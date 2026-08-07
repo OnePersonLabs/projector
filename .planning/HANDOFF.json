@@ -1,0 +1,125 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-07T10:42:52.634Z",
+  "phase": "1",
+  "phase_name": "Slice 0 — Foundation and Correctness Substrate",
+  "phase_dir": ".planning/phases/01-slice-0-foundation-and-correctness-substrate",
+  "plan": 0,
+  "task": 0,
+  "total_tasks": 13,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Create autonomous Phase 1 context",
+      "status": "done",
+      "commit": "4b9643d"
+    },
+    {
+      "id": 2,
+      "name": "Research all 116 Phase 1 requirements",
+      "status": "done",
+      "commit": "9a6dc26"
+    },
+    {
+      "id": 3,
+      "name": "Map Phase 1 implementation patterns",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "name": "Draft 13 executable Phase 1 plans",
+      "status": "done"
+    },
+    {
+      "id": 5,
+      "name": "Independent plan-checker review",
+      "status": "done"
+    },
+    {
+      "id": 6,
+      "name": "Revise research and create Nyquist validation contract",
+      "status": "in_progress",
+      "progress": "Research decisions and package-legitimacy gate were partially revised before the user requested a pause; 01-VALIDATION.md was not created."
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 6,
+      "name": "Finish research revision and create 01-VALIDATION.md",
+      "status": "in_progress"
+    },
+    {
+      "id": 7,
+      "name": "Revise plans to add required packages/engine tier and remove contradictions",
+      "status": "not_started"
+    },
+    {
+      "id": 8,
+      "name": "Re-run independent plan checker until Phase 1 plans pass",
+      "status": "not_started"
+    },
+    {
+      "id": 9,
+      "name": "Execute and verify Phase 1",
+      "status": "not_started"
+    },
+    {
+      "id": 10,
+      "name": "Continue Phases 2 through 14",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "01-13 makes packages/engine optional while KERN-052 requires engine -> core; selector evaluation and StateBinding/query validation are currently planned in core.",
+      "type": "technical",
+      "workaround": "Create packages/engine, move runtime semantic evaluation there, compose it from CLI, and enforce the exact package graph."
+    },
+    {
+      "description": "01-VALIDATION.md is missing although Nyquist validation is enabled.",
+      "type": "technical",
+      "workaround": "Create the validation contract and align all plan verification steps with it."
+    },
+    {
+      "description": "The interrupted research revision left one stale phrase: 'post-checkpoint for fast-check' conflicts with the newly approved deterministic no-human package legitimacy gate.",
+      "type": "technical",
+      "workaround": "Remove the stale phrase and verify the research document is internally consistent."
+    }
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "All 14 roadmap phases remain committed scope; sequence is dependency order, not deferral.",
+      "rationale": "The user explicitly rejected incomplete ingestion and lazy later-hand-waving.",
+      "phase": "project"
+    },
+    {
+      "decision": "Phase 14 must import GSD artifacts into canonical .projector state, prove semantic equivalence and self-governance, then make PROJECTOR_SPEC and local GSD removable.",
+      "rationale": "This is the required handoff and deletion gate.",
+      "phase": "14"
+    },
+    {
+      "decision": "Package installation may proceed autonomously only behind deterministic registry provenance, integrity, license, lifecycle-script, exact-version, and lockfile checks that fail closed.",
+      "rationale": "The user authorized autonomous completion; deterministic evidence replaces a manual checkpoint without weakening safety.",
+      "phase": "1"
+    },
+    {
+      "decision": "Use node:sqlite only behind the DerivedStore port, with black-box acceptance and an adapter-only escape path.",
+      "rationale": "It satisfies the Node 24 reference stack while containing release-candidate API risk.",
+      "phase": "1"
+    }
+  ],
+  "uncommitted_files": [
+    ".planning/ROADMAP.md",
+    ".planning/phases/01-slice-0-foundation-and-correctness-substrate/01-RESEARCH.md",
+    ".planning/phases/01-slice-0-foundation-and-correctness-substrate/01-01-PLAN.md through 01-13-PLAN.md",
+    ".planning/phases/01-slice-0-foundation-and-correctness-substrate/01-PATTERNS.md",
+    ".planning/phases/01-slice-0-foundation-and-correctness-substrate/01-SOURCE-AUDIT.md",
+    ".planning/phases/01-slice-0-foundation-and-correctness-substrate/SKELETON.md",
+    ".planning/research/.cache/4238dcde6844789f0b9eb88d3f3ac43fd9e998c59f17bc6bf06b95e019366a81.json"
+  ],
+  "next_action": "Finish 01-RESEARCH.md consistency, create 01-VALIDATION.md, revise the engine-tier plan architecture, then rerun the Phase 1 plan checker before executing any product code.",
+  "context_notes": "Paused at the Phase 1 plan revision gate. No product code, dependencies, databases, or services were created or run. The 13 draft plans cover all 116 Phase 1 requirement IDs exactly once, but independent review found four blockers and four scope warnings."
+}
