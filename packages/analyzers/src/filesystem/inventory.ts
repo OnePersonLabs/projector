@@ -19,6 +19,7 @@ export interface InventoryEntry {
 export interface InventoryResult {
   readonly entries: InventoryEntry[];
   readonly failures: AnalyzerFailure[];
+  readonly rootAvailability: "available" | "unavailable";
 }
 
 const ignoredDirectories = new Set([".git", "node_modules"]);
@@ -54,6 +55,7 @@ export async function inventoryRepository(repositoryRoot: string): Promise<Inven
   const root = resolve(repositoryRoot);
   const entries: InventoryEntry[] = [];
   const failures: AnalyzerFailure[] = [];
+  let rootAvailability: InventoryResult["rootAvailability"] = "available";
 
   async function visit(directory: string): Promise<void> {
     let children;
@@ -61,6 +63,7 @@ export async function inventoryRepository(repositoryRoot: string): Promise<Inven
       children = await readdir(directory, { withFileTypes: true });
     } catch (error) {
       const scope = directory === root ? "." : repositoryPath(root, directory);
+      if (directory === root) rootAvailability = "unavailable";
       failures.push(failure(scope, "directory-enumeration", error, ["artifact-enumeration", "inventory-completeness"]));
       return;
     }
@@ -122,5 +125,5 @@ export async function inventoryRepository(repositoryRoot: string): Promise<Inven
   }
 
   await visit(root);
-  return { entries, failures };
+  return { entries, failures, rootAvailability };
 }

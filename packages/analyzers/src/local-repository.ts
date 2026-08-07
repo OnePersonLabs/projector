@@ -111,11 +111,11 @@ function tokenizeCommand(command: string): string[] {
       quote = character;
       continue;
     }
-    if (character === ";" || character === "&" || character === "|") {
+    if (character === ";" || character === "&" || character === "|" || character === ">" || character === "<") {
       if (token.length > 0) tokens.push(token);
       token = "";
       const previous = tokens.at(-1);
-      if ((character === "&" || character === "|") && previous === character) tokens[tokens.length - 1] = `${character}${character}`;
+      if (character !== ";" && previous === character) tokens[tokens.length - 1] = `${character}${character}`;
       else tokens.push(character);
       continue;
     }
@@ -148,6 +148,10 @@ function executableTargets(tokens: readonly string[]): Array<{ runner: string; t
         skipNext = false;
         continue;
       }
+      if ([">", ">>", "<", "<<"].includes(target)) {
+        skipNext = true;
+        continue;
+      }
       if (["-e", "--eval", "-p", "--print", "--input-type", "--require", "-r", "--import"].includes(target)) {
         skipNext = true;
         continue;
@@ -158,7 +162,7 @@ function executableTargets(tokens: readonly string[]): Array<{ runner: string; t
     segment = [];
   };
   for (const token of tokens) {
-    if ([";", "&&", "||"].includes(token)) consume();
+    if ([";", "&", "&&", "|", "||"].includes(token)) consume();
     else segment.push(token);
   }
   consume();
@@ -368,26 +372,35 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
   const hookReachable = hookReachablePaths(javaScriptFacts.files, javaScriptFacts.dependencies);
   const javaScriptByPath = new Map(javaScriptFacts.files.map((facts) => [facts.path, facts]));
   const gitByPath = new Map(gitFacts.identities.map((identity) => [identity.path, identity]));
+  const rootAvailable = inventoryResult.rootAvailability === "available";
   const surfaceId = deriveEntityId("projector.repository-surface", packageFacts.repositoryKey);
   const surface: Surface = {
     id: surfaceId,
     key: packageFacts.repositoryKey,
     kind: "repository",
     adapter: "projector.local-repository@1",
-    access: "read-only",
-    enumeration: {
-      observability: "bounded",
-      method: "composed-local-filesystem-git-and-static-syntax-observation",
-      assumptions: ["repository root and available Git metadata are readable"],
-      blindSpots: ["ignored .git and node_modules contents", "dynamic module resolution", "unavailable per-entry observations"],
-      dynamicMechanisms: ["runtime module resolution", "generated state outside inventory boundary"],
-    },
+    access: rootAvailable ? "read-only" : "unavailable",
+    enumeration: rootAvailable
+      ? {
+          observability: "bounded",
+          method: "composed-local-filesystem-git-and-static-syntax-observation",
+          assumptions: ["repository root and available Git metadata are readable"],
+          blindSpots: ["ignored .git and node_modules contents", "dynamic module resolution", "unavailable per-entry observations"],
+          dynamicMechanisms: ["runtime module resolution", "generated state outside inventory boundary"],
+        }
+      : {
+          observability: "unavailable",
+          method: "repository-root-read-attempt",
+          assumptions: [],
+          blindSpots: ["repository root could not be enumerated; no absence claim is valid"],
+          dynamicMechanisms: [],
+        },
     capabilities: {
-      read: true,
+      read: rootAvailable,
       write: false,
       watch: false,
       transactionalWrites: false,
-      stableAnchors: true,
+      stableAnchors: rootAvailable,
       humanApprovalRequired: false,
     },
     boundary: { repositoryKey: packageFacts.repositoryKey },

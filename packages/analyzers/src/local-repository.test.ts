@@ -323,4 +323,90 @@ describe("local repository analyzer", () => {
 
     expect(paths.indexOf("scripts/\uE000.mjs")).toBeLessThan(paths.indexOf("scripts/\u{10000}.mjs"));
   });
+
+  it("reports a nonexistent repository root as unavailable instead of proving an empty repository", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "projector-missing-root-"));
+    temporaryRoots.push(parent);
+
+    const result = await analyzeLocalRepository({ repositoryRoot: join(parent, "does-not-exist") });
+
+    expect(result.surface).toMatchObject({
+      access: "unavailable",
+      enumeration: { observability: "unavailable" },
+      capabilities: { read: false, stableAnchors: false },
+    });
+    expect(result.files).toEqual([]);
+    expect(result.failures).toContainEqual(expect.objectContaining({
+      analyzerId: "projector.filesystem-local",
+      capability: "directory-enumeration",
+      scope: ".",
+      affectedClaimKinds: ["artifact-enumeration", "inventory-completeness"],
+    }));
+  });
+
+  it("keeps a readable root bounded when only one child artifact is unavailable", async () => {
+    const root = await fixtureRepository();
+    const unreadable = join(root, "scripts/child-unavailable.mjs");
+    await writeFile(unreadable, "export const childUnavailable = true;\n");
+    await chmod(unreadable, 0);
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+
+    expect(result.surface).toMatchObject({
+      access: "read-only",
+      enumeration: { observability: "bounded" },
+      capabilities: { read: true, stableAnchors: true },
+    });
+    expect(result.failures).toContainEqual(expect.objectContaining({ scope: "scripts/child-unavailable.mjs" }));
+  });
+
+  it("does not treat pipeline commands or redirection destinations as package-script targets", async () => {
+    const root = await fixtureRepository();
+    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
+    manifest.scripts.background = "node scripts/build-index.mjs & echo scripts/not-invoked.mjs";
+    manifest.scripts.redirect = "node scripts/check-links.mjs > scripts/captured-output.mjs";
+    await writeFile(join(root, "package.json"), `${JSON.stringify(manifest, undefined, 2)}\n`);
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+    const backgroundTargets = result.packageScriptInvocations.filter((fact) => fact.scriptName === "background").map((fact) => fact.targetPath);
+    const redirectTargets = result.packageScriptInvocations.filter((fact) => fact.scriptName === "redirect").map((fact) => fact.targetPath);
+
+    expect(backgroundTargets).toEqual(["scripts/build-index.mjs"]);
+    expect(redirectTargets).toEqual(["scripts/check-links.mjs"]);
+  });
+
+  it("localizes per-file Git history failure without discarding available Git identity", async () => {
+    const root = await fixtureRepository();
+    const wrapperRoot = await mkdtemp(join(tmpdir(), "projector-git-wrapper-"));
+    temporaryRoots.push(wrapperRoot);
+    const wrapper = join(wrapperRoot, "git");
+    const { stdout: gitPathOutput } = await execFileAsync("which", ["git"]);
+    const gitPath = gitPathOutput.trim();
+    await writeFile(
+      wrapper,
+      `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "log" ]; then exit 71; fi\ndone\nexec '${gitPath}' "$@"\n`,
+    );
+    await chmod(wrapper, 0o755);
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${wrapperRoot}:${originalPath ?? ""}`;
+
+    try {
+      const result = await analyzeLocalRepository({ repositoryRoot: root });
+      const identity = result.gitIdentities.find((fact) => fact.path === "scripts/build-index.mjs");
+
+      expect(result.git.availability).toBe("available");
+      expect(identity).toMatchObject({ tracked: true, introductionHistory: "unavailable" });
+      expect(identity?.introductionCommit).toBeUndefined();
+      expect(result.failures).toContainEqual(expect.objectContaining({
+        analyzerId: "projector.git-local",
+        capability: "introduction-history",
+        scope: "scripts/build-index.mjs",
+        recoverable: true,
+        affectedClaimKinds: ["git-introduction-commit"],
+      }));
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+  });
 });
