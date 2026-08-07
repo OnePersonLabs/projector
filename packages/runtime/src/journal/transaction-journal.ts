@@ -179,6 +179,7 @@ export class FileTransaction {
   }
 
   async checkpoint(id: string): Promise<void> {
+    await this.assertMetadataMutable();
     if (id.length === 0 || this.record.entry.checkpointIds.includes(id)) {
       throw new TypeError(`Invalid or duplicate checkpoint: ${id}`);
     }
@@ -198,6 +199,7 @@ export class FileTransaction {
     compensationId?: string;
     instructions?: string;
   }): Promise<void> {
+    await this.assertMetadataMutable();
     if (input.externalOperationId.length === 0 || this.record.entry.externalOperationIds.includes(input.externalOperationId)) {
       throw new TypeError(`Invalid or duplicate external operation: ${input.externalOperationId}`);
     }
@@ -211,6 +213,7 @@ export class FileTransaction {
   }
 
   async markCompensated(externalOperationId: string): Promise<void> {
+    await this.assertMetadataMutable();
     const compensation = this.record.compensations.find(
       (candidate) => candidate.externalOperationId === externalOperationId,
     );
@@ -230,6 +233,18 @@ export class FileTransaction {
     }
     if (this.record.entry.phase !== "workspace-mutating") {
       throw new InvalidJournalTransitionError(this.record.entry.phase, "workspace-mutating");
+    }
+  }
+
+  private async assertMetadataMutable(): Promise<void> {
+    const durablePhase = (await this.journal.read(this.record.entry.transactionId)).entry.phase;
+    if (
+      durablePhase !== this.record.entry.phase ||
+      durablePhase === "committed" ||
+      durablePhase === "rolled-back" ||
+      durablePhase === "recovery-required"
+    ) {
+      throw new InvalidJournalTransitionError(this.record.entry.phase, durablePhase);
     }
   }
 }
