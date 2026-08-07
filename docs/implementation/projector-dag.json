@@ -7,7 +7,7 @@
   "criticalPath": [1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20],
   "initialWaveAfterFoundation": [2, 3, 4, 5],
   "nodes": [
-    {"id":1,"name":"foundation-contracts-hashing-ports","dependencies":[],"status":"ready","owner":"unassigned","baseRevision":"42a0b73","packages":["root","core"],"verification":"pending","blockers":[],"newDependencies":[],"integration":"pending"},
+    {"id":1,"name":"foundation-contracts-hashing-ports","dependencies":[],"status":"running","owner":"/root/implement_t1","baseRevision":"934ea37","packages":["root","core"],"verification":"running","blockers":[],"newDependencies":[],"integration":"pending"},
     {"id":2,"name":"canonical-sqlite-persistence-rebuild","dependencies":[1],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["runtime/persistence","runtime/sqlite"],"verification":"pending","blockers":["T1"],"newDependencies":[],"integration":"pending"},
     {"id":3,"name":"security-lease-journal-recovery","dependencies":[1],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["runtime/security","runtime/execution","runtime/journal","runtime/worktrees"],"verification":"pending","blockers":["T1"],"newDependencies":[],"integration":"pending"},
     {"id":4,"name":"state-binding-query-graph","dependencies":[1],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/state","engine/query"],"verification":"pending","blockers":["T1"],"newDependencies":[],"integration":"pending"},
