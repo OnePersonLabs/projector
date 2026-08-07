@@ -53,9 +53,9 @@ The detailed heading-to-ID map is embedded in `.planning/REQUIREMENTS.md` under 
 - [x] All 376 source headings mapped
 - [x] 1,319 unique numeric v1 requirement IDs generated
 - [x] Seven independent fidelity audits completed
-- [ ] Requirements approved by the user
-- [ ] Every requirement mapped to exactly one roadmap phase
-- [ ] Roadmap approved and committed
+- [x] Requirements approved by the user
+- [x] Every requirement mapped to exactly one roadmap phase
+- [x] Roadmap approved and committed
 - [ ] Detailed phase plans created and verified
 - [ ] Projector implementation complete
 - [ ] GSD-to-Projector semantic import and equivalence proof complete
@@ -63,4 +63,4 @@ The detailed heading-to-ID map is embedded in `.planning/REQUIREMENTS.md` under 
 - [ ] Original specification and GSD bootstrap safely removable
 
 ---
-*Last updated: 2026-08-07 after independent specification-fidelity audit*
+*Last updated: 2026-08-07 after user requirements approval and exact roadmap-mapping validation*
