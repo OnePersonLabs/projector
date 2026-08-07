@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "specVersion": "2.0.0",
+  "plan": "docs/superpowers/plans/2026-08-07-projector-implementation.md",
+  "integrationBranch": "codex/projector-implementation",
+  "integrationBase": "42a0b73",
+  "criticalPath": [1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20],
+  "initialWaveAfterFoundation": [2, 3, 4, 5],
+  "nodes": [
+    {"id":1,"name":"foundation-contracts-hashing-ports","dependencies":[],"status":"ready","owner":"unassigned","baseRevision":"42a0b73","packages":["root","core"],"verification":"pending","blockers":[],"newDependencies":[],"integration":"pending"},
+    {"id":2,"name":"canonical-sqlite-persistence-rebuild","dependencies":[1],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["runtime/persistence","runtime/sqlite"],"verification":"pending","blockers":["T1"],"newDependencies":[],"integration":"pending"},
+    {"id":3,"name":"security-lease-journal-recovery","dependencies":[1],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["runtime/security","runtime/execution","runtime/journal","runtime/worktrees"],"verification":"pending","blockers":["T1"],"newDependencies":[],"integration":"pending"},
+    {"id":4,"name":"state-binding-query-graph","dependencies":[1],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/state","engine/query"],"verification":"pending","blockers":["T1"],"newDependencies":[],"integration":"pending"},
+    {"id":5,"name":"testkit-fixture-substrate","dependencies":[1],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["testkit","fixtures"],"verification":"pending","blockers":["T1"],"newDependencies":[],"integration":"pending"},
+    {"id":6,"name":"local-analyzers-projection-units","dependencies":[2,3,4,5],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["analyzers"],"verification":"pending","blockers":["T2","T3","T4","T5"],"newDependencies":[],"integration":"pending"},
+    {"id":7,"name":"authority-selector-rule-lens-kernel","dependencies":[2,4,5],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/inference","engine/authority","engine/governance"],"verification":"pending","blockers":["T2","T4","T5"],"newDependencies":[],"integration":"pending"},
+    {"id":8,"name":"transform-plan-capsule-receipt-runtime","dependencies":[2,3,4,5],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["runtime/transforms","engine/planning","engine/change"],"verification":"pending","blockers":["T2","T3","T4","T5"],"newDependencies":[],"integration":"pending"},
+    {"id":9,"name":"mandatory-misplaced-script-loop-cli","dependencies":[6,7,8],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/reconciliation","cli"],"verification":"pending","blockers":["T6","T7","T8"],"newDependencies":[],"integration":"pending"},
+    {"id":10,"name":"signatures-invalidation-backdating","dependencies":[9],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/invalidation"],"verification":"pending","blockers":["T9"],"newDependencies":[],"integration":"pending"},
+    {"id":11,"name":"identity-relevance-facets-surprises","dependencies":[10],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/identity","engine/relevance","engine/context","analyzers/topology"],"verification":"pending","blockers":["T10"],"newDependencies":[],"integration":"pending"},
+    {"id":12,"name":"governance-representation-policy-rebase","dependencies":[11],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/representation","engine/governance","engine/planning","cli"],"verification":"pending","blockers":["T11"],"newDependencies":[],"integration":"pending"},
+    {"id":13,"name":"progressive-architecture-commitment","dependencies":[12],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/architecture","engine/authority","cli"],"verification":"pending","blockers":["T12"],"newDependencies":[],"integration":"pending"},
+    {"id":14,"name":"broad-analyzers-topology","dependencies":[13],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["analyzers"],"verification":"pending","blockers":["T13"],"newDependencies":[],"integration":"pending"},
+    {"id":15,"name":"coverage-completion","dependencies":[14],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/coverage","cli"],"verification":"pending","blockers":["T14"],"newDependencies":[],"integration":"pending"},
+    {"id":16,"name":"semantic-change-compiler-packet-executor","dependencies":[15],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/change","engine/planning","runtime/execution","cli"],"verification":"pending","blockers":["T15"],"newDependencies":[],"integration":"pending"},
+    {"id":17,"name":"model-host-mcp-integrations","dependencies":[16],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["integrations/models","integrations/codex","integrations/claude","integrations/mcp"],"verification":"pending","blockers":["T16"],"newDependencies":[],"integration":"pending"},
+    {"id":18,"name":"modernization-research-surface-framework","dependencies":[13,16],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["engine/modernization","integrations/surfaces"],"verification":"pending","blockers":["T13","T16"],"newDependencies":[],"integration":"pending"},
+    {"id":19,"name":"watch-ci-ops-benchmarks-dogfood","dependencies":[17,18],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["cli","runtime","testkit","root",".projector"],"verification":"pending","blockers":["T17","T18"],"newDependencies":[],"integration":"pending"},
+    {"id":20,"name":"full-acceptance-public-package","dependencies":[19],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["root","testkit","fixtures","cli"],"verification":"pending","blockers":["T19"],"newDependencies":[],"integration":"pending"},
+    {"id":21,"name":"demand-driven-external-adapters","dependencies":[20],"status":"blocked","owner":"unassigned","baseRevision":"","packages":["integrations/surfaces"],"verification":"pending","blockers":["T20","demand selection"],"newDependencies":[],"integration":"pending"}
+  ]
+}
