@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -79,6 +79,23 @@ describe("WriterLeaseManager", () => {
     const manager = await leaseManager(root);
 
     await expect(manager.acquire(owner("session-a"))).rejects.toMatchObject({ code: "symlink-refused" });
+  });
+
+  it("fails closed on a path-unsafe persisted lease ID before stale archival", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-lease-"));
+    let now = new Date("2026-08-07T12:00:00.000Z");
+    const paths = await RepositoryPathService.create(root);
+    const manager = new WriterLeaseManager(paths, { staleAfterMs: 1_000, now: () => now });
+    await manager.acquire(owner("session-a"));
+    const ownerPath = join(root, ".projector", "runtime", "writer-lease.lock", "owner.json");
+    const record = JSON.parse(await readFile(ownerPath, "utf8"));
+    record.leaseId = "../../../stolen";
+    await writeFile(ownerPath, JSON.stringify(record));
+    now = new Date("2026-08-07T12:00:02.000Z");
+
+    await expect(manager.acquire(owner("session-b"))).rejects.toMatchObject({ code: "lease-corrupt" });
+    expect((await stat(join(root, ".projector", "runtime", "writer-lease.lock"))).isDirectory()).toBe(true);
+    await expect(stat(join(root, "stolen"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

@@ -61,6 +61,7 @@ class EchoSandboxLauncher implements ProcessLauncher {
     networkIsolation: true,
     cpuLimits: true,
     memoryLimits: true,
+    externalWrites: true,
   };
 
   async launch(request: ProcessLaunchRequest) {
@@ -76,6 +77,16 @@ class EchoSandboxLauncher implements ProcessLauncher {
       durationMs: 1,
     };
   }
+}
+
+class NoExternalWriteSandboxLauncher extends EchoSandboxLauncher {
+  override readonly capabilities = {
+    filesystemIsolation: true,
+    networkIsolation: true,
+    cpuLimits: true,
+    memoryLimits: true,
+    externalWrites: false,
+  };
 }
 
 describe("StateBoundCommandExecutor", () => {
@@ -130,6 +141,62 @@ describe("StateBoundCommandExecutor", () => {
     await expect(
       executor.execute(command({ argv: ["different-tool", "unexpected"] }), request()),
     ).rejects.toMatchObject({ code: "command-refused" });
+  });
+
+  it("fails closed for an external-write command without explicit policy authorization", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
+    const paths = await RepositoryPathService.create(root);
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new EchoSandboxLauncher());
+    const spec = command({ sideEffectClass: "external-write" });
+
+    await expect(executor.execute(spec, request(spec))).rejects.toMatchObject({
+      code: "external-write-refused",
+    });
+  });
+
+  it("fails closed when the launcher lacks an external-write capability", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
+    const paths = await RepositoryPathService.create(root);
+    const executor = new StateBoundCommandExecutor(
+      paths,
+      new FixedBindingValidator("current"),
+      new NoExternalWriteSandboxLauncher(),
+    );
+    const spec = command({ sideEffectClass: "external-write" });
+
+    await expect(
+      executor.execute(spec, request(spec, { allowExternalWrites: true })),
+    ).rejects.toMatchObject({ code: "unsupported-isolation" });
+  });
+
+  it("rejects non-finite, fractional, or non-positive resource budgets", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
+    const paths = await RepositoryPathService.create(root);
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new EchoSandboxLauncher());
+    const cases: Array<{ spec: CommandSpec; maxOutputBytes: number }> = [
+      { spec: command(), maxOutputBytes: Number.NaN },
+      { spec: command(), maxOutputBytes: Number.POSITIVE_INFINITY },
+      { spec: command(), maxOutputBytes: 1.5 },
+      { spec: command({ cpuBudgetMs: Number.NaN }), maxOutputBytes: 1_024 },
+      { spec: command({ cpuBudgetMs: 0 }), maxOutputBytes: 1_024 },
+      { spec: command({ memoryBudgetMb: Number.POSITIVE_INFINITY }), maxOutputBytes: 1_024 },
+      { spec: command({ memoryBudgetMb: 1.5 }), maxOutputBytes: 1_024 },
+      { spec: command({ timeoutMs: Number.NaN }), maxOutputBytes: 1_024 },
+    ];
+
+    for (const candidate of cases) {
+      await expect(
+        executor.execute(candidate.spec, request(candidate.spec, { maxOutputBytes: candidate.maxOutputBytes })),
+      ).rejects.toMatchObject({ code: "invalid-command" });
+    }
+  });
+
+  it("does not treat a rebound status without a replacement binding as authorized", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
+    const paths = await RepositoryPathService.create(root);
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("rebound"), new EchoSandboxLauncher());
+
+    await expect(executor.execute(command(), request())).rejects.toMatchObject({ code: "stale-binding" });
   });
 });
 
@@ -205,7 +272,10 @@ function command(overrides: Partial<CommandSpec> = {}): CommandSpec {
   };
 }
 
-function request(declaredCommand: CommandSpec = command()) {
+function request(
+  declaredCommand: CommandSpec = command(),
+  overrides: Partial<{ maxOutputBytes: number; allowExternalWrites: boolean }> = {},
+) {
   return {
     boundState: binding,
     currentState: state,
@@ -214,8 +284,10 @@ function request(declaredCommand: CommandSpec = command()) {
     allowedReadRoots: ["."],
     allowedWriteRoots: ["src"],
     allowNetwork: false,
+    allowExternalWrites: false,
     environment: { KEPT: "yes", HIDDEN: "no" },
     maxOutputBytes: 1_024,
     signal: new AbortController().signal,
+    ...overrides,
   };
 }

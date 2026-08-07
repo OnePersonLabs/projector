@@ -122,7 +122,19 @@ export class FileTransaction {
   }
 
   transition(phase: TransactionPhase): Promise<void> {
+    if (
+      phase === "committed" ||
+      phase === "rolling-back" ||
+      phase === "rolled-back" ||
+      phase === "recovery-required"
+    ) {
+      return Promise.reject(new InvalidJournalTransitionError(this.record.entry.phase, phase));
+    }
     return this.journal.transitionRecord(this.record, phase);
+  }
+
+  commit(): Promise<void> {
+    return this.journal.commitRecord(this.record);
   }
 
   async writeFile(path: string, content: string | Uint8Array): Promise<void> {
@@ -309,6 +321,16 @@ export class FileTransactionJournal {
     const allowed = allowedTransitions[record.entry.phase];
     if (!allowed.includes(phase)) throw new InvalidJournalTransitionError(record.entry.phase, phase);
     await this.forcePhase(record, phase);
+  }
+
+  async commitRecord(record: DurableTransactionRecord): Promise<void> {
+    if (record.entry.phase !== "committing") {
+      throw new InvalidJournalTransitionError(record.entry.phase, "committed");
+    }
+    if (record.operations.some((operation) => operation.status !== "applied")) {
+      throw new JournalRecoveryRequiredError("A transaction with incomplete or reverted operations cannot commit");
+    }
+    await this.forcePhase(record, "committed");
   }
 
   async applyOperation(
@@ -512,7 +534,8 @@ function recordFileName(transactionId: string): string {
 function sameSnapshot(left: PathSnapshot, right: PathSnapshot): boolean {
   return (
     left.kind === right.kind &&
-    (left.kind === "missing" || (right.kind === "file" && left.contentBase64 === right.contentBase64))
+    (left.kind === "missing" ||
+      (right.kind === "file" && left.contentBase64 === right.contentBase64 && left.mode === right.mode))
   );
 }
 
@@ -550,7 +573,8 @@ function isRecord(value: unknown): value is DurableTransactionRecord {
     Array.isArray(record.checkpoints) &&
     record.checkpoints.every(isCheckpoint) &&
     Array.isArray(record.compensations) &&
-    record.compensations.every(isCompensation)
+    record.compensations.every(isCompensation) &&
+    hasConsistentRecordIndexes(record as DurableTransactionRecord)
   );
 }
 
@@ -572,10 +596,10 @@ function isStateDigest(value: unknown): value is StateDigest {
   const state = value as Partial<StateDigest>;
   return (
     typeof state.gitBase === "string" &&
-    typeof state.worktreeDigest === "string" &&
-    typeof state.canonicalProjectorDigest === "string" &&
-    typeof state.toolchainDigest === "string" &&
-    (state.pinnedExternalSnapshotDigest === undefined || typeof state.pinnedExternalSnapshotDigest === "string")
+    isContentHash(state.worktreeDigest) &&
+    isContentHash(state.canonicalProjectorDigest) &&
+    isContentHash(state.toolchainDigest) &&
+    (state.pinnedExternalSnapshotDigest === undefined || isContentHash(state.pinnedExternalSnapshotDigest))
   );
 }
 
@@ -604,6 +628,7 @@ function isSnapshot(value: unknown): value is PathSnapshot {
     snapshot.kind === "missing" ||
     (snapshot.kind === "file" &&
       typeof snapshot.contentBase64 === "string" &&
+      Buffer.from(snapshot.contentBase64, "base64").toString("base64") === snapshot.contentBase64 &&
       typeof snapshot.mode === "number" &&
       Number.isSafeInteger(snapshot.mode) &&
       snapshot.mode >= 0 &&
@@ -640,6 +665,57 @@ function isCompensation(value: unknown): value is CompensationRecord {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function hasConsistentRecordIndexes(record: DurableTransactionRecord): boolean {
+  const operationIds = record.operations.map((operation) => operation.id);
+  const touchedPaths = record.operations.flatMap((operation) => operation.changes.map((change) => change.path));
+  const checkpointIds = record.checkpoints.map((checkpoint) => checkpoint.id);
+  const externalOperationIds = record.compensations.map((compensation) => compensation.externalOperationId);
+  return (
+    allUnique(operationIds) &&
+    sameStringSet(record.entry.touchedPaths, touchedPaths) &&
+    sameStringSet(record.entry.checkpointIds, checkpointIds) &&
+    sameStringSet(record.entry.externalOperationIds, externalOperationIds) &&
+    allUnique(record.allowedWriteRoots) &&
+    record.allowedWriteRoots.every(isCanonicalRepositoryPath) &&
+    touchedPaths.every(
+      (path) => isCanonicalRepositoryPath(path) && record.allowedWriteRoots.some((scope) => isWithinScope(path, scope)),
+    ) &&
+    record.checkpoints.every((checkpoint) => checkpoint.operationCount <= record.operations.length) &&
+    (record.entry.phase !== "prepared" || record.operations.length === 0) &&
+    (record.entry.phase !== "committed" || record.operations.every((operation) => operation.status === "applied")) &&
+    (record.entry.phase !== "rolled-back" || record.operations.every((operation) => operation.status === "reverted"))
+  );
+}
+
+function isCanonicalRepositoryPath(path: string): boolean {
+  return (
+    path.length > 0 &&
+    !path.includes("\\") &&
+    !path.includes("\0") &&
+    !path.startsWith("/") &&
+    !/^[A-Za-z]:/u.test(path) &&
+    posix.normalize(path) === path &&
+    path !== ".." &&
+    !path.startsWith("../")
+  );
+}
+
+function isWithinScope(path: string, scope: string): boolean {
+  return scope === "." || path === scope || path.startsWith(`${scope}/`);
+}
+
+function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
+  return allUnique(left) && allUnique(right) && left.length === right.length && left.every((value) => right.includes(value));
+}
+
+function allUnique(values: readonly string[]): boolean {
+  return new Set(values).size === values.length;
+}
+
+function isContentHash(value: unknown): value is ContentHash {
+  return typeof value === "string" && /^sha256:v1:[0-9a-f]{64}$/u.test(value);
 }
 
 function lastCheckpoint(record: DurableTransactionRecord): { lastCheckpointId?: string } {

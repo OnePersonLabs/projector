@@ -13,6 +13,7 @@ import { PathSecurityError, type RepositoryPathService } from "../security/index
 
 export type ExecutionRefusalCode =
   | "command-refused"
+  | "external-write-refused"
   | "invalid-command"
   | "network-refused"
   | "scope-refused"
@@ -44,6 +45,7 @@ export interface ProcessLauncherCapabilities {
   networkIsolation: boolean;
   cpuLimits: boolean;
   memoryLimits: boolean;
+  externalWrites: boolean;
 }
 
 export interface ProcessLaunchRequest {
@@ -82,6 +84,7 @@ export interface CommandExecutionAuthorization {
   allowedReadRoots: readonly string[];
   allowedWriteRoots: readonly string[];
   allowNetwork: boolean;
+  allowExternalWrites: boolean;
   environment: Readonly<Record<string, string | undefined>>;
   maxOutputBytes: number;
   signal: AbortSignal;
@@ -111,7 +114,10 @@ export class StateBoundCommandExecutor {
       authorization.currentState,
       context,
     );
-    if (binding.status !== "current" && binding.status !== "rebound") {
+    if (
+      binding.status !== "current" &&
+      (binding.status !== "rebound" || binding.rebound === undefined || !sameState(binding.rebound.compiledAgainst, authorization.currentState))
+    ) {
       throw new ExecutionRefusedError(
         "stale-binding",
         `Command ${spec.id} is bound to ${binding.status} state: ${binding.reasons.join("; ")}`,
@@ -180,7 +186,12 @@ export class StateBoundCommandExecutor {
     if (spec.argv.length === 0 || spec.argv.some((argument) => argument.includes("\0"))) {
       throw new ExecutionRefusedError("invalid-command", `Command ${spec.id} has invalid argv`);
     }
-    if (!Number.isSafeInteger(spec.timeoutMs) || spec.timeoutMs <= 0 || authorization.maxOutputBytes <= 0) {
+    if (
+      !isPositiveSafeInteger(spec.timeoutMs) ||
+      !isPositiveSafeInteger(authorization.maxOutputBytes) ||
+      (spec.cpuBudgetMs !== undefined && !isPositiveSafeInteger(spec.cpuBudgetMs)) ||
+      (spec.memoryBudgetMb !== undefined && !isPositiveSafeInteger(spec.memoryBudgetMb))
+    ) {
       throw new ExecutionRefusedError("invalid-command", `Command ${spec.id} has invalid resource limits`);
     }
     if ((spec.sideEffectClass === "none" || spec.sideEffectClass === "read-only") && spec.writeScope.length > 0) {
@@ -188,6 +199,9 @@ export class StateBoundCommandExecutor {
     }
     if (spec.network === "allow" && !authorization.allowNetwork) {
       throw new ExecutionRefusedError("network-refused", `Command ${spec.id} has no network grant`);
+    }
+    if (spec.sideEffectClass === "external-write" && !authorization.allowExternalWrites) {
+      throw new ExecutionRefusedError("external-write-refused", `Command ${spec.id} has no external-write grant`);
     }
   }
 
@@ -205,6 +219,9 @@ export class StateBoundCommandExecutor {
     if (spec.memoryBudgetMb !== undefined && !capabilities.memoryLimits) {
       throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot enforce a memory budget");
     }
+    if (spec.sideEffectClass === "external-write" && !capabilities.externalWrites) {
+      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot perform authorized external writes");
+    }
   }
 }
 
@@ -218,14 +235,28 @@ function sameCommand(left: CommandSpec, right: CommandSpec): boolean {
     left.network === right.network &&
     sameStrings(left.environmentKeys, right.environmentKeys) &&
     left.sideEffectClass === right.sideEffectClass &&
-    left.timeoutMs === right.timeoutMs &&
-    left.cpuBudgetMs === right.cpuBudgetMs &&
-    left.memoryBudgetMb === right.memoryBudgetMb
+    Object.is(left.timeoutMs, right.timeoutMs) &&
+    Object.is(left.cpuBudgetMs, right.cpuBudgetMs) &&
+    Object.is(left.memoryBudgetMb, right.memoryBudgetMb)
   );
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function isPositiveSafeInteger(value: number): boolean {
+  return Number.isFinite(value) && Number.isSafeInteger(value) && value > 0;
+}
+
+function sameState(left: StateDigest, right: StateDigest): boolean {
+  return (
+    left.gitBase === right.gitBase &&
+    left.worktreeDigest === right.worktreeDigest &&
+    left.canonicalProjectorDigest === right.canonicalProjectorDigest &&
+    left.toolchainDigest === right.toolchainDigest &&
+    left.pinnedExternalSnapshotDigest === right.pinnedExternalSnapshotDigest
+  );
 }
 
 export class NativeProcessLauncher implements ProcessLauncher {
@@ -234,6 +265,7 @@ export class NativeProcessLauncher implements ProcessLauncher {
     networkIsolation: false,
     cpuLimits: false,
     memoryLimits: false,
+    externalWrites: false,
   };
 
   launch(request: ProcessLaunchRequest): Promise<ProcessExecutionResult> {

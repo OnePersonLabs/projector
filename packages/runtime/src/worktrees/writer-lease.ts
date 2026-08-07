@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { StateBinding, StateDigest } from "@projector/core";
+import { StateBindingSchema, StateDigestSchema, type StateBinding, type StateDigest } from "@projector/core";
 
 import type { RepositoryPathService } from "../security/index.js";
 
@@ -244,12 +244,27 @@ function isLeaseRecord(value: unknown): value is WriterLeaseRecord {
   return (
     candidate.version === 1 &&
     typeof candidate.leaseId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(candidate.leaseId) &&
     typeof candidate.sessionId === "string" &&
-    (typeof candidate.processId === "string" || typeof candidate.processId === "number") &&
+    candidate.sessionId.length > 0 &&
+    ((typeof candidate.processId === "string" && candidate.processId.length > 0) ||
+      (typeof candidate.processId === "number" && Number.isSafeInteger(candidate.processId) && candidate.processId > 0)) &&
     typeof candidate.staleAfterMs === "number" &&
-    typeof candidate.stateBinding === "object" &&
-    typeof candidate.compiledAgainstSnapshot === "object"
+    Number.isSafeInteger(candidate.staleAfterMs) &&
+    candidate.staleAfterMs > 0 &&
+    isIsoDate(candidate.acquiredAt) &&
+    isIsoDate(candidate.heartbeatAt) &&
+    isIsoDate(candidate.expiresAt) &&
+    StateBindingSchema.safeParse(candidate.stateBinding).success &&
+    StateDigestSchema.safeParse(candidate.compiledAgainstSnapshot).success &&
+    JSON.stringify(candidate.stateBinding?.compiledAgainst) === JSON.stringify(candidate.compiledAgainstSnapshot)
   );
+}
+
+function isIsoDate(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
 }
 
 async function writeDurableNewFile(path: string, content: string): Promise<void> {
