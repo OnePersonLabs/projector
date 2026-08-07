@@ -1,8 +1,13 @@
 import { canonicalJson, hashFramedDomain } from "./canonical-json.js";
 
 export interface HashProfile {
+  /** Semantic, discovery, and exact-document paths may overlap each other. */
   readonly semantic: readonly string[];
   readonly discovery: readonly string[];
+  /**
+   * Volatile paths must be disjoint from every persisted projection, including
+   * ancestor/descendant overlap. A volatile value can never influence a hash.
+   */
   readonly volatile: readonly string[];
   readonly exactDocument?: readonly string[];
 }
@@ -20,8 +25,31 @@ function normalizeProfile(profile: HashProfile): HashProfile {
   };
 }
 
+function pathsOverlap(left: string, right: string): boolean {
+  return left === right || left.startsWith(`${right}.`) || right.startsWith(`${left}.`);
+}
+
+function validateProfile(kind: string, profile: HashProfile): void {
+  const persistedProjections = [
+    ["semantic", profile.semantic],
+    ["discovery", profile.discovery],
+    ["exact-document", profile.exactDocument ?? []],
+  ] as const;
+  for (const volatilePath of profile.volatile) {
+    for (const [projectionName, projectionPaths] of persistedProjections) {
+      const projectionPath = projectionPaths.find((path) => pathsOverlap(volatilePath, path));
+      if (projectionPath !== undefined) {
+        throw new Error(
+          `hash profile ${kind} volatile path "${volatilePath}" overlaps ${projectionName} path "${projectionPath}"`,
+        );
+      }
+    }
+  }
+}
+
 export function registerHashProfile(kind: string, profile: HashProfile): void {
   const normalized = normalizeProfile(profile);
+  validateProfile(kind, normalized);
   const existing = profiles.get(kind);
   if (existing !== undefined && canonicalJson(existing) !== canonicalJson(normalized)) {
     throw new Error(`hash profile ${kind} is already registered differently`);
