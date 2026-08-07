@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/core" },
+    { "path": "packages/analyzers" },
     { "path": "packages/runtime" },
     { "path": "packages/engine" },
     { "path": "packages/testkit" },
