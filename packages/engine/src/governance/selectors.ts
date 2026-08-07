@@ -11,6 +11,14 @@ type SelectorField = Extract<SelectorExpr, { op: "atom" }>["field"];
 
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
+const selectorFields = new Set<SelectorField>([
+  "path", "language", "artifact-role", "concept", "concept-kind", "requirement", "scenario", "lens", "surface",
+  "package", "package-kind", "operation", "platform", "migration-phase", "risk", "tag", "control-ownership",
+  "control-mutation", "ast-pattern", "relation", "causal-origin",
+]);
+const selectorMatchers = new Set<Extract<SelectorExpr, { op: "atom" }>["matcher"]>([
+  "equals", "in", "glob", "regex", "contains", "exists", "matches-structural-query",
+]);
 
 export class SelectorEvaluationError extends Error {
   constructor(message: string) {
@@ -78,6 +86,8 @@ export function projectionUnitSelectorSubject(unit: ProjectionUnit, facts: Proje
 }
 
 function normalizeAtom(atom: Extract<SelectorExpr, { op: "atom" }>): SelectorExpr {
+  if (!selectorFields.has(atom.field)) throw new SelectorEvaluationError(`unsupported selector field ${String(atom.field)}`);
+  if (!selectorMatchers.has(atom.matcher)) throw new SelectorEvaluationError(`unsupported selector matcher ${String(atom.matcher)}`);
   let value = structuredClone(atom.value);
   if (atom.matcher === "in") {
     if (!Array.isArray(value)) throw new SelectorEvaluationError(`selector ${atom.field} in matcher requires an array`);
@@ -88,6 +98,12 @@ function normalizeAtom(atom: Extract<SelectorExpr, { op: "atom" }>): SelectorExp
   if (["glob", "regex", "contains"].includes(atom.matcher) && typeof value !== "string") {
     throw new SelectorEvaluationError(`selector ${atom.field} ${atom.matcher} matcher requires a string`);
   }
+  if (atom.matcher === "exists" && typeof value !== "boolean") {
+    throw new SelectorEvaluationError(`selector ${atom.field} exists matcher requires a boolean`);
+  }
+  canonicalJson(value);
+  if (atom.matcher === "glob") globRegex(value as string);
+  if (atom.matcher === "regex") deterministicRegexTokens(value as string);
   return { ...atom, value };
 }
 
@@ -386,18 +402,59 @@ export function evaluateSelectorMembership(
   };
 }
 
-export function selectorLensDependencies(selector: SelectorExpr): string[] {
+function lensAtomDependencies(
+  atom: Extract<SelectorExpr, { op: "atom" }>,
+  candidateLensIds: readonly string[],
+): string[] {
+  if (atom.field !== "lens") return [];
+  if (atom.matcher === "matches-structural-query") {
+    throw new SelectorEvaluationError("matches-structural-query is unsupported for lens membership dependencies");
+  }
+  if (candidateLensIds.length === 0) {
+    if (atom.matcher === "equals" && typeof atom.value === "string") return [atom.value];
+    if (atom.matcher === "in" && Array.isArray(atom.value)) {
+      return sortedUnique(atom.value.filter((item): item is string => typeof item === "string"));
+    }
+    if (atom.matcher !== "exists") {
+      throw new SelectorEvaluationError(`lens ${atom.matcher} dependency extraction requires the candidate lens universe`);
+    }
+  }
+  if (atom.matcher === "exists") return sortedUnique(candidateLensIds);
+  return sortedUnique(candidateLensIds.filter((lensId) => evaluateSelector(atom, {
+    id: `lens-dependency:${lensId}`,
+    values: { lens: [lensId] },
+    dependencyKeys: [],
+  }).matched));
+}
+
+export function selectorLensDependencies(selector: SelectorExpr, candidateLensIds: readonly string[] = []): string[] {
   const dependencies: string[] = [];
+  const normalized = normalizeSelector(selector);
   const visit = (expression: SelectorExpr): void => {
     if (expression.op === "all" || expression.op === "any") expression.items.forEach(visit);
     else if (expression.op === "not") visit(expression.item);
-    else if (expression.field === "lens") {
-      if (expression.matcher === "equals" && typeof expression.value === "string") dependencies.push(expression.value);
-      if (expression.matcher === "in" && Array.isArray(expression.value)) {
-        dependencies.push(...expression.value.filter((item): item is string => typeof item === "string"));
+    else dependencies.push(...lensAtomDependencies(expression, candidateLensIds));
+  };
+  visit(normalized);
+  return sortedUnique(dependencies);
+}
+
+export function assertMonotonicLensSelector(selector: SelectorExpr, recursiveLensIds: readonly string[]): void {
+  const candidates = sortedUnique(recursiveLensIds);
+  const visit = (expression: SelectorExpr, negated: boolean): void => {
+    if (expression.op === "all" || expression.op === "any") {
+      expression.items.forEach((item) => visit(item, negated));
+    } else if (expression.op === "not") {
+      visit(expression.item, !negated);
+    } else if (expression.field === "lens") {
+      const dependencies = lensAtomDependencies(expression, candidates);
+      if (dependencies.length === 0) return;
+      if (negated || (expression.matcher === "exists" && expression.value === false)) {
+        throw new SelectorEvaluationError(
+          `monotonic-union recursion requires positive lens dependencies; non-monotone atom reaches ${dependencies.join(", ")}`,
+        );
       }
     }
   };
-  visit(normalizeSelector(selector));
-  return sortedUnique(dependencies);
+  visit(normalizeSelector(selector), false);
 }

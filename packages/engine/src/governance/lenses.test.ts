@@ -1,3 +1,4 @@
+import type { ProjectionLens, SelectorExpr } from "@projector/core";
 import { describe, expect, it } from "vitest";
 
 import { authorityRecord, projectionUnit, tagSelector } from "./test-fixtures.js";
@@ -65,6 +66,19 @@ describe("lens composition and fixed points", () => {
       .toThrow(/projection owner/i);
   });
 
+  it("does not treat duplicate owner projections from one lens as a collision", () => {
+    const record = authorityRecord("authority:repository-script");
+    const base = createRepositoryScriptLens({
+      status: "active",
+      authorityRecordId: record.id,
+      governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }],
+    });
+    const lens = { ...base, expectedProjections: [base.expectedProjections[0]!, base.expectedProjections[0]!] };
+    const unit = projectionUnit("repository-script", { tags: ["repository-automation"] });
+
+    expect(() => compileProjectionLenses({ lenses: [lens], units: [unit], authorityRecords: [record] })).not.toThrow();
+  });
+
   it("detects recursive membership without declared fixed-point semantics", () => {
     const record = authorityRecord("authority:repository-script");
     const first = createRepositoryScriptLens({
@@ -87,6 +101,93 @@ describe("lens composition and fixed points", () => {
 
     expect(() => compileProjectionLenses({ lenses: [first, second], units: [], authorityRecords: [record] }))
       .toThrow(GovernanceCycleError);
+  });
+
+  it.each([
+    { matcher: "contains", value: "second" },
+    { matcher: "glob", value: "lens:sec*" },
+    { matcher: "regex", value: "^lens:second$" },
+  ] as const)("detects recursive membership expressed with the $matcher lens matcher", ({ matcher, value }) => {
+    const record = authorityRecord("authority:repository-script");
+    const first = createRepositoryScriptLens({
+      id: "lens:first",
+      status: "active",
+      selector: { op: "atom", field: "lens", matcher, value },
+      authorityRecordId: record.id,
+      governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }],
+    });
+    const second = createRepositoryScriptLens({
+      id: "lens:second",
+      status: "active",
+      selector: { op: "atom", field: "lens", matcher: "equals", value: "lens:first" },
+      authorityRecordId: record.id,
+      governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }],
+    });
+
+    expect(() => compileProjectionLenses({ lenses: [first, second], units: [], authorityRecords: [record] }))
+      .toThrow(GovernanceCycleError);
+  });
+
+  it("validates malformed lens selectors even when the unit universe is empty", () => {
+    const record = authorityRecord("authority:repository-script");
+    const lens = createRepositoryScriptLens({
+      status: "active",
+      selector: { op: "atom", field: "lens", matcher: "regex", value: "^(lens:)+)+$" },
+      authorityRecordId: record.id,
+      governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }],
+    });
+
+    expect(() => compileProjectionLenses({ lenses: [lens], units: [], authorityRecords: [record] })).toThrow(/selector|regex/i);
+  });
+
+  it.each([
+    (base: ProjectionLens, malformed: SelectorExpr): ProjectionLens => ({
+      ...base,
+      expectedProjections: [{ ...base.expectedProjections[0]!, selector: malformed }],
+    }),
+    (base: ProjectionLens, malformed: SelectorExpr): ProjectionLens => ({
+      ...base,
+      rules: [{ ...base.rules[0]!, selector: malformed }],
+    }),
+  ])("validates every nested governance selector before an empty-universe compile", (mutate) => {
+    const record = authorityRecord("authority:repository-script");
+    const base = createRepositoryScriptLens({
+      status: "active",
+      authorityRecordId: record.id,
+      governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }],
+    });
+    const malformed: SelectorExpr = { op: "atom", field: "path", matcher: "regex", value: "^(a+)+$" };
+
+    expect(() => compileProjectionLenses({ lenses: [mutate(base, malformed)], units: [], authorityRecords: [record] }))
+      .toThrow(/selector|regex/i);
+  });
+
+  it.each([
+    { op: "not", item: { op: "atom", field: "lens", matcher: "equals", value: "lens:second" } },
+    { op: "atom", field: "lens", matcher: "exists", value: false },
+  ] satisfies SelectorExpr[])("rejects non-monotone recursive membership in a monotonic-union group", (selector) => {
+    const record = authorityRecord("authority:repository-script");
+    const first = { ...createRepositoryScriptLens({
+      id: "lens:first",
+      status: "active",
+      selector,
+      authorityRecordId: record.id,
+      governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }],
+    }), contributions: ["constraint-contributor" as const] };
+    const second = { ...createRepositoryScriptLens({
+      id: "lens:second",
+      status: "active",
+      selector: { op: "atom", field: "lens", matcher: "equals", value: "lens:first" },
+      authorityRecordId: record.id,
+      governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }],
+    }), contributions: ["constraint-contributor" as const] };
+
+    expect(() => compileProjectionLenses({
+      lenses: [first, second],
+      units: [],
+      authorityRecords: [record],
+      fixedPointGroups: [{ id: "group:bad", lensIds: ["lens:first", "lens:second"], semantics: "monotonic-union", maxIterations: 4 }],
+    })).toThrow(/monotonic/i);
   });
 
   it("converges an explicitly declared monotonic SCC deterministically", () => {

@@ -24,6 +24,39 @@ describe("causal evidence grouping", () => {
     expect(support.generatedEvidenceIds).toEqual(["projector-repair"]);
   });
 
+  it("defaults every Projector-caused occurrence to authority-ineligible without requiring a target", () => {
+    const items = [
+      evidence("human-source", "human:source"),
+      evidence("lens-output", "generated:lens", {
+        causalOrigin: { kind: "lens-transform", causedByLensId: "lens:any" },
+      }),
+      evidence("rule-output", "generated:rule", {
+        causalOrigin: { kind: "semantic-resolution", causedByRuleId: "rule:any", causedByTransformId: "transform:any" },
+      }),
+      evidence("plan-output", "generated:plan", {
+        causalOrigin: { kind: "plan", causedByPlanId: "plan:any" },
+      }),
+      evidence("model-output", "generated:model", { causalOrigin: { kind: "model-inference" } }),
+      evidence("relevance-output", "generated:relevance", { causalOrigin: { kind: "relevance-analysis" } }),
+      evidence("surprise-output", "generated:surprise", { causalOrigin: { kind: "planning-surprise" } }),
+    ];
+
+    const groups = groupCausalEvidence(items);
+    const summary = summarizeEvidenceSupport({ evidence: items });
+
+    expect(groups.filter(({ authorityEligible }) => authorityEligible).map(({ independenceGroup }) => independenceGroup))
+      .toEqual(["human:source"]);
+    expect(summary.independentOccurrenceCount).toBe(1);
+    expect(summary.generatedEvidenceIds).toEqual([
+      "lens-output",
+      "model-output",
+      "plan-output",
+      "relevance-output",
+      "rule-output",
+      "surprise-output",
+    ]);
+  });
+
   it.each(["open", "sampled", "unavailable"] as const)("never treats an empty %s lane as absence proof", (observability) => {
     const summary = summarizeEvidenceSupport({
       evidence: [],

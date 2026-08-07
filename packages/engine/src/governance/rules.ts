@@ -18,6 +18,7 @@ import {
 } from "./selectors.js";
 
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
 
 export class RuleCompilationError extends Error {
   constructor(message: string) {
@@ -85,6 +86,28 @@ function validateHardRule(rule: Rule): void {
   if (rule.effect === "grant" && rule.predicates.some((predicate) => predicate.kind !== "permission")) {
     throw new RuleCompilationError(`grant rule ${rule.id} may only contain permission predicates`);
   }
+}
+
+function normalizePredicate(predicate: NormalizedPredicate): NormalizedPredicate {
+  const cloned = structuredClone(predicate);
+  if (cloned.kind === "relation-required" || cloned.kind === "relation-forbidden") {
+    return { ...cloned, targetSelector: normalizeSelector(cloned.targetSelector) };
+  }
+  if (cloned.kind === "cardinality") return { ...cloned, selector: normalizeSelector(cloned.selector) };
+  if (cloned.kind === "dependency-allowed" || cloned.kind === "dependency-forbidden") {
+    return { ...cloned, from: normalizeSelector(cloned.from), to: normalizeSelector(cloned.to) };
+  }
+  return cloned;
+}
+
+function normalizeRule(rule: Rule): Rule {
+  const cloned = structuredClone(rule);
+  return {
+    ...cloned,
+    selector: normalizeSelector(cloned.selector),
+    predicates: cloned.predicates.map(normalizePredicate),
+    transformIds: sortedUnique(cloned.transformIds),
+  };
 }
 
 interface PredicateConflict {
@@ -166,8 +189,8 @@ export function compileEffectiveRuleBundle(input: CompileEffectiveRuleBundleInpu
   const facts: ProjectionUnitSelectorFacts = { ...input.selectorFacts, operation: input.operation };
   const subject = projectionUnitSelectorSubject(input.unit, facts);
   const selected = input.rules
+    .map(normalizeRule)
     .filter((rule) => evaluateSelector(rule.selector, subject).matched)
-    .map((rule) => structuredClone(rule))
     .sort(compareRules);
   selected.forEach(validateHardRule);
 

@@ -11,12 +11,27 @@ import {
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
 
-const isGenerated = (origin: CausalOrigin): boolean => origin.kind === "lens-transform" || origin.kind === "plan";
+const isGenerated = (origin: CausalOrigin): boolean => (
+  origin.kind === "model-inference"
+  || origin.kind === "semantic-resolution"
+  || origin.kind === "relevance-analysis"
+  || origin.kind === "planning-surprise"
+  || origin.kind === "lens-transform"
+  || origin.kind === "plan"
+  || origin.causedByLensId !== undefined
+  || origin.causedByRuleId !== undefined
+  || origin.causedByTransformId !== undefined
+  || origin.causedBySemanticChangeId !== undefined
+  || origin.causedByRelevanceClosureId !== undefined
+  || origin.causedByPlanningSurpriseId !== undefined
+  || origin.causedByPlanId !== undefined
+  || origin.causedByPacketId !== undefined
+);
 
 const isEndogenous = (
   origin: CausalOrigin,
   target: { targetLensId?: string; targetRuleId?: string },
-): boolean => (
+): boolean => isGenerated(origin) || (
   target.targetLensId !== undefined && origin.causedByLensId === target.targetLensId
 ) || (
   target.targetRuleId !== undefined && origin.causedByRuleId === target.targetRuleId
