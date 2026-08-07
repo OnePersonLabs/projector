@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,16 +67,26 @@ describe("mandatory misplaced repository-script vertical slice", () => {
     expect(plan.report.risk.class).toBe("R1");
     expect(plan.report.preview.expectedDiff).toContain("scripts/validate-repo.mjs");
 
+    process.env.PROJECTOR_FIXTURE_EXECUTION_MARKER = "sandbox-escape.txt";
     const reconciled = await executeProjector(["reconcile", "--format", "json"], { cwd: repository.root });
-    expect(reconciled.exitCode).toBe(0);
+    delete process.env.PROJECTOR_FIXTURE_EXECUTION_MARKER;
+    expect(reconciled.exitCode, reconciled.output).toBe(0);
     expect(reconciled.report.steps).toHaveLength(17);
     expect(reconciled.report.fixedPoint.iterations).toHaveLength(2);
+    expect(reconciled.report.secondReconciliation.invocation).toBe(2);
     expect(reconciled.report.secondRunMaterialDelta).toBe(false);
     expect(reconciled.report.cleanupPlan.unresolvedClusterWork).toBe(0);
     expect(reconciled.report.receipt).toBeDefined();
     expect(reconciled.report.receiptRef).toContain("/.projector/receipts/");
     expect(reconciled.report.certificateRef).toContain("/.projector/reports/certificates/");
     expect(reconciled.report.certificate.validations.every(({ status }: { status: string }) => status === "passed")).toBe(true);
+    expect(reconciled.report.receipt.changedCanonicalEntityIds).toEqual([
+      "authority:repository-script-placement", "lens:repository-script",
+    ]);
+    expect(reconciled.report.steps.every(({ details }: { details?: { artifactRefs?: unknown[]; assertions?: Array<{ passed: boolean }> } }) =>
+      details !== undefined && details.artifactRefs!.length > 0 && details.assertions!.every(({ passed }) => passed),
+    )).toBe(true);
+    await expect(access(join(repository.root, "sandbox-escape.txt"))).rejects.toThrow();
 
     await expect(access(join(repository.root, ".codex/hooks/validate-repo.mjs"))).rejects.toThrow();
     await expect(access(join(repository.root, ".codex/hooks/validate-repo.test.mjs"))).rejects.toThrow();
@@ -98,5 +108,29 @@ describe("mandatory misplaced repository-script vertical slice", () => {
     expect(rebuilt.report.divergences).toEqual([]);
     const repairedCandidate = rebuilt.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
     expect(repairedCandidate.independenceGroups).not.toContain("authored:scripts/validate-repo.mjs");
+  });
+
+  it("does not discount a manually moved occurrence without Projector transaction provenance", async () => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const repaired = await executeProjector(["reconcile", "--format", "json"], { cwd: repository.root });
+    expect(repaired.exitCode, repaired.output).toBe(0);
+    await rm(join(repository.root, ".projector/receipts"), { recursive: true, force: true });
+    await rm(join(repository.root, ".projector/reports/certificates"), { recursive: true, force: true });
+    const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
+    const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
+    expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
+  });
+
+  it("refuses after a post-approval canonical edit before any workspace mutation", async () => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const prepared = await import("./vertical-slice.js").then(({ prepareMandatorySlice }) => prepareMandatorySlice(repository.root));
+    const canonicalPath = join(repository.root, prepared.canonicalWrites[0]!.path);
+    await mkdir(join(canonicalPath, ".."), { recursive: true });
+    await writeFile(canonicalPath, `${prepared.canonicalWrites[0]!.content}\n`);
+    const result = await import("./vertical-slice.js").then(({ applyMandatorySlice }) => applyMandatorySlice(repository.root, prepared));
+    expect(result.outcome).toBe("failure");
+    await expect(access(join(repository.root, ".codex/hooks/validate-repo.mjs"))).resolves.toBeUndefined();
   });
 });

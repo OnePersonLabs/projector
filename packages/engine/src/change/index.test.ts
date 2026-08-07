@@ -293,6 +293,7 @@ const execute = async (input: {
   allowedUnits?: string[];
   subjectPlan?: ExecutionPlan;
   completionAssessment?: TestCompletionAssessment;
+  changedCanonicalEntityIds?: readonly string[];
   callerRiskClass?: "R0" | "R1" | "R2" | "R3" | "R4";
 }) => {
   const artifacts = new MemoryArtifactStore();
@@ -320,6 +321,7 @@ const execute = async (input: {
         return input.completionAssessment ?? completeAssessment();
       },
     },
+    changedCanonicalEntityIds: (result) => input.changedCanonicalEntityIds?.filter((id) => result.touchedUnitIds.includes(id)) ?? [],
     environment: { repositoryRoot: "/approved/repo", signal: new AbortController().signal },
     now: () => "2026-08-07T12:00:00.000Z",
   });
@@ -367,6 +369,14 @@ describe("state-bound deterministic change execution", () => {
       "state-sampled",
     ]);
     expect(lifecycle.lastIndexOf("commit")).toBeLessThan(lifecycle.lastIndexOf("state-sampled"));
+  });
+
+  it("records declared canonical entities in the content-addressed receipt", async () => {
+    const { result, artifacts } = await execute({
+      changedCanonicalEntityIds: ["unit:move"],
+    });
+    expect(result.receipt.changedCanonicalEntityIds).toEqual(["unit:move"]);
+    expect(JSON.parse(artifacts.writes[1]?.content ?? "{}").changedCanonicalEntityIds).toEqual(["unit:move"]);
   });
 
   it("does not persist false success evidence when durable commit fails", async () => {

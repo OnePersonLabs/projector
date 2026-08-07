@@ -151,12 +151,24 @@ export async function executeProjector(
       const prepared = await prepareMandatorySlice(repositoryRoot);
       const result = await applyMandatorySlice(repositoryRoot, prepared);
       report = { policy, plan: prepared.plan, capsule: prepared.capsule, risk: prepared.risk, preview: prepared.preview, ...result };
-      exitCode = result.outcome === "success" ? 0 : 2;
+      exitCode = result.outcome === "success" ? 0 : result.outcome === "partial" ? 6 : 3;
       break;
     }
-    case "reconcile":
-      report = { policy, ...await reconcileMandatorySlice(repositoryRoot, policy) };
+    case "reconcile": {
+      if (!policy.allowAutoMutation || policy.maximumAutomaticRisk === "R0") {
+        return { exitCode: 3, output: "R1 approval required.", report: { policy, approvalRequired: true } };
+      }
+      try {
+        report = { policy, ...await reconcileMandatorySlice(repositoryRoot, policy) };
+      } catch (error) {
+        const code = error instanceof Error && "code" in error ? String(error.code) : "";
+        if (code === "nonconvergent-reconciliation" || (error instanceof Error && /material delta|recovery|required|nondetermin/u.test(error.message))) {
+          return { exitCode: 6, output: error instanceof Error ? error.message : String(error), report: { policy, converged: false, error: error instanceof Error ? error.message : String(error) } };
+        }
+        throw error;
+      }
       break;
+    }
     case "explain": {
       const analysis = await analyzeMandatorySlice(repositoryRoot);
       const target = parsed.target!;

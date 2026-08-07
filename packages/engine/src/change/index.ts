@@ -163,6 +163,8 @@ export interface StateBoundChangeExecutorOptions<TInput> {
   transactions: ChangeTransactionPort;
   artifacts: ChangeArtifactStore;
   completion: CompletionAssessmentPort;
+  /** Resolves canonical entity IDs from the approved transform result for receipt provenance. */
+  changedCanonicalEntityIds?: (result: TransformResult) => readonly string[];
   environment: {
     readonly repositoryRoot: string;
     readonly signal: AbortSignal;
@@ -342,6 +344,7 @@ export class StateBoundChangeExecutor<TInput> {
   private readonly transactions: ChangeTransactionPort;
   private readonly artifacts: ChangeArtifactStore;
   private readonly completion: CompletionAssessmentPort;
+  private readonly changedCanonicalEntityIds: (result: TransformResult) => readonly string[];
   private readonly environment: Readonly<{ repositoryRoot: string; signal: AbortSignal }>;
   private readonly now: () => string;
 
@@ -352,6 +355,7 @@ export class StateBoundChangeExecutor<TInput> {
     this.transactions = options.transactions;
     this.artifacts = options.artifacts;
     this.completion = options.completion;
+    this.changedCanonicalEntityIds = options.changedCanonicalEntityIds ?? (() => []);
     if (options.environment.repositoryRoot.length === 0) throw new TypeError("execution repository root cannot be blank");
     this.environment = Object.freeze({
       repositoryRoot: options.environment.repositoryRoot,
@@ -596,13 +600,16 @@ export class StateBoundChangeExecutor<TInput> {
     const certificateHash = hashFramedDomain("change-certificate-artifact", artifact);
     const certificateRef = await this.artifacts.write("certificate", certificateHash, canonicalJson(artifact));
     const validationSummaryHash = hashFramedDomain("validation-summary", certificate.validations);
+    const changedCanonicalEntityIds = attempt.result === undefined ? [] : sortedUnique(
+      this.changedCanonicalEntityIds(attempt.result).filter((id) => changedUnits.includes(id)),
+    );
     const receiptWithoutHash: Omit<TransactionReceipt, "semanticHash"> = {
       id: `receipt:${input.plan.id}:${input.approval.id}`,
       planId: input.plan.id,
       riskClass: input.capsule.risk.class,
       beforeState: structuredClone(beforeState),
       afterState: structuredClone(afterState),
-      changedCanonicalEntityIds: [],
+      changedCanonicalEntityIds,
       changedRequirementIds: [],
       changedScenarioIds: [],
       changedUnitIds: changedUnits,
