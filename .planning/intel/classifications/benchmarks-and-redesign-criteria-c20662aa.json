@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/11-validation/benchmarks-and-redesign-criteria.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Benchmarks and Redesign Criteria",
+  "summary": "Defines validation benchmarks, engineering gates, and criteria for reconsidering or redesigning Projector subsystems and architecture.",
+  "scope": ["validation benchmarks", "release metrics", "engineering gates", "kill criteria", "redesign criteria", "semantic model", "context compression", "transaction recovery"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 36,
+  "notes": ""
+}

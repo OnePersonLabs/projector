@@ -1,0 +1,22 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Testing and Adversarial Evaluation",
+  "summary": "Technical specification for unit, property-based, fixture, and adversarial tests validating Projector correctness and resistance to self-deception.",
+  "scope": [
+    "testing",
+    "adversarial evaluation",
+    "unit tests",
+    "property-based tests",
+    "fixture repositories",
+    "anti-self-deception tests",
+    "semantic validation",
+    "governance"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 35,
+  "notes": ""
+}

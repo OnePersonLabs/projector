@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/10-operation/cli-modes-and-security.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "CLI, Modes, and Security",
+  "summary": "Defines CLI commands, execution-mode policies, security boundaries, path safety, command execution, external writes, and state-bound authorization.",
+  "scope": ["CLI commands", "execution policy", "operating modes", "security", "path safety", "command execution", "external writes", "state-bound authorization"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 33,
+  "notes": ""
+}

@@ -1,0 +1,24 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/12-delivery/implementation-plan.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Implementation Plan",
+  "summary": "Defines a vertical-slice delivery roadmap and acceptance criteria for Projector foundations, analyzers, governance, integrations, and modernization.",
+  "scope": [
+    "vertical-slice delivery",
+    "normative contracts",
+    "canonical storage",
+    "semantic hashing",
+    "repository scripts",
+    "semantic signatures",
+    "behavioral intent",
+    "governance",
+    "analyzers",
+    "integrations"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 37,
+  "notes": ""
+}

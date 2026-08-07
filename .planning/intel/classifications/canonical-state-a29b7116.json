@@ -1,0 +1,23 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/02-semantic-kernel/canonical-state.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Canonical State",
+  "summary": "Defines the canonical .projector state contract, semantic storage requirements, hashing, version-control defaults, and deterministic rebuild inputs.",
+  "scope": [
+    "canonical state",
+    ".projector/ directory",
+    "canonical documents",
+    "semantic hashes",
+    "discovery hashes",
+    "canonical storage",
+    "relations",
+    "version control",
+    "rebuild inputs"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 6,
+  "notes": ""
+}

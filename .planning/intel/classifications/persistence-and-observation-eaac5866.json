@@ -1,0 +1,22 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/09-evolution/persistence-and-observation.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Persistence and Observation",
+  "summary": "Technical specification for persistence, graph revisions, canonical rebuilds, upgrades, observation, and analyzer capabilities.",
+  "scope": [
+    "SQLite",
+    "graph revision",
+    "canonical files",
+    "schema migrations",
+    "observation",
+    "analyzer capabilities",
+    "deterministic inventory",
+    "semantic analyzer outputs"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 31,
+  "notes": ""
+}

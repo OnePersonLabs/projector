@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/03-knowledge/relevance-and-change-cognition.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Relevance and Change Cognition",
+  "summary": "Defines Relevance Closure and semantic identity resolution for change cognition, separating relevance discovery from conservative impact closure.",
+  "scope": ["Relevance Closure", "Impact Closure", "semantic identity resolution", "relevance discovery", "change cognition", "semantic entities", "typed relationships"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 12,
+  "notes": ""
+}

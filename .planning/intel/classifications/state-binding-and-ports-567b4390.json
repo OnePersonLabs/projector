@@ -1,0 +1,22 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/02-semantic-kernel/state-binding-and-ports.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "State Binding and Core Ports",
+  "summary": "Defines state binding, dependency validation, analyzer and graph ports, transformation contracts, surface plans, and supporting validator interfaces.",
+  "scope": [
+    "state binding",
+    "state digest",
+    "query dependencies",
+    "analyzer ports",
+    "graph reader",
+    "transforms",
+    "surface plans",
+    "validator contracts"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 9,
+  "notes": ""
+}

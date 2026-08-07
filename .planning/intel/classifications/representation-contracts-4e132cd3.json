@@ -1,0 +1,21 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/02-semantic-kernel/representation-contracts.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Semantic Representation Contracts",
+  "summary": "Defines contracts, profiles, projections, preservation fingerprints, and token accounting for semantic representation targets.",
+  "scope": [
+    "semantic representation contracts",
+    "representation targets",
+    "preservation dimensions",
+    "representation profiles",
+    "representation projections",
+    "token accounting",
+    "validation"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 11,
+  "notes": ""
+}

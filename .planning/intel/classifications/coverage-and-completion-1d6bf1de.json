@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/06-reconciliation/coverage-and-completion.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Coverage and Progressive Completion",
+  "summary": "Defines multidimensional coverage lanes, proof boundaries, analyzer-failure degradation, and criteria for complete-within-boundary reconciliation.",
+  "scope": ["coverage", "observability", "proof boundaries", "coverage lanes", "coverage snapshots", "analyzer failures", "reconciliation"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 24,
+  "notes": ""
+}

@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/04-governance/scope-and-rules.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Scope, Selectors, and Rules",
+  "summary": "Defines deterministic selector expressions, layered ignore policies, rule effects, authority classes, and governance evaluation constraints.",
+  "scope": ["selectors", "scope algebra", "ignore policy", "rule kernel", "rule effects", "authority classes", "governance evaluation", "cache invalidation"],
+  "cross_refs": ["../02-semantic-kernel/conceptual-architecture.md"],
+  "locked": false,
+  "precedence": 19,
+  "notes": ""
+}

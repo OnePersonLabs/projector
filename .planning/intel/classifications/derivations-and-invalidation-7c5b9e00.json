@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/05-projections/derivations-and-invalidation.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Derivations, Invalidation, and Repair Routing",
+  "summary": "Technical specification for derivation records, semantic invalidation, correctness oracles, and upstream-first repair routing.",
+  "scope": ["derivations", "semantic signatures", "proof groups", "invalidation", "impact rules", "correctness oracles", "repair routing", "generated repair"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 21,
+  "notes": ""
+}

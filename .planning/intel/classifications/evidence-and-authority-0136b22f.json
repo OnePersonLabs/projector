@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/03-knowledge/evidence-and-authority.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Evidence and Authority",
+  "summary": "Defines evidence contracts, authority vectors, reconsideration triggers, refresh policies, and authority records for inspectable governance.",
+  "scope": ["evidence", "authority", "evidence contracts", "authority vectors", "reconsideration triggers", "refresh policies", "authority records", "governance"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 13,
+  "notes": ""
+}

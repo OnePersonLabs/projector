@@ -1,0 +1,23 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/03-knowledge/architecture-evidence-and-consequences.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Architecture Evidence, Preferences, and Consequences",
+  "summary": "Defines evidence freshness, preference composition, decision deferral, consequence governance, convergence, modernization, and explainability rules for architecture decisions.",
+  "scope": [
+    "architecture decisions",
+    "research evidence",
+    "preferences",
+    "decision deferral",
+    "decision consequences",
+    "governance",
+    "decision dependencies",
+    "modernization",
+    "explainability"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 16,
+  "notes": ""
+}

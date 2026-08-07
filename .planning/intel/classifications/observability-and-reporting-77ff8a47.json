@@ -1,0 +1,21 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/10-operation/observability-and-reporting.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Observability, Economics, and Reporting",
+  "summary": "Defines observability metrics, semantic-model economics, instruction-efficiency constraints, and required reporting formats and finding contents.",
+  "scope": [
+    "observability",
+    "cost accounting",
+    "semantic-model economics",
+    "instruction efficiency",
+    "reporting",
+    "findings",
+    "metrics"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 34,
+  "notes": ""
+}

@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/09-evolution/modernization-and-surfaces.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Modernization and External Surfaces",
+  "summary": "Defines modernization recommendation contracts and adapter-based external surface observation, mutation, snapshot, and availability rules.",
+  "scope": ["modernization engine", "recommendation contract", "surface adapters", "external observation snapshots", "surface contracts", "StateDigest"],
+  "cross_refs": ["../03-knowledge/architecture-decisions.md"],
+  "locked": false,
+  "precedence": 30,
+  "notes": ""
+}

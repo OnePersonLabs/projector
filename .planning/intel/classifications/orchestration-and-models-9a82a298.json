@@ -1,0 +1,21 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/08-agents/orchestration-and-models.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Agent Orchestration and Model Inference",
+  "summary": "Defines agent orchestration roles, model routing, validation independence, authority restrictions, completion criteria, and replayable model-provider contracts.",
+  "scope": [
+    "agent orchestration",
+    "model inference",
+    "model routing",
+    "validation independence",
+    "agent authority",
+    "completion contracts",
+    "model providers"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 28,
+  "notes": ""
+}

@@ -1,0 +1,22 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/02-semantic-kernel/surfaces-and-projection-units.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Surfaces and Projection Units",
+  "summary": "Defines surfaces, observability artifacts, semantic anchors, control policies, and projection units with traceability and validity contracts.",
+  "scope": [
+    "surfaces",
+    "observability",
+    "artifacts",
+    "semantic anchors",
+    "control policies",
+    "projection units",
+    "traceability",
+    "validity"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 8,
+  "notes": ""
+}

@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/05-projections/execution-capsules.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Execution Capsules",
+  "summary": "Defines the execution capsule schema and context compilation rules for bounded, state-aware worker tasks.",
+  "scope": ["Execution Capsule", "Context Compiler", "RelevanceClosure", "Impact Closure", "StateBinding", "Representation Profile", "CompletionContract"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 20,
+  "notes": ""
+}

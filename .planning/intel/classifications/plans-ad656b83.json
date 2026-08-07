@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zethj/dev/projector/PROJECTOR_SPEC/07-change/plans.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Plans, Revisions, and Rebase",
+  "summary": "Technical specification for immutable execution plans, checkpoints, resumability, rebasing, and approval invalidation.",
+  "scope": ["execution plans", "plan revisions", "checkpoints", "state binding", "rebase", "approvals"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 25,
+  "notes": ""
+}
