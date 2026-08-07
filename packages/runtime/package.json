@@ -12,7 +12,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run src",
+    "test": "vitest run --root ../.. packages/runtime/src",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
