@@ -6,8 +6,8 @@ import {
   type ChangeCertificate,
   type ContentHash,
   type EntityId,
+  type ExecutionCapsule,
   type ExecutionPlan,
-  type RiskClass,
   type StateBinding,
   type StateBindingValidator,
   type StateDigest,
@@ -28,19 +28,31 @@ export interface ExecutionApproval {
   readonly planRevision: number;
   readonly planHash: ContentHash;
   readonly dependencyDigest: ContentHash;
+  readonly capsuleId: EntityId;
+  readonly capsuleHash: ContentHash;
 }
 
 export function executionPlanHash(plan: ExecutionPlan): ContentHash {
   return hashFramedDomain("execution-plan", plan);
 }
 
-export function createExecutionApproval(plan: ExecutionPlan, id: EntityId): Readonly<ExecutionApproval> {
+export function executionCapsuleHash(capsule: ExecutionCapsule): ContentHash {
+  return hashFramedDomain("approved-execution-capsule", capsule);
+}
+
+export function createExecutionApproval(
+  plan: ExecutionPlan,
+  capsule: ExecutionCapsule,
+  id: EntityId,
+): Readonly<ExecutionApproval> {
   return Object.freeze({
     id,
     planId: plan.id,
     planRevision: plan.revision,
     planHash: executionPlanHash(plan),
     dependencyDigest: plan.boundState.dependencyDigest,
+    capsuleId: capsule.id,
+    capsuleHash: executionCapsuleHash(capsule),
   });
 }
 
@@ -53,6 +65,15 @@ export interface DeterministicTransformPort<TInput> {
   preview(input: TInput, context: TransformContext): Promise<TransformPreview>;
   apply(input: TInput, context: TransformContext): Promise<TransformResult>;
   verify(result: TransformResult, context: TransformContext): Promise<ValidationResult[]>;
+}
+
+export interface ApprovedTransformContext extends TransformContext {
+  readonly approvedBoundary: readonly string[];
+  readonly allowedPathBoundary: readonly string[];
+  readonly forbiddenBoundary: readonly string[];
+  readonly approvedOperations: readonly string[];
+  readonly capsuleId: EntityId;
+  readonly capsuleHash: ContentHash;
 }
 
 export interface ChangeTransaction {
@@ -78,6 +99,27 @@ export interface ChangeArtifactStore {
   write(kind: "certificate" | "receipt", hash: ContentHash, content: string): Promise<string>;
 }
 
+export interface CompletionAssessment {
+  readonly unitStates: ReadonlyArray<{
+    unitId: EntityId;
+    state: "valid" | "removed" | "exception";
+  }>;
+  readonly newDivergenceIds: readonly EntityId[];
+  readonly unknowns: readonly string[];
+  readonly unavailableActions: readonly string[];
+  readonly availableArtifacts: readonly string[];
+  readonly cleanWorkingTree: boolean;
+}
+
+export interface CompletionAssessmentPort {
+  assess(input: {
+    plan: ExecutionPlan;
+    capsule: ExecutionCapsule;
+    transformResult: TransformResult;
+    validations: readonly ValidationResult[];
+  }): Promise<CompletionAssessment>;
+}
+
 export interface ChangeCertificateArtifact {
   readonly version: 1;
   readonly outcome: ChangeOutcome;
@@ -85,6 +127,7 @@ export interface ChangeCertificateArtifact {
   readonly journalPhase: TransactionPhase | "not-started";
   readonly recoveryState: "not-required" | "rolled-back" | "recovery-required";
   readonly reasons: readonly string[];
+  readonly completionAssessment?: CompletionAssessment;
   readonly certificate: ChangeCertificate;
 }
 
@@ -106,12 +149,9 @@ export interface StateBoundChangeResult {
 
 export interface ExecuteStateBoundChangeInput<TInput> {
   readonly plan: ExecutionPlan;
-  readonly capsule: Pick<import("@projector/core").ExecutionCapsule, "id" | "boundState" | "requiredValidations">;
+  readonly capsule: ExecutionCapsule;
   readonly approval: ExecutionApproval;
   readonly transformInput: TInput;
-  readonly repositoryRoot: string;
-  readonly riskClass: RiskClass;
-  readonly allowedUnits: readonly EntityId[];
 }
 
 export interface StateBoundChangeExecutorOptions<TInput> {
@@ -120,6 +160,11 @@ export interface StateBoundChangeExecutorOptions<TInput> {
   transform: DeterministicTransformPort<TInput>;
   transactions: ChangeTransactionPort;
   artifacts: ChangeArtifactStore;
+  completion: CompletionAssessmentPort;
+  environment: {
+    readonly repositoryRoot: string;
+    readonly signal: AbortSignal;
+  };
   now?: () => string;
 }
 
@@ -128,17 +173,45 @@ interface AttemptState {
   result?: TransformResult;
   validations: ValidationResult[];
   transaction?: ChangeTransaction;
+  completionAssessment?: CompletionAssessment;
 }
 
 interface PartialTransformError extends Error {
   partialResult?: TransformResult;
 }
 
-function isApprovalCurrent(plan: ExecutionPlan, approval: ExecutionApproval): boolean {
+function isApprovalCurrent(plan: ExecutionPlan, capsule: ExecutionCapsule, approval: ExecutionApproval): boolean {
   return approval.planId === plan.id
     && approval.planRevision === plan.revision
     && approval.planHash === executionPlanHash(plan)
-    && approval.dependencyDigest === plan.boundState.dependencyDigest;
+    && approval.dependencyDigest === plan.boundState.dependencyDigest
+    && approval.capsuleId === capsule.id
+    && approval.capsuleHash === executionCapsuleHash(capsule);
+}
+
+function outsideApprovedUnits(unitIds: readonly EntityId[], approvedUnits: ReadonlySet<EntityId>): EntityId[] {
+  return sortedUnique(unitIds.filter((unitId) => !approvedUnits.has(unitId)));
+}
+
+function selectorPathPatterns(selector: import("@projector/core").SelectorExpr): string[] {
+  if (selector.op === "atom") {
+    return selector.field === "path"
+      && (selector.matcher === "equals" || selector.matcher === "glob")
+      && typeof selector.value === "string"
+      ? [selector.value]
+      : [];
+  }
+  if (selector.op === "not") return [];
+  return sortedUnique(selector.items.flatMap((item) => selectorPathPatterns(item)));
+}
+
+function selectorScopeIsSupported(selector: import("@projector/core").SelectorExpr): boolean {
+  if (selector.op === "atom") {
+    return (selector.field === "path" && (selector.matcher === "equals" || selector.matcher === "glob") && typeof selector.value === "string")
+      || (selector.field === "operation" && selector.matcher === "equals" && typeof selector.value === "string");
+  }
+  if (selector.op === "not" || selector.op === "any") return false;
+  return selector.items.every((item) => selectorScopeIsSupported(item));
 }
 
 function normalizeValidations(validations: readonly ValidationResult[]): ValidationResult[] {
@@ -161,12 +234,99 @@ function validationReasons(required: readonly string[], validations: readonly Va
   return reasons;
 }
 
+const assuranceRank: Record<ValidationResult["assurance"], number> = {
+  weak: 0,
+  supporting: 1,
+  strong: 2,
+  exact: 3,
+};
+
+function normalizeCompletionAssessment(assessment: CompletionAssessment): CompletionAssessment {
+  return {
+    unitStates: [...assessment.unitStates].map((state) => structuredClone(state)).sort((left, right) =>
+      compareStrings(left.unitId, right.unitId) || compareStrings(left.state, right.state)),
+    newDivergenceIds: sortedUnique(assessment.newDivergenceIds),
+    unknowns: sortedUnique(assessment.unknowns),
+    unavailableActions: sortedUnique(assessment.unavailableActions),
+    availableArtifacts: sortedUnique(assessment.availableArtifacts),
+    cleanWorkingTree: assessment.cleanWorkingTree,
+  };
+}
+
+function completionContractReasons(
+  plan: ExecutionPlan,
+  capsule: ExecutionCapsule,
+  validations: readonly ValidationResult[],
+  assessment: CompletionAssessment,
+): string[] {
+  const contract = plan.completionCriteria;
+  const reasons = validationReasons(
+    [...contract.requiredValidators, ...capsule.requiredValidations],
+    validations,
+  );
+  const passed = validations.filter((validation) => validation.status === "passed");
+  for (const lane of contract.requiredEvidenceLanes) {
+    if (!passed.some((validation) => validation.evidenceLane === lane)) {
+      reasons.push(`required evidence lane did not pass: ${lane}`);
+    }
+  }
+  const byValidator = new Map(validations.map((validation) => [validation.validatorId, validation]));
+  for (const validatorId of sortedUnique([...contract.requiredValidators, ...capsule.requiredValidations])) {
+    const result = byValidator.get(validatorId);
+    if (result?.status === "passed" && assuranceRank[result.assurance] < assuranceRank[contract.minimumValidationAssurance]) {
+      reasons.push(`required validation ${validatorId} is below ${contract.minimumValidationAssurance} assurance`);
+    }
+  }
+  if (contract.requireIndependentValidation && !passed.some((validation) =>
+    validation.evidenceLane !== "same-packet-agent"
+    && validation.independenceGroup !== "deterministic-transform")) {
+    reasons.push("completion requires an independent passing validation");
+  }
+
+  const unitStates = new Map<EntityId, CompletionAssessment["unitStates"][number]["state"]>();
+  for (const observed of assessment.unitStates) {
+    const existing = unitStates.get(observed.unitId);
+    if (existing !== undefined && existing !== observed.state) {
+      reasons.push(`conflicting observed unit states: ${observed.unitId}`);
+    } else {
+      unitStates.set(observed.unitId, observed.state);
+    }
+  }
+  for (const required of contract.requiredUnitStates) {
+    if (unitStates.get(required.unitId) !== required.state) {
+      reasons.push(`required unit state not established: ${required.unitId} must be ${required.state}`);
+    }
+  }
+  const divergenceCount = new Set(assessment.newDivergenceIds).size;
+  if (divergenceCount > contract.maximumNewDivergences) {
+    reasons.push(`new divergence count ${divergenceCount} exceeds maximum ${contract.maximumNewDivergences}`);
+  }
+  const unknownCount = new Set([...capsule.unknowns, ...assessment.unknowns]).size;
+  if (unknownCount > contract.maximumUnknowns) {
+    reasons.push(`unknown count ${unknownCount} exceeds maximum ${contract.maximumUnknowns}`);
+  }
+  const unavailableActions = sortedUnique(assessment.unavailableActions);
+  if (!contract.allowUnavailableExternalActions && unavailableActions.length > 0) {
+    reasons.push(`unavailable external actions are not allowed: ${unavailableActions.join(", ")}`);
+  }
+  const availableArtifacts = new Set(["certificate", "receipt", ...assessment.availableArtifacts]);
+  for (const artifact of contract.requiredArtifacts) {
+    if (!availableArtifacts.has(artifact)) reasons.push(`required artifact is unavailable: ${artifact}`);
+  }
+  if (contract.cleanWorkingTree && !assessment.cleanWorkingTree) {
+    reasons.push("completion requires a clean working tree");
+  }
+  return sortedUnique(reasons);
+}
+
 export class StateBoundChangeExecutor<TInput> {
   private readonly state: CurrentStatePort;
   private readonly bindingValidator: StateBindingValidator;
   private readonly transform: DeterministicTransformPort<TInput>;
   private readonly transactions: ChangeTransactionPort;
   private readonly artifacts: ChangeArtifactStore;
+  private readonly completion: CompletionAssessmentPort;
+  private readonly environment: Readonly<{ repositoryRoot: string; signal: AbortSignal }>;
   private readonly now: () => string;
 
   constructor(options: StateBoundChangeExecutorOptions<TInput>) {
@@ -175,6 +335,12 @@ export class StateBoundChangeExecutor<TInput> {
     this.transform = options.transform;
     this.transactions = options.transactions;
     this.artifacts = options.artifacts;
+    this.completion = options.completion;
+    if (options.environment.repositoryRoot.length === 0) throw new TypeError("execution repository root cannot be blank");
+    this.environment = Object.freeze({
+      repositoryRoot: options.environment.repositoryRoot,
+      signal: options.environment.signal,
+    });
     this.now = options.now ?? (() => new Date().toISOString());
   }
 
@@ -183,18 +349,49 @@ export class StateBoundChangeExecutor<TInput> {
     const attempt: AttemptState = { validations: [] };
     const preflightReasons: string[] = [];
 
-    if (!isApprovalCurrent(input.plan, input.approval)) {
+    const planApprovalMatches = input.approval.planId === input.plan.id
+      && input.approval.planRevision === input.plan.revision
+      && input.approval.planHash === executionPlanHash(input.plan)
+      && input.approval.dependencyDigest === input.plan.boundState.dependencyDigest;
+    if (!planApprovalMatches) {
       preflightReasons.push("approval does not match the immutable execution plan");
+    } else if (!isApprovalCurrent(input.plan, input.capsule, input.approval)) {
+      preflightReasons.push("approval does not match the immutable execution capsule");
     }
     if (canonicalJson(input.capsule.boundState) !== canonicalJson(input.plan.boundState)) {
       preflightReasons.push("execution capsule does not match the plan state binding");
     }
+    if (canonicalJson(input.capsule.completionContract) !== canonicalJson(input.plan.completionCriteria)) {
+      preflightReasons.push("execution capsule completion contract does not match the immutable plan");
+    }
+    const planUnits = new Set(input.plan.knownAffectedUnitIds);
+    const capsuleUnitsOutsidePlan = outsideApprovedUnits(input.capsule.unitIds, planUnits);
+    if (capsuleUnitsOutsidePlan.length > 0) {
+      preflightReasons.push(`capsule units are outside the immutable plan: ${capsuleUnitsOutsidePlan.join(", ")}`);
+    }
+    const operationGrants = input.capsule.allowedWrites.filter((grant) => grant.operations.includes(input.capsule.operation));
+    const allowedOperations = sortedUnique(input.capsule.allowedWrites.flatMap((grant) => grant.operations));
+    const allowedGrantPathSets = operationGrants.map((grant) => selectorPathPatterns(grant.selector));
+    const hasGlobalOperationGrant = allowedGrantPathSets.some((patterns) => patterns.length === 0);
+    const allowedPathBoundary = hasGlobalOperationGrant
+      ? []
+      : sortedUnique(allowedGrantPathSets.flat());
+    const forbiddenOperationGrants = input.capsule.forbiddenWrites
+      .filter((grant) => grant.operations.includes(input.capsule.operation));
+    if ([...operationGrants, ...forbiddenOperationGrants].some((grant) => !selectorScopeIsSupported(grant.selector))) {
+      preflightReasons.push("capsule write selector cannot be enforced deterministically");
+    }
+    const forbiddenBoundary = sortedUnique(forbiddenOperationGrants.flatMap((grant) => selectorPathPatterns(grant.selector)));
+    const operationForbiddenGlobally = forbiddenOperationGrants.some((grant) => selectorPathPatterns(grant.selector).length === 0);
+    if (!allowedOperations.includes(input.capsule.operation) || operationForbiddenGlobally) {
+      preflightReasons.push(`capsule operation is not granted for mutation: ${input.capsule.operation}`);
+    }
 
     const adapterContext: AdapterContext = {
-      repositoryRoot: input.repositoryRoot,
+      repositoryRoot: this.environment.repositoryRoot,
       stateDigest: beforeState,
       config: {},
-      signal: new AbortController().signal,
+      signal: this.environment.signal,
     };
     const executionBinding = input.plan.boundState;
     if (preflightReasons.length === 0) {
@@ -216,16 +413,34 @@ export class StateBoundChangeExecutor<TInput> {
       return this.finalize(input, beforeState, await this.state.current(), "failure", preflightReasons, attempt);
     }
 
-    const transformContext: TransformContext = {
-      repositoryRoot: input.repositoryRoot,
+    const transformContext: ApprovedTransformContext = {
+      repositoryRoot: this.environment.repositoryRoot,
       stateBinding: executionBinding,
-      allowedUnits: sortedUnique(input.allowedUnits),
+      allowedUnits: sortedUnique(input.capsule.unitIds),
       dryRun: false,
       signal: adapterContext.signal,
+      approvedBoundary: sortedUnique(input.plan.boundary),
+      allowedPathBoundary,
+      forbiddenBoundary,
+      approvedOperations: allowedOperations,
+      capsuleId: input.capsule.id,
+      capsuleHash: input.approval.capsuleHash,
     };
 
     try {
       attempt.preview = await this.transform.preview(input.transformInput, transformContext);
+      const approvedUnits = new Set(transformContext.allowedUnits);
+      const previewOutsideScope = outsideApprovedUnits(attempt.preview.touchedUnitIds, approvedUnits);
+      if (previewOutsideScope.length > 0) {
+        return this.finalize(
+          input,
+          beforeState,
+          await this.state.current(),
+          "failure",
+          [`transform preview touched units outside the approved capsule: ${previewOutsideScope.join(", ")}`],
+          attempt,
+        );
+      }
       if (!attempt.preview.applicable) {
         return this.finalize(input, beforeState, await this.state.current(), "success", [], attempt);
       }
@@ -237,12 +452,35 @@ export class StateBoundChangeExecutor<TInput> {
       });
       await attempt.transaction.checkpoint("before-transform");
       attempt.result = await this.transform.apply(input.transformInput, transformContext);
+      const resultOutsideScope = outsideApprovedUnits(
+        [...attempt.result.touchedUnitIds, ...attempt.result.operations.flatMap((operation) => operation.unitIds)],
+        approvedUnits,
+      );
+      if (resultOutsideScope.length > 0) {
+        await attempt.transaction.rollback();
+        return this.finalize(
+          input,
+          beforeState,
+          await this.state.current(),
+          attempt.result.changed ? "partial" : "failure",
+          [`transform result touched units outside the approved capsule: ${resultOutsideScope.join(", ")}`],
+          attempt,
+        );
+      }
       await attempt.transaction.transition("workspace-staged");
       await attempt.transaction.transition("validating");
       attempt.validations = normalizeValidations(await this.transform.verify(attempt.result, transformContext));
-      const failedValidations = validationReasons(
-        [...input.plan.completionCriteria.requiredValidators, ...input.capsule.requiredValidations],
+      attempt.completionAssessment = normalizeCompletionAssessment(await this.completion.assess({
+        plan: input.plan,
+        capsule: input.capsule,
+        transformResult: attempt.result,
+        validations: attempt.validations,
+      }));
+      const failedValidations = completionContractReasons(
+        input.plan,
+        input.capsule,
         attempt.validations,
+        attempt.completionAssessment,
       );
       if (failedValidations.length > 0) {
         await attempt.transaction.rollback();
@@ -251,16 +489,15 @@ export class StateBoundChangeExecutor<TInput> {
       }
       await attempt.transaction.checkpoint("after-validation");
       await attempt.transaction.transition("canonical-staging");
-      const afterState = await this.state.current();
-      const finalized = await this.finalize(input, beforeState, afterState, "success", [], attempt);
       await attempt.transaction.transition("committing");
       await attempt.transaction.commit();
-      return finalized;
+      const afterState = await this.state.current();
+      return this.finalize(input, beforeState, afterState, "success", [], attempt);
     } catch (caught) {
       const error = caught as PartialTransformError;
       if (error.partialResult !== undefined) attempt.result = error.partialResult;
       const changed = attempt.result?.changed === true;
-      if (attempt.transaction !== undefined) {
+      if (attempt.transaction !== undefined && attempt.transaction.phase !== "committed") {
         try {
           await attempt.transaction.rollback();
         } catch {
@@ -332,6 +569,9 @@ export class StateBoundChangeExecutor<TInput> {
       journalPhase: transactionPhase,
       recoveryState,
       reasons: sortedUnique(reasons),
+      ...(attempt.completionAssessment === undefined
+        ? {}
+        : { completionAssessment: structuredClone(attempt.completionAssessment) }),
       certificate,
     };
     const certificateHash = hashFramedDomain("change-certificate-artifact", artifact);
@@ -340,7 +580,7 @@ export class StateBoundChangeExecutor<TInput> {
     const receiptWithoutHash: Omit<TransactionReceipt, "semanticHash"> = {
       id: `receipt:${input.plan.id}:${input.approval.id}`,
       planId: input.plan.id,
-      riskClass: input.riskClass,
+      riskClass: input.capsule.risk.class,
       beforeState: structuredClone(beforeState),
       afterState: structuredClone(afterState),
       changedCanonicalEntityIds: [],
