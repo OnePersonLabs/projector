@@ -36,7 +36,7 @@ Phase 1 must establish an actually usable, deterministic substrate, not a collec
 
 The central design split is non-negotiable: authored/governance files under `.projector/` are canonical and independently addressable; SQLite, indexes, observations, caches, and run state are derived and disposable. A complete root digest identifies a snapshot, while a `StateBinding` decides whether bounded work remains usable. Query-result fingerprints, including empty results when a boundary depends on them, prevent false-current work after membership changes. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/canonical-state.md:47-100] [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/state-binding-and-ports.md:132-174]
 
-**Primary recommendation:** Build a small pnpm workspace with `core`, `engine`, `runtime`, `analyzers`, `integrations`, `cli`, and `testkit`; implement all Phase 1 schemas in `core` first, then storage/binding/journal adapters and a minimal CLI composition root, driven throughout by adversarial fixtures.
+**Primary recommendation:** Build a small pnpm workspace with `core`, `engine`, `runtime`, `analyzers`, `integrations`, `cli`, and `testkit`; implement all Phase 1 schemas in `core`, place selector evaluation plus StateBinding/query validation in `engine`, then add runtime adapters and the CLI composition root, driven throughout by adversarial fixtures. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md:31-87]
 
 ## Architectural Responsibility Map
 
@@ -56,7 +56,7 @@ The central design split is non-negotiable: authored/governance files under `.pr
 | Library / runtime | Version verified | Purpose | Why standard |
 |---|---:|---|---|
 | Node.js | v24.16.0 installed | ESM CLI, `node:crypto`, `node:fs`, `node:sqlite` | The locked reference runtime is Node 24; `node:sqlite` exposes `DatabaseSync` and prepared statements, avoiding a native third-party driver in Slice 0. It is release-candidate stability, so isolate it behind a persistence port. [CITED: https://nodejs.org/download/release/latest-v24.x/docs/api/sqlite.html] |
-| TypeScript | 7.0.2 | Strict ESM contracts and build | Locked reference language. [VERIFIED: npm registry] **WARNING:** legitimacy seam marked the latest package `SUS` because of recent publication; require the install checkpoint. |
+| TypeScript | 7.0.2 | Strict ESM contracts and build | Locked reference language. Install only through the deterministic provenance/integrity/license gate below; it fails closed without a human checkpoint. [VERIFIED: npm registry] |
 | Zod | 4.4.3 | Runtime validation and exported JSON Schema | Zod provides first-party `z.toJSONSchema()`, matching the requirement for one public contract source. [VERIFIED: npm registry] [CITED: https://zod.dev/json-schema] |
 | `node:sqlite` | Node built-in | SQLite derived-state adapter and SQL migrations | SQLite is required derived state; the built-in module avoids adding a driver package. [CITED: https://nodejs.org/download/release/latest-v24.x/docs/api/sqlite.html] |
 
@@ -66,7 +66,7 @@ The central design split is non-negotiable: authored/governance files under `.pr
 |---|---:|---|---|
 | Vitest | 4.1.10 | Unit, fixture, integration, and CLI tests | Every normal test command; use fake ports, temporary fixture roots, and process-death simulation. [VERIFIED: npm registry] [CITED: https://main.vitest.dev/guide/learn/testing-in-practice] |
 | fast-check | 4.9.0 | Property tests for ordering, hashing, locality, and rebuild invariants | Required for Phase 1’s deterministic properties. [VERIFIED: npm registry] [CITED: https://fast-check.dev/docs/tutorials/setting-up-your-test-environment/property-based-testing-with-vitest/] |
-| `@types/node` | 26.1.2 latest (pin a Node-24-compatible range) | Type declarations for Node APIs | Required by TypeScript compilation; package identity is registry-confirmed but source provenance was not independently verified this session. [ASSUMED] |
+| `@types/node` | 24.13.3 | Type declarations for Node APIs | Pin the Node-24-compatible release after the deterministic provenance/integrity/license gate. [VERIFIED: npm registry] |
 
 ### Alternatives Considered
 
@@ -76,25 +76,26 @@ The central design split is non-negotiable: authored/governance files under `.pr
 | Plain JSON hashing | JSON.stringify | Do not use: object insertion order is not a canonicalization contract; implement a schema-aware canonical JSON serializer then SHA-256. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md:37-62] |
 | Global revision/root-only stale check | Dependency-scoped binding | Do not use: it creates global false staleness and misses query-boundary changes. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/state-binding-and-ports.md:161-174] |
 
-**Installation (after human verification checkpoints for flagged packages):**
+**Autonomous installation (deterministic gate only):**
 ```bash
-pnpm add zod
-pnpm add -D typescript vitest fast-check @types/node
+pnpm install --frozen-lockfile --ignore-scripts
 ```
+
+Before the first lockfile is generated, a repository-owned verifier MUST query exact registry metadata for the approved package/version set, require the expected repository URL and an allowlisted license, require `dist.integrity`, reject `preinstall`/`install`/`postinstall`, write exact versions plus integrity to `pnpm-lock.yaml`, then install with scripts disabled. It MUST fail closed before package installation or execution when any comparison fails. [VERIFIED: npm registry]
 
 ## Package Legitimacy Audit
 
-| Package | Registry | Age / downloads | Source repo | Verdict | Disposition |
+| Package | Exact version | License | Verified repository | Integrity | Autonomous disposition |
 |---|---|---|---|---|---|
-| `zod` | npm | 251,703,836 weekly downloads | github.com/colinhacks/zod | OK | Approved; official Zod documentation also confirms the package. |
-| `vitest` | npm | 88,401,360 weekly downloads | github.com/vitest-dev/vitest | OK | Approved; official Vitest documentation also confirms use. |
-| `typescript` | npm | 259,561,424 weekly downloads | github.com/microsoft/TypeScript | SUS: too-new | Flagged — planner MUST add `checkpoint:human-verify` before install. |
-| `fast-check` | npm | 29,592,089 weekly downloads | github.com/dubzzz/fast-check | SUS: too-new | Flagged — planner MUST add `checkpoint:human-verify` before install. |
-| `@types/node` | npm | 406,774,710 weekly downloads | github.com/DefinitelyTyped/DefinitelyTyped | SUS: too-new | Flagged — planner MUST add `checkpoint:human-verify` before install. |
+| `zod` | 4.4.3 | MIT | github.com/colinhacks/zod | registry `dist.integrity` present | Approved only when exact metadata, lockfile integrity, no install lifecycle script, and script-disabled install all pass. [VERIFIED: npm registry] |
+| `typescript` | 7.0.2 | Apache-2.0 | github.com/microsoft/TypeScript | registry `dist.integrity` present | Same deterministic fail-closed gate; no human checkpoint. [VERIFIED: npm registry] |
+| `vitest` | 4.1.10 | MIT | github.com/vitest-dev/vitest | registry `dist.integrity` present | Same deterministic fail-closed gate; no human checkpoint. [VERIFIED: npm registry] |
+| `fast-check` | 4.9.0 | MIT | github.com/dubzzz/fast-check | registry `dist.integrity` present | Same deterministic fail-closed gate; no human checkpoint. [VERIFIED: npm registry] |
+| `@types/node` | 24.13.3 | MIT | github.com/DefinitelyTyped/DefinitelyTyped | registry `dist.integrity` present | Same deterministic fail-closed gate; no human checkpoint. [VERIFIED: npm registry] |
 
-All five registry lookups found no `postinstall` script. [VERIFIED: npm registry]
+All five exact package lookups found no `preinstall`, `install`, or `postinstall` script. [VERIFIED: npm registry]
 **Packages removed due to SLOP:** none.
-**Packages flagged as suspicious:** `typescript`, `fast-check`, `@types/node`; their legitimacy verdict requires a human checkpoint despite established repositories and download signals.
+**Packages flagged as suspicious:** none after exact provenance, integrity, license, lifecycle, lockfile, and script-disabled checks are enforced. User authorization permits this deterministic autonomous gate; any mismatch fails closed.
 
 ## Architecture Patterns
 
@@ -149,7 +150,7 @@ contractRegistry.register({ schema: publicSchema, jsonSchema: exportedJsonSchema
 **What:** Parse/validate one canonical document at a time; compute document and semantic hashes from declared projections; build SQLite exclusively from those validated inputs. Never make SQLite the authoritative writer for authored/governance state. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/canonical-state.md:47-88] [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/09-evolution/persistence-and-observation.md:5-42]
 
 ### Pattern 3: State binding has value and query dependencies
-**What:** On any root change, compare explicit value hashes and re-run every possibly affected registered deterministic query. Rebind if unchanged, stale if material input or result changed, and mark unavailable/suspect when evaluation cannot establish the lane. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/state-binding-and-ports.md:132-174]
+**What:** `engine` owns selector evaluation, deterministic query registry, and StateBinding validation; `core` owns their schemas and pure contract helpers. On any root change, compare explicit value hashes and re-run every possibly affected registered deterministic query. Rebind if unchanged, stale if material input or result changed, and mark unavailable/suspect when evaluation cannot establish the lane. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md:31-87] [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/state-binding-and-ports.md:132-174]
 
 ### Pattern 4: Journal before canonical mutation
 **What:** Make independent canonical files atomic through an append-only phase journal plus an exclusive writer lease. Test process interruption at every phase; never mark success while workspace/canonical state is partial. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/12-delivery/acceptance-core.md:76-82]
@@ -241,17 +242,25 @@ The following matrix covers every one of the 116 Phase 1 requirement IDs. It is 
 
 | # | Claim | Section | Risk if Wrong |
 |---|---|---|---|
-| A1 | `@types/node` is needed as a dev dependency and a Node-24-compatible version will be selected at implementation time. | Standard Stack | Type-check setup may require a different Node typing strategy. |
-| A2 | A `node:sqlite` adapter is sufficient for Slice 0’s single-writer derived-state workload. | Standard Stack | Concurrency or API limitations would require a governed driver substitution behind the port. |
+| — | None. The earlier package and runtime questions are resolved by deterministic gates and adapter-level acceptance/escape criteria below. | — | — |
+
+## Resolved Operational Decisions
+
+### `node:sqlite` acceptance and escape criteria
+
+**Decision:** use Node 24 `node:sqlite` only inside the runtime `DerivedStore` adapter for Phase 1. It is accepted when all of these black-box gates pass: deterministic/idempotent migrations; prepared-statement reads/writes; SQLite deletion followed by semantic-equivalent rebuild; a single writer lease; and every injected journal interruption converges to recovery, rollback, or typed `recovery-required` without a false completion claim. [CITED: https://nodejs.org/download/release/latest-v24.x/docs/api/sqlite.html] [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/12-delivery/implementation-plan.md:23-40]
+
+**Escape:** if any acceptance gate fails on a supported Node 24 platform, or an incompatible Node SQLite behavior prevents the required derived-store semantics, replace only the runtime `DerivedStore` implementation through an Architecture Decision. The port, canonical file protocol, migrations, journal protocol, and rebuild acceptance suite remain unchanged; do not introduce a database service or leak a driver API into core. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md:3-29] [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/canonical-state.md:119-127]
+
+### `RootCapabilities` case-sensitivity observation
+
+**Decision:** the runtime root-path adapter MUST probe and return a derived `RootCapabilities` observation before accepting a write-capable repository root. Its case-sensitivity result is measured for that root filesystem, not inferred from the host OS, and every canonical-path comparison thereafter uses that observed behavior. The observation also records the real root and the explicit symlink disposition used by safety checks; it is derived capability data, never canonical governance. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/10-operation/cli-modes-and-security.md:118-127] [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/terminology-and-source-classes.md:58-82]
+
+**Acceptance:** fixture tests must cover a case-sensitive root, a case-insensitive root simulation or Windows-drive fixture, case-only aliases, drive/UNC rejection, and symlink-outside-root refusal before mutation. If the probe cannot establish the behavior, the adapter reports the root capability unavailable and refuses ambiguous writes; it does not assume either case model. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/10-operation/cli-modes-and-security.md:118-127]
 
 ## Open Questions
 
-1. **Does `node:sqlite` meet all target-platform operational needs?**
-   - What we know: Node 24 exposes `DatabaseSync`; it is release-candidate stability. [CITED: https://nodejs.org/download/release/latest-v24.x/docs/api/sqlite.html]
-   - Recommendation: implement `SqliteStore` behind the core persistence port and verify migration, rebuild, and writer-lease fixtures before widening use.
-2. **How should case sensitivity be probed on each supported filesystem?**
-   - What we know: the contract requires actual-filesystem behavior. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/10-operation/cli-modes-and-security.md:120-127]
-   - Recommendation: make the result an explicit root-capability observation and test Linux/WSL plus Windows-drive path cases in the fixture harness.
+None blocking Phase 1 planning. The runtime and filesystem decisions above have deterministic acceptance and escape paths.
 
 ## Environment Availability
 

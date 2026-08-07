@@ -35,7 +35,22 @@ Projector is delivered as one dependency-ordered semantic control plane: a deter
   2. Canonical entities, relations, behavioral identities, hashes, manifests, selectors, and dependency-scoped bindings validate deterministically without loading or rewriting the full graph.
   3. Unrelated root changes can rebind scoped work, while changed values or query results stale only the work that depends on them; open or unavailable discovery never proves absence.
   4. Foundation fixtures prove crash-safe canonical operations, path-root safety, manifest order, semantic hashing, package boundaries, and no-exec observation.
-**Plans**: TBD
+**Plans**: 13 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Prove the CLI/canonical/SQLite walking skeleton and locked workspace.
+- [ ] 01-02-PLAN.md — Define base, intent, identity, Requirement, and Scenario contracts.
+- [ ] 01-03-PLAN.md — Define evidence, authority, causal-independence, risk, and policy contracts.
+- [ ] 01-04-PLAN.md — Define identity/relevance, representation, and surface contracts.
+- [ ] 01-05-PLAN.md — Close StateBinding/core-port schemas and the public registry.
+- [ ] 01-06-PLAN.md — Implement serialized selectors and deterministic evaluation.
+- [ ] 01-07-PLAN.md — Implement canonical JSON, hashes, stable identity, lineage, and root manifests.
+- [ ] 01-08-PLAN.md — Implement fine-grained canonical storage and bounded updates.
+- [ ] 01-09-PLAN.md — Enforce path safety, explicit argv, and no-exec observation.
+- [ ] 01-10-PLAN.md — Implement the complete derived SQLite schema and rebuild closure.
+- [ ] 01-11-PLAN.md — Implement dependency/query-scoped validity and truthful negative space.
+- [ ] 01-12-PLAN.md — Implement writer leases, transaction journaling, and crash recovery.
+- [ ] 01-13-PLAN.md — Lock package direction, canonicalize stack decisions, and run the phase gate.
 
 ### Phase 2: Slice 1 — Mandatory Misplaced-Script Loop
 **Goal**: Maintainers can complete a safe, inspectable misplaced-script repair through one full semantic control loop.
@@ -211,4 +226,3 @@ Projector is delivered as one dependency-ordered semantic control plane: a deter
 | 12. Slice 11 — Watch, CI, Security, and Hardening | 0/TBD | Not started | - |
 | 13. Slice 12 — External Surface Adapters | 0/TBD | Not started | - |
 | 14. Dogfooding, Public Release, and GSD-to-Projector Handoff | 0/TBD | Not started | - |
-
