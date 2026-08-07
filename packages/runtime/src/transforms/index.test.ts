@@ -38,7 +38,8 @@ const context = (
   allowedUnits: string[],
   approvedBoundary: string[] = ["**"],
   forbiddenBoundary: string[] = [],
-): TransformContext & { approvedBoundary: string[]; forbiddenBoundary: string[] } => ({
+  allowedPathScopes?: string[][],
+): TransformContext & { approvedBoundary: string[]; forbiddenBoundary: string[]; allowedPathScopes?: string[][] } => ({
   repositoryRoot: "/repo",
   stateBinding: binding,
   allowedUnits,
@@ -46,6 +47,7 @@ const context = (
   signal: new AbortController().signal,
   approvedBoundary,
   forbiddenBoundary,
+  ...(allowedPathScopes === undefined ? {} : { allowedPathScopes }),
 });
 
 class MemoryMutationPort implements TransformMutationPort {
@@ -349,6 +351,25 @@ describe("move/reference transform", () => {
     await expect(transform.preview(input, context(["unit:move"], ["scripts/**"], ["scripts/private/**"])))
       .rejects.toBeInstanceOf(TransformScopeError);
   });
+
+  it("requires every path pattern in a conjunctive allowed-write scope", async () => {
+    const port = new MemoryMutationPort(new Map([["scripts/private/source.mjs", "source"]]));
+    const transform = new MoveReferenceTransform(port);
+    const input: MoveReferenceUpdateInput = {
+      moves: [{
+        unitId: "unit:move", from: "scripts/private/source.mjs", to: "scripts/private/destination.mjs",
+        provenance: "source", expectedContentHash: hashFramedDomain("transform-content", "source"),
+      }],
+      references: [],
+    };
+
+    await expect(transform.preview(input, context(
+      ["unit:move"],
+      ["scripts/**"],
+      [],
+      [["scripts/**", "scripts/public/**"]],
+    ))).rejects.toBeInstanceOf(TransformScopeError);
+  });
 });
 
 describe("transform registry", () => {
@@ -517,5 +538,24 @@ describe("transform registry", () => {
 
     currentId = "changed-after-registration";
     expect(() => registry.get("drifting-transform", "1")).toThrow(/implementation identity drift/u);
+  });
+
+  it("does not freeze arbitrary mutable implementation state at registration", () => {
+    const implementation = new MoveReferenceTransform(new MemoryMutationPort(new Map())) as MoveReferenceTransform & {
+      cache?: string[];
+    };
+    implementation.cache = [];
+    const registry = new TransformRegistry();
+    registry.register({
+      implementation,
+      metadata: {
+        preconditions: [], writeScope: [], predecessors: [], exclusions: [], commutativity: "always",
+        postconditions: [], convergence: { kind: "idempotent" }, unitClaim: "shared",
+      },
+    });
+
+    implementation.cache = ["runtime-state"];
+    expect(implementation.cache).toEqual(["runtime-state"]);
+    expect(Object.isFrozen(registry.get(implementation.id, implementation.version)?.metadata)).toBe(true);
   });
 });
