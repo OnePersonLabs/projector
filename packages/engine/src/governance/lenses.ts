@@ -10,7 +10,9 @@ import {
 
 import { assessLensAuthority, governanceBasisIsEndogenous } from "../authority/index.js";
 import {
+  assertMonotonicLensSelector,
   evaluateSelector,
+  normalizeSelector,
   projectionUnitSelectorSubject,
   selectorLensDependencies,
   type SelectorSubject,
@@ -73,7 +75,8 @@ export interface ProjectionLensCompilation {
 
 function stronglyConnectedComponents(lenses: readonly ProjectionLens[]): string[][] {
   const known = new Set(lenses.map(({ id }) => id));
-  const graph = new Map(lenses.map((lens) => [lens.id, selectorLensDependencies(lens.selector).filter((id) => known.has(id))]));
+  const knownIds = [...known].sort(compareStrings);
+  const graph = new Map(lenses.map((lens) => [lens.id, selectorLensDependencies(lens.selector, knownIds)]));
   let nextIndex = 0;
   const indexes = new Map<string, number>();
   const lowLinks = new Map<string, number>();
@@ -151,6 +154,22 @@ function validateLenses(lenses: readonly ProjectionLens[], authorityRecords: rea
   for (const lens of lenses) {
     if (ids.has(lens.id)) throw new LensCompilationError(`duplicate lens stable ID ${lens.id}`);
     ids.add(lens.id);
+    normalizeSelector(lens.selector);
+    lens.expectedProjections.forEach(({ selector }) => normalizeSelector(selector));
+    lens.impactRules.forEach(({ selector }) => normalizeSelector(selector));
+    for (const rule of lens.rules) {
+      normalizeSelector(rule.selector);
+      for (const predicate of rule.predicates) {
+        if (predicate.kind === "relation-required" || predicate.kind === "relation-forbidden") {
+          normalizeSelector(predicate.targetSelector);
+        } else if (predicate.kind === "cardinality") {
+          normalizeSelector(predicate.selector);
+        } else if (predicate.kind === "dependency-allowed" || predicate.kind === "dependency-forbidden") {
+          normalizeSelector(predicate.from);
+          normalizeSelector(predicate.to);
+        }
+      }
+    }
     if (governanceBasisIsEndogenous(lens.id, lens.governanceBasis)) {
       throw new LensCompilationError(`lens ${lens.id} cannot cite itself as its governance basis`);
     }
@@ -168,15 +187,21 @@ function validateLenses(lenses: readonly ProjectionLens[], authorityRecords: rea
 function validateFixedPointGroups(
   cycles: readonly string[][],
   groups: readonly GovernanceFixedPointGroup[],
+  lenses: readonly ProjectionLens[],
 ): Map<string, GovernanceFixedPointGroup> {
+  const lensesById = new Map(lenses.map((lens) => [lens.id, lens]));
   const byLens = new Map<string, GovernanceFixedPointGroup>();
   for (const group of groups) {
     if (group.maxIterations < 1 || !Number.isSafeInteger(group.maxIterations)) {
       throw new LensCompilationError(`fixed-point group ${group.id} has an invalid iteration budget`);
     }
     for (const lensId of sortedUnique(group.lensIds)) {
+      if (!lensesById.has(lensId)) throw new LensCompilationError(`fixed-point group ${group.id} references unknown lens ${lensId}`);
       if (byLens.has(lensId)) throw new LensCompilationError(`lens ${lensId} belongs to multiple fixed-point groups`);
       byLens.set(lensId, group);
+    }
+    for (const lensId of sortedUnique(group.lensIds)) {
+      assertMonotonicLensSelector(lensesById.get(lensId)!.selector, group.lensIds);
     }
   }
   for (const cycle of cycles) {
@@ -195,7 +220,7 @@ function compileOwnership(
   units: readonly ProjectionUnit[],
   memberships: ReadonlyMap<string, ReadonlySet<string>>,
 ): void {
-  const owners = new Map<string, string[]>();
+  const owners = new Map<string, Set<string>>();
   for (const lens of lenses.filter(({ status, contributions }) => status === "active" && contributions.includes("projection-owner"))) {
     for (const unit of units) {
       if (!(memberships.get(lens.id)?.has(unit.id) ?? false)) continue;
@@ -203,13 +228,14 @@ function compileOwnership(
         if (projection.role !== unit.role) continue;
         if (!evaluateSelector(projection.selector, subjectWithMemberships(unit, memberships)).matched) continue;
         const key = `${unit.id}\u0000${projection.role}`;
-        const entries = owners.get(key) ?? [];
-        entries.push(lens.id);
+        const entries = owners.get(key) ?? new Set<string>();
+        entries.add(lens.id);
         owners.set(key, entries);
       }
     }
   }
-  for (const [key, lensIds] of owners) {
+  for (const [key, lensIdSet] of owners) {
+    const lensIds = [...lensIdSet].sort(compareStrings);
     if (lensIds.length < 2) continue;
     const [unitId, role] = key.split("\u0000") as [string, string];
     throw new LensOwnershipCollisionError(unitId, role, lensIds);
@@ -242,7 +268,7 @@ export function compileProjectionLenses(input: CompileProjectionLensesInput): Pr
   validateLenses(lenses, input.authorityRecords);
   const cycles = stronglyConnectedComponents(lenses);
   const fixedPointGroups = input.fixedPointGroups ?? [];
-  const groupByLens = validateFixedPointGroups(cycles, fixedPointGroups);
+  const groupByLens = validateFixedPointGroups(cycles, fixedPointGroups, lenses);
   const memberships = new Map<string, Set<string>>(lenses.map(({ id }) => [id, new Set<string>()]));
   const fixedPointIterations: Record<string, number> = {};
 

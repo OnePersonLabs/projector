@@ -48,6 +48,20 @@ describe("selector normalization and evaluation", () => {
     )).toThrow(SelectorEvaluationError);
   });
 
+  it.each([
+    { op: "all", items: [tagSelector("missing"), { op: "atom", field: "path", matcher: "regex", value: "^(a+)+$" }] },
+    { op: "any", items: [tagSelector("public"), { op: "atom", field: "path", matcher: "regex", value: "^(a+)+$" }] },
+  ] satisfies SelectorExpr[])("validates every atom before boolean short circuit", (selector) => {
+    const subject = projectionUnitSelectorSubject(projectionUnit("unit", { tags: ["public"] }));
+    expect(() => evaluateSelector(selector, subject)).toThrow(SelectorEvaluationError);
+    expect(() => normalizeSelector(selector)).toThrow(SelectorEvaluationError);
+  });
+
+  it("rejects a malformed selector before an empty universe can prove absence", () => {
+    const malformed: SelectorExpr = { op: "atom", field: "path", matcher: "regex", value: "^(a+)+$" };
+    expect(() => evaluateSelectorMembership(malformed, [], { observability: "closed" })).toThrow(SelectorEvaluationError);
+  });
+
   it("evaluates the anchored regex subset with a deterministic state machine", () => {
     const subject = projectionUnitSelectorSubject(projectionUnit("script", { path: "scripts/check-links.mjs" }));
     expect(evaluateSelector(
@@ -145,10 +159,36 @@ describe("hard rule compilation", () => {
     expect(() => compileEffectiveRuleBundle({ unit, operation: "move", rules: [invalid] })).toThrow(/predicate or validator/i);
   });
 
+  it("validates nested predicate selectors even when the enclosing rule does not apply", () => {
+    const malformed = rule("rule:malformed-target", {
+      selector: tagSelector("does-not-apply"),
+      predicates: [{
+        kind: "relation-required",
+        relation: "verifies",
+        targetSelector: { op: "atom", field: "path", matcher: "regex", value: "^(a+)+$" },
+      }],
+    });
+
+    expect(() => compileEffectiveRuleBundle({ unit, operation: "move", rules: [malformed] }))
+      .toThrow(SelectorEvaluationError);
+  });
+
   it("reports distinct unlayered transform claims as exclusive", () => {
     const first = rule("rule:transform-a", { effect: "transform", transformIds: ["transform:a"] });
     const second = rule("rule:transform-b", { effect: "transform", transformIds: ["transform:b"] });
     const bundle = compileEffectiveRuleBundle({ unit, operation: "move", rules: [first, second] });
     expect(bundle.conflicts.map(({ kind }) => kind)).toContain("exclusive-transform");
+  });
+
+  it("normalizes transform IDs as a sorted set before comparing exclusive claims", () => {
+    const first = rule("rule:transform-a", { effect: "transform", transformIds: ["transform:b", "transform:a", "transform:a"] });
+    const second = rule("rule:transform-b", { effect: "transform", transformIds: ["transform:a", "transform:b"] });
+    const bundle = compileEffectiveRuleBundle({ unit, operation: "move", rules: [first, second] });
+
+    expect(bundle.conflicts).toEqual([]);
+    expect(bundle.rules.map(({ transformIds }) => transformIds)).toEqual([
+      ["transform:a", "transform:b"],
+      ["transform:a", "transform:b"],
+    ]);
   });
 });
