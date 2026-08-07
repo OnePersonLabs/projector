@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -33,6 +33,41 @@ describe("FileTransactionJournal", () => {
     await transaction.transition("canonical-staging");
     await transaction.transition("committing");
     await expect(transaction.transition("committed")).rejects.toBeInstanceOf(InvalidJournalTransitionError);
+  });
+
+  it("does not let the public journal transition API bypass commit guards", async () => {
+    const { journal } = await harness();
+    const transaction = await journal.begin(beginInput("tx-transition-bypass"));
+    await transaction.transition("workspace-mutating");
+    await transaction.transition("workspace-staged");
+    await transaction.transition("validating");
+    await transaction.transition("canonical-staging");
+    await transaction.transition("committing");
+    const record = await journal.read("tx-transition-bypass");
+
+    await expect(journal.transitionRecord(record, "committed")).rejects.toBeInstanceOf(
+      InvalidJournalTransitionError,
+    );
+  });
+
+  it("does not let the public journal transition API bypass rollback effects", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-transition-rollback-"));
+    let crashed = false;
+    const journal = await journalFor(root, (point) => {
+      if (!crashed && point === "after-phase:rolling-back") {
+        crashed = true;
+        throw new Error("crash:rolling-back");
+      }
+    });
+    const transaction = await journal.begin(beginInput("tx-rollback-transition-bypass"));
+    await transaction.writeFile("sample.txt", "after");
+    await expect(transaction.rollback()).rejects.toThrow("crash:rolling-back");
+    const restarted = await journalFor(root);
+    const record = await restarted.read("tx-rollback-transition-bypass");
+
+    await expect(restarted.transitionRecord(record, "rolled-back")).rejects.toBeInstanceOf(
+      InvalidJournalTransitionError,
+    );
   });
 
   it.each([
@@ -271,6 +306,27 @@ describe("FileTransactionJournal", () => {
     ]);
   });
 
+  it("refuses commit with pending compensation and persists manual recovery state", async () => {
+    const { journal } = await harness();
+    const transaction = await journal.begin(beginInput("tx-pending-commit"));
+    await transaction.writeFile("sample.txt", "after");
+    await transaction.recordCompensation({
+      externalOperationId: "remote-write-1",
+      kind: "manual",
+      instructions: "Inspect and compensate the remote write",
+    });
+    for (const phase of phasesAfterMutation) await transaction.transition(phase);
+
+    await expect(transaction.commit()).rejects.toBeInstanceOf(JournalRecoveryRequiredError);
+    expect((await journal.read("tx-pending-commit")).entry.phase).toBe("recovery-required");
+    const [recovery] = await journal.recoverIncomplete();
+    expect(recovery).toMatchObject({
+      transactionId: "tx-pending-commit",
+      action: "recovery-required",
+      reason: "Uncompensated external operation remote-write-1",
+    });
+  });
+
   it("fails closed instead of interpreting a corrupt journal phase", async () => {
     const { root, journal } = await harness();
     await journal.begin(beginInput("tx-corrupt"));
@@ -298,6 +354,19 @@ describe("FileTransactionJournal", () => {
     await writeFile(path, JSON.stringify(record));
 
     await expect(journal.recoverIncomplete()).rejects.toBeInstanceOf(JournalRecoveryRequiredError);
+  });
+
+  it("fails closed when a journal filename does not match its transaction identity", async () => {
+    const { root, journal } = await harness();
+    const transaction = await journal.begin(beginInput("tx-renamed-record"));
+    await transaction.writeFile("sample.txt", "after");
+    const directory = join(root, ".projector", "runtime", "journal");
+    const [name] = await readdir(directory);
+    if (name === undefined) throw new Error("Expected a journal record");
+    await rename(join(directory, name), join(directory, `${"0".repeat(64)}.json`));
+
+    await expect(journal.recoverIncomplete()).rejects.toBeInstanceOf(JournalRecoveryRequiredError);
+    expect(await readFile(join(root, "sample.txt"), "utf8")).toBe("after");
   });
 });
 
