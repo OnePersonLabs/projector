@@ -54,6 +54,23 @@ describe("RepositoryPathService", () => {
     });
   });
 
+  it("refuses a dangling symlink ancestor even when following in-root symlinks is allowed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-paths-"));
+    const outside = await mkdtemp(join(tmpdir(), "projector-outside-"));
+    await symlink(join(outside, "missing"), join(root, "dangling"), "dir");
+    await symlink("missing-inside", join(root, "dangling-inside"), "dir");
+    const paths = await RepositoryPathService.create(root);
+
+    for (const ancestor of ["dangling", "dangling-inside"]) {
+      await expect(paths.resolveWrite(`${ancestor}/new.txt`, "follow-inside")).rejects.toMatchObject({
+        code: "symlink-refused",
+      });
+      await expect(paths.resolveRead(`${ancestor}/new.txt`, "follow-inside")).rejects.toMatchObject({
+        code: "symlink-refused",
+      });
+    }
+  });
+
   it("enforces declared scopes before returning a real target", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-paths-"));
     await mkdir(join(root, "src"));

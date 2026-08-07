@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -32,8 +32,7 @@ describe("FileTransactionJournal", () => {
     await transaction.transition("validating");
     await transaction.transition("canonical-staging");
     await transaction.transition("committing");
-    await transaction.transition("committed");
-    await expect(transaction.transition("rolling-back")).rejects.toBeInstanceOf(InvalidJournalTransitionError);
+    await expect(transaction.transition("committed")).rejects.toBeInstanceOf(InvalidJournalTransitionError);
   });
 
   it.each([
@@ -43,7 +42,6 @@ describe("FileTransactionJournal", () => {
     "validating",
     "canonical-staging",
     "committing",
-    "rolling-back",
   ] satisfies TransactionPhase[])("deterministically rolls back an interruption in %s", async (phase) => {
     const { root, journal } = await harness();
     await writeFile(join(root, "sample.txt"), "before");
@@ -52,16 +50,12 @@ describe("FileTransactionJournal", () => {
     if (phase !== "prepared") {
       await transaction.writeFile("sample.txt", "after");
     }
-    if (phase !== "prepared" && phase !== "workspace-mutating" && phase !== "rolling-back") {
+    if (phase !== "prepared" && phase !== "workspace-mutating") {
       for (const next of phasesAfterMutation) {
         await transaction.transition(next);
         if (phase === next) break;
       }
     }
-    if (phase === "rolling-back") {
-      await transaction.transition("rolling-back");
-    }
-
     const restarted = await journalFor(root);
     const [result] = await restarted.recoverIncomplete();
     expect(result).toMatchObject({ transactionId: `tx-${phase}`, action: "rolled-back" });
@@ -89,6 +83,67 @@ describe("FileTransactionJournal", () => {
       expect(await readFile(join(root, "sample.txt"), "utf8")).toBe("before");
     },
   );
+
+  it.each([
+    "prepared",
+    "workspace-mutating",
+    "workspace-staged",
+    "validating",
+    "canonical-staging",
+    "committing",
+    "committed",
+    "rolling-back",
+    "rolled-back",
+    "recovery-required",
+  ] satisfies TransactionPhase[])("recovers a restart injected after authoritative phase %s", async (targetPhase) => {
+    const root = await mkdtemp(join(tmpdir(), "projector-phase-crash-"));
+    await writeFile(join(root, "workspace.txt"), "workspace-before");
+    await mkdir(join(root, ".projector", "model"), { recursive: true });
+    await writeFile(join(root, ".projector", "model", "canonical.json"), "canonical-before");
+    let crashed = false;
+    const journal = await journalFor(root, (point) => {
+      if (!crashed && point === `after-phase:${targetPhase}`) {
+        crashed = true;
+        throw new Error(`crash:${targetPhase}`);
+      }
+    });
+
+    try {
+      const transaction = await journal.begin(beginInput(`tx-phase-${targetPhase}`));
+      await transaction.writeFile("workspace.txt", "workspace-after");
+      await transaction.writeFile(".projector/model/canonical.json", "canonical-after");
+      if (targetPhase === "rolling-back" || targetPhase === "rolled-back") {
+        await transaction.rollback();
+      } else if (targetPhase === "recovery-required") {
+        await transaction.recordCompensation({ externalOperationId: "remote-1", kind: "manual" });
+        await journal.recoverIncomplete();
+      } else {
+        for (const phase of phasesAfterMutation) await transaction.transition(phase);
+        await transaction.commit();
+      }
+    } catch (error) {
+      expect(error).toEqual(new Error(`crash:${targetPhase}`));
+    }
+    expect(crashed).toBe(true);
+
+    const restarted = await journalFor(root);
+    const recovery = await restarted.recoverIncomplete();
+    const workspace = await readFile(join(root, "workspace.txt"), "utf8");
+    const canonical = await readFile(join(root, ".projector", "model", "canonical.json"), "utf8");
+    if (targetPhase === "committed") {
+      expect(recovery).toEqual([]);
+      expect([workspace, canonical]).toEqual(["workspace-after", "canonical-after"]);
+    } else if (targetPhase === "rolled-back") {
+      expect(recovery).toEqual([]);
+      expect([workspace, canonical]).toEqual(["workspace-before", "canonical-before"]);
+    } else if (targetPhase === "recovery-required") {
+      expect(recovery[0]).toMatchObject({ action: "recovery-required" });
+      expect([workspace, canonical]).toEqual(["workspace-after", "canonical-after"]);
+    } else {
+      expect(recovery[0]).toMatchObject({ action: "rolled-back", priorPhase: targetPhase });
+      expect([workspace, canonical]).toEqual(["workspace-before", "canonical-before"]);
+    }
+  });
 
   it("leaves a complete prepared record when creation crashes after claiming the transaction ID", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-journal-"));
@@ -128,7 +183,7 @@ describe("FileTransactionJournal", () => {
     const transaction = await journal.begin(beginInput("tx-committed"));
     await transaction.writeFile("sample.txt", "committed");
     for (const phase of phasesAfterMutation) await transaction.transition(phase);
-    await transaction.transition("committed");
+    await transaction.commit();
 
     expect(await journal.recoverIncomplete()).toEqual([]);
     expect(await readFile(join(root, "sample.txt"), "utf8")).toBe("committed");
@@ -165,6 +220,34 @@ describe("FileTransactionJournal", () => {
     expect((await journal.read("tx-unexplained")).entry.phase).toBe("recovery-required");
   });
 
+  it("treats an unexplained mode change as a third state instead of overwriting it", async () => {
+    const { root, journal } = await harness();
+    const path = join(root, "sample.txt");
+    await writeFile(path, "before");
+    await chmod(path, 0o600);
+    const transaction = await journal.begin(beginInput("tx-mode-change"));
+    await transaction.writeFile("sample.txt", "planned-after");
+    await chmod(path, 0o640);
+
+    const [result] = await journal.recoverIncomplete();
+    expect(result).toMatchObject({ action: "recovery-required" });
+    expect(await readFile(path, "utf8")).toBe("planned-after");
+    expect((await stat(path)).mode & 0o777).toBe(0o640);
+  });
+
+  it("restores the original mode together with file content during rollback", async () => {
+    const { root, journal } = await harness();
+    const path = join(root, "sample.txt");
+    await writeFile(path, "before");
+    await chmod(path, 0o600);
+    const transaction = await journal.begin(beginInput("tx-mode-restore"));
+    await transaction.writeFile("sample.txt", "after");
+
+    await journal.recoverIncomplete();
+    expect(await readFile(path, "utf8")).toBe("before");
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+  });
+
   it("records checkpoints and requires intervention for an uncompensated external operation", async () => {
     const { journal } = await harness();
     const transaction = await journal.begin(beginInput("tx-external"));
@@ -197,6 +280,21 @@ describe("FileTransactionJournal", () => {
     const path = join(directory, name);
     const record = JSON.parse(await readFile(path, "utf8"));
     record.entry.phase = "invented-phase";
+    await writeFile(path, JSON.stringify(record));
+
+    await expect(journal.recoverIncomplete()).rejects.toBeInstanceOf(JournalRecoveryRequiredError);
+  });
+
+  it("fails closed when persisted touched paths disagree with reversible operations", async () => {
+    const { root, journal } = await harness();
+    const transaction = await journal.begin(beginInput("tx-corrupt-path-index"));
+    await transaction.writeFile("sample.txt", "after");
+    const directory = join(root, ".projector", "runtime", "journal");
+    const [name] = await readdir(directory);
+    if (name === undefined) throw new Error("Expected a journal record");
+    const path = join(directory, name);
+    const record = JSON.parse(await readFile(path, "utf8"));
+    record.entry.touchedPaths = [];
     await writeFile(path, JSON.stringify(record));
 
     await expect(journal.recoverIncomplete()).rejects.toBeInstanceOf(JournalRecoveryRequiredError);

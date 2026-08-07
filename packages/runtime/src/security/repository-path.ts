@@ -108,7 +108,17 @@ export class RepositoryPathService {
           if (symlinks === "reject") {
             throw new PathSecurityError("symlink-refused", `Symbolic links are not allowed for ${canonicalPath}`);
           }
-          cursor = await realpath(candidate);
+          try {
+            cursor = await realpath(candidate);
+          } catch (error) {
+            if (isMissingPathError(error)) {
+              throw new PathSecurityError(
+                "symlink-refused",
+                `Dangling symbolic link is not allowed for ${canonicalPath}`,
+              );
+            }
+            throw error;
+          }
           this.assertInsideRoot(cursor, canonicalPath);
         } else {
           cursor = candidate;
