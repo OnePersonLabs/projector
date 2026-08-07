@@ -16,6 +16,7 @@ export interface GitIdentityFact {
   readonly path: string;
   readonly tracked: boolean | "unknown";
   readonly availability: "available" | "unavailable";
+  readonly introductionHistory: "available" | "unavailable" | "not-applicable";
   readonly objectId?: string;
   readonly introductionCommit?: string;
 }
@@ -156,25 +157,52 @@ export async function collectGitFacts(repositoryRoot: string, paths: readonly st
       safeGit(repositoryRoot, ["status", "--porcelain=v1", "-z"]),
     ]);
     const tracked = parseTracked(trackedOutput);
-    const identities = await Promise.all(paths.map(async (path): Promise<GitIdentityFact> => {
+    const identityResults = await Promise.all(paths.map(async (path): Promise<{ identity: GitIdentityFact; failure?: AnalyzerFailure }> => {
       const objectId = tracked.get(path);
-      if (objectId === undefined) return { sourceClass: "derived", path, tracked: false, availability: "available" };
+      if (objectId === undefined) {
+        return { identity: { sourceClass: "derived", path, tracked: false, availability: "available", introductionHistory: "not-applicable" } };
+      }
       let introductionCommit: string | undefined;
       try {
         const history = await safeGit(repositoryRoot, ["log", "--no-ext-diff", "--follow", "--diff-filter=A", "--format=%H", "--", path]);
         introductionCommit = history.trim().split("\n").filter(Boolean).at(-1);
-      } catch {
-        // Current tracked identity remains useful if per-file history is unavailable.
+      } catch (error) {
+        return {
+          identity: {
+            sourceClass: "derived",
+            path,
+            tracked: true,
+            availability: "available",
+            introductionHistory: "unavailable",
+            objectId,
+          },
+          failure: {
+            analyzerId: "projector.git-local",
+            capability: "introduction-history",
+            scope: path,
+            message: error instanceof Error ? error.message : String(error),
+            recoverable: true,
+            affectedClaimKinds: ["git-introduction-commit"],
+          },
+        };
       }
       return {
-        sourceClass: "derived",
-        path,
-        tracked: true,
-        availability: "available",
-        objectId,
-        ...(introductionCommit === undefined ? {} : { introductionCommit }),
+        identity: {
+          sourceClass: "derived",
+          path,
+          tracked: true,
+          availability: "available",
+          introductionHistory: "available",
+          objectId,
+          ...(introductionCommit === undefined ? {} : { introductionCommit }),
+        },
       };
     }));
+    const identities = identityResults.map((result) => result.identity);
+    const historyFailures = identityResults
+      .map((result) => result.failure)
+      .filter((failure): failure is AnalyzerFailure => failure !== undefined)
+      .sort((left, right) => compareCodePoint(left.scope, right.scope));
     const explicitMoves = parseMoves(statusOutput);
     const inferredMoves = await inferUnstagedMoves(repositoryRoot, statusOutput);
     return {
@@ -184,13 +212,19 @@ export async function collectGitFacts(repositoryRoot: string, paths: readonly st
       moves: [...explicitMoves, ...inferredMoves]
         .filter((move, index, moves) => moves.findIndex((candidate) => candidate.fromPath === move.fromPath && candidate.toPath === move.toPath) === index)
         .sort((left, right) => compareCodePoint(left.fromPath, right.fromPath) || compareCodePoint(left.toPath, right.toPath)),
-      failures: [],
+      failures: historyFailures,
     };
   } catch (error) {
     return {
       availability: "unavailable",
       revision: "filesystem",
-      identities: paths.map((path) => ({ sourceClass: "derived", path, tracked: "unknown", availability: "unavailable" })),
+      identities: paths.map((path) => ({
+        sourceClass: "derived",
+        path,
+        tracked: "unknown",
+        availability: "unavailable",
+        introductionHistory: "unavailable",
+      })),
       moves: [],
       failures: [{
         analyzerId: "projector.git-local",
