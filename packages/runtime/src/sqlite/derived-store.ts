@@ -74,10 +74,15 @@ export class SqliteDerivedStore {
     this.database.exec(`
       PRAGMA foreign_keys = ON;
       PRAGMA trusted_schema = OFF;
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = FULL;
     `);
-    migrateSqlite(this.database);
+    try {
+      migrateSqlite(this.database);
+      this.database.exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;`);
+      this.validateStoredState();
+    } catch (error) {
+      this.database.close();
+      throw error;
+    }
   }
 
   close(): void {
@@ -92,10 +97,9 @@ export class SqliteDerivedStore {
     if (computedDigest !== snapshot.rootDigest) {
       throw new Error(`canonical snapshot root mismatch: expected ${computedDigest}, received ${snapshot.rootDigest}`);
     }
-    const current = this.revisionNumber();
-    const nextRevision = current + 1;
     this.database.exec("BEGIN IMMEDIATE");
     try {
+      const nextRevision = this.revisionNumber() + 1;
       this.database.exec(`
         DELETE FROM entities;
         DELETE FROM requirements;
@@ -119,9 +123,9 @@ export class SqliteDerivedStore {
   }
 
   applyCanonicalUpdate(document: CanonicalDocumentEnvelope, rootDigest: ContentHash): DerivedRevision {
-    const nextRevision = this.revisionNumber() + 1;
     this.database.exec("BEGIN IMMEDIATE");
     try {
+      const nextRevision = this.revisionNumber() + 1;
       this.database.prepare("DELETE FROM canonical_documents WHERE id = ?").run(document.id);
       this.insertDocument(document, nextRevision);
       const computedDigest = this.indexedRootDigest();
@@ -140,9 +144,9 @@ export class SqliteDerivedStore {
   }
 
   applyCanonicalDelete(id: string, rootDigest: ContentHash): DerivedRevision {
-    const nextRevision = this.revisionNumber() + 1;
     this.database.exec("BEGIN IMMEDIATE");
     try {
+      const nextRevision = this.revisionNumber() + 1;
       const result = this.database.prepare("DELETE FROM canonical_documents WHERE id = ?").run(id);
       if (result.changes !== 1) throw new Error(`canonical document ${id} is not indexed`);
       const computedDigest = this.indexedRootDigest();
@@ -232,12 +236,36 @@ export class SqliteDerivedStore {
   }
 
   readCanonicalDocument(id: string): CanonicalDocumentEnvelope | undefined {
-    const row = this.database.prepare("SELECT document_json AS documentJson FROM canonical_documents WHERE id = ?")
-      .get(id) as { documentJson: string } | undefined;
+    this.validateStoredState();
+    const row = this.database.prepare(`SELECT id, kind, canonical_key AS canonicalKey, lifecycle,
+      semantic_hash AS semanticHash, discovery_hash AS discoveryHash,
+      canonical_document_hash AS canonicalDocumentHash, document_json AS documentJson,
+      indexed_revision AS indexedRevision FROM canonical_documents WHERE id = ?`)
+      .get(id) as unknown as CanonicalIndexRow | undefined;
     if (row === undefined) return undefined;
+    return this.validateStoredRow(row, id);
+  }
+
+  private validateStoredRow(row: CanonicalIndexRow, requestedId = row.id): CanonicalDocumentEnvelope {
     const result = CanonicalDocumentEnvelopeSchema.safeParse(parseCanonicalJson(row.documentJson));
-    if (!result.success) throw new Error(`corrupt canonical index row ${id}: ${result.error.message}`);
-    return result.data as CanonicalDocumentEnvelope;
+    if (!result.success) throw new Error(`corrupt canonical index row ${requestedId}: ${result.error.message}`);
+    const document = result.data as CanonicalDocumentEnvelope;
+    assertSupportedCanonicalVersions(document);
+    const mismatched = document.id !== requestedId || document.id !== row.id || document.kind !== row.kind ||
+      document.key !== row.canonicalKey || document.lifecycle !== row.lifecycle ||
+      document.semanticHash !== row.semanticHash || (document.discoveryHash ?? null) !== row.discoveryHash ||
+      document.canonicalDocumentHash !== row.canonicalDocumentHash || canonicalJson(document) !== row.documentJson;
+    if (mismatched) throw new Error(`corrupt canonical index row ${requestedId}: envelope/column mismatch`);
+    return document;
+  }
+
+  private validateStoredState(): void {
+    const state = this.database.prepare("SELECT canonical_root_digest AS rootDigest FROM graph_state WHERE singleton=1")
+      .get() as { rootDigest: ContentHash | null } | undefined;
+    if (state?.rootDigest === null || state === undefined) return;
+    for (const row of this.canonicalRows()) this.validateStoredRow(row);
+    const actual = this.indexedRootDigest();
+    if (actual !== state.rootDigest) throw new Error(`corrupt state.db canonical root mismatch: expected ${actual}, received ${state.rootDigest}`);
   }
 
   private revisionNumber(): number {

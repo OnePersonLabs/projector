@@ -1,6 +1,8 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { Worker } from "node:worker_threads";
 
 import { hashRootManifest, withCanonicalHashes, type CanonicalDocumentEnvelope } from "@projector/core";
 import { afterEach, describe, expect, test } from "vitest";
@@ -337,5 +339,92 @@ describe("SQLite derived canonical index", () => {
       integrity: "ok",
     });
     store.close();
+  });
+
+  test.each([
+    ["semantic hash column", "UPDATE canonical_documents SET semantic_hash = 'sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"],
+    ["canonical root", "UPDATE graph_state SET canonical_root_digest = 'sha256:v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'"],
+  ])("fails closed when state.db has a tampered %s", async (_label, sql) => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    store.close();
+    const raw = new DatabaseSync(path);
+    raw.exec(sql);
+    raw.close();
+    expect(() => new SqliteDerivedStore(path)).toThrow(/corrupt|mismatch/i);
+  });
+
+  test("rejects a row whose JSON envelope ID differs from the requested database ID", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    store.close();
+    const raw = new DatabaseSync(path);
+    raw.prepare("UPDATE canonical_documents SET document_json = ? WHERE id = 'concept-a'")
+      .run(JSON.stringify(concept("concept-b")));
+    raw.close();
+    expect(() => new SqliteDerivedStore(path)).toThrow(/requested|column|mismatch/i);
+  });
+
+  test("rechecks canonical root consistency when reading from an already-open store", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    const raw = new DatabaseSync(path);
+    raw.exec("UPDATE graph_state SET canonical_root_digest = 'sha256:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'");
+    raw.close();
+    expect(() => store.readCanonicalDocument("concept-a")).toThrow(/root mismatch/i);
+    store.close();
+  });
+
+  test("assigns distinct monotonic revisions across multiple store connections", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const path = join(root, ".projector", "state.db");
+    const first = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, first);
+    const second = new SqliteDerivedStore(path);
+    await canonical.write(concept("concept-a", "revision two"));
+    const snapshotTwo = await canonical.snapshot();
+    const revisionTwo = first.applyCanonicalUpdate(snapshotTwo.documents[0]!, snapshotTwo.rootDigest);
+    await canonical.write(concept("concept-a", "revision three"));
+    const snapshotThree = await canonical.snapshot();
+    const revisionThree = second.applyCanonicalUpdate(snapshotThree.documents[0]!, snapshotThree.rootDigest);
+    expect([revisionTwo.revision, revisionThree.revision]).toEqual([2, 3]);
+    first.close();
+    second.close();
+  });
+
+  test("waits for a concurrent fresh-database migration lock", async () => {
+    const root = await temporaryRepository();
+    const path = join(root, ".projector", "state.db");
+    await mkdir(join(path, ".."), { recursive: true });
+    const worker = new Worker(`
+      const { parentPort, workerData } = require('node:worker_threads');
+      const { DatabaseSync } = require('node:sqlite');
+      const db = new DatabaseSync(workerData, { timeout: 5000 });
+      db.exec('BEGIN IMMEDIATE');
+      parentPort.postMessage('locked');
+      setTimeout(() => { db.exec('COMMIT'); db.close(); parentPort.postMessage('done'); }, 75);
+    `, { eval: true, workerData: path });
+    await new Promise<void>((resolve, reject) => {
+      worker.once("message", () => resolve());
+      worker.once("error", reject);
+    });
+    const store = new SqliteDerivedStore(path);
+    expect(store.securityPosture().integrity).toBe("ok");
+    store.close();
+    await worker.terminate();
   });
 });

@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 
 import {
@@ -57,10 +57,15 @@ async function canonicalJsonFiles(root: string): Promise<string[]> {
       throw error;
     }
     for (const entry of entries) {
-      if (entry.isSymbolicLink()) continue;
       const path = join(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        const topLevel = relative(root, path).replaceAll("\\", "/").split("/")[0];
+        if (topLevel === undefined || !derivedTopLevelDirectories.has(topLevel)) {
+          throw new Error(`symlink canonical entry is not allowed: ${path}`);
+        }
+        continue;
+      }
       if (entry.isDirectory()) {
-        if (directory === root && derivedTopLevelDirectories.has(entry.name)) continue;
         await visit(path);
       } else if (entry.isFile() && entry.name.endsWith(".json")) {
         files.push(path);
@@ -131,7 +136,24 @@ export class CanonicalFileRepository {
     const location = kindLocations[kind];
     const directoryParts = location.slice(0, -1);
     const suffix = location.at(-1);
-    return join(this.canonicalRoot, ...directoryParts, `${encodeURIComponent(id)}.${suffix}.json`);
+    const storageKey = createHash("sha256").update(id, "utf8").digest("hex");
+    return join(this.canonicalRoot, ...directoryParts, `${storageKey}.${suffix}.json`);
+  }
+
+  private legacyPathFor(kind: SupportedCanonicalKind, id: string): string {
+    const location = kindLocations[kind];
+    return join(this.canonicalRoot, ...location.slice(0, -1), `${encodeURIComponent(id)}.${location.at(-1)}.json`);
+  }
+
+  private async validateOwnedPath(path: string, kind: SupportedCanonicalKind, id: string): Promise<boolean> {
+    try {
+      const existing = parseEnvelope(await readFile(path, "utf8"), path);
+      if (existing.kind !== kind || existing.id !== id) throw new Error(`canonical path ${path} is owned by ${existing.id}`);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
   }
 
   async write(document: CanonicalDocumentEnvelope): Promise<string> {
@@ -141,18 +163,18 @@ export class CanonicalFileRepository {
     const kind = document.kind as SupportedCanonicalKind;
     if (!(kind in kindLocations)) throw new Error(`unsupported canonical kind: ${document.kind}`);
     const path = this.pathFor(kind, document.id);
+    await this.validateOwnedPath(path, kind, document.id);
+    const legacyPath = this.legacyPathFor(kind, document.id);
+    const hasLegacy = legacyPath !== path && await this.validateOwnedPath(legacyPath, kind, document.id);
     await atomicWrite(path, `${canonicalJson(document)}\n`);
+    if (hasLegacy) await rm(legacyPath);
     return path;
   }
 
   async read(kind: SupportedCanonicalKind, id: string): Promise<CanonicalDocumentEnvelope | undefined> {
-    const path = this.pathFor(kind, id);
-    try {
-      await access(path, constants.R_OK);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw error;
-    }
+    let path = this.pathFor(kind, id);
+    if (!await this.validateOwnedPath(path, kind, id)) path = this.legacyPathFor(kind, id);
+    if (!await this.validateOwnedPath(path, kind, id)) return undefined;
     const document = parseEnvelope(await readFile(path, "utf8"), path);
     if (document.kind !== kind || document.id !== id) {
       throw new Error(`canonical path lookup conflict at ${path}`);
@@ -162,13 +184,16 @@ export class CanonicalFileRepository {
 
   async delete(kind: SupportedCanonicalKind, id: string): Promise<boolean> {
     const path = this.pathFor(kind, id);
+    let ownedPath = path;
+    if (!await this.validateOwnedPath(ownedPath, kind, id)) ownedPath = this.legacyPathFor(kind, id);
+    if (!await this.validateOwnedPath(ownedPath, kind, id)) return false;
     try {
-      await rm(path);
+      await rm(ownedPath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
       throw error;
     }
-    const directoryHandle = await open(dirname(path), constants.O_RDONLY);
+    const directoryHandle = await open(dirname(ownedPath), constants.O_RDONLY);
     try {
       await directoryHandle.sync();
     } finally {
@@ -180,16 +205,23 @@ export class CanonicalFileRepository {
   async snapshot(): Promise<CanonicalSnapshot> {
     const documents: CanonicalDocumentEnvelope[] = [];
     for (const path of await canonicalJsonFiles(this.canonicalRoot)) {
+      const relativePath = relative(this.canonicalRoot, path).replaceAll("\\", "/");
+      const topLevel = relativePath.split("/")[0];
       const supportedKind = (Object.entries(kindLocations) as Array<
         [SupportedCanonicalKind, (typeof kindLocations)[SupportedCanonicalKind]]
       >).find(([, location]) => path.endsWith(`.${location.at(-1)}.json`))?.[0];
       if (supportedKind === undefined) {
-        const relativePath = relative(this.canonicalRoot, path).replaceAll("\\", "/");
+        if (topLevel !== undefined && derivedTopLevelDirectories.has(topLevel)) continue;
         const unsupportedKind = relativePath === "config.json" ? "Config"
           : relativePath.endsWith(".exception.json") ? "Exception"
             : relativePath.endsWith(".migration.json") ? "Migration"
               : "unknown";
         throw new Error(`unsupported canonical ${unsupportedKind} kind at ${path}`);
+      }
+      const relativeParts = relative(this.canonicalRoot, path).replaceAll("\\", "/").split("/");
+      const approvedPrefix = kindLocations[supportedKind].slice(0, -1);
+      if (!approvedPrefix.every((part, index) => relativeParts[index] === part)) {
+        throw new Error(`canonical file is outside approved canonical family for ${supportedKind}: ${path}`);
       }
       const document = parseEnvelope(await readFile(path, "utf8"), path);
       if (document.kind !== supportedKind) {
