@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 
 import {
@@ -146,6 +146,7 @@ export class CanonicalFileRepository {
   }
 
   private async validateOwnedPath(path: string, kind: SupportedCanonicalKind, id: string): Promise<boolean> {
+    await this.assertNoSymlinks(path);
     try {
       const existing = parseEnvelope(await readFile(path, "utf8"), path);
       if (existing.kind !== kind || existing.id !== id) throw new Error(`canonical path ${path} is owned by ${existing.id}`);
@@ -153,6 +154,20 @@ export class CanonicalFileRepository {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
       throw error;
+    }
+  }
+
+  private async assertNoSymlinks(path: string): Promise<void> {
+    const parts = relative(this.canonicalRoot, path).split(/[\\/]/u).filter(Boolean);
+    let current = this.canonicalRoot;
+    for (const part of ["", ...parts]) {
+      if (part !== "") current = join(current, part);
+      try {
+        if ((await lstat(current)).isSymbolicLink()) throw new Error(`symlink canonical path is not allowed: ${current}`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
     }
   }
 
@@ -183,21 +198,18 @@ export class CanonicalFileRepository {
   }
 
   async delete(kind: SupportedCanonicalKind, id: string): Promise<boolean> {
-    const path = this.pathFor(kind, id);
-    let ownedPath = path;
-    if (!await this.validateOwnedPath(ownedPath, kind, id)) ownedPath = this.legacyPathFor(kind, id);
-    if (!await this.validateOwnedPath(ownedPath, kind, id)) return false;
-    try {
-      await rm(ownedPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw error;
-    }
-    const directoryHandle = await open(dirname(ownedPath), constants.O_RDONLY);
-    try {
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
+    const paths = [...new Set([this.pathFor(kind, id), this.legacyPathFor(kind, id)])];
+    const owned: string[] = [];
+    for (const path of paths) if (await this.validateOwnedPath(path, kind, id)) owned.push(path);
+    if (owned.length === 0) return false;
+    for (const path of owned) await rm(path);
+    for (const directory of new Set(owned.map(dirname))) {
+      const directoryHandle = await open(directory, constants.O_RDONLY);
+      try {
+        await directoryHandle.sync();
+      } finally {
+        await directoryHandle.close();
+      }
     }
     return true;
   }

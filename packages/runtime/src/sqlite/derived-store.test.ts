@@ -427,4 +427,32 @@ describe("SQLite derived canonical index", () => {
     store.close();
     await worker.terminate();
   });
+
+  test("revision rejects live canonical-root tampering", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    const raw = new DatabaseSync(path);
+    raw.exec("UPDATE graph_state SET canonical_root_digest = 'sha256:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'");
+    raw.close();
+    expect(() => store.revision()).toThrow(/root mismatch/i);
+    store.close();
+  });
+
+  test("open rejects NULL root after a nonempty revision", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    store.close();
+    const raw = new DatabaseSync(path);
+    raw.exec("UPDATE graph_state SET canonical_root_digest = NULL");
+    raw.close();
+    expect(() => new SqliteDerivedStore(path)).toThrow(/NULL canonical root/i);
+  });
 });

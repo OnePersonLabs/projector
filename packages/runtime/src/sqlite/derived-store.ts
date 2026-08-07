@@ -165,6 +165,7 @@ export class SqliteDerivedStore {
   }
 
   revision(): DerivedRevision {
+    this.validateStoredState();
     const state = this.database.prepare(
       "SELECT revision, canonical_root_digest AS rootDigest FROM graph_state WHERE singleton = 1",
     ).get() as { revision: number; rootDigest: ContentHash | null } | undefined;
@@ -176,6 +177,11 @@ export class SqliteDerivedStore {
   }
 
   canonicalRows(): CanonicalIndexRow[] {
+    this.validateStoredState();
+    return this.rawCanonicalRows();
+  }
+
+  private rawCanonicalRows(): CanonicalIndexRow[] {
     return this.database.prepare(`
       SELECT
         id,
@@ -193,6 +199,7 @@ export class SqliteDerivedStore {
   }
 
   relationCount(): number {
+    this.validateStoredState();
     const row = this.database.prepare("SELECT COUNT(*) AS count FROM relations").get() as
       | { count: number }
       | undefined;
@@ -200,6 +207,7 @@ export class SqliteDerivedStore {
   }
 
   logicalCounts(): LogicalTableCounts {
+    this.validateStoredState();
     return this.database.prepare(`
       SELECT
         (SELECT COUNT(*) FROM entities) AS entities,
@@ -260,10 +268,15 @@ export class SqliteDerivedStore {
   }
 
   private validateStoredState(): void {
-    const state = this.database.prepare("SELECT canonical_root_digest AS rootDigest FROM graph_state WHERE singleton=1")
-      .get() as { rootDigest: ContentHash | null } | undefined;
-    if (state?.rootDigest === null || state === undefined) return;
-    for (const row of this.canonicalRows()) this.validateStoredRow(row);
+    const state = this.database.prepare("SELECT revision, canonical_root_digest AS rootDigest FROM graph_state WHERE singleton=1")
+      .get() as { revision: number; rootDigest: ContentHash | null } | undefined;
+    if (state === undefined) return;
+    const rows = this.rawCanonicalRows();
+    if (state.rootDigest === null) {
+      if (state.revision !== 0 || rows.length !== 0) throw new Error("corrupt state.db: NULL canonical root after nonempty revision");
+      return;
+    }
+    for (const row of rows) this.validateStoredRow(row);
     const actual = this.indexedRootDigest();
     if (actual !== state.rootDigest) throw new Error(`corrupt state.db canonical root mismatch: expected ${actual}, received ${state.rootDigest}`);
   }
