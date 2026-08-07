@@ -29,9 +29,18 @@ importers:
 
   packages/cli:
     dependencies:
+      '@projector/analyzers':
+        specifier: workspace:*
+        version: link:../analyzers
       '@projector/core':
         specifier: workspace:*
         version: link:../core
+      '@projector/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@projector/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
   packages/core:
     dependencies:
