@@ -32,6 +32,18 @@ describe("canonical serialization and hash domains", () => {
     expect(() => canonicalJson({ fn: () => undefined })).toThrow(/JSON/i);
   });
 
+  it("rejects dense undefined array elements", () => {
+    expect(() => canonicalJson([undefined])).toThrow(/undefined array/i);
+  });
+
+  it("rejects sparse array holes instead of serializing them as absent", () => {
+    fc.assert(fc.property(fc.integer({ min: 1, max: 32 }), fc.integer(), (length, seed) => {
+      const sparse: unknown[] = new Array(length).fill(null);
+      delete sparse[Math.abs(seed) % length];
+      expect(() => canonicalJson(sparse)).toThrow(/sparse/i);
+    }));
+  });
+
   it("rejects duplicate object keys before canonicalization", () => {
     expect(() => parseCanonicalJson('{"a":1,"a":2}')).toThrow(/duplicate/i);
     expect(parseCanonicalJson('{"a":1,"nested":{"a":2}}')).toEqual({ a: 1, nested: { a: 2 } });
@@ -67,6 +79,38 @@ describe("canonical serialization and hash domains", () => {
     expect(hashCanonicalDocument("IdentityExample", base)).toBe(
       hashCanonicalDocument("IdentityExample", { ...base, observedAt: "b" }),
     );
+  });
+
+  it("excludes volatile-only changes from semantic and discovery hashes", () => {
+    registerHashProfile("VolatileIsolationExample", {
+      semantic: ["statement"],
+      discovery: ["key"],
+      volatile: ["createdAt"],
+    });
+    const before = { statement: "charge once", key: "charge", createdAt: "2026-01-01" };
+    const after = { ...before, createdAt: "2026-08-07" };
+    expect(hashSemantic("VolatileIsolationExample", after)).toBe(hashSemantic("VolatileIsolationExample", before));
+    expect(hashDiscovery("VolatileIsolationExample", after)).toBe(hashDiscovery("VolatileIsolationExample", before));
+  });
+
+  it("rejects volatile paths that overlap any persisted projection", () => {
+    const cases = [
+      {
+        kind: "VolatileSemanticOverlap",
+        profile: { semantic: ["createdAt"], discovery: [], volatile: ["createdAt"] },
+      },
+      {
+        kind: "VolatileDiscoveryDescendantOverlap",
+        profile: { semantic: [], discovery: ["metadata.alias"], volatile: ["metadata"] },
+      },
+      {
+        kind: "VolatileExactAncestorOverlap",
+        profile: { semantic: [], discovery: [], exactDocument: ["audit"], volatile: ["audit.createdAt"] },
+      },
+    ] as const;
+    for (const { kind, profile } of cases) {
+      expect(() => registerHashProfile(kind, profile)).toThrow(/volatile.*overlap/i);
+    }
   });
 
   it("rejects hashing a kind without a registered projection", () => {

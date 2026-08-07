@@ -33,6 +33,11 @@ function serialize(value: unknown, seen: Set<object>, inArray: boolean): string 
   seen.add(value);
   try {
     if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) {
+          throw new TypeError(`sparse array hole at index ${index} is not a JSON value`);
+        }
+      }
       return `[${value.map((item) => serialize(item, seen, true)).join(",")}]`;
     }
     const prototype = Object.getPrototypeOf(value) as object | null;
