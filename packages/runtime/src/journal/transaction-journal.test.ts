@@ -224,6 +224,49 @@ describe("FileTransactionJournal", () => {
     expect(await readFile(join(root, "sample.txt"), "utf8")).toBe("committed");
   });
 
+  it("keeps a committed record immutable when metadata mutators are called", async () => {
+    const { journal } = await harness();
+    const transaction = await journal.begin(beginInput("tx-committed-immutable"));
+    await transaction.writeFile("sample.txt", "committed");
+    await transaction.recordCompensation({ externalOperationId: "remote-1", kind: "manual" });
+    await transaction.markCompensated("remote-1");
+    for (const phase of phasesAfterMutation) await transaction.transition(phase);
+    await transaction.commit();
+    const committed = await journal.read("tx-committed-immutable");
+
+    await expect(
+      transaction.recordCompensation({ externalOperationId: "remote-2", kind: "manual" }),
+    ).rejects.toBeInstanceOf(InvalidJournalTransitionError);
+    await expect(transaction.markCompensated("remote-1")).rejects.toBeInstanceOf(
+      InvalidJournalTransitionError,
+    );
+    await expect(transaction.checkpoint("after-commit")).rejects.toBeInstanceOf(
+      InvalidJournalTransitionError,
+    );
+    expect(await journal.read("tx-committed-immutable")).toEqual(committed);
+  });
+
+  it("keeps rolled-back and recovery-required metadata immutable", async () => {
+    const { journal } = await harness();
+    const rolledBack = await journal.begin(beginInput("tx-rolled-back-immutable"));
+    await rolledBack.writeFile("rolled.txt", "after");
+    await rolledBack.rollback();
+    const rolledBackRecord = await journal.read("tx-rolled-back-immutable");
+    await expect(rolledBack.checkpoint("too-late")).rejects.toBeInstanceOf(
+      InvalidJournalTransitionError,
+    );
+    expect(await journal.read("tx-rolled-back-immutable")).toEqual(rolledBackRecord);
+
+    const recoveryRequired = await journal.begin(beginInput("tx-recovery-immutable"));
+    await recoveryRequired.recordCompensation({ externalOperationId: "remote-1", kind: "manual" });
+    await journal.recoverIncomplete();
+    const recoveryRecord = await journal.read("tx-recovery-immutable");
+    await expect(recoveryRequired.markCompensated("remote-1")).rejects.toBeInstanceOf(
+      InvalidJournalTransitionError,
+    );
+    expect(await journal.read("tx-recovery-immutable")).toEqual(recoveryRecord);
+  });
+
   it("restores overwritten moves, deletions, and newly created files in reverse order", async () => {
     const { root, journal } = await harness();
     await writeFile(join(root, "source.txt"), "source-before");
