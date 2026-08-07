@@ -1,0 +1,409 @@
+import {
+  canonicalJson,
+  hashFramedDomain,
+  type AdapterContext,
+  type BehavioralScenario,
+  type Concept,
+  type ContentHash,
+  type DerivationInput,
+  type EntityId,
+  type GraphReader,
+  type ObservabilityClass,
+  type ProjectionUnit,
+  type Relation,
+  type Requirement,
+  type StateQueryKind,
+  type StateQueryReader,
+  type StateQueryResultFingerprint,
+  type StateQuerySpec,
+} from "@projector/core";
+
+type SemanticIdentityKind = "concept" | "requirement" | "scenario";
+type QueryResult = Record<string, unknown>;
+
+export interface InMemoryDerivationInputs {
+  unitId: EntityId;
+  inputs: DerivationInput[];
+}
+
+export interface InMemoryReverseDerivation {
+  subjectId: EntityId | string;
+  dependentIds: EntityId[];
+}
+
+export interface InMemorySelectorMembership {
+  selectorHash: ContentHash;
+  memberIds: EntityId[];
+}
+
+export interface InMemoryGraphSnapshot {
+  concepts?: readonly Concept[];
+  requirements?: readonly Requirement[];
+  behavioralScenarios?: readonly BehavioralScenario[];
+  projectionUnits?: readonly ProjectionUnit[];
+  relations?: readonly Relation[];
+  derivationInputs?: readonly InMemoryDerivationInputs[];
+  reverseDerivations?: readonly InMemoryReverseDerivation[];
+  selectorMemberships?: readonly InMemorySelectorMembership[];
+}
+
+const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+const sortedUniqueStrings = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
+
+function indexed<T extends { id: string }>(kind: string, values: readonly T[]): Map<string, T> {
+  const result = new Map<string, T>();
+  for (const value of values) {
+    if (result.has(value.id)) throw new Error(`duplicate ${kind} stable ID ${value.id}`);
+    result.set(value.id, structuredClone(value));
+  }
+  return result;
+}
+
+function indexedLists<T>(
+  kind: string,
+  values: readonly T[],
+  keyOf: (value: T) => string,
+  listOf: (value: T) => readonly string[],
+): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  for (const value of values) {
+    const key = keyOf(value);
+    if (result.has(key)) throw new Error(`duplicate ${kind} key ${key}`);
+    result.set(key, sortedUniqueStrings(listOf(value)));
+  }
+  return result;
+}
+
+/** A deterministic, bounded graph primitive for adapters, tests, and small repositories. */
+export class InMemoryGraphReader implements GraphReader {
+  private concepts = new Map<string, Concept>();
+  private requirements = new Map<string, Requirement>();
+  private scenarios = new Map<string, BehavioralScenario>();
+  private units = new Map<string, ProjectionUnit>();
+  private relations = new Map<string, Relation>();
+  private inputs = new Map<string, DerivationInput[]>();
+  private reverse = new Map<string, string[]>();
+  private selectorMembers = new Map<string, string[]>();
+
+  constructor(snapshot: InMemoryGraphSnapshot = {}) {
+    this.replace(snapshot);
+  }
+
+  replace(snapshot: InMemoryGraphSnapshot): void {
+    const concepts = indexed("concept", snapshot.concepts ?? []);
+    const requirements = indexed("requirement", snapshot.requirements ?? []);
+    const scenarios = indexed("behavioral scenario", snapshot.behavioralScenarios ?? []);
+    const units = indexed("projection unit", snapshot.projectionUnits ?? []);
+    const relations = indexed("relation", snapshot.relations ?? []);
+    const entityIds = new Set<string>();
+    for (const collection of [concepts, requirements, scenarios, units]) {
+      for (const id of collection.keys()) {
+        if (entityIds.has(id)) throw new Error(`duplicate graph stable ID ${id}`);
+        entityIds.add(id);
+      }
+    }
+
+    const inputs = new Map<string, DerivationInput[]>();
+    for (const entry of snapshot.derivationInputs ?? []) {
+      if (inputs.has(entry.unitId)) throw new Error(`duplicate derivation input key ${entry.unitId}`);
+      inputs.set(
+        entry.unitId,
+        [...entry.inputs].map((input) => structuredClone(input)).sort((left, right) => {
+          const byId = compareStrings(left.id, right.id);
+          return byId === 0 ? compareStrings(left.role, right.role) : byId;
+        }),
+      );
+    }
+
+    this.concepts = concepts;
+    this.requirements = requirements;
+    this.scenarios = scenarios;
+    this.units = units;
+    this.relations = relations;
+    this.inputs = inputs;
+    this.reverse = indexedLists(
+      "reverse derivation",
+      snapshot.reverseDerivations ?? [],
+      (entry) => entry.subjectId,
+      (entry) => entry.dependentIds,
+    );
+    this.selectorMembers = indexedLists(
+      "selector membership",
+      snapshot.selectorMemberships ?? [],
+      (entry) => entry.selectorHash,
+      (entry) => entry.memberIds,
+    );
+  }
+
+  getConcept(id: EntityId): Concept | undefined {
+    return structuredClone(this.concepts.get(id));
+  }
+
+  getRequirement(id: EntityId): Requirement | undefined {
+    return structuredClone(this.requirements.get(id));
+  }
+
+  getBehavioralScenario(id: EntityId): BehavioralScenario | undefined {
+    return structuredClone(this.scenarios.get(id));
+  }
+
+  getProjectionUnit(id: EntityId): ProjectionUnit | undefined {
+    return structuredClone(this.units.get(id));
+  }
+
+  getRelations(id: EntityId, direction: "in" | "out" | "both"): Relation[] {
+    return [...this.relations.values()]
+      .filter((item) =>
+        direction === "in" ? item.toId === id : direction === "out" ? item.fromId === id : item.fromId === id || item.toId === id,
+      )
+      .sort((left, right) => compareStrings(left.id, right.id))
+      .map((item) => structuredClone(item));
+  }
+
+  reverseDerivationDependents(subjectId: EntityId | string): EntityId[] {
+    return [...(this.reverse.get(subjectId) ?? [])];
+  }
+
+  getDerivationInputs(unitId: EntityId): DerivationInput[] {
+    return structuredClone(this.inputs.get(unitId) ?? []);
+  }
+
+  querySelectorDependencies(selectorHash: ContentHash): EntityId[] {
+    return [...(this.selectorMembers.get(selectorHash) ?? [])];
+  }
+
+  searchSemanticIdentities(query: string, kinds: SemanticIdentityKind[] = ["concept", "requirement", "scenario"]): EntityId[] {
+    const needle = query.trim().toLocaleLowerCase("en-US");
+    if (needle.length === 0) return [];
+    const matches: string[] = [];
+    const includes = (values: readonly string[]): boolean => values.some((value) => value.toLocaleLowerCase("en-US").includes(needle));
+    if (kinds.includes("concept")) {
+      for (const item of this.concepts.values()) {
+        if (includes([item.key, item.name, item.statement, ...item.aliases])) matches.push(item.id);
+      }
+    }
+    if (kinds.includes("requirement")) {
+      for (const item of this.requirements.values()) {
+        if (includes([item.key, item.title, item.statement, ...item.aliases])) matches.push(item.id);
+      }
+    }
+    if (kinds.includes("scenario")) {
+      for (const item of this.scenarios.values()) {
+        if (includes([item.key, item.title, ...item.aliases, ...item.steps.map(({ statement }) => statement)])) matches.push(item.id);
+      }
+    }
+    return sortedUniqueStrings(matches);
+  }
+}
+
+export interface QueryProgramResult {
+  results: readonly QueryResult[];
+  observability: ObservabilityClass;
+  assumptions: readonly string[];
+  unavailableLanes: readonly string[];
+  dependencyKeys: readonly string[];
+}
+
+export interface RegisteredQueryProgram {
+  id: string;
+  version: string;
+  kind: StateQueryKind;
+  evaluate(args: { input: Readonly<Record<string, unknown>>; graph: GraphReader; context: AdapterContext }): QueryProgramResult | Promise<QueryProgramResult>;
+}
+
+export class UnknownQueryProgramError extends Error {
+  constructor(programId: string) {
+    super(`unknown registered query program ${programId}`);
+    this.name = "UnknownQueryProgramError";
+  }
+}
+
+export class QueryProgramVersionError extends Error {
+  constructor(programId: string, expected: string, received: string) {
+    super(`query program ${programId} version changed from ${received} to ${expected}`);
+    this.name = "QueryProgramVersionError";
+  }
+}
+
+export class InvalidQuerySpecError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidQuerySpecError";
+  }
+}
+
+const querySemanticHash = (query: Pick<StateQuerySpec, "kind" | "programId" | "programVersion" | "input">): ContentHash =>
+  hashFramedDomain("state-query", {
+    kind: query.kind,
+    programId: query.programId,
+    programVersion: query.programVersion,
+    input: query.input,
+  });
+
+function requireString(input: Readonly<Record<string, unknown>>, key: string): string {
+  const value = input[key];
+  if (typeof value !== "string" || value.length === 0) throw new InvalidQuerySpecError(`query input ${key} must be a non-empty string`);
+  return value;
+}
+
+function builtInPrograms(): RegisteredQueryProgram[] {
+  return [
+    {
+      id: "graph.semantic-identity-search",
+      version: "1",
+      kind: "semantic-identity-search",
+      evaluate: ({ input, graph }) => {
+        const query = requireString(input, "query");
+        const kindsValue = input.kinds;
+        const kinds = kindsValue === undefined ? undefined : kindsValue;
+        if (kinds !== undefined && (!Array.isArray(kinds) || kinds.some((kind) => !["concept", "requirement", "scenario"].includes(String(kind))))) {
+          throw new InvalidQuerySpecError("semantic identity kinds must contain only concept, requirement, or scenario");
+        }
+        const normalizedKinds = kinds === undefined ? undefined : sortedUniqueStrings(kinds as string[]) as SemanticIdentityKind[];
+        return {
+          results: graph.searchSemanticIdentities(query, normalizedKinds).map((id) => ({ id })),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: ["semantic-identities"],
+        };
+      },
+    },
+    {
+      id: "graph.relation-neighborhood",
+      version: "1",
+      kind: "relation-neighborhood",
+      evaluate: ({ input, graph }) => {
+        const entityId = requireString(input, "entityId");
+        const direction = input.direction;
+        if (direction !== "in" && direction !== "out" && direction !== "both") {
+          throw new InvalidQuerySpecError("relation direction must be in, out, or both");
+        }
+        return {
+          results: graph.getRelations(entityId, direction).map(({ id, fromId, toId, type, active, semanticHash }) => ({
+            id,
+            fromId,
+            toId,
+            type,
+            active,
+            semanticHash,
+          })),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: [`relations:${direction}:${entityId}`],
+        };
+      },
+    },
+    {
+      id: "graph.reverse-derivation",
+      version: "1",
+      kind: "reverse-derivation",
+      evaluate: ({ input, graph }) => {
+        const subjectId = requireString(input, "subjectId");
+        return {
+          results: graph.reverseDerivationDependents(subjectId).map((id) => ({ id })),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: [`reverse-derivations:${subjectId}`],
+        };
+      },
+    },
+    {
+      id: "graph.selector-membership",
+      version: "1",
+      kind: "selector-membership",
+      evaluate: ({ input, graph }) => {
+        const selectorHash = requireString(input, "selectorHash") as ContentHash;
+        return {
+          results: graph.querySelectorDependencies(selectorHash).map((id) => ({ id })),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: [`selector-membership:${selectorHash}`],
+        };
+      },
+    },
+  ];
+}
+
+export interface CreateQuerySpecInput {
+  id: string;
+  programId: string;
+  input: Record<string, unknown>;
+}
+
+/** Registry is intentionally data-only at the query boundary: inputs are normalized serializable records, never executable payloads. */
+export class QueryDependencyRegistry implements StateQueryReader {
+  private readonly programs = new Map<string, RegisteredQueryProgram>();
+
+  constructor(private readonly graph: GraphReader, includeBuiltIns = true) {
+    if (includeBuiltIns) for (const program of builtInPrograms()) this.register(program);
+  }
+
+  register(program: RegisteredQueryProgram): void {
+    if (program.id.length === 0 || program.version.length === 0) throw new Error("query program ID and version must be non-empty");
+    const existing = this.programs.get(program.id);
+    if (existing?.version === program.version) {
+      throw new Error(`query program ${program.id} is already registered at version ${program.version}; change the version before replacing it`);
+    }
+    this.programs.set(program.id, program);
+  }
+
+  createSpec(input: CreateQuerySpecInput): StateQuerySpec {
+    const program = this.programs.get(input.programId);
+    if (program === undefined) throw new UnknownQueryProgramError(input.programId);
+    canonicalJson(input.input);
+    const basis = {
+      kind: program.kind,
+      programId: program.id,
+      programVersion: program.version,
+      input: structuredClone(input.input),
+    };
+    return { id: input.id, ...basis, semanticHash: querySemanticHash(basis) };
+  }
+
+  assertCurrent(query: StateQuerySpec): void {
+    const program = this.programs.get(query.programId);
+    if (program === undefined) throw new UnknownQueryProgramError(query.programId);
+    if (program.version !== query.programVersion) throw new QueryProgramVersionError(program.id, program.version, query.programVersion);
+    if (program.kind !== query.kind) throw new InvalidQuerySpecError(`query kind ${query.kind} does not match program kind ${program.kind}`);
+    if (querySemanticHash(query) !== query.semanticHash) {
+      throw new InvalidQuerySpecError("query semantic hash does not match program and normalized input");
+    }
+  }
+
+  async evaluate(query: StateQuerySpec, context: AdapterContext): Promise<StateQueryResultFingerprint> {
+    this.assertCurrent(query);
+    const program = this.programs.get(query.programId)!;
+    const expectedHash = querySemanticHash(query);
+    const raw = await program.evaluate({ input: structuredClone(query.input), graph: this.graph, context });
+    const normalizedById = new Map<string, { json: string; result: QueryResult }>();
+    for (const result of raw.results) {
+      if (typeof result !== "object" || result === null || Array.isArray(result) || typeof result.id !== "string" || result.id.length === 0) {
+        throw new Error(`query program ${program.id} returned a result without a stable id`);
+      }
+      const json = canonicalJson(result);
+      const existing = normalizedById.get(result.id);
+      if (existing !== undefined && existing.json !== json) {
+        throw new Error(`query program ${program.id} returned conflicting projections for stable id ${result.id}`);
+      }
+      normalizedById.set(result.id, { json, result: structuredClone(result) });
+    }
+    const normalizedResults = [...normalizedById.entries()]
+      .sort(([left], [right]) => compareStrings(left, right))
+      .map(([, { result }]) => result);
+    const dependencyKeys = sortedUniqueStrings(raw.dependencyKeys);
+    if (dependencyKeys.length === 0) throw new Error(`query program ${program.id} returned no dependency keys`);
+    return {
+      queryHash: expectedHash,
+      resultHash: hashFramedDomain("state-query-result", normalizedResults),
+      resultCount: normalizedResults.length,
+      observability: raw.observability,
+      assumptions: sortedUniqueStrings(raw.assumptions),
+      unavailableLanes: sortedUniqueStrings(raw.unavailableLanes),
+      dependencyKeys,
+    };
+  }
+}
