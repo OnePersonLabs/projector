@@ -216,16 +216,24 @@ class MemoryTransactionPort implements ChangeTransactionPort {
 }
 
 const transformPort = (options: {
+  applicable?: boolean;
   changed?: boolean;
   verify?: ValidationResult[];
   throwAfterChange?: boolean;
   touchedUnitId?: string;
-} = {}): DeterministicTransformPort<{}> & { applies: number; contexts: TransformContext[] } => ({
+} = {}): DeterministicTransformPort<{}> & { applies: number; verifies: number; contexts: TransformContext[] } => ({
   applies: 0,
+  verifies: 0,
   contexts: [],
   async preview(_input: {}, transformContext: TransformContext): Promise<TransformPreview> {
     this.contexts.push(transformContext);
-    return { applicable: true, operations: [{ kind: "move" }], touchedUnitIds: [options.touchedUnitId ?? "unit:move"], expectedDiff: "move", warnings: [] };
+    return {
+      applicable: options.applicable ?? true,
+      operations: options.applicable === false ? [] : [{ kind: "move" }],
+      touchedUnitIds: options.applicable === false ? [] : [options.touchedUnitId ?? "unit:move"],
+      expectedDiff: options.applicable === false ? "" : "move",
+      warnings: [],
+    };
   },
   async apply(_input: {}, transformContext: TransformContext): Promise<TransformResult> {
     this.applies += 1;
@@ -264,6 +272,7 @@ const transformPort = (options: {
     };
   },
   async verify(_result: TransformResult, _context: TransformContext): Promise<ValidationResult[]> {
+    this.verifies += 1;
     return options.verify ?? [validation("passed")];
   },
 });
@@ -478,6 +487,56 @@ describe("state-bound deterministic change execution", () => {
     expect(result.outcome).toBe("failure");
     expect(result.reasons).toContain("capsule write selector cannot be enforced deterministically");
     expect(transform.applies).toBe(0);
+  });
+
+  it("preserves conjunctive path selectors instead of overapproving their union", async () => {
+    const conjunctiveCapsule = capsule({
+      allowedWrites: [{
+        selector: {
+          op: "all",
+          items: [
+            { op: "atom", field: "operation", matcher: "equals", value: "move-reference-update" },
+            { op: "atom", field: "path", matcher: "glob", value: "scripts/**" },
+            { op: "atom", field: "path", matcher: "glob", value: "scripts/public/**" },
+          ],
+        },
+        operations: ["move-reference-update"],
+        reason: "only public scripts are approved",
+      }],
+    });
+    const transform = transformPort();
+    const { result } = await execute({
+      transform,
+      executionCapsule: conjunctiveCapsule,
+      approvalCapsule: conjunctiveCapsule,
+    });
+
+    expect(result.outcome).toBe("success");
+    expect((transform.contexts[0] as TransformContext & { allowedPathScopes?: string[][] }).allowedPathScopes)
+      .toEqual([["scripts/**", "scripts/public/**"]]);
+  });
+
+  it.each([
+    { name: "passing", assessment: completeAssessment(), outcome: "success" as const, reason: undefined },
+    {
+      name: "failing",
+      assessment: completeAssessment({ cleanWorkingTree: false }),
+      outcome: "failure" as const,
+      reason: "completion requires a clean working tree",
+    },
+  ])("runs validation and full completion assessment for a $name no-op", async ({ assessment, outcome, reason }) => {
+    const noOpTransform = transformPort({ applicable: false, changed: false });
+    const { result, artifacts } = await execute({
+      transform: noOpTransform,
+      completionAssessment: assessment,
+    });
+
+    expect(result.outcome).toBe(outcome);
+    expect(noOpTransform.applies).toBe(1);
+    expect(noOpTransform.verifies).toBe(1);
+    expect(result.validations).toHaveLength(1);
+    expect(JSON.parse(artifacts.writes[0]?.content ?? "{}")).toHaveProperty("completionAssessment");
+    if (reason !== undefined) expect(result.reasons).toContain(reason);
   });
 
   it("derives unit and path scope from the approved plan and capsule instead of caller input", async () => {

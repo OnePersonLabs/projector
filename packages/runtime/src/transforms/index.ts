@@ -279,12 +279,17 @@ export class MoveReferenceTransform implements Transform<MoveReferenceUpdateInpu
     if (approvedBoundary === undefined || approvedBoundary.length === 0) {
       throw new TransformScopeError("transform context has no approved path boundary");
     }
-    const allowedPathBoundary = (context as TransformContext & { allowedPathBoundary?: readonly string[] }).allowedPathBoundary ?? [];
+    const allowedPathScopes = (context as TransformContext & {
+      allowedPathScopes?: ReadonlyArray<readonly string[]>;
+    }).allowedPathScopes ?? [[]];
     const forbiddenBoundary = (context as TransformContext & { forbiddenBoundary?: readonly string[] }).forbiddenBoundary ?? [];
+    const forbiddenPathScopes = (context as TransformContext & {
+      forbiddenPathScopes?: ReadonlyArray<readonly string[]>;
+    }).forbiddenPathScopes ?? forbiddenBoundary.map((pattern) => [pattern]);
     const pathIsApproved = (path: string): boolean =>
       pathMatchesBoundary(path, approvedBoundary)
-      && (allowedPathBoundary.length === 0 || pathMatchesBoundary(path, allowedPathBoundary))
-      && !pathMatchesBoundary(path, forbiddenBoundary);
+      && allowedPathScopes.some((scope) => scope.every((pattern) => pathMatchesBoundary(path, [pattern])))
+      && !forbiddenPathScopes.some((scope) => scope.every((pattern) => pathMatchesBoundary(path, [pattern])));
     const operations: PreparedOperation[] = [];
     const destinations = new Set<string>();
     const movePaths = new Set<string>();
@@ -479,7 +484,6 @@ export class TransformRegistry {
       implementation: registration.implementation as Transform<unknown>,
       metadata: normalizeMetadata(registration.metadata),
     });
-    Object.freeze(registration.implementation);
     this.transforms.set(key, Object.freeze({ registeredId, registeredVersion, registration: normalized }));
   }
 

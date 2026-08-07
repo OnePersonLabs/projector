@@ -4,10 +4,14 @@ import { hashFramedDomain, type CompletionContract, type StateBinding, type Vali
 
 import {
   PlanningClaimConflictError,
+  PlanningDependencyCycleError,
+  PlanningFixedPointError,
+  convergePlannedTransforms,
   createExecutionCapsule,
   createExecutionPlan,
   normalizeValidationSet,
   orderPlannedTransforms,
+  type PlanningTransformRegistry,
 } from "./index.js";
 
 const state = {
@@ -125,15 +129,76 @@ describe("minimal execution planning", () => {
     ])).toThrow(/conflicting validator/u);
   });
 
-  it("orders source transforms before generated transforms and rejects overlapping exclusive claims", () => {
+  it("derives normalized exclusive claims from registry metadata and orders sources first", () => {
+    const registry: PlanningTransformRegistry = {
+      getMetadata(id, version) {
+        if (version !== "1") return undefined;
+        return {
+          predecessors: [],
+          unitClaim: id === "shared" ? "shared" : "exclusive",
+          convergence: { kind: "idempotent" },
+        };
+      },
+    };
     expect(orderPlannedTransforms([
-      { id: "generated", provenance: "generated", predecessors: [], unitIds: ["unit:generated"], exclusiveUnitClaim: true },
-      { id: "source", provenance: "source", predecessors: [], unitIds: ["unit:source"], exclusiveUnitClaim: true },
-    ]).map((transform) => transform.id)).toEqual(["source", "generated"]);
+      { id: "generated", version: "1", provenance: "generated", unitIds: ["unit:generated"] },
+      { id: "source", version: "1", provenance: "source", unitIds: ["unit:source", "unit:source"] },
+    ], registry)).toEqual([
+      { id: "source", version: "1", provenance: "source", unitIds: ["unit:source"] },
+      { id: "generated", version: "1", provenance: "generated", unitIds: ["unit:generated"] },
+    ]);
 
+    const callerAttemptsToDisableClaims = [
+      {
+        id: "left", version: "1", provenance: "source", unitIds: ["unit:same", "unit:same"],
+        exclusiveUnitClaim: false,
+      },
+      { id: "right", version: "1", provenance: "source", unitIds: ["unit:same"], exclusiveUnitClaim: false },
+    ] as unknown as Parameters<typeof orderPlannedTransforms>[0];
+    expect(() => orderPlannedTransforms(callerAttemptsToDisableClaims, registry)).toThrow(PlanningClaimConflictError);
+  });
+
+  it("accepts only registry-declared bounded SCCs and converges them deterministically", async () => {
+    const registry: PlanningTransformRegistry = {
+      getMetadata(id, version) {
+        if (version !== "1" || (id !== "left" && id !== "right")) return undefined;
+        return {
+          predecessors: [id === "left" ? "right" : "left"],
+          unitClaim: "exclusive",
+          convergence: { kind: "bounded-fixed-point", maximumIterations: 3 },
+        };
+      },
+    };
+    const transforms = [
+      { id: "right", version: "1", provenance: "generated" as const, unitIds: ["unit:right"] },
+      { id: "left", version: "1", provenance: "source" as const, unitIds: ["unit:left"] },
+    ];
+
+    expect(orderPlannedTransforms(transforms, registry).map((transform) => transform.id)).toEqual(["left", "right"]);
+    const visits: string[] = [];
+    await expect(convergePlannedTransforms(transforms, registry, async (transform, iteration) => {
+      visits.push(`${iteration}:${transform.id}`);
+      return { changed: iteration === 1 };
+    })).resolves.toEqual({ converged: true, iterations: 2 });
+    expect(visits).toEqual(["1:left", "1:right", "2:left", "2:right"]);
+
+    await expect(convergePlannedTransforms(transforms, registry, async () => ({ changed: true })))
+      .rejects.toBeInstanceOf(PlanningFixedPointError);
+  });
+
+  it("rejects undeclared transform cycles", () => {
+    const registry: PlanningTransformRegistry = {
+      getMetadata(id) {
+        return {
+          predecessors: [id === "left" ? "right" : "left"],
+          unitClaim: "shared",
+          convergence: { kind: "idempotent" },
+        };
+      },
+    };
     expect(() => orderPlannedTransforms([
-      { id: "left", provenance: "source", predecessors: [], unitIds: ["unit:same"], exclusiveUnitClaim: true },
-      { id: "right", provenance: "source", predecessors: [], unitIds: ["unit:same"], exclusiveUnitClaim: true },
-    ])).toThrow(PlanningClaimConflictError);
+      { id: "left", version: "1", provenance: "source", unitIds: [] },
+      { id: "right", version: "1", provenance: "generated", unitIds: [] },
+    ], registry)).toThrow(PlanningDependencyCycleError);
   });
 });
