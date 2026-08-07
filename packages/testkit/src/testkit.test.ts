@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -25,10 +26,12 @@ import {
   FakeSurfaceAdapter,
   applyFixtureMutations,
   createCrashInjector,
+  createFixturePaths,
   createTempGitRepository,
   defineFixtureCase,
   mandatoryMisplacedRepositoryScriptContract,
   mandatoryMisplacedRepositoryScriptFixture,
+  resolveInside,
   snapshotFilesystem,
   transactionCrashPhases,
 } from "./index.js";
@@ -45,12 +48,79 @@ describe("deterministic providers", () => {
     expect(clock.advance({ seconds: 2 })).toBe("2026-08-07T12:00:02.000Z");
   });
 
+  it("rejects timezone-less initial clock values", () => {
+    expect(() => new DeterministicClock("2026-08-07T12:00:00.000")).toThrow(/timezone/i);
+    expect(() => new DeterministicClock("2026-08-07")).toThrow(/timezone/i);
+  });
+
   it("allocates stable instance-local IDs", () => {
     const first = new DeterministicIdProvider("fixture", 7);
     const second = new DeterministicIdProvider("fixture", 7);
 
     expect([first.next("unit"), first.next("unit")]).toEqual(["fixture_unit_0007", "fixture_unit_0008"]);
     expect(second.next("unit")).toBe("fixture_unit_0007");
+  });
+
+  it("fails before its numeric sequence can overflow and repeat", () => {
+    const ids = new DeterministicIdProvider("fixture", Number.MAX_SAFE_INTEGER);
+
+    expect(ids.next("unit")).toBe(`fixture_unit_${Number.MAX_SAFE_INTEGER}`);
+    expect(() => ids.next("unit")).toThrow(/exhausted/i);
+  });
+});
+
+describe("root-constrained fixture paths", () => {
+  it("treats Windows separator traversal as outside the root", () => {
+    expect(() => resolveInside("/fixture", "..\\outside.txt")).toThrow(/outside/i);
+  });
+
+  it("refuses a symlink ancestor for writes", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "projector-path-root-"));
+    const outside = await mkdtemp(path.join(tmpdir(), "projector-path-outside-"));
+    try {
+      await symlink(outside, path.join(root, "linked"), "dir");
+      await expect(createFixturePaths(root).writeText("linked/escaped.txt", "escaped"))
+        .rejects.toThrow(/symbolic link/i);
+      await expect(access(path.join(outside, "escaped.txt"))).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an existing symlink target for writes", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "projector-path-root-"));
+    const outside = await mkdtemp(path.join(tmpdir(), "projector-path-outside-"));
+    try {
+      const outsideFile = path.join(outside, "protected.txt");
+      await writeFile(outsideFile, "protected", "utf8");
+      await symlink(outsideFile, path.join(root, "target.txt"), "file");
+      await expect(createFixturePaths(root).writeText("target.txt", "overwritten"))
+        .rejects.toThrow(/symbolic link/i);
+      expect(await readFile(outsideFile, "utf8")).toBe("protected");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses symlink sources and destinations for moves", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "projector-path-root-"));
+    const outside = await mkdtemp(path.join(tmpdir(), "projector-path-outside-"));
+    try {
+      const paths = createFixturePaths(root);
+      await writeFile(path.join(outside, "source.txt"), "outside", "utf8");
+      await symlink(path.join(outside, "source.txt"), path.join(root, "linked-source.txt"), "file");
+      await expect(paths.move("linked-source.txt", "inside.txt")).rejects.toThrow(/symbolic link/i);
+
+      await writeFile(path.join(root, "local.txt"), "local", "utf8");
+      await symlink(outside, path.join(root, "linked-destination"), "dir");
+      await expect(paths.move("local.txt", "linked-destination/moved.txt")).rejects.toThrow(/symbolic link/i);
+      await expect(access(path.join(outside, "moved.txt"))).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });
 
@@ -128,11 +198,82 @@ describe("mandatory misplaced repository script fixture", () => {
           { from: ".codex/hooks/validate-repo.mjs", to: "scripts/validate-repo.mjs" },
           { from: ".codex/hooks/validate-repo.test.mjs", to: "scripts/validate-repo.test.mjs" },
         ],
-        packageScript: "node scripts/validate-repo.mjs",
+        packageScripts: {
+          test: "node --test scripts/*.test.mjs",
+          "validate:repo": "node scripts/validate-repo.mjs",
+        },
         secondReconciliationMaterialDelta: false,
         unresolvedClusterWork: 0,
       },
     });
+  });
+
+  it("produces identical initial revisions despite ambient Git identity changes", async () => {
+    const keys = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"] as const;
+    const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    try {
+      Object.assign(process.env, {
+        GIT_AUTHOR_NAME: "Ambient Author One",
+        GIT_AUTHOR_EMAIL: "one@example.invalid",
+        GIT_COMMITTER_NAME: "Ambient Committer One",
+        GIT_COMMITTER_EMAIL: "committer-one@example.invalid",
+      });
+      const first = await createTempGitRepository();
+      repositories.push(first);
+
+      Object.assign(process.env, {
+        GIT_AUTHOR_NAME: "Ambient Author Two",
+        GIT_AUTHOR_EMAIL: "two@example.invalid",
+        GIT_COMMITTER_NAME: "Ambient Committer Two",
+        GIT_COMMITTER_EMAIL: "committer-two@example.invalid",
+      });
+      const second = await createTempGitRepository();
+      repositories.push(second);
+
+      expect(first.initialRevision).toBe(second.initialRevision);
+      expect(await first.git(["show", "-s", "--format=%an <%ae>|%cn <%ce>"])).toBe(
+        "Projector Testkit <testkit@projector.invalid>|Projector Testkit <testkit@projector.invalid>",
+      );
+    } finally {
+      for (const key of keys) {
+        const value = previous[key];
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it("runs all validators after applying the expected moves and package-script updates", async () => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const paths = createFixturePaths(repository.root);
+    await paths.move(".codex/hooks/validate-repo.mjs", "scripts/validate-repo.mjs");
+    await paths.move(".codex/hooks/validate-repo.test.mjs", "scripts/validate-repo.test.mjs");
+    const manifestPath = path.join(repository.root, "package.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.scripts.test = "node --test scripts/*.test.mjs";
+    manifest.scripts["validate:repo"] = "node scripts/validate-repo.mjs";
+    await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, "utf8");
+
+    const repairedManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    expect(repairedManifest.scripts).toMatchObject({
+      test: "node --test scripts/*.test.mjs",
+      "validate:repo": "node scripts/validate-repo.mjs",
+    });
+    const testResult = await executeFile(process.execPath, [
+      "--test",
+      "scripts/build-index.test.mjs",
+      "scripts/check-links.test.mjs",
+      "scripts/validate-repo.test.mjs",
+    ], { cwd: repository.root });
+    expect(testResult.stderr).toBe("");
+
+    await executeFile(process.execPath, ["scripts/validate-repo.mjs"], {
+      cwd: repository.root,
+      env: { ...process.env, PROJECTOR_FIXTURE_EXECUTION_MARKER: "repository-script-executed.marker" },
+    });
+    expect(await readFile(path.join(repository.root, "repository-script-executed.marker"), "utf8"))
+      .toBe("validate:repo executed\n");
   });
 
   it("clones deterministically without executing repository scripts and isolates mutations", async () => {
