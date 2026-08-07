@@ -246,4 +246,39 @@ describe("CanonicalFileRepository", () => {
     await symlink(target, link, "dir");
     await expect(repository.snapshot()).rejects.toThrow(/symlink.*canonical/i);
   });
+
+  test("rejects direct reads through a symlinked canonical file", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const external = join(root, "external.json");
+    await writeFile(external, `${JSON.stringify(concept("concept-a", "external"))}\n`);
+    const path = repository.pathFor("concept", "concept-a");
+    await mkdir(join(path, ".."), { recursive: true });
+    await symlink(external, path);
+    await expect(repository.read("concept", "concept-a")).rejects.toThrow(/symlink/i);
+  });
+
+  test("rejects writes through a symlinked canonical root or ancestor", async () => {
+    for (const ancestor of [".projector", join(".projector", "model", "concepts")]) {
+      const root = await temporaryRepository();
+      const repository = new CanonicalFileRepository(root);
+      const external = join(root, "external-directory");
+      await mkdir(external, { recursive: true });
+      const link = join(root, ancestor);
+      await mkdir(join(link, ".."), { recursive: true });
+      await symlink(external, link, "dir");
+      await expect(repository.write(concept("concept-a", "unsafe"))).rejects.toThrow(/symlink/i);
+    }
+  });
+
+  test("deletes matching hashed and legacy files left by an interrupted migration", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const document = concept("residue", "same owner");
+    await repository.write(document);
+    const legacy = join(root, ".projector", "model", "concepts", "residue.concept.json");
+    await writeFile(legacy, `${JSON.stringify(document)}\n`);
+    expect(await repository.delete("concept", "residue")).toBe(true);
+    expect((await repository.snapshot()).documents).toEqual([]);
+  });
 });
