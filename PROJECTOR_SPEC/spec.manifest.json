@@ -1,0 +1,344 @@
+{
+  "schemaVersion": 1,
+  "entrypoint": "SPEC.md",
+  "index": "INDEX.md",
+  "bundle": "PROJECTOR_SPEC.md",
+  "maxModuleBytes": 20000,
+  "modules": [
+    {
+      "path": "01-product/vision-and-north-star.md",
+      "tags": [
+        "product",
+        "north-star"
+      ]
+    },
+    {
+      "path": "01-product/principles-and-non-goals.md",
+      "tags": [
+        "principles",
+        "non-goals"
+      ]
+    },
+    {
+      "path": "02-semantic-kernel/terminology-and-source-classes.md",
+      "tags": [
+        "terminology",
+        "source-classes"
+      ]
+    },
+    {
+      "path": "02-semantic-kernel/conceptual-architecture.md",
+      "tags": [
+        "architecture",
+        "semantic-planes",
+        "change-cognition"
+      ]
+    },
+    {
+      "path": "02-semantic-kernel/reference-implementation.md",
+      "tags": [
+        "implementation-architecture",
+        "packages",
+        "technology"
+      ]
+    },
+    {
+      "path": "02-semantic-kernel/canonical-state.md",
+      "tags": [
+        "canonical-state",
+        "persistence",
+        "sharding"
+      ]
+    },
+    {
+      "path": "02-semantic-kernel/identity-and-relations.md",
+      "tags": [
+        "identity",
+        "concepts",
+        "requirements",
+        "scenarios",
+        "relations"
+      ]
+    },
+    {
+      "path": "02-semantic-kernel/surfaces-and-projection-units.md",
+      "tags": [
+        "surfaces",
+        "projection-units",
+        "traceability"
+      ]
+    },
+    {
+      "path": "02-semantic-kernel/state-binding-and-ports.md",
+      "tags": [
+        "state-binding",
+        "ports",
+        "graph"
+      ]
+    },
+    {
+      "path": "02-semantic-kernel/architecture-decision-contracts.md",
+      "tags": [
+        "architecture",
+        "contracts"
+      ]
+    },
+    {
+      "path": "02-semantic-kernel/representation-contracts.md",
+      "tags": [
+        "representations",
+        "gherkin",
+        "fidelity"
+      ]
+    },
+    {
+      "path": "03-knowledge/relevance-and-change-cognition.md",
+      "tags": [
+        "relevance",
+        "identity-resolution",
+        "sdd",
+        "context",
+        "events",
+        "contracts"
+      ]
+    },
+    {
+      "path": "03-knowledge/evidence-and-authority.md",
+      "tags": [
+        "evidence",
+        "authority"
+      ]
+    },
+    {
+      "path": "03-knowledge/architecture-decisions.md",
+      "tags": [
+        "architecture",
+        "entrypoint"
+      ]
+    },
+    {
+      "path": "03-knowledge/architecture-concerns-and-validity.md",
+      "tags": [
+        "architecture",
+        "concerns",
+        "validity"
+      ]
+    },
+    {
+      "path": "03-knowledge/architecture-evidence-and-consequences.md",
+      "tags": [
+        "architecture",
+        "research",
+        "preferences",
+        "consequences"
+      ]
+    },
+    {
+      "path": "03-knowledge/risk-and-execution-policy.md",
+      "tags": [
+        "risk",
+        "policy"
+      ]
+    },
+    {
+      "path": "04-governance/lenses.md",
+      "tags": [
+        "patterns",
+        "lenses"
+      ]
+    },
+    {
+      "path": "04-governance/scope-and-rules.md",
+      "tags": [
+        "selectors",
+        "rules",
+        "scope"
+      ]
+    },
+    {
+      "path": "05-projections/execution-capsules.md",
+      "tags": [
+        "context",
+        "capsules"
+      ]
+    },
+    {
+      "path": "05-projections/derivations-and-invalidation.md",
+      "tags": [
+        "derivations",
+        "invalidation",
+        "impact",
+        "repair"
+      ]
+    },
+    {
+      "path": "05-projections/runtime-and-representations.md",
+      "tags": [
+        "runtime",
+        "transforms",
+        "representations"
+      ]
+    },
+    {
+      "path": "06-reconciliation/reconciliation-and-divergence.md",
+      "tags": [
+        "reconciliation",
+        "divergence",
+        "planning-surprise",
+        "migrations"
+      ]
+    },
+    {
+      "path": "06-reconciliation/coverage-and-completion.md",
+      "tags": [
+        "coverage",
+        "completion"
+      ]
+    },
+    {
+      "path": "07-change/plans.md",
+      "tags": [
+        "plans",
+        "rebase"
+      ]
+    },
+    {
+      "path": "07-change/semantic-change-compiler.md",
+      "tags": [
+        "change",
+        "sdd",
+        "requirements",
+        "relevance",
+        "impact"
+      ]
+    },
+    {
+      "path": "07-change/transactions-and-certificates.md",
+      "tags": [
+        "transactions",
+        "receipts",
+        "certificates"
+      ]
+    },
+    {
+      "path": "08-agents/orchestration-and-models.md",
+      "tags": [
+        "agents",
+        "models",
+        "validation"
+      ]
+    },
+    {
+      "path": "08-agents/hosts-and-mcp.md",
+      "tags": [
+        "hosts",
+        "mcp",
+        "codex",
+        "claude"
+      ]
+    },
+    {
+      "path": "09-evolution/modernization-and-surfaces.md",
+      "tags": [
+        "modernization",
+        "surfaces"
+      ]
+    },
+    {
+      "path": "09-evolution/persistence-and-observation.md",
+      "tags": [
+        "sqlite",
+        "observation",
+        "analyzers"
+      ]
+    },
+    {
+      "path": "09-evolution/historical-evaluation-and-research.md",
+      "tags": [
+        "historical",
+        "research"
+      ]
+    },
+    {
+      "path": "10-operation/cli-modes-and-security.md",
+      "tags": [
+        "cli",
+        "modes",
+        "security"
+      ]
+    },
+    {
+      "path": "10-operation/observability-and-reporting.md",
+      "tags": [
+        "observability",
+        "economics",
+        "reporting"
+      ]
+    },
+    {
+      "path": "11-validation/testing-and-adversarial-evaluation.md",
+      "tags": [
+        "testing",
+        "adversarial"
+      ]
+    },
+    {
+      "path": "11-validation/benchmarks-and-redesign-criteria.md",
+      "tags": [
+        "benchmarks",
+        "kill-criteria"
+      ]
+    },
+    {
+      "path": "12-delivery/implementation-plan.md",
+      "tags": [
+        "implementation",
+        "slices"
+      ]
+    },
+    {
+      "path": "12-delivery/first-vertical-slice.md",
+      "tags": [
+        "acceptance",
+        "slice-1"
+      ]
+    },
+    {
+      "path": "12-delivery/acceptance-core.md",
+      "tags": [
+        "acceptance",
+        "core"
+      ]
+    },
+    {
+      "path": "12-delivery/acceptance-relevance-and-identity.md",
+      "tags": [
+        "acceptance",
+        "relevance",
+        "identity"
+      ]
+    },
+    {
+      "path": "12-delivery/acceptance-representation.md",
+      "tags": [
+        "acceptance",
+        "representation"
+      ]
+    },
+    {
+      "path": "12-delivery/acceptance-architecture.md",
+      "tags": [
+        "acceptance",
+        "architecture"
+      ]
+    },
+    {
+      "path": "12-delivery/release-and-directive.md",
+      "tags": [
+        "release",
+        "dogfood",
+        "directive"
+      ]
+    }
+  ]
+}
