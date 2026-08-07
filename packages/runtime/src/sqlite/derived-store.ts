@@ -270,7 +270,7 @@ export class SqliteDerivedStore {
   private validateStoredState(): void {
     const state = this.database.prepare("SELECT revision, canonical_root_digest AS rootDigest FROM graph_state WHERE singleton=1")
       .get() as { revision: number; rootDigest: ContentHash | null } | undefined;
-    if (state === undefined) return;
+    if (state === undefined) throw new Error("corrupt state.db: missing graph_state singleton");
     const rows = this.rawCanonicalRows();
     if (state.rootDigest === null) {
       if (state.revision !== 0 || rows.length !== 0) throw new Error("corrupt state.db: NULL canonical root after nonempty revision");

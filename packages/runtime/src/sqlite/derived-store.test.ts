@@ -455,4 +455,19 @@ describe("SQLite derived canonical index", () => {
     raw.close();
     expect(() => new SqliteDerivedStore(path)).toThrow(/NULL canonical root/i);
   });
+
+  test("open and public reads reject a missing graph_state singleton", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    const raw = new DatabaseSync(path);
+    raw.exec("DELETE FROM graph_state");
+    raw.close();
+    expect(() => store.canonicalRows()).toThrow(/missing graph_state/i);
+    store.close();
+    expect(() => new SqliteDerivedStore(path)).toThrow(/missing graph_state/i);
+  });
 });
