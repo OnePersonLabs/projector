@@ -10,6 +10,9 @@ export class DeterministicClock {
   #currentMilliseconds: number;
 
   public constructor(initialTime = "2000-01-01T00:00:00.000Z") {
+    if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(initialTime)) {
+      throw new TypeError(`Deterministic clock time must include an explicit timezone: ${initialTime}`);
+    }
     const milliseconds = Date.parse(initialTime);
     if (!Number.isFinite(milliseconds)) {
       throw new TypeError(`Invalid deterministic clock time: ${initialTime}`);
@@ -47,7 +50,7 @@ export class DeterministicClock {
 
 export class DeterministicIdProvider {
   readonly #prefix: string;
-  #nextValue: number;
+  #nextValue: number | undefined;
 
   public constructor(prefix = "test", start = 1) {
     assertIdPart(prefix, "prefix");
@@ -60,8 +63,12 @@ export class DeterministicIdProvider {
 
   public next(label = "id"): string {
     assertIdPart(label, "label");
-    const id = `${this.#prefix}_${label}_${String(this.#nextValue).padStart(4, "0")}`;
-    this.#nextValue += 1;
+    const nextValue = this.#nextValue;
+    if (nextValue === undefined) {
+      throw new RangeError("Deterministic ID sequence is exhausted");
+    }
+    const id = `${this.#prefix}_${label}_${String(nextValue).padStart(4, "0")}`;
+    this.#nextValue = nextValue === Number.MAX_SAFE_INTEGER ? undefined : nextValue + 1;
     return id;
   }
 }

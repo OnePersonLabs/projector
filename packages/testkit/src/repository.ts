@@ -41,7 +41,11 @@ export async function createTempGitRepository(
         encoding: "utf8",
         env: {
           ...process.env,
+          GIT_AUTHOR_EMAIL: "testkit@projector.invalid",
+          GIT_AUTHOR_NAME: "Projector Testkit",
           GIT_AUTHOR_DATE: deterministicGitDate,
+          GIT_COMMITTER_EMAIL: "testkit@projector.invalid",
+          GIT_COMMITTER_NAME: "Projector Testkit",
           GIT_COMMITTER_DATE: deterministicGitDate,
           GIT_CONFIG_GLOBAL: path.join(root, ".projector-testkit-no-global-gitconfig"),
           GIT_CONFIG_NOSYSTEM: "1",

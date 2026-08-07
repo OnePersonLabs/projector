@@ -46,7 +46,10 @@ export const mandatoryMisplacedRepositoryScriptContract = {
       { from: ".codex/hooks/validate-repo.mjs", to: "scripts/validate-repo.mjs" },
       { from: ".codex/hooks/validate-repo.test.mjs", to: "scripts/validate-repo.test.mjs" },
     ],
-    packageScript: "node scripts/validate-repo.mjs",
+    packageScripts: {
+      test: "node --test scripts/*.test.mjs",
+      "validate:repo": "node scripts/validate-repo.mjs",
+    },
     secondReconciliationMaterialDelta: false,
     unresolvedClusterWork: 0,
     requiresWriterLease: true,

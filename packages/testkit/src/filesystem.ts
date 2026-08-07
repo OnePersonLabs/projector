@@ -1,13 +1,16 @@
+import { constants } from "node:fs";
 import {
   copyFile,
+  lstat,
   mkdir,
+  open,
   readFile,
   readdir,
   readlink,
+  realpath,
   rename,
   rm,
   symlink,
-  writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 
@@ -102,17 +105,29 @@ export function createFixturePaths(root: string): FixturePaths {
       return readFile(resolveInside(resolvedRoot, relativePath), "utf8");
     },
     async writeText(relativePath, content) {
-      const target = resolveInside(resolvedRoot, relativePath);
+      let target = await validateMutationPath(resolvedRoot, relativePath, false);
       await mkdir(path.dirname(target), { recursive: true });
-      await writeFile(target, content, "utf8");
+      target = await validateMutationPath(resolvedRoot, relativePath, false);
+      const handle = await open(
+        target,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+        0o666,
+      );
+      try {
+        await handle.writeFile(content, "utf8");
+      } finally {
+        await handle.close();
+      }
     },
     async remove(relativePath) {
-      await rm(resolveInside(resolvedRoot, relativePath), { recursive: true, force: true });
+      await rm(await validateMutationPath(resolvedRoot, relativePath, false), { recursive: true, force: true });
     },
     async move(from, to) {
-      const destination = resolveInside(resolvedRoot, to);
+      const source = await validateMutationPath(resolvedRoot, from, true);
+      let destination = await validateMutationPath(resolvedRoot, to, false);
       await mkdir(path.dirname(destination), { recursive: true });
-      await rename(resolveInside(resolvedRoot, from), destination);
+      destination = await validateMutationPath(resolvedRoot, to, false);
+      await rename(source, destination);
     },
   };
 }
@@ -127,13 +142,66 @@ export function resolveInside(root: string, relativePath: string): string {
   ) {
     throw new Error(`Path is outside fixture root: ${relativePath}`);
   }
+  const normalizedPath = relativePath.replaceAll("\\", "/");
   const resolvedRoot = path.resolve(root);
-  const resolved = path.resolve(resolvedRoot, relativePath);
+  const resolved = path.resolve(resolvedRoot, normalizedPath);
   const relative = path.relative(resolvedRoot, resolved);
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error(`Path is outside fixture root: ${relativePath}`);
   }
   return resolved;
+}
+
+async function validateMutationPath(root: string, relativePath: string, mustExist: boolean): Promise<string> {
+  const target = resolveInside(root, relativePath);
+  const rootRealPath = await realpath(root);
+  const normalizedPath = relativePath.replaceAll("\\", "/");
+  const components = normalizedPath.split("/").filter((component) => component !== "" && component !== ".");
+  let current = path.resolve(root);
+  let targetExists = true;
+
+  for (const [index, component] of components.entries()) {
+    current = path.join(current, component);
+    let stats;
+    try {
+      stats = await lstat(current);
+    } catch (error) {
+      if (isMissingPathError(error)) {
+        targetExists = false;
+        break;
+      }
+      throw error;
+    }
+    if (stats.isSymbolicLink()) {
+      throw new Error(`Mutation path contains a symbolic link: ${relativePath}`);
+    }
+    if (index < components.length - 1 && !stats.isDirectory()) {
+      throw new Error(`Mutation path ancestor is not a directory: ${relativePath}`);
+    }
+    assertRealPathInside(rootRealPath, await realpath(current), relativePath);
+  }
+
+  if (mustExist && !targetExists) {
+    throw new Error(`Mutation source does not exist: ${relativePath}`);
+  }
+  const parent = path.dirname(target);
+  try {
+    assertRealPathInside(rootRealPath, await realpath(parent), relativePath);
+  } catch (error) {
+    if (!isMissingPathError(error)) throw error;
+  }
+  return target;
+}
+
+function assertRealPathInside(rootRealPath: string, candidateRealPath: string, relativePath: string): void {
+  const relative = path.relative(rootRealPath, candidateRealPath);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`Mutation path resolves outside fixture root: ${relativePath}`);
+  }
+}
+
+function isMissingPathError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function toPortablePath(value: string): string {
