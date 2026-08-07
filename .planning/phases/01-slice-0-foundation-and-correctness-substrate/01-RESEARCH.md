@@ -1,7 +1,7 @@
 # Phase 1: Slice 0 — Foundation and Correctness Substrate - Research
 
-**Researched:** 2026-08-07  
-**Domain:** Deterministic local semantic-state foundation for a TypeScript/Node CLI  
+**Researched:** 2026-08-07
+**Domain:** Deterministic local semantic-state foundation for a TypeScript/Node CLI
 **Confidence:** HIGH for normative scope and architecture; MEDIUM for current package/runtime particulars
 
 <user_constraints>
@@ -92,8 +92,8 @@ pnpm add -D typescript vitest fast-check @types/node
 | `fast-check` | npm | 29,592,089 weekly downloads | github.com/dubzzz/fast-check | SUS: too-new | Flagged — planner MUST add `checkpoint:human-verify` before install. |
 | `@types/node` | npm | 406,774,710 weekly downloads | github.com/DefinitelyTyped/DefinitelyTyped | SUS: too-new | Flagged — planner MUST add `checkpoint:human-verify` before install. |
 
-All five registry lookups found no `postinstall` script. [VERIFIED: npm registry]  
-**Packages removed due to SLOP:** none.  
+All five registry lookups found no `postinstall` script. [VERIFIED: npm registry]
+**Packages removed due to SLOP:** none.
 **Packages flagged as suspicious:** `typescript`, `fast-check`, `@types/node`; their legitimacy verdict requires a human checkpoint despite established repositories and download signals.
 
 ## Architecture Patterns
@@ -174,23 +174,23 @@ contractRegistry.register({ schema: publicSchema, jsonSchema: exportedJsonSchema
 ## Common Pitfalls
 
 ### Pitfall 1: Confusing `semanticHash`, document hash, and root digest
-**What goes wrong:** Alias/display-only changes either become invisible or invalidate every meaning-only consumer.  
+**What goes wrong:** Alias/display-only changes either become invisible or invalidate every meaning-only consumer.
 **How to avoid:** Declare projections per schema; use semantic hash for meaning, discovery hash for retrieval metadata, complete document hash for exact document identity, and a sorted manifest/root digest for complete snapshots. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/canonical-state.md:73-100]
 
 ### Pitfall 2: Binding selected entities but not the query that selected them
-**What goes wrong:** A newly matching relation/membership fails to stale work because old entity hashes did not change.  
+**What goes wrong:** A newly matching relation/membership fails to stale work because old entity hashes did not change.
 **How to avoid:** Persist query program/version, normalized input, result projection, observability, assumptions, unavailable lanes, and dependency keys; fingerprint empty results whenever the conclusion depends on them. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/state-binding-and-ports.md:153-172]
 
 ### Pitfall 3: Treating unavailable discovery as absence
-**What goes wrong:** An empty open/sampled/unavailable result gets reported as a proof.  
+**What goes wrong:** An empty open/sampled/unavailable result gets reported as a proof.
 **How to avoid:** Only closed, or bounded-with-held-assumptions, lanes can prove absence; all other lanes widen the frontier. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/02-semantic-kernel/state-binding-and-ports.md:166-170]
 
 ### Pitfall 4: A “safe” path check that resolves too late
-**What goes wrong:** `..`, Windows drive/UNC forms, or symlinked targets escape the governed root after a superficially valid string check.  
+**What goes wrong:** `..`, Windows drive/UNC forms, or symlinked targets escape the governed root after a superficially valid string check.
 **How to avoid:** Centralize every file operation in one root-constrained utility and test real-target policy before mutation. Node `realpath` resolves dot segments and symlinks but must be combined with Projector’s root-policy checks. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/10-operation/cli-modes-and-security.md:118-127] [CITED: https://nodejs.org/download/release/v25.9.0/docs/api/fs.html]
 
 ### Pitfall 5: Passing a clean rebuild as independent correctness
-**What goes wrong:** The same analyzer bug can make incremental and clean rebuild agree on the same wrong result.  
+**What goes wrong:** The same analyzer bug can make incremental and clean rebuild agree on the same wrong result.
 **How to avoid:** Label rebuild evidence as rebuild consistency; use schema, property, or independent validator lanes for independent conformance. [VERIFIED: .planning/intel/source-snapshot/PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md:3-35]
 
 ## Code Examples
@@ -264,7 +264,7 @@ The following matrix covers every one of the 116 Phase 1 requirement IDs. It is 
 | SQLite CLI | diagnostic fixture inspection | ✓ | 3.50.6 | `node:sqlite` remains runtime API |
 | Existing test scaffolding | Phase verification | ✗ | — | Wave 0 creates it |
 
-**Missing dependencies with no fallback:** none.  
+**Missing dependencies with no fallback:** none.
 **Missing dependencies with fallback:** test infrastructure — create the locked Vitest/fast-check harness first.
 
 ## Validation Architecture
@@ -348,5 +348,5 @@ The following matrix covers every one of the 116 Phase 1 requirement IDs. It is 
 - Architecture: HIGH — directly specified in the exact, checksummed source snapshot and Phase 1 context.
 - Pitfalls: HIGH — explicitly represented by Slice 0 acceptance/adversarial requirements; filesystem API usage is MEDIUM-confidence official-documentation support.
 
-**Research date:** 2026-08-07  
+**Research date:** 2026-08-07
 **Valid until:** 2026-08-14 for npm/runtime details; authoritative snapshot findings remain valid until amended by governed project decision.
