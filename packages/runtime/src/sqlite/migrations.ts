@@ -69,27 +69,23 @@ const migrationOne = `
 `;
 
 export function migrateSqlite(database: DatabaseSync): void {
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version INTEGER PRIMARY KEY
-    ) STRICT;
-  `);
-  const row = database.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").get() as
-    | { version: number }
-    | undefined;
-  const version = row?.version ?? 0;
-  if (version > currentSqliteSchemaVersion) {
-    throw new Error(`state.db schema version ${version} is newer than supported version ${currentSqliteSchemaVersion}`);
-  }
-  if (version === 0) {
-    database.exec("BEGIN IMMEDIATE");
-    try {
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    database.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY) STRICT;`);
+    const row = database.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").get() as
+      | { version: number }
+      | undefined;
+    const version = row?.version ?? 0;
+    if (version > currentSqliteSchemaVersion) {
+      throw new Error(`state.db schema version ${version} is newer than supported version ${currentSqliteSchemaVersion}`);
+    }
+    if (version === 0) {
       database.exec(migrationOne);
       database.prepare("INSERT INTO schema_migrations(version) VALUES (?)").run(1);
-      database.exec("COMMIT");
-    } catch (error) {
-      database.exec("ROLLBACK");
-      throw error;
     }
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
   }
 }

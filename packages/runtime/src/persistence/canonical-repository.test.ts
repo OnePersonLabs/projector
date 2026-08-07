@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -92,7 +92,7 @@ describe("CanonicalFileRepository", () => {
     await firstRepository.write(b);
     await secondRepository.write(b);
     await secondRepository.write(a);
-    const movedDirectory = join(firstRoot, ".projector", "model", "custom-shard");
+    const movedDirectory = join(firstRoot, ".projector", "model", "concepts", "custom-shard");
     await mkdir(movedDirectory, { recursive: true });
     await rename(originalPath, join(movedDirectory, "arbitrary.concept.json"));
 
@@ -103,11 +103,45 @@ describe("CanonicalFileRepository", () => {
     expect(firstSnapshot.documents.map((document) => document.id)).toEqual(["concept-a", "concept-b"]);
   });
 
+  test("uses case-insensitive collision-safe paths for stable IDs", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const upperPath = await repository.write(concept("Foo", "upper"));
+    const lowerPath = await repository.write(concept("foo", "lower"));
+    expect(upperPath.toLowerCase()).not.toBe(lowerPath.toLowerCase());
+    expect((await repository.read("concept", "Foo"))?.payload.statement).toBe("upper");
+    expect((await repository.read("concept", "foo"))?.payload.statement).toBe("lower");
+  });
+
+  test("refuses to overwrite or delete a path owned by another envelope ID", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const targetPath = repository.pathFor("concept", "concept-a");
+    await mkdir(join(targetPath, ".."), { recursive: true });
+    await writeFile(targetPath, `${JSON.stringify(concept("concept-b", "protected"))}\n`, "utf8");
+    await expect(repository.write(concept("concept-a", "overwrite"))).rejects.toThrow(/owned by concept-b/);
+    await expect(repository.delete("concept", "concept-a")).rejects.toThrow(/owned by concept-b/);
+    expect(JSON.parse(await readFile(targetPath, "utf8")).id).toBe("concept-b");
+  });
+
+  test("reads a legacy encoded-ID path and migrates it on the next write", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const legacyPath = join(root, ".projector", "model", "concepts", "legacy.concept.json");
+    await mkdir(join(legacyPath, ".."), { recursive: true });
+    await writeFile(legacyPath, `${JSON.stringify(concept("legacy", "old"))}\n`, "utf8");
+    expect((await repository.read("concept", "legacy"))?.payload.statement).toBe("old");
+    const newPath = await repository.write(concept("legacy", "new"));
+    expect(newPath).not.toBe(legacyPath);
+    await expect(readFile(legacyPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await repository.read("concept", "legacy"))?.payload.statement).toBe("new");
+  });
+
   test("rejects duplicate stable IDs even when files use different paths", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
     const canonicalPath = await repository.write(concept("concept-a", "authoritative"));
-    const duplicateDirectory = join(root, ".projector", "model", "custom-shard");
+    const duplicateDirectory = join(root, ".projector", "model", "concepts", "custom-shard");
     await mkdir(duplicateDirectory, { recursive: true });
     await writeFile(
       join(duplicateDirectory, "duplicate.concept.json"),
@@ -170,5 +204,46 @@ describe("CanonicalFileRepository", () => {
     await writeFile(path, "{}\n", "utf8");
 
     await expect(repository.snapshot()).rejects.toThrow(new RegExp(`unsupported canonical ${kind} kind`, "i"));
+  });
+
+  test("rejects canonical-looking files outside their approved family", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const path = join(root, ".projector", "model", "relations", "wrong.concept.json");
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, `${JSON.stringify(concept("concept-a", "hidden"))}\n`, "utf8");
+    await expect(repository.snapshot()).rejects.toThrow(/outside approved canonical family/i);
+  });
+
+  test("does not hide canonical-looking files inside a derived directory", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const path = join(root, ".projector", "generated", "hidden.concept.json");
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, `${JSON.stringify(concept("concept-a", "hidden"))}\n`, "utf8");
+    await expect(repository.snapshot()).rejects.toThrow(/outside approved canonical family/i);
+  });
+
+  test("rejects symlinked canonical entries instead of hiding them from rebuild", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const target = join(root, "target.json");
+    await writeFile(target, `${JSON.stringify(concept("concept-a", "linked"))}\n`, "utf8");
+    const link = join(root, ".projector", "model", "concepts", "linked.concept.json");
+    await mkdir(join(link, ".."), { recursive: true });
+    await symlink(target, link);
+    await expect(repository.snapshot()).rejects.toThrow(/symlink.*canonical/i);
+  });
+
+  test("rejects a symlinked canonical shard directory", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const target = join(root, "external-shard");
+    await mkdir(target, { recursive: true });
+    await writeFile(join(target, "hidden.concept.json"), `${JSON.stringify(concept("concept-a", "linked"))}\n`);
+    const link = join(root, ".projector", "model", "concepts", "shard");
+    await mkdir(join(link, ".."), { recursive: true });
+    await symlink(target, link, "dir");
+    await expect(repository.snapshot()).rejects.toThrow(/symlink.*canonical/i);
   });
 });
