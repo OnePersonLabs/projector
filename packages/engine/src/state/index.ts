@@ -75,9 +75,7 @@ export interface CreateStateBindingInput {
 
 export function createStateBinding(input: CreateStateBindingInput): StateBinding {
   const valueDependencies = normalizeValueDependencies(input.valueDependencies);
-  if (valueDependencies.length === 0) throw new Error("state binding must declare at least one value dependency");
   const queryDependencies = normalizeQueryDependencies(input.queryDependencies);
-  if (queryDependencies.length === 0) throw new Error("state binding must declare at least one query dependency");
   return {
     compiledAgainst: structuredClone(input.compiledAgainst),
     valueDependencies,
@@ -122,7 +120,6 @@ const cannotProveEmptyAbsence = (fingerprint: StateQueryResultFingerprint): bool
   fingerprint.resultCount === 0 && (
     fingerprint.observability === "open"
     || fingerprint.observability === "sampled"
-    || (fingerprint.observability === "bounded" && fingerprint.assumptions.length === 0)
   );
 
 export class DependencyScopedStateBindingValidator implements StateBindingValidator {
@@ -137,16 +134,6 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
   }
 
   async validate(binding: StateBinding, currentState: StateDigest, context: AdapterContext): Promise<StateBindingValidation> {
-    if (sameState(binding.compiledAgainst, currentState)) {
-      return {
-        status: "current",
-        currentState: structuredClone(currentState),
-        changedValueDependencyIds: [],
-        changedQueryDependencyIds: [],
-        reasons: ["compiled snapshot is unchanged"],
-      };
-    }
-
     let normalizedBinding: StateBinding;
     try {
       normalizedBinding = createStateBinding(binding);
@@ -167,6 +154,54 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
         changedQueryDependencyIds: [],
         reasons: [error instanceof Error ? error.message : "invalid state binding"],
       };
+    }
+
+    if (sameState(binding.compiledAgainst, currentState)) {
+      const changedQueryDependencyIds: string[] = [];
+      const unavailableQueryDependencyIds: string[] = [];
+      const suspectQueryDependencyIds: string[] = [];
+      const reasons: string[] = [];
+      for (const dependency of normalizedBinding.queryDependencies) {
+        if (dependency.priorResult.observability === "unavailable") {
+          unavailableQueryDependencyIds.push(dependency.query.id);
+        } else if (dependency.priorResult.unavailableLanes.length > 0 || cannotProveEmptyAbsence(dependency.priorResult)) {
+          suspectQueryDependencyIds.push(dependency.query.id);
+        }
+        try {
+          if (this.queries.assertCurrent !== undefined) {
+            this.queries.assertCurrent(dependency.query);
+          } else {
+            const current = normalizeFingerprint(await this.queries.evaluate(dependency.query, context));
+            if (current.observability === "unavailable") unavailableQueryDependencyIds.push(dependency.query.id);
+            else if (!sameFingerprint(current, dependency.priorResult)) changedQueryDependencyIds.push(dependency.query.id);
+            else if (current.unavailableLanes.length > 0 || cannotProveEmptyAbsence(current)) suspectQueryDependencyIds.push(dependency.query.id);
+          }
+        } catch (error) {
+          if (error instanceof QueryProgramVersionError) {
+            changedQueryDependencyIds.push(dependency.query.id);
+            reasons.push(error.message);
+          } else {
+            unavailableQueryDependencyIds.push(dependency.query.id);
+            reasons.push(error instanceof Error ? error.message : `query ${dependency.query.id} is unavailable`);
+          }
+        }
+      }
+      const changedQueries = sortedUniqueStrings(changedQueryDependencyIds);
+      const unavailableQueries = sortedUniqueStrings(unavailableQueryDependencyIds);
+      const suspectQueries = sortedUniqueStrings(suspectQueryDependencyIds);
+      if (changedQueries.length > 0) reasons.push(`query dependencies changed: ${changedQueries.join(", ")}`);
+      if (unavailableQueries.length > 0) reasons.push(`query dependencies unavailable: ${unavailableQueries.join(", ")}`);
+      if (suspectQueries.length > 0) reasons.push(`query observation boundary is incomplete: ${suspectQueries.join(", ")}`);
+      const result = {
+        currentState: structuredClone(currentState),
+        changedValueDependencyIds: [],
+        changedQueryDependencyIds: changedQueries,
+        reasons,
+      };
+      if (unavailableQueries.length > 0) return { status: "unavailable", ...result };
+      if (changedQueries.length > 0) return { status: "stale", ...result };
+      if (suspectQueries.length > 0) return { status: "suspect", ...result };
+      return { status: "current", ...result, reasons: ["compiled snapshot and registered query dependencies are unchanged"] };
     }
 
     const changedValueDependencyIds: string[] = [];
@@ -200,6 +235,11 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
     const reboundQueryDependencies: StateQueryDependency[] = [];
 
     for (const dependency of normalizedBinding.queryDependencies) {
+      if (dependency.priorResult.observability === "unavailable") {
+        unavailableQueryDependencyIds.push(dependency.query.id);
+      } else if (dependency.priorResult.unavailableLanes.length > 0) {
+        suspectQueryDependencyIds.push(dependency.query.id);
+      }
       try {
         this.queries.assertCurrent?.(dependency.query);
       } catch (error) {
@@ -298,6 +338,12 @@ export class DependencyScopedCache<K, V> {
 
   set(key: K, value: V, binding: StateBinding): void {
     const normalized = createStateBinding(binding);
+    if (normalized.valueDependencies.length === 0) {
+      throw new Error("cache entry binding must declare at least one value dependency");
+    }
+    if (normalized.queryDependencies.length === 0) {
+      throw new Error("cache entry binding must declare at least one query dependency");
+    }
     if (normalized.dependencyDigest !== binding.dependencyDigest) {
       throw new Error("cache entry binding dependency digest is invalid");
     }

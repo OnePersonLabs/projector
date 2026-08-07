@@ -2,6 +2,7 @@ import type {
   AdapterContext,
   Concept,
   ContentHash,
+  DerivationInput,
   Relation,
   StateDigest,
   StateQuerySpec,
@@ -86,6 +87,17 @@ describe("in-memory graph reader", () => {
 
     expect(graph.searchSemanticIdentities("match")).toEqual(["Zulu", "éclair"]);
   });
+
+  it("totally orders derivation inputs including kind and version hash", () => {
+    const adapterA = { kind: "adapter", id: "same", role: "input", versionHash: hash("a") } satisfies DerivationInput;
+    const adapterB = { kind: "adapter", id: "same", role: "input", versionHash: hash("b") } satisfies DerivationInput;
+    const toolchain = { kind: "toolchain", id: "same", role: "input", versionHash: hash("a") } satisfies DerivationInput;
+    const graph = new InMemoryGraphReader({
+      derivationInputs: [{ unitId: "unit", inputs: [toolchain, adapterB, adapterA] }],
+    });
+
+    expect(graph.getDerivationInputs("unit")).toEqual([adapterA, adapterB, toolchain]);
+  });
 });
 
 describe("registered query dependencies", () => {
@@ -169,6 +181,71 @@ describe("registered query dependencies", () => {
 
     expect(() => registry.register({ ...program, evaluate: () => ({ ...program.evaluate(), results: [{ id: "different" }] }) }))
       .toThrow(/version/i);
+  });
+
+  it("does not reactivate a previously replaced version identifier", () => {
+    const registry = new QueryDependencyRegistry(new InMemoryGraphReader(), false);
+    const program = (version: string) => ({
+      id: "custom.history",
+      version,
+      kind: "custom" as const,
+      evaluate: () => ({
+        results: [],
+        observability: "closed" as const,
+        assumptions: [],
+        unavailableLanes: [],
+        dependencyKeys: ["custom:history"],
+      }),
+    });
+    registry.register(program("1"));
+    registry.register(program("2"));
+
+    expect(() => registry.register(program("1"))).toThrow(/previous|history|version/i);
+  });
+
+  it("does not let a caller rebind a registered implementation by mutating its object", async () => {
+    const registry = new QueryDependencyRegistry(new InMemoryGraphReader(), false);
+    const program = {
+      id: "custom.snapshot",
+      version: "1",
+      kind: "custom" as const,
+      evaluate: () => ({
+        results: [{ id: "original" }],
+        observability: "closed" as const,
+        assumptions: [],
+        unavailableLanes: [],
+        dependencyKeys: ["custom:snapshot"],
+      }),
+    };
+    registry.register(program);
+    program.evaluate = () => ({
+      results: [{ id: "replacement-a" }, { id: "replacement-b" }],
+      observability: "closed",
+      assumptions: [],
+      unavailableLanes: [],
+      dependencyKeys: ["custom:snapshot"],
+    });
+    const query = registry.createSpec({ id: "snapshot", programId: "custom.snapshot", input: {} });
+
+    await expect(registry.evaluate(query, context)).resolves.toMatchObject({ resultCount: 1 });
+  });
+
+  it("normalizes set-like built-in kinds before hashing the query", () => {
+    const registry = new QueryDependencyRegistry(new InMemoryGraphReader());
+
+    const first = registry.createSpec({
+      id: "first",
+      programId: "graph.semantic-identity-search",
+      input: { query: "billing", kinds: ["scenario", "concept", "scenario"] },
+    });
+    const second = registry.createSpec({
+      id: "second",
+      programId: "graph.semantic-identity-search",
+      input: { kinds: ["concept", "scenario"], query: "billing" },
+    });
+
+    expect(first.input).toEqual({ kinds: ["concept", "scenario"], query: "billing" });
+    expect(first.semanticHash).toBe(second.semanticHash);
   });
 
   it("rejects query results without a stable identity", async () => {
