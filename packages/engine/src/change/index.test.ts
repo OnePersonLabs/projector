@@ -5,6 +5,8 @@ import {
   hashSemantic,
   type AdapterContext,
   type ChangeCertificate,
+  type CompletionContract,
+  type ExecutionCapsule,
   type ExecutionPlan,
   type StateBinding,
   type StateBindingValidation,
@@ -15,10 +17,11 @@ import {
   type ValidationResult,
 } from "@projector/core";
 
-import { createExecutionPlan } from "../planning/index.js";
+import { createExecutionCapsule, createExecutionPlan } from "../planning/index.js";
 import {
   StateBoundChangeExecutor,
   createExecutionApproval,
+  executionCapsuleHash,
   executionPlanHash,
   type ChangeArtifactStore,
   type ChangeTransaction,
@@ -42,7 +45,10 @@ const binding: StateBinding = {
   dependencyDigest: hashFramedDomain("state-binding-dependencies", { valueDependencies: [], queryDependencies: [] }),
 };
 
-const plan = (id = "plan:move"): ExecutionPlan => createExecutionPlan({
+const plan = (
+  id = "plan:move",
+  completionOverrides: Partial<ExecutionPlan["completionCriteria"]> = {},
+): ExecutionPlan => createExecutionPlan({
   id,
   revision: 1,
   sourceRunId: "run:1",
@@ -65,10 +71,56 @@ const plan = (id = "plan:move"): ExecutionPlan => createExecutionPlan({
     allowUnavailableExternalActions: false,
     requiredArtifacts: ["certificate", "receipt"],
     cleanWorkingTree: true,
+    ...completionOverrides,
   },
 });
 
-const validation = (status: ValidationResult["status"]): ValidationResult => ({
+const capsule = (overrides: Partial<ExecutionCapsule> = {}): ExecutionCapsule => createExecutionCapsule({
+  id: "capsule:move",
+  taskId: "task:move",
+  objective: "move repository automation",
+  operation: "move-reference-update",
+  unitIds: ["unit:move"],
+  boundState: binding,
+  relevanceClosureId: "closure:move",
+  analysisFacetKeys: [],
+  requirementIds: [],
+  scenarioIds: [],
+  conceptSummary: "repository automation",
+  decisionIds: [],
+  decisionSummary: "",
+  unresolvedArchitectureConcerns: [],
+  lensSummary: "repository script lens",
+  effectiveRules: [],
+  normativeKernelHash: hashFramedDomain("test", "kernel"),
+  relevantPrecedents: [],
+  allowedWrites: [{
+    selector: { op: "atom", field: "operation", matcher: "equals", value: "move-reference-update" },
+    operations: ["move-reference-update"],
+    reason: "approved deterministic repair",
+  }],
+  forbiddenWrites: [],
+  availablePrimitives: ["move artifact", "update reference"],
+  requiredValidations: ["move-reference-update.verify"],
+  upstreamImplications: [],
+  downstreamImplications: [],
+  knownExceptions: [],
+  unknowns: [],
+  risk: {
+    class: "R1", inherentOperationRisk: 1, affectedUnitCount: 1, affectedSurfaceCount: 1,
+    publicContractImpact: false, externalImpact: false, dataImpact: false, reversibility: "full",
+    validationStrength: "exact", closureConfidence: "bounded", unresolvedIdentityCount: 0,
+    relevanceFrontierCount: 0, openWorldDependencies: false, unresolvedBlockingConcernCount: 0,
+    suspectDecisionCount: 0, compensationAvailable: true, reasons: [],
+  },
+  completionContract: plan().completionCriteria,
+  ...overrides,
+});
+
+const validation = (
+  status: ValidationResult["status"],
+  overrides: Partial<ValidationResult> = {},
+): ValidationResult => ({
   validatorId: "move-reference-update.verify",
   status,
   summary: status,
@@ -81,6 +133,26 @@ const validation = (status: ValidationResult["status"]): ValidationResult => ({
   details: {},
   startedAt: "2026-08-07T12:00:00.000Z",
   completedAt: "2026-08-07T12:00:00.000Z",
+  ...overrides,
+});
+
+interface TestCompletionAssessment {
+  unitStates: Array<{ unitId: string; state: "valid" | "removed" | "exception" }>;
+  newDivergenceIds: string[];
+  unknowns: string[];
+  unavailableActions: string[];
+  availableArtifacts: string[];
+  cleanWorkingTree: boolean;
+}
+
+const completeAssessment = (overrides: Partial<TestCompletionAssessment> = {}): TestCompletionAssessment => ({
+  unitStates: [{ unitId: "unit:move", state: "valid" }],
+  newDivergenceIds: [],
+  unknowns: [],
+  unavailableActions: [],
+  availableArtifacts: [],
+  cleanWorkingTree: true,
+  ...overrides,
 });
 
 class MemoryArtifactStore implements ChangeArtifactStore {
@@ -95,7 +167,14 @@ class MemoryArtifactStore implements ChangeArtifactStore {
 class MemoryTransaction implements ChangeTransaction {
   phase = "prepared" as const satisfies ChangeTransaction["phase"];
   lastCheckpointId: string | undefined;
-  readonly events: string[] = [];
+  readonly events: string[];
+
+  constructor(
+    events: string[] = [],
+    private readonly commitFails = false,
+  ) {
+    this.events = events;
+  }
 
   async checkpoint(id: string): Promise<void> {
     this.lastCheckpointId = id;
@@ -108,6 +187,10 @@ class MemoryTransaction implements ChangeTransaction {
   }
 
   async commit(): Promise<void> {
+    if (this.commitFails) {
+      this.events.push("commit-failed");
+      throw new Error("durable commit failed");
+    }
     (this as { phase: ChangeTransaction["phase"] }).phase = "committed";
     this.events.push("commit");
   }
@@ -119,8 +202,12 @@ class MemoryTransaction implements ChangeTransaction {
 }
 
 class MemoryTransactionPort implements ChangeTransactionPort {
-  readonly transaction = new MemoryTransaction();
+  readonly transaction: MemoryTransaction;
   begins = 0;
+
+  constructor(events: string[] = [], commitFails = false) {
+    this.transaction = new MemoryTransaction(events, commitFails);
+  }
 
   async begin(): Promise<ChangeTransaction> {
     this.begins += 1;
@@ -128,13 +215,21 @@ class MemoryTransactionPort implements ChangeTransactionPort {
   }
 }
 
-const transformPort = (options: { changed?: boolean; verify?: ValidationResult[]; throwAfterChange?: boolean } = {}): DeterministicTransformPort<{}> & { applies: number } => ({
+const transformPort = (options: {
+  changed?: boolean;
+  verify?: ValidationResult[];
+  throwAfterChange?: boolean;
+  touchedUnitId?: string;
+} = {}): DeterministicTransformPort<{}> & { applies: number; contexts: TransformContext[] } => ({
   applies: 0,
-  async preview(_input: {}, _context: TransformContext): Promise<TransformPreview> {
-    return { applicable: true, operations: [{ kind: "move" }], touchedUnitIds: ["unit:move"], expectedDiff: "move", warnings: [] };
+  contexts: [],
+  async preview(_input: {}, transformContext: TransformContext): Promise<TransformPreview> {
+    this.contexts.push(transformContext);
+    return { applicable: true, operations: [{ kind: "move" }], touchedUnitIds: [options.touchedUnitId ?? "unit:move"], expectedDiff: "move", warnings: [] };
   },
-  async apply(_input: {}, _context: TransformContext): Promise<TransformResult> {
+  async apply(_input: {}, transformContext: TransformContext): Promise<TransformResult> {
     this.applies += 1;
+    this.contexts.push(transformContext);
     if (options.throwAfterChange === true) {
       const error = new Error("crash after mutation") as Error & { partialResult?: TransformResult };
       error.partialResult = {
@@ -156,11 +251,11 @@ const transformPort = (options: { changed?: boolean; verify?: ValidationResult[]
     return {
       transformId: "move-reference-update",
       changed: options.changed ?? true,
-      touchedUnitIds: ["unit:move"],
+      touchedUnitIds: [options.touchedUnitId ?? "unit:move"],
       operations: [{
         operationId: "move:1",
         executor: "transform",
-        unitIds: ["unit:move"],
+        unitIds: [options.touchedUnitId ?? "unit:move"],
         beforeHashes: [hashFramedDomain("content", "before")],
         afterHashes: [hashFramedDomain("content", "after")],
         evidenceIds: [],
@@ -183,13 +278,24 @@ const execute = async (input: {
   validation?: StateBindingValidation;
   transform?: DeterministicTransformPort<{}>;
   approvalPlan?: ExecutionPlan;
+  approvalCapsule?: ExecutionCapsule;
+  executionCapsule?: ExecutionCapsule;
+  commitFails?: boolean;
+  allowedUnits?: string[];
+  subjectPlan?: ExecutionPlan;
+  completionAssessment?: TestCompletionAssessment;
+  callerRiskClass?: "R0" | "R1" | "R2" | "R3" | "R4";
 }) => {
   const artifacts = new MemoryArtifactStore();
-  const transactions = new MemoryTransactionPort();
-  const subjectPlan = plan();
+  const lifecycle: string[] = [];
+  const transactions = new MemoryTransactionPort(lifecycle, input.commitFails);
+  const subjectPlan = input.subjectPlan ?? plan();
   const states = [initialState, afterState];
   const executor = new StateBoundChangeExecutor({
-    state: { async current(): Promise<StateDigest> { return states.shift() ?? afterState; } },
+    state: { async current(): Promise<StateDigest> {
+      lifecycle.push("state-sampled");
+      return states.shift() ?? afterState;
+    } },
     bindingValidator: validator(input.validation ?? {
       status: "current",
       currentState: initialState,
@@ -200,24 +306,32 @@ const execute = async (input: {
     transform: input.transform ?? transformPort(),
     transactions,
     artifacts,
+    completion: {
+      async assess(): Promise<TestCompletionAssessment> {
+        return input.completionAssessment ?? completeAssessment();
+      },
+    },
+    environment: { repositoryRoot: "/approved/repo", signal: new AbortController().signal },
     now: () => "2026-08-07T12:00:00.000Z",
   });
   const approved = input.approvalPlan ?? subjectPlan;
+  const subjectCapsule = input.executionCapsule ?? capsule({ completionContract: subjectPlan.completionCriteria });
+  const approvedCapsule = input.approvalCapsule ?? subjectCapsule;
   const result = await executor.execute({
     plan: subjectPlan,
-    capsule: { id: "capsule:move", boundState: binding, requiredValidations: ["move-reference-update.verify"] },
-    approval: createExecutionApproval(approved, "approval:1"),
+    capsule: subjectCapsule,
+    approval: createExecutionApproval(approved, approvedCapsule, "approval:1"),
     transformInput: {},
-    repositoryRoot: "/repo",
-    riskClass: "R1",
-    allowedUnits: ["unit:move"],
+    ...({ repositoryRoot: "/caller-controlled/repo" } as Record<string, unknown>),
+    ...({ riskClass: input.callerRiskClass ?? "R1" } as Record<string, unknown>),
+    ...({ allowedUnits: input.allowedUnits ?? ["unit:move"] } as Record<string, unknown>),
   });
-  return { result, artifacts, transactions };
+  return { result, artifacts, transactions, lifecycle, approvedCapsule };
 };
 
 describe("state-bound deterministic change execution", () => {
   it("emits a compact receipt linked to a verbose content-addressed success certificate", async () => {
-    const { result, artifacts, transactions } = await execute({});
+    const { result, artifacts, transactions, lifecycle } = await execute({});
 
     expect(result.outcome).toBe("success");
     expect(result.receipt.certificateHash).toBe(result.certificateHash);
@@ -233,6 +347,7 @@ describe("state-bound deterministic change execution", () => {
       recoveryState: "not-required",
     });
     expect(transactions.transaction.events).toEqual([
+      "state-sampled",
       "checkpoint:before-transform",
       "phase:workspace-staged",
       "phase:validating",
@@ -240,7 +355,22 @@ describe("state-bound deterministic change execution", () => {
       "phase:canonical-staging",
       "phase:committing",
       "commit",
+      "state-sampled",
     ]);
+    expect(lifecycle.lastIndexOf("commit")).toBeLessThan(lifecycle.lastIndexOf("state-sampled"));
+  });
+
+  it("does not persist false success evidence when durable commit fails", async () => {
+    const { result, artifacts, transactions } = await execute({ commitFails: true });
+
+    expect(result.outcome).toBe("partial");
+    expect(transactions.transaction.phase).toBe("rolled-back");
+    expect(artifacts.writes).toHaveLength(2);
+    expect(JSON.parse(artifacts.writes[0]?.content ?? "{}")).toMatchObject({
+      outcome: "partial",
+      recoveryState: "rolled-back",
+      reasons: ["durable commit failed"],
+    });
   });
 
   it("refuses stale bindings and approval mismatches before preview/apply while still recording failure evidence", async () => {
@@ -308,8 +438,182 @@ describe("state-bound deterministic change execution", () => {
 
   it("binds approvals to immutable plan content and dependency scope", () => {
     const subject = plan();
-    const approval = createExecutionApproval(subject, "approval:1");
+    const subjectCapsule = capsule();
+    const approval = createExecutionApproval(subject, subjectCapsule, "approval:1");
     expect(approval.planHash).toBe(executionPlanHash(subject));
     expect(approval.dependencyDigest).toBe(subject.boundState.dependencyDigest);
+    expect(approval.capsuleId).toBe(subjectCapsule.id);
+    expect(approval.capsuleHash).toBe(executionCapsuleHash(subjectCapsule));
+  });
+
+  it("refuses a capsule whose immutable content differs from the approved capsule", async () => {
+    const approvedCapsule = capsule();
+    const changedCapsule = capsule({ objective: "widened objective" });
+    const transform = transformPort();
+    const { result } = await execute({ approvalCapsule: approvedCapsule, executionCapsule: changedCapsule, transform });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.reasons).toContain("approval does not match the immutable execution capsule");
+    expect(transform.applies).toBe(0);
+  });
+
+  it("fails closed when a capsule write selector cannot be compiled into deterministic scope", async () => {
+    const unsupportedCapsule = capsule({
+      allowedWrites: [{
+        selector: {
+          op: "not",
+          item: { op: "atom", field: "path", matcher: "glob", value: "private/**" },
+        },
+        operations: ["move-reference-update"],
+        reason: "unsupported negative scope",
+      }],
+    });
+    const transform = transformPort();
+    const { result } = await execute({
+      transform,
+      executionCapsule: unsupportedCapsule,
+      approvalCapsule: unsupportedCapsule,
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.reasons).toContain("capsule write selector cannot be enforced deterministically");
+    expect(transform.applies).toBe(0);
+  });
+
+  it("derives unit and path scope from the approved plan and capsule instead of caller input", async () => {
+    const transform = transformPort({ touchedUnitId: "unit:outside" });
+    const scopedCapsule = capsule({
+      forbiddenWrites: [{
+        selector: { op: "atom", field: "path", matcher: "glob", value: "scripts/private/**" },
+        operations: ["move-reference-update"],
+        reason: "private scripts are excluded",
+      }],
+    });
+    const { result, transactions } = await execute({
+      transform,
+      executionCapsule: scopedCapsule,
+      approvalCapsule: scopedCapsule,
+      allowedUnits: ["unit:move", "unit:outside"],
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.reasons).toContain("transform preview touched units outside the approved capsule: unit:outside");
+    expect(transactions.begins).toBe(0);
+    expect(transform.contexts[0]?.allowedUnits).toEqual(["unit:move"]);
+    expect(transform.contexts[0]?.repositoryRoot).toBe("/approved/repo");
+    expect((transform.contexts[0] as TransformContext & { approvedBoundary?: string[] }).approvedBoundary).toEqual([
+      "package.json",
+      "scripts/**",
+    ]);
+    expect((transform.contexts[0] as TransformContext & { forbiddenBoundary?: string[] }).forbiddenBoundary)
+      .toEqual(["scripts/private/**"]);
+  });
+
+  it("derives receipt risk from the approved capsule rather than caller input", async () => {
+    const { result } = await execute({ callerRiskClass: "R0" });
+    expect(result.receipt.riskClass).toBe("R1");
+  });
+
+  it("content-addresses completion evidence independently of assessment insertion order", async () => {
+    const subjectPlan = plan("plan:move", { maximumUnknowns: 2 });
+    const left = await execute({
+      subjectPlan,
+      completionAssessment: completeAssessment({
+        unknowns: ["zeta", "alpha"],
+        availableArtifacts: ["trace", "diff"],
+      }),
+    });
+    const right = await execute({
+      subjectPlan,
+      completionAssessment: completeAssessment({
+        unknowns: ["alpha", "zeta"],
+        availableArtifacts: ["diff", "trace"],
+      }),
+    });
+
+    expect(left.result.certificateHash).toBe(right.result.certificateHash);
+  });
+
+  it.each([
+    {
+      name: "required evidence lane",
+      completion: { requiredEvidenceLanes: ["test"] },
+      assessment: {},
+      validations: [validation("passed")],
+      reason: "required evidence lane did not pass: test",
+    },
+    {
+      name: "minimum assurance",
+      completion: { minimumValidationAssurance: "exact" as const },
+      assessment: {},
+      validations: [validation("passed", { assurance: "strong" })],
+      reason: "required validation move-reference-update.verify is below exact assurance",
+    },
+    {
+      name: "independent validation",
+      completion: { requireIndependentValidation: true },
+      assessment: {},
+      validations: [validation("passed")],
+      reason: "completion requires an independent passing validation",
+    },
+    {
+      name: "required unit state",
+      completion: {},
+      assessment: { unitStates: [{ unitId: "unit:move", state: "removed" as const }] },
+      validations: [validation("passed")],
+      reason: "required unit state not established: unit:move must be valid",
+    },
+    {
+      name: "divergence bound",
+      completion: { maximumNewDivergences: 0 },
+      assessment: { newDivergenceIds: ["divergence:new"] },
+      validations: [validation("passed")],
+      reason: "new divergence count 1 exceeds maximum 0",
+    },
+    {
+      name: "unknown bound",
+      completion: { maximumUnknowns: 0 },
+      assessment: { unknowns: ["unresolved consumer"] },
+      validations: [validation("passed")],
+      reason: "unknown count 1 exceeds maximum 0",
+    },
+    {
+      name: "unavailable action policy",
+      completion: { allowUnavailableExternalActions: false },
+      assessment: { unavailableActions: ["publish"] },
+      validations: [validation("passed")],
+      reason: "unavailable external actions are not allowed: publish",
+    },
+    {
+      name: "artifact policy",
+      completion: { requiredArtifacts: ["certificate", "receipt", "diff"] },
+      assessment: {},
+      validations: [validation("passed")],
+      reason: "required artifact is unavailable: diff",
+    },
+    {
+      name: "clean working tree policy",
+      completion: { cleanWorkingTree: true },
+      assessment: { cleanWorkingTree: false },
+      validations: [validation("passed")],
+      reason: "completion requires a clean working tree",
+    },
+  ] satisfies Array<{
+    name: string;
+    completion: Partial<CompletionContract>;
+    assessment: Partial<TestCompletionAssessment>;
+    validations: ValidationResult[];
+    reason: string;
+  }>)("enforces CompletionContract $name", async ({ completion, assessment, validations, reason }) => {
+    const subjectPlan = plan("plan:move", completion);
+    const { result, transactions } = await execute({
+      subjectPlan,
+      transform: transformPort({ verify: validations }),
+      completionAssessment: completeAssessment(assessment),
+    });
+
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(reason);
+    expect(transactions.transaction.phase).toBe("rolled-back");
   });
 });

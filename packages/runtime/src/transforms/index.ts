@@ -20,6 +20,7 @@ export interface MoveOperationInput {
   from: string;
   to: string;
   provenance: TransformProvenance;
+  expectedContentHash: ContentHash;
 }
 
 export interface ReferenceUpdateInput {
@@ -117,6 +118,17 @@ function contentHash(content: string): ContentHash {
   return hashFramedDomain("transform-content", content);
 }
 
+function pathMatchesBoundary(path: string, boundary: readonly string[]): boolean {
+  return boundary.some((pattern) => {
+    if (pattern === "**") return true;
+    if (pattern.endsWith("/**")) {
+      const root = pattern.slice(0, -3).replace(/\/$/u, "");
+      return path === root || path.startsWith(`${root}/`);
+    }
+    return path === pattern;
+  });
+}
+
 export interface MoveReferenceTransformOptions {
   now?: () => string;
 }
@@ -171,7 +183,9 @@ export class MoveReferenceTransform implements Transform<MoveReferenceUpdateInpu
   async apply(input: MoveReferenceUpdateInput, context: TransformContext): Promise<TransformResult> {
     const operations = await this.prepare(input, context);
     if (context.dryRun || operations.length === 0) {
-      return { transformId: this.id, changed: false, touchedUnitIds: [], operations: [] };
+      const result: TransformResult = { transformId: this.id, changed: false, touchedUnitIds: [], operations: [] };
+      if (!context.dryRun) this.appliedInputs.set(result, structuredClone(input));
+      return result;
     }
 
     await this.mutation.checkpoint(`${this.id}@${this.version}:before`);
@@ -261,17 +275,56 @@ export class MoveReferenceTransform implements Transform<MoveReferenceUpdateInpu
 
   private async prepare(input: MoveReferenceUpdateInput, context: TransformContext): Promise<PreparedOperation[]> {
     const allowedUnits = new Set(context.allowedUnits);
+    const approvedBoundary = (context as TransformContext & { approvedBoundary?: readonly string[] }).approvedBoundary;
+    if (approvedBoundary === undefined || approvedBoundary.length === 0) {
+      throw new TransformScopeError("transform context has no approved path boundary");
+    }
+    const allowedPathBoundary = (context as TransformContext & { allowedPathBoundary?: readonly string[] }).allowedPathBoundary ?? [];
+    const forbiddenBoundary = (context as TransformContext & { forbiddenBoundary?: readonly string[] }).forbiddenBoundary ?? [];
+    const pathIsApproved = (path: string): boolean =>
+      pathMatchesBoundary(path, approvedBoundary)
+      && (allowedPathBoundary.length === 0 || pathMatchesBoundary(path, allowedPathBoundary))
+      && !pathMatchesBoundary(path, forbiddenBoundary);
     const operations: PreparedOperation[] = [];
     const destinations = new Set<string>();
     const movePaths = new Set<string>();
+    const moveSources = new Set<string>();
+
+    for (const move of input.moves) {
+      if (moveSources.has(move.from)) throw new TransformPreconditionError(`duplicate move source claim: ${move.from}`);
+      if (destinations.has(move.to)) throw new TransformPreconditionError(`duplicate move destination: ${move.to}`);
+      moveSources.add(move.from);
+      destinations.add(move.to);
+    }
+    const referenceClaims = new Set<string>();
+    const referencesByPath = new Map<string, ReferenceUpdateInput[]>();
+    for (const reference of input.references) {
+      const claim = `${reference.path}\0${reference.from}`;
+      if (referenceClaims.has(claim)) {
+        throw new TransformPreconditionError(`duplicate reference claim: ${reference.path} ${reference.from}`);
+      }
+      referenceClaims.add(claim);
+      if (reference.from === reference.to || reference.from.includes(reference.to) || reference.to.includes(reference.from)) {
+        throw new TransformPreconditionError(`non-convergent replacement in ${reference.path}: ${reference.from} -> ${reference.to}`);
+      }
+      const prior = referencesByPath.get(reference.path) ?? [];
+      const overlap = prior.find((candidate) =>
+        reference.to.includes(candidate.from) || candidate.to.includes(reference.from));
+      if (overlap !== undefined) {
+        throw new TransformPreconditionError(`overlapping replacement claims in ${reference.path}`);
+      }
+      prior.push(reference);
+      referencesByPath.set(reference.path, prior);
+    }
 
     for (const move of input.moves) {
       this.assertUnitAllowed(move.unitId, allowedUnits);
       assertRelativeRepositoryPath(move.from);
       assertRelativeRepositoryPath(move.to);
+      if (!pathIsApproved(move.from) || !pathIsApproved(move.to)) {
+        throw new TransformScopeError(`move path is outside the approved boundary: ${move.from} -> ${move.to}`);
+      }
       if (move.from === move.to) throw new TransformPreconditionError(`move source equals destination: ${move.from}`);
-      if (destinations.has(move.to)) throw new TransformPreconditionError(`duplicate move destination: ${move.to}`);
-      destinations.add(move.to);
       movePaths.add(move.from);
       movePaths.add(move.to);
       await this.mutation.assertWritable(move.from);
@@ -284,7 +337,16 @@ export class MoveReferenceTransform implements Transform<MoveReferenceUpdateInpu
         if (destination === undefined) {
           throw new TransformPreconditionError(`move source and destination are both missing: ${move.from}, ${move.to}`);
         }
+        if (move.expectedContentHash === undefined) {
+          throw new TransformPreconditionError(`missing move source requires an expected content identity: ${move.from}`);
+        }
+        if (contentHash(destination) !== move.expectedContentHash) {
+          throw new TransformPreconditionError(`move destination content identity does not match approval: ${move.to}`);
+        }
         continue;
+      }
+      if (contentHash(source) !== move.expectedContentHash) {
+        throw new TransformPreconditionError(`move source content identity does not match approval: ${move.from}`);
       }
       if (destination !== undefined) {
         throw new TransformPreconditionError(`move destination collision: ${move.to}`);
@@ -302,6 +364,9 @@ export class MoveReferenceTransform implements Transform<MoveReferenceUpdateInpu
     for (const reference of references) {
       this.assertUnitAllowed(reference.unitId, allowedUnits);
       assertRelativeRepositoryPath(reference.path);
+      if (!pathIsApproved(reference.path)) {
+        throw new TransformScopeError(`reference path is outside the approved boundary: ${reference.path}`);
+      }
       if (movePaths.has(reference.path)) {
         throw new TransformPreconditionError(`reference file also participates in a move: ${reference.path}`);
       }
@@ -344,6 +409,7 @@ export interface RegisteredTransformMetadata {
   readonly exclusions: readonly string[];
   readonly commutativity: TransformCommutativity;
   readonly postconditions: readonly string[];
+  readonly unitClaim: "exclusive" | "shared";
   readonly convergence:
     | { readonly kind: "idempotent" }
     | { readonly kind: "bounded-fixed-point"; readonly maximumIterations: number };
@@ -358,7 +424,6 @@ export interface TransformInvocation {
   readonly transformId: string;
   readonly version: string;
   readonly unitIds: readonly EntityId[];
-  readonly exclusiveUnitClaim: boolean;
 }
 
 export class TransformClaimConflictError extends Error {
@@ -382,27 +447,91 @@ function normalizeMetadata(metadata: RegisteredTransformMetadata): RegisteredTra
     exclusions: Object.freeze(sortedUnique(metadata.exclusions)),
     commutativity: metadata.commutativity,
     postconditions: Object.freeze(sortedUnique(metadata.postconditions)),
+    unitClaim: metadata.unitClaim,
     convergence,
   });
 }
 
+interface RegistryEntry {
+  readonly registeredId: string;
+  readonly registeredVersion: string;
+  readonly registration: RegisteredTransform<unknown>;
+}
+
+interface InvocationGroup {
+  readonly kind: "sequential" | "bounded-fixed-point";
+  readonly invocations: TransformInvocation[];
+  readonly maximumIterations: number;
+}
+
 export class TransformRegistry {
-  private readonly transforms = new Map<string, RegisteredTransform<unknown>>();
+  private readonly transforms = new Map<string, RegistryEntry>();
 
   register<TInput>(registration: RegisteredTransform<TInput>): void {
-    const key = this.key(registration.implementation.id, registration.implementation.version);
+    const registeredId = registration.implementation.id;
+    const registeredVersion = registration.implementation.version;
+    if (registeredId.length === 0 || registeredVersion.length === 0) {
+      throw new TypeError("transform identity and version cannot be blank");
+    }
+    const key = this.key(registeredId, registeredVersion);
     if (this.transforms.has(key)) throw new TypeError(`transform already registered: ${key}`);
-    this.transforms.set(key, Object.freeze({
+    const normalized = Object.freeze({
       implementation: registration.implementation as Transform<unknown>,
       metadata: normalizeMetadata(registration.metadata),
-    }));
+    });
+    Object.freeze(registration.implementation);
+    this.transforms.set(key, Object.freeze({ registeredId, registeredVersion, registration: normalized }));
   }
 
   get(id: string, version: string): RegisteredTransform<unknown> | undefined {
-    return this.transforms.get(this.key(id, version));
+    const entry = this.transforms.get(this.key(id, version));
+    if (entry === undefined) return undefined;
+    this.assertIdentity(entry);
+    return entry.registration;
   }
 
   orderInvocations(invocations: readonly TransformInvocation[]): TransformInvocation[] {
+    return this.compositionGroups(invocations).flatMap((group) => group.invocations);
+  }
+
+  async convergeInvocations(
+    invocations: readonly TransformInvocation[],
+    execute: (
+      invocation: TransformInvocation,
+      iteration: number,
+    ) => Promise<{ readonly changed: boolean }>,
+  ): Promise<{ converged: true; iterations: number }> {
+    const groups = this.compositionGroups(invocations);
+    let iterations = groups.length === 0 ? 0 : 1;
+    for (const group of groups) {
+      if (group.kind === "sequential") {
+        for (const invocation of group.invocations) await execute(invocation, 1);
+        continue;
+      }
+      let converged = false;
+      for (let iteration = 1; iteration <= group.maximumIterations; iteration += 1) {
+        let changed = false;
+        for (const invocation of group.invocations) {
+          const result = await execute(invocation, iteration);
+          changed ||= result.changed;
+        }
+        iterations = Math.max(iterations, iteration);
+        if (!changed) {
+          converged = true;
+          break;
+        }
+      }
+      if (!converged) {
+        throw new Error(
+          `transform fixed-point group ${group.invocations.map((invocation) => invocation.transformId).join(", ")} `
+          + `did not converge within ${group.maximumIterations} iterations`,
+        );
+      }
+    }
+    return { converged: true, iterations };
+  }
+
+  private compositionGroups(invocations: readonly TransformInvocation[]): InvocationGroup[] {
     const claims = new Map<EntityId, string[]>();
     const registeredInvocations = invocations.map((invocation) => {
       const registration = this.get(invocation.transformId, invocation.version);
@@ -412,7 +541,13 @@ export class TransformRegistry {
       return { invocation, registration };
     });
     const invokedIds = new Set(invocations.map((invocation) => invocation.transformId));
+    const registrationById = new Map<string, RegisteredTransform<unknown>>();
     for (const { invocation, registration } of registeredInvocations) {
+      const existing = registrationById.get(invocation.transformId);
+      if (existing !== undefined && existing.implementation.version !== invocation.version) {
+        throw new TypeError(`multiple versions of transform ${invocation.transformId} cannot share one composition`);
+      }
+      registrationById.set(invocation.transformId, registration);
       for (const excludedId of registration.metadata.exclusions) {
         if (invokedIds.has(excludedId)) {
           throw new TypeError(`transform ${invocation.transformId} excludes ${excludedId}`);
@@ -423,9 +558,7 @@ export class TransformRegistry {
           throw new TypeError(`transform ${invocation.transformId} requires predecessor ${predecessorId}`);
         }
       }
-    }
-    for (const invocation of invocations) {
-      if (!invocation.exclusiveUnitClaim) continue;
+      if (registration.metadata.unitClaim !== "exclusive") continue;
       for (const unitId of sortedUnique(invocation.unitIds)) {
         const owners = claims.get(unitId) ?? [];
         owners.push(`${invocation.transformId}@${invocation.version}`);
@@ -435,24 +568,110 @@ export class TransformRegistry {
     for (const [unitId, owners] of claims) {
       if (owners.length > 1) throw new TransformClaimConflictError(unitId, owners);
     }
-    const remaining = [...registeredInvocations];
-    const completed = new Set<string>();
-    const ordered: TransformInvocation[] = [];
-    while (remaining.length > 0) {
-      const ready = remaining.filter(({ registration }) =>
-        registration.metadata.predecessors.every((predecessor) => completed.has(predecessor)));
-      if (ready.length === 0) {
-        throw new TypeError(`transform predecessor cycle: ${sortedUnique(remaining.map(({ invocation }) => invocation.transformId)).join(", ")}`);
+
+    let nextIndex = 0;
+    const indices = new Map<string, number>();
+    const lowLinks = new Map<string, number>();
+    const stack: string[] = [];
+    const onStack = new Set<string>();
+    const components: string[][] = [];
+    const visit = (id: string): void => {
+      const ownIndex = nextIndex;
+      nextIndex += 1;
+      indices.set(id, ownIndex);
+      lowLinks.set(id, ownIndex);
+      stack.push(id);
+      onStack.add(id);
+      const registration = registrationById.get(id);
+      if (registration === undefined) throw new TypeError(`unknown transform in composition: ${id}`);
+      for (const predecessor of registration.metadata.predecessors) {
+        if (!indices.has(predecessor)) {
+          visit(predecessor);
+          lowLinks.set(id, Math.min(lowLinks.get(id) ?? ownIndex, lowLinks.get(predecessor) ?? ownIndex));
+        } else if (onStack.has(predecessor)) {
+          lowLinks.set(id, Math.min(lowLinks.get(id) ?? ownIndex, indices.get(predecessor) ?? ownIndex));
+        }
       }
-      ready.sort(({ invocation: left }, { invocation: right }) =>
-        compareStrings(left.transformId, right.transformId) || compareStrings(left.version, right.version));
-      for (const entry of ready) {
-        ordered.push(entry.invocation);
-        completed.add(entry.invocation.transformId);
-        remaining.splice(remaining.indexOf(entry), 1);
+      if (lowLinks.get(id) === ownIndex) {
+        const component: string[] = [];
+        let member: string | undefined;
+        do {
+          member = stack.pop();
+          if (member === undefined) throw new Error("invalid transform component stack");
+          onStack.delete(member);
+          component.push(member);
+        } while (member !== id);
+        components.push(component.sort(compareStrings));
+      }
+    };
+    for (const id of [...invokedIds].sort(compareStrings)) if (!indices.has(id)) visit(id);
+
+    const componentById = new Map<string, number>();
+    components.forEach((component, index) => component.forEach((id) => componentById.set(id, index)));
+    const outgoing = components.map(() => new Set<number>());
+    const indegree = components.map(() => 0);
+    for (const [id, registration] of registrationById) {
+      const currentComponent = componentById.get(id);
+      if (currentComponent === undefined) throw new Error(`missing component for ${id}`);
+      for (const predecessor of registration.metadata.predecessors) {
+        const predecessorComponent = componentById.get(predecessor);
+        if (predecessorComponent === undefined || predecessorComponent === currentComponent) continue;
+        const edges: Set<number> | undefined = outgoing[predecessorComponent];
+        if (edges !== undefined && !edges.has(currentComponent)) {
+          edges.add(currentComponent);
+          indegree[currentComponent] = (indegree[currentComponent] ?? 0) + 1;
+        }
       }
     }
-    return ordered;
+
+    const groups: InvocationGroup[] = [];
+    const remainingComponents = new Set(components.map((_component, index) => index));
+    while (remainingComponents.size > 0) {
+      const ready = [...remainingComponents]
+        .filter((index) => indegree[index] === 0)
+        .sort((left, right) => compareStrings(components[left]?.[0] ?? "", components[right]?.[0] ?? ""));
+      if (ready.length === 0) throw new Error("transform component graph is cyclic");
+      for (const componentIndex of ready) {
+        const component = components[componentIndex] ?? [];
+        const selfCycle = component.some((id) => registrationById.get(id)?.metadata.predecessors.includes(id));
+        const isCycle = component.length > 1 || selfCycle;
+        const convergences = component.map((id) => registrationById.get(id)?.metadata.convergence);
+        if (isCycle && convergences.some((convergence) => convergence?.kind !== "bounded-fixed-point")) {
+          throw new TypeError(`transform predecessor cycle is not declared bounded-convergent: ${component.join(", ")}`);
+        }
+        const maximumIterations = isCycle
+          ? Math.min(...convergences.map((convergence) =>
+              convergence?.kind === "bounded-fixed-point" ? convergence.maximumIterations : 0))
+          : 1;
+        const componentInvocations = registeredInvocations
+          .filter(({ invocation }) => component.includes(invocation.transformId))
+          .map(({ invocation }) => structuredClone(invocation))
+          .sort((left, right) =>
+            compareStrings(left.transformId, right.transformId) || compareStrings(left.version, right.version));
+        groups.push({
+          kind: isCycle ? "bounded-fixed-point" : "sequential",
+          invocations: componentInvocations,
+          maximumIterations,
+        });
+        remainingComponents.delete(componentIndex);
+        for (const dependent of outgoing[componentIndex] ?? []) {
+          indegree[dependent] = (indegree[dependent] ?? 0) - 1;
+        }
+      }
+    }
+    return groups;
+  }
+
+  private assertIdentity(entry: RegistryEntry): void {
+    if (
+      entry.registration.implementation.id !== entry.registeredId
+      || entry.registration.implementation.version !== entry.registeredVersion
+    ) {
+      throw new Error(
+        `transform implementation identity drift: expected ${entry.registeredId}@${entry.registeredVersion}, `
+        + `received ${entry.registration.implementation.id}@${entry.registration.implementation.version}`,
+      );
+    }
   }
 
   private key(id: string, version: string): string {
