@@ -41,21 +41,34 @@ describe("reconcileToFixedPoint", () => {
 });
 
 describe("mandatory vertical-slice evidence", () => {
+  const evidence = () => MANDATORY_VERTICAL_SLICE_STEPS.map((step, index) => ({
+    step,
+    sequence: index + 1,
+    summary: `evidence for ${step}`,
+    details: {
+      outputDigest: `sha256:v1:${String(index).padStart(64, "0")}` as ContentHash,
+      artifactRefs: [`artifact:${step}`],
+      assertions: [{ claim: step, observed: true, expected: true, passed: true }],
+    },
+  }));
+
   it("requires all seventeen steps in normative order", () => {
     expect(MANDATORY_VERTICAL_SLICE_STEPS).toHaveLength(17);
-    expect(() => assertMandatoryVerticalSliceEvidence(
-      MANDATORY_VERTICAL_SLICE_STEPS.map((step, index) => ({
-        step,
-        sequence: index + 1,
-        summary: `evidence for ${step}`,
-      })),
-    )).not.toThrow();
+    expect(() => assertMandatoryVerticalSliceEvidence(evidence())).not.toThrow();
     expect(() => assertMandatoryVerticalSliceEvidence(
       MANDATORY_VERTICAL_SLICE_STEPS.slice(1).map((step, index) => ({
         step,
         sequence: index + 1,
         summary: `evidence for ${step}`,
-      })),
+      })) as unknown as Parameters<typeof assertMandatoryVerticalSliceEvidence>[0],
     )).toThrow(/17 ordered steps/u);
+  });
+
+  it("rejects labels that are not substantiated by output-linked assertions", () => {
+    const labelsOnly = evidence().map(({ details: _details, ...item }) => item);
+    expect(() => assertMandatoryVerticalSliceEvidence(labelsOnly as unknown as Parameters<typeof assertMandatoryVerticalSliceEvidence>[0])).toThrow(/structured details/u);
+    const falseClaim = evidence();
+    falseClaim[13]!.details.assertions[0]!.passed = false;
+    expect(() => assertMandatoryVerticalSliceEvidence(falseClaim)).toThrow(/failed assertion/u);
   });
 });

@@ -26,7 +26,16 @@ export interface MandatoryVerticalSliceStepEvidence {
   readonly step: MandatoryVerticalSliceStep;
   readonly sequence: number;
   readonly summary: string;
-  readonly details?: Readonly<Record<string, unknown>>;
+  readonly details: {
+    readonly outputDigest: ContentHash;
+    readonly artifactRefs: readonly string[];
+    readonly assertions: readonly {
+      readonly claim: string;
+      readonly observed: unknown;
+      readonly expected: unknown;
+      readonly passed: boolean;
+    }[];
+  };
 }
 
 export function assertMandatoryVerticalSliceEvidence(
@@ -40,7 +49,25 @@ export function assertMandatoryVerticalSliceEvidence(
     if (item?.sequence !== index + 1 || item.step !== expected || item.summary.trim().length === 0) {
       throw new Error(`mandatory vertical slice step ${index + 1} must be ${expected}`);
     }
+    if (item.details === undefined || !item.details.outputDigest.startsWith("sha256:v1:")
+      || item.details.artifactRefs.length === 0 || item.details.assertions.length === 0) {
+      throw new Error(`mandatory vertical slice step ${index + 1} requires structured details linked to outputs`);
+    }
+    if (item.details.assertions.some((assertion) => !assertion.passed
+      || assertion.claim.trim().length === 0
+      || canonicalComparable(assertion.observed) !== canonicalComparable(assertion.expected))) {
+      throw new Error(`mandatory vertical slice step ${index + 1} contains a failed assertion`);
+    }
   }
+}
+
+function canonicalComparable(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) => {
+    if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+      return Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)));
+    }
+    return item;
+  });
 }
 
 export interface ReconciliationIteration {
