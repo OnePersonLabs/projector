@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CanonicalFileRepository,
   FileTransactionJournal,
+  MoveReferenceTransform,
   RepositoryPathService,
   SqliteDerivedStore,
   StateBoundCommandExecutor,
@@ -19,6 +20,7 @@ describe("runtime public entrypoint", () => {
     expect(StateBoundCommandExecutor).toBeTypeOf("function");
     expect(FileTransactionJournal).toBeTypeOf("function");
     expect(WriterLeaseManager).toBeTypeOf("function");
+    expect(MoveReferenceTransform).toBeTypeOf("function");
     expect(assertSupportedCanonicalVersions).toBeTypeOf("function");
     expect(currentSqliteSchemaVersion).toBe(1);
   });
