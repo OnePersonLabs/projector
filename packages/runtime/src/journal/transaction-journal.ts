@@ -290,12 +290,27 @@ export class FileTransactionJournal {
   async recoverIncomplete(): Promise<RecoveryResult[]> {
     const directory = await this.ensureJournalRoot();
     const names = (await readdir(directory)).filter((name) => name.endsWith(".json")).sort();
-    const results: RecoveryResult[] = [];
+    const discovered: DurableTransactionRecord[] = [];
+    const transactionIds = new Set<string>();
     for (const name of names) {
       const record = parseRecord(await readFile(join(directory, name), "utf8"));
+      if (name !== recordFileName(record.entry.transactionId)) {
+        throw new JournalRecoveryRequiredError(
+          `Journal filename ${name} does not match transaction ${record.entry.transactionId}`,
+        );
+      }
+      if (transactionIds.has(record.entry.transactionId)) {
+        throw new JournalRecoveryRequiredError(`Duplicate journal identity ${record.entry.transactionId}`);
+      }
+      transactionIds.add(record.entry.transactionId);
       if (record.entry.worktreePath !== this.paths.root) {
         throw new JournalRecoveryRequiredError(`Journal ${name} belongs to a different worktree`);
       }
+      discovered.push(record);
+    }
+
+    const results: RecoveryResult[] = [];
+    for (const record of discovered) {
       if (record.entry.phase === "committed" || record.entry.phase === "rolled-back") continue;
       const priorPhase = record.entry.phase;
       const pending = record.compensations.find((compensation) => compensation.status === "pending");
@@ -318,6 +333,14 @@ export class FileTransactionJournal {
   }
 
   async transitionRecord(record: DurableTransactionRecord, phase: TransactionPhase): Promise<void> {
+    if (
+      phase === "committed" ||
+      phase === "rolling-back" ||
+      phase === "rolled-back" ||
+      phase === "recovery-required"
+    ) {
+      throw new InvalidJournalTransitionError(record.entry.phase, phase);
+    }
     const allowed = allowedTransitions[record.entry.phase];
     if (!allowed.includes(phase)) throw new InvalidJournalTransitionError(record.entry.phase, phase);
     await this.forcePhase(record, phase);
@@ -329,6 +352,13 @@ export class FileTransactionJournal {
     }
     if (record.operations.some((operation) => operation.status !== "applied")) {
       throw new JournalRecoveryRequiredError("A transaction with incomplete or reverted operations cannot commit");
+    }
+    const pending = record.compensations.find((compensation) => compensation.status === "pending");
+    if (pending !== undefined) {
+      await this.forcePhase(record, "recovery-required");
+      throw new JournalRecoveryRequiredError(
+        `Uncompensated external operation ${pending.externalOperationId} requires manual recovery`,
+      );
     }
     await this.forcePhase(record, "committed");
   }
