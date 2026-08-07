@@ -2,6 +2,7 @@ import type {
   AdapterContext,
   ContentHash,
   StateDigest,
+  StateQueryReader,
   StateValueDependencyRef,
 } from "@projector/core";
 import { describe, expect, it } from "vitest";
@@ -46,6 +47,7 @@ const setup = async (options: {
   results?: Array<Record<string, unknown>>;
   observability?: "closed" | "bounded" | "open" | "sampled" | "unavailable";
   assumptions?: string[];
+  unavailableLanes?: string[];
   currentValueHash?: ContentHash;
   changedKeys?: string[];
 }) => {
@@ -60,7 +62,7 @@ const setup = async (options: {
       results,
       observability: options.observability ?? "closed",
       assumptions: options.assumptions ?? [],
-      unavailableLanes: options.observability === "unavailable" ? ["contract-index"] : [],
+      unavailableLanes: options.unavailableLanes ?? (options.observability === "unavailable" ? ["contract-index"] : []),
       dependencyKeys: ["contracts:checkout"],
     }),
   });
@@ -85,6 +87,7 @@ const setup = async (options: {
   return {
     binding,
     queries,
+    values,
     validator,
     setResults: (next: Array<Record<string, unknown>>) => { results = next; },
     setChangedKeys: (next: string[]) => { changedKeys = next; },
@@ -105,9 +108,18 @@ describe("state binding construction", () => {
     expect(duplicate.dependencyDigest).toBe(binding.dependencyDigest);
   });
 
-  it("refuses semantic bindings missing either value hashes or query dependency keys", async () => {
+  it("accepts contract-valid empty, value-only, and query-only dependency sets", async () => {
     const { binding } = await setup({});
-    expect(() => createStateBinding({ ...binding, valueDependencies: [] })).toThrow(/value dependenc/i);
+    expect(createStateBinding({ ...binding, valueDependencies: [], queryDependencies: [] })).toMatchObject({
+      valueDependencies: [],
+      queryDependencies: [],
+    });
+    expect(createStateBinding({ ...binding, queryDependencies: [] }).valueDependencies).toEqual([valueDependency]);
+    expect(createStateBinding({ ...binding, valueDependencies: [] }).queryDependencies).toEqual(binding.queryDependencies);
+  });
+
+  it("requires dependency keys when a query dependency is present", async () => {
+    const { binding } = await setup({});
     expect(() => createStateBinding({
       ...binding,
       queryDependencies: [{
@@ -131,6 +143,67 @@ describe("state binding construction", () => {
 });
 
 describe("dependency-scoped validation", () => {
+  it("detects a query program version replacement against the same StateDigest", async () => {
+    const fixture = await setup({});
+    fixture.queries.register({
+      id: "test.consumers",
+      version: "2",
+      kind: "contract-topology",
+      evaluate: () => ({
+        results: [{ id: "consumer-a" }],
+        observability: "closed",
+        assumptions: [],
+        unavailableLanes: [],
+        dependencyKeys: ["contracts:checkout"],
+      }),
+    });
+
+    const validation = await fixture.validator.validate(fixture.binding, oldState, context(oldState));
+
+    expect(validation.status).toBe("stale");
+    expect(validation.changedQueryDependencyIds).toEqual(["checkout-consumers"]);
+  });
+
+  it("fails closed for an unknown query program against the same StateDigest", async () => {
+    const fixture = await setup({});
+    const validator = new DependencyScopedStateBindingValidator({
+      values: fixture.values,
+      queries: new QueryDependencyRegistry(new InMemoryGraphReader(), false),
+    });
+
+    const validation = await validator.validate(fixture.binding, oldState, context(oldState));
+
+    expect(validation.status).toBe("unavailable");
+    expect(validation.changedQueryDependencyIds).toEqual([]);
+  });
+
+  it("rejects a forged dependency digest against the same StateDigest", async () => {
+    const fixture = await setup({});
+
+    const validation = await fixture.validator.validate(
+      { ...fixture.binding, dependencyDigest: hash("forged") },
+      oldState,
+      context(oldState),
+    );
+
+    expect(validation.status).toBe("suspect");
+    expect(validation.reasons.join(" ")).toMatch(/digest/i);
+  });
+
+  it("conservatively re-evaluates a reader without optional program inspection", async () => {
+    const fixture = await setup({});
+    fixture.setResults([{ id: "consumer-a" }, { id: "consumer-b" }]);
+    const readerWithoutAssert = {
+      evaluate: (query, adapterContext) => fixture.queries.evaluate(query, adapterContext),
+    } satisfies StateQueryReader;
+    const validator = new DependencyScopedStateBindingValidator({ values: fixture.values, queries: readerWithoutAssert });
+
+    const validation = await validator.validate(fixture.binding, oldState, context(oldState));
+
+    expect(validation.status).toBe("stale");
+    expect(validation.changedQueryDependencyIds).toEqual(["checkout-consumers"]);
+  });
+
   it("rebinds an unrelated root change without recomputing semantic work", async () => {
     const { binding, validator } = await setup({ changedKeys: ["units:unrelated"] });
 
@@ -193,6 +266,25 @@ describe("dependency-scoped validation", () => {
     expect(validation.status).toBe("suspect");
   });
 
+  it("accepts an empty bounded result when the registered boundary has no assumptions", async () => {
+    const { binding, validator } = await setup({ results: [], observability: "bounded", changedKeys: ["contracts:checkout"] });
+
+    const validation = await validator.validate(binding, newState, context(newState));
+
+    expect(validation.status).toBe("rebound");
+  });
+
+  it("does not rebind a prior result with an unavailable observation lane", async () => {
+    const { binding, validator } = await setup({
+      unavailableLanes: ["external-consumers"],
+      changedKeys: ["units:unrelated"],
+    });
+
+    const validation = await validator.validate(binding, newState, context(newState));
+
+    expect(validation.status).toBe("suspect");
+  });
+
   it("reports unavailable when a required query lane cannot be observed", async () => {
     const { binding, validator } = await setup({ results: [], observability: "unavailable", changedKeys: ["contracts:checkout"] });
 
@@ -203,6 +295,14 @@ describe("dependency-scoped validation", () => {
 });
 
 describe("dependency-scoped cache", () => {
+  it("refuses an entry that omits consumed value hashes", async () => {
+    const fixture = await setup({});
+    const cache = new DependencyScopedCache<string, { result: string }>(fixture.validator);
+    const queryOnly = createStateBinding({ ...fixture.binding, valueDependencies: [] });
+
+    expect(() => cache.set("unsafe", { result: "compiled" }, queryOnly)).toThrow(/value dependenc/i);
+  });
+
   it("refuses an entry that omits its query boundary", async () => {
     const fixture = await setup({});
     const cache = new DependencyScopedCache<string, { result: string }>(fixture.validator);

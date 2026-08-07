@@ -108,10 +108,9 @@ export class InMemoryGraphReader implements GraphReader {
       if (inputs.has(entry.unitId)) throw new Error(`duplicate derivation input key ${entry.unitId}`);
       inputs.set(
         entry.unitId,
-        [...entry.inputs].map((input) => structuredClone(input)).sort((left, right) => {
-          const byId = compareStrings(left.id, right.id);
-          return byId === 0 ? compareStrings(left.role, right.role) : byId;
-        }),
+        [...entry.inputs]
+          .map((input) => structuredClone(input))
+          .sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right))),
       );
     }
 
@@ -208,6 +207,7 @@ export interface RegisteredQueryProgram {
   id: string;
   version: string;
   kind: StateQueryKind;
+  normalizeInput?(input: Readonly<Record<string, unknown>>): Record<string, unknown>;
   evaluate(args: { input: Readonly<Record<string, unknown>>; graph: GraphReader; context: AdapterContext }): QueryProgramResult | Promise<QueryProgramResult>;
 }
 
@@ -252,6 +252,17 @@ function builtInPrograms(): RegisteredQueryProgram[] {
       id: "graph.semantic-identity-search",
       version: "1",
       kind: "semantic-identity-search",
+      normalizeInput: (input) => {
+        const query = requireString(input, "query");
+        const kinds = input.kinds;
+        if (kinds !== undefined && (!Array.isArray(kinds) || kinds.some((kind) => !["concept", "requirement", "scenario"].includes(String(kind))))) {
+          throw new InvalidQuerySpecError("semantic identity kinds must contain only concept, requirement, or scenario");
+        }
+        return {
+          query,
+          ...(kinds === undefined ? {} : { kinds: sortedUniqueStrings(kinds as string[]) }),
+        };
+      },
       evaluate: ({ input, graph }) => {
         const query = requireString(input, "query");
         const kindsValue = input.kinds;
@@ -337,6 +348,7 @@ export interface CreateQuerySpecInput {
 /** Registry is intentionally data-only at the query boundary: inputs are normalized serializable records, never executable payloads. */
 export class QueryDependencyRegistry implements StateQueryReader {
   private readonly programs = new Map<string, RegisteredQueryProgram>();
+  private readonly versionHistory = new Map<string, Set<string>>();
 
   constructor(private readonly graph: GraphReader, includeBuiltIns = true) {
     if (includeBuiltIns) for (const program of builtInPrograms()) this.register(program);
@@ -344,22 +356,26 @@ export class QueryDependencyRegistry implements StateQueryReader {
 
   register(program: RegisteredQueryProgram): void {
     if (program.id.length === 0 || program.version.length === 0) throw new Error("query program ID and version must be non-empty");
-    const existing = this.programs.get(program.id);
-    if (existing?.version === program.version) {
-      throw new Error(`query program ${program.id} is already registered at version ${program.version}; change the version before replacing it`);
+    const history = this.versionHistory.get(program.id) ?? new Set<string>();
+    if (history.has(program.version)) {
+      throw new Error(`query program ${program.id} version ${program.version} was previously registered; version identifiers cannot be rebound`);
     }
-    this.programs.set(program.id, program);
+    this.programs.set(program.id, Object.freeze({ ...program }));
+    history.add(program.version);
+    this.versionHistory.set(program.id, history);
   }
 
   createSpec(input: CreateQuerySpecInput): StateQuerySpec {
     const program = this.programs.get(input.programId);
     if (program === undefined) throw new UnknownQueryProgramError(input.programId);
     canonicalJson(input.input);
+    const normalizedInput = program.normalizeInput?.(structuredClone(input.input)) ?? structuredClone(input.input);
+    canonicalJson(normalizedInput);
     const basis = {
       kind: program.kind,
       programId: program.id,
       programVersion: program.version,
-      input: structuredClone(input.input),
+      input: normalizedInput,
     };
     return { id: input.id, ...basis, semanticHash: querySemanticHash(basis) };
   }
@@ -369,7 +385,8 @@ export class QueryDependencyRegistry implements StateQueryReader {
     if (program === undefined) throw new UnknownQueryProgramError(query.programId);
     if (program.version !== query.programVersion) throw new QueryProgramVersionError(program.id, program.version, query.programVersion);
     if (program.kind !== query.kind) throw new InvalidQuerySpecError(`query kind ${query.kind} does not match program kind ${program.kind}`);
-    if (querySemanticHash(query) !== query.semanticHash) {
+    const normalizedInput = program.normalizeInput?.(structuredClone(query.input)) ?? structuredClone(query.input);
+    if (canonicalJson(normalizedInput) !== canonicalJson(query.input) || querySemanticHash({ ...query, input: normalizedInput }) !== query.semanticHash) {
       throw new InvalidQuerySpecError("query semantic hash does not match program and normalized input");
     }
   }
