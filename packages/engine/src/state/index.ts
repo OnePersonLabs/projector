@@ -254,7 +254,8 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
         continue;
       }
 
-      const isProvablyUnchanged = changedKeySet !== undefined
+      const isProvablyUnchanged = this.queries.assertCurrent !== undefined
+        && changedKeySet !== undefined
         && dependency.priorResult.dependencyKeys.every((key) => !changedKeySet.has(key));
       if (isProvablyUnchanged) {
         if (dependency.priorResult.observability === "unavailable") unavailableQueryDependencyIds.push(dependency.query.id);

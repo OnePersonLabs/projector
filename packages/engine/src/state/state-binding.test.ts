@@ -204,6 +204,24 @@ describe("dependency-scoped validation", () => {
     expect(validation.changedQueryDependencyIds).toEqual(["checkout-consumers"]);
   });
 
+  it("does not use changed-key skipping when a changed-root reader cannot inspect the program", async () => {
+    const fixture = await setup({ changedKeys: [] });
+    fixture.setResults([{ id: "consumer-a" }, { id: "consumer-b" }]);
+    const readerWithoutAssert = {
+      evaluate: (query, adapterContext) => fixture.queries.evaluate(query, adapterContext),
+    } satisfies StateQueryReader;
+    const validator = new DependencyScopedStateBindingValidator({
+      values: fixture.values,
+      queries: readerWithoutAssert,
+      changedDependencyKeys: { changedKeys: async () => [] },
+    });
+
+    const validation = await validator.validate(fixture.binding, newState, context(newState));
+
+    expect(validation.status).toBe("stale");
+    expect(validation.changedQueryDependencyIds).toEqual(["checkout-consumers"]);
+  });
+
   it("rebinds an unrelated root change without recomputing semantic work", async () => {
     const { binding, validator } = await setup({ changedKeys: ["units:unrelated"] });
 
