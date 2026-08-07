@@ -1,0 +1,11 @@
+{
+  "name": "misplaced-repository-script-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:index": "node scripts/build-index.mjs",
+    "check:links": "node scripts/check-links.mjs",
+    "test": "node --test .codex/hooks/validate-repo.test.mjs scripts/*.test.mjs",
+    "validate:repo": "node .codex/hooks/validate-repo.mjs"
+  }
+}
