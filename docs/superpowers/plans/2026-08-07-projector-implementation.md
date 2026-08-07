@@ -65,17 +65,19 @@ T1 foundation/contracts/hashing/ports
                                              → T21 external adapters (post-credible-local-kernel)
 ```
 
-Critical path: `T1 → T2/T3/T4 → T6/T7/T8 → T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T19 → T20`.
+Critical path through one longest branch: `T1 → T2 → T6 → T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T19 → T20`. T3, T4, and T5 are join prerequisites co-critical to the T6/T8 wave; T7 and T8 are parallel join prerequisites for T9.
 
 Maximum initial independent implementation wave after T1: T2, T3, T4, and T5. Maximum Slice-1 wave after that integration: T6, T7, and T8.
 
+Wave boundary after T2–T5: the primary integration authority runs the complete Slice-0 gate—root typecheck/tests/build, registry/reference coverage, package-boundary enforcement, canonical delete/rebuild and locality properties, state-binding locality/query-membership properties, journal empty/sample crash recovery, fixture isolation, and minimal CLI `--help`/`--version` smoke tests—before T6–T8 can become integrated.
+
 ### Task 1: Workspace, normative contracts, hashing, identity, and ports
 
-**Files:** shared root configs; `packages/core/**`; package-boundary test under `scripts/` or `packages/testkit/`.
+**Files:** shared root configs; `packages/core/**`; minimal `packages/cli` package/entrypoint skeleton; package-boundary test under `scripts/` or `packages/testkit/`.
 
-**Produces:** all 147 exported normative declarations represented as TypeScript types where applicable; Zod schemas for every serialized public contract; JSON Schema export and reference-resolution validation; stable IDs; canonical serialization; schema-defined semantic/discovery/document/root hashing; host-neutral ports; package dependency guard.
+**Produces:** all 147 exported normative declarations represented as TypeScript types where applicable; Zod schemas for every serialized public contract; JSON Schema export and reference-resolution validation; stable IDs; canonical serialization; schema-defined semantic/discovery/document/root hashing; host-neutral ports; package dependency guard; buildable minimal CLI entrypoint exposing `--help` and `--version` without composing unfinished subsystems.
 
-**Verification:** schema registry completeness, typecheck, JSON Schema cross-reference resolution, insertion-order/root-order properties, hash-domain and volatile-field tests, ID/path/alias/lineage properties, dependency-direction test.
+**Verification:** schema registry completeness, typecheck, JSON Schema cross-reference resolution, insertion-order/root-order properties, hash-domain and volatile-field tests, ID/path/alias/lineage properties, dependency-direction test, CLI build/help/version smoke test.
 
 - [ ] Implement with contract tests first, verify locally, commit one coherent foundation unit, and record exact test evidence in the task report.
 
@@ -143,7 +145,7 @@ Maximum initial independent implementation wave after T1: T2, T3, T4, and T5. Ma
 
 **Files:** `packages/engine/src/inference/**`, `authority/**`, `governance/**`; engine tests.
 
-**Consumes:** core evidence/authority/selector/rule/lens contracts, graph/query ports, analyzed Projection Units.
+**Consumes:** core evidence/authority/selector/rule/lens contracts, graph/query ports, and Projection Unit fixtures conforming to the analyzer output contract. T9 integrates this kernel with T6's concrete analyzer output, preserving T6/T7 parallelism.
 
 **Produces:** causal evidence grouping; copied/generated-occurrence discounting; descriptive family inference; Pattern Candidate/authority separation; deterministic selector normalization/evaluation; authority ordering; hard predicate/conflict compiler; active/shadow repository-script lens.
 
@@ -167,11 +169,11 @@ Maximum initial independent implementation wave after T1: T2, T3, T4, and T5. Ma
 
 **Files:** `packages/engine/src/reconciliation/**`; `packages/cli/**`; cross-package Slice-1 acceptance tests.
 
-**Consumes:** T2–T8 public packages.
+**Consumes:** the engine reconciliation implementation consumes only core contracts and injected ports/facades. The CLI composition root and cross-package acceptance tests consume T2–T8 public package facades; engine code must not import runtime/analyzer implementations.
 
-**Produces:** `projector init|audit|plan|apply|reconcile|explain`; complete 17-step misplaced-script causal loop; divergence rationale/counterevidence/caveats; independent validation; cleanup state; canonical semantic result; recovery UX.
+**Produces:** `projector init|audit|plan|apply|reconcile|explain`; minimal mode/flag-to-`ExecutionPolicy` normalization and R1 approval binding; complete 17-step misplaced-script causal loop; divergence rationale/counterevidence/caveats; independent validation; cleanup state; canonical semantic result; recovery UX. T12 broadens policy presets and contradictory-flag coverage without changing semantic interpretation.
 
-**Verification:** the mandated fixture is detected, previewed, repaired, validated, and reconciled; second identical run has zero material delta; receipt/certificate exist; deleting `state.db` and rebuilding preserves accepted canonical semantics; clean and incremental results agree.
+**Verification:** the mandated fixture is detected, previewed, repaired, validated, and reconciled through an acquired lease and durable journal; source and test move to `/scripts`, all package-script/import references are updated, validators pass, and the cleanup plan reports no unresolved cluster work; second identical run has zero material delta; receipt/certificate exist; deleting `state.db` and rebuilding preserves accepted canonical semantics; clean and incremental results agree; package-boundary guard confirms only CLI/tests compose concrete packages.
 
 - [ ] Integrate the first vertical slice, run all dependent package tests and the exact acceptance fixture, commit, and report.
 
@@ -301,4 +303,3 @@ Maximum initial independent implementation wave after T1: T2, T3, T4, and T5. Ma
 - Dependency consistency: shared contracts are stabilized in T1; every later task consumes only packages allowed by the reference dependency graph; CLI is the sole broad composition root.
 - Placeholder scan: no implementation placeholder is used; underspecified normative seams have explicit minimal resolutions in `docs/implementation/spec-resolutions.md`.
 - TDD scope: each checkbox represents one independently reviewable subsystem capability with its complete red/green/refactor and verification cycle, matching the approved handoff’s granularity override.
-
