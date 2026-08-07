@@ -1,7 +1,9 @@
 import { lstat, readFile, readdir, readlink } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 
-import { hashFramedDomain, type ContentHash } from "@projector/core";
+import { hashFramedDomain, type AnalyzerFailure, type ContentHash } from "@projector/core";
+
+import { compareCodePoint } from "../ordering.js";
 
 export interface InventoryEntry {
   readonly path: string;
@@ -12,6 +14,11 @@ export interface InventoryEntry {
   readonly generated: boolean;
   readonly generatedReason?: "source-marker";
   readonly symlinkTarget?: string;
+}
+
+export interface InventoryResult {
+  readonly entries: InventoryEntry[];
+  readonly failures: AnalyzerFailure[];
 }
 
 const ignoredDirectories = new Set([".git", "node_modules"]);
@@ -32,24 +39,55 @@ function isGenerated(content: string): boolean {
   return /(?:@generated|generated file|do not edit)/iu.test(content.slice(0, 1024));
 }
 
-export async function inventoryRepository(repositoryRoot: string): Promise<InventoryEntry[]> {
+function failure(scope: string, capability: string, error: unknown, affectedClaimKinds: string[]): AnalyzerFailure {
+  return {
+    analyzerId: "projector.filesystem-local",
+    capability,
+    scope,
+    message: error instanceof Error ? error.message : String(error),
+    recoverable: true,
+    affectedClaimKinds,
+  };
+}
+
+export async function inventoryRepository(repositoryRoot: string): Promise<InventoryResult> {
   const root = resolve(repositoryRoot);
   const entries: InventoryEntry[] = [];
+  const failures: AnalyzerFailure[] = [];
 
   async function visit(directory: string): Promise<void> {
-    const children = await readdir(directory, { withFileTypes: true });
-    children.sort((left, right) => Buffer.compare(Buffer.from(left.name), Buffer.from(right.name)));
+    let children;
+    try {
+      children = await readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      const scope = directory === root ? "." : repositoryPath(root, directory);
+      failures.push(failure(scope, "directory-enumeration", error, ["artifact-enumeration", "inventory-completeness"]));
+      return;
+    }
+    children.sort((left, right) => compareCodePoint(left.name, right.name));
     for (const child of children) {
       if (child.isDirectory() && ignoredDirectories.has(child.name)) continue;
       const absolutePath = resolve(directory, child.name);
       const path = repositoryPath(root, absolutePath);
-      const stat = await lstat(absolutePath);
+      let stat;
+      try {
+        stat = await lstat(absolutePath);
+      } catch (error) {
+        failures.push(failure(path, "artifact-metadata", error, ["artifact", "projection-unit", "source-relationships"]));
+        continue;
+      }
       if (stat.isDirectory()) {
         await visit(absolutePath);
         continue;
       }
       if (stat.isSymbolicLink()) {
-        const symlinkTarget = await readlink(absolutePath);
+        let symlinkTarget;
+        try {
+          symlinkTarget = await readlink(absolutePath);
+        } catch (error) {
+          failures.push(failure(path, "symlink-target", error, ["artifact-content", "projection-unit"]));
+          continue;
+        }
         entries.push({
           path,
           kind: "symlink",
@@ -62,7 +100,13 @@ export async function inventoryRepository(repositoryRoot: string): Promise<Inven
         continue;
       }
       if (!stat.isFile()) continue;
-      const bytes = await readFile(absolutePath);
+      let bytes;
+      try {
+        bytes = await readFile(absolutePath);
+      } catch (error) {
+        failures.push(failure(path, "artifact-content", error, ["artifact-content", "projection-unit", "source-relationships"]));
+        continue;
+      }
       const content = bytes.toString("utf8");
       const generated = isGenerated(content);
       entries.push({
@@ -78,5 +122,5 @@ export async function inventoryRepository(repositoryRoot: string): Promise<Inven
   }
 
   await visit(root);
-  return entries;
+  return { entries, failures };
 }

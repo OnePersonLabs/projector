@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -24,6 +24,14 @@ async function fixtureRepository(): Promise<string> {
     ["-c", "user.name=Projector Test", "-c", "user.email=projector@example.invalid", "commit", "--quiet", "-m", "fixture"],
     { cwd: root },
   );
+  return root;
+}
+
+async function fixtureWithoutGit(): Promise<string> {
+  const parent = await mkdtemp(join(tmpdir(), "projector-analyzer-no-git-"));
+  temporaryRoots.push(parent);
+  const root = join(parent, "repository");
+  await cp(fixtureRoot, root, { recursive: true });
   return root;
 }
 
@@ -178,5 +186,141 @@ describe("local repository analyzer", () => {
     const afterUnit = after.projectionUnits.find((unit) => unit.key === "scripts/literal.mjs");
     expect(afterUnit?.id).toBe(beforeUnit?.id);
     expect(afterUnit?.semanticSignature.hash).not.toBe(beforeUnit?.semanticSignature.hash);
+  });
+
+  it("neutralizes executable local Git configuration during every probe", async () => {
+    const root = await fixtureRepository();
+    const marker = join(root, "fsmonitor-executed.txt");
+    const monitor = join(root, "hostile-fsmonitor.sh");
+    await writeFile(monitor, `#!/bin/sh\ntouch '${marker}'\nexit 0\n`);
+    await chmod(monitor, 0o755);
+    await execFileAsync("git", ["config", "--local", "core.fsmonitor", monitor], { cwd: root });
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+
+    expect(result.git.availability).toBe("available");
+    await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("localizes an unreadable filesystem entry without discarding other artifacts", async () => {
+    const root = await fixtureRepository();
+    const unreadable = join(root, "scripts/unreadable.mjs");
+    await writeFile(unreadable, "export const unavailable = true;\n");
+    await chmod(unreadable, 0);
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+
+    expect(result.failures).toContainEqual(expect.objectContaining({
+      analyzerId: "projector.filesystem-local",
+      capability: "artifact-content",
+      scope: "scripts/unreadable.mjs",
+      affectedClaimKinds: ["artifact-content", "projection-unit", "source-relationships"],
+    }));
+    expect(result.files.some((file) => file.path === "scripts/build-index.mjs")).toBe(true);
+    expect(result.packageScriptInvocations.some((fact) => fact.scriptName === "build:index")).toBe(true);
+  });
+
+  it("reports Git outage as unavailable unknown evidence rather than known untracked files", async () => {
+    const root = await fixtureWithoutGit();
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+
+    expect(result.git.availability).toBe("unavailable");
+    expect(result.gitIdentities.length).toBeGreaterThan(0);
+    expect(result.gitIdentities.every((identity) => identity.tracked === "unknown" && identity.availability === "unavailable")).toBe(true);
+    expect(result.gitIdentities.some((identity) => identity.tracked === false)).toBe(false);
+    expect(result.failures).toContainEqual(expect.objectContaining({
+      analyzerId: "projector.git-local",
+      capability: "git-identity-and-moves",
+    }));
+  });
+
+  it("does not collapse whitespace that changes JavaScript token structure or automatic semicolon insertion", async () => {
+    const root = await fixtureRepository();
+    await writeFile(join(root, "scripts/collision-a.mjs"), "export function collision() { return\n{ value: 1 }; }\n");
+    await writeFile(join(root, "scripts/collision-b.mjs"), "export function collision() { return { value: 1 }; }\n");
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+    const first = result.projectionUnits.find((unit) => unit.key === "scripts/collision-a.mjs");
+    const second = result.projectionUnits.find((unit) => unit.key === "scripts/collision-b.mjs");
+
+    expect(first?.id).not.toBe(second?.id);
+    expect(first?.semanticSignature.hash).not.toBe(second?.semanticSignature.hash);
+    expect(first?.anchor.fallbackSignature?.hash).not.toBe(second?.anchor.fallbackSignature?.hash);
+  });
+
+  it("does not extract imports, tests, lifecycle exports, or commands from comments and string literals", async () => {
+    const root = await fixtureRepository();
+    await writeFile(
+      join(root, "scripts/false-positive.mjs"),
+      [
+        "// import './ghost-comment.mjs'; export function onPreTool() {}",
+        "const sourceText = \"import './ghost-string.mjs'; export function onPreTool() {}; test('ghost', () => {});\";",
+        "export const realValue = sourceText;",
+        "",
+      ].join("\n"),
+    );
+    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
+    manifest.scripts["print:example"] = "echo 'node scripts/ghost-command.mjs'";
+    await writeFile(join(root, "package.json"), `${JSON.stringify(manifest, undefined, 2)}\n`);
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+    const file = result.files.find((candidate) => candidate.path === "scripts/false-positive.mjs");
+
+    expect(result.dependencies.some((dependency) => dependency.importerPath === "scripts/false-positive.mjs")).toBe(false);
+    expect(result.testTargets.some((target) => target.testPath === "scripts/false-positive.mjs")).toBe(false);
+    expect(file).toMatchObject({ lifecycleExports: [], semanticRole: "source", exports: ["realValue"] });
+    expect(result.packageScriptInvocations.some((invocation) => invocation.scriptName === "print:example")).toBe(false);
+  });
+
+  it("declares the composed repository observation bounded rather than closed-world", async () => {
+    const root = await fixtureRepository();
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+
+    expect(result.surface.enumeration).toMatchObject({
+      observability: "bounded",
+      blindSpots: expect.arrayContaining(["ignored .git and node_modules contents"]),
+    });
+  });
+
+  it("does not follow an untracked symlink outside the repository when inferring a move", async () => {
+    const root = await fixtureRepository();
+    const outside = join(root, "..", "outside-validate-repo.mjs");
+    const original = join(root, ".codex/hooks/validate-repo.mjs");
+    await writeFile(outside, await readFile(original, "utf8"));
+    await unlink(original);
+    await symlink(outside, join(root, "scripts/validate-repo.mjs"));
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+
+    expect(result.gitMoves).not.toContainEqual(expect.objectContaining({
+      fromPath: ".codex/hooks/validate-repo.mjs",
+      toPath: "scripts/validate-repo.mjs",
+    }));
+  });
+
+  it("distinguishes staged renames from working-tree rename clues", async () => {
+    const root = await fixtureRepository();
+    await rename(join(root, "scripts/build-index.mjs"), join(root, "scripts/generate-index.mjs"));
+    await execFileAsync("git", ["add", "--all"], { cwd: root });
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+
+    expect(result.gitMoves).toContainEqual(expect.objectContaining({
+      fromPath: "scripts/build-index.mjs",
+      toPath: "scripts/generate-index.mjs",
+      status: "staged-rename",
+    }));
+  });
+
+  it("orders repository paths by Unicode code point independent of locale", async () => {
+    const root = await fixtureRepository();
+    await writeFile(join(root, "scripts/\uE000.mjs"), "export const privateUse = true;\n");
+    await writeFile(join(root, "scripts/\u{10000}.mjs"), "export const supplementary = true;\n");
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+    const paths = result.files.map((file) => file.path);
+
+    expect(paths.indexOf("scripts/\uE000.mjs")).toBeLessThan(paths.indexOf("scripts/\u{10000}.mjs"));
   });
 });

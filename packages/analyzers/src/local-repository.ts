@@ -14,7 +14,8 @@ import {
 } from "@projector/core";
 
 import { inventoryRepository, type InventoryEntry } from "./filesystem/inventory.js";
-import { collectGitFacts, type GitIdentityFact, type GitMoveFact } from "./git/facts.js";
+import { collectGitFacts, type GitFacts, type GitIdentityFact, type GitMoveFact } from "./git/facts.js";
+import { compareCodePoint } from "./ordering.js";
 import {
   analyzeJavaScript,
   type JavaScriptFileFacts,
@@ -69,6 +70,7 @@ export interface LocalRepositoryAnalysis {
   readonly artifacts: Artifact[];
   readonly projectionUnits: ProjectionUnit[];
   readonly files: LocalFileFact[];
+  readonly git: GitFacts;
   readonly gitIdentities: GitIdentityFact[];
   readonly gitMoves: GitMoveFact[];
   readonly packageScriptInvocations: PackageScriptInvocationFact[];
@@ -109,6 +111,14 @@ function tokenizeCommand(command: string): string[] {
       quote = character;
       continue;
     }
+    if (character === ";" || character === "&" || character === "|") {
+      if (token.length > 0) tokens.push(token);
+      token = "";
+      const previous = tokens.at(-1);
+      if ((character === "&" || character === "|") && previous === character) tokens[tokens.length - 1] = `${character}${character}`;
+      else tokens.push(character);
+      continue;
+    }
     if (/\s/u.test(character)) {
       if (token.length > 0) tokens.push(token);
       token = "";
@@ -118,6 +128,41 @@ function tokenizeCommand(command: string): string[] {
   }
   if (token.length > 0) tokens.push(token);
   return tokens;
+}
+
+function executableTargets(tokens: readonly string[]): Array<{ runner: string; target: string }> {
+  const result: Array<{ runner: string; target: string }> = [];
+  let segment: string[] = [];
+  const consume = (): void => {
+    if (segment.length === 0) return;
+    let runnerIndex = 0;
+    while (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(segment[runnerIndex] ?? "")) runnerIndex += 1;
+    const runner = posix.basename(segment[runnerIndex] ?? "");
+    if (!["node", "node.exe", "bun", "deno", "tsx", "ts-node"].includes(runner)) {
+      segment = [];
+      return;
+    }
+    let skipNext = false;
+    for (const target of segment.slice(runnerIndex + 1)) {
+      if (skipNext) {
+        skipNext = false;
+        continue;
+      }
+      if (["-e", "--eval", "-p", "--print", "--input-type", "--require", "-r", "--import"].includes(target)) {
+        skipNext = true;
+        continue;
+      }
+      if (target.startsWith("-")) continue;
+      if (/\.(?:mjs|js|cjs|mts|ts)$/u.test(target) && !target.includes("*")) result.push({ runner, target });
+    }
+    segment = [];
+  };
+  for (const token of tokens) {
+    if ([";", "&&", "||"].includes(token)) consume();
+    else segment.push(token);
+  }
+  consume();
+  return result;
 }
 
 interface PackageFacts {
@@ -137,13 +182,11 @@ function analyzePackageScripts(entries: readonly InventoryEntry[]): PackageFacts
         repositoryKey = manifest.name.trim();
       }
       if (typeof manifest.scripts !== "object" || manifest.scripts === null || Array.isArray(manifest.scripts)) continue;
-      for (const [scriptName, value] of Object.entries(manifest.scripts as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
+      for (const [scriptName, value] of Object.entries(manifest.scripts as Record<string, unknown>).sort(([left], [right]) => compareCodePoint(left, right))) {
         if (typeof value !== "string") continue;
         const tokens = tokenizeCommand(value);
-        const runner = tokens[0] ?? "unknown";
-        for (const token of tokens) {
-          if (!/\.(?:mjs|js|cjs|mts|ts)$/u.test(token) || token.includes("*")) continue;
-          const targetPath = posix.normalize(posix.join(posix.dirname(entry.path), token.replace(/^\.\//u, "")));
+        for (const { runner, target } of executableTargets(tokens)) {
+          const targetPath = posix.normalize(posix.join(posix.dirname(entry.path), target.replace(/^\.\//u, "")));
           invocations.push({
             sourceClass: "derived",
             manifestPath: entry.path,
@@ -165,7 +208,7 @@ function analyzePackageScripts(entries: readonly InventoryEntry[]): PackageFacts
       });
     }
   }
-  invocations.sort((left, right) => left.manifestPath.localeCompare(right.manifestPath) || left.scriptName.localeCompare(right.scriptName) || left.targetPath.localeCompare(right.targetPath));
+  invocations.sort((left, right) => compareCodePoint(left.manifestPath, right.manifestPath) || compareCodePoint(left.scriptName, right.scriptName) || compareCodePoint(left.targetPath, right.targetPath));
   return { invocations, failures, repositoryKey };
 }
 
@@ -223,7 +266,7 @@ function roleFor(
   if (entry.path.startsWith(".codex/hooks/")) {
     evidence.push({ sourceClass: "derived", kind: "directory-proximity", detail: ".codex/hooks", strength: 10 });
   }
-  evidence.sort((left, right) => right.strength - left.strength || left.kind.localeCompare(right.kind) || left.detail.localeCompare(right.detail));
+  evidence.sort((left, right) => right.strength - left.strength || compareCodePoint(left.kind, right.kind) || compareCodePoint(left.detail, right.detail));
 
   if (/\.test\.(?:mjs|js|cjs|mts|ts)$/u.test(entry.path)) return { role: "test", evidence };
   if (javaScript !== undefined && javaScript.lifecycleExports.length > 0) return { role: "hook-entrypoint", evidence };
@@ -276,7 +319,7 @@ function buildCapabilities(): AnalyzerCapabilities[] {
       supportedLanguages: [],
       supportedSemantics: ["deterministic-file-inventory", "generated-source-markers"],
       enumeration: {
-        observability: "closed",
+        observability: "bounded",
         method: "recursive-lstat-without-symlink-following",
         assumptions: ["repository root is readable"],
         blindSpots: ["ignored .git and node_modules contents"],
@@ -317,7 +360,8 @@ function buildCapabilities(): AnalyzerCapabilities[] {
 
 export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOptions): Promise<LocalRepositoryAnalysis> {
   const repositoryRoot = resolve(options.repositoryRoot);
-  const inventory = await inventoryRepository(repositoryRoot);
+  const inventoryResult = await inventoryRepository(repositoryRoot);
+  const inventory = inventoryResult.entries;
   const packageFacts = analyzePackageScripts(inventory);
   const javaScriptFacts = analyzeJavaScript(inventory);
   const gitFacts = await collectGitFacts(repositoryRoot, inventory.map((entry) => entry.path));
@@ -331,7 +375,13 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
     kind: "repository",
     adapter: "projector.local-repository@1",
     access: "read-only",
-    enumeration: buildCapabilities()[0]!.enumeration,
+    enumeration: {
+      observability: "bounded",
+      method: "composed-local-filesystem-git-and-static-syntax-observation",
+      assumptions: ["repository root and available Git metadata are readable"],
+      blindSpots: ["ignored .git and node_modules contents", "dynamic module resolution", "unavailable per-entry observations"],
+      dynamicMechanisms: ["runtime module resolution", "generated state outside inventory boundary"],
+    },
     capabilities: {
       read: true,
       write: false,
@@ -370,7 +420,8 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
       role,
       exports: javaScript?.exports ?? [],
       lifecycleExports: javaScript?.lifecycleExports ?? [],
-      dependencySpecifiers: javaScriptFacts.dependencies.filter((dependency) => dependency.importerPath === entry.path).map((dependency) => dependency.specifier).sort(),
+      dependencySpecifiers: javaScriptFacts.dependencies.filter((dependency) => dependency.importerPath === entry.path).map((dependency) => dependency.specifier).sort(compareCodePoint),
+      syntaxTokens: javaScript?.normalizedSemantics,
     });
     const semanticSignature = signature("projector.local-semantic", semanticKey, javaScript?.normalizedSemantics ?? entry.content);
     const anchor = javaScript !== undefined && javaScript.exports.length > 0
@@ -380,7 +431,7 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
         : entry.path.endsWith("package.json")
           ? { kind: "json-pointer" as const, value: "/", fallbackSignature: structuralSignature }
           : { kind: "file" as const, value: semanticKey, fallbackSignature: structuralSignature };
-    const tags = [role, "source-class:derived", ...(entry.generated ? ["generated"] : [])].sort();
+    const tags = [role, "source-class:derived", ...(entry.generated ? ["generated"] : [])].sort(compareCodePoint);
     artifacts.push({
       id: artifactId,
       surfaceId,
@@ -436,18 +487,19 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
     });
   }
 
-  const byLocator = (left: Artifact, right: Artifact): number => left.locator.localeCompare(right.locator);
+  const byLocator = (left: Artifact, right: Artifact): number => compareCodePoint(left.locator, right.locator);
   artifacts.sort(byLocator);
-  projectionUnits.sort((left, right) => left.key.localeCompare(right.key));
-  files.sort((left, right) => left.path.localeCompare(right.path));
-  const failures = [...packageFacts.failures, ...javaScriptFacts.failures, ...gitFacts.failures]
-    .sort((left, right) => left.analyzerId.localeCompare(right.analyzerId) || left.scope.localeCompare(right.scope) || left.capability.localeCompare(right.capability));
+  projectionUnits.sort((left, right) => compareCodePoint(left.key, right.key));
+  files.sort((left, right) => compareCodePoint(left.path, right.path));
+  const failures = [...inventoryResult.failures, ...packageFacts.failures, ...javaScriptFacts.failures, ...gitFacts.failures]
+    .sort((left, right) => compareCodePoint(left.analyzerId, right.analyzerId) || compareCodePoint(left.scope, right.scope) || compareCodePoint(left.capability, right.capability));
   return {
     surface,
     capabilities: buildCapabilities(),
     artifacts,
     projectionUnits,
     files,
+    git: gitFacts,
     gitIdentities: gitFacts.identities,
     gitMoves: gitFacts.moves,
     packageScriptInvocations: packageFacts.invocations,
