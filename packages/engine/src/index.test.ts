@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DependencyScopedStateBindingValidator,
   InMemoryGraphReader,
+  MANDATORY_VERTICAL_SLICE_STEPS,
   StateBoundChangeExecutor,
   QueryDependencyRegistry,
   compileProjectionLenses,
@@ -10,6 +11,7 @@ import {
   createStateBinding,
   evaluateSelector,
   groupCausalEvidence,
+  reconcileToFixedPoint,
 } from "./index.js";
 
 describe("engine public entrypoint", () => {
@@ -23,5 +25,7 @@ describe("engine public entrypoint", () => {
     expect(compileProjectionLenses).toBeTypeOf("function");
     expect(createExecutionCapsule).toBeTypeOf("function");
     expect(StateBoundChangeExecutor).toBeTypeOf("function");
+    expect(reconcileToFixedPoint).toBeTypeOf("function");
+    expect(MANDATORY_VERTICAL_SLICE_STEPS).toHaveLength(17);
   });
 });

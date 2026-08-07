@@ -37,6 +37,9 @@ import {
   createRepositoryScriptLens,
   createStateBinding,
   inferPatternFamilies,
+  MANDATORY_VERTICAL_SLICE_STEPS,
+  assertMandatoryVerticalSliceEvidence,
+  reconcileToFixedPoint,
   selectorHash,
   type ApprovedTransformContext,
   type ChangeArtifactStore,
@@ -44,13 +47,8 @@ import {
   type ChangeTransactionPort,
   type CompletionAssessmentPort,
   type StateBoundChangeResult,
-} from "@projector/engine";
-import {
-  MANDATORY_VERTICAL_SLICE_STEPS,
-  assertMandatoryVerticalSliceEvidence,
-  reconcileToFixedPoint,
   type MandatoryVerticalSliceStepEvidence,
-} from "../../engine/src/reconciliation/index.js";
+} from "@projector/engine";
 import {
   CanonicalFileRepository,
   FileTransactionJournal,
