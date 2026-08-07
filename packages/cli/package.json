@@ -14,9 +14,13 @@
   },
   "scripts": {
     "build": "tsc -b",
+    "test": "vitest run --root ../.. packages/cli/src",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@projector/core": "workspace:*"
+    "@projector/analyzers": "workspace:*",
+    "@projector/core": "workspace:*",
+    "@projector/engine": "workspace:*",
+    "@projector/runtime": "workspace:*"
   }
 }
