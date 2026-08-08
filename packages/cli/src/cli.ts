@@ -2,7 +2,15 @@
 import { pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { RiskClass } from "@projector/core";
+import type { ArchitectureConcern, ArchitectureDecision, DecisionValidityAssessment, RiskClass } from "@projector/core";
+import {
+  auditArchitectureDecisions,
+  explainArchitectureDecision,
+  runArchitecturePreflight,
+  type ArchitecturePreflightInput,
+  type DecisionOverlapPort,
+  type DecisionPopulationPort,
+} from "@projector/engine/architecture";
 
 import { assertOperationRiskAuthorized, deriveOperationRisk, normalizeExecutionPolicy, type CliPolicyInput, type OperationRiskInput, type SliceCommand } from "./policy.js";
 import {
@@ -22,7 +30,7 @@ Usage: projector <command> [options]
 
 Commands:
   init                  Initialize local Projector derived state
-  audit                 Analyze the mandatory repository-script cluster
+  audit                 Analyze governed state; add --decisions for architecture decisions
   plan                  Preview a state-bound deterministic repair
   apply                 Apply the approved R1 repair once
   reconcile             Apply and reconcile the repair to a fixed point
@@ -49,6 +57,15 @@ export interface ProjectorCommandOptions {
     readonly assessOperationRisk?: (command: SliceCommand, repositoryRoot: string) => Promise<RiskClass>;
     readonly operation?: OperationRiskInput;
   };
+  readonly architecture?: ArchitectureCliPort;
+}
+
+export interface ArchitectureCliPort {
+  readonly load: () => Promise<{ decisions: readonly ArchitectureDecision[]; concerns: readonly ArchitectureConcern[] }>;
+  readonly validity: (decisionId: string) => Promise<DecisionValidityAssessment | undefined>;
+  readonly overlap: DecisionOverlapPort;
+  readonly population: DecisionPopulationPort;
+  readonly preflight?: () => Promise<ArchitecturePreflightInput>;
 }
 
 const execFileAsync = promisify(execFile);
@@ -63,6 +80,7 @@ interface ParsedCommand {
   readonly target?: string;
   readonly format: "text" | "json";
   readonly policy: CliPolicyInput;
+  readonly decisions: boolean;
 }
 
 function optionValue(arguments_: readonly string[], name: string): string | undefined {
@@ -90,10 +108,13 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     ? arguments_[1]
     : undefined;
   if (command === "explain" && target === undefined) throw new Error("explain requires a target");
+  const decisions = arguments_.includes("--decisions");
+  if (decisions && command !== "audit") throw new Error("--decisions is only valid with audit");
   return {
     command,
     ...(target === undefined ? {} : { target }),
     format: formatValue,
+    decisions,
     policy: {
       command,
       ...(modeValue === undefined ? {} : { mode: modeValue }),
@@ -107,6 +128,10 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
 function outputFor(command: SliceCommand, report: unknown, format: "text" | "json"): string {
   if (format === "json") return JSON.stringify(report, null, 2);
   if (command === "audit") {
+    if ("decisionAudit" in (report as object)) {
+      const count = (report as { decisionAudit: { findings: readonly unknown[] } }).decisionAudit.findings.length;
+      return count === 0 ? "No architecture decision audit findings." : `${count} architecture decision audit findings.`;
+    }
     const count = (report as { divergences: readonly unknown[] }).divergences.length;
     return count === 0 ? "No governed divergences found." : `${count} governed divergences found.`;
   }
@@ -159,6 +184,14 @@ export async function executeProjector(
         : { policy, initialized: false, dryRun: true };
       break;
     case "audit": {
+      if (parsed.decisions) {
+        if (options.architecture === undefined) return { exitCode: 3, output: "architecture decision provider is unavailable", report: { policy, blocked: true } };
+        const loaded = await options.architecture.load();
+        const decisionAudit = await auditArchitectureDecisions(loaded, { overlap: options.architecture.overlap, population: options.architecture.population });
+        report = { policy, decisionAudit };
+        exitCode = decisionAudit.findings.length === 0 ? 0 : 2;
+        break;
+      }
       const analysis = await analyzeMandatorySlice(repositoryRoot);
       report = {
         policy,
@@ -170,6 +203,10 @@ export async function executeProjector(
       break;
     }
     case "plan": {
+      if (options.architecture?.preflight !== undefined) {
+        const architecturePreflight = runArchitecturePreflight(await options.architecture.preflight());
+        if (!architecturePreflight.planningAllowed) return { exitCode: 3, output: architecturePreflight.reasons.join("\n"), report: { policy, architecturePreflight, blocked: true } };
+      }
       const prepared = await prepareMandatorySlice(repositoryRoot);
       report = {
         policy,
@@ -209,6 +246,20 @@ export async function executeProjector(
       break;
     }
     case "explain": {
+      if (parsed.target!.startsWith("decision:")) {
+        if (options.architecture === undefined) return { exitCode: 3, output: "architecture decision provider is unavailable", report: { policy, blocked: true } };
+        const loaded = await options.architecture.load();
+        const decision = loaded.decisions.find(({ id }) => id === parsed.target);
+        const validity = decision === undefined ? undefined : await options.architecture.validity(decision.id);
+        if (decision === undefined || validity === undefined) {
+          const explanation = `No architecture decision proof currently matches ${parsed.target}.`;
+          report = { policy, target: parsed.target, explanation };
+          break;
+        }
+        const decisionExplanation = explainArchitectureDecision(decision, validity);
+        report = { policy, target: parsed.target, decisionExplanation, explanation: decisionExplanation.explanation };
+        break;
+      }
       const analysis = await analyzeMandatorySlice(repositoryRoot);
       const target = parsed.target!;
       const divergences = analysis.divergences.filter((item) => item.id === target || item.unitIds.includes(target)
