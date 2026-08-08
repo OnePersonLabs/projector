@@ -7,4 +7,11 @@ describe("engine public facade", () => {
     expect(engine.DerivationIndex).toBeDefined();
     expect(engine.createImpactClosure).toBeDefined();
   });
+
+  it("exports identity, relevance, and context through @projector/engine's root barrel", () => {
+    expect(engine.resolveSemanticIdentity).toBeDefined();
+    expect(engine.AdjudicatedSemanticIdentityResolutionSchema).toBeDefined();
+    expect(engine.compileRelevanceClosure).toBeDefined();
+    expect(engine.activateAnalysisFacets).toBeDefined();
+  });
 });
