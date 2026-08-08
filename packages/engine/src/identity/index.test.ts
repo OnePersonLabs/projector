@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertCanonicalCreationAllowed,
+  AdjudicatedSemanticIdentityResolutionSchema,
   computeEvidenceContentHash,
   resolveSemanticIdentityFromSearch,
   resolveSemanticIdentityFromEvidence,
@@ -97,10 +98,15 @@ const outcomeClaims = (
   input: Pick<Parameters<typeof resolveSemanticIdentity>[0], "requestedMeaning" | "requestedKind" | "records" | "proposedTargetIds" | "newBoundary"> = base,
 ): Evidence["claims"] => {
   const requestedMeaning = input.requestedMeaning.normalize("NFKC").trim();
-  const sourceIds = [...new Set(input.records.map(({ candidate }) => candidate.entityId))].sort();
+  const supportedRecords = input.records.filter(({ candidate }) =>
+    (input.requestedKind === "unknown" || candidate.entityKind === input.requestedKind)
+    && candidate.similarity >= 0.75 && candidate.ownershipFit >= 0.75 && candidate.boundaryFit >= 0.7
+    && candidate.explanation.trim().length > 0
+    && candidate.evidence.some(({ evidenceId, stance }) => evidenceId.trim().length > 0 && stance === "supports"));
+  const sourceIds = [...new Set(supportedRecords.map(({ candidate }) => candidate.entityId))].sort();
   const proposedTargetIds = [...new Set(input.proposedTargetIds ?? [])].sort();
   const targetIds = kind === "same" || kind === "overlap"
-    ? [...new Set(input.records.flatMap(({ candidate, lifecycle, replacementIds }) =>
+    ? [...new Set(supportedRecords.flatMap(({ candidate, lifecycle, replacementIds }) =>
       lifecycle === "superseded" || lifecycle === "tombstone" ? replacementIds : [candidate.entityId]))].sort()
     : proposedTargetIds;
   const requestId = `identity_request_${hashFramedDomain("semantic-identity-request", {
@@ -120,7 +126,15 @@ const outcomeClaims = (
       { subjectKey: requestId, predicate: "identity-cessation", object: { ...common, durableMeaningCeased: true } },
       { subjectKey: requestId, predicate: "identity-no-durable-entity", object: { ...common, noDurableEntity: true } },
     ];
-    case "distinct": return [{ subjectKey: requestId, predicate: "identity-distinct-boundary", object: { ...common, boundary: input.newBoundary ?? null } }];
+    case "distinct": {
+      const boundary = input.newBoundary === undefined ? null : {
+        owns: [...new Set(input.newBoundary.owns.map((value) => value.normalize("NFKC").trim()))].sort(),
+        excludes: [...new Set(input.newBoundary.excludes.map((value) => value.normalize("NFKC").trim()))].sort(),
+        nearestEntityIds: [...new Set(input.newBoundary.nearestEntityIds.map((value) => value.normalize("NFKC").trim()))].sort(),
+        rationale: input.newBoundary.rationale.normalize("NFKC").trim(),
+      };
+      return [{ subjectKey: requestId, predicate: "identity-distinct-boundary", object: { ...common, boundary } }];
+    }
     case "ambiguous": return [{ subjectKey: requestId, predicate: "identity-conflict", object: { ...common, unresolvedConflict: "ownership conflict" } }];
   }
 };
@@ -212,6 +226,89 @@ const authority: AuthorityRecord = {
 };
 
 describe("semantic identity resolution", () => {
+  it("binds same and overlap claims to exactly the eligible selected endpoint set", async () => {
+    const weak = record("weak", "active");
+    weak.candidate = candidate("weak", 0.1);
+    const records = [record("cap-midi-discovery"), weak];
+    const boundState = createStateBinding({
+      ...binding,
+      valueDependencies: [
+        ...binding.valueDependencies,
+        { kind: "canonical-entity", id: "weak", versionHash: hash("candidate-weak"), role: "identity candidate semantic value" },
+      ],
+    });
+    for (const assessment of ["same", "overlap"] as const) {
+      const input = { ...base, records, boundState, assessment };
+      const overbroadClaims = structuredClone(outcomeClaims(assessment, input));
+      const overbroadFact = overbroadClaims[0]!.object as { sourceIds: string[]; targetIds: string[] };
+      overbroadFact.sourceIds.push("weak");
+      overbroadFact.targetIds.push("weak");
+      const overbroad = evidenceDocument({
+        ...authorityEvidence, id: "request", normativeAuthority: "supporting", claims: overbroadClaims,
+      });
+
+      await expect(resolveSemanticIdentityFromEvidence(
+        { ...input, evidence: [{ evidenceId: "request", stance: "supports" }] },
+        { loadEvidence: async () => overbroad },
+      )).rejects.toThrow(/target|eligible|selected|payload/i);
+
+      const exactClaims = outcomeClaims(assessment, { ...input, records: [records[0]!] });
+      const exact = evidenceDocument({ ...overbroad, claims: exactClaims });
+      const resolution = await resolveSemanticIdentityFromEvidence(
+        { ...input, evidence: [{ evidenceId: "request", stance: "supports" }] },
+        { loadEvidence: async () => exact },
+      );
+      expect(resolution.selectedEntityIds).toEqual(["cap-midi-discovery"]);
+      expect(resolution.adjudication?.sourceIds).toEqual(["cap-midi-discovery"]);
+      expect(resolution.adjudication?.factPayloads).toMatchObject([{ targetIds: ["cap-midi-discovery"] }]);
+    }
+  });
+
+  it("schema-validates and round-trips the complete trusted adjudicated resolution", async () => {
+    const resolution = await resolveTrusted({ ...base, assessment: "same" });
+    expect(AdjudicatedSemanticIdentityResolutionSchema.parse(resolution)).toEqual(resolution);
+    expect(AdjudicatedSemanticIdentityResolutionSchema.parse(JSON.parse(JSON.stringify(resolution)))).toEqual(resolution);
+
+    const extraNested = structuredClone(resolution) as typeof resolution & { adjudication: NonNullable<typeof resolution.adjudication> & { unexpected?: true } };
+    extraNested.adjudication!.unexpected = true;
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(extraNested).success).toBe(false);
+
+    const malformedFact = structuredClone(resolution);
+    malformedFact.adjudication!.factPayloads[0] = { operation: "same", equivalentMeaning: true } as never;
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(malformedFact).success).toBe(false);
+  });
+
+  it("normalizes semantic boundary sets once before claims and all identity hashes", async () => {
+    const firstBoundary = {
+      owns: [" transport ownership ", "device enumeration", "transport ownership"],
+      excludes: ["wired transport", "legacy protocol"],
+      nearestEntityIds: ["near-b", "near-a", "near-b"],
+      rationale: " independently governed ",
+    };
+    const secondBoundary = {
+      owns: ["device enumeration", "transport ownership"],
+      excludes: ["legacy protocol", "wired transport"],
+      nearestEntityIds: ["near-a", "near-b"],
+      rationale: "independently governed",
+    };
+    const first = await resolveTrusted({ ...base, assessment: "distinct", records: [], boundState: emptyBinding, newBoundary: firstBoundary });
+    const second = await resolveTrusted({ ...base, assessment: "distinct", records: [], boundState: emptyBinding, newBoundary: secondBoundary });
+
+    expect(first).toEqual(second);
+    expect(first.newBoundary).toEqual(secondBoundary);
+    expect(first.adjudication?.contentHash).toBe(second.adjudication?.contentHash);
+    expect(first.id).toBe(second.id);
+
+    await expect(resolveTrusted({
+      ...base, assessment: "distinct", records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["shared"], excludes: [" shared "], nearestEntityIds: ["near"], rationale: "boundary" },
+    })).rejects.toThrow(/boundary|overlap|owns|excludes/i);
+    await expect(resolveTrusted({
+      ...base, assessment: "distinct", records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["valid"], excludes: [""], nearestEntityIds: ["bad/id"], rationale: "boundary" },
+    })).rejects.toThrow(/boundary|blank|entity ID|nearest/i);
+  });
+
   it("rejects repository evidence substitution when distinct claim payloads reuse one declared content hash", async () => {
     const resolution = await resolveTrusted({
       ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [], boundState: emptyBinding,
