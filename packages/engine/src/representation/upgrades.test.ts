@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { UpgradeDeclarationSchema, planUpgradeInvalidation } from "./upgrades.js";
+import { UpgradeDeclarationSchema, planUpgradeInvalidation, upgradeDeclarationHash } from "./upgrades.js";
 
 describe("representation and semantic upgrade protocol", () => {
   it("invalidates only dependents of a changed representation profile", () => {
@@ -21,5 +21,23 @@ describe("representation and semantic upgrade protocol", () => {
     const declaration = { apiVersion: "projector.dev/upgrade-declaration/v1", schemaVersion: "1", kind: "engine", id: "projector", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["engine:projector"], requiredAction: "migrate" };
     expect(UpgradeDeclarationSchema.parse(declaration)).toEqual(declaration);
     expect(() => UpgradeDeclarationSchema.parse({ ...declaration, undeclared: true })).toThrow();
+  });
+
+  it("requires profile changes to name dependencies and invalidate old proof", () => {
+    expect(() => planUpgradeInvalidation({ kind: "representation-profile", id: "compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: [], requiredAction: "none" }, []))
+      .toThrow(/affected dependency|action/u);
+  });
+
+  it("canonicalizes dependency keys before hashing declarations", () => {
+    const base = { apiVersion: "projector.dev/upgrade-declaration/v1" as const, schemaVersion: "1" as const, kind: "engine" as const, id: "projector", fromVersion: "1", toVersion: "2", requiredAction: "migrate" as const };
+    expect(upgradeDeclarationHash({ ...base, affectedDependencyKeys: ["b", "a", "a"] }))
+      .toBe(upgradeDeclarationHash({ ...base, affectedDependencyKeys: ["a", "b"] }));
+  });
+
+  it("rejects conflicting duplicate dependent identities", () => {
+    expect(() => planUpgradeInvalidation({ kind: "representation-profile", id: "compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["profile:compact"], requiredAction: "revalidate" }, [
+      { id: "same", kind: "canonical-source", dependencyKeys: [] },
+      { id: "same", kind: "representation", dependencyKeys: ["profile:compact"] },
+    ])).toThrow(/conflicting dependent/u);
   });
 });

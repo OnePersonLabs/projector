@@ -9,6 +9,63 @@ export class IgnorePolicyConflictError extends Error {
   constructor(id: string) { super(`conflicting ignore rule identity: ${id}`); this.name = "IgnorePolicyConflictError"; }
 }
 
+export type IgnoreLayer = "repository" | "config" | "lens" | "rule";
+export interface LayeredIgnoreRule {
+  readonly id: string;
+  readonly layer: IgnoreLayer;
+  readonly concern: IgnoreConcern;
+  readonly effect: "ignore" | "include";
+  readonly selector: SelectorExpr;
+  /** Explicit authority to remove a unit from every semantic role. */
+  readonly authorizeAllRoles?: boolean;
+}
+
+const LAYER_RANK: Record<IgnoreLayer, number> = { repository: 0, config: 1, lens: 2, rule: 3 };
+function selectorSpecificity(selector: SelectorExpr): number {
+  switch (selector.op) {
+    case "atom": return 1;
+    case "not": return selectorSpecificity(selector.item);
+    case "all": case "any": return selector.items.reduce((sum, item) => sum + selectorSpecificity(item), 0);
+  }
+}
+
+export function compileLayeredIgnorePolicy(input: { readonly units: readonly ProjectionUnit[]; readonly rules: readonly LayeredIgnoreRule[] }): {
+  readonly byUnit: Record<string, Record<IgnoreConcern, boolean>>; readonly policyHash: string;
+} {
+  const definitions = new Map<string, string>();
+  const rules = input.rules.map((rule) => ({ ...structuredClone(rule), selector: normalizeSelector(rule.selector) }));
+  for (const rule of rules) {
+    const serialized = canonicalJson(rule);
+    const prior = definitions.get(rule.id);
+    if (prior !== undefined && prior !== serialized) throw new IgnorePolicyConflictError(rule.id);
+    definitions.set(rule.id, serialized);
+  }
+  const normalizedRules = [...new Map(rules.map((rule) => [canonicalJson(rule), rule])).values()]
+    .sort((a, b) => compare(canonicalJson(a), canonicalJson(b)));
+  const byUnit = Object.fromEntries([...input.units].sort((a, b) => compare(a.id, b.id)).map((unit) => {
+    const subject = projectionUnitSelectorSubject(unit);
+    const winners = new Map<IgnoreConcern, LayeredIgnoreRule[]>();
+    for (const concern of CONCERNS) {
+      const matching = normalizedRules.filter((rule) => rule.concern === concern && evaluateSelector(rule.selector, subject).matched);
+      const highest = matching.reduce((rank, rule) => Math.max(rank, LAYER_RANK[rule.layer]), -1);
+      const layerWinners = matching.filter((rule) => LAYER_RANK[rule.layer] === highest);
+      const specificity = layerWinners.reduce((rank, rule) => Math.max(rank, selectorSpecificity(rule.selector)), -1);
+      const atHighest = layerWinners.filter((rule) => selectorSpecificity(rule.selector) === specificity);
+      if (new Set(atHighest.map(({ effect }) => effect)).size > 1) {
+        throw new IgnorePolicyConflictError(`conflicting layered ignore for ${unit.id}:${concern}`);
+      }
+      winners.set(concern, atHighest);
+    }
+    const decision = Object.fromEntries(CONCERNS.map((concern) => [concern, winners.get(concern)?.[0]?.effect === "ignore"])) as Record<IgnoreConcern, boolean>;
+    if (CONCERNS.every((concern) => decision[concern])
+      && !CONCERNS.every((concern) => winners.get(concern)?.some(({ authorizeAllRoles }) => authorizeAllRoles === true))) {
+      throw new IgnorePolicyConflictError(`ignore rules erase all semantic roles for ${unit.id} without explicit authorization`);
+    }
+    return [unit.id, decision];
+  })) as Record<string, Record<IgnoreConcern, boolean>>;
+  return { byUnit, policyHash: hashFramedDomain("layered-ignore-policy:v2", normalizedRules) };
+}
+
 export function compileIgnorePolicy(input: { policy: IgnorePolicy; units: readonly ProjectionUnit[]; ruleIds?: Partial<Record<IgnoreConcern, readonly string[]>> }): {
   readonly byUnit: Record<string, Record<IgnoreConcern, boolean>>; readonly policyHash: string;
 } {

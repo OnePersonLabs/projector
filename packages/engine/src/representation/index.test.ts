@@ -27,9 +27,8 @@ const binding: StateBinding = {
   }),
 };
 
-const source: CanonicalRepresentationSource = {
+const sourceBody: Omit<CanonicalRepresentationSource, "sourceSemanticHash"> = {
   sourceEntityIds: ["scenario:delete", "rule:delete"],
-  sourceSemanticHash: hashFramedDomain("test", "canonical-delete-semantics"),
   statements: [{
     id: "rule:delete",
     text: "MUST_NOT delete production data unless explicit user approval.",
@@ -55,7 +54,6 @@ const source: CanonicalRepresentationSource = {
     ],
   }],
 };
-
 class MemoryArtifacts implements RepresentationArtifactStore {
   readonly values = new Map<string, string>();
   async put(hash: string, content: string): Promise<void> { this.values.set(hash, content); }
@@ -66,6 +64,16 @@ const measured: TokenMeasurementPort = {
   profileId: "test-tokenizer@1",
   measure: (text) => text.trim().split(/\s+/u).length,
 };
+
+const canonicalSourceHash = (body: Omit<CanonicalRepresentationSource, "sourceSemanticHash">) => hashFramedDomain("canonical-representation-source", {
+  sourceEntityIds: [...body.sourceEntityIds].sort(),
+  statements: body.statements.map((statement) => ({ ...statement,
+    scope: [...statement.scope].sort(), exceptions: [...statement.exceptions].sort(),
+    conceptIds: [...statement.conceptIds].sort(), protectedLiterals: [...statement.protectedLiterals].sort(),
+  })).sort((a, b) => a.id.localeCompare(b.id)),
+  scenarios: [...body.scenarios].sort((a, b) => a.id.localeCompare(b.id)),
+});
+const source: CanonicalRepresentationSource = { ...sourceBody, sourceSemanticHash: canonicalSourceHash(sourceBody) };
 
 describe("semantic representation compilation", () => {
   it("compiles all built-ins from one canonical source while keeping rendered content behind the artifact port", async () => {
@@ -149,18 +157,20 @@ describe("semantic representation compilation", () => {
       source,
       profileKey: "agent-compact@1", candidate: invented,
       measuredAbbreviations: [{ abbreviation: "PDA", tokenSavings: 2, clarityValidated: true }],
-    })).resolves.toBeDefined();
+    })).rejects.toThrow(/exact|candidate|semantic/u);
   });
 
   it("falls back for measured net-negative compact output but selects compact for measured positive utility", async () => {
     const artifacts = new MemoryArtifacts();
     const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
-    const terse = { ...source, statements: [{ ...source.statements[0]!, text: "MUST_NOT delete." }] };
+    const terseBody = { ...sourceBody, statements: [{ ...sourceBody.statements[0]!, text: "MUST_NOT delete." }] };
+    const terse = { ...terseBody, sourceSemanticHash: canonicalSourceHash(terseBody) };
     const negative = await compiler.compileBest({ source: terse, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 50 });
-    const large = { ...source, statements: [{ ...source.statements[0]!, text: Array(30).fill("Please note that the system really must not delete production data unless explicit user approval.").join(" ") }] };
+    const largeBody = { ...sourceBody, statements: [{ ...sourceBody.statements[0]!, text: Array(30).fill("Please note that the system really must not delete production data unless explicit user approval.").join(" ") }] };
+    const large = { ...largeBody, sourceSemanticHash: canonicalSourceHash(largeBody) };
     const positive = await compiler.compileBest({ source: large, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 1 });
 
-    expect(negative.projection.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["human-technical@1"].id);
+    expect(negative.projection.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["machine-invariant@1"].id);
     expect(negative.projection.status).toBe("fallback-used");
     expect(negative.projection.tokenAccounting?.estimatedNetTokens).toBeLessThanOrEqual(0);
     expect(positive.projection.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].id);
@@ -195,5 +205,44 @@ describe("semantic representation compilation", () => {
     await expect(compiler.compile({ source: {
       ...source, statements: [source.statements[0]!, { ...source.statements[0]!, normativeForce: "permit" }],
     }, binding, profileKey: "machine-invariant@1" })).rejects.toThrow(/conflicting canonical representation source/u);
+  });
+
+  it("rejects statement-local semantic laundering and contradictory additions", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const compact = await compiler.compile({ source, binding, profileKey: "agent-compact@1" });
+    const exact = (await artifacts.get(compact.projection.contentHash))!;
+    await expect(compiler.validateCandidate({
+      source, profileKey: "agent-compact@1", candidate: `${exact}\nPERMIT rule:delete | deletion without approval`,
+    })).rejects.toThrow(/candidate|semantic|exact/u);
+    await expect(compiler.validateCandidate({
+      source, profileKey: "agent-compact@1",
+      candidate: exact.replace("FORBID NOT rule:delete", "PERMIT rule:delete\nFORBID NOT decoy"),
+    })).rejects.toMatchObject({ dimension: "normative-force" });
+  });
+
+  it("derives canonical membership and semantic identity from trusted structured input", async () => {
+    const compiler = new RepresentationCompiler({ artifacts: new MemoryArtifacts(), tokenizer: measured });
+    await expect(compiler.compile({ source: { ...source, sourceEntityIds: [] }, binding, profileKey: "machine-invariant@1" }))
+      .rejects.toThrow(/source membership/u);
+    await expect(compiler.compile({ source: { ...source, sourceSemanticHash: hashFramedDomain("test", "lie") }, binding, profileKey: "machine-invariant@1" }))
+      .rejects.toThrow(/semantic hash/u);
+    await expect(compiler.compile({ source: { ...source, sourceEntityIds: [...source.sourceEntityIds, "rule:delete"] }, binding, profileKey: "machine-invariant@1" }))
+      .rejects.toThrow(/duplicate source membership/u);
+    const changedBody = { ...sourceBody, statements: [{ ...sourceBody.statements[0]!, normativeForce: "permit" as const }] };
+    const changed = await compiler.compile({ source: { ...changedBody, sourceSemanticHash: canonicalSourceHash(changedBody) }, binding, profileKey: "machine-invariant@1" });
+    const original = await compiler.compile({ source, binding, profileKey: "machine-invariant@1" });
+    expect(changed.projection.id).not.toBe(original.projection.id);
+  });
+
+  it("reports accounting for the accepted fallback artifact rather than rejected compact bytes", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const terseBody = { ...sourceBody, statements: [{ ...sourceBody.statements[0]!, text: "MUST_NOT delete." }] };
+    const terse = { ...terseBody, sourceSemanticHash: canonicalSourceHash(terseBody) };
+    const result = await compiler.compileBest({ source: terse, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 50 });
+    const accepted = (await artifacts.get(result.projection.contentHash))!;
+    expect(result.projection.tokenAccounting?.outputTokens).toBe(measured.measure(accepted));
+    expect(result.projection.profileId).not.toBe(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].id);
   });
 });

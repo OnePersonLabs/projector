@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import type { RiskClass } from "@projector/core";
 
-import { normalizeExecutionPolicy, type CliPolicyInput, type SliceCommand } from "./policy.js";
+import { assertOperationRiskAuthorized, normalizeExecutionPolicy, type CliPolicyInput, type SliceCommand } from "./policy.js";
 import {
   analyzeMandatorySlice,
   applyMandatorySlice,
@@ -41,6 +44,16 @@ export interface ProjectorCommandResult {
 
 export interface ProjectorCommandOptions {
   readonly cwd?: string;
+  readonly governance?: {
+    readonly detectCanonicalConflictPaths: (repositoryRoot: string) => Promise<readonly string[]>;
+    readonly assessOperationRisk: (command: SliceCommand, repositoryRoot: string) => Promise<RiskClass>;
+  };
+}
+
+const execFileAsync = promisify(execFile);
+async function defaultCanonicalConflictPaths(repositoryRoot: string): Promise<string[]> {
+  const { stdout } = await execFileAsync("git", ["-C", repositoryRoot, "diff", "--name-only", "--diff-filter=U"], { encoding: "utf8" });
+  return stdout.split(/\r?\n/u).filter((path) => path.startsWith(".projector/")).sort();
 }
 
 interface ParsedCommand {
@@ -112,6 +125,23 @@ export async function executeProjector(
   const parsed = parseCommand(arguments_);
   const policy = normalizeExecutionPolicy(parsed.policy);
   const repositoryRoot = options.cwd ?? process.cwd();
+  if (policy.allowAutoMutation) {
+    const governance = options.governance ?? {
+      detectCanonicalConflictPaths: defaultCanonicalConflictPaths,
+      assessOperationRisk: async () => "R1" as const,
+    };
+    const conflicts = await governance.detectCanonicalConflictPaths(repositoryRoot);
+    if ((policy.preset === "govern" || policy.preset === "autonomous") && conflicts.length > 0) {
+      const output = `canonical governance conflict blocks ${policy.preset}: ${[...conflicts].sort().join(", ")}`;
+      return { exitCode: 3, output, report: { policy, blocked: true, conflicts: [...conflicts].sort() } };
+    }
+    const operationRisk = await governance.assessOperationRisk(parsed.command, repositoryRoot);
+    try { assertOperationRiskAuthorized(policy, operationRisk); }
+    catch (error) {
+      const output = error instanceof Error ? error.message : String(error);
+      return { exitCode: 3, output, report: { policy, blocked: true, operationRisk } };
+    }
+  }
   let report: any;
   let exitCode = 0;
   switch (parsed.command) {
@@ -149,6 +179,7 @@ export async function executeProjector(
         return { exitCode: 3, output: "R1 approval required.", report: { policy, approvalRequired: true } };
       }
       const prepared = await prepareMandatorySlice(repositoryRoot);
+      assertOperationRiskAuthorized(policy, prepared.risk.class);
       const result = await applyMandatorySlice(repositoryRoot, prepared);
       report = { policy, plan: prepared.plan, capsule: prepared.capsule, risk: prepared.risk, preview: prepared.preview, ...result };
       exitCode = result.outcome === "success" ? 0 : result.outcome === "partial" ? 6 : 3;

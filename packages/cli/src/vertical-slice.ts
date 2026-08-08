@@ -75,6 +75,7 @@ import {
   type MoveReferenceUpdateInput,
   type TransformMutationPort,
 } from "@projector/runtime";
+import { assertOperationRiskAuthorized } from "./policy.js";
 
 const executeFile = promisify(execFile);
 const zeroHash = `sha256:v1:${"0".repeat(64)}` as ContentHash;
@@ -1074,6 +1075,7 @@ async function runMandatoryReconciliationPass(repositoryRoot: string, policy: Ex
     async iterate(iteration) {
       if (iteration === 1) {
         prepared = await prepareMandatorySlice(repositoryRoot);
+        assertOperationRiskAuthorized(policy, prepared.risk.class);
         applied = await applyMandatorySlice(repositoryRoot, prepared);
         if (applied.outcome !== "success") throw new Error(`mandatory repair failed: ${applied.reasons.join("; ")}`);
         const after = await currentSliceState(repositoryRoot);
