@@ -224,6 +224,13 @@ describe("CanonicalFileRepository", () => {
     await expect(repository.snapshot()).rejects.toThrow(/outside approved canonical family/i);
   });
 
+  test("excludes authenticated operational journals and receipts from canonical rebuild input", async () => {
+    const root = await temporaryRepository(); const repository = new CanonicalFileRepository(root); await repository.write(concept("concept-a", "owned"));
+    const journal = join(root, ".projector", "runtime", "journal", "operation.json"); const receipt = join(root, ".projector", "receipts", "content-addressed.json");
+    await mkdir(join(journal, ".."), { recursive: true }); await mkdir(join(receipt, ".."), { recursive: true }); await writeFile(journal, JSON.stringify({ phase: "committed" })); await writeFile(receipt, JSON.stringify({ status: "success" }));
+    expect((await repository.snapshot()).documents.map(({ id }) => id)).toEqual(["concept-a"]);
+  });
+
   test("rejects symlinked canonical entries instead of hiding them from rebuild", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
