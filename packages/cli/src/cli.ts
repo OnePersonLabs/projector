@@ -2,13 +2,13 @@
 import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import { compileSemanticChange, compileSemanticChangePlan, createStateBinding } from "@projector/engine";
-import { executePacketPlan, type PacketObservation, type PlanExecutionArtifact, type PacketExecutionArtifact } from "@projector/runtime";
+import { createOperationalReport, renderOperationalReport, JsonlTelemetryStore, FileTransactionJournal, RepositoryPathService, WatchCoordinator, type OperationalReport, type ReportFormat, executePacketPlan, type PacketObservation, type PlanExecutionArtifact, type PacketExecutionArtifact } from "@projector/runtime";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -52,13 +52,17 @@ Commands:
   cleanup               Resume a trusted cleanup continuation plan
   run <codex|claude> -- <args>  Run a bounded host session
   mcp                   Start the built Projector MCP composition
+  watch                 Scan repository changes without executing repository code
+  ci                    Run authenticated CI proof and reporting
+  recover               Recover incomplete durable transactions
+  verify [--clean]      Verify and optionally rebuild derived state
   upgrade               Compile the current authenticated modernization candidate
   explain <target>      Explain findings for a path or finding identity
 
 Options:
   -h, --help     Show this help text
   -v, --version  Show the Projector version
-  --format       text or json
+  --format       text, json, md, or sarif
   --mode         observe, guide, govern, autonomous, or salvage
   --dry-run      Refuse mutation
   --audit-only   Refuse mutation`;
@@ -83,6 +87,7 @@ export interface ProjectorCommandOptions {
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal;
   readonly mcp?: McpCliPort;
+  readonly operations?: OperationalCliPort;
   readonly upgrade?: { readonly run: (request: { readonly repositoryRoot: string }) => Promise<Record<string, unknown>> };
 }
 
@@ -90,6 +95,7 @@ export interface RunHostCliRequest { readonly host: "codex" | "claude"; readonly
 export interface RunHostCliResult { readonly status: "completed" | "failed" | "cancelled" | "unavailable"; readonly exitCode: number | null; readonly changedPaths: readonly string[]; readonly reconciled: boolean; readonly signal?: string }
 export interface RunHostCliPort { readonly resolve: (request: Omit<RunHostCliRequest, "argv" | "environment" | "signal">) => Promise<{ readonly authenticated: true; readonly host: "codex" | "claude" }>; readonly run: (request: RunHostCliRequest) => Promise<RunHostCliResult> }
 export interface McpCliPort { readonly start: (request: { readonly repositoryRoot: string; readonly signal: AbortSignal; readonly sessionSelector?: string }) => Promise<{ readonly status: "ready" | "unavailable"; readonly tools: readonly string[]; readonly capabilityToken?: string; readonly transport: { handle(request: { readonly jsonrpc: "2.0"; readonly id: string | number | null; readonly method: string; readonly params?: unknown }): Promise<unknown> } }> }
+export interface OperationalCliPort { readonly run: (request: { readonly command: "watch" | "ci" | "recover" | "verify"; readonly repositoryRoot: string; readonly clean: boolean; readonly policy: ReturnType<typeof normalizeExecutionPolicy> }) => Promise<OperationalReport> }
 
 export interface ChangeCliRequest { readonly repositoryRoot: string; readonly selector: string; readonly persist?: boolean }
 export interface ChangeCliPort {
@@ -136,7 +142,7 @@ async function defaultCanonicalConflictPaths(repositoryRoot: string): Promise<st
 interface ParsedCommand {
   readonly command: SliceCommand;
   readonly target?: string;
-  readonly format: "text" | "json";
+  readonly format: ReportFormat;
   readonly policy: CliPolicyInput;
   readonly decisions: boolean;
   readonly coverageRequest: CoverageCliRequest;
@@ -144,6 +150,7 @@ interface ParsedCommand {
   readonly host?: "codex" | "claude";
   readonly hostArgv: readonly string[];
   readonly sessionSelector?: string;
+  readonly clean: boolean;
 }
 
 function optionValue(arguments_: readonly string[], name: string): string | undefined {
@@ -170,7 +177,7 @@ function normalizeScope(raw: string | undefined): string {
 }
 
 const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--continuation", "--session"]);
-const booleanFlags = new Set(["--decisions", "--dry-run", "--audit-only", "--non-interactive"]);
+const booleanFlags = new Set(["--decisions", "--dry-run", "--audit-only", "--non-interactive", "--clean"]);
 function validateArguments(arguments_: readonly string[], command: SliceCommand): void {
   const seen = new Set<string>();
   for (let index = 1; index < arguments_.length; index += 1) {
@@ -191,7 +198,7 @@ function validateArguments(arguments_: readonly string[], command: SliceCommand)
 function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const command = arguments_[0];
   if (command !== "init" && command !== "audit" && command !== "change" && command !== "plan" && command !== "apply"
-    && command !== "upgrade" && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run" && command !== "mcp") {
+    && command !== "upgrade" && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run" && command !== "mcp" && command !== "watch" && command !== "ci" && command !== "recover" && command !== "verify") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
   const separator = arguments_.indexOf("--");
@@ -201,7 +208,7 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const hostArgv = command === "run" ? arguments_.slice(separator + 1) : [];
   validateArguments(commandArguments, command);
   const formatValue = optionValue(commandArguments, "--format") ?? "text";
-  if (formatValue !== "text" && formatValue !== "json") throw new Error(`unsupported format: ${formatValue}`);
+  if (formatValue !== "text" && formatValue !== "json" && formatValue !== "md" && formatValue !== "sarif") throw new Error(`unsupported format: ${formatValue}`);
   const modeValue = optionValue(commandArguments, "--mode");
   if (modeValue !== undefined && modeValue !== "observe" && modeValue !== "guide" && modeValue !== "govern"
     && modeValue !== "autonomous" && modeValue !== "salvage") {
@@ -221,6 +228,7 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
   if (command === "mcp" && sessionSelector !== undefined && !/^session:[a-z0-9][a-z0-9._:-]*$/iu.test(sessionSelector)) throw new Error("mcp requires a safe session selector");
   if (command !== "run" && command !== "mcp" && sessionSelector !== undefined) throw new Error("--session is only valid with run or mcp");
   const decisions = commandArguments.includes("--decisions");
+  const clean = commandArguments.includes("--clean"); if (clean && command !== "verify") throw new Error("--clean is only valid with verify");
   if (decisions && command !== "audit") throw new Error("--decisions is only valid with audit");
   const coverageCommand = command === "coverage" || command === "complete" || command === "cleanup";
   const explicitStrictness = optionValue(commandArguments, "--strictness");
@@ -239,6 +247,7 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     ...(target === undefined ? {} : { target }),
     format: formatValue,
     decisions,
+    clean,
     hostArgv,
     ...(hostValue === "codex" || hostValue === "claude" ? { host: hostValue } : {}),
     ...(sessionSelector === undefined ? {} : { sessionSelector }),
@@ -256,11 +265,13 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
       dryRun: commandArguments.includes("--dry-run"),
       auditOnly: commandArguments.includes("--audit-only"),
       nonInteractive: commandArguments.includes("--non-interactive"),
+      clean,
     },
   };
 }
 
-function outputFor(command: SliceCommand, report: unknown, format: "text" | "json"): string {
+function outputFor(command: SliceCommand, report: unknown, format: ReportFormat): string {
+  if ((command === "watch" || command === "ci" || command === "recover" || command === "verify") && "operationalReport" in (report as object)) return renderOperationalReport((report as { operationalReport: OperationalReport }).operationalReport, format);
   if (format === "json") return JSON.stringify(report, null, 2);
   if (command === "audit") {
     if ("decisionAudit" in (report as object)) {
@@ -310,7 +321,7 @@ export async function executeProjector(
   const repositoryRoot = options.cwd ?? process.cwd();
   const defaultOperation: OperationRiskInput = parsed.command === "init"
     ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
-    : parsed.command === "apply" || parsed.command === "upgrade" || parsed.command === "reconcile" || parsed.command === "cleanup" || parsed.command === "run"
+    : parsed.command === "apply" || parsed.command === "upgrade" || parsed.command === "reconcile" || parsed.command === "cleanup" || parsed.command === "run" || parsed.command === "recover" || (parsed.command === "verify" && parsed.clean)
       ? { command: parsed.command, sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false }
       : { command: parsed.command, sideEffect: "read-only", externalWrite: false, canonicalMutation: false };
   const suppliedOperation = options.governance?.operation;
@@ -470,6 +481,9 @@ export async function executeProjector(
       const mcpResult = await (options.mcp ?? createBuiltMcpCliPort()).start({ repositoryRoot, signal: options.signal ?? new AbortController().signal, ...(parsed.sessionSelector === undefined ? {} : { sessionSelector: parsed.sessionSelector }) });
       report = { policy, status: mcpResult.status, tools: mcpResult.tools, transportActive: true, capabilityAvailable: mcpResult.capabilityToken !== undefined }; exitCode = mcpResult.status === "ready" ? 0 : 5; break;
     }
+    case "watch": case "ci": case "recover": case "verify": {
+      const operationalReport = await (options.operations ?? defaultOperationalCliPort()).run({ command: parsed.command, repositoryRoot, clean: parsed.clean, policy }); report = { policy, operationalReport }; exitCode = operationalReport.exitCode; break;
+    }
     case "explain": {
       if (parsed.target!.startsWith("decision:")) {
         if (options.architecture === undefined) return { exitCode: 3, output: "architecture decision provider is unavailable", report: { policy, blocked: true } };
@@ -497,6 +511,23 @@ export async function executeProjector(
     }
   }
   return { exitCode, output: outputFor(parsed.command, report, parsed.format), report };
+}
+
+function defaultOperationalCliPort(): OperationalCliPort {
+  return { run: async ({ command, repositoryRoot, clean, policy }) => {
+    const started = Date.now(); let findings: Array<{ code: string; title: string; path?: string; severity: "note" | "warning" | "error"; evidenceIds: string[] }> = []; let exitCode = 0;
+    if (command === "recover") {
+      const journal = new FileTransactionJournal(await RepositoryPathService.create(repositoryRoot));
+      try { const recovered = await journal.recoverIncomplete(); findings = recovered.map(({ transactionId, action, reason, lastCheckpointId }) => ({ code: action, title: action === "rolled-back" ? `Rolled back incomplete transaction ${transactionId}` : reason ?? `Recovery required for ${transactionId}`, severity: action === "rolled-back" ? "note" as const : "error" as const, evidenceIds: [transactionId, ...(lastCheckpointId === undefined ? [] : [lastCheckpointId])] })); exitCode = findings.some(({ severity }) => severity === "error") ? 6 : 0; }
+      catch (error) { findings = [{ code: "journal-corrupt", title: error instanceof Error ? error.message : String(error), severity: "error", evidenceIds: [] }]; exitCode = 6; }
+    } else {
+      if (clean) await rm(join(repositoryRoot, ".projector", "state.db"), { force: true });
+      const analyze = async () => analyzeLocalRepository({ repositoryRoot });
+      if (command === "watch") { const watch = new WatchCoordinator({ scan: async ({ paths, fullScan }) => { const analysis = await analyze(); const value = { digest: hashFramedDomain("cli-watch-analysis", { paths, fullScan, artifacts: analysis.artifacts.map(({ id, contentHash }) => ({ id, contentHash })) }), affectedDependencyIds: paths, generatedEventIds: [] }; return { ...value, contentHash: hashFramedDomain("authenticated-watch-scan", value) }; }, process: async ({ digest, affectedDependencyIds }) => ({ digest, cacheKeys: affectedDependencyIds }) }); await watch.submit([{ kind: "overflow", path: "." }]); }
+      const first = await analyze(); const second = clean ? await analyze() : first; const firstHash = hashFramedDomain("cli-operational-analysis", { artifacts: first.artifacts.map(({ id, contentHash }) => ({ id, contentHash })), failures: first.failures }); const secondHash = hashFramedDomain("cli-operational-analysis", { artifacts: second.artifacts.map(({ id, contentHash }) => ({ id, contentHash })), failures: second.failures }); findings = first.failures.map(({ capability, message, scope, analyzerId }) => ({ code: capability, title: message, path: scope, severity: "error" as const, evidenceIds: [analyzerId] })); if (firstHash !== secondHash) { findings.push({ code: "clean-incremental-mismatch", title: "Clean and incremental analysis differ", severity: "error", evidenceIds: [firstHash, secondHash] }); exitCode = 6; } else exitCode = findings.length === 0 ? 0 : first.surface.access === "unavailable" ? 5 : 2;
+    }
+    const stateDigest = hashFramedDomain("operational-run-state", { repositoryRoot, command, findings }); const operational = createOperationalReport({ runId: hashFramedDomain("operational-run-id", { command, stateDigest, started }), command, exitCode, policy, stateDigest, unavailableFields: ["modelCalls", "externalSnapshots"], findings }); await mkdir(join(repositoryRoot, ".projector", "telemetry"), { recursive: true }); await new JsonlTelemetryStore(join(repositoryRoot, ".projector", "telemetry", "runs.jsonl")).append(operational); return operational;
+  } };
 }
 
 function defaultChangePort(repositoryRoot: string): ChangeCliPort {

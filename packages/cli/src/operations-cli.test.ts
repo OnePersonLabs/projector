@@ -1,0 +1,24 @@
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import { describe, expect, it } from "vitest";
+import { hashFramedDomain } from "@projector/core";
+import { createOperationalReport, FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
+import { executeProjector } from "./cli.js";
+
+const exec = promisify(execFile);
+async function repository() { const root = await mkdtemp(join(tmpdir(), "projector-ops-")); await exec("git", ["init", "-q", root]); await writeFile(join(root, "a.json"), "{}\n"); await exec("git", ["-C", root, "add", "."]); await exec("git", ["-C", root, "-c", "user.name=Fixture", "-c", "user.email=f@example.test", "commit", "-qm", "initial"]); return root; }
+
+describe("built operational CLI", () => {
+  it("renders text/json/md/sarif from one authenticated DTO with identical exit precedence", async () => {
+    const operationalReport = createOperationalReport({ runId: "run:ci", command: "ci", exitCode: 5, policy: {}, stateDigest: hashFramedDomain("state", "ci"), unavailableFields: ["surface:x"], findings: [{ code: "unavailable", title: "Required surface unavailable", severity: "error", evidenceIds: ["surface:x"] }] }); const operations = { run: async () => operationalReport };
+    const results = await Promise.all((["text", "json", "md", "sarif"] as const).map((format) => executeProjector(["ci", "--format", format], { operations })));
+    expect(results.every(({ exitCode }) => exitCode === 5)).toBe(true); expect(results.every(({ output }) => output.includes("Required surface unavailable"))).toBe(true); expect(JSON.parse(results[1]!.output).dtoHash).toBe(operationalReport.dtoHash); expect(JSON.parse(results[3]!.output).runs[0].results[0].ruleId).toBe("unavailable");
+  });
+
+  it("recovers an incomplete public transaction idempotently and rebuilds after deleting derived state", async () => {
+    const root = await repository(); try { const paths = await RepositoryPathService.create(root); const journal = new FileTransactionJournal(paths); const state = { gitBase: "base", worktreeDigest: hashFramedDomain("s", "w"), canonicalProjectorDigest: hashFramedDomain("s", "c"), toolchainDigest: hashFramedDomain("s", "t") }; const transaction = await journal.begin({ transactionId: "tx:ops", planId: "plan:ops", beforeState: state, allowedWriteRoots: ["."] }); await transaction.writeFile("a.json", "{\"changed\":true}\n"); const recovered = await executeProjector(["recover"], { cwd: root }); expect(recovered.exitCode).toBe(0); expect(await readFile(join(root, "a.json"), "utf8")).toBe("{}\n"); expect((await executeProjector(["recover"], { cwd: root })).exitCode).toBe(0); await writeFile(join(root, ".projector", "state.db"), "derived"); const verified = await executeProjector(["verify", "--clean", "--format", "json"], { cwd: root }); expect([0, 2, 5]).toContain(verified.exitCode); expect(JSON.parse(verified.output).dtoHash).toBe(verified.report.operationalReport.dtoHash); } finally { await rm(root, { recursive: true, force: true }); }
+  }, 20_000);
+});

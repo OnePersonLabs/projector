@@ -1,0 +1,47 @@
+{
+  "acceptedDebt": [
+    {
+      "id": "debt:task19-held-out-expansion",
+      "rationale": "Demand-selected external adapters remain Task 21 scope.",
+      "status": "accepted"
+    }
+  ],
+  "architectureDecisions": [
+    {
+      "id": "decision:operations-reuse-semantic-kernels",
+      "status": "active",
+      "summary": "Operational commands compose existing policy, coverage, relevance, journal, and analyzer kernels."
+    }
+  ],
+  "authorities": [
+    {
+      "id": "authority:projector-spec",
+      "scope": "repository",
+      "status": "active"
+    }
+  ],
+  "governanceBases": [
+    {
+      "id": "governance-base:projector-self",
+      "source": "PROJECTOR_SPEC",
+      "status": "active"
+    }
+  ],
+  "lenses": [
+    {
+      "id": "lens:operations-trust-boundary",
+      "status": "active"
+    }
+  ],
+  "rules": [
+    {
+      "id": "rule:no-repository-code-during-inspection",
+      "status": "active"
+    },
+    {
+      "id": "rule:redact-before-context-and-persistence",
+      "status": "active"
+    }
+  ],
+  "version": 1
+}

@@ -5,3 +5,4 @@ export * from "./fixtures.js";
 export * from "./processes.js";
 export * from "./providers.js";
 export * from "./repository.js";
+export * from "./benchmark.js";
