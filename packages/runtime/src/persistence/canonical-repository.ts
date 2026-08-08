@@ -45,6 +45,8 @@ const derivedTopLevelDirectories = new Set([
   "plans",
   "reports",
 ]);
+const operationalTopLevelDirectories = new Set(["runtime", "task16-selections", "task17-host-journals", "telemetry", "watch"]);
+const operationalRootFiles = new Set(["dogfood.json", "governance.json"]);
 
 async function canonicalJsonFiles(root: string): Promise<string[]> {
   const files: string[] = [];
@@ -58,8 +60,12 @@ async function canonicalJsonFiles(root: string): Promise<string[]> {
     }
     for (const entry of entries) {
       const path = join(directory, entry.name);
+      const relativePath = relative(root, path).replaceAll("\\", "/");
+      const [topLevel] = relativePath.split("/");
+      if ((entry.isDirectory() && topLevel !== undefined && operationalTopLevelDirectories.has(topLevel))
+        || (entry.isFile() && !relativePath.includes("/") && operationalRootFiles.has(entry.name))
+        || (entry.isFile() && topLevel === "receipts" && !entry.name.endsWith(".receipt.json"))) continue;
       if (entry.isSymbolicLink()) {
-        const topLevel = relative(root, path).replaceAll("\\", "/").split("/")[0];
         if (topLevel === undefined || !derivedTopLevelDirectories.has(topLevel)) {
           throw new Error(`symlink canonical entry is not allowed: ${path}`);
         }

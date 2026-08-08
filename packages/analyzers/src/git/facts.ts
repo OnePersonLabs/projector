@@ -151,11 +151,15 @@ async function inferUnstagedMoves(repositoryRoot: string, statusOutput: string):
 
 export async function collectGitFacts(repositoryRoot: string, paths: readonly string[]): Promise<GitFacts> {
   try {
-    const [revisionOutput, trackedOutput, statusOutput] = await Promise.all([
+    const commandResults = await Promise.allSettled([
       safeGit(repositoryRoot, ["rev-parse", "HEAD"]),
       safeGit(repositoryRoot, ["ls-files", "--stage", "-z"]),
       safeGit(repositoryRoot, ["status", "--porcelain=v1", "-z"]),
     ]);
+    const failed = commandResults.find((result): result is PromiseRejectedResult => result.status === "rejected"); if (failed !== undefined) throw failed.reason;
+    const revisionOutput = (commandResults[0] as PromiseFulfilledResult<string>).value;
+    const trackedOutput = (commandResults[1] as PromiseFulfilledResult<string>).value;
+    const statusOutput = (commandResults[2] as PromiseFulfilledResult<string>).value;
     const tracked = parseTracked(trackedOutput);
     const identityResults = await Promise.all(paths.map(async (path): Promise<{ identity: GitIdentityFact; failure?: AnalyzerFailure }> => {
       const objectId = tracked.get(path);
