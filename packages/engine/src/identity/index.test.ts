@@ -104,11 +104,11 @@ const outcomeClaims = (
     && candidate.similarity >= 0.75 && candidate.ownershipFit >= 0.75 && candidate.boundaryFit >= 0.7
     && candidate.explanation.trim().length > 0
     && candidate.evidence.some(({ evidenceId, stance }) => evidenceId.trim().length > 0 && stance === "supports"));
-  const sourceIds = [...new Set(supportedRecords.map(({ candidate }) => candidate.entityId))].sort();
   const proposedTargetIds = [...new Set(input.proposedTargetIds ?? [])].sort();
+  const sourceIds = [...new Set(supportedRecords.flatMap(({ candidate, lifecycle, replacementIds }) =>
+    lifecycle === "superseded" || lifecycle === "tombstone" ? replacementIds : [candidate.entityId]))].sort();
   const targetIds = kind === "same" || kind === "overlap"
-    ? [...new Set(supportedRecords.flatMap(({ candidate, lifecycle, replacementIds }) =>
-      lifecycle === "superseded" || lifecycle === "tombstone" ? replacementIds : [candidate.entityId]))].sort()
+    ? sourceIds
     : proposedTargetIds;
   const requestId = `identity_request_${hashFramedDomain("semantic-identity-request", {
     requestedMeaning, requestedKind: input.requestedKind,
@@ -347,6 +347,129 @@ describe("semantic identity resolution", () => {
     await expect(assertCanonicalCreationAllowed(
       { resolutionId: rehashed.id, authorityRecordId: authority.id }, trustedRepository(rehashed),
     )).rejects.toThrow(/boundary|normalized|blank|overlap|disjoint/i);
+  });
+
+  it("rejects a fully rehashed create-new resolution with a supported persisted duplicate candidate", async () => {
+    const authentic = await resolveTrusted({
+      ...base, assessment: "distinct", records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+    const forged = structuredClone(authentic);
+    const existing = candidate("existing", 0.99);
+    existing.ownershipFit = 0.99;
+    existing.boundaryFit = 0.99;
+    forged.candidates = [existing];
+    forged.candidateRecords = [{ candidate: existing, lifecycle: "active", replacementIds: [] }];
+    forged.boundState = createStateBinding({
+      ...forged.boundState,
+      valueDependencies: [{
+        kind: "canonical-entity", id: "existing", versionHash: hash("candidate-existing"),
+        role: "identity candidate semantic value",
+      }],
+    });
+    const rehashed = rehashResolution(forged);
+
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(rehashed).success).toBe(false);
+    await expect(assertCanonicalCreationAllowed(
+      { resolutionId: rehashed.id, authorityRecordId: authority.id }, trustedRepository(rehashed),
+    )).rejects.toThrow(/candidate|duplicate|overlap|eligible|source/i);
+  });
+
+  it("accepts a fully persisted distinct resolution only when candidate analysis proves no overlap", async () => {
+    const weak = record("concept-timing");
+    weak.candidate = candidate("concept-timing", 0.1);
+    const resolution = await resolveTrusted({
+      ...base, assessment: "distinct", records: [weak], boundState: binding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+
+    expect(resolution.candidateRecords).toEqual([weak]);
+    expect(AdjudicatedSemanticIdentityResolutionSchema.parse(resolution)).toEqual(resolution);
+    await expect(assertCanonicalCreationAllowed(
+      { resolutionId: resolution.id, authorityRecordId: authority.id }, trustedRepository(resolution),
+    )).resolves.toEqual(resolution.boundState);
+  });
+
+  it("rejects unresolved exact-kind historical candidates even when overlap support has decayed", async () => {
+    const authentic = await resolveTrusted({
+      ...base, assessment: "distinct", records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+    const forged = structuredClone(authentic);
+    const unresolved = candidate("existing", 0.1);
+    unresolved.evidence = [];
+    unresolved.explanation = "";
+    forged.candidates = [unresolved];
+    forged.candidateRecords = [{ candidate: unresolved, lifecycle: "tombstone", replacementIds: [] }];
+    forged.boundState = createStateBinding({
+      ...forged.boundState,
+      valueDependencies: [{
+        kind: "canonical-entity", id: "existing", versionHash: hash("candidate-existing"),
+        role: "identity candidate semantic value",
+      }],
+    });
+    const rehashed = rehashResolution(forged);
+
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(rehashed).success).toBe(false);
+    await expect(assertCanonicalCreationAllowed(
+      { resolutionId: rehashed.id, authorityRecordId: authority.id }, trustedRepository(rehashed),
+    )).rejects.toThrow(/candidate|duplicate|histor|unresolved|source/i);
+  });
+
+  it.each([
+    { assessment: "replace" as const, records: [record("a")], targets: ["replacement"], overlappingTargets: ["a"] },
+    { assessment: "split" as const, records: [record("a")], targets: ["child-a", "child-b"], overlappingTargets: ["a", "child-b"] },
+    { assessment: "merge" as const, records: [record("a"), record("b")], targets: ["merged"], overlappingTargets: ["a"] },
+  ])("rejects fully rehashed $assessment continuity whose source and target endpoints overlap", async ({ assessment, records, targets, overlappingTargets }) => {
+    const authentic = await resolveTrusted({ ...base, assessment, records, proposedTargetIds: targets });
+    const forged = structuredClone(authentic);
+    forged.proposedTargetIds = overlappingTargets;
+    forged.selectedEntityIds = forged.adjudication!.sourceIds;
+    const fact = structuredClone(forged.adjudication!.factPayloads[0]!);
+    fact.targetIds = overlappingTargets;
+    if (fact.operation === "replace") fact.supersession.targetIds = overlappingTargets;
+    if (fact.operation === "split") fact.partitionTargetIds = overlappingTargets;
+    if (fact.operation === "merge") fact.convergence.targetId = overlappingTargets[0]!;
+    const claim = { ...forged.adjudication!.claims[0]!, object: fact };
+    const lineageBasis = {
+      ...forged.lineageProposals[0]!, id: undefined, canonical: undefined, toIds: overlappingTargets,
+    };
+    const { id: _lineageId, canonical: _lineageCanonical, ...lineageSemantic } = lineageBasis;
+    const lineage = {
+      id: `lineage_proposal_${hashFramedDomain("identity-lineage-proposal", lineageSemantic).slice(-32)}`,
+      canonical: false as const, ...lineageSemantic,
+    };
+    forged.lineageProposals = [lineage];
+    const tombstones = assessment === "replace" ? forged.tombstoneProposals.map((proposal) => {
+      const basis = { ...proposal, id: undefined, canonical: undefined, replacementIds: overlappingTargets };
+      const { id: _tombstoneId, canonical: _tombstoneCanonical, ...semantic } = basis;
+      return {
+        id: `tombstone_proposal_${hashFramedDomain("identity-tombstone-proposal", semantic).slice(-32)}`,
+        canonical: false as const, ...semantic,
+      };
+    }) : [];
+    forged.tombstoneProposals = tombstones;
+    forged.adjudication = {
+      ...forged.adjudication!, proposedTargetIds: overlappingTargets, factPayloads: [fact], claims: [claim],
+      claimHashes: [hashFramedDomain("identity-adjudication-claim-ref", claim)],
+      lineageProposals: [lineage], tombstoneProposals: tombstones,
+    };
+    const rehashed = rehashResolution(forged);
+
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(rehashed).success).toBe(false);
+  });
+
+  it("accepts valid disjoint split, merge, replace, and delete continuity", async () => {
+    const resolutions = await Promise.all([
+      resolveTrusted({ ...base, assessment: "split", records: [record("a")], proposedTargetIds: ["child-a", "child-b"] }),
+      resolveTrusted({ ...base, assessment: "merge", records: [record("a"), record("b")], proposedTargetIds: ["merged"] }),
+      resolveTrusted({ ...base, assessment: "replace", records: [record("a")], proposedTargetIds: ["replacement"] }),
+      resolveTrusted({ ...base, assessment: "delete", records: [record("a")], proposedTargetIds: [] }),
+    ]);
+
+    for (const resolution of resolutions) {
+      expect(AdjudicatedSemanticIdentityResolutionSchema.parse(resolution)).toEqual(resolution);
+    }
   });
 
   it("normalizes semantic boundary sets once before claims and all identity hashes", async () => {
