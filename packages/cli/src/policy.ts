@@ -10,6 +10,13 @@ export interface CliPolicyInput {
   readonly nonInteractive?: boolean;
 }
 
+export interface OperationRiskInput {
+  readonly command: SliceCommand;
+  readonly sideEffect: "read-only" | "derived-write" | "workspace-write" | "canonical-write" | "external-write";
+  readonly externalWrite: boolean;
+  readonly canonicalMutation: boolean;
+}
+
 const riskRank = (risk: RiskClass): number => ["R0", "R1", "R2", "R3", "R4"].indexOf(risk);
 
 export function assertOperationRiskAuthorized(policy: ExecutionPolicy, risk: RiskClass): void {
@@ -17,9 +24,13 @@ export function assertOperationRiskAuthorized(policy: ExecutionPolicy, risk: Ris
   if (riskRank(risk) > riskRank(policy.maximumAutomaticRisk)) {
     throw new Error(`operation risk ${risk} exceeds automatic policy ${policy.maximumAutomaticRisk}`);
   }
-  if (policy.allowAutoMutation && riskRank(policy.requireIndependentValidationAtOrAbove) > riskRank(risk)) {
-    throw new Error(`operation risk ${risk} does not satisfy independent-validation policy`);
-  }
+}
+
+export function deriveOperationRisk(input: OperationRiskInput): RiskClass {
+  if (input.externalWrite || input.sideEffect === "external-write") return "R3";
+  if (input.canonicalMutation || input.sideEffect === "canonical-write") return "R2";
+  if (input.sideEffect === "workspace-write" || input.sideEffect === "derived-write") return "R1";
+  return "R0";
 }
 
 export function normalizeExecutionPolicy(input: CliPolicyInput): Readonly<ExecutionPolicy> {

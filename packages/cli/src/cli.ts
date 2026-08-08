@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { RiskClass } from "@projector/core";
 
-import { assertOperationRiskAuthorized, normalizeExecutionPolicy, type CliPolicyInput, type SliceCommand } from "./policy.js";
+import { assertOperationRiskAuthorized, deriveOperationRisk, normalizeExecutionPolicy, type CliPolicyInput, type OperationRiskInput, type SliceCommand } from "./policy.js";
 import {
   analyzeMandatorySlice,
   applyMandatorySlice,
@@ -46,11 +46,13 @@ export interface ProjectorCommandOptions {
   readonly cwd?: string;
   readonly governance?: {
     readonly detectCanonicalConflictPaths: (repositoryRoot: string) => Promise<readonly string[]>;
-    readonly assessOperationRisk: (command: SliceCommand, repositoryRoot: string) => Promise<RiskClass>;
+    readonly assessOperationRisk?: (command: SliceCommand, repositoryRoot: string) => Promise<RiskClass>;
+    readonly operation?: OperationRiskInput;
   };
 }
 
 const execFileAsync = promisify(execFile);
+const riskRank = (risk: RiskClass): number => ["R0", "R1", "R2", "R3", "R4"].indexOf(risk);
 async function defaultCanonicalConflictPaths(repositoryRoot: string): Promise<string[]> {
   const { stdout } = await execFileAsync("git", ["-C", repositoryRoot, "diff", "--name-only", "--diff-filter=U"], { encoding: "utf8" });
   return stdout.split(/\r?\n/u).filter((path) => path.startsWith(".projector/")).sort();
@@ -126,20 +128,26 @@ export async function executeProjector(
   const policy = normalizeExecutionPolicy(parsed.policy);
   const repositoryRoot = options.cwd ?? process.cwd();
   if (policy.allowAutoMutation) {
-    const governance = options.governance ?? {
-      detectCanonicalConflictPaths: defaultCanonicalConflictPaths,
-      assessOperationRisk: async () => "R1" as const,
-    };
-    const conflicts = await governance.detectCanonicalConflictPaths(repositoryRoot);
-    if ((policy.preset === "govern" || policy.preset === "autonomous") && conflicts.length > 0) {
-      const output = `canonical governance conflict blocks ${policy.preset}: ${[...conflicts].sort().join(", ")}`;
-      return { exitCode: 3, output, report: { policy, blocked: true, conflicts: [...conflicts].sort() } };
+    const defaultOperation: OperationRiskInput = parsed.command === "init"
+      ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
+      : { command: parsed.command, sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false };
+    const suppliedOperation = options.governance?.operation;
+    if (suppliedOperation !== undefined && suppliedOperation.command !== parsed.command) {
+      return { exitCode: 3, output: "operation risk descriptor does not match command", report: { policy, blocked: true } };
     }
-    const operationRisk = await governance.assessOperationRisk(parsed.command, repositoryRoot);
+    const baselineRisk = deriveOperationRisk(defaultOperation);
+    const suppliedRisk = suppliedOperation === undefined ? baselineRisk : deriveOperationRisk(suppliedOperation);
+    const operationRisk = riskRank(suppliedRisk) > riskRank(baselineRisk) ? suppliedRisk : baselineRisk;
     try { assertOperationRiskAuthorized(policy, operationRisk); }
     catch (error) {
       const output = error instanceof Error ? error.message : String(error);
       return { exitCode: 3, output, report: { policy, blocked: true, operationRisk } };
+    }
+    const governance = options.governance ?? { detectCanonicalConflictPaths: defaultCanonicalConflictPaths };
+    const conflicts = await governance.detectCanonicalConflictPaths(repositoryRoot);
+    if ((policy.preset === "govern" || policy.preset === "autonomous") && conflicts.length > 0) {
+      const output = `canonical governance conflict blocks ${policy.preset}: ${[...conflicts].sort().join(", ")}`;
+      return { exitCode: 3, output, report: { policy, blocked: true, conflicts: [...conflicts].sort() } };
     }
   }
   let report: any;

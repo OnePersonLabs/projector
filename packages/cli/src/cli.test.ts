@@ -29,9 +29,27 @@ describe("minimal CLI entrypoint", () => {
   it("enforces actual operation risk before public mutation work begins", async () => {
     const result = await executeProjector(["apply", "--mode", "autonomous"], {
       cwd: "/definitely/not/a/repository",
-      governance: { detectCanonicalConflictPaths: async () => [], assessOperationRisk: async () => "R2" },
+      governance: {
+        detectCanonicalConflictPaths: async () => [],
+        operation: { command: "apply", sideEffect: "canonical-write", externalWrite: false, canonicalMutation: true },
+      },
     });
     expect(result.exitCode).toBe(3);
     expect(result.output).toMatch(/risk R2 exceeds/u);
+  });
+
+  it("derives and rejects command risk before any repository access", async () => {
+    let repositoryAccessed = false;
+    const result = await executeProjector(["init", "--mode", "autonomous"], {
+      cwd: "/definitely/not/a/repository",
+      governance: {
+        detectCanonicalConflictPaths: async () => { repositoryAccessed = true; return []; },
+        assessOperationRisk: async () => { throw new Error("risk must be derived before repository access"); },
+        operation: { command: "init", sideEffect: "canonical-write", externalWrite: false, canonicalMutation: true },
+      },
+    });
+    expect(result.exitCode).toBe(3);
+    expect(result.report.operationRisk).toBe("R2");
+    expect(repositoryAccessed).toBe(false);
   });
 });

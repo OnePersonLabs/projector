@@ -23,9 +23,15 @@ export interface LayeredIgnoreRule {
 const LAYER_RANK: Record<IgnoreLayer, number> = { repository: 0, config: 1, lens: 2, rule: 3 };
 function selectorSpecificity(selector: SelectorExpr): number {
   switch (selector.op) {
-    case "atom": return 1;
-    case "not": return selectorSpecificity(selector.item);
-    case "all": case "any": return selector.items.reduce((sum, item) => sum + selectorSpecificity(item), 0);
+    case "atom": {
+      const matcherRank = { equals: 1_000, in: 850, "matches-structural-query": 800, contains: 400, glob: 200, regex: 150, exists: 50 } as const;
+      return matcherRank[selector.matcher];
+    }
+    case "not": return selectorSpecificity(selector.item) - 10_000;
+    case "all": return selector.items.length === 0 ? -20_000
+      : selector.items.reduce((sum, item) => sum + selectorSpecificity(item), 0) + selector.items.length * 100;
+    case "any": return selector.items.length === 0 ? -20_000
+      : Math.max(...selector.items.map(selectorSpecificity)) - 10_000 - selector.items.length;
   }
 }
 

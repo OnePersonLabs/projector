@@ -117,6 +117,11 @@ export function lintHumanTechnical(content: string): HumanTechnicalLintReport {
 }
 
 function normalizedSource(source: CanonicalRepresentationSource): CanonicalRepresentationSource {
+  const statementIds = new Set(source.statements.map(({ id }) => id));
+  const crossKindCollision = source.scenarios.find(({ id }) => statementIds.has(id));
+  if (crossKindCollision !== undefined) {
+    throw new TypeError(`cross-kind canonical source identity collision: ${crossKindCollision.id}`);
+  }
   if (new Set(source.sourceEntityIds).size !== source.sourceEntityIds.length) {
     throw new TypeError("duplicate source membership is not permitted");
   }
@@ -166,7 +171,16 @@ function entitySemanticHash(source: CanonicalRepresentationSource, id: EntityId)
   return hashFramedDomain("canonical-representation-entity", entity);
 }
 
-function dimensionValue(source: CanonicalRepresentationSource, dimension: PreservationDimension): unknown {
+function typedSourceMembers(source: CanonicalRepresentationSource): Array<{
+  readonly kind: "statement" | "scenario"; readonly id: EntityId; readonly semanticHash: ContentHash;
+}> {
+  return [
+    ...source.statements.map(({ id }) => ({ kind: "statement" as const, id, semanticHash: entitySemanticHash(source, id) })),
+    ...source.scenarios.map(({ id }) => ({ kind: "scenario" as const, id, semanticHash: entitySemanticHash(source, id) })),
+  ].sort((left, right) => compare(`${left.kind}:${left.id}`, `${right.kind}:${right.id}`));
+}
+
+function dimensionValue(source: Pick<CanonicalRepresentationSource, "statements" | "scenarios">, dimension: PreservationDimension): unknown {
   switch (dimension) {
     case "normative-force": return source.statements.map(({ id, normativeForce }) => ({ id, normativeForce }));
     case "negation": return source.statements.map(({ id, negated }) => ({ id, negated }));
@@ -232,6 +246,13 @@ function render(source: CanonicalRepresentationSource, key: BuiltInRepresentatio
   return `${source.statements.map((statement) => `${statement.text}\nSemantic kernel: ${canonicalJson(kernel(statement))}`).join("\n\n")}\n\nBehavioral scenarios: ${canonicalJson(source.scenarios)}`;
 }
 
+function renderLessAggressiveCompact(source: CanonicalRepresentationSource): string {
+  return [
+    ...source.statements.map((statement) => `STATEMENT ${canonicalJson(kernel(statement))}`),
+    ...source.scenarios.map((scenario) => `SCENARIO-KERNEL ${canonicalJson(scenario)}`),
+  ].join("\n");
+}
+
 function validation(status: "passed" | "failed", summary: string, details: Record<string, unknown> = {}): ValidationResult {
   return {
     validatorId: "representation-fidelity@1", status, summary, evidenceIds: [], evidenceLane: "representation",
@@ -253,56 +274,170 @@ export interface MeasuredAbbreviation {
   readonly clarityValidated: boolean;
 }
 
+type ParsedCandidateSource = Pick<CanonicalRepresentationSource, "statements" | "scenarios">;
+
+function parseKernelStatement(value: unknown): CanonicalRepresentationStatement {
+  if (value === null || typeof value !== "object") throw new TypeError("statement kernel is not an object");
+  const item = value as Record<string, unknown>;
+  const strings = (key: string): string[] => {
+    if (!Array.isArray(item[key]) || !item[key].every((entry) => typeof entry === "string")) throw new TypeError(`${key} is not a string list`);
+    return item[key] as string[];
+  };
+  if (typeof item.id !== "string" || !["require", "forbid", "prefer", "permit"].includes(String(item.force))
+    || typeof item.negated !== "boolean") throw new TypeError("statement identity, force, or negation is invalid");
+  const cardinality = item.cardinality;
+  const connective = item.connective;
+  const guard = item.guard;
+  if (cardinality !== null && !["exactly-one", "one-or-more", "at-most-one", "all", "none"].includes(String(cardinality))) throw new TypeError("cardinality is invalid");
+  if (connective !== null && !["and", "or", "implies", "iff"].includes(String(connective))) throw new TypeError("connective is invalid");
+  if (guard !== null && typeof guard !== "string") throw new TypeError("guard is invalid");
+  return {
+    id: item.id, text: "", normativeForce: item.force as CanonicalRepresentationStatement["normativeForce"], negated: item.negated,
+    scope: strings("scope"), ...(cardinality === null ? {} : { cardinality: cardinality as NonNullable<CanonicalRepresentationStatement["cardinality"]> }),
+    ...(connective === null ? {} : { connective: connective as NonNullable<CanonicalRepresentationStatement["connective"]> }),
+    ...(guard === null ? {} : { guard }), exceptions: strings("exceptions"), dependencies: strings("dependencyOrder"),
+    conceptIds: strings("concepts"), protectedLiterals: strings("literals"),
+  };
+}
+
+function parseScenarios(value: unknown): CanonicalRepresentationSource["scenarios"] {
+  if (!Array.isArray(value)) throw new TypeError("scenarios are not an array");
+  return value.map((entry) => {
+    if (entry === null || typeof entry !== "object") throw new TypeError("scenario is not an object");
+    const scenario = entry as Record<string, unknown>;
+    if (typeof scenario.id !== "string" || typeof scenario.title !== "string" || !Array.isArray(scenario.steps)) throw new TypeError("scenario structure is invalid");
+    const steps = scenario.steps.map((step) => {
+      if (step === null || typeof step !== "object") throw new TypeError("scenario step is invalid");
+      const item = step as Record<string, unknown>;
+      if (!["precondition", "trigger", "expected-outcome", "forbidden-outcome"].includes(String(item.role)) || typeof item.statement !== "string") {
+        throw new TypeError("scenario step role is invalid");
+      }
+      return { role: item.role as BehavioralScenarioStep["role"], statement: item.statement };
+    });
+    return { id: scenario.id, title: scenario.title, steps };
+  });
+}
+
+function parseMachineCandidate(candidate: string): ParsedCandidateSource {
+  const parsed = JSON.parse(candidate) as Record<string, unknown>;
+  if (parsed.apiVersion !== "projector.dev/representation/v1" || parsed.kind !== "MachineInvariant"
+    || !Array.isArray(parsed.statements) || !Array.isArray(parsed.sourceIds)
+    || !parsed.sourceIds.every((id) => typeof id === "string")) throw new TypeError("candidate is not a supported machine invariant kernel");
+  const statements = parsed.statements.map(parseKernelStatement);
+  const scenarios = parseScenarios(parsed.scenarios);
+  const observedIds = unique([...statements.map(({ id }) => id), ...scenarios.map(({ id }) => id)]);
+  if (canonicalJson(observedIds) !== canonicalJson(unique(parsed.sourceIds as string[]))) throw new TypeError("machine source membership does not match its structured kernel");
+  return { statements, scenarios };
+}
+
+function parseHumanCandidate(candidate: string): ParsedCandidateSource {
+  const scenarioMarker = "Behavioral scenarios:";
+  const marker = candidate.lastIndexOf(scenarioMarker);
+  if (marker < 0) throw new TypeError("human representation has no scenario kernel");
+  const scenarios = parseScenarios(JSON.parse(candidate.slice(marker + scenarioMarker.length).trim()));
+  const statements = [...candidate.slice(0, marker).matchAll(/Semantic kernel:\s*(\{[^\n]*\})/gu)]
+    .map((match) => parseKernelStatement(JSON.parse(match[1]!)));
+  if (statements.length === 0) throw new TypeError("human representation has no statement kernel");
+  return { statements, scenarios };
+}
+
+function parseGherkinCandidate(candidate: string): ParsedCandidateSource {
+  const marker = "# invariant-kernel:";
+  const markerOffset = candidate.lastIndexOf(marker);
+  if (markerOffset < 0) throw new TypeError("Gherkin representation has no invariant kernel");
+  const statementsValue = JSON.parse(candidate.slice(markerOffset + marker.length).trim()) as unknown;
+  if (!Array.isArray(statementsValue)) throw new TypeError("Gherkin invariant kernel is not an array");
+  const scenarios = candidate.slice(0, markerOffset).trim().split(/\n\s*\n/gu).filter(Boolean).map((block) => {
+    const lines = block.split(/\r?\n/gu).map((line) => line.trim()).filter(Boolean);
+    const id = /^# source:\s*(.+)$/u.exec(lines[0] ?? "")?.[1];
+    const title = /^Scenario:\s*(.+)$/u.exec(lines[1] ?? "")?.[1];
+    if (id === undefined || title === undefined) throw new TypeError("Gherkin scenario identity is invalid");
+    const roles: Record<string, BehavioralScenarioStep["role"]> = { Given: "precondition", When: "trigger", Then: "expected-outcome", But: "forbidden-outcome" };
+    const steps = lines.slice(2).map((line) => {
+      const match = /^(Given|When|Then|But)\s+(.+)$/u.exec(line);
+      if (match === null) throw new TypeError("Gherkin scenario step cannot be parsed");
+      return { role: roles[match[1]!]!, statement: match[2]! };
+    });
+    return { id, title, steps };
+  });
+  return { statements: statementsValue.map(parseKernelStatement), scenarios };
+}
+
+function parseCompactCandidate(candidate: string): ParsedCandidateSource {
+  if (candidate.split(/\r?\n/gu).some((line) => line.trim().startsWith("STATEMENT "))) {
+    const statements: CanonicalRepresentationStatement[] = [];
+    const scenarios: Array<CanonicalRepresentationSource["scenarios"][number]> = [];
+    for (const line of candidate.split(/\r?\n/gu).map((item) => item.trim()).filter(Boolean)) {
+      if (line.startsWith("STATEMENT ")) statements.push(parseKernelStatement(JSON.parse(line.slice("STATEMENT ".length))));
+      else if (line.startsWith("SCENARIO-KERNEL ")) scenarios.push(...parseScenarios([JSON.parse(line.slice("SCENARIO-KERNEL ".length))]));
+      else throw new TypeError("less-aggressive compact line cannot be parsed");
+    }
+    return { statements, scenarios };
+  }
+  const statements: CanonicalRepresentationStatement[] = [];
+  const scenarios: Array<CanonicalRepresentationSource["scenarios"][number]> = [];
+  for (const line of candidate.split(/\r?\n/gu).map((item) => item.trim()).filter(Boolean)) {
+    if (line.startsWith("SCENARIO ")) {
+      const parts = line.split(/\s*\|\s*/gu);
+      const id = parts.shift()!.slice("SCENARIO ".length).trim();
+      const steps = parts.map((part) => {
+        const match = /^(PRECONDITION|TRIGGER|EXPECTED-OUTCOME|FORBIDDEN-OUTCOME):\s*(.+)$/u.exec(part);
+        if (match === null) throw new TypeError("compact scenario step cannot be parsed");
+        return { role: match[1]!.toLowerCase() as BehavioralScenarioStep["role"], statement: match[2]! };
+      });
+      scenarios.push({ id, title: "", steps });
+      continue;
+    }
+    const parts = line.split(/\s*\|\s*/gu);
+    const head = /^(REQUIRE|FORBID|PREFER|PERMIT)( NOT)?\s+(.+)$/u.exec(parts.shift() ?? "");
+    if (head === null) throw new TypeError("compact statement head cannot be parsed");
+    const fields = new Map<string, string>();
+    const literals: string[] = [];
+    for (const part of parts) {
+      const field = /^(EXACTLY-ONE|ONE-OR-MORE|AT-MOST-ONE|ALL|NONE|AND|OR|IMPLIES|IFF)$/u.exec(part);
+      if (field !== null) fields.set(["AND", "OR", "IMPLIES", "IFF"].includes(field[1]!) ? "connective" : "cardinality", field[1]!.toLowerCase());
+      else {
+        const tagged = /^(IF|EXCEPT|ORDER|SCOPE|CONCEPTS)\s+(.+)$/u.exec(part);
+        if (tagged === null) literals.push(part); else fields.set(tagged[1]!, tagged[2]!);
+      }
+    }
+    const list = (key: string, separator = /,\s*/gu): string[] => fields.get(key)?.split(separator).filter(Boolean) ?? [];
+    statements.push({
+      id: head[3]!, text: "", normativeForce: head[1]!.toLowerCase() as CanonicalRepresentationStatement["normativeForce"], negated: head[2] !== undefined,
+      scope: list("SCOPE"), ...(fields.has("cardinality") ? { cardinality: fields.get("cardinality")! as NonNullable<CanonicalRepresentationStatement["cardinality"]> } : {}),
+      ...(fields.has("connective") ? { connective: fields.get("connective")! as NonNullable<CanonicalRepresentationStatement["connective"]> } : {}),
+      ...(fields.has("IF") ? { guard: fields.get("IF")! } : {}), exceptions: list("EXCEPT"), dependencies: list("ORDER", /\s*>\s*/gu),
+      conceptIds: list("CONCEPTS"), protectedLiterals: literals,
+    });
+  }
+  return { statements, scenarios };
+}
+
+function parseCandidate(candidate: string, profileKey: BuiltInRepresentationProfileKey): ParsedCandidateSource {
+  try {
+    if (profileKey === "machine-invariant@1") return parseMachineCandidate(candidate);
+    if (profileKey === "behavior-gherkin@1") return parseGherkinCandidate(candidate);
+    if (profileKey === "agent-compact@1") return parseCompactCandidate(candidate);
+    return parseHumanCandidate(candidate);
+  } catch (error) {
+    throw new RepresentationFidelityError("normative-force", `candidate cannot be deterministically parsed or proved: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function assertCandidate(
   source: CanonicalRepresentationSource,
   candidate: string,
   profileKey: BuiltInRepresentationProfileKey,
   measuredAbbreviations: readonly MeasuredAbbreviation[] = [],
 ): void {
-  const lower = candidate.toLowerCase();
-  for (const statement of source.statements) {
-    if (statement.cardinality === "exactly-one" && /one or more|one-or-more/u.test(lower)) throw new RepresentationFidelityError("quantifier-cardinality", "exactly-one changed to one-or-more");
-    if (statement.connective === "iff" && /\bwhen\b/u.test(lower) && !/\biff\b/u.test(lower)) throw new RepresentationFidelityError("logical-connective", "iff changed to when");
-    if (statement.normativeForce === "forbid" && !/must_not|must not|forbid/u.test(lower)) throw new RepresentationFidelityError("normative-force", "forbid weakened or changed");
-    if (statement.negated && !/must_not|must not|forbid|\bnot\b|\bnever\b/u.test(lower)) throw new RepresentationFidelityError("negation", "negation was dropped");
-    if (statement.exceptions.length > 0 && !/unless|except|"exceptions"/u.test(lower)) throw new RepresentationFidelityError("exception", "exception was dropped");
-    for (const scope of statement.scope) {
-      if (!candidate.includes(scope)) throw new RepresentationFidelityError("scope", `semantic scope changed: ${scope}`);
-    }
-    if (profileKey === "agent-compact@1" && statement.scope.length > 0 && !candidate.includes(`SCOPE ${statement.scope.join(", ")}`)) {
-      throw new RepresentationFidelityError("scope", "semantic scope marker changed");
-    }
-    if (statement.guard !== undefined && !candidate.includes(statement.guard)) throw new RepresentationFidelityError("condition-guard", `condition guard changed: ${statement.guard}`);
-    if (statement.guard !== undefined && profileKey === "agent-compact@1" && !candidate.includes(`IF ${statement.guard}`)) {
-      throw new RepresentationFidelityError("condition-guard", `condition guard marker changed: ${statement.guard}`);
-    }
-    let dependencyOffset = -1;
-    for (const dependency of statement.dependencies) {
-      const next = candidate.indexOf(dependency, dependencyOffset + 1);
-      if (next < 0 || next < dependencyOffset) throw new RepresentationFidelityError("dependency-order", `dependency missing or reordered: ${dependency}`);
-      dependencyOffset = next;
-    }
-    if (profileKey === "agent-compact@1" && statement.dependencies.length > 0 && !candidate.includes(`ORDER ${statement.dependencies.join(" > ")}`)) {
-      throw new RepresentationFidelityError("dependency-order", "dependency order marker changed");
-    }
-    for (const conceptId of statement.conceptIds) {
-      if (!candidate.includes(conceptId)) throw new RepresentationFidelityError("concept-identity", `canonical concept identity changed: ${conceptId}`);
-    }
-    for (const literal of statement.protectedLiterals) {
-      if (!candidate.includes(literal)) throw new RepresentationFidelityError("identifier-literal", `protected literal changed: ${literal}`);
-    }
-  }
-  for (const scenario of source.scenarios) {
-    let offset = -1;
-    for (const step of scenario.steps) {
-      const next = candidate.indexOf(step.statement);
-      if (next < 0 || next < offset) throw new RepresentationFidelityError("behavior-step-role", `scenario step missing or reordered: ${step.statement}`);
-      const roleMarker = profileKey === "behavior-gherkin@1"
-        ? ({ precondition: "Given", trigger: "When", "expected-outcome": "Then", "forbidden-outcome": "But" } as const)[step.role]
-        : profileKey === "agent-compact@1" ? step.role.toUpperCase() : `"role":"${step.role}"`;
-      const markerOffset = candidate.lastIndexOf(roleMarker, next);
-      if (markerOffset < 0 || markerOffset < offset) throw new RepresentationFidelityError("behavior-step-role", `scenario role changed: ${step.role}`);
-      offset = next;
+  const observed = parseCandidate(candidate, profileKey);
+  const normalizedObserved = {
+    statements: [...observed.statements].map((statement) => ({ ...statement, scope: unique(statement.scope), exceptions: unique(statement.exceptions), conceptIds: unique(statement.conceptIds), protectedLiterals: unique(statement.protectedLiterals) })).sort((a, b) => compare(a.id, b.id)),
+    scenarios: [...observed.scenarios].sort((a, b) => compare(a.id, b.id)),
+  };
+  for (const dimension of ALL_DIMENSIONS) {
+    if (canonicalJson(dimensionValue(source, dimension)) !== canonicalJson(dimensionValue(normalizedObserved, dimension))) {
+      throw new RepresentationFidelityError(dimension, `candidate changed protected dimension: ${dimension}`);
     }
   }
   if (profileKey === "agent-compact@1") {
@@ -318,10 +453,6 @@ function assertCandidate(
       }
     }
   }
-  const expected = render(source, profileKey);
-  if (candidate !== expected) {
-    throw new RepresentationFidelityError("normative-force", "candidate semantic form is not the canonical exact rendering");
-  }
 }
 
 export interface CompileRepresentationInput {
@@ -332,7 +463,10 @@ export interface CompileRepresentationInput {
 }
 
 export class RepresentationCompiler {
-  constructor(private readonly ports: { readonly artifacts: RepresentationArtifactStore; readonly tokenizer?: TokenMeasurementPort }) {}
+  constructor(private readonly ports: {
+    readonly artifacts: RepresentationArtifactStore; readonly tokenizer?: TokenMeasurementPort;
+    readonly fallbackGate?: (tier: RepresentationFallbackTier) => boolean;
+  }) {}
 
   async validateCandidate(input: { source: CanonicalRepresentationSource; profileKey: BuiltInRepresentationProfileKey; candidate: string; measuredAbbreviations?: readonly MeasuredAbbreviation[] }): Promise<SemanticPreservationFingerprint> {
     const source = normalizedSource(input.source);
@@ -350,18 +484,27 @@ export class RepresentationCompiler {
   }
 
   async compile(input: CompileRepresentationInput): Promise<{ readonly projection: Readonly<RepresentationProjection> }> {
+    return this.compileRendered(input);
+  }
+
+  private async compileRendered(input: CompileRepresentationInput, contentOverride?: string, identityVariant = "canonical"): Promise<{ readonly projection: Readonly<RepresentationProjection> }> {
     const source = normalizedSource(input.source);
     const selected = BUILT_IN_REPRESENTATION_PROFILES[input.profileKey];
+    const members = typedSourceMembers(source);
+    const memberKeys = new Set(members.map(({ kind, id }) => `${kind}:${id}`));
+    if (input.binding.valueDependencies.some(({ kind, id }) => kind === "canonical-entity" && memberKeys.has(String(id)))) {
+      throw new TypeError("representation source members must occur exactly once in typed bound value dependencies");
+    }
     const boundState = createStateBinding({
       compiledAgainst: input.binding.compiledAgainst,
       valueDependencies: [
         ...input.binding.valueDependencies,
-        ...source.sourceEntityIds.map((id) => ({ kind: "canonical-entity" as const, id, versionHash: entitySemanticHash(source, id), role: "representation-source" })),
+        ...members.map((member) => ({ kind: "canonical-entity" as const, id: `${member.kind}:${member.id}`, versionHash: member.semanticHash, role: `representation-source:${member.kind}` })),
         { kind: "representation-profile" as const, id: selected.id, versionHash: selected.semanticHash, role: "representation-profile" },
       ],
       queryDependencies: input.binding.queryDependencies,
     });
-    const content = render(source, input.profileKey);
+    const content = contentOverride ?? render(source, input.profileKey);
     assertCandidate(source, content, input.profileKey);
     // Generated renderers originate from the normalized kernel. Literal checks guard accidental renderer loss.
     for (const literal of source.statements.flatMap(({ protectedLiterals }) => protectedLiterals)) {
@@ -378,7 +521,7 @@ export class RepresentationCompiler {
       tokenizerProfileId: this.ports.tokenizer.profileId,
     };
     const projectionBase = {
-      id: `representation:${hashFramedDomain("representation-projection-id", { sourceHash: source.sourceSemanticHash, profileId: selected.id, profileVersion: selected.version, binding: boundState.dependencyDigest })}`,
+      id: `representation:${hashFramedDomain("representation-projection-id", { sourceHash: source.sourceSemanticHash, profileId: selected.id, profileVersion: selected.version, binding: boundState.dependencyDigest, identityVariant })}`,
       profileId: selected.id, profileVersion: selected.version, target: selected.target,
       sourceEntityIds: unique(source.sourceEntityIds), sourceSemanticHash: source.sourceSemanticHash,
       boundState, contentHash, preservation,
@@ -389,15 +532,31 @@ export class RepresentationCompiler {
     return { projection: deepFreeze(projection) };
   }
 
-  async compileBest(input: Omit<CompileRepresentationInput, "profileKey"> & { requestedProfileKey: BuiltInRepresentationProfileKey }): Promise<{ readonly projection: Readonly<RepresentationProjection> }> {
+  async compileBest(input: Omit<CompileRepresentationInput, "profileKey"> & { requestedProfileKey: BuiltInRepresentationProfileKey }): Promise<{
+    readonly projection: Readonly<RepresentationProjection>; readonly advisoryProjection?: Readonly<RepresentationProjection>;
+    readonly fallback?: { readonly tier: RepresentationFallbackTier; readonly status: "fallback-used" };
+  }> {
     const requested = await this.compile({ ...input, profileKey: input.requestedProfileKey });
     if (input.requestedProfileKey !== "agent-compact@1" || (requested.projection.tokenAccounting?.estimatedNetTokens ?? 0) > 0) return requested;
-    // The first conservative tier is the exact machine kernel. It is freshly compiled,
-    // measured, bound and validated; rejected compact accounting is never carried over.
-    const fallback = await this.compile({ ...input, profileKey: "machine-invariant@1" });
-    const base = {
-      ...fallback.projection, status: "fallback-used" as const,
-    };
-    return { projection: deepFreeze({ ...base, semanticHash: hashFramedDomain("representation-projection", { ...base, semanticHash: undefined }) }) };
+    const tiers: Array<{ tier: RepresentationFallbackTier; profileKey: BuiltInRepresentationProfileKey }> = [
+      { tier: "exact-machine-plus-advisory-compact", profileKey: "machine-invariant@1" },
+      { tier: "less-aggressive-compact", profileKey: "agent-compact@1" },
+      { tier: "human-technical", profileKey: "human-technical@1" },
+    ];
+    for (const { tier, profileKey } of tiers) {
+      if (this.ports.fallbackGate?.(tier) === false) continue;
+      const accepted = tier === "less-aggressive-compact"
+        ? await this.compileRendered({ ...input, profileKey: "agent-compact@1" }, renderLessAggressiveCompact(normalizedSource(input.source)), "less-aggressive-compact")
+        : profileKey === input.requestedProfileKey ? requested : await this.compile({ ...input, profileKey });
+      const base = { ...accepted.projection, status: "fallback-used" as const };
+      const projection = deepFreeze({ ...base, semanticHash: hashFramedDomain("representation-projection", { ...base, semanticHash: undefined }) });
+      return {
+        projection, ...(tier === "exact-machine-plus-advisory-compact" ? { advisoryProjection: requested.projection } : {}),
+        fallback: { tier, status: "fallback-used" },
+      };
+    }
+    throw new Error("representation fallback exhausted; projection must block");
   }
 }
+
+export type RepresentationFallbackTier = "exact-machine-plus-advisory-compact" | "less-aggressive-compact" | "human-technical";
