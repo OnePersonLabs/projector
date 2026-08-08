@@ -81,6 +81,15 @@ export interface MandatoryVerticalSliceEvidenceDetails {
   }[];
 }
 
+export function mandatoryVerticalSliceEvidenceDigest(
+  step: MandatoryVerticalSliceStep,
+  evidenceKind: MandatoryVerticalSliceEvidenceKind,
+  artifactRefs: readonly string[],
+  proof: Readonly<Record<string, unknown>>,
+): ContentHash {
+  return hashFramedDomain("mandatory-vertical-slice-proof", { step, evidenceKind, artifactRefs, proof });
+}
+
 export interface MandatoryVerticalSliceStepEvidence {
   readonly step: MandatoryVerticalSliceStep;
   readonly sequence: number;
@@ -107,6 +116,9 @@ export function assertMandatoryVerticalSliceEvidence(
       || item.details.proof === undefined
       || canonicalComparable(item.details.proof.artifactRefs) !== canonicalComparable(item.details.artifactRefs)) {
       throw new Error(`mandatory vertical slice step ${index + 1} requires structured details linked to outputs`);
+    }
+    if (item.details.outputDigest !== mandatoryVerticalSliceEvidenceDigest(item.step, item.details.evidenceKind, item.details.artifactRefs, item.details.proof)) {
+      throw new Error(`mandatory vertical slice step ${index + 1} output digest does not match proof`);
     }
     for (const key of contract?.required ?? []) {
       if (!Object.hasOwn(item.details.proof, key)) {
