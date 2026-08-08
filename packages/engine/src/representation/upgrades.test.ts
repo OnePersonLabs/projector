@@ -7,7 +7,7 @@ describe("representation and semantic upgrade protocol", () => {
       { id: "projection:agent", dependencyKeys: ["representation-profile:profile:agent-compact"], kind: "representation" },
       { id: "capsule:agent", dependencyKeys: ["representation:projection:agent"], kind: "capsule" },
       { id: "projection:human", dependencyKeys: ["representation-profile:profile:human-technical"], kind: "representation" },
-      { id: "source:rule", dependencyKeys: [], kind: "canonical-source" },
+      { id: "source:rule", dependencyKeys: [], kind: "canonical-entity" },
     ], {
       knownDependencyKeys: ["representation-profile:profile:agent-compact", "representation-profile:profile:human-technical", "representation:projection:agent"],
       ownedDependencyKeys: { "representation-profile:profile:agent-compact": { kind: "representation-profile", id: "profile:agent-compact" }, "representation-profile:profile:human-technical": { kind: "representation-profile", id: "profile:human-technical" } },
@@ -18,7 +18,7 @@ describe("representation and semantic upgrade protocol", () => {
       },
     });
     expect(result.invalidatedIds).toEqual(["capsule:agent", "projection:agent"]);
-    expect(result.preservedCanonicalSourceIds).toEqual(["source:rule"]);
+    expect(result.preservedCanonicalEntityIds).toEqual(["source:rule"]);
   });
 
   it("requires explicit reindex or revalidation for semantic interpretation changes", () => {
@@ -44,7 +44,7 @@ describe("representation and semantic upgrade protocol", () => {
 
   it("rejects conflicting duplicate dependent identities", () => {
     expect(() => planUpgradeInvalidation({ kind: "representation-profile", id: "compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["profile:compact"], requiredAction: "revalidate" }, [
-      { id: "same", kind: "canonical-source", dependencyKeys: [] },
+      { id: "same", kind: "canonical-entity", dependencyKeys: [] },
       { id: "same", kind: "representation", dependencyKeys: ["profile:compact"] },
     ], { knownDependencyKeys: ["profile:compact"], ownedDependencyKeys: { "profile:compact": { kind: "representation-profile", id: "compact" } }, directDependentIdsByDependencyKey: { "profile:compact": ["same"] } })).toThrow(/conflicting dependent/u);
   });
@@ -116,4 +116,34 @@ describe("representation and semantic upgrade protocol", () => {
     expect(() => planUpgradeInvalidation({ ...declaration, affectedDependencyKeys: ["profile:compact:render", "profile:compact:fidelity"] }, dependents, missingReachableKeyRegistry))
       .toThrow(/registry coverage|unknown dependency/u);
   });
+
+  it.each(["engine", "schema", "analyzer", "signature-profile"] as const)(
+    "invalidates directly dependent canonical-source proof rows for a %s interpretation change while preserving canonical entities",
+    (kind) => {
+      const targetId = `${kind}:typescript`;
+      const targetKey = `${kind}:typescript:v1`;
+      const proofKey = "canonical-source:proof:rule-a";
+      const result = planUpgradeInvalidation({
+        kind, id: targetId, fromVersion: "1", toVersion: "2",
+        affectedDependencyKeys: [targetKey], requiredAction: "revalidate",
+      }, [
+        { id: "entity:rule-a", kind: "canonical-entity", dependencyKeys: [] },
+        { id: "entity:decoy", kind: "canonical-entity", dependencyKeys: [] },
+        { id: "proof:rule-a", kind: "canonical-source", dependencyKeys: [targetKey] },
+        { id: "proof:rule-a-consumer", kind: "derivation", dependencyKeys: [proofKey] },
+        { id: "proof:decoy", kind: "derivation", dependencyKeys: ["unrelated:key"] },
+      ], {
+        knownDependencyKeys: [targetKey, proofKey, "unrelated:key"],
+        ownedDependencyKeys: { [targetKey]: { kind, id: targetId } },
+        directDependentIdsByDependencyKey: {
+          [targetKey]: ["proof:rule-a"],
+          [proofKey]: ["proof:rule-a-consumer"],
+          "unrelated:key": ["proof:decoy"],
+        },
+      });
+
+      expect(result.invalidatedIds).toEqual(["proof:rule-a", "proof:rule-a-consumer"]);
+      expect(result.preservedCanonicalEntityIds).toEqual(["entity:decoy", "entity:rule-a"]);
+    },
+  );
 });

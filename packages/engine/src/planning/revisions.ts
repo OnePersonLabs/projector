@@ -96,7 +96,7 @@ export interface RebasedExecutionPlan {
 }
 
 function packetHashMap(proofs: readonly PacketHashProof[], expectedPacketIds: readonly EntityId[], label: string): Map<EntityId, ContentHash> {
-  if (proofs.length === 0 || new Set(proofs.map(({ packetId }) => packetId)).size !== proofs.length
+  if (new Set(proofs.map(({ packetId }) => packetId)).size !== proofs.length
     || canonicalJson(unique(proofs.map(({ packetId }) => packetId))) !== canonicalJson(unique(expectedPacketIds))) {
     throw new Error(`${label} packet hash inventory must prove every packet exactly once`);
   }
@@ -141,7 +141,7 @@ export async function rebaseExecutionPlan(input: RebaseExecutionPlanInput): Prom
   let newCapsuleMapping: readonly CapsuleProof[] = [];
   if (!lightweight) {
     const oldInventory = await input.capsuleInventoryPort!.enumerateAuthenticated({ planId: input.original.id, packetIds: input.original.packetIds });
-    if (oldInventory.length === 0 || new Set(oldInventory.map(({ packetId }) => packetId)).size !== oldInventory.length
+    if (new Set(oldInventory.map(({ packetId }) => packetId)).size !== oldInventory.length
       || canonicalJson(unique(oldInventory.map(({ packetId }) => packetId))) !== canonicalJson(unique(input.original.packetIds))) {
       throw new Error("trusted old capsule inventory must account for every original packet exactly once");
     }
