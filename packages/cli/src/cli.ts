@@ -31,6 +31,8 @@ import {
   rebuildAcceptedState,
   reconcileMandatorySlice,
 } from "./vertical-slice.js";
+import { runDefaultUpgradeWorkflow } from "./upgrade.js";
+export * from "./upgrade.js";
 
 export const PROJECTOR_VERSION = "2.0.0";
 
@@ -50,6 +52,7 @@ Commands:
   cleanup               Resume a trusted cleanup continuation plan
   run <codex|claude> -- <args>  Run a bounded host session
   mcp                   Start the built Projector MCP composition
+  upgrade               Compile the current authenticated modernization candidate
   explain <target>      Explain findings for a path or finding identity
 
 Options:
@@ -80,6 +83,7 @@ export interface ProjectorCommandOptions {
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal;
   readonly mcp?: McpCliPort;
+  readonly upgrade?: { readonly run: (request: { readonly repositoryRoot: string }) => Promise<Record<string, unknown>> };
 }
 
 export interface RunHostCliRequest { readonly host: "codex" | "claude"; readonly sessionSelector: string; readonly repositoryRoot: string; readonly argv: readonly string[]; readonly environment: Readonly<Record<string, string>>; readonly signal: AbortSignal }
@@ -187,7 +191,7 @@ function validateArguments(arguments_: readonly string[], command: SliceCommand)
 function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const command = arguments_[0];
   if (command !== "init" && command !== "audit" && command !== "change" && command !== "plan" && command !== "apply"
-    && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run" && command !== "mcp") {
+    && command !== "upgrade" && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run" && command !== "mcp") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
   const separator = arguments_.indexOf("--");
@@ -272,6 +276,7 @@ function outputFor(command: SliceCommand, report: unknown, format: "text" | "jso
   if (command === "coverage" || command === "complete" || command === "cleanup") return `${command}: ${(report as CoverageCliReport).proofStatement}`;
   if (command === "run") return (report as { dryRun?: boolean }).dryRun === true ? "run: dry-run" : `run: ${(report as RunHostCliResult).status}`;
   if (command === "mcp") return `mcp: ${(report as { status: string }).status}`;
+  if (command === "upgrade") return `upgrade: ${(report as { selector: string }).selector}`;
   return `${command} completed.`;
 }
 
@@ -305,7 +310,7 @@ export async function executeProjector(
   const repositoryRoot = options.cwd ?? process.cwd();
   const defaultOperation: OperationRiskInput = parsed.command === "init"
     ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
-    : parsed.command === "apply" || parsed.command === "reconcile" || parsed.command === "cleanup" || parsed.command === "run"
+    : parsed.command === "apply" || parsed.command === "upgrade" || parsed.command === "reconcile" || parsed.command === "cleanup" || parsed.command === "run"
       ? { command: parsed.command, sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false }
       : { command: parsed.command, sideEffect: "read-only", externalWrite: false, canonicalMutation: false };
   const suppliedOperation = options.governance?.operation;
@@ -405,6 +410,12 @@ export async function executeProjector(
       const result = await applyMandatorySlice(repositoryRoot, prepared);
       report = { policy, plan: prepared.plan, capsule: prepared.capsule, risk: prepared.risk, preview: prepared.preview, ...result };
       exitCode = result.outcome === "success" ? 0 : result.outcome === "partial" ? 6 : 3;
+      break;
+    }
+    case "upgrade": {
+      if (!policy.allowAutoMutation) { report = { policy, kind: "upgrade-candidate", selector: "upgrade:pending", applied: false, persisted: false, dryRun: true }; break; }
+      const upgrade = options.upgrade?.run ?? (async ({ repositoryRoot }: { repositoryRoot: string }) => runDefaultUpgradeWorkflow(repositoryRoot));
+      report = { policy, ...await upgrade({ repositoryRoot }) };
       break;
     }
     case "reconcile": {

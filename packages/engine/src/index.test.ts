@@ -14,6 +14,8 @@ import {
   createStateBinding,
   evaluateSelector,
   groupCausalEvidence,
+  evaluateModernization,
+  compileUpgradePlan,
   reconcileToFixedPoint,
 } from "./index.js";
 
@@ -24,6 +26,8 @@ describe("engine public entrypoint", () => {
     expect(QueryDependencyRegistry).toBeTypeOf("function");
     expect(createStateBinding).toBeTypeOf("function");
     expect(groupCausalEvidence).toBeTypeOf("function");
+    expect(evaluateModernization.recommend).toBeTypeOf("function");
+    expect(compileUpgradePlan).toBeTypeOf("function");
     expect(evaluateSelector).toBeTypeOf("function");
     expect(compileProjectionLenses).toBeTypeOf("function");
     expect(compileAuthenticatedCoverageSnapshot).toBeTypeOf("function");

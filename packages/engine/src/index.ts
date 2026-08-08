@@ -17,3 +17,4 @@ export * from "./governance/ignore-policy.js";
 export * from "./planning/revisions.js";
 export * from "./architecture/index.js";
 export * from "./coverage/index.js";
+export * from "./modernization/index.js";
