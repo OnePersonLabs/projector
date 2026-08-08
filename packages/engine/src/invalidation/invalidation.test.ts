@@ -90,6 +90,28 @@ const event = (subjectId: string, eventKind = "artifact-change"): InvalidationEv
   },
 });
 
+const currentSccOutputs = (
+  aValue: string,
+  bValue: string,
+  bAssurance: SemanticSignature["assurance"] = "exact",
+) => [
+  {
+    unitId: "contract-a",
+    signature: signature(aValue),
+    structuralSignature: { ...signature(`structure-${aValue}`), scope: "ast-shape" },
+    inputs: [
+      { kind: "artifact" as const, id: "internal", versionHash: hash("new"), role: "source" },
+      { kind: "unit" as const, id: "contract-b", versionHash: hash(bValue), role: "semantic-output" },
+    ],
+  },
+  {
+    unitId: "contract-b",
+    signature: signature(bValue, bAssurance),
+    structuralSignature: { ...signature(`structure-${bValue}`, bAssurance), scope: "ast-shape" },
+    inputs: [{ kind: "unit" as const, id: "contract-a", versionHash: hash(aValue), role: "semantic-output" }],
+  },
+];
+
 describe("semantic signature profiles and assurance", () => {
   it("creates deterministic signatures independent of object and evidence insertion order", () => {
     const profiles = new SemanticSignatureProfileRegistry();
@@ -377,7 +399,7 @@ describe("derivation index and exact invalidation", () => {
     const result = await engine.invalidate(event("internal"), {
       revalidate: async (unitIds) => {
         calls.push([...unitIds]);
-        return unitIds.map((id) => ({ unitId: id, signature: signature(id === "contract-a" ? "a-v1" : "b-v1") }));
+        return currentSccOutputs("a-v1", "b-v1");
       },
     });
 
@@ -414,10 +436,7 @@ describe("derivation index and exact invalidation", () => {
       maximumProofGroupIterations: 3,
       revalidate: async () => {
         round += 1;
-        return [
-          { unitId: "contract-a", signature: signature(round === 1 ? "a-intermediate" : "a-v1") },
-          { unitId: "contract-b", signature: signature("b-v1") },
-        ];
+        return currentSccOutputs(round === 1 ? "a-intermediate" : "a-v1", "b-v1");
       },
     });
     expect(round).toBe(2);
@@ -428,10 +447,7 @@ describe("derivation index and exact invalidation", () => {
       maximumProofGroupIterations: 2,
       revalidate: async () => {
         oscillationRound += 1;
-        return [
-          { unitId: "contract-a", signature: signature(`a-${oscillationRound % 2}`) },
-          { unitId: "contract-b", signature: signature("b-v1") },
-        ];
+        return currentSccOutputs(`a-${oscillationRound % 2}`, "b-v1");
       },
     });
     expect(unresolved.diagnostics).toContain("derivation-cycle-unresolved");
@@ -446,10 +462,7 @@ describe("derivation index and exact invalidation", () => {
     ]);
     const result = await new InvalidationEngine({ derivations: index }).invalidate(event("internal"), {
       maximumProofGroupIterations: 3,
-      revalidate: async () => [
-        { unitId: "contract-a", signature: signature("a-v2") },
-        { unitId: "contract-b", signature: signature("b-v2") },
-      ],
+      revalidate: async () => currentSccOutputs("a-v2", "b-v2"),
     });
     expect(result.invalidation.transitivelyAffected).toEqual(["consumer"]);
     expect(result.diagnostics).toEqual([]);
@@ -477,6 +490,32 @@ describe("derivation index and exact invalidation", () => {
     });
 
     expect(result.diagnostics).toContain("derivation-cycle-unresolved");
+    expect(result.revalidatedRecords).toEqual([]);
+    expect(index.snapshot()).toEqual(before);
+    expect(stored).toEqual([]);
+  });
+
+  it("does not backdate a cyclic group when current inputs and structural proof are missing", async () => {
+    const index = new DerivationIndex([
+      record("contract-a", [["artifact", "internal"], ["unit", "contract-b"]], "a-v1"),
+      record("contract-b", [["unit", "contract-a"]], "b-v1"),
+      record("consumer", [["unit", "contract-a"]]),
+    ]);
+    const before = index.snapshot();
+    const stored: DerivationIndexSnapshot[] = [];
+    const result = await new InvalidationEngine({ derivations: index }).invalidate(event("internal"), {
+      maximumProofGroupIterations: 2,
+      derivationStore: { load: async () => undefined, replace: async (snapshot) => { stored.push(snapshot); } },
+      revalidate: async () => [
+        { unitId: "contract-a", signature: signature("a-v1") },
+        { unitId: "contract-b", signature: signature("b-v1") },
+      ],
+    });
+
+    expect(result.backdatedUnitIds).toEqual([]);
+    expect(result.diagnostics).toContain("derivation-cycle-unresolved");
+    expect(result.invalidation.unavailable).toEqual(expect.arrayContaining(["contract-a", "contract-b"]));
+    expect(result.validUnitIds).not.toEqual(expect.arrayContaining(["contract-a", "contract-b"]));
     expect(result.revalidatedRecords).toEqual([]);
     expect(index.snapshot()).toEqual(before);
     expect(stored).toEqual([]);
@@ -623,7 +662,7 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     result.impactClosure?.stateBinding.queryDependencies.forEach(({ query }) => expect(() => registry.assertCurrent(query)).not.toThrow());
   });
 
-  it("rebinds a GraphReader-reproducible Impact Rule closure and stales only on a semantic query change", async () => {
+  it("fails closed for injected traversal even when a graph happens to reproduce its known IDs", async () => {
     const rule = publicRule();
     const selectorHash = canonicalSelectorHash(rule.selector);
     const port: ImpactRuleEvaluationPort = {
@@ -656,20 +695,58 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     const context: AdapterContext = { repositoryRoot: "/repo", stateDigest: nextState, config: {}, signal: new AbortController().signal };
 
     await expect(validator.validate(result.impactClosure!.stateBinding, nextState, context)).resolves.toMatchObject({
-      status: "rebound", changedQueryDependencyIds: [],
+      status: "unavailable", changedQueryDependencyIds: [],
     });
     expect(result.impactClosure!.stateBinding.queryDependencies
       .filter(({ query }) => query.kind === "selector-membership")
       .every(({ query }) => query.input.selectorHash === selectorHash)).toBe(true);
 
-    graph.replace({
-      selectorMemberships: [{ selectorHash, memberIds: ["after-export"] }],
+    expect((await validator.validate(result.impactClosure!.stateBinding, nextState, context)).reasons)
+      .toEqual(expect.arrayContaining([expect.stringContaining("non-rebindable")]));
+  });
+
+  it("fails closed for known-only bounded port traversal instead of claiming unbounded graph equivalence", async () => {
+    const rule = { ...publicRule(), maxDepth: 1 };
+    const originalState = event("selector:public").stateDigest;
+    const port: ImpactRuleEvaluationPort = {
+      subjects: async () => [{ id: "export", values: { tag: ["public"] }, dependencyKeys: ["membership:export"] }],
+      traverse: async () => ({
+        knownIds: ["docs"], possibleIds: [], unavailableIds: [], observability: "bounded" as const,
+        assumptions: ["port applies maxDepth=1"], unavailableLanes: [], dependencyKeys: ["adapter:bounded@1"], reasons: {},
+      }),
+    };
+    const result = await new InvalidationEngine({
+      derivations: new DerivationIndex(), impactRules: new ImpactRuleRegistry([rule]), impactPort: port,
+    }).invalidate(event("selector:public", "membership-change"), {
+      stateBinding: createStateBinding({ compiledAgainst: originalState, valueDependencies: [], queryDependencies: [] }),
+      revalidate: async () => [],
+    });
+    const graph = new InMemoryGraphReader({
+      selectorMemberships: [{ selectorHash: canonicalSelectorHash(rule.selector), memberIds: ["export"] }],
       reverseDerivations: [
-        { subjectId: "before-export", dependentIds: ["docs", "new-consumer"] },
-        { subjectId: "after-export", dependentIds: ["docs", "new-consumer"] },
+        { subjectId: "export", dependentIds: ["docs"] },
+        { subjectId: "docs", dependentIds: ["deep-consumer"] },
       ],
     });
-    await expect(validator.validate(result.impactClosure!.stateBinding, nextState, context)).resolves.toMatchObject({ status: "stale" });
+    const registry = new QueryDependencyRegistry(graph);
+    const validator = new DependencyScopedStateBindingValidator({ values: { readVersionHash: async () => undefined }, queries: registry });
+    const context: AdapterContext = { repositoryRoot: "/repo", stateDigest: originalState, config: {}, signal: new AbortController().signal };
+    await expect(validator.validate(result.impactClosure!.stateBinding, originalState, context)).resolves.toMatchObject({ status: "current" });
+
+    const changedState = { ...originalState, worktreeDigest: hash("unrelated") };
+    const changedContext = { ...context, stateDigest: changedState };
+    const changed = await validator.validate(result.impactClosure!.stateBinding, changedState, changedContext);
+    expect(changed.status).toBe("unavailable");
+    expect(changed.reasons.some((reason) => reason.includes("non-rebindable"))).toBe(true);
+    const traversal = result.impactClosure!.stateBinding.queryDependencies
+      .find(({ query }) => query.kind === "reverse-derivation" && query.id.includes("reverse-traversal"));
+    expect(traversal?.query.input).toMatchObject({ rebindable: false, seedIds: ["export"] });
+    expect(traversal?.priorResult).toMatchObject({
+      resultCount: 1,
+      observability: "bounded",
+      assumptions: ["port applies maxDepth=1"],
+      dependencyKeys: expect.arrayContaining(["adapter:bounded@1"]),
+    });
   });
 
   it("fails closed with an explicit non-rebindable contract for port-only traversal semantics", async () => {

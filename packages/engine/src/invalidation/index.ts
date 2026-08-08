@@ -974,7 +974,11 @@ export class InvalidationEngine {
             ...seeds.map((id) => `selector-member:${id}`),
             ...(traversal.dependencyKeys ?? []),
           ];
-          const traversalRebindable = traversal.possibleIds.length === 0 && traversal.unavailableIds.length === 0;
+          // The injected port does not currently provide a canonical traversal
+          // descriptor/evaluator that the query registry can replay. Even a
+          // known-only result may come from bounded/custom semantics, so it
+          // must fail closed when rebinding across a changed state snapshot.
+          const traversalRebindable = false;
           const traversalQueryInput = {
             eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version,
             selectorHash: impactSelectorHash(rule), seedIds: sortedUnique(seeds), excludedIds: sortedUnique(seeds),
@@ -1132,7 +1136,8 @@ export class InvalidationEngine {
           return input.versionHash === byUnit.get(input.id)?.signature.hash;
         });
       }));
-      if (fixedPointReached && completeCoverage && hasCompleteCurrentProof) {
+      const currentProofEstablished = fixedPointReached && completeCoverage && hasCompleteCurrentProof;
+      if (currentProofEstablished) {
         for (const prior of priorRecords) {
           const output = byUnit.get(prior.unitId);
           const assessment = assessments.find(({ unitId }) => unitId === prior.unitId)?.assessment;
@@ -1141,12 +1146,22 @@ export class InvalidationEngine {
           }
         }
       }
-      const groupEligible = assessments.length === memberIds.length && assessments.every(({ assessment }) => assessment?.eligible);
+      const groupEligible = currentProofEstablished
+        && assessments.length === memberIds.length
+        && assessments.every(({ assessment }) => assessment?.eligible);
       if (groupEligible) {
         memberIds.forEach((id) => backdated.add(id));
         continue;
       }
-      const anyUnavailable = assessments.some(({ assessment }) => assessment === undefined);
+      const proofUnavailable = group?.cyclic === true && !currentProofEstablished;
+      if (proofUnavailable) {
+        diagnostics.add("derivation-cycle-unresolved");
+        memberIds.forEach((id) => {
+          unavailable.add(id);
+          addReason(id, "cyclic derivation proof is unresolved");
+        });
+      }
+      const anyUnavailable = proofUnavailable || assessments.some(({ assessment }) => assessment === undefined);
       const anyMaterial = assessments.some(({ assessment }) => assessment?.materiallyChanged);
       const assuranceInsufficient = assessments.some(({ assessment }) =>
         assessment !== undefined && !assessment.eligible && !assessment.materiallyChanged);
