@@ -11,6 +11,14 @@
     "./surfaces": {
       "types": "./dist/surfaces/index.d.ts",
       "default": "./dist/surfaces/index.js"
+    },
+    "./models": {
+      "types": "./dist/models/index.d.ts",
+      "default": "./dist/models/index.js"
+    },
+    "./codex": {
+      "types": "./dist/codex/index.d.ts",
+      "default": "./dist/codex/index.js"
     }
   },
   "files": ["dist"],

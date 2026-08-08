@@ -295,7 +295,7 @@ Wave boundary after T2–T5: the primary integration authority runs the complete
 
 **Verification:** per-adapter truthful observability, pinned snapshots, state-bound plans, unavailable/open-world behavior, compensation/recovery for external writes.
 
-- [ ] Start only after T20 establishes the credible local kernel; ship each adapter as an independent unit.
+- [x] Start only after T20 establishes the credible local kernel; ship each adapter as an independent unit. Codex CLI shipped first by explicit demand.
 
 ## Plan self-review
 
