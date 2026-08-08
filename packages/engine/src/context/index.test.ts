@@ -62,7 +62,10 @@ describe("bounded context and derived behavior views", () => {
       { entityId: "direct", band: "direct", score: 1, requiredForPlanning: true, reasons: [] },
       { entityId: "governing", band: "governing", score: 0.9, requiredForPlanning: true, reasons: [] },
       { entityId: "consequence", band: "consequence", score: 0.7, requiredForPlanning: false, reasons: [] },
-      { entityId: "possible", band: "possible", score: 0.4, requiredForPlanning: false, reasons: [] },
+      { entityId: "possible", band: "possible", score: 0.4, requiredForPlanning: false, reasons: [{
+        kind: "semantic-similarity", fromId: "direct", weight: 0.4, provenance: "inferred", confidence: 0.4,
+        explanation: "may share timing semantics", evidenceIds: ["similarity-evidence"],
+      }] },
     ],
     activatedFacetKeys: [],
     unknowns: [],
@@ -90,6 +93,19 @@ describe("bounded context and derived behavior views", () => {
     ]);
     expect(new Set(compiled.items.map(({ entityId }) => entityId)).size).toBe(4);
     expect(compiled.sourceClosureId).toBe("closure");
+    expect(compiled.items.find(({ entityId }) => entityId === "possible")).toMatchObject({
+      relevanceReasons: ["may share timing semantics"], confidence: 0.4,
+      uncertainty: ["inferred semantic-similarity at confidence 0.4"],
+    });
+  });
+
+  it("exposes required semantic context that overruns the soft budget", async () => {
+    const compiled = await compileContext(closure, {
+      load: async (id) => ({ entityId: id, kind: "concept", semanticHash: hash(id), full: `full ${id}`, summary: `summary ${id}` }),
+    }, { maxCost: 4 });
+    expect(compiled.requiredBudgetOverrun).toBeGreaterThan(0);
+    expect(compiled.requiredExpansionIds).toEqual(["direct", "governing"]);
+    expect(compiled.unknowns.join(" ")).toMatch(/required.*budget/i);
   });
 
   it("derives Markdown, Gherkin, compact, and machine views from the same canonical Requirement/Scenario identities", () => {
@@ -115,5 +131,13 @@ describe("bounded context and derived behavior views", () => {
     expect(views.every(({ scenarioId }) => scenarioId === scenario.id)).toBe(true);
     expect(new Set(views.map(({ derivedId }) => derivedId)).size).toBe(4);
     expect(requirement.statement).toBe("MIDI timing must remain stable");
+    const gherkin = views.find(({ format }) => format === "gherkin")!;
+    expect(gherkin.content).toContain(`Source-Requirement: ${requirement.id}@${requirement.semanticHash}`);
+    expect(gherkin.content).toContain(`Source-Scenario: ${scenario.id}@${scenario.semanticHash}`);
+    expect(gherkin.content.split("\n").filter((line) => /^\s+(Given|When|Then|And|But)\b/.test(line))).toEqual([
+      "  Given a wireless MIDI device is connected",
+      "  When a note arrives",
+      "  Then recorded ordering stays stable",
+    ]);
   });
 });

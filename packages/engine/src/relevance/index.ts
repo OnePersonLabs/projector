@@ -122,6 +122,10 @@ export interface CompileRelevanceClosureInput {
 export interface RelevanceMetrics {
   consideredEdgeCount: number;
   includedEdgeCount: number;
+  duplicateEdgeCount: number;
+  belowThresholdEdgeCount: number;
+  budgetDeferredEdgeCount: number;
+  frontierCount: number;
   irrelevantExpansionRate: number;
   closureSize: number;
 }
@@ -190,6 +194,29 @@ function openWorldUnknown(dependency: StateQueryDependency): string | undefined 
     : `${dependency.query.id} used ${observability} observability and cannot prove the consumer enumeration complete or exclude additional results`;
 }
 
+interface NormalizedDiscoveryEdge extends Omit<RelevanceDiscoveryEdge, "reason"> { reasons: RelevanceReason[] }
+
+function normalizeDiscoveryEdges(edges: readonly RelevanceDiscoveryEdge[]): { edges: NormalizedDiscoveryEdge[]; duplicateCount: number } {
+  const groups = new Map<string, RelevanceDiscoveryEdge[]>();
+  for (const edge of edges) {
+    if (!Number.isFinite(edge.score) || edge.score < 0 || edge.score > 1 || !Number.isFinite(edge.cost) || edge.cost < 0) {
+      throw new Error(`invalid Relevance edge ${edge.entityId}`);
+    }
+    if (edge.entityId.trim().length === 0) throw new Error("Relevance edge entity identity cannot be blank");
+    groups.set(edge.entityId, [...(groups.get(edge.entityId) ?? []), edge]);
+  }
+  const normalized = [...groups.entries()].map(([entityId, rows]) => ({
+    entityId,
+    band: rows.map(({ band }) => band).reduce((left, right) => bandRank[left] <= bandRank[right] ? left : right),
+    score: Math.max(...rows.map(({ score }) => score)),
+    requiredForPlanning: rows.some(({ requiredForPlanning }) => requiredForPlanning),
+    cost: Math.min(...rows.map(({ cost }) => cost)),
+    reasons: [...new Map(rows.map(({ reason }) => normalizeReason(reason)).map((reason) => [canonicalJson(reason), reason])).entries()]
+      .sort(([left], [right]) => compareStrings(left, right)).map(([, reason]) => reason),
+  })).sort((left, right) => bandRank[left.band] - bandRank[right.band] || right.score - left.score || compareStrings(left.entityId, right.entityId));
+  return { edges: normalized, duplicateCount: edges.length - normalized.length };
+}
+
 /**
  * Deterministic bounded graph expansion. Every executed boundary query, including an empty leaf/stopping query,
  * is retained in StateBinding. Unexecuted budget frontiers remain explicit unknowns.
@@ -198,6 +225,9 @@ export async function compileRelevanceClosure(input: CompileRelevanceClosureInpu
   validatePolicy(input.policy);
   if (canonicalJson(input.identityResolution.boundState.compiledAgainst) !== canonicalJson(input.compiledAgainst)) {
     throw new Error("semantic identity evidence is stale: it was compiled against a different state snapshot");
+  }
+  if (canonicalJson(input.context.stateDigest) !== canonicalJson(input.compiledAgainst)) {
+    throw new Error("relevance discovery context snapshot differs from compiledAgainst state");
   }
   const seeds = normalizeSeeds(input.seeds);
   const entries = new Map<string, RelevanceEntry>();
@@ -245,6 +275,9 @@ export async function compileRelevanceClosure(input: CompileRelevanceClosureInpu
   const unavailableLanes = new Set<string>();
   let consideredEdgeCount = 0;
   let includedEdgeCount = 0;
+  let duplicateEdgeCount = 0;
+  let belowThresholdEdgeCount = 0;
+  let budgetDeferredEdgeCount = 0;
   let cost = 0;
 
   while (queue.length > 0) {
@@ -265,19 +298,19 @@ export async function compileRelevanceClosure(input: CompileRelevanceClosureInpu
       unavailableLanes.add(result.dependency.query.id);
       unknowns.add(`required discovery lane ${result.dependency.query.id} is unavailable`);
     }
-    const edges = [...result.edges].sort((left, right) =>
-      bandRank[left.band] - bandRank[right.band] || right.score - left.score || compareStrings(left.entityId, right.entityId));
-    consideredEdgeCount += edges.length;
+    const normalized = normalizeDiscoveryEdges(result.edges);
+    const edges = normalized.edges;
+    consideredEdgeCount += result.edges.length;
+    duplicateEdgeCount += normalized.duplicateCount;
     for (const edge of edges) {
-      if (!Number.isFinite(edge.score) || edge.score < 0 || edge.score > 1 || !Number.isFinite(edge.cost) || edge.cost < 0) {
-        throw new Error(`invalid Relevance edge ${edge.entityId}`);
-      }
       if (edge.score < input.policy.minimumScore && !edge.requiredForPlanning) {
-        frontier.add(edge.entityId);
+        belowThresholdEdgeCount += 1;
+        if (!entries.has(edge.entityId)) frontier.add(edge.entityId);
         continue;
       }
       const isNew = !entries.has(edge.entityId);
       if (isNew && (entries.size >= input.policy.maxEntries || cost + edge.cost > input.policy.maxCost)) {
+        budgetDeferredEdgeCount += 1;
         frontier.add(edge.entityId);
         unknowns.add(`Relevance budget bound stopped expansion before ${edge.entityId}`);
         continue;
@@ -291,9 +324,10 @@ export async function compileRelevanceClosure(input: CompileRelevanceClosureInpu
         band: edge.band,
         score: edge.score,
         requiredForPlanning: edge.requiredForPlanning,
-        reasons: [normalizeReason(edge.reason)],
+        reasons: edge.reasons,
       });
       if (added) {
+        frontier.delete(edge.entityId);
         queue.push({ entityId: edge.entityId, depth: current.depth + 1 });
         queue.sort((left, right) => left.depth - right.depth || compareStrings(left.entityId, right.entityId));
       }
@@ -313,14 +347,19 @@ export async function compileRelevanceClosure(input: CompileRelevanceClosureInpu
   };
   const contentHash = hashFramedDomain("relevance-closure", closureBasis);
   const closure: RelevanceClosure = { id: `relevance_closure_${contentHash.slice(-32)}`, ...closureBasis, contentHash };
-  const rejected = consideredEdgeCount - includedEdgeCount;
+  const uniqueConsidered = consideredEdgeCount - duplicateEdgeCount;
+  const finalFrontier = sortedUnique([...frontier].filter((entityId) => !entries.has(entityId)));
   return {
     closure,
-    frontier: sortedUnique([...frontier]),
+    frontier: finalFrontier,
     metrics: {
       consideredEdgeCount,
       includedEdgeCount,
-      irrelevantExpansionRate: consideredEdgeCount === 0 ? 0 : rejected / consideredEdgeCount,
+      duplicateEdgeCount,
+      belowThresholdEdgeCount,
+      budgetDeferredEdgeCount,
+      frontierCount: finalFrontier.length,
+      irrelevantExpansionRate: uniqueConsidered === 0 ? 0 : belowThresholdEdgeCount / uniqueConsidered,
       closureSize: closure.entries.length,
     },
   };
@@ -356,17 +395,18 @@ export interface RelationshipProposal {
 
 export interface PlanningSurpriseClassification {
   classification: SurpriseClassification;
+  impactClassifications: Array<{ entityId: string; classification: SurpriseClassification }>;
   surprise: PlanningSurprise;
   proposals: RelationshipProposal[];
 }
 
 function classify(unexpected: readonly ObservedPlanningImpact[]): SurpriseClassification {
   if (unexpected.some(({ legitimacy }) => legitimacy === "unexplained")) return "agent-overreach";
-  if (unexpected.some(({ legitimacy, authorized }) => legitimacy === "required" && !authorized)) return "legitimate-scope-expansion";
   if (unexpected.some(({ legitimacy, proposedRelation, evidence }) => legitimacy === "required" && proposedRelation !== undefined && evidence.length > 0)) {
     return "legitimate-new-relationship";
   }
   if (unexpected.some(({ legitimacy }) => legitimacy === "analysis-deficiency")) return "missing-predicted-impact";
+  if (unexpected.some(({ legitimacy }) => legitimacy === "required")) return "legitimate-scope-expansion";
   return "incidental-change";
 }
 
@@ -375,7 +415,7 @@ export function classifyPlanningSurprise(input: {
   planId: string;
   predictedEntityIds: readonly string[];
   observed: readonly ObservedPlanningImpact[];
-}): PlanningSurpriseClassification {
+}): PlanningSurpriseClassification | undefined {
   const predictedEntityIds = sortedUnique(input.predictedEntityIds);
   const predicted = new Set(predictedEntityIds);
   const observed = [...input.observed]
@@ -384,9 +424,23 @@ export function classifyPlanningSurprise(input: {
   const observedEntityIds = sortedUnique(observed.map(({ entityId }) => entityId));
   const unexpected = observed.filter(({ entityId }) => !predicted.has(entityId));
   const unexpectedEntityIds = sortedUnique(unexpected.map(({ entityId }) => entityId));
+  if (unexpected.length === 0) return undefined;
+  for (const item of unexpected) {
+    if (item.proposedRelation === undefined) continue;
+    const { fromId, toId } = item.proposedRelation;
+    const otherId = fromId === item.entityId ? toId : fromId;
+    if (fromId.trim().length === 0 || toId.trim().length === 0 || (fromId !== item.entityId && toId !== item.entityId)
+      || (!predicted.has(otherId) && !observedEntityIds.includes(otherId))) {
+      throw new Error(`relationship proposal endpoints must be nonblank and include unexpected entity ${item.entityId}`);
+    }
+    if (!item.evidence.some(({ evidenceId, stance }) => evidenceId.trim().length > 0 && stance === "supports")) {
+      throw new Error(`relationship proposal for ${item.entityId} requires supporting evidence`);
+    }
+  }
   const classification = classify(unexpected);
-  const proposals: RelationshipProposal[] = classification === "legitimate-new-relationship"
-    ? unexpected.flatMap(({ proposedRelation, evidence }) => {
+  const impactClassifications = unexpected.map((item) => ({ entityId: item.entityId, classification: classify([item]) }));
+  const proposals: RelationshipProposal[] = unexpected.flatMap(({ legitimacy, proposedRelation, evidence }) => {
+      if (legitimacy !== "required") return [];
       if (proposedRelation === undefined || evidence.length === 0) return [];
       const basis = { ...proposedRelation, evidence };
       const contentHash = hashFramedDomain("relationship-proposal", basis);
@@ -399,8 +453,7 @@ export function classifyPlanningSurprise(input: {
         evidence: [...evidence],
         contentHash,
       }];
-    }).sort((left, right) => compareStrings(left.id, right.id))
-    : [];
+    }).sort((left, right) => compareStrings(left.id, right.id));
   const kind: PlanningSurprise["kind"] = classification === "agent-overreach" ? "agent-overreach"
     : classification === "legitimate-scope-expansion" ? "scope-expansion"
       : classification === "legitimate-new-relationship" ? "missing-relation"
@@ -424,6 +477,7 @@ export function classifyPlanningSurprise(input: {
   const contentHash = hashFramedDomain("planning-surprise", semantic);
   return {
     classification,
+    impactClassifications,
     surprise: { id: `planning_surprise_${contentHash.slice(-32)}`, ...semantic, contentHash },
     proposals,
   };

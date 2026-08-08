@@ -71,6 +71,9 @@ export interface CompiledContextItem {
   disclosure: "full" | "summary" | "identity";
   content: string;
   relevanceScore: number;
+  relevanceReasons: string[];
+  uncertainty: string[];
+  confidence: number;
 }
 
 export interface CompiledSemanticContext {
@@ -78,6 +81,8 @@ export interface CompiledSemanticContext {
   items: CompiledContextItem[];
   unknowns: string[];
   estimatedCost: number;
+  requiredBudgetOverrun: number;
+  requiredExpansionIds: string[];
   contentHash: ContentHash;
 }
 
@@ -99,6 +104,7 @@ export async function compileContext(
   const items: CompiledContextItem[] = [];
   const unknowns = [...closure.unknowns];
   let estimatedCost = 0;
+  const requiredExpansionIds: string[] = [];
   for (const entry of entries) {
     const source = await sources.load(entry.entityId);
     if (source === undefined) {
@@ -113,6 +119,11 @@ export async function compileContext(
       unknowns.push(`context budget retained ${entry.entityId} on the frontier`);
       continue;
     }
+    if (estimatedCost + cost > policy.maxCost && entry.requiredForPlanning) {
+      requiredExpansionIds.push(entry.entityId);
+      unknowns.push(`required semantic context ${entry.entityId} exceeds the context budget`);
+    }
+    const normalizedReasons = [...entry.reasons].sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
     items.push({
       entityId: source.entityId,
       sourceSemanticHash: source.semanticHash,
@@ -121,6 +132,11 @@ export async function compileContext(
       disclosure: mode,
       content,
       relevanceScore: entry.score,
+      relevanceReasons: sortedUnique(normalizedReasons.map(({ explanation }) => explanation).filter(Boolean)),
+      uncertainty: entry.band === "possible"
+        ? sortedUnique(normalizedReasons.map(({ provenance, kind, confidence }) => `${provenance} ${kind} at confidence ${confidence}`))
+        : [],
+      confidence: entry.score,
     });
     estimatedCost += cost;
   }
@@ -129,6 +145,8 @@ export async function compileContext(
     items,
     unknowns: sortedUnique(unknowns),
     estimatedCost,
+    requiredBudgetOverrun: Math.max(0, estimatedCost - policy.maxCost),
+    requiredExpansionIds: sortedUnique(requiredExpansionIds),
   };
   return { ...value, contentHash: hashFramedDomain("compiled-semantic-context", value) };
 }
@@ -149,7 +167,22 @@ export interface DerivedBehaviorView {
 function renderBehaviorView(requirement: Requirement, scenario: BehavioralScenario, format: BehaviorViewFormat): string {
   const steps = scenario.steps.map(({ role, statement }) => `${role}: ${statement}`);
   if (format === "markdown") return `# ${requirement.title}\n\n${requirement.statement}\n\n## ${scenario.title}\n\n${steps.join("\n")}`;
-  if (format === "gherkin") return `Feature: ${requirement.title}\nScenario: ${scenario.title}\n${steps.join("\n")}`;
+  if (format === "gherkin") {
+    let seenThen = false;
+    const rendered = scenario.steps.map(({ role, statement }) => {
+      if (role === "precondition") return `  Given ${statement}`;
+      if (role === "trigger") return `  When ${statement}`;
+      if (role === "expected-outcome") {
+        const keyword = seenThen ? "And" : "Then";
+        seenThen = true;
+        return `  ${keyword} ${statement}`;
+      }
+      const keyword = seenThen ? "But" : "Then";
+      seenThen = true;
+      return `  ${keyword} not (${statement})`;
+    });
+    return `# Source-Requirement: ${requirement.id}@${requirement.semanticHash}\n# Source-Scenario: ${scenario.id}@${scenario.semanticHash}\nFeature: ${requirement.title}\n\n  Scenario: ${scenario.title}\n${rendered.join("\n")}`;
+  }
   if (format === "agent-compact") return `${requirement.id}: ${requirement.statement} | ${scenario.id}: ${steps.join("; ")}`;
   return canonicalJson({ requirement: requirement.statement, scenario: scenario.steps });
 }
