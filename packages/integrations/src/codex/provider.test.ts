@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { hashFramedDomain, type RiskAssessment, type StructuredModelRequest } from "@projector/core";
 import { describe, expect, it } from "vitest";
 
-import { CodexExecProviderError, createCodexExecProvider } from "./provider.js";
+import { CodexExecProviderError, DISABLED_CODEX_EXEC_FEATURES, createCodexExecProvider } from "./provider.js";
 
 const risk: RiskAssessment = { class: "R0", inherentOperationRisk: 0, affectedUnitCount: 0, affectedSurfaceCount: 0, publicContractImpact: false, externalImpact: false, dataImpact: false, reversibility: "full", validationStrength: "strong", closureConfidence: "bounded", unresolvedIdentityCount: 0, relevanceFrontierCount: 0, openWorldDependencies: false, unresolvedBlockingConcernCount: 0, suspectDecisionCount: 0, compensationAvailable: true, reasons: [] };
 const request = (): StructuredModelRequest<{ label: string }> => ({ purpose: "classify fixture", role: "classify", programVersion: "1", schemaName: "label", schemaVersion: "1", schema: { type: "object", additionalProperties: false, required: ["label"], properties: { label: { type: "string" } } }, input: { evidence: ["safe"] }, inputHash: hashFramedDomain("structured-model-input", { evidence: ["safe"] }), risk, maxInputTokens: 4_000, maxOutputTokens: 40, maxCost: 1 });
@@ -19,7 +19,8 @@ const behavior = JSON.parse(await readFile(${JSON.stringify(behavior)}, "utf8"))
 await appendFile(calls, JSON.stringify({ args, env: process.env, stdin: args[0] === "exec" ? await new Promise((resolve) => { let value = ""; process.stdin.setEncoding("utf8"); process.stdin.on("data", (chunk) => value += chunk); process.stdin.on("end", () => resolve(value)); }) : "" }) + "\\n");
 if (args[0] === "--version") { console.log("codex-cli 0.147.0"); process.exit(0); }
 if (args[0] === "login" && args[1] === "status") { console.log(behavior.auth ?? "Logged in using ChatGPT"); process.exit(0); }
-if (args[0] === "exec" && args[1] === "--help") { console.log("--output-schema --json --output-last-message --ephemeral --ignore-user-config --ignore-rules --sandbox --cd"); process.exit(0); }
+if (args[0] === "exec" && args[1] === "--help") { console.log("--output-schema --json --output-last-message --ephemeral --ignore-user-config --ignore-rules --sandbox --cd" + (behavior.missingDisable === true ? "" : " --disable")); process.exit(0); }
+if (args[0] === "features" && args[1] === "list") { for (const feature of ${JSON.stringify(DISABLED_CODEX_EXEC_FEATURES)}) if (behavior.missingFeature !== feature) console.log(feature.padEnd(40) + "stable             true"); process.exit(0); }
 if (behavior.hang === true) await new Promise(() => {});
 const output = args[args.indexOf("--output-last-message") + 1];
 await readFile(args[args.indexOf("--output-schema") + 1], "utf8");
@@ -34,7 +35,7 @@ describe("Codex CLI ChatGPT-subscription provider", () => {
     const root = await mkdtemp(join(tmpdir(), "projector-codex-provider-"));
     try {
       const fake = await fakeCodex(root); const provider = createCodexExecProvider({ executable: fake.executable, cwd: root, model: "gpt-test", environment: { PATH: process.env.PATH!, HOME: root, OPENAI_API_KEY: "must-not-leak", UNRELATED: "drop" } });
-      await expect(provider.capabilities()).resolves.toMatchObject({ available: true, executable: true, authenticated: true, authKind: "chatgpt-subscription", structuredOutput: true, cancellation: true, filesystemAccess: "read-only", tokenBudgetEnforcement: "preflight-and-observed", providerRevision: "codex-cli 0.147.0" });
+      await expect(provider.capabilities()).resolves.toMatchObject({ available: true, executable: true, authenticated: true, authKind: "chatgpt-subscription", structuredOutput: true, cancellation: true, filesystemAccess: "read-only", toolIsolation: "all-stable-tools-disabled", tokenBudgetEnforcement: "preflight-and-observed", providerRevision: "codex-cli 0.147.0" });
       const route = await provider.authenticatedRoute();
       expect(route.contentHash).toBe(hashFramedDomain("authenticated-model-route", route.value));
       const response = await route.provider.generateStructured(request(), { timeoutMs: 1_000 });
@@ -42,6 +43,7 @@ describe("Codex CLI ChatGPT-subscription provider", () => {
       const calls = (await readFile(fake.calls, "utf8")).trim().split("\n").map((line) => JSON.parse(line)); const invocation = calls.at(-1);
       expect(invocation.args).toEqual(expect.arrayContaining(["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only", "--output-schema", "--output-last-message", "--json", "--cd", root, "--model", "gpt-test", "-"]));
       expect(invocation.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+      for (const feature of DISABLED_CODEX_EXEC_FEATURES) expect(invocation.args.some((value: string, index: number) => value === "--disable" && invocation.args[index + 1] === feature)).toBe(true);
       expect(invocation.env).toMatchObject({ PATH: process.env.PATH, HOME: root }); expect(invocation.env).not.toHaveProperty("OPENAI_API_KEY"); expect(invocation.env).not.toHaveProperty("UNRELATED");
       const prompt = JSON.parse(invocation.stdin); expect(prompt).toMatchObject({ requestHash: expect.stringMatching(/^sha256:v1:/u), inputHash: request().inputHash, schemaName: "label", maxOutputTokens: 40 });
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -53,7 +55,11 @@ describe("Codex CLI ChatGPT-subscription provider", () => {
       const missing = createCodexExecProvider({ executable: join(root, "missing"), cwd: root, model: "gpt-test", environment: { PATH: "" } });
       await expect(missing.capabilities()).resolves.toMatchObject({ available: false, executable: false, authenticated: false, authKind: "unavailable" });
       await expect(missing.authenticatedRoute()).rejects.toMatchObject({ code: "unavailable" });
-      const fake = await fakeCodex(root); await writeFile(fake.behavior, JSON.stringify({ auth: "Logged in using an API key" })); const apiKey = createCodexExecProvider({ executable: fake.executable, cwd: root, model: "gpt-test", environment: { PATH: process.env.PATH!, HOME: root } });
+      const fake = await fakeCodex(root); await writeFile(fake.behavior, JSON.stringify({ missingDisable: true })); const incomplete = createCodexExecProvider({ executable: fake.executable, cwd: root, model: "gpt-test", environment: { PATH: process.env.PATH!, HOME: root } });
+      await expect(incomplete.capabilities()).resolves.toMatchObject({ available: false, authKind: "chatgpt-subscription", reason: expect.stringMatching(/contract/iu) }); await expect(incomplete.authenticatedRoute()).rejects.toMatchObject({ code: "unsupported-contract" });
+      await writeFile(fake.behavior, JSON.stringify({ missingFeature: "shell_tool" })); const missingIsolation = createCodexExecProvider({ executable: fake.executable, cwd: root, model: "gpt-test", environment: { PATH: process.env.PATH!, HOME: root } });
+      await expect(missingIsolation.capabilities()).resolves.toMatchObject({ available: false, authKind: "chatgpt-subscription", reason: expect.stringMatching(/tool-disable inventory/iu) }); await expect(missingIsolation.authenticatedRoute()).rejects.toMatchObject({ code: "unsupported-contract" });
+      await writeFile(fake.behavior, JSON.stringify({ auth: "Logged in using an API key" })); const apiKey = createCodexExecProvider({ executable: fake.executable, cwd: root, model: "gpt-test", environment: { PATH: process.env.PATH!, HOME: root } });
       await expect(apiKey.capabilities()).resolves.toMatchObject({ available: false, executable: true, authenticated: false, authKind: "unsupported" });
       await expect(apiKey.generateStructured(request())).rejects.toThrow(/ChatGPT subscription/iu);
     } finally { await rm(root, { recursive: true, force: true }); }
