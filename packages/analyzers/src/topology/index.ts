@@ -2,6 +2,8 @@ import {
   canonicalJson,
   hashFramedDomain,
   type AdapterContext,
+  type AnalyzerCapabilities,
+  type AnalyzerFailure,
   type ContentHash,
   type EnumerationContract,
   type ObservabilityClass,
@@ -41,6 +43,7 @@ export interface EventContractTopologyRoute {
   subjectId: string;
   subjectKind: TopologyObservation["subjectKind"];
   semanticKey: string;
+  queryVersion: string;
   producerIds: string[];
   consumerIds: string[];
   links: TopologyLink[];
@@ -144,6 +147,7 @@ export function compileEventContractTopology(
       subjectId: head.subjectId,
       subjectKind: head.subjectKind,
       semanticKey: head.semanticKey,
+      queryVersion: sortedUnique(links.map(({ adapterVersion }) => adapterVersion)).join("+") || "1",
       producerIds: sortedUnique(links.filter(({ role }) => role === "producer").map(({ participantId }) => participantId)),
       consumerIds: sortedUnique(links.filter(({ role }) => role === "consumer").map(({ participantId }) => participantId)),
       links,
@@ -158,6 +162,74 @@ export function compileEventContractTopology(
     };
     const contentHash = hashFramedDomain("event-contract-topology-route", semantic);
     return { id: `topology_route_${hashFramedDomain("event-contract-topology-route-identity", routeIdentity).slice(-32)}`, ...semantic, contentHash };
+  }).sort((left, right) => compareStrings(left.subjectId, right.subjectId));
+  return { routes, contentHash: hashFramedDomain("event-contract-topology", routes) };
+}
+
+export interface AuthenticatedTopologySubject {
+  readonly subjectId: string;
+  readonly subjectKind: "event" | "contract";
+  readonly semanticKey: string;
+  readonly scopeKey: string;
+  readonly artifactHash: ContentHash;
+  readonly dynamic: boolean;
+}
+
+export interface AuthenticatedTopologyParticipant {
+  readonly subjectId: string;
+  readonly participantId: string;
+  readonly role: "producer" | "consumer";
+  readonly evidenceIds: readonly string[];
+  readonly artifactHash: ContentHash;
+}
+
+export interface AuthenticatedTopologyInput {
+  readonly subjects: readonly AuthenticatedTopologySubject[];
+  readonly participants: readonly AuthenticatedTopologyParticipant[];
+  readonly capabilities: readonly AnalyzerCapabilities[];
+  readonly failures: readonly AnalyzerFailure[];
+}
+
+/** Builds route completeness and link assurance only from authenticated analyzer evidence. */
+export function compileAuthenticatedAnalyzerTopology(input: AuthenticatedTopologyInput): EventContractTopology {
+  const subjects = new Map<string, AuthenticatedTopologySubject>();
+  for (const subject of input.subjects) {
+    const existing = subjects.get(subject.subjectId);
+    if (existing !== undefined && canonicalJson(existing) !== canonicalJson(subject)) throw new Error(`conflicting authenticated topology subject ${subject.subjectId}`);
+    subjects.set(subject.subjectId, subject);
+  }
+  const capabilities = input.capabilities.filter(({ executesRepositoryCode }) => !executesRepositoryCode);
+  const routes = [...subjects.values()].map((subject): EventContractTopologyRoute => {
+    const semantic = subject.subjectKind === "event" ? "event-topology" : "public-contract-topology";
+    const capability = capabilities.find(({ supportedSemantics }) => supportedSemantics.includes(semantic));
+    const localFailures = input.failures.filter(({ analyzerId, scope, affectedClaimKinds, capability: failedCapability }) =>
+      capability?.analyzerId === analyzerId && (scope === subject.scopeKey || scope === subject.subjectId) && (affectedClaimKinds.includes(semantic) || failedCapability === semantic));
+    const authenticated = capability !== undefined && localFailures.length === 0;
+    const links: TopologyLink[] = input.participants.filter(({ subjectId }) => subjectId === subject.subjectId).map((participant): TopologyLink => ({
+      participantId: participant.participantId,
+      role: participant.role,
+      assurance: authenticated ? "exact" : "heuristic",
+      confidence: authenticated ? 1 : 0.5,
+      evidenceIds: sortedUnique(participant.evidenceIds),
+      adapterVersion: capability?.adapterVersion ?? "unavailable",
+      artifactHash: participant.artifactHash,
+    })).sort((left, right) => compareStrings(left.participantId, right.participantId) || compareStrings(left.role, right.role));
+    const queryVersion = capability?.adapterVersion ?? "unavailable";
+    const observability: ObservabilityClass = subject.dynamic || !authenticated ? "open" : capability.enumeration.observability;
+    const enumeration = capability === undefined ? undefined : {
+      method: capability.enumeration.method,
+      assumptions: sortedUnique(capability.enumeration.assumptions),
+      blindSpots: sortedUnique(capability.enumeration.blindSpots),
+      dynamicMechanisms: sortedUnique(capability.enumeration.dynamicMechanisms),
+      ...(capability.enumeration.freshnessRequirement === undefined ? {} : { freshnessRequirement: capability.enumeration.freshnessRequirement }),
+    };
+    const routeSemantic = {
+      subjectId: subject.subjectId, subjectKind: subject.subjectKind, semanticKey: subject.semanticKey, queryVersion,
+      producerIds: sortedUnique(links.filter(({ role }) => role === "producer").map(({ participantId }) => participantId)),
+      consumerIds: sortedUnique(links.filter(({ role }) => role === "consumer").map(({ participantId }) => participantId)),
+      links, observability, ...(enumeration === undefined ? {} : { enumeration }),
+    };
+    return { id: `topology_route_${hashFramedDomain("event-contract-topology-route-identity", { subjectId: subject.subjectId, subjectKind: subject.subjectKind }).slice(-32)}`, ...routeSemantic, contentHash: hashFramedDomain("event-contract-topology-route", routeSemantic) };
   }).sort((left, right) => compareStrings(left.subjectId, right.subjectId));
   return { routes, contentHash: hashFramedDomain("event-contract-topology", routes) };
 }
@@ -257,7 +329,7 @@ export function createTopologyRelevanceAdapter(topology: EventContractTopology, 
       const programId = `projector.topology.${route.subjectKind}-relevance`;
       const kind = `${route.subjectKind}-topology` as "event-topology" | "contract-topology";
       const input = { subjectId };
-      const queryHash = hashFramedDomain("state-query", { kind, programId, programVersion: "1", input });
+      const queryHash = hashFramedDomain("state-query", { kind, programId, programVersion: route.queryVersion, input });
       const snapshot = createTopologyRelevanceQueryStatePort(topology).inspect(subjectId, route.subjectKind);
       const expectedFingerprint = {
         queryHash,
@@ -268,7 +340,7 @@ export function createTopologyRelevanceAdapter(topology: EventContractTopology, 
         unavailableLanes: snapshot.unavailableLanes,
         dependencyKeys: snapshot.dependencyKeys,
       };
-      if (dependency.query.kind !== kind || dependency.query.programId !== programId || dependency.query.programVersion !== "1"
+      if (dependency.query.kind !== kind || dependency.query.programId !== programId || dependency.query.programVersion !== route.queryVersion
         || canonicalJson(dependency.query.input) !== canonicalJson(input) || dependency.query.semanticHash !== queryHash
         || canonicalJson(dependency.priorResult) !== canonicalJson(expectedFingerprint)) {
         throw new Error(`topology query binding for ${subjectId} is not the canonical registered query fingerprint`);

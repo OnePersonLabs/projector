@@ -30,6 +30,8 @@ function repositoryPath(root: string, absolutePath: string): string {
 
 function mediaType(path: string): string {
   if (path.endsWith(".json")) return "application/json";
+  if (/\.ya?ml$/u.test(path)) return "application/yaml";
+  if (path.endsWith(".toml")) return "application/toml";
   if (/\.(?:mjs|js)$/u.test(path)) return "text/javascript";
   if (/\.(?:mts|ts)$/u.test(path)) return "text/typescript";
   if (path.endsWith(".md")) return "text/markdown";

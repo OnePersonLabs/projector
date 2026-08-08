@@ -14,11 +14,15 @@ import {
 } from "@projector/core";
 
 import { inventoryRepository, type InventoryEntry } from "./filesystem/inventory.js";
+import { analyzeDocuments, type ActionsWorkflowFact, type DocumentFact, type MarkdownFact } from "./formats/documents.js";
 import { collectGitFacts, type GitFacts, type GitIdentityFact, type GitMoveFact } from "./git/facts.js";
 import { compareCodePoint } from "./ordering.js";
+import { type EventContractTopology } from "./topology/index.js";
+import { compileRepositoryTopology, detectMechanicalDivergences, type AnalyzerDivergenceFact } from "./topology/repository.js";
 import {
   analyzeJavaScript,
   type JavaScriptFileFacts,
+  type JavaScriptFacts,
   type ModuleDependencyFact,
   type TestTargetFact,
 } from "./typescript/facts.js";
@@ -76,6 +80,12 @@ export interface LocalRepositoryAnalysis {
   readonly packageScriptInvocations: PackageScriptInvocationFact[];
   readonly dependencies: ModuleDependencyFact[];
   readonly testTargets: TestTargetFact[];
+  readonly javaScript: JavaScriptFacts;
+  readonly documents: DocumentFact[];
+  readonly actions: ActionsWorkflowFact[];
+  readonly markdown: MarkdownFact[];
+  readonly topology: EventContractTopology;
+  readonly divergences: AnalyzerDivergenceFact[];
   readonly failures: AnalyzerFailure[];
 }
 
@@ -85,7 +95,7 @@ export interface AnalyzeLocalRepositoryOptions {
   readonly observationRevision?: string;
 }
 
-const adapterVersion = "1.0.0";
+const adapterVersion = "2.0.0";
 
 function tokenizeCommand(command: string): string[] {
   const tokens: string[] = [];
@@ -315,7 +325,7 @@ function projectionRole(role: LocalSemanticRole): ProjectionUnit["role"] {
   return "implementation";
 }
 
-function buildCapabilities(): AnalyzerCapabilities[] {
+function buildCapabilities(rootAvailable: boolean): AnalyzerCapabilities[] {
   return [
     {
       analyzerId: "projector.filesystem-local",
@@ -359,6 +369,24 @@ function buildCapabilities(): AnalyzerCapabilities[] {
       },
       executesRepositoryCode: false,
     },
+    {
+      analyzerId: "projector.typescript-semantic",
+      adapterVersion,
+      supportedLanguages: ["JavaScript", "TypeScript"],
+      supportedSemantics: ["semantic-declarations", "scoped-symbol-identity", "event-topology", "public-contract-topology"],
+      enumeration: rootAvailable ? {
+        observability: "bounded", method: "bounded static syntax inventory", assumptions: ["inventory complete for route scope"], blindSpots: ["computed event and contract names"], dynamicMechanisms: ["computed event names", "runtime module resolution"],
+      } : { observability: "unavailable", method: "repository-root-read-attempt", assumptions: [], blindSpots: ["repository unavailable"], dynamicMechanisms: [] },
+      executesRepositoryCode: false,
+    },
+    {
+      analyzerId: "projector.structured-documents",
+      adapterVersion,
+      supportedLanguages: ["JSON", "YAML", "TOML", "Markdown", "GitHub Actions"],
+      supportedSemantics: ["stable-document-paths", "actions-workflow-structure", "markdown-structure"],
+      enumeration: { observability: rootAvailable ? "bounded" : "unavailable", method: "inert bounded document parsing", assumptions: rootAvailable ? ["inventoried text is complete"] : [], blindSpots: ["custom YAML tags", "runtime Actions expressions"], dynamicMechanisms: ["Actions expressions"], },
+      executesRepositoryCode: false,
+    },
   ];
 }
 
@@ -368,6 +396,7 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
   const inventory = inventoryResult.entries;
   const packageFacts = analyzePackageScripts(inventory);
   const javaScriptFacts = analyzeJavaScript(inventory);
+  const documentFacts = analyzeDocuments(inventory);
   const gitFacts = await collectGitFacts(repositoryRoot, inventory.map((entry) => entry.path));
   const hookReachable = hookReachablePaths(javaScriptFacts.files, javaScriptFacts.dependencies);
   const javaScriptByPath = new Map(javaScriptFacts.files.map((facts) => [facts.path, facts]));
@@ -504,11 +533,14 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
   artifacts.sort(byLocator);
   projectionUnits.sort((left, right) => compareCodePoint(left.key, right.key));
   files.sort((left, right) => compareCodePoint(left.path, right.path));
-  const failures = [...inventoryResult.failures, ...packageFacts.failures, ...javaScriptFacts.failures, ...gitFacts.failures]
+  const failures = [...inventoryResult.failures, ...packageFacts.failures, ...javaScriptFacts.failures, ...documentFacts.failures, ...gitFacts.failures]
     .sort((left, right) => compareCodePoint(left.analyzerId, right.analyzerId) || compareCodePoint(left.scope, right.scope) || compareCodePoint(left.capability, right.capability));
+  const capabilities = buildCapabilities(rootAvailable);
+  const topology = compileRepositoryTopology(javaScriptFacts, capabilities, failures);
+  const divergences = detectMechanicalDivergences(javaScriptFacts, documentFacts.actions);
   return {
     surface,
-    capabilities: buildCapabilities(),
+    capabilities,
     artifacts,
     projectionUnits,
     files,
@@ -518,6 +550,12 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
     packageScriptInvocations: packageFacts.invocations,
     dependencies: javaScriptFacts.dependencies,
     testTargets: javaScriptFacts.testTargets,
+    javaScript: javaScriptFacts,
+    documents: documentFacts.documents,
+    actions: documentFacts.actions,
+    markdown: documentFacts.markdown,
+    topology,
+    divergences,
     failures,
   };
 }
