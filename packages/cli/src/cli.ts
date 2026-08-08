@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
+import { stat } from "node:fs/promises";
+import { resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { ArchitectureConcern, ArchitectureDecision, DecisionValidityAssessment, RiskClass } from "@projector/core";
+import type { ArchitectureConcern, ArchitectureDecision, CoverageSnapshot, DecisionValidityAssessment, ObservabilityClass, RiskClass } from "@projector/core";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -68,13 +70,13 @@ export interface ProjectorCommandOptions {
 export type CoverageStrictness = "proven" | "bounded" | "high-confidence" | "partial";
 export interface CoverageCliRequest { readonly scope: string; readonly strictness: CoverageStrictness; readonly budgetTokens?: number; readonly budgetCost?: number; readonly continuationSelector?: string }
 export interface CoverageCliReport {
-  readonly proofStatement: string;
-  readonly strictnessMet: boolean;
-  readonly requiredUnavailable: boolean;
+  readonly proofStatement: CoverageSnapshot["proofStatement"];
   readonly approvalRequired: boolean;
   readonly budgetExhausted: boolean;
   readonly continuationPersisted: boolean;
   readonly boundary: readonly string[];
+  readonly lanes: readonly { readonly observability: ObservabilityClass }[];
+  readonly unavailableSurfaceIds: readonly string[];
   readonly [key: string]: unknown;
 }
 export interface CoverageCliPort {
@@ -131,12 +133,32 @@ function normalizeScope(raw: string | undefined): string {
   return scope;
 }
 
+const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--continuation"]);
+const booleanFlags = new Set(["--decisions", "--dry-run", "--audit-only", "--non-interactive"]);
+function validateArguments(arguments_: readonly string[], command: SliceCommand): void {
+  const seen = new Set<string>();
+  for (let index = 1; index < arguments_.length; index += 1) {
+    const argument = arguments_[index]!;
+    if (valueFlags.has(argument)) {
+      if (seen.has(argument)) throw new Error(`duplicate ${argument.slice(2)} option`);
+      seen.add(argument); index += 1; continue;
+    }
+    if (booleanFlags.has(argument)) {
+      if (seen.has(argument)) throw new Error(`duplicate ${argument.slice(2)} flag`);
+      seen.add(argument); continue;
+    }
+    if (argument.startsWith("-")) throw new Error(`unknown flag: ${argument}`);
+    if (command !== "explain" || index !== 1) throw new Error(`unknown argument: ${argument}`);
+  }
+}
+
 function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const command = arguments_[0];
   if (command !== "init" && command !== "audit" && command !== "plan" && command !== "apply"
     && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
+  validateArguments(arguments_, command);
   const formatValue = optionValue(arguments_, "--format") ?? "text";
   if (formatValue !== "text" && formatValue !== "json") throw new Error(`unsupported format: ${formatValue}`);
   const modeValue = optionValue(arguments_, "--mode");
@@ -214,7 +236,7 @@ export async function executeProjector(
   const repositoryRoot = options.cwd ?? process.cwd();
   const defaultOperation: OperationRiskInput = parsed.command === "init"
     ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
-    : parsed.command === "apply" || parsed.command === "reconcile"
+    : parsed.command === "apply" || parsed.command === "reconcile" || parsed.command === "cleanup"
       ? { command: parsed.command, sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false }
       : { command: parsed.command, sideEffect: "read-only", externalWrite: false, canonicalMutation: false };
   const suppliedOperation = options.governance?.operation;
@@ -312,15 +334,24 @@ export async function executeProjector(
     case "coverage":
     case "complete":
     case "cleanup": {
-      if (options.coverage === undefined) return { exitCode: 5, output: "coverage composition provider is unavailable", report: { policy, requiredUnavailable: true } };
-      const provider = parsed.command === "coverage" ? options.coverage.coverage : parsed.command === "complete" ? options.coverage.complete : options.coverage.cleanup;
+      if (parsed.command === "cleanup" && !policy.allowAutoMutation) {
+        report = { policy, dryRun: true, proofStatement: "partial", boundary: [parsed.coverageRequest.scope], lanes: [], unavailableSurfaceIds: [], approvalRequired: false, budgetExhausted: false, continuationPersisted: false } satisfies CoverageCliReport & { policy: typeof policy; dryRun: true };
+        break;
+      }
+      const coveragePort = options.coverage ?? defaultCoveragePort(repositoryRoot);
+      const provider = parsed.command === "coverage" ? coveragePort.coverage : parsed.command === "complete" ? coveragePort.complete : coveragePort.cleanup;
       const coverageReport = await provider(parsed.coverageRequest);
       report = { policy, ...coverageReport };
-      exitCode = coverageReport.requiredUnavailable ? 5
+      const boundaryMatches = coverageReport.boundary.length === 1 && coverageReport.boundary[0] === parsed.coverageRequest.scope;
+      const requiredUnavailable = !boundaryMatches || coverageReport.unavailableSurfaceIds.length > 0 || coverageReport.lanes.some(({ observability }) => observability === "unavailable");
+      const proofRank: Record<CoverageSnapshot["proofStatement"], number> = { "not-established": -1, partial: 0, "high-confidence": 1, bounded: 2, "proven-within-boundary": 3 };
+      const requestedRank: Record<CoverageStrictness, number> = { partial: 0, "high-confidence": 1, bounded: 2, proven: 3 };
+      const strictnessMet = boundaryMatches && proofRank[coverageReport.proofStatement] >= requestedRank[parsed.coverageRequest.strictness];
+      exitCode = requiredUnavailable ? 5
         : coverageReport.budgetExhausted && coverageReport.continuationPersisted ? 7
           : coverageReport.budgetExhausted ? 1
           : coverageReport.approvalRequired ? 3
-            : !coverageReport.strictnessMet ? 4 : 0;
+            : !strictnessMet ? 4 : 0;
       break;
     }
     case "explain": {
@@ -350,6 +381,19 @@ export async function executeProjector(
     }
   }
   return { exitCode, output: outputFor(parsed.command, report, parsed.format), report };
+}
+
+function defaultCoveragePort(repositoryRoot: string): CoverageCliPort {
+  const observe = async (request: CoverageCliRequest): Promise<CoverageCliReport> => {
+    try {
+      const target = resolve(repositoryRoot, request.scope);
+      await stat(target);
+      return { proofStatement: "partial", boundary: [request.scope], lanes: [], unavailableSurfaceIds: [], approvalRequired: false, budgetExhausted: false, continuationPersisted: false, adapter: "repository-boundary-observation" };
+    } catch {
+      return { proofStatement: "not-established", boundary: [request.scope], lanes: [], unavailableSurfaceIds: [request.scope], approvalRequired: false, budgetExhausted: false, continuationPersisted: false, adapter: "repository-boundary-unavailable" };
+    }
+  };
+  return { coverage: observe, complete: observe, cleanup: async (request) => ({ ...(await observe(request)), proofStatement: "not-established", unavailableSurfaceIds: ["cleanup-continuation-adapter"] }) };
 }
 
 export function renderCli(arguments_: readonly string[]): string {

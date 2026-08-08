@@ -38,7 +38,7 @@ export function normalizeExecutionPolicy(input: CliPolicyInput): Readonly<Execut
     throw new Error("contradictory audit-only and mutation-capable mode flags");
   }
   const preset = input.auditOnly === true && input.mode === undefined ? "observe" : (input.mode ?? "guide");
-  const mutationCommand = input.command === "init" || input.command === "apply" || input.command === "reconcile";
+  const mutationCommand = input.command === "init" || input.command === "apply" || input.command === "reconcile" || input.command === "cleanup";
   if (input.auditOnly === true && mutationCommand) {
     throw new Error("contradictory mutation and audit-only flags");
   }

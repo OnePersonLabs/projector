@@ -40,6 +40,20 @@ describe("authenticated coverage snapshot", () => {
     await expect(compileAuthenticatedCoverageSnapshot({ graphRevision: 1, boundary: ["."], binding, currentState: state, context }, ports(evidence(), "stale"))).rejects.toThrow(/stale|binding/iu);
   });
 
+  it("cannot prove incomplete required lanes and degrades real structured-document failures", async () => {
+    const incomplete = evidence(REQUIRED_COVERAGE_LANES.map((key) => key === "inventory" ? lane(key, { numerator: 0, denominator: 1 }) : lane(key)));
+    const report = await compileAuthenticatedCoverageSnapshot({ graphRevision: 1, boundary: ["."], binding, currentState: state, context }, ports(incomplete));
+    expect(report.snapshot).toMatchObject({ completeWithinBoundary: false });
+    expect(report.snapshot.proofStatement).not.toBe("proven-within-boundary");
+    expect(report.snapshot.lanes.find(({ key }) => key === "inventory")?.exactClosureProvable).toBe(false);
+
+    const documentFailure: AnalyzerFailure = { analyzerId: "projector.structured-documents", capability: "document-parse", scope: "package.json", message: "bad JSON", recoverable: true, affectedClaimKinds: ["structured-document", "stable-path"] };
+    const degraded = await compileAuthenticatedCoverageSnapshot({ graphRevision: 1, boundary: ["."], binding, currentState: state, context }, ports(evidence(undefined, [documentFailure])));
+    expect(degraded.snapshot.completeWithinBoundary).toBe(false);
+    expect(degraded.snapshot.lanes.find(({ key }) => key === "projection-unit-classification")?.analyzerFailures).toContainEqual(documentFailure);
+    expect(degraded.snapshot.lanes.find(({ key }) => key === "representation-projection-fidelity")?.analyzerFailures).toContainEqual(documentFailure);
+  });
+
   it("treats reordered set evidence identically and requires proof for bounded assumptions or exclusions", async () => {
     const inventory = lane("inventory", { observability: "bounded", assumptions: ["b", "a"], provenAssumptions: ["a"] });
     const observed = evidence([...REQUIRED_COVERAGE_LANES.map((key) => key === "inventory" ? inventory : key === "planning-surprise" ? lane(key, { applicability: "not-applicable", boundaryExclusion: "no executed changes", denominator: 0, numerator: 0 }) : lane(key)), { ...inventory, assumptions: ["a", "b"], provenAssumptions: ["a"] }]);

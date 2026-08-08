@@ -60,10 +60,13 @@ export function createCleanupPlan(input: CreateCleanupPlanInput): CleanupContinu
 export interface CleanupPlanStore {
   lookupAuthenticated(selector: string): Promise<readonly Readonly<CleanupContinuationPlan>[]>;
   compareAndStore(expectedRevision: number | undefined, plan: Readonly<CleanupContinuationPlan>): Promise<"stored" | "idempotent" | "conflict">;
+  reserve(expectedRevision: number, plan: Readonly<CleanupContinuationPlan>, workIds: readonly string[]): Promise<{ readonly status: "reserved"; readonly reservationId: string } | { readonly status: "conflict" }>;
+  commitReservation(reservationId: string, plan: Readonly<CleanupContinuationPlan>): Promise<"stored" | "conflict">;
 }
 
 export class InMemoryCleanupPlanStore implements CleanupPlanStore {
   private readonly plans = new Map<string, Readonly<CleanupContinuationPlan>>();
+  private readonly reservations = new Map<string, { readonly planId: string; readonly revision: number; readonly workIds: string[] }>();
   async lookupAuthenticated(selector: string): Promise<readonly Readonly<CleanupContinuationPlan>[]> {
     return [...this.plans.values()].filter((plan) => plan.id === selector || plan.key === selector).map((plan) => structuredClone(plan)).sort((a, b) => b.revision - a.revision);
   }
@@ -74,10 +77,27 @@ export class InMemoryCleanupPlanStore implements CleanupPlanStore {
     if (latest?.revision !== expectedRevision) return "conflict";
     this.plans.set(plan.id, structuredClone(plan)); return "stored";
   }
+  async reserve(expectedRevision: number, plan: Readonly<CleanupContinuationPlan>, workIds: readonly string[]): Promise<{ status: "reserved"; reservationId: string } | { status: "conflict" }> {
+    const latest = [...this.plans.values()].filter(({ key }) => key === plan.key).sort((a, b) => b.revision - a.revision)[0];
+    if (latest?.id !== plan.id || latest.revision !== expectedRevision || [...this.reservations.values()].some((item) => item.planId === plan.id)) return { status: "conflict" };
+    const normalizedWorkIds = unique(workIds);
+    const reservationId = `cleanup_reservation_${hashFramedDomain("cleanup-work-reservation", { planId: plan.id, revision: plan.revision, workIds: normalizedWorkIds }).slice(-32)}`;
+    this.reservations.set(reservationId, { planId: plan.id, revision: plan.revision, workIds: normalizedWorkIds });
+    return { status: "reserved", reservationId };
+  }
+  async commitReservation(reservationId: string, plan: Readonly<CleanupContinuationPlan>): Promise<"stored" | "conflict"> {
+    const reservation = this.reservations.get(reservationId);
+    if (reservation === undefined || plan.revision !== reservation.revision + 1 || plan.supersedesPlanId !== reservation.planId
+      || reservation.workIds.some((id) => !plan.completedWorkIds.includes(id) || plan.remainingWork.some((item) => item.id === id))) return "conflict";
+    this.plans.set(plan.id, structuredClone(plan)); this.reservations.delete(reservationId); return "stored";
+  }
 }
 
 export interface CleanupProgressProof { readonly completedWorkIds: readonly string[]; readonly remainingWorkIds: readonly string[]; readonly boundDependencyDigest: ContentHash }
 export interface CleanupProgressPort { authenticate(plan: Readonly<CleanupContinuationPlan>): Promise<CleanupProgressProof> }
+export interface CleanupCheckpointPort {
+  validate(input: { readonly plan: Readonly<CleanupContinuationPlan>; readonly checkpoint: Readonly<CleanupCheckpoint>; readonly selectedWorkIds: readonly string[] }): Promise<readonly { readonly validatorId: string; readonly status: "passed" | "failed" | "skipped" | "blocked" }[]>;
+}
 
 export interface ResumeCleanupResult {
   readonly kind: "advanced" | "no-op" | "rebound" | "semantic-rebase";
@@ -95,6 +115,7 @@ export async function resumeCleanupPlan(
     readonly store: CleanupPlanStore;
     readonly bindingValidator: StateBindingValidator;
     readonly progress: CleanupProgressPort;
+    readonly checkpoints?: CleanupCheckpointPort;
     readonly runChunk: (workIds: readonly string[]) => Promise<{ readonly completedWorkIds: readonly string[]; readonly externalActions: readonly CleanupExternalAction[] }>;
     readonly recompile?: (plan: Readonly<CleanupContinuationPlan>, currentState: StateDigest) => Promise<CreateCleanupPlanInput>;
   },
@@ -132,7 +153,7 @@ export async function resumeCleanupPlan(
   if (remainingIds.length === 0) return { kind: "no-op", plan, executedWorkIds: [], authenticatedCompletedWorkIds: completed, authenticatedRemainingWorkIds: [], budgetExhausted: false, continuationPersisted: true };
   if (reboundBinding !== undefined) {
     const { id: _oldId, contentHash: _oldHash, ...planFields } = plan;
-    const rebound = createCleanupPlan({ ...planFields, revision: plan.revision + 1, supersedesPlanId: plan.id, boundState: reboundBinding });
+    const rebound = createCleanupPlan({ ...planFields, revision: plan.revision + 1, supersedesPlanId: plan.id, boundState: reboundBinding, approvalIds: [] });
     if (await ports.store.compareAndStore(plan.revision, rebound) === "conflict") throw new Error("cleanup lightweight rebind compare-and-store conflict");
     plan = rebound; rebaseKind = "rebound";
   }
@@ -144,12 +165,22 @@ export async function resumeCleanupPlan(
     selected.push(id); tokens += item.tokenCost; cost += item.monetaryCost;
   }
   if (selected.length === 0) return { kind: rebaseKind ?? "no-op", plan, executedWorkIds: [], authenticatedCompletedWorkIds: completed, authenticatedRemainingWorkIds: remainingIds, budgetExhausted: true, continuationPersisted: true };
+  const prospectiveCompleted = unique([...completed, ...selected]);
+  for (const checkpoint of plan.checkpoints.filter(({ afterWorkIds }) => afterWorkIds.every((id) => prospectiveCompleted.includes(id)))) {
+    if (checkpoint.requiredValidators.length === 0) continue;
+    if (ports.checkpoints === undefined) throw new Error(`cleanup checkpoint ${checkpoint.id} validator proof is unavailable`);
+    const results = await ports.checkpoints.validate({ plan, checkpoint, selectedWorkIds: selected });
+    const byValidator = new Map(results.map((result) => [result.validatorId, result.status]));
+    if (checkpoint.requiredValidators.some((id) => byValidator.get(id) !== "passed")) throw new Error(`cleanup checkpoint ${checkpoint.id} required validator did not pass`);
+  }
+  const reservation = await ports.store.reserve(plan.revision, plan, selected);
+  if (reservation.status === "conflict") throw new Error("cleanup durable work reservation conflict");
   const execution = await ports.runChunk(selected);
   if (canonicalJson(unique(execution.completedWorkIds)) !== canonicalJson(unique(selected))) throw new Error("cleanup chunk did not authenticate completion of exactly the selected work");
   const nextCompleted = unique([...completed, ...execution.completedWorkIds]); const nextRemaining = plan.remainingWork.filter(({ id }) => !nextCompleted.includes(id));
   const { id: _oldId, contentHash: _oldHash, ...planFields } = plan;
-  const next = createCleanupPlan({ ...planFields, revision: plan.revision + 1, supersedesPlanId: plan.id, completedWorkIds: nextCompleted, remainingWork: nextRemaining, externalActions: [...plan.externalActions, ...execution.externalActions], ...(nextRemaining[0] === undefined ? {} : { recommendedNextChunk: nextRemaining[0].id }) });
-  const stored = await ports.store.compareAndStore(plan.revision, next);
-  if (stored === "conflict") throw new Error("cleanup continuation compare-and-store conflict");
+  const next = createCleanupPlan({ ...planFields, revision: plan.revision + 1, supersedesPlanId: plan.id, completedWorkIds: nextCompleted, remainingWork: nextRemaining, externalActions: [...plan.externalActions, ...execution.externalActions], approvalIds: [], ...(nextRemaining[0] === undefined ? {} : { recommendedNextChunk: nextRemaining[0].id }) });
+  const stored = await ports.store.commitReservation(reservation.reservationId, next);
+  if (stored === "conflict") throw new Error("cleanup continuation reservation commit conflict");
   return { kind: rebaseKind ?? "advanced", plan: next, executedWorkIds: unique(selected), authenticatedCompletedWorkIds: nextCompleted, authenticatedRemainingWorkIds: nextRemaining.map(({ id }) => id), budgetExhausted: nextRemaining.length > 0, continuationPersisted: true };
 }
