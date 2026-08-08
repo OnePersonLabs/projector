@@ -511,6 +511,29 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     expect(result.impactClosure?.stateBinding.queryDependencies.some(({ priorResult }) => priorResult.dependencyKeys.includes("membership:before"))).toBe(true);
   });
 
+  it("normalizes selector subject order before content-addressing the binding", async () => {
+    const makePort = (reverse: boolean): ImpactRuleEvaluationPort => ({
+      subjects: async (_rule, phase) => {
+        const subjects = phase === "before"
+          ? [
+              { id: "export-b", values: { tag: ["public"] }, dependencyKeys: ["membership:b"] },
+              { id: "export-a", values: { tag: ["public"] }, dependencyKeys: ["membership:a"] },
+            ]
+          : [{ id: "export-c", values: { tag: ["public"] }, dependencyKeys: ["membership:c"] }];
+        return reverse ? [...subjects].reverse() : subjects;
+      },
+      traverse: async () => ({ knownIds: [], possibleIds: [], unavailableIds: [], observability: "closed", reasons: {} }),
+    });
+    const run = async (reverse: boolean) => new InvalidationEngine({
+      derivations: new DerivationIndex(), impactRules: new ImpactRuleRegistry([publicRule()]), impactPort: makePort(reverse),
+    }).invalidate(event("selector:public", "membership-change"), {
+      stateBinding: { compiledAgainst: event("selector:public").stateDigest, valueDependencies: [], queryDependencies: [], dependencyDigest: hash("binding") } as StateBinding,
+      revalidate: async () => [],
+    });
+    const [first, second] = await Promise.all([run(false), run(true)]);
+    expect(first.impactClosure?.contentHash).toBe(second.impactClosure?.contentHash);
+  });
+
   it("keeps widen-analysis Impact Rule results in the possible frontier", async () => {
     const wideningRule = { ...publicRule(), effect: "widen-analysis" as const };
     const port: ImpactRuleEvaluationPort = {

@@ -580,6 +580,11 @@ function mergeImpactStateBinding(binding: StateBinding, event: InvalidationEvent
   });
 }
 
+function normalizeSubjectResults(subjects: readonly SelectorSubject[]): Array<{ id: string; values: Partial<Record<string, unknown>> }> {
+  return subjects.map(({ id, values }) => ({ id, values: structuredClone(values) }))
+    .sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
+}
+
 const triggerFor = (eventKind: string): ImpactRule["trigger"] | undefined => {
   const triggers = new Set<ImpactRule["trigger"]>([
     "concept-change", "interface-change", "membership-change", "removal", "lens-change", "rule-change",
@@ -816,7 +821,7 @@ export class InvalidationEngine {
               programVersion: "1",
               input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, phase },
               role: "Impact Rule selector membership",
-              result: subjects.map(({ id, values }) => ({ id, values })),
+              result: normalizeSubjectResults(subjects),
               resultCount: subjects.length,
               observability: "closed",
               dependencyKeys: subjects.flatMap(({ dependencyKeys }) => dependencyKeys),
