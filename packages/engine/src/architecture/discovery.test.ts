@@ -1,4 +1,4 @@
-import type { ContentHash, RelevanceClosure, SelectorExpr, StateDigest } from "@projector/core";
+import { hashFramedDomain, type ContentHash, type RelevanceClosure, type SelectorExpr, type StateDigest } from "@projector/core";
 import { describe, expect, it } from "vitest";
 
 import { discoverArchitectureConcerns } from "./discovery.js";
@@ -27,12 +27,12 @@ describe("progressive architecture concern discovery", () => {
   it("activates a bounded cross-platform question frontier without selecting technology answers", () => {
     const first = discoverArchitectureConcerns({
       closure,
-      changes: [{ kind: "surface-added", subjectIds: ["desktop", "android", "ios"], explanation: "add native targets", scope }],
+      changes: [{ kind: "surface-added", activationFacets: ["platform-target", "workspace-expansion", "public-contract", "distribution"], subjectIds: ["desktop", "android", "ios"], explanation: "add native targets", scope }],
       inferred: [{ key: "task-orchestration", title: "Task orchestration", question: "When do scripts stop being sufficient?", scope, materiality: "deferable", subjectIds: ["requirement:targets"] }],
     });
     const reordered = discoverArchitectureConcerns({
       closure,
-      changes: [{ kind: "surface-added", subjectIds: ["ios", "desktop", "android"], explanation: "add native targets", scope }],
+      changes: [{ kind: "surface-added", activationFacets: ["distribution", "public-contract", "workspace-expansion", "platform-target"], subjectIds: ["ios", "desktop", "android"], explanation: "add native targets", scope }],
       inferred: [{ key: "task-orchestration", title: "Task orchestration", question: "When do scripts stop being sufficient?", scope, materiality: "deferable", subjectIds: ["requirement:targets"] }],
     });
 
@@ -48,15 +48,15 @@ describe("progressive architecture concern discovery", () => {
   it("refuses to lower deterministic security/platform/public-contract minima or accept circular justification", () => {
     expect(() => discoverArchitectureConcerns({
       closure,
-      changes: [{ kind: "surface-added", subjectIds: ["ios"], explanation: "distribution surface", scope }],
+      changes: [{ kind: "surface-added", activationFacets: ["distribution"], subjectIds: ["ios"], explanation: "distribution surface", scope }],
       inferred: [{ key: "distribution-signing", title: "Distribution", question: "How is distribution secured?", scope, materiality: "deferable", subjectIds: ["ios"] }],
     })).not.toThrow();
     const result = discoverArchitectureConcerns({
       closure,
-      changes: [{ kind: "surface-added", subjectIds: ["ios"], explanation: "distribution surface", scope }],
+      changes: [{ kind: "surface-added", activationFacets: ["distribution"], subjectIds: ["ios"], explanation: "distribution surface", scope }],
       inferred: [{
         key: "generated-loop", title: "Generated loop", question: "Does generated state justify itself?", scope,
-        materiality: "blocking-now", subjectIds: ["decision:generated-loop"], causedByDecisionId: "decision:generated-loop",
+        materiality: "blocking-now", subjectIds: ["requirement:other"], originatingDecision: { decisionId: "decision:generated-loop", semanticHash: hashFramedDomain("architecture-concern-origin", { decisionId: "decision:generated-loop" }) },
       }],
     });
     expect(result.concerns.find(({ key }) => key === "distribution-signing")?.materiality).toBe("blocking-now");

@@ -8,6 +8,7 @@ import {
   explainArchitectureDecision,
   runArchitecturePreflight,
   type ArchitecturePreflightInput,
+  type ArchitecturePreflightPorts,
   type DecisionOverlapPort,
   type DecisionPopulationPort,
 } from "@projector/engine/architecture";
@@ -65,7 +66,8 @@ export interface ArchitectureCliPort {
   readonly validity: (decisionId: string) => Promise<DecisionValidityAssessment | undefined>;
   readonly overlap: DecisionOverlapPort;
   readonly population: DecisionPopulationPort;
-  readonly preflight?: () => Promise<ArchitecturePreflightInput>;
+  readonly preflight?: () => Promise<Omit<ArchitecturePreflightInput, "mode" | "risk">>;
+  readonly preflightPorts?: ArchitecturePreflightPorts;
 }
 
 const execFileAsync = promisify(execFile);
@@ -152,17 +154,19 @@ export async function executeProjector(
   const parsed = parseCommand(arguments_);
   const policy = normalizeExecutionPolicy(parsed.policy);
   const repositoryRoot = options.cwd ?? process.cwd();
+  const defaultOperation: OperationRiskInput = parsed.command === "init"
+    ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
+    : parsed.command === "apply" || parsed.command === "reconcile"
+      ? { command: parsed.command, sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false }
+      : { command: parsed.command, sideEffect: "read-only", externalWrite: false, canonicalMutation: false };
+  const suppliedOperation = options.governance?.operation;
+  if (suppliedOperation !== undefined && suppliedOperation.command !== parsed.command) {
+    return { exitCode: 3, output: "operation risk descriptor does not match command", report: { policy, blocked: true } };
+  }
+  const candidateRisks = [deriveOperationRisk(defaultOperation)];
+  if (suppliedOperation !== undefined) candidateRisks.push(deriveOperationRisk(suppliedOperation));
+  const operationRisk = candidateRisks.sort((left, right) => riskRank(right) - riskRank(left))[0]!;
   if (policy.allowAutoMutation) {
-    const defaultOperation: OperationRiskInput = parsed.command === "init"
-      ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
-      : { command: parsed.command, sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false };
-    const suppliedOperation = options.governance?.operation;
-    if (suppliedOperation !== undefined && suppliedOperation.command !== parsed.command) {
-      return { exitCode: 3, output: "operation risk descriptor does not match command", report: { policy, blocked: true } };
-    }
-    const baselineRisk = deriveOperationRisk(defaultOperation);
-    const suppliedRisk = suppliedOperation === undefined ? baselineRisk : deriveOperationRisk(suppliedOperation);
-    const operationRisk = riskRank(suppliedRisk) > riskRank(baselineRisk) ? suppliedRisk : baselineRisk;
     try { assertOperationRiskAuthorized(policy, operationRisk); }
     catch (error) {
       const output = error instanceof Error ? error.message : String(error);
@@ -204,7 +208,9 @@ export async function executeProjector(
     }
     case "plan": {
       if (options.architecture?.preflight !== undefined) {
-        const architecturePreflight = runArchitecturePreflight(await options.architecture.preflight());
+        if (options.architecture.preflightPorts === undefined) return { exitCode: 3, output: "architecture preflight proof ports are unavailable", report: { policy, blocked: true } };
+        const providerInput = await options.architecture.preflight();
+        const architecturePreflight = await runArchitecturePreflight({ ...providerInput, mode: policy.preset, risk: operationRisk }, options.architecture.preflightPorts);
         if (!architecturePreflight.planningAllowed) return { exitCode: 3, output: architecturePreflight.reasons.join("\n"), report: { policy, architecturePreflight, blocked: true } };
       }
       const prepared = await prepareMandatorySlice(repositoryRoot);

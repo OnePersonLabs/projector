@@ -3,11 +3,15 @@ import {
   DecisionEvaluationSchema,
   DecisionOptionSchema,
   DecisionValidityAssessmentSchema,
+  DeveloperPreferenceSchema,
   canonicalJson,
   hashFramedDomain,
+  hashSemantic,
+  type AdapterContext,
   type AppliedPreferenceRef,
   type ArchitectureConcern,
   type ArchitectureDecision,
+  type AuthorityRecord,
   type DecisionDeferral,
   type DecisionEvaluation,
   type DecisionOption,
@@ -17,7 +21,8 @@ import {
   type RelevanceClosure,
   type SelectorExpr,
   type StateBinding,
-  type StateBindingValidation,
+  type StateBindingValidator,
+  type StateDigest,
   type StateQueryDependency,
 } from "@projector/core";
 
@@ -49,30 +54,52 @@ export function captureDecisionStateBinding(input: CaptureDecisionStateBindingIn
 export interface AssessDecisionValidityInput {
   decision: ArchitectureDecision;
   currentScope: SelectorExpr;
-  applicable: boolean;
-  bindingValidation: StateBindingValidation;
+  binding: StateBinding;
+  currentState: StateDigest;
+  context: AdapterContext;
   firedTriggers: DecisionValidityAssessment["firedTriggers"];
   invalidatedAssumptions: readonly string[];
   staleEvidenceIds: readonly EntityId[];
-  governedPopulationCount: number;
 }
 
-export function assessDecisionValidity(input: AssessDecisionValidityInput): DecisionValidityAssessment {
+export interface DecisionApplicabilityPort {
+  evaluate(input: { decision: ArchitectureDecision; scope: SelectorExpr; currentState: StateDigest; context: AdapterContext }): Promise<{
+    applicable: boolean;
+    governedPopulationCount: number;
+    dependency: StateQueryDependency;
+  }>;
+}
+
+export async function assessDecisionValidity(
+  input: AssessDecisionValidityInput,
+  ports: { bindingValidator: StateBindingValidator; applicability: DecisionApplicabilityPort },
+): Promise<DecisionValidityAssessment> {
   const scope = normalizeSelector(input.currentScope);
   const firedTriggers = [...new Map(input.firedTriggers.map((trigger) => [canonicalJson(trigger), trigger])).entries()]
     .sort(([left], [right]) => compareStrings(left, right)).map(([, trigger]) => structuredClone(trigger));
   const invalidatedAssumptions = sortedUnique(input.invalidatedAssumptions);
   const staleEvidenceIds = sortedUnique(input.staleEvidenceIds);
-  if (!Number.isInteger(input.governedPopulationCount) || input.governedPopulationCount < 0) throw new Error("governed population count must be a non-negative integer");
+  const applicability = await ports.applicability.evaluate({ decision: structuredClone(input.decision), scope, currentState: structuredClone(input.currentState), context: input.context });
+  if (!Number.isInteger(applicability.governedPopulationCount) || applicability.governedPopulationCount < 0) throw new Error("governed population count must be a non-negative integer");
+  if (applicability.dependency.role !== "decision-applicability" || applicability.dependency.query.kind !== "decision-applicability") throw new Error("applicability port returned a non-applicability dependency");
+  const boundDependency = input.binding.queryDependencies.find(({ query, role }) => query.id === applicability.dependency.query.id && role === applicability.dependency.role);
+  const applicabilityProofCurrent = boundDependency !== undefined && canonicalJson(boundDependency) === canonicalJson(applicability.dependency);
+  const bindingValidation = await ports.bindingValidator.validate(input.binding, input.currentState, input.context);
+  const observationIncomplete = applicability.dependency.priorResult.observability !== "closed" || applicability.dependency.priorResult.unavailableLanes.length > 0;
+  const bindingCurrent = bindingValidation.status === "current" || bindingValidation.status === "rebound";
 
   let state: DecisionValidityAssessment["state"];
   let blocksCurrentChange: boolean;
   let explanation: string;
-  if (input.governedPopulationCount === 0) {
-    state = "invalid-for-scope";
+  if (!applicabilityProofCurrent || !bindingCurrent || observationIncomplete || (!applicability.applicable && applicability.governedPopulationCount > 0)) {
+    state = "suspect";
+    blocksCurrentChange = true;
+    explanation = `decision ${input.decision.id} lost authenticated applicability or state-binding proof; reassessment may reaffirm the existing decision`;
+  } else if (applicability.governedPopulationCount === 0 && !applicability.applicable) {
+    state = "valid";
     blocksCurrentChange = false;
-    explanation = `decision ${input.decision.id} has no governed population in the assessed scope`;
-  } else if (!input.applicable) {
+    explanation = `decision ${input.decision.id} remains valid outside the changed scope and was not reconsidered`;
+  } else if (!applicability.applicable) {
     state = "valid";
     blocksCurrentChange = false;
     explanation = `decision ${input.decision.id} remains valid outside the changed scope and was not reconsidered`;
@@ -80,7 +107,7 @@ export function assessDecisionValidity(input: AssessDecisionValidityInput): Deci
     state = "contested";
     blocksCurrentChange = true;
     explanation = `decision ${input.decision.id} has invalidated assumptions and must be resolved for this scope`;
-  } else if (input.bindingValidation.status !== "current" || firedTriggers.length > 0 || staleEvidenceIds.length > 0) {
+  } else if (firedTriggers.length > 0 || staleEvidenceIds.length > 0) {
     state = "suspect";
     blocksCurrentChange = true;
     explanation = `decision ${input.decision.id} lost proof for this scope; reassessment may reaffirm the existing decision`;
@@ -121,10 +148,9 @@ export interface ArchitectureResearchPort {
 export interface EvaluateDecisionOptionsInput {
   concern: ArchitectureConcern;
   options: readonly DecisionOption[];
-  preferences: readonly DeveloperPreference[];
-  preferenceMatches: Readonly<Record<string, readonly string[]>>;
+  preferenceIds: readonly EntityId[];
   research: { required: boolean; affectedEvidenceIds: readonly EntityId[] };
-  acceptance: "automatic" | "explicit-user";
+  acceptance: { kind: "automatic" } | { kind: "explicit-user"; authorityRecordId: EntityId };
   evaluatedAt?: string;
 }
 
@@ -150,9 +176,27 @@ function normalizeOptions(options: readonly DecisionOption[]): DecisionOption[] 
 const preferenceScopeRank: Record<DeveloperPreference["scope"], number> = { user: 0, organization: 1, project: 2 };
 const preferenceStrength: Record<DeveloperPreference["strength"], number> = { avoid: -1, prefer: 1, "strongly-prefer": 2 };
 
+export interface AuthenticatedAuthorityPort {
+  read(authorityRecordId: EntityId): Promise<AuthorityRecord | undefined>;
+}
+
+export interface AuthenticatedPreferencePort {
+  read(preferenceId: EntityId): Promise<DeveloperPreference | undefined>;
+  match(input: { preference: DeveloperPreference; concern: ArchitectureConcern; options: readonly DecisionOption[] }): Promise<readonly string[]>;
+}
+
+export function authorityRecordHashIsValid(record: AuthorityRecord): boolean {
+  return record.semanticHash === hashSemantic("authority-record", record);
+}
+
+export function developerPreferenceHashIsValid(preference: DeveloperPreference): boolean {
+  const { semanticHash: _semanticHash, ...semantic } = preference;
+  return preference.semanticHash === hashFramedDomain("developer-preference", semantic);
+}
+
 export async function evaluateDecisionOptions(
   input: EvaluateDecisionOptionsInput,
-  researchPort?: ArchitectureResearchPort,
+  ports: { research?: ArchitectureResearchPort; preferences: AuthenticatedPreferencePort; authority: AuthenticatedAuthorityPort },
 ): Promise<DecisionOptionEvaluationResult> {
   const proposedOptions = normalizeOptions(input.options);
   let options = proposedOptions;
@@ -160,11 +204,11 @@ export async function evaluateDecisionOptions(
   let researchUnavailable = false;
   let unknowns: string[] = [];
   if (input.research.required) {
-    if (researchPort === undefined) {
+    if (ports.research === undefined) {
       researchUnavailable = true;
       unknowns.push("required current option-set research is unavailable");
     } else {
-      const researched = await researchPort.verifyOptionSet({
+      const researched = await ports.research.verifyOptionSet({
         concern: structuredClone(input.concern),
         candidateOptions: proposedOptions,
         affectedEvidenceIds: sortedUnique(input.research.affectedEvidenceIds),
@@ -180,38 +224,59 @@ export async function evaluateDecisionOptions(
   const uncertainOptions = options.filter(({ hardConstraintStatus }) => hardConstraintStatus === "unknown").map(({ key }) => key);
   unknowns.push(...uncertainOptions.map((key) => `option ${key} has unknown hard-constraint status`));
   const viable = options.filter(({ hardConstraintStatus }) => hardConstraintStatus === "passes");
-  const activePreferences = input.preferences.filter(({ status }) => status === "active");
+  const activePreferences: DeveloperPreference[] = [];
+  const preferenceMatches: Record<string, readonly string[]> = {};
+  for (const preferenceId of sortedUnique(input.preferenceIds)) {
+    const loaded = await ports.preferences.read(preferenceId);
+    if (loaded === undefined) throw new Error(`authenticated preference ${preferenceId} is unavailable`);
+    const preference = DeveloperPreferenceSchema.parse(structuredClone(loaded)) as DeveloperPreference;
+    if (preference.id !== preferenceId || !developerPreferenceHashIsValid(preference)) throw new Error(`preference ${preferenceId} failed semantic authentication`);
+    if (preference.status !== "active") continue;
+    activePreferences.push(preference);
+    preferenceMatches[preference.id] = sortedUnique(await ports.preferences.match({ preference: structuredClone(preference), concern: structuredClone(input.concern), options: structuredClone(options) }));
+  }
   const maximumScopeRank = activePreferences.reduce((maximum, item) => Math.max(maximum, preferenceScopeRank[item.scope]), -1);
   const rankingPreferences = activePreferences.filter((item) => preferenceScopeRank[item.scope] === maximumScopeRank);
   const scores = new Map(viable.map(({ key }) => [key, 0]));
   const preferenceConflicts: string[] = [];
   for (const preference of rankingPreferences) {
-    for (const optionKey of sortedUnique(input.preferenceMatches[preference.id] ?? [])) {
+    for (const optionKey of preferenceMatches[preference.id] ?? []) {
       if (!scores.has(optionKey)) continue;
       scores.set(optionKey, scores.get(optionKey)! + preferenceStrength[preference.strength]);
     }
   }
   for (const option of viable) {
-    const influences = rankingPreferences.filter((preference) => (input.preferenceMatches[preference.id] ?? []).includes(option.key));
+    const influences = rankingPreferences.filter((preference) => (preferenceMatches[preference.id] ?? []).includes(option.key));
     if (influences.some(({ strength }) => strength === "avoid") && influences.some(({ strength }) => strength !== "avoid")) {
       preferenceConflicts.push(`conflicting ${influences[0]?.scope ?? "soft"} preferences remain visible for option ${option.key}`);
     }
   }
   const favoredOptionKeys = sortedUnique(rankingPreferences
     .filter(({ strength }) => strength !== "avoid")
-    .flatMap((preference) => input.preferenceMatches[preference.id] ?? [])
+    .flatMap((preference) => preferenceMatches[preference.id] ?? [])
     .filter((key) => scores.has(key)));
   if (favoredOptionKeys.length > 1) preferenceConflicts.push(`conflicting ${rankingPreferences[0]?.scope ?? "soft"} preferences favor distinct viable options: ${favoredOptionKeys.join(", ")}`);
   const ranked = [...viable].sort((left, right) => (scores.get(right.key)! - scores.get(left.key)!) || compareStrings(left.key, right.key));
   const recommendedOptionKey = ranked[0]?.key;
-  const acceptanceBlocked = input.research.required && researchUnavailable && input.acceptance === "automatic";
+  let uncertaintyExceptionAuthorized = false;
+  if (input.research.required && researchUnavailable && input.acceptance.kind === "explicit-user") {
+    const record = await ports.authority.read(input.acceptance.authorityRecordId);
+    uncertaintyExceptionAuthorized = record !== undefined
+      && record.id === input.acceptance.authorityRecordId
+      && record.subjectId === input.concern.id
+      && record.status === "approved"
+      && record.conclusion === "exception"
+      && record.decidedBy === "user"
+      && authorityRecordHashIsValid(record);
+  }
+  const acceptanceBlocked = input.research.required && researchUnavailable && !uncertaintyExceptionAuthorized;
   const topScore = recommendedOptionKey === undefined ? undefined : scores.get(recommendedOptionKey);
   const tied = topScore === undefined ? [] : ranked.filter(({ key }) => scores.get(key) === topScore);
   const outcome: DecisionEvaluation["outcome"] = acceptanceBlocked || recommendedOptionKey === undefined
     ? "insufficient-evidence"
     : tied.length > 1 && preferenceConflicts.length > 0 ? "contested" : "recommended";
   const materiallyInfluential = recommendedOptionKey !== undefined && (scores.get(recommendedOptionKey) ?? 0) !== 0
-    ? rankingPreferences.filter((preference) => (input.preferenceMatches[preference.id] ?? []).includes(recommendedOptionKey))
+    ? rankingPreferences.filter((preference) => (preferenceMatches[preference.id] ?? []).includes(recommendedOptionKey))
     : [];
   const appliedPreferences = materiallyInfluential.map((preference): AppliedPreferenceRef => ({
     key: preference.key,

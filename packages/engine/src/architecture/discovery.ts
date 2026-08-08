@@ -19,9 +19,12 @@ const materialityRank: Record<ConcernMateriality, number> = { deferable: 0, "mat
 export interface ArchitectureChangeSignal {
   kind: Extract<ConcernActivationReason["kind"], "requirement-delta" | "scenario-delta" | "constraint-delta" | "surface-added" | "scale-signal" | "pattern-friction" | "planning-surprise" | "user-request">;
   subjectIds: readonly string[];
+  activationFacets: readonly ArchitectureActivationFacet[];
   explanation: string;
   scope: SelectorExpr;
 }
+
+export type ArchitectureActivationFacet = "platform-target" | "workspace-expansion" | "public-contract" | "distribution";
 
 export interface InferredConcernCandidate {
   key: string;
@@ -30,7 +33,7 @@ export interface InferredConcernCandidate {
   scope: SelectorExpr;
   materiality: ConcernMateriality;
   subjectIds: readonly string[];
-  causedByDecisionId?: string;
+  originatingDecision?: { decisionId: string; semanticHash: ContentHash };
 }
 
 export interface DiscoverArchitectureConcernsInput {
@@ -50,17 +53,18 @@ interface CandidateDefinition {
   title: string;
   question: string;
   minimum: ConcernMateriality;
+  facets: readonly ArchitectureActivationFacet[];
 }
 
 const platformFrontier: readonly CandidateDefinition[] = [
-  { key: "workspace-topology", title: "Workspace topology", question: "What workspace boundaries preserve coherent ownership across the target surfaces?", minimum: "material-soon" },
-  { key: "cross-platform-runtime", title: "Cross-platform runtime", question: "Which runtime boundaries safely support the requested target capabilities?", minimum: "blocking-now" },
-  { key: "shared-code-boundary", title: "Shared-code boundary", question: "Which behavior is safe to share and which remains platform-specific?", minimum: "blocking-now" },
-  { key: "dependency-version-coherence", title: "Dependency coherence", question: "How will compatible dependency versions remain coherent across governed packages?", minimum: "material-soon" },
-  { key: "api-contract", title: "API contract", question: "Which public compatibility contract connects the new surfaces?", minimum: "blocking-now" },
-  { key: "build-release", title: "Build and release", question: "How will each target be built, verified, and released reproducibly?", minimum: "blocking-now" },
-  { key: "distribution-signing", title: "Distribution and signing", question: "Which distribution, signing, and platform obligations must the product satisfy?", minimum: "blocking-now" },
-  { key: "task-orchestration", title: "Task orchestration", question: "When do existing task dependencies stop being safely coordinated by simple scripts?", minimum: "deferable" },
+  { key: "workspace-topology", title: "Workspace topology", question: "What workspace boundaries preserve coherent ownership across the target surfaces?", minimum: "material-soon", facets: ["workspace-expansion"] },
+  { key: "cross-platform-runtime", title: "Cross-platform runtime", question: "Which runtime boundaries safely support the requested target capabilities?", minimum: "blocking-now", facets: ["platform-target"] },
+  { key: "shared-code-boundary", title: "Shared-code boundary", question: "Which behavior is safe to share and which remains platform-specific?", minimum: "blocking-now", facets: ["platform-target"] },
+  { key: "dependency-version-coherence", title: "Dependency coherence", question: "How will compatible dependency versions remain coherent across governed packages?", minimum: "material-soon", facets: ["workspace-expansion"] },
+  { key: "api-contract", title: "API contract", question: "Which public compatibility contract connects the new surfaces?", minimum: "blocking-now", facets: ["public-contract"] },
+  { key: "build-release", title: "Build and release", question: "How will each target be built, verified, and released reproducibly?", minimum: "blocking-now", facets: ["platform-target"] },
+  { key: "distribution-signing", title: "Distribution and signing", question: "Which distribution, signing, and platform obligations must the product satisfy?", minimum: "blocking-now", facets: ["distribution"] },
+  { key: "task-orchestration", title: "Task orchestration", question: "When do existing task dependencies stop being safely coordinated by simple scripts?", minimum: "deferable", facets: ["workspace-expansion"] },
 ];
 
 function stronger(left: ConcernMateriality, right: ConcernMateriality): ConcernMateriality {
@@ -69,12 +73,6 @@ function stronger(left: ConcernMateriality, right: ConcernMateriality): ConcernM
 
 function architectureId(hash: ContentHash): string {
   return `architecture-concern:${hash.slice("sha256:v1:".length, "sha256:v1:".length + 24)}`;
-}
-
-function relevantToPlatformFrontier(input: DiscoverArchitectureConcernsInput): boolean {
-  const subjects = input.changes.flatMap(({ subjectIds }) => subjectIds).map((item) => item.toLocaleLowerCase("en-US"));
-  return input.closure.activatedFacetKeys.some((key) => key === "platform" || key === "public-contract")
-    || subjects.some((subject) => ["desktop", "android", "ios", "mobile", "platform"].some((token) => subject.includes(token)));
 }
 
 interface AccumulatedCandidate {
@@ -97,10 +95,9 @@ export function discoverArchitectureConcerns(input: DiscoverArchitectureConcerns
   const sortedChanges = [...input.changes].map((change) => ({
     ...change,
     subjectIds: sortedUnique(change.subjectIds),
+    activationFacets: [...new Set(change.activationFacets)].sort(compareStrings),
     scope: normalizeSelector(change.scope),
   })).sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
-  const defaultScope = sortedChanges[0]?.scope ?? { op: "all", items: [] } satisfies SelectorExpr;
-
   const add = (definition: CandidateDefinition, scope: SelectorExpr, sourceClass: "derived" | "inferred", materiality: ConcernMateriality, reason: ConcernActivationReason): void => {
     const normalizedScope = normalizeSelector(scope);
     const mapKey = canonicalJson({ key: definition.key.normalize("NFKC").trim(), scope: normalizedScope });
@@ -122,24 +119,28 @@ export function discoverArchitectureConcerns(input: DiscoverArchitectureConcerns
     if (!existing.reasons.some((candidate) => reasonKey(candidate) === reasonKey(reason))) existing.reasons.push(reason);
   };
 
-  if (relevantToPlatformFrontier(input)) {
-    const reasonSource = sortedChanges.find(({ kind }) => kind === "surface-added") ?? sortedChanges[0];
+  for (const reasonSource of sortedChanges) {
     const reason: ConcernActivationReason = {
-      kind: reasonSource?.kind ?? "relevance-discovery",
-      subjectIds: reasonSource?.subjectIds ?? input.closure.entries.map(({ entityId }) => entityId).sort(compareStrings),
-      explanation: reasonSource?.explanation ?? "bounded relevance closure activated the platform frontier",
+      kind: reasonSource.kind,
+      subjectIds: reasonSource.subjectIds,
+      explanation: reasonSource.explanation,
       causalOrigin: { kind: "relevance-analysis", causedByRelevanceClosureId: input.closure.id },
     };
-    for (const definition of platformFrontier) add(definition, reasonSource?.scope ?? defaultScope, "derived", definition.minimum, reason);
+    for (const definition of platformFrontier) {
+      if (definition.facets.some((facet) => reasonSource.activationFacets.includes(facet))) add(definition, reasonSource.scope, "derived", definition.minimum, reason);
+    }
   }
 
   for (const candidate of [...(input.inferred ?? [])].sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)))) {
-    if (candidate.causedByDecisionId !== undefined && candidate.subjectIds.includes(candidate.causedByDecisionId)) {
-      unknowns.push(`circular architecture justification rejected for ${candidate.key}`);
+    if (candidate.originatingDecision !== undefined) {
+      const expected = hashFramedDomain("architecture-concern-origin", { decisionId: candidate.originatingDecision.decisionId });
+      unknowns.push(candidate.originatingDecision.semanticHash === expected
+        ? `circular architecture justification rejected for ${candidate.key}`
+        : `unverifiable originating-decision provenance rejected for ${candidate.key}`);
       continue;
     }
     add(
-      { key: candidate.key, title: candidate.title, question: candidate.question, minimum: "deferable" },
+      { key: candidate.key, title: candidate.title, question: candidate.question, minimum: "deferable", facets: [] },
       candidate.scope,
       "inferred",
       candidate.materiality,

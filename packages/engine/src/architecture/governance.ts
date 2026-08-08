@@ -3,11 +3,14 @@ import {
   AuthorityRecordSchema,
   canonicalJson,
   hashFramedDomain,
+  hashSemantic,
   type ArchitectureDecision,
   type AuthorityRecord,
   type ContentHash,
   type DecisionConsequence,
 } from "@projector/core";
+
+import { authorityRecordHashIsValid, type AuthenticatedAuthorityPort } from "./evaluation.js";
 
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 
@@ -31,17 +34,17 @@ export interface SemanticGovernanceTransactionPort {
 export interface AcceptArchitectureDecisionsInput {
   decisions: readonly ArchitectureDecision[];
   existingDecisions: readonly ArchitectureDecision[];
-  authorityRecords: readonly AuthorityRecord[];
 }
 
 export type ArchitectureAcceptanceResult =
   | { activated: true; batchHash: ContentHash }
-  | { activated: false; code: "invalid-decision" | "unauthorized-decision" | "incompatible-decision-overlap" | "transaction-failure"; reasons: string[] };
+  | { activated: false; code: "invalid-decision" | "unauthorized-decision" | "incompatible-decision-overlap" | "decision-convergence-failure" | "transaction-failure"; reasons: string[] };
 
 function normalizeDecisions(decisions: readonly ArchitectureDecision[]): ArchitectureDecision[] {
   const byId = new Map<string, ArchitectureDecision>();
   for (const raw of decisions) {
     const decision = ArchitectureDecisionSchema.parse(structuredClone(raw)) as ArchitectureDecision;
+    if (decision.semanticHash !== hashSemantic("architecture-decision", decision)) throw new Error(`decision ${decision.id} failed semantic authentication`);
     const existing = byId.get(decision.id);
     if (existing !== undefined && canonicalJson(existing) !== canonicalJson(decision)) throw new Error(`conflicting decision ${decision.id}`);
     byId.set(decision.id, decision);
@@ -49,8 +52,7 @@ function normalizeDecisions(decisions: readonly ArchitectureDecision[]): Archite
   return [...byId.values()].sort((left, right) => compareStrings(left.id, right.id));
 }
 
-function authorityAllows(decision: ArchitectureDecision, records: ReadonlyMap<string, AuthorityRecord>): string | undefined {
-  const record = records.get(decision.authorityRecordId);
+function authorityAllows(decision: ArchitectureDecision, record: AuthorityRecord | undefined): string | undefined {
   if (record === undefined) return `authority record ${decision.authorityRecordId} is missing`;
   if (record.subjectId !== decision.concernId) return `authority record ${record.id} is bound to another concern`;
   if (record.status !== "approved" && record.status !== "auto-approved") return `authority record ${record.id} is not active`;
@@ -59,27 +61,87 @@ function authorityAllows(decision: ArchitectureDecision, records: ReadonlyMap<st
   return undefined;
 }
 
+export interface DecisionConvergenceProofPort {
+  verify(input: { members: readonly string[]; inputDigest: ContentHash; decisions: readonly ArchitectureDecision[] }): Promise<{
+    status: "converged" | "decision-convergence-failure";
+    inputDigest: ContentHash;
+    stateDigest: ContentHash;
+  } | undefined>;
+}
+
+function dependencySccs(decisions: readonly ArchitectureDecision[]): string[][] {
+  const ids = new Set(decisions.map(({ id }) => id));
+  const edges = new Map(decisions.map(({ id, consequences }) => [id, [...new Set(consequences
+    .filter(({ kind, targetId }) => kind === "constrain-decision" && targetId !== undefined && ids.has(targetId))
+    .map(({ targetId }) => targetId!))].sort(compareStrings)]));
+  const indices = new Map<string, number>();
+  const low = new Map<string, number>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  const groups: string[][] = [];
+  let nextIndex = 0;
+  const visit = (id: string): void => {
+    indices.set(id, nextIndex);
+    low.set(id, nextIndex);
+    nextIndex += 1;
+    stack.push(id);
+    onStack.add(id);
+    for (const target of edges.get(id) ?? []) {
+      if (!indices.has(target)) {
+        visit(target);
+        low.set(id, Math.min(low.get(id)!, low.get(target)!));
+      } else if (onStack.has(target)) low.set(id, Math.min(low.get(id)!, indices.get(target)!));
+    }
+    if (low.get(id) !== indices.get(id)) return;
+    const group: string[] = [];
+    while (stack.length > 0) {
+      const member = stack.pop()!;
+      onStack.delete(member);
+      group.push(member);
+      if (member === id) break;
+    }
+    group.sort(compareStrings);
+    if (group.length > 1 || (edges.get(group[0]!) ?? []).includes(group[0]!)) groups.push(group);
+  };
+  for (const id of [...ids].sort(compareStrings)) if (!indices.has(id)) visit(id);
+  return groups.sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
+}
+
 export async function acceptArchitectureDecisions(
   input: AcceptArchitectureDecisionsInput,
-  ports: { overlap: DecisionOverlapPort; transaction: SemanticGovernanceTransactionPort },
+  ports: { authority: AuthenticatedAuthorityPort; overlap: DecisionOverlapPort; convergence: DecisionConvergenceProofPort; transaction: SemanticGovernanceTransactionPort },
 ): Promise<ArchitectureAcceptanceResult> {
   let decisions: ArchitectureDecision[];
   let existingDecisions: ArchitectureDecision[];
-  const records = new Map<string, AuthorityRecord>();
   try {
     decisions = normalizeDecisions(input.decisions);
     existingDecisions = normalizeDecisions(input.existingDecisions).filter(({ lifecycle }) => lifecycle === "active");
-    for (const raw of input.authorityRecords) {
-      const record = AuthorityRecordSchema.parse(structuredClone(raw)) as AuthorityRecord;
-      const existing = records.get(record.id);
-      if (existing !== undefined && canonicalJson(existing) !== canonicalJson(record)) throw new Error(`conflicting authority record ${record.id}`);
-      records.set(record.id, record);
-    }
   } catch (error) {
     return { activated: false, code: "invalid-decision", reasons: [error instanceof Error ? error.message : "invalid architecture decision batch"] };
   }
-  const authorityReasons = decisions.map((decision) => authorityAllows(decision, records)).filter((reason): reason is string => reason !== undefined);
+  const authorityReasons: string[] = [];
+  for (const decision of decisions) {
+    const loaded = await ports.authority.read(decision.authorityRecordId);
+    let record: AuthorityRecord | undefined;
+    try { record = loaded === undefined ? undefined : AuthorityRecordSchema.parse(structuredClone(loaded)) as AuthorityRecord; }
+    catch { authorityReasons.push(`authority record ${decision.authorityRecordId} failed schema authentication`); continue; }
+    if (record !== undefined && (record.id !== decision.authorityRecordId || !authorityRecordHashIsValid(record))) authorityReasons.push(`authority record ${decision.authorityRecordId} failed semantic authentication`);
+    else {
+      const reason = authorityAllows(decision, record);
+      if (reason !== undefined) authorityReasons.push(reason);
+    }
+  }
   if (authorityReasons.length > 0) return { activated: false, code: "unauthorized-decision", reasons: authorityReasons.sort(compareStrings) };
+
+  for (const members of dependencySccs(decisions)) {
+    const membersSet = new Set(members);
+    const groupDecisions = decisions.filter(({ id }) => membersSet.has(id));
+    const inputDigest = hashFramedDomain("decision-convergence-input", { members, decisions: groupDecisions });
+    const proof = await ports.convergence.verify({ members, inputDigest, decisions: structuredClone(groupDecisions) });
+    if (proof === undefined || proof.status !== "converged" || proof.inputDigest !== inputDigest) {
+      return { activated: false, code: "decision-convergence-failure", reasons: [`decision dependency SCC lacks fresh convergence proof: ${members.join(", ")}`] };
+    }
+  }
 
   const comparisons: Array<readonly [ArchitectureDecision, ArchitectureDecision]> = [];
   for (let leftIndex = 0; leftIndex < decisions.length; leftIndex += 1) {
