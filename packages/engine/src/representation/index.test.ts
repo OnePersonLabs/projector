@@ -356,6 +356,54 @@ describe("semantic representation compilation", () => {
       .rejects.toMatchObject({ dimension: "identifier-literal" });
   });
 
+  it("rejects internal whitespace drift in smart-quoted literals through the public compile and validate path", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.constantFrom(
+        ["Preserve “Exact  error” unchanged.", "Preserve “Exact error” unchanged."],
+        ["Preserve ‘Exact  error’ unchanged.", "Preserve ‘Exact error’ unchanged."],
+      ),
+      async ([canonicalText, collapsedText]) => {
+        const body = {
+          ...sourceBody,
+          statements: [{ ...sourceBody.statements[0]!, text: canonicalText, protectedLiterals: [] }],
+        };
+        const literalSource = { ...body, sourceSemanticHash: canonicalSourceHash(body) };
+        const artifacts = new MemoryArtifacts();
+        const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+        const compiled = await compiler.compile({ source: literalSource, binding, profileKey: "human-technical@1" });
+        const exact = (await artifacts.get(compiled.projection.contentHash))!;
+        const candidate = exact.replace(JSON.stringify(canonicalText), JSON.stringify(collapsedText));
+
+        await expect(compiler.validateCandidate({ source: literalSource, profileKey: "human-technical@1", candidate }))
+          .rejects.toMatchObject({ dimension: "identifier-literal" });
+      },
+    ));
+  });
+
+  it("rejects internal whitespace drift in ordinary error-code messages through the public compile and validate path", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.constantFrom(
+        ["Preserve ENOENT:  file missing.", "Preserve ENOENT: file missing."],
+        ["Preserve EACCES:  permission denied.", "Preserve EACCES: permission denied."],
+      ),
+      async ([canonicalText, collapsedText]) => {
+        const body = {
+          ...sourceBody,
+          statements: [{ ...sourceBody.statements[0]!, text: canonicalText, protectedLiterals: [] }],
+        };
+        const literalSource = { ...body, sourceSemanticHash: canonicalSourceHash(body) };
+        const artifacts = new MemoryArtifacts();
+        const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+        const compiled = await compiler.compile({ source: literalSource, binding, profileKey: "human-technical@1" });
+        const exact = (await artifacts.get(compiled.projection.contentHash))!;
+        const candidate = exact.replace(JSON.stringify(canonicalText), JSON.stringify(collapsedText));
+
+        await expect(compiler.validateCandidate({ source: literalSource, profileKey: "human-technical@1", candidate }))
+          .rejects.toMatchObject({ dimension: "identifier-literal" });
+      },
+    ));
+  });
+
   it("permits cosmetic wrapping around exact literals and rejects literal byte, count, and boundary drift", async () => {
     const canonicalText = "Run command `pnpm  test` after approval, preserve \"Exact  error\", call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.";
     const body = {

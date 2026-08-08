@@ -518,11 +518,13 @@ function protectedAdvisorySpans(text: string, declaredLiterals: readonly string[
   }
   addMatches(/`[^`\r\n]+`/gu);
   addMatches(/"(?:[^"\\\r\n]|\\.)*"|'(?:[^'\\\r\n]|\\.)*'/gu);
+  addMatches(/“[^”\r\n]*”|‘[^’\r\n]*’/gu);
   addMatches(/\bhttps?:\/\/[^\s,;"'`()]+/gu);
   addMatches(/\b(?:[A-Za-z]:[\\/]|\.{0,2}[\\/]|[A-Za-z0-9_.-]+[\\/])[^\s,;:"'`()]+/gu);
   addMatches(/\b(?:[A-Za-z]+[A-Z][A-Za-z0-9]*|[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+|--?[a-z][a-z0-9-]*|[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9.]*)\b/gu);
   addMatches(/\b\d+(?:\.\d+)?(?:[ \t]+)?(?:B|KB|MB|GB|TB|KiB|MiB|GiB|ms|s|min|h|Hz|kHz|MHz|GHz|%|px|rem|em)\b/giu);
   addMatches(/\b(?:Error|Exception):[^\r\n]+/gu);
+  addMatches(/\bE[A-Z0-9_]{2,}:[^\r\n]+/gu);
 
   const merged: ProtectedAdvisorySpan[] = [];
   for (const span of spans.sort((left, right) => left.start - right.start || right.end - left.end)) {
