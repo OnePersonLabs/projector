@@ -15,3 +15,4 @@ export * from "./representation/upgrades.js";
 export * from "./governance/execution-policy.js";
 export * from "./governance/ignore-policy.js";
 export * from "./planning/revisions.js";
+export * from "./architecture/index.js";

@@ -22,4 +22,10 @@ describe("engine public facade", () => {
     expect(engine.normalizeRiskPolicy).toBeDefined();
     expect(engine.InMemoryPlanRevisionStore).toBeDefined();
   });
+
+  it("exports progressive architecture commitment APIs", () => {
+    expect(engine.discoverArchitectureConcerns).toBeDefined();
+    expect(engine.runArchitecturePreflight).toBeDefined();
+    expect(engine.acceptArchitectureDecisions).toBeDefined();
+  });
 });
