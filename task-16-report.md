@@ -37,3 +37,7 @@ Focused runtime/CLI tests, both typechecks and diff check pass. Full gate remain
 - Successful packet observations map authenticated state/path change to the packet's affected units before reconciliation. The built mandatory pipeline now reports its exact predicted unit set with no false missing-unit surprises.
 
 Focused runtime/CLI tests and typechecks pass; runtime was rebuilt before the built CLI assertion. Diff check passes; full gate remains deferred.
+
+## Final two-issue closure — PASS (`c578d3d..a59b899`)
+
+Focused runtime/CLI tests (6), both typechecks and diff check pass. Same-author/group trusted validation now fails before intent/success persistence and commits zero mutations; rollback emits only truthful failure/recovery artifacts. A direct built mandatory apply completed through the packet coordinator with the exact five predicted unit IDs in observed impact, zero unexplained surprises, exit 0, and four durable artifacts. No material blocker remains in the two-issue closure scope.
