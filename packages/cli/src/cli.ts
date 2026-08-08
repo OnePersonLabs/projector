@@ -623,7 +623,16 @@ function defaultChangePort(repositoryRoot: string): ChangeCliPort {
 
 function defaultCoveragePort(repositoryRoot: string): CoverageCliPort {
   const observe = async (request: CoverageCliRequest): Promise<CoverageCliReport> => compileRepositoryCoverage(repositoryRoot, request);
-  return { coverage: observe, complete: observe, cleanup: async (request) => ({ ...(await observe(request)), proofStatement: "not-established", unavailableSurfaceIds: ["cleanup-continuation-adapter"] }) };
+  const cleanup = async (request: CoverageCliRequest): Promise<CoverageCliReport> => ({
+    proofStatement: "not-established",
+    boundary: [request.scope],
+    lanes: REQUIRED_COVERAGE_LANES.map((key) => ({ key, observability: "unavailable" as const })),
+    unavailableSurfaceIds: ["cleanup-continuation-adapter"],
+    approvalRequired: false,
+    budgetExhausted: false,
+    continuationPersisted: false,
+  });
+  return { coverage: observe, complete: observe, cleanup };
 }
 
 const normalizedRepositoryPath = (value: string): string => value.replace(/\\/gu, "/").replace(/^\.\//u, "").replace(/\/+$/u, "") || ".";

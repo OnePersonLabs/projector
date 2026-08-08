@@ -22,7 +22,7 @@ export interface InventoryResult {
   readonly rootAvailability: "available" | "unavailable";
 }
 
-const ignoredDirectories = new Set([".git", "node_modules"]);
+const ignoredDirectories = new Set([".git", ".worktrees", "node_modules"]);
 
 function repositoryPath(root: string, absolutePath: string): string {
   return relative(root, absolutePath).split(sep).join("/");

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, cp, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -202,6 +202,29 @@ describe("local repository analyzer", () => {
     await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("collects tracked introduction history in one batched Git traversal", async () => {
+    const root = await fixtureRepository();
+    const wrapperRoot = await mkdtemp(join(tmpdir(), "projector-git-batch-wrapper-"));
+    temporaryRoots.push(wrapperRoot);
+    const wrapper = join(wrapperRoot, "git");
+    const marker = join(wrapperRoot, "log-invocations.txt");
+    const { stdout: gitPathOutput } = await execFileAsync("which", ["git"]);
+    const gitPath = gitPathOutput.trim();
+    await writeFile(wrapper, `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "log" ]; then printf x >> '${marker}'; fi\ndone\nexec '${gitPath}' "$@"\n`);
+    await chmod(wrapper, 0o755);
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${wrapperRoot}:${originalPath ?? ""}`;
+
+    try {
+      const result = await analyzeLocalRepository({ repositoryRoot: root });
+      expect(await readFile(marker, "utf8")).toBe("x");
+      expect(result.gitIdentities.filter(({ tracked }) => tracked === true).every(({ introductionHistory, introductionCommit }) => introductionHistory === "available" && introductionCommit !== undefined)).toBe(true);
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+  });
+
   it("localizes an unreadable filesystem entry without discarding other artifacts", async () => {
     const root = await fixtureRepository();
     const unreadable = join(root, "scripts/unreadable.mjs");
@@ -279,8 +302,19 @@ describe("local repository analyzer", () => {
 
     expect(result.surface.enumeration).toMatchObject({
       observability: "bounded",
-      blindSpots: expect.arrayContaining(["ignored .git and node_modules contents"]),
+      blindSpots: expect.arrayContaining(["ignored .git, .worktrees, and node_modules contents"]),
     });
+  });
+
+  it("excludes nested managed worktrees from the repository inventory", async () => {
+    const root = await fixtureRepository();
+    await mkdir(join(root, ".worktrees", "review", "src"), { recursive: true });
+    await writeFile(join(root, ".worktrees", "review", "src", "duplicate.ts"), "export const duplicate = true;\n");
+
+    const result = await analyzeLocalRepository({ repositoryRoot: root });
+
+    expect(result.artifacts.some(({ locator }) => locator.startsWith(".worktrees/"))).toBe(false);
+    expect(result.files.some(({ path }) => path.startsWith(".worktrees/"))).toBe(false);
   });
 
   it("does not follow an untracked symlink outside the repository when inferring a move", async () => {

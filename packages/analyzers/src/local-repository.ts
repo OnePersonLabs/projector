@@ -336,7 +336,7 @@ function buildCapabilities(rootAvailable: boolean): AnalyzerCapabilities[] {
         observability: "bounded",
         method: "recursive-lstat-without-symlink-following",
         assumptions: ["repository root is readable"],
-        blindSpots: ["ignored .git and node_modules contents"],
+        blindSpots: ["ignored .git, .worktrees, and node_modules contents"],
         dynamicMechanisms: [],
       },
       executesRepositoryCode: false,
@@ -414,7 +414,7 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
           observability: "bounded",
           method: "composed-local-filesystem-git-and-static-syntax-observation",
           assumptions: ["repository root and available Git metadata are readable"],
-          blindSpots: ["ignored .git and node_modules contents", "dynamic module resolution", "unavailable per-entry observations"],
+          blindSpots: ["ignored .git, .worktrees, and node_modules contents", "dynamic module resolution", "unavailable per-entry observations"],
           dynamicMechanisms: ["runtime module resolution", "generated state outside inventory boundary"],
         }
       : {
