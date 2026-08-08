@@ -118,6 +118,13 @@ export const IdentityLineageProposalSchema = z.strictObject({
     || canonicalJson(proposal.toIds) !== canonicalJson(sortedUnique(proposal.toIds))) {
     context.addIssue({ code: "custom", message: "lineage proposal endpoints must be normalized, sorted, and unique" });
   }
+  const overlaps = proposal.fromIds.some((id) => proposal.toIds.includes(id));
+  if (overlaps) context.addIssue({ code: "custom", message: "lineage source and target endpoints must be disjoint" });
+  const validCardinality = proposal.kind === "split" ? proposal.fromIds.length === 1 && proposal.toIds.length >= 2
+    : proposal.kind === "merge" ? proposal.fromIds.length >= 2 && proposal.toIds.length === 1
+      : proposal.kind === "replace" ? proposal.fromIds.length === 1 && proposal.toIds.length === 1
+        : proposal.fromIds.length === 1 && proposal.toIds.length === 0;
+  if (!validCardinality) context.addIssue({ code: "custom", message: `${proposal.kind} lineage endpoints violate operation cardinality` });
 });
 
 export const IdentityTombstoneProposalSchema = z.strictObject({
@@ -130,6 +137,26 @@ export const IdentityTombstoneProposalSchema = z.strictObject({
 }).superRefine((proposal, context) => {
   if (canonicalJson(proposal.replacementIds) !== canonicalJson(sortedUnique(proposal.replacementIds))) {
     context.addIssue({ code: "custom", message: "tombstone replacements must be normalized, sorted, and unique" });
+  }
+  if (proposal.replacementIds.includes(proposal.entityId)) {
+    context.addIssue({ code: "custom", message: "tombstone replacement continuity cannot point to the deleted identity" });
+  }
+});
+
+export const IdentityCandidateRecordSchema = z.strictObject({
+  candidate: SemanticIdentityCandidateSchema,
+  lifecycle: z.enum(["active", "deprecated", "superseded", "tombstone"]),
+  replacementIds: z.array(EntityIdSchema),
+}).superRefine((record, context) => {
+  const candidate = record.candidate as SemanticIdentityCandidate;
+  if (!sameJson(record.replacementIds, sortedUnique(record.replacementIds.map(normalizedTerm)))) {
+    context.addIssue({ code: "custom", message: "candidate replacement IDs must be normalized, sorted, and unique" });
+  }
+  if (record.replacementIds.includes(candidate.entityId)) {
+    context.addIssue({ code: "custom", message: "candidate lifecycle replacement cannot point to the same identity" });
+  }
+  if ((record.lifecycle === "active" || record.lifecycle === "deprecated") && record.replacementIds.length > 0) {
+    context.addIssue({ code: "custom", message: `${record.lifecycle} candidate records cannot declare replacement continuity` });
   }
 });
 
@@ -170,6 +197,7 @@ export const AdjudicatedSemanticIdentityResolutionSchema = z.strictObject({
   requestedKind: RequestedKindSchema,
   outcome: z.enum(["reuse-existing", "coordinated-modification", "split-existing", "merge-existing", "replace-existing", "create-new", "no-durable-entity", "unresolved"]),
   candidates: z.array(SemanticIdentityCandidateSchema),
+  candidateRecords: z.array(IdentityCandidateRecordSchema),
   selectedEntityIds: z.array(EntityIdSchema),
   newBoundary: CanonicalSemanticBoundarySchema.optional(),
   confidence: ConfidenceSchema,
@@ -292,6 +320,7 @@ export interface IdentityTombstoneProposal {
 
 export interface AdjudicatedSemanticIdentityResolution extends SemanticIdentityResolution {
   contractVersion: 1;
+  candidateRecords: IdentityCandidateRecord[];
   operation: IdentityAssessment;
   proposedTargetIds: string[];
   adjudication?: IdentityAdjudication;
@@ -394,6 +423,10 @@ function reportAdjudicationSemanticIssues(adjudication: IdentityAdjudication, is
 
   const sourceCount = adjudication.sourceIds.length;
   const targetCount = adjudication.proposedTargetIds.length;
+  const overlappingEndpoints = adjudication.sourceIds.filter((id) => adjudication.proposedTargetIds.includes(id));
+  if (overlappingEndpoints.length > 0) {
+    issue(`${operation} source and destination endpoints must be disjoint`, ["proposedTargetIds"]);
+  }
   const exactLineage = (kind: IdentityLineageProposal["kind"]): void => {
     if (adjudication.lineageProposals.length !== 1) {
       issue(`${operation} requires exactly one ${kind} lineage proposal`, ["lineageProposals"]);
@@ -489,6 +522,14 @@ function reportResolutionSemanticIssues(resolution: AdjudicatedSemanticIdentityR
   }
   reportNormalizedIds(resolution.selectedEntityIds, "selected entity IDs", issue, ["selectedEntityIds"]);
   reportNormalizedIds(resolution.proposedTargetIds, "proposed target IDs", issue, ["proposedTargetIds"]);
+  const analysis = candidateAnalysis(resolution.candidateRecords, resolution.requestedKind);
+  if (!sameJson(resolution.candidateRecords, normalizeRecords(resolution.candidateRecords))) {
+    issue("persisted candidate records must be canonical normalized and uniquely identified", ["candidateRecords"]);
+  }
+  if (!sameJson(resolution.candidates, resolution.candidateRecords.map(({ candidate }) => candidate))) {
+    issue("persisted candidates must exactly equal the candidate-record projection", ["candidates"]);
+  }
+  const unresolvedDuplicateBlocker = hasUnresolvedCandidateSearchBlocker(resolution.boundState, resolution.candidateRecords);
   const allowedOutcomes: Record<IdentityAssessment, readonly SemanticIdentityResolution["outcome"][]> = {
     same: ["reuse-existing", "unresolved"],
     overlap: ["coordinated-modification", "unresolved"],
@@ -518,6 +559,9 @@ function reportResolutionSemanticIssues(resolution: AdjudicatedSemanticIdentityR
     issue("outer operation and adjudication discriminants must exactly agree", ["adjudication"]);
   }
   if (!sameJson(resolution.proposedTargetIds, adjudication.proposedTargetIds)) issue("outer proposed targets must exactly equal adjudication targets");
+  if (!sameJson(adjudication.sourceIds, analysis.endpointIds)) {
+    issue("adjudication sources must exactly equal operation-eligible persisted candidate endpoints", ["adjudication", "sourceIds"]);
+  }
   const requestId = `identity_request_${hashFramedDomain("semantic-identity-request", {
     requestedMeaning, requestedKind: resolution.requestedKind,
   }).slice(-32)}`;
@@ -556,9 +600,10 @@ function reportResolutionSemanticIssues(resolution: AdjudicatedSemanticIdentityR
   }
   if (resolution.outcome === "create-new") {
     if (resolution.operation !== "distinct" || adjudication.sourceIds.length !== 0
+      || analysis.supportedRecords.length > 0 || analysis.unresolvedHistoricalBlockers.length > 0 || unresolvedDuplicateBlocker
       || distinctFact?.boundary === null || distinctFact?.boundary === undefined
       || resolution.newBoundary === undefined || !sameJson(resolution.newBoundary, distinctFact.boundary)) {
-      issue("create-new requires one exact distinct-boundary fact equal to the outer canonical boundary");
+      issue("create-new requires no eligible duplicate candidate or unresolved history and one exact distinct-boundary fact equal to the outer canonical boundary");
     }
   } else if (resolution.newBoundary !== undefined) {
     issue("only create-new may persist a new semantic boundary", ["newBoundary"]);
@@ -596,6 +641,12 @@ function activeTargets(records: readonly IdentityCandidateRecord[]): string[] {
     (lifecycle === "superseded" || lifecycle === "tombstone")
       ? replacementIds
       : [candidate.entityId]));
+}
+
+function hasUnresolvedCandidateSearchBlocker(binding: StateBinding, records: readonly IdentityCandidateRecord[]): boolean {
+  return records.length === 0 && binding.queryDependencies.some(({ query, priorResult }) =>
+    ["identity.exact-search", "identity.alias-search", "identity.lineage", "identity.tombstone"].includes(query.programId)
+    && priorResult.resultCount > 0);
 }
 
 const requiredIdentityPrograms = [
@@ -676,15 +727,15 @@ function outcomeFactFromEvidence(
   assessment: IdentityAssessment,
   evidence: readonly Evidence[],
   input: Pick<ResolveSemanticIdentityInput, "requestedMeaning" | "requestedKind" | "proposedTargetIds" | "newBoundary">,
-  endpoints: OperationEndpoints,
+  analysis: CandidateAnalysis,
 ): IdentityOutcomeEvidence | undefined {
   const requestedMeaning = input.requestedMeaning.normalize("NFKC").trim();
   const requestId = `identity_request_${hashFramedDomain("semantic-identity-request", {
     requestedMeaning, requestedKind: input.requestedKind,
   }).slice(-32)}`;
-  const sourceIds = endpoints.sourceIds;
+  const sourceIds = analysis.endpointIds;
   const proposedTargetIds = sortedUnique(input.proposedTargetIds ?? []);
-  const targetIds = assessment === "same" || assessment === "overlap" ? endpoints.targetIds : proposedTargetIds;
+  const targetIds = assessment === "same" || assessment === "overlap" ? analysis.endpointIds : proposedTargetIds;
   const common = {
     version: 1, requestId, requestedMeaning, requestedKind: input.requestedKind,
     operation: assessment, sourceIds, targetIds,
@@ -771,21 +822,24 @@ function supportsRequestedIdentity(record: IdentityCandidateRecord, requestedKin
     && candidate.evidence.some(({ evidenceId, stance }) => evidenceId.trim().length > 0 && stance === "supports");
 }
 
-interface OperationEndpoints {
+interface CandidateAnalysis {
   supportedRecords: IdentityCandidateRecord[];
-  sourceIds: string[];
-  targetIds: string[];
+  endpointIds: string[];
+  unresolvedHistoricalBlockers: IdentityCandidateRecord[];
 }
 
-function operationEndpoints(
+function candidateAnalysis(
   records: readonly IdentityCandidateRecord[],
   requestedKind: ResolveSemanticIdentityInput["requestedKind"],
-): OperationEndpoints {
+): CandidateAnalysis {
   const supportedRecords = records.filter((record) => supportsRequestedIdentity(record, requestedKind));
   return {
     supportedRecords,
-    sourceIds: sortedUnique(supportedRecords.map(({ candidate }) => candidate.entityId)),
-    targetIds: activeTargets(supportedRecords),
+    endpointIds: activeTargets(supportedRecords),
+    unresolvedHistoricalBlockers: records.filter(({ candidate, lifecycle, replacementIds }) =>
+      (requestedKind === "unknown" || candidate.entityKind === requestedKind)
+      && (lifecycle === "superseded" || lifecycle === "tombstone")
+      && replacementIds.length === 0),
   };
 }
 
@@ -831,7 +885,7 @@ function validBoundary(boundary: NewSemanticBoundary | undefined): boundary is N
     && boundary.rationale.trim().length > 0;
 }
 
-function decision(input: ResolveSemanticIdentityInput, records: readonly IdentityCandidateRecord[], endpoints: OperationEndpoints): {
+function decision(input: ResolveSemanticIdentityInput, records: readonly IdentityCandidateRecord[], analysis: CandidateAnalysis): {
   outcome: SemanticIdentityResolution["outcome"];
   selectedEntityIds: string[];
   unknowns: string[];
@@ -842,16 +896,14 @@ function decision(input: ResolveSemanticIdentityInput, records: readonly Identit
   if (!hasOutcomeEvidence(input)) {
     return { outcome: "unresolved", selectedEntityIds: [], unknowns: sortedUnique([...unknowns, "identity outcome lacks outcome-specific supporting evidence"]) };
   }
-  const supported = endpoints.supportedRecords;
-  const targets = endpoints.targetIds;
-  const historicalBlockers = supported.filter(({ lifecycle, replacementIds }) => lifecycle === "tombstone" && replacementIds.length === 0);
+  const supported = analysis.supportedRecords;
+  const targets = analysis.endpointIds;
+  const historicalBlockers = analysis.unresolvedHistoricalBlockers;
   if (input.assessment === "ambiguous") {
     return { outcome: "unresolved", selectedEntityIds: [], unknowns: sortedUnique([...unknowns, "semantic ownership remains ambiguous"]) };
   }
   if (input.assessment === "distinct") {
-    const unresolvedSearchResults = records.length === 0 && input.boundState.queryDependencies.some(({ query, priorResult }) =>
-      ["identity.exact-search", "identity.alias-search", "identity.lineage", "identity.tombstone"].includes(query.programId)
-      && priorResult.resultCount > 0);
+    const unresolvedSearchResults = hasUnresolvedCandidateSearchBlocker(input.boundState, records);
     if (unresolvedSearchResults) {
       return { outcome: "unresolved", selectedEntityIds: [], unknowns: sortedUnique([...unknowns, "identity search returned candidates or history that were not resolved into candidate records"]) };
     }
@@ -895,19 +947,19 @@ function decision(input: ResolveSemanticIdentityInput, records: readonly Identit
 /** Deterministically adjudicates an already evidence-backed semantic comparison. It never creates canonical state. */
 export function resolveSemanticIdentity(input: ResolveSemanticIdentityInput): AdjudicatedSemanticIdentityResolution {
   const prepared = prepareIdentityInput(input);
-  return resolvePreparedSemanticIdentity(prepared, operationEndpoints(prepared.records, prepared.requestedKind));
+  return resolvePreparedSemanticIdentity(prepared, candidateAnalysis(prepared.records, prepared.requestedKind));
 }
 
 function resolvePreparedSemanticIdentity(
   input: ResolveSemanticIdentityInput,
-  endpoints: OperationEndpoints,
+  analysis: CandidateAnalysis,
 ): AdjudicatedSemanticIdentityResolution {
   if (input.requestedMeaning.trim().length === 0) throw new Error("requested semantic meaning cannot be blank");
   if (input.durableEntity) validateIdentityBinding(input.boundState, input.requestedMeaning, input.requestedKind, input.queryRegistry);
   const records = input.records;
   if (input.durableEntity) validateCandidateValueDependencies(input.boundState, records);
   const candidates = records.map(({ candidate }) => candidate);
-  const resolved = decision(input, records, endpoints);
+  const resolved = decision(input, records, analysis);
   const evidence = [...input.evidence].sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
   const candidateScores = candidates.map(({ similarity, ownershipFit, boundaryFit }) => Math.min(similarity, ownershipFit, boundaryFit));
   const confidence = resolved.outcome === "no-durable-entity" ? 1
@@ -915,7 +967,7 @@ function resolvePreparedSemanticIdentity(
       : resolved.outcome === "create-new" ? candidates.length === 0 ? 1 : 1 - Math.max(...candidateScores)
         : candidates.length === 0 ? 1 : Math.min(...candidateScores);
   const proposedTargetIds = resolved.outcome === "unresolved" ? [] : sortedUnique(input.proposedTargetIds ?? []);
-  const sourceIds = endpoints.sourceIds;
+  const sourceIds = analysis.endpointIds;
   const lineageKind: IdentityLineageProposal["kind"] | undefined = resolved.outcome === "split-existing" ? "split"
     : resolved.outcome === "merge-existing" ? "merge"
       : resolved.outcome === "replace-existing" ? "replace"
@@ -970,6 +1022,7 @@ function resolvePreparedSemanticIdentity(
     requestedKind: input.requestedKind,
     outcome: resolved.outcome,
     candidates,
+    candidateRecords: structuredClone(records),
     selectedEntityIds: resolved.selectedEntityIds,
     ...(resolved.newBoundary === undefined ? {} : {
       newBoundary: {
@@ -1028,16 +1081,16 @@ export async function resolveSemanticIdentityFromEvidence(
   repository: TrustedIdentityEvidenceRepository,
 ): Promise<AdjudicatedSemanticIdentityResolution> {
   const prepared = prepareIdentityInput(input);
-  const endpoints = operationEndpoints(prepared.records, prepared.requestedKind);
+  const analysis = candidateAnalysis(prepared.records, prepared.requestedKind);
   const supportingIds = sortedUnique(prepared.evidence.filter(({ stance }) => stance === "supports").map(({ evidenceId }) => evidenceId));
   const evidence = await Promise.all(supportingIds.map(async (id) => parseVerifiedEvidence(await repository.loadEvidence(id), id)));
   const applicable = evidence.filter((item) => item.applicability === "direct" && item.reliability !== "low" && item.reliability !== "untrusted");
-  const outcomeEvidence = outcomeFactFromEvidence(prepared.assessment, applicable, prepared, endpoints);
+  const outcomeEvidence = outcomeFactFromEvidence(prepared.assessment, applicable, prepared, analysis);
   if (outcomeEvidence !== undefined) verifiedOutcomeEvidence.add(outcomeEvidence);
   const { outcomeEvidence: _callerOutcome, ...trustedInput } = prepared;
   return resolvePreparedSemanticIdentity(
     outcomeEvidence === undefined ? trustedInput : { ...trustedInput, outcomeEvidence },
-    endpoints,
+    analysis,
   );
 }
 
@@ -1175,6 +1228,12 @@ export async function assertCanonicalCreationAllowed(
   }
   if (resolution.outcome !== "create-new") {
     throw new Error(`canonical creation refused: identity outcome ${resolution.outcome} is unresolved or overlaps existing authority`);
+  }
+  const candidateEligibility = candidateAnalysis(resolution.candidateRecords, resolution.requestedKind);
+  if (candidateEligibility.supportedRecords.length > 0
+    || candidateEligibility.unresolvedHistoricalBlockers.length > 0
+    || hasUnresolvedCandidateSearchBlocker(resolution.boundState, resolution.candidateRecords)) {
+    throw new Error("canonical creation refused: persisted eligible candidates or unresolved identity history block duplicate creation");
   }
   if (adjudication?.kind !== "distinct" || adjudication.claims.length === 0) {
     throw new Error("canonical creation refused: persisted hash-bound distinct adjudication facts are required");
