@@ -26,6 +26,8 @@ export interface UpgradeDependent { readonly id: string; readonly dependencyKeys
 export interface UpgradeDependencyRegistry {
   readonly knownDependencyKeys: readonly string[];
   readonly ownedDependencyKeys: Readonly<Record<string, { readonly kind: UpgradeComponentKind; readonly id: string }>>;
+  /** Complete reverse dependency enumeration for every registered dependency key. */
+  readonly directDependentIdsByDependencyKey: Readonly<Record<string, readonly string[]>>;
 }
 
 export function planUpgradeInvalidation(declaration: UpgradeDeclaration, dependents: readonly UpgradeDependent[], registry: UpgradeDependencyRegistry): {
@@ -53,21 +55,40 @@ export function planUpgradeInvalidation(declaration: UpgradeDeclaration, depende
     definitions.set(dependent.id, normalized);
   }
   const normalizedDependents = [...new Map(dependents.map((dependent) => [dependent.id, { ...dependent, dependencyKeys: normalizeKeys(dependent.dependencyKeys) }])).values()];
-  for (const key of keys) {
-    const owner = registry.ownedDependencyKeys?.[key];
-    if (owner === undefined || owner.kind !== declaration.kind || owner.id !== declaration.id) {
-      throw new TypeError(`affected dependency key does not belong to the declared upgrade target namespace or registry ownership: ${key}`);
-    }
+  const targetKeys = Object.entries(registry.ownedDependencyKeys)
+    .filter(([, owner]) => owner.kind === declaration.kind && owner.id === declaration.id)
+    .map(([key]) => key).sort();
+  if (targetKeys.length === 0 || canonicalJson(keys) !== canonicalJson(targetKeys)) {
+    throw new TypeError("affected dependency keys must exactly enumerate the complete target-owned dependency key set");
   }
-  const affected = new Set(keys);
+  const dependentsById = new Map(normalizedDependents.map((dependent) => [dependent.id, dependent]));
+  const unregisteredDependentKeys = normalizeKeys(normalizedDependents.flatMap(({ dependencyKeys }) => dependencyKeys)).filter((key) => !known.has(key));
+  if (unregisteredDependentKeys.length > 0) {
+    throw new TypeError(`dependency registry coverage is missing dependency keys: ${unregisteredDependentKeys.join(", ")}`);
+  }
+  for (const key of known) {
+    const registered = registry.directDependentIdsByDependencyKey[key];
+    if (registered === undefined) throw new TypeError(`dependency registry coverage is missing direct dependents for ${key}`);
+    const actual = normalizedDependents.filter((dependent) => dependent.dependencyKeys.includes(key)).map(({ id }) => id).sort();
+    const declared = normalizeKeys(registered);
+    if (declared.length !== registered.length || canonicalJson(declared) !== canonicalJson(actual)) {
+      throw new TypeError(`dependency registry coverage disagrees with direct dependents for ${key}`);
+    }
+    if (declared.some((id) => !dependentsById.has(id))) throw new TypeError(`dependency registry names a missing direct dependent for ${key}`);
+  }
+  const affected = new Set(targetKeys);
   const invalidated = new Set<string>();
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const dependent of normalizedDependents) {
-      if (dependent.kind === "canonical-source" || invalidated.has(dependent.id)) continue;
-      if (dependent.dependencyKeys.some((key) => affected.has(key))) {
-        invalidated.add(dependent.id); affected.add(`${dependent.kind}:${dependent.id}`); changed = true;
+  const pending = [...targetKeys];
+  while (pending.length > 0) {
+    const dependencyKey = pending.shift()!;
+    for (const id of registry.directDependentIdsByDependencyKey[dependencyKey] ?? []) {
+      const dependent = dependentsById.get(id)!;
+      if (dependent.kind === "canonical-source" || invalidated.has(id)) continue;
+      invalidated.add(id);
+      const producedKey = `${dependent.kind}:${dependent.id}`;
+      if (known.has(producedKey) && !affected.has(producedKey)) {
+        affected.add(producedKey);
+        pending.push(producedKey);
       }
     }
   }

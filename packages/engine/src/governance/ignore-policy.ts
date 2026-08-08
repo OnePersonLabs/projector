@@ -1,5 +1,5 @@
 import { canonicalJson, hashFramedDomain, type IgnorePolicy, type ProjectionUnit, type SelectorExpr } from "@projector/core";
-import { evaluateSelector, normalizeSelector, projectionUnitSelectorSubject } from "./selectors.js";
+import { evaluateSelector, matchesCanonicalGlob, normalizeSelector, projectionUnitSelectorSubject } from "./selectors.js";
 
 export type IgnoreConcern = keyof IgnorePolicy;
 const CONCERNS: IgnoreConcern[] = ["inventory", "inferenceAuthority", "mutation", "reporting", "modelContext", "coverageDenominator"];
@@ -41,8 +41,7 @@ function selectorContainedBy(left: SelectorExpr, right: SelectorExpr): Containme
     return left.value.every((value) => includesValue(right.value as readonly unknown[], value)) ? "yes" : "no";
   }
   if (left.matcher === "equals" && right.matcher === "glob" && typeof left.value === "string" && typeof right.value === "string") {
-    const escaped = right.value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&").replaceAll("**", "\u0000").replaceAll("*", "[^/]*").replaceAll("\u0000", ".*");
-    return new RegExp(`^${escaped}$`, "u").test(left.value) ? "yes" : "no";
+    return matchesCanonicalGlob(right.value, left.value) ? "yes" : "no";
   }
   return "unknown";
 }

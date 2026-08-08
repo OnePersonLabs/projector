@@ -42,8 +42,6 @@ export interface RecompiledPlanFields {
   readonly possibleFrontierUnitIds?: readonly EntityId[];
   readonly unavailableSurfaceIds?: readonly EntityId[];
   readonly completionCriteria?: ExecutionPlan["completionCriteria"];
-  readonly packetHashes?: readonly PacketHashProof[];
-  readonly recompiledCapsules?: readonly CapsuleProof[];
   readonly checkpoints?: ExecutionPlan["checkpoints"];
 }
 
@@ -53,20 +51,36 @@ export interface RebaseExecutionPlanInput {
   readonly completedPackets: readonly EntityId[];
   readonly isCompletedPacketCurrent: (packetId: EntityId) => Promise<boolean>;
   readonly recompile: () => Promise<RecompiledPlanFields>;
-  readonly originalPacketHashes?: readonly PacketHashProof[];
-  readonly authenticateOriginalPacketHash?: (packetId: EntityId, packetHash: ContentHash) => Promise<boolean>;
-  readonly capsuleInventory?: readonly CapsuleInventoryEntry[];
+  readonly capsuleInventoryPort?: PlanCapsuleInventoryPort;
+  readonly capsuleCompilerVerifier?: PlanCapsuleCompilerVerifierPort;
 }
 
 export interface PacketHashProof { readonly packetId: EntityId; readonly packetHash: ContentHash }
 export interface CapsuleProof extends PacketHashProof {
   readonly capsuleId: EntityId;
-  readonly capsuleHash: ContentHash;
+  readonly capsuleContentHash: ContentHash;
   readonly boundState: StateBinding;
   readonly approvalIds: readonly EntityId[];
 }
-export interface NoCapsuleProof extends PacketHashProof { readonly noCapsuleProof: ContentHash }
-export type CapsuleInventoryEntry = CapsuleProof | NoCapsuleProof;
+export interface AuthenticatedCapsuleInventoryEntry extends CapsuleProof { readonly planId: EntityId }
+export interface AuthenticatedNoCapsuleInventoryEntry extends PacketHashProof { readonly planId: EntityId }
+export type CapsuleInventoryEntry = AuthenticatedCapsuleInventoryEntry | AuthenticatedNoCapsuleInventoryEntry;
+
+/** Read-only authority for complete persisted packet/capsule/approval state. Absence is meaningful only here. */
+export interface PlanCapsuleInventoryPort {
+  enumerateAuthenticated(input: { readonly planId: EntityId; readonly packetIds: readonly EntityId[] }): Promise<readonly CapsuleInventoryEntry[]>;
+}
+
+/** Separate trusted compiler/verifier for freshly current replacement capsules. */
+export interface PlanCapsuleCompilerVerifierPort {
+  compileAndVerify(input: {
+    readonly originalPlanId: EntityId;
+    readonly revision: number;
+    readonly packetIds: readonly EntityId[];
+    readonly boundState: StateBinding;
+    readonly recomputedPlan: RecompiledPlanFields;
+  }): Promise<readonly CapsuleProof[]>;
+}
 
 export interface RebasedExecutionPlan {
   readonly kind: "lightweight-rebind" | "semantic-rebase";
@@ -81,8 +95,6 @@ export interface RebasedExecutionPlan {
   readonly newCapsuleMapping: readonly CapsuleProof[];
 }
 
-export const capsuleProofHash = (proof: Omit<CapsuleProof, "capsuleHash">): ContentHash => hashFramedDomain("rebase-capsule-proof", { ...proof, approvalIds: unique(proof.approvalIds) });
-export const noCapsuleProofHash = (proof: PacketHashProof): ContentHash => hashFramedDomain("rebase-no-capsule-proof", proof);
 function packetHashMap(proofs: readonly PacketHashProof[], expectedPacketIds: readonly EntityId[], label: string): Map<EntityId, ContentHash> {
   if (proofs.length === 0 || new Set(proofs.map(({ packetId }) => packetId)).size !== proofs.length
     || canonicalJson(unique(proofs.map(({ packetId }) => packetId))) !== canonicalJson(unique(expectedPacketIds))) {
@@ -97,9 +109,7 @@ function validateCapsuleProof(proof: CapsuleProof, expectedPacketHash: ContentHa
     throw new Error(`${label} capsule is not bound to the required plan state`);
   }
   if (new Set(proof.approvalIds).size !== proof.approvalIds.length) throw new Error(`${label} capsule approval inventory contains duplicate identities`);
-  if (proof.capsuleHash !== capsuleProofHash({ packetId: proof.packetId, packetHash: proof.packetHash, capsuleId: proof.capsuleId, boundState: proof.boundState, approvalIds: proof.approvalIds })) {
-    throw new Error(`${label} capsule identity is not cryptographically proven`);
-  }
+  if (proof.capsuleId.trim() === "" || proof.capsuleContentHash.trim() === "") throw new Error(`${label} capsule identity or authenticated content hash is blank`);
 }
 
 export async function rebaseExecutionPlan(input: RebaseExecutionPlanInput): Promise<RebasedExecutionPlan> {
@@ -110,13 +120,14 @@ export async function rebaseExecutionPlan(input: RebaseExecutionPlanInput): Prom
     ? createStateBinding({ compiledAgainst: input.validation.currentState, valueDependencies: input.original.boundState.valueDependencies, queryDependencies: input.original.boundState.queryDependencies })
     : input.validation.rebound!;
   const recomputed = lightweight ? {} : await input.recompile();
-  if (!lightweight && input.capsuleInventory === undefined) throw new Error("semantic rebase requires an explicit old capsule inventory");
+  if (!lightweight && input.capsuleInventoryPort === undefined) throw new Error("semantic rebase requires a trusted old capsule inventory port");
+  if (!lightweight && input.capsuleCompilerVerifier === undefined) throw new Error("semantic rebase requires a separate trusted capsule compiler/verifier");
   if (!lightweight && recomputed.boundState === undefined) throw new Error("semantic rebase must provide a recomputed state binding");
   if (!lightweight && (recomputed.boundary === undefined || recomputed.packetIds === undefined || recomputed.assumptions === undefined
     || recomputed.relevanceClosureId === undefined || recomputed.predictedImpactClosureHash === undefined
     || recomputed.knownAffectedUnitIds === undefined || recomputed.possibleFrontierUnitIds === undefined
     || recomputed.unavailableSurfaceIds === undefined || recomputed.completionCriteria === undefined
-    || recomputed.checkpoints === undefined || recomputed.packetHashes === undefined || recomputed.recompiledCapsules === undefined)) {
+    || recomputed.checkpoints === undefined)) {
     throw new Error("semantic rebase requires complete semantic recomputation of scope, packets, assumptions, closures, affected/frontier/unavailable units, checkpoints, completion, and capsules");
   }
   const nextBinding = recomputed.boundState ?? rebound;
@@ -126,19 +137,17 @@ export async function rebaseExecutionPlan(input: RebaseExecutionPlanInput): Prom
   const validatedBinding = createStateBinding({ compiledAgainst: nextBinding.compiledAgainst, valueDependencies: nextBinding.valueDependencies, queryDependencies: nextBinding.queryDependencies });
   if (validatedBinding.dependencyDigest !== nextBinding.dependencyDigest) throw new Error("rebased plan binding has an invalid dependency digest");
   const nextPacketIds = recomputed.packetIds ?? input.original.packetIds;
+  let oldCapsuleMapping: readonly CapsuleInventoryEntry[] = [];
+  let newCapsuleMapping: readonly CapsuleProof[] = [];
   if (!lightweight) {
-    if (input.originalPacketHashes === undefined) throw new Error("semantic rebase requires authenticated original packet hashes");
-    if (input.authenticateOriginalPacketHash === undefined) throw new Error("semantic rebase requires a trusted original packet hash authenticator");
-    const oldPacketHashes = packetHashMap(input.originalPacketHashes, input.original.packetIds, "original");
-    for (const { packetId, packetHash } of input.originalPacketHashes) {
-      if (!await input.authenticateOriginalPacketHash(packetId, packetHash)) throw new Error(`original packet hash could not be authenticated: ${packetId}`);
-    }
-    const oldInventory = input.capsuleInventory!;
+    const oldInventory = await input.capsuleInventoryPort!.enumerateAuthenticated({ planId: input.original.id, packetIds: input.original.packetIds });
     if (oldInventory.length === 0 || new Set(oldInventory.map(({ packetId }) => packetId)).size !== oldInventory.length
       || canonicalJson(unique(oldInventory.map(({ packetId }) => packetId))) !== canonicalJson(unique(input.original.packetIds))) {
-      throw new Error("old capsule inventory must account for every original packet exactly once");
+      throw new Error("trusted old capsule inventory must account for every original packet exactly once");
     }
-    const oldCapsules = oldInventory.filter((entry): entry is CapsuleProof => "capsuleId" in entry);
+    if (oldInventory.some(({ planId }) => planId !== input.original.id)) throw new Error("trusted capsule inventory is bound to the wrong original plan");
+    const oldPacketHashes = packetHashMap(oldInventory, input.original.packetIds, "trusted original");
+    const oldCapsules = oldInventory.filter((entry): entry is AuthenticatedCapsuleInventoryEntry => "capsuleId" in entry);
     if (new Set(oldCapsules.map(({ capsuleId }) => capsuleId)).size !== oldCapsules.length
       || new Set(oldCapsules.flatMap(({ approvalIds = [] }) => approvalIds)).size !== oldCapsules.flatMap(({ approvalIds = [] }) => approvalIds).length) {
       throw new Error("old capsule or approval identities alias across packets");
@@ -146,10 +155,13 @@ export async function rebaseExecutionPlan(input: RebaseExecutionPlanInput): Prom
     for (const entry of oldInventory) {
       const expectedHash = oldPacketHashes.get(entry.packetId)!;
       if ("capsuleId" in entry) validateCapsuleProof(entry, expectedHash, input.original.boundState, "old");
-      else if (entry.packetHash !== expectedHash || entry.noCapsuleProof !== noCapsuleProofHash({ packetId: entry.packetId, packetHash: entry.packetHash })) throw new Error("old no-capsule claim is not proven");
+      else if (entry.packetHash.trim() === "") throw new Error("trusted no-capsule inventory has a blank authenticated packet hash");
     }
-    const newCapsules = recomputed.recompiledCapsules!;
-    const newPacketHashes = packetHashMap(recomputed.packetHashes!, nextPacketIds, "recompiled");
+    const newCapsules = await input.capsuleCompilerVerifier!.compileAndVerify({
+      originalPlanId: input.original.id, revision: input.original.revision + 1,
+      packetIds: nextPacketIds, boundState: validatedBinding, recomputedPlan: recomputed,
+    });
+    const newPacketHashes = packetHashMap(newCapsules, nextPacketIds, "verified recompiled");
     if (new Set(newCapsules.map(({ packetId }) => packetId)).size !== newCapsules.length
       || canonicalJson(unique(newCapsules.map(({ packetId }) => packetId))) !== canonicalJson(unique(nextPacketIds))) {
       throw new Error("semantic rebase must recompile exactly one capsule for every recomputed packet");
@@ -159,6 +171,8 @@ export async function rebaseExecutionPlan(input: RebaseExecutionPlanInput): Prom
       throw new Error("recompiled capsule identities must be unique and must not alias stale capsules");
     }
     for (const capsule of newCapsules) validateCapsuleProof(capsule, newPacketHashes.get(capsule.packetId)!, validatedBinding, "recompiled");
+    oldCapsuleMapping = deepFreeze(structuredClone([...oldInventory].sort((a, b) => compare(a.packetId, b.packetId))));
+    newCapsuleMapping = deepFreeze(structuredClone([...newCapsules].sort((a, b) => compare(a.packetId, b.packetId))));
   }
   const carried: EntityId[] = [];
   for (const packetId of unique(input.completedPackets)) {
@@ -166,10 +180,9 @@ export async function rebaseExecutionPlan(input: RebaseExecutionPlanInput): Prom
   }
   const invalidated = lightweight ? unique(input.completedPackets).filter((id) => !carried.includes(id)) : unique(input.original.packetIds.filter((id) => !carried.includes(id)));
   const revision = input.original.revision + 1;
-  const { recompiledCapsules = [], packetHashes: _packetHashes, ...planFields } = recomputed;
   const fields = {
     ...input.original,
-    ...planFields,
+    ...recomputed,
     revision,
     supersedesPlanId: input.original.id,
     boundState: validatedBinding,
@@ -178,18 +191,17 @@ export async function rebaseExecutionPlan(input: RebaseExecutionPlanInput): Prom
   };
   const identity = hashFramedDomain("execution-plan-revision-id", { ...fields, id: undefined });
   const plan = createExecutionPlan({ ...fields, id: `plan:${identity}` });
-  const oldCapsuleMapping = [...(input.capsuleInventory ?? [])].sort((a, b) => compare(a.packetId, b.packetId));
-  const newCapsuleMapping = [...recompiledCapsules].sort((a, b) => compare(a.packetId, b.packetId));
+  const oldCapsules = oldCapsuleMapping.filter((entry): entry is AuthenticatedCapsuleInventoryEntry => "capsuleId" in entry);
   return {
     kind: lightweight ? "lightweight-rebind" : "semantic-rebase", plan,
     carriedCompletedPacketIds: carried, invalidatedPacketIds: invalidated,
     invalidatedApprovalPlanIds: [input.original.id],
-    invalidatedApprovalIds: unique(oldCapsuleMapping.flatMap((entry) => "approvalIds" in entry ? entry.approvalIds ?? [] : [])),
+    invalidatedApprovalIds: unique(oldCapsules.flatMap(({ approvalIds }) => approvalIds)),
     invalidatedCapsuleIds: unique(lightweight
-      ? (input.capsuleInventory ?? []).filter((entry): entry is CapsuleProof => "capsuleId" in entry && invalidated.includes(entry.packetId)).map(({ capsuleId }) => capsuleId)
-      : input.capsuleInventory!.filter((entry): entry is CapsuleProof => "capsuleId" in entry).map(({ capsuleId }) => capsuleId)),
-    recompiledCapsuleIds: unique(recompiledCapsules.map(({ capsuleId }) => capsuleId)),
-    oldCapsuleMapping: deepFreeze(structuredClone(oldCapsuleMapping)),
-    newCapsuleMapping: deepFreeze(structuredClone(newCapsuleMapping)),
+      ? oldCapsules.filter((entry) => invalidated.includes(entry.packetId)).map(({ capsuleId }) => capsuleId)
+      : oldCapsules.map(({ capsuleId }) => capsuleId)),
+    recompiledCapsuleIds: unique(newCapsuleMapping.map(({ capsuleId }) => capsuleId)),
+    oldCapsuleMapping,
+    newCapsuleMapping,
   };
 }

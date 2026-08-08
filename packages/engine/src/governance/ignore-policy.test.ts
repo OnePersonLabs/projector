@@ -101,4 +101,28 @@ describe("layered ignore policy", () => {
       { id: "exact", layer: "rule", concern: "mutation", effect: "include", selector: tagSelector("vendor") },
     ] })).toThrow(/conflicting layered ignore/u);
   });
+
+  it("uses the canonical glob matcher for exact-to-glob containment", () => {
+    for (const [path, glob] of [["vendor", "**/vendor"], ["foo", "f?o"], ["src/vendor", "**/vendor"]] as const) {
+      const unit = projectionUnit(path, { path });
+      const result = compileLayeredIgnorePolicy({ units: [unit], rules: [
+        { id: `glob:${glob}`, layer: "rule", concern: "mutation", effect: "ignore", selector: { op: "atom", field: "path", matcher: "glob", value: glob } },
+        { id: `exact:${path}`, layer: "rule", concern: "mutation", effect: "include", selector: { op: "atom", field: "path", matcher: "equals", value: path } },
+      ] });
+      expect(result.byUnit[unit.id]!.mutation).toBe(false);
+    }
+    fc.assert(fc.property(
+      fc.array(fc.constantFrom("a", "b", "vendor", "generated"), { minLength: 1, maxLength: 5 }),
+      (segments) => {
+        const path = segments.join("/");
+        const basename = segments.at(-1)!;
+        const unit = projectionUnit(path, { path });
+        const result = compileLayeredIgnorePolicy({ units: [unit], rules: [
+          { id: "glob", layer: "rule", concern: "reporting", effect: "ignore", selector: { op: "atom", field: "path", matcher: "glob", value: `**/${basename}` } },
+          { id: "exact", layer: "rule", concern: "reporting", effect: "include", selector: { op: "atom", field: "path", matcher: "equals", value: path } },
+        ] });
+        expect(result.byUnit[unit.id]!.reporting).toBe(false);
+      },
+    ));
+  });
 });

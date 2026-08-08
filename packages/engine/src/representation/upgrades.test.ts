@@ -8,13 +8,21 @@ describe("representation and semantic upgrade protocol", () => {
       { id: "capsule:agent", dependencyKeys: ["representation:projection:agent"], kind: "capsule" },
       { id: "projection:human", dependencyKeys: ["representation-profile:profile:human-technical"], kind: "representation" },
       { id: "source:rule", dependencyKeys: [], kind: "canonical-source" },
-    ], { knownDependencyKeys: ["representation-profile:profile:agent-compact", "representation-profile:profile:human-technical"], ownedDependencyKeys: { "representation-profile:profile:agent-compact": { kind: "representation-profile", id: "profile:agent-compact" }, "representation-profile:profile:human-technical": { kind: "representation-profile", id: "profile:human-technical" } } });
+    ], {
+      knownDependencyKeys: ["representation-profile:profile:agent-compact", "representation-profile:profile:human-technical", "representation:projection:agent"],
+      ownedDependencyKeys: { "representation-profile:profile:agent-compact": { kind: "representation-profile", id: "profile:agent-compact" }, "representation-profile:profile:human-technical": { kind: "representation-profile", id: "profile:human-technical" } },
+      directDependentIdsByDependencyKey: {
+        "representation-profile:profile:agent-compact": ["projection:agent"],
+        "representation-profile:profile:human-technical": ["projection:human"],
+        "representation:projection:agent": ["capsule:agent"],
+      },
+    });
     expect(result.invalidatedIds).toEqual(["capsule:agent", "projection:agent"]);
     expect(result.preservedCanonicalSourceIds).toEqual(["source:rule"]);
   });
 
   it("requires explicit reindex or revalidation for semantic interpretation changes", () => {
-    expect(() => planUpgradeInvalidation({ kind: "analyzer", id: "typescript", fromVersion: "1", toVersion: "2", affectedDependencyKeys: [], requiredAction: "none" }, [], { knownDependencyKeys: [], ownedDependencyKeys: {} })).toThrow(/semantic interpretation upgrade/u);
+    expect(() => planUpgradeInvalidation({ kind: "analyzer", id: "typescript", fromVersion: "1", toVersion: "2", affectedDependencyKeys: [], requiredAction: "none" }, [], { knownDependencyKeys: [], ownedDependencyKeys: {}, directDependentIdsByDependencyKey: {} })).toThrow(/semantic interpretation upgrade/u);
   });
 
   it("parses implementation upgrade declarations through a strict versioned schema", () => {
@@ -24,7 +32,7 @@ describe("representation and semantic upgrade protocol", () => {
   });
 
   it("requires profile changes to name dependencies and invalidate old proof", () => {
-    expect(() => planUpgradeInvalidation({ kind: "representation-profile", id: "compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: [], requiredAction: "none" }, [], { knownDependencyKeys: [], ownedDependencyKeys: {} }))
+    expect(() => planUpgradeInvalidation({ kind: "representation-profile", id: "compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: [], requiredAction: "none" }, [], { knownDependencyKeys: [], ownedDependencyKeys: {}, directDependentIdsByDependencyKey: {} }))
       .toThrow(/affected dependency|action/u);
   });
 
@@ -38,17 +46,17 @@ describe("representation and semantic upgrade protocol", () => {
     expect(() => planUpgradeInvalidation({ kind: "representation-profile", id: "compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["profile:compact"], requiredAction: "revalidate" }, [
       { id: "same", kind: "canonical-source", dependencyKeys: [] },
       { id: "same", kind: "representation", dependencyKeys: ["profile:compact"] },
-    ], { knownDependencyKeys: ["profile:compact"], ownedDependencyKeys: { "profile:compact": { kind: "representation-profile", id: "compact" } } })).toThrow(/conflicting dependent/u);
+    ], { knownDependencyKeys: ["profile:compact"], ownedDependencyKeys: { "profile:compact": { kind: "representation-profile", id: "compact" } }, directDependentIdsByDependencyKey: { "profile:compact": ["same"] } })).toThrow(/conflicting dependent/u);
   });
 
   it("resolves affected keys against the known graph and rejects misspelled or vacuous invalidation", () => {
     const declaration = { kind: "representation-profile" as const, id: "compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["profile:compact"], requiredAction: "revalidate" as const };
     expect(() => planUpgradeInvalidation({ ...declaration, affectedDependencyKeys: ["profile:comapct"] }, [
       { id: "projection:compact", kind: "representation", dependencyKeys: ["profile:compact"] },
-    ], { knownDependencyKeys: ["profile:compact"], ownedDependencyKeys: { "profile:compact": { kind: "representation-profile", id: "compact" } } })).toThrow(/unknown.*dependency|resolve/u);
+    ], { knownDependencyKeys: ["profile:compact"], ownedDependencyKeys: { "profile:compact": { kind: "representation-profile", id: "compact" } }, directDependentIdsByDependencyKey: { "profile:compact": ["projection:compact"] } })).toThrow(/unknown.*dependency|resolve/u);
     expect(() => planUpgradeInvalidation(declaration, [
       { id: "projection:other", kind: "representation", dependencyKeys: ["profile:other"] },
-    ], { knownDependencyKeys: ["profile:compact", "profile:other"], ownedDependencyKeys: { "profile:compact": { kind: "representation-profile", id: "compact" } } })).toThrow(/nonempty|invalidation|vacuous/u);
+    ], { knownDependencyKeys: ["profile:compact", "profile:other"], ownedDependencyKeys: { "profile:compact": { kind: "representation-profile", id: "compact" } }, directDependentIdsByDependencyKey: { "profile:compact": [], "profile:other": ["projection:other"] } })).toThrow(/nonempty|invalidation|vacuous/u);
   });
 
   it("requires trimmed identities and keys owned by the declared upgrade target", () => {
@@ -58,6 +66,10 @@ describe("representation and semantic upgrade protocol", () => {
         "representation-profile:profile:compact": { kind: "representation-profile" as const, id: "compact" },
         "representation-profile:profile:other": { kind: "representation-profile" as const, id: "other" },
       },
+      directDependentIdsByDependencyKey: {
+        "representation-profile:profile:compact": [],
+        "representation-profile:profile:other": ["projection:other"],
+      },
     };
     const declaration = { kind: "representation-profile" as const, id: "compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["representation-profile:profile:other"], requiredAction: "revalidate" as const };
     expect(() => planUpgradeInvalidation(declaration, [{ id: "projection:other", kind: "representation", dependencyKeys: ["representation-profile:profile:other"] }], registry))
@@ -66,5 +78,42 @@ describe("representation and semantic upgrade protocol", () => {
       .toThrow();
     expect(() => planUpgradeInvalidation({ ...declaration, id: "compact", affectedDependencyKeys: [" representation-profile:profile:compact"] }, [], registry))
       .toThrow(/blank|trim|dependency/u);
+  });
+
+  it("derives the complete target-owned dependency closure and rejects caller-selected decoys", () => {
+    const registry = {
+      knownDependencyKeys: ["profile:compact:render", "profile:compact:fidelity", "representation:projection:old"],
+      ownedDependencyKeys: {
+        "profile:compact:render": { kind: "representation-profile" as const, id: "compact" },
+        "profile:compact:fidelity": { kind: "representation-profile" as const, id: "compact" },
+      },
+      directDependentIdsByDependencyKey: {
+        "profile:compact:render": ["context:decoy"],
+        "profile:compact:fidelity": ["projection:old"],
+        "representation:projection:old": ["capsule:old"],
+      },
+    };
+    const dependents = [
+      { id: "context:decoy", kind: "context" as const, dependencyKeys: ["profile:compact:render"] },
+      { id: "projection:old", kind: "representation" as const, dependencyKeys: ["profile:compact:fidelity"] },
+      { id: "capsule:old", kind: "capsule" as const, dependencyKeys: ["representation:projection:old"] },
+    ];
+    const declaration = { kind: "representation-profile" as const, id: "compact", fromVersion: "1", toVersion: "2", requiredAction: "revalidate" as const };
+    expect(() => planUpgradeInvalidation({ ...declaration, affectedDependencyKeys: ["profile:compact:render"] }, dependents, registry))
+      .toThrow(/complete|coverage|owned dependency/u);
+    expect(planUpgradeInvalidation({ ...declaration, affectedDependencyKeys: ["profile:compact:render", "profile:compact:fidelity"] }, dependents, registry).invalidatedIds)
+      .toEqual(["capsule:old", "context:decoy", "projection:old"]);
+    expect(() => planUpgradeInvalidation({ ...declaration, affectedDependencyKeys: ["profile:compact:render", "profile:compact:fidelity"] }, dependents.slice(0, 2), registry))
+      .toThrow(/registry coverage|direct dependent/u);
+    const missingReachableKeyRegistry = {
+      ...registry,
+      knownDependencyKeys: ["profile:compact:render", "profile:compact:fidelity"],
+      directDependentIdsByDependencyKey: {
+        "profile:compact:render": ["context:decoy"],
+        "profile:compact:fidelity": ["projection:old"],
+      },
+    };
+    expect(() => planUpgradeInvalidation({ ...declaration, affectedDependencyKeys: ["profile:compact:render", "profile:compact:fidelity"] }, dependents, missingReachableKeyRegistry))
+      .toThrow(/registry coverage|unknown dependency/u);
   });
 });

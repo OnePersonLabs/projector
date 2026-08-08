@@ -361,9 +361,14 @@ function assertNoDuplicateJsonKeys(source: string): void {
   }
 }
 
+/** The sole JSON parser for representation candidates. Duplicate names are rejected recursively before parsing. */
+function parseStrictJson(source: string): unknown {
+  assertNoDuplicateJsonKeys(source);
+  return JSON.parse(source) as unknown;
+}
+
 function parseMachineCandidate(candidate: string): ParsedCandidateSource {
-  assertNoDuplicateJsonKeys(candidate);
-  const parsed = JSON.parse(candidate) as Record<string, unknown>;
+  const parsed = parseStrictJson(candidate) as Record<string, unknown>;
   if (canonicalJson(Object.keys(parsed).sort(compare)) !== canonicalJson(["apiVersion", "kind", "scenarios", "sourceIds", "statements"])) {
     throw new TypeError("machine invariant has unknown or missing schema keys");
   }
@@ -381,13 +386,15 @@ function parseHumanCandidate(candidate: string): ParsedCandidateSource {
   const scenarioMarker = "Behavioral scenarios:";
   const marker = candidate.lastIndexOf(scenarioMarker);
   if (marker < 0) throw new TypeError("human representation has no scenario kernel");
-  const scenarios = parseScenarios(JSON.parse(candidate.slice(marker + scenarioMarker.length).trim()));
+  const scenarios = parseScenarios(parseStrictJson(candidate.slice(marker + scenarioMarker.length).trim()));
   const statementPart = candidate.slice(0, marker).trim();
   const statements = statementPart.split(/\n\s*\n/gu).filter(Boolean).map((block) => {
     const match = /^Advisory text:\s*("(?:[^"\\]|\\.)*")\r?\nSemantic kernel:\s*(\{[^\n]*\})$/su.exec(block.trim());
     if (match === null) throw new TypeError("human statement block cannot be fully parsed");
-    const parsed = parseKernelStatement(JSON.parse(match[2]!));
-    return { ...parsed, text: JSON.parse(match[1]!) as string };
+    const parsed = parseKernelStatement(parseStrictJson(match[2]!));
+    const advisory = parseStrictJson(match[1]!);
+    if (typeof advisory !== "string") throw new TypeError("human advisory envelope must contain a JSON string");
+    return { ...parsed, text: advisory };
   });
   if (statements.length === 0) throw new TypeError("human representation has no statement kernel");
   return { statements, scenarios };
@@ -397,7 +404,7 @@ function parseGherkinCandidate(candidate: string): ParsedCandidateSource {
   const marker = "# invariant-kernel:";
   const markerOffset = candidate.lastIndexOf(marker);
   if (markerOffset < 0) throw new TypeError("Gherkin representation has no invariant kernel");
-  const statementsValue = JSON.parse(candidate.slice(markerOffset + marker.length).trim()) as unknown;
+  const statementsValue = parseStrictJson(candidate.slice(markerOffset + marker.length).trim());
   if (!Array.isArray(statementsValue)) throw new TypeError("Gherkin invariant kernel is not an array");
   const scenarios = candidate.slice(0, markerOffset).trim().split(/\n\s*\n/gu).filter(Boolean).map((block) => {
     const lines = block.split(/\r?\n/gu).map((line) => line.trim()).filter(Boolean);
@@ -420,8 +427,8 @@ function parseCompactCandidate(candidate: string): ParsedCandidateSource {
     const statements: CanonicalRepresentationStatement[] = [];
     const scenarios: Array<CanonicalRepresentationSource["scenarios"][number]> = [];
     for (const line of candidate.split(/\r?\n/gu).map((item) => item.trim()).filter(Boolean)) {
-      if (line.startsWith("STATEMENT ")) statements.push(parseKernelStatement(JSON.parse(line.slice("STATEMENT ".length))));
-      else if (line.startsWith("SCENARIO-KERNEL ")) scenarios.push(...parseScenarios([JSON.parse(line.slice("SCENARIO-KERNEL ".length))]));
+      if (line.startsWith("STATEMENT ")) statements.push(parseKernelStatement(parseStrictJson(line.slice("STATEMENT ".length))));
+      else if (line.startsWith("SCENARIO-KERNEL ")) scenarios.push(...parseScenarios([parseStrictJson(line.slice("SCENARIO-KERNEL ".length))]));
       else throw new TypeError("less-aggressive compact line cannot be parsed");
     }
     return { statements, scenarios };
@@ -435,7 +442,8 @@ function parseCompactCandidate(candidate: string): ParsedCandidateSource {
       const titlePart = parts.shift();
       const titleMatch = /^TITLE\s+("(?:[^"\\]|\\.)*")$/u.exec(titlePart ?? "");
       if (titleMatch === null) throw new TypeError("compact scenario title cannot be parsed");
-      const title = JSON.parse(titleMatch[1]!) as string;
+      const title = parseStrictJson(titleMatch[1]!);
+      if (typeof title !== "string") throw new TypeError("compact scenario title must be a JSON string");
       const steps = parts.map((part) => {
         const match = /^(PRECONDITION|TRIGGER|EXPECTED-OUTCOME|FORBIDDEN-OUTCOME):\s*(.+)$/u.exec(part);
         if (match === null) throw new TypeError("compact scenario step cannot be parsed");
@@ -489,6 +497,10 @@ function parseCandidate(candidate: string, profileKey: BuiltInRepresentationProf
   }
 }
 
+function normalizeAdvisoryText(value: string): string {
+  return value.normalize("NFKC").replace(/[^\p{L}\p{N}_]+/gu, "");
+}
+
 function assertCandidate(
   source: CanonicalRepresentationSource,
   candidate: string,
@@ -512,8 +524,9 @@ function assertCandidate(
     throw new RepresentationFidelityError("normative-force", "candidate contains unparsed or contradictory semantic content");
   }
   if (profileKey === "human-technical@1"
-    && canonicalJson(source.statements.map(({ id, text }) => ({ id, text }))) !== canonicalJson(normalizedObserved.statements.map(({ id, text }) => ({ id, text })))) {
-    throw new RepresentationFidelityError("normative-force", "human candidate advisory text differs from its trusted source");
+    && canonicalJson(source.statements.map(({ id, text }) => ({ id, text: normalizeAdvisoryText(text) })))
+      !== canonicalJson(normalizedObserved.statements.map(({ id, text }) => ({ id, text: normalizeAdvisoryText(text) })))) {
+    throw new RepresentationFidelityError("normative-force", "human candidate advisory envelope contains changed semantic words");
   }
   if (profileKey === "agent-compact@1") {
     const structural = new Set(["FORBID", "NOT", "MUST", "IFF", "IF", "ORDER", "SCOPE", "TITLE", "ONE", "MORE", "MOST", "ALL", "NONE", "AND", "OR"]);
