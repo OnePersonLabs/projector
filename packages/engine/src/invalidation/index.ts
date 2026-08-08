@@ -102,7 +102,7 @@ const validationAssuranceRank: Record<ValidationResult["assurance"], number> = {
 function hasCorrelatedProvenance(result: Pick<ValidationResult, "evidenceLane" | "independenceGroup" | "authorSource">): boolean {
   const normalizedGroup = result.independenceGroup.trim().toLocaleLowerCase("en-US");
   const normalizedAuthor = result.authorSource.trim().toLocaleLowerCase("en-US");
-  const correlated = /same[\s_-]*packet|correlat|causal|projector[\s_-]*generated/u;
+  const correlated = /packet|correlat|causal|projector[\s_-]*generated/u;
   return result.evidenceLane === "same-packet-agent"
     || normalizedGroup === "packet"
     || correlated.test(normalizedGroup)
