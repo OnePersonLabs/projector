@@ -78,4 +78,27 @@ describe("layered ignore policy", () => {
       expect(result.byUnit[unit.id]!.reporting).toBe(false);
     }));
   });
+
+  it("uses semantic containment for in subsets and conjunctions", () => {
+    const unit = projectionUnit("vendor", { tags: ["vendor"] });
+    const broad = { op: "atom" as const, field: "tag" as const, matcher: "in" as const, value: ["vendor", "generated"] };
+    const narrow = { op: "all" as const, items: [tagSelector("vendor"), { op: "atom" as const, field: "artifact-role" as const, matcher: "equals" as const, value: unit.role }] };
+    const result = compileLayeredIgnorePolicy({ units: [unit], rules: [
+      { id: "broad", layer: "rule", concern: "mutation", effect: "ignore", selector: broad },
+      { id: "narrow", layer: "rule", concern: "mutation", effect: "include", selector: narrow },
+    ] });
+    expect(result.byUnit[unit.id]!.mutation).toBe(false);
+  });
+
+  it("fails closed for overlapping incomparable or unsupported conflicting selectors", () => {
+    const unit = projectionUnit("vendor", { tags: ["vendor"] });
+    expect(() => compileLayeredIgnorePolicy({ units: [unit], rules: [
+      { id: "tag", layer: "rule", concern: "reporting", effect: "ignore", selector: tagSelector("vendor") },
+      { id: "role", layer: "rule", concern: "reporting", effect: "include", selector: { op: "atom", field: "artifact-role", matcher: "equals", value: unit.role } },
+    ] })).toThrow(/conflicting layered ignore/u);
+    expect(() => compileLayeredIgnorePolicy({ units: [unit], rules: [
+      { id: "contains", layer: "rule", concern: "mutation", effect: "ignore", selector: { op: "atom", field: "tag", matcher: "contains", value: "vendor" } },
+      { id: "exact", layer: "rule", concern: "mutation", effect: "include", selector: tagSelector("vendor") },
+    ] })).toThrow(/conflicting layered ignore/u);
+  });
 });

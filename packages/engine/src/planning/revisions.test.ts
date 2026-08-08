@@ -7,12 +7,24 @@ const digest = (name: string) => ({ gitBase: name, worktreeDigest: hashFramedDom
 const binding = (name: string) => ({ compiledAgainst: digest(name), valueDependencies: [], queryDependencies: [], dependencyDigest: hashFramedDomain("state-binding-dependencies", { valueDependencies: [], queryDependencies: [] }) });
 const completion = { requiredUnitStates: [], requiredValidators: [], requiredEvidenceLanes: [], minimumValidationAssurance: "strong" as const, requireIndependentValidation: true, maximumNewDivergences: 0, maximumUnknowns: 0, allowUnavailableExternalActions: false, requiredArtifacts: [], cleanWorkingTree: true };
 const plan = (): Readonly<ExecutionPlan> => createExecutionPlan({ id: "plan:1", revision: 1, sourceRunId: "run:1", boundState: binding("old"), boundary: ["src/**"], assumptions: ["closed consumers"], knownAffectedUnitIds: ["unit:a"], possibleFrontierUnitIds: [], unavailableSurfaceIds: [], packetIds: ["packet:a", "packet:b"], checkpoints: [], completionCriteria: completion });
+const packetHash = (id: string) => hashFramedDomain("execution-packet", id);
+const capsuleProof = (packetId: string, capsuleId: string, stateName: string, approvalIds: string[] = []) => {
+  const proof = { packetId, packetHash: packetHash(packetId), capsuleId, boundState: binding(stateName), approvalIds };
+  return { ...proof, capsuleHash: hashFramedDomain("rebase-capsule-proof", proof) };
+};
+const originalPacketHashes = [{ packetId: "packet:a", packetHash: packetHash("packet:a") }, { packetId: "packet:b", packetHash: packetHash("packet:b") }];
+const authenticateOriginalPacketHash = async (packetId: string, hash: string) => hash === packetHash(packetId);
+const oldCapsules = () => [
+  capsuleProof("packet:a", "capsule:a", "old", ["approval:a"]),
+  capsuleProof("packet:b", "capsule:b", "old", ["approval:b"]),
+];
 const completeRecompute = () => ({
   boundState: binding("new"), boundary: ["new/**"], packetIds: ["packet:c"], assumptions: ["new assumption"],
   relevanceClosureId: "closure:new", predictedImpactClosureHash: hashFramedDomain("test", "impact:new"),
   knownAffectedUnitIds: ["unit:new"], possibleFrontierUnitIds: ["unit:frontier"], unavailableSurfaceIds: ["surface:down"],
   checkpoints: [], completionCriteria: { ...completion, requiredArtifacts: ["artifact:new"] },
-  recompiledCapsules: [{ packetId: "packet:c", capsuleId: "capsule:c" }],
+  packetHashes: [{ packetId: "packet:c", packetHash: packetHash("packet:c") }],
+  recompiledCapsules: [capsuleProof("packet:c", "capsule:c", "new")],
 });
 
 describe("immutable plan revision rebind and semantic rebase", () => {
@@ -36,8 +48,8 @@ describe("immutable plan revision rebind and semantic rebase", () => {
     const result = await rebaseExecutionPlan({
       original, validation, completedPackets: ["packet:a", "packet:b"],
       isCompletedPacketCurrent: async (id) => id === "packet:a",
-      capsuleInventory: [{ packetId: "packet:a", capsuleId: "capsule:a" }, { packetId: "packet:b", capsuleId: "capsule:b" }],
-      recompile: async () => ({ ...completeRecompute(), packetIds: ["packet:a", "packet:c"], assumptions: ["recomputed consumers"], relevanceClosureId: "closure:2", predictedImpactClosureHash: hashFramedDomain("test", "impact:2"), recompiledCapsules: [{ packetId: "packet:a", capsuleId: "capsule:a2" }, { packetId: "packet:c", capsuleId: "capsule:c" }] }),
+      originalPacketHashes, authenticateOriginalPacketHash, capsuleInventory: oldCapsules(),
+      recompile: async () => ({ ...completeRecompute(), packetIds: ["packet:a", "packet:c"], packetHashes: [{ packetId: "packet:a", packetHash: packetHash("packet:a") }, { packetId: "packet:c", packetHash: packetHash("packet:c") }], assumptions: ["recomputed consumers"], relevanceClosureId: "closure:2", predictedImpactClosureHash: hashFramedDomain("test", "impact:2"), recompiledCapsules: [capsuleProof("packet:a", "capsule:a2", "new"), capsuleProof("packet:c", "capsule:c", "new")] }),
     });
     expect(result.kind).toBe("semantic-rebase");
     expect(result.carriedCompletedPacketIds).toEqual(["packet:a"]);
@@ -70,7 +82,7 @@ describe("immutable plan revision rebind and semantic rebase", () => {
       original: plan(),
       validation: { status: "suspect", currentState: digest("new"), changedValueDependencyIds: [], changedQueryDependencyIds: ["uncertain"], reasons: ["widen"] },
       completedPackets: [], isCompletedPacketCurrent: async () => true,
-      capsuleInventory: [{ packetId: "packet:a", capsuleId: "capsule:a" }, { packetId: "packet:b", capsuleId: "capsule:b" }],
+      originalPacketHashes, authenticateOriginalPacketHash, capsuleInventory: oldCapsules(),
       recompile: async () => completeRecompute(),
     });
     expect(result.kind).toBe("semantic-rebase");
@@ -86,7 +98,7 @@ describe("immutable plan revision rebind and semantic rebase", () => {
     await expect(rebaseExecutionPlan({
       original: plan(), validation: { status: "stale", currentState: digest("new"), changedValueDependencyIds: ["x"], changedQueryDependencyIds: [], reasons: [] },
       completedPackets: [], isCompletedPacketCurrent: async () => true,
-      capsuleInventory: [], recompile: async () => ({ ...completeRecompute(), boundState: binding("old") }),
+      originalPacketHashes, authenticateOriginalPacketHash, capsuleInventory: oldCapsules(), recompile: async () => ({ ...completeRecompute(), boundState: binding("old") }),
     })).rejects.toThrow(/current state/u);
   });
 
@@ -94,13 +106,13 @@ describe("immutable plan revision rebind and semantic rebase", () => {
     await expect(rebaseExecutionPlan({
       original: plan(), validation: { status: "stale", currentState: digest("new"), changedValueDependencyIds: ["x"], changedQueryDependencyIds: [], reasons: [] },
       completedPackets: [], isCompletedPacketCurrent: async () => true,
-      capsuleInventory: [],
+      originalPacketHashes, authenticateOriginalPacketHash, capsuleInventory: oldCapsules(),
       recompile: async () => ({ boundState: binding("new") }),
     })).rejects.toThrow(/complete semantic recomputation/u);
     const result = await rebaseExecutionPlan({
       original: plan(), validation: { status: "stale", currentState: digest("new"), changedValueDependencyIds: ["x"], changedQueryDependencyIds: [], reasons: [] },
       completedPackets: [], isCompletedPacketCurrent: async () => true,
-      capsuleInventory: [{ packetId: "packet:a", capsuleId: "capsule:a" }, { packetId: "packet:b", capsuleId: "capsule:b" }],
+      originalPacketHashes, authenticateOriginalPacketHash, capsuleInventory: oldCapsules(),
       recompile: async () => completeRecompute(),
     });
     expect(result.invalidatedPacketIds).toEqual(["packet:a", "packet:b"]);
@@ -111,7 +123,7 @@ describe("immutable plan revision rebind and semantic rebase", () => {
     const validation: StateBindingValidation = { status: "stale", currentState: digest("new"), changedValueDependencyIds: ["x"], changedQueryDependencyIds: [], reasons: [] };
     const result = await rebaseExecutionPlan({
       original: plan(), validation, completedPackets: [], isCompletedPacketCurrent: async () => true,
-      capsuleInventory: [{ packetId: "packet:a", capsuleId: "capsule:a" }, { packetId: "packet:b", capsuleId: "capsule:b" }],
+      originalPacketHashes, authenticateOriginalPacketHash, capsuleInventory: oldCapsules(),
       recompile: async () => completeRecompute(),
     });
     expect(result.plan).toMatchObject({
@@ -144,5 +156,49 @@ describe("immutable plan revision rebind and semantic rebase", () => {
     expect(first?.boundary).toEqual(["src/**"]);
     expect(() => (first!.boundary as string[]).push("reader/**")).toThrow();
     expect((await store.get(mutable.id))?.boundary).toEqual(["src/**"]);
+  });
+
+  it("cryptographically binds complete old and new capsule mappings to packets and state", async () => {
+    const validation: StateBindingValidation = { status: "stale", currentState: digest("new"), changedValueDependencyIds: ["x"], changedQueryDependencyIds: [], reasons: [] };
+    const valid = await rebaseExecutionPlan({
+      original: plan(), validation, completedPackets: [], isCompletedPacketCurrent: async () => true,
+      originalPacketHashes, authenticateOriginalPacketHash, capsuleInventory: oldCapsules(), recompile: async () => completeRecompute(),
+    });
+    expect(valid.invalidatedApprovalIds).toEqual(["approval:a", "approval:b"]);
+    expect(valid.oldCapsuleMapping).toHaveLength(2);
+    expect(valid.newCapsuleMapping).toHaveLength(1);
+
+    const adversaries = [
+      { originalPacketHashes, capsuleInventory: oldCapsules().slice(0, 1), recompile: async () => completeRecompute() },
+      { originalPacketHashes: [], capsuleInventory: oldCapsules(), recompile: async () => completeRecompute() },
+      { originalPacketHashes, capsuleInventory: [{ ...oldCapsules()[0]!, packetId: "packet:b" }, oldCapsules()[1]!], recompile: async () => completeRecompute() },
+      { originalPacketHashes, capsuleInventory: [{ ...oldCapsules()[0]!, capsuleId: "capsule:b" }, oldCapsules()[1]!], recompile: async () => completeRecompute() },
+      { originalPacketHashes, capsuleInventory: [{ ...oldCapsules()[0]!, boundState: binding("new") }, oldCapsules()[1]!], recompile: async () => completeRecompute() },
+      { originalPacketHashes, capsuleInventory: oldCapsules(), recompile: async () => ({ ...completeRecompute(), recompiledCapsules: [{ ...completeRecompute().recompiledCapsules[0]!, boundState: binding("old") }] }) },
+      { originalPacketHashes, capsuleInventory: oldCapsules(), recompile: async () => ({ ...completeRecompute(), recompiledCapsules: [{ ...completeRecompute().recompiledCapsules[0]!, packetHash: packetHash("lie") }] }) },
+    ];
+    for (const adversary of adversaries) {
+      await expect(rebaseExecutionPlan({ original: plan(), validation, completedPackets: [], isCompletedPacketCurrent: async () => true, authenticateOriginalPacketHash, ...adversary }))
+        .rejects.toThrow(/capsule|packet|state|inventory/u);
+    }
+    const falseHashes = originalPacketHashes.map(({ packetId }) => ({ packetId, packetHash: packetHash(`false:${packetId}`) }));
+    const falseCapsules = falseHashes.map(({ packetId, packetHash: falseHash }, index) => {
+      const proof = { packetId, packetHash: falseHash, capsuleId: `capsule:false:${index}`, boundState: binding("old"), approvalIds: [] };
+      return { ...proof, capsuleHash: hashFramedDomain("rebase-capsule-proof", proof) };
+    });
+    await expect(rebaseExecutionPlan({
+      original: plan(), validation, completedPackets: [], isCompletedPacketCurrent: async () => true, authenticateOriginalPacketHash,
+      originalPacketHashes: falseHashes, capsuleInventory: falseCapsules, recompile: async () => completeRecompute(),
+    })).rejects.toThrow(/authenticate|packet hash|proven/u);
+  });
+
+  it("accepts an explicit cryptographic proof that an original packet had no capsule and rejects an unproven claim", async () => {
+    const validation: StateBindingValidation = { status: "stale", currentState: digest("new"), changedValueDependencyIds: ["x"], changedQueryDependencyIds: [], reasons: [] };
+    const packet = { packetId: "packet:b", packetHash: packetHash("packet:b") };
+    const noCapsule = { ...packet, noCapsuleProof: hashFramedDomain("rebase-no-capsule-proof", packet) };
+    const input = { original: plan(), validation, completedPackets: [], isCompletedPacketCurrent: async () => true, originalPacketHashes, authenticateOriginalPacketHash, recompile: async () => completeRecompute() };
+    await expect(rebaseExecutionPlan({ ...input, capsuleInventory: [oldCapsules()[0]!, noCapsule] })).resolves.toMatchObject({ invalidatedCapsuleIds: ["capsule:a"] });
+    await expect(rebaseExecutionPlan({ ...input, capsuleInventory: [oldCapsules()[0]!, { ...noCapsule, noCapsuleProof: hashFramedDomain("test", "lie") }] }))
+      .rejects.toThrow(/no-capsule|proven/u);
   });
 });
