@@ -14,4 +14,12 @@ describe("engine public facade", () => {
     expect(engine.compileRelevanceClosure).toBeDefined();
     expect(engine.activateAnalysisFacets).toBeDefined();
   });
+
+  it("exports representation, governance policy, and plan revision APIs", () => {
+    expect(engine.RepresentationCompiler).toBeDefined();
+    expect(engine.UpgradeDeclarationSchema).toBeDefined();
+    expect(engine.compileLayeredIgnorePolicy).toBeDefined();
+    expect(engine.normalizeRiskPolicy).toBeDefined();
+    expect(engine.InMemoryPlanRevisionStore).toBeDefined();
+  });
 });
