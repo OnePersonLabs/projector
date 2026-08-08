@@ -199,6 +199,27 @@ describe("mandatory misplaced repository-script vertical slice", () => {
     expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
   });
 
+  it("rejects a durable journal whose snapshot bytes no longer match the certificate", async () => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const repaired = await executeProjector(["reconcile", "--format", "json"], { cwd: repository.root });
+    expect(repaired.exitCode, repaired.output).toBe(0);
+    const journalDirectory = join(repository.root, ".projector/runtime/journal");
+    const journalName = (await readdir(journalDirectory))[0];
+    if (journalName === undefined) throw new Error("expected committed journal");
+    const journalPath = join(journalDirectory, journalName);
+    const journal = JSON.parse(await readFile(journalPath, "utf8")) as {
+      operations: Array<{ changes: Array<{ before: { kind: string; contentBase64?: string; mode?: number } }> }>;
+    };
+    const firstChange = journal.operations[0]?.changes[0];
+    if (firstChange === undefined || firstChange.before.kind !== "file" || firstChange.before.mode === undefined) throw new Error("expected a journal snapshot");
+    firstChange.before.contentBase64 = Buffer.from("forged snapshot", "utf8").toString("base64");
+    await writeFile(journalPath, `${JSON.stringify(journal)}\n`, "utf8");
+    const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
+    const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
+    expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
+  });
+
   it("rejects receipt touched-unit and plan mismatches", async () => {
     const repository = await createTempGitRepository();
     repositories.push(repository);

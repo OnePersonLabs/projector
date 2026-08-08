@@ -90,6 +90,43 @@ export function mandatoryVerticalSliceEvidenceDigest(
   return hashFramedDomain("mandatory-vertical-slice-proof", { step, evidenceKind, artifactRefs, proof });
 }
 
+/**
+ * Facts captured by the orchestration run, independently of the report proof
+ * objects.  The verifier treats these facts as the correspondence boundary:
+ * a report may only claim values that were observed in this context.
+ */
+export interface MandatoryVerticalSliceExecutionContextInput {
+  readonly observations: Readonly<Record<MandatoryVerticalSliceEvidenceKind, Readonly<Record<string, unknown>>>>;
+  readonly artifactRefs: Readonly<Record<MandatoryVerticalSliceEvidenceKind, readonly string[]>>;
+  readonly artifacts: Readonly<Record<string, unknown>>;
+}
+
+export interface MandatoryVerticalSliceExecutionContext extends MandatoryVerticalSliceExecutionContextInput {
+  readonly contextDigest: ContentHash;
+}
+
+export function mandatoryVerticalSliceExecutionContextDigest(
+  context: MandatoryVerticalSliceExecutionContextInput,
+): ContentHash {
+  return hashFramedDomain("mandatory-vertical-slice-execution-context", {
+    observations: context.observations,
+    artifactRefs: context.artifactRefs,
+    artifacts: context.artifacts,
+  });
+}
+
+/** Build a detached, deeply immutable context from run observations. */
+export function createMandatoryVerticalSliceExecutionContext(
+  input: MandatoryVerticalSliceExecutionContextInput,
+): MandatoryVerticalSliceExecutionContext {
+  const detached = structuredClone(input);
+  const context = {
+    ...detached,
+    contextDigest: mandatoryVerticalSliceExecutionContextDigest(detached),
+  } as MandatoryVerticalSliceExecutionContext;
+  return deepFreeze(context);
+}
+
 export interface MandatoryVerticalSliceStepEvidence {
   readonly step: MandatoryVerticalSliceStep;
   readonly sequence: number;
@@ -99,7 +136,14 @@ export interface MandatoryVerticalSliceStepEvidence {
 
 export function assertMandatoryVerticalSliceEvidence(
   evidence: readonly MandatoryVerticalSliceStepEvidence[],
+  context: MandatoryVerticalSliceExecutionContext,
 ): void {
+  if (context === undefined || !isHash(context.contextDigest)) {
+    throw new Error("mandatory vertical slice requires an execution context");
+  }
+  if (context.contextDigest !== mandatoryVerticalSliceExecutionContextDigest(context)) {
+    throw new Error("mandatory vertical slice execution context digest does not match observations");
+  }
   if (evidence.length !== MANDATORY_VERTICAL_SLICE_STEPS.length) {
     throw new Error("mandatory vertical slice requires exactly 17 ordered steps");
   }
@@ -119,6 +163,19 @@ export function assertMandatoryVerticalSliceEvidence(
     }
     if (item.details.outputDigest !== mandatoryVerticalSliceEvidenceDigest(item.step, item.details.evidenceKind, item.details.artifactRefs, item.details.proof)) {
       throw new Error(`mandatory vertical slice step ${index + 1} output digest does not match proof`);
+    }
+    const observedProof = context.observations[item.details.evidenceKind];
+    const observedRefs = context.artifactRefs[item.details.evidenceKind];
+    if (observedProof === undefined || observedRefs === undefined
+      || canonicalComparable(observedRefs) !== canonicalComparable(item.details.artifactRefs)
+      || observedRefs.some((ref) => !Object.hasOwn(context.artifacts, ref))) {
+      throw new Error(`mandatory vertical slice step ${index + 1} is not linked to an observed execution artifact`);
+    }
+    for (const [key, value] of Object.entries(item.details.proof)) {
+      if (key === "artifactRefs") continue;
+      if (!Object.hasOwn(observedProof, key) || canonicalComparable(observedProof[key]) !== canonicalComparable(value)) {
+        throw new Error(`mandatory vertical slice step ${index + 1} proof field ${key} does not correspond to execution observations`);
+      }
     }
     for (const key of contract?.required ?? []) {
       if (!Object.hasOwn(item.details.proof, key)) {
@@ -211,6 +268,14 @@ function canonicalComparable(value: unknown): string {
     }
     return item;
   });
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 export interface ReconciliationIteration {
