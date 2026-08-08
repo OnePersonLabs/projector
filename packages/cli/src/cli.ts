@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
-import { createStateBinding } from "@projector/engine";
+import { compileSemanticChange, compileSemanticChangePlan, createStateBinding } from "@projector/engine";
+import { executePacketPlan, type PacketObservation, type PlanExecutionArtifact, type PacketExecutionArtifact } from "@projector/runtime";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -72,11 +73,11 @@ export interface ProjectorCommandOptions {
   readonly change?: ChangeCliPort;
 }
 
-export interface ChangeCliRequest { readonly repositoryRoot: string; readonly selector: string }
+export interface ChangeCliRequest { readonly repositoryRoot: string; readonly selector: string; readonly persist?: boolean }
 export interface ChangeCliPort {
-  readonly change: (request: { readonly repositoryRoot: string; readonly intent: string }) => Promise<Record<string, unknown>>;
+  readonly change: (request: { readonly repositoryRoot: string; readonly intent: string; readonly persist: boolean }) => Promise<Record<string, unknown>>;
   readonly plan: (request: ChangeCliRequest) => Promise<Record<string, unknown>>;
-  readonly resolvePlan: (request: ChangeCliRequest) => Promise<{ readonly risk: RiskClass; readonly planHash: string }>;
+  readonly resolvePlan: (request: ChangeCliRequest) => Promise<{ readonly risk: RiskClass; readonly planHash: string; readonly approvalHash: string; readonly capsuleHash: string }>;
   readonly apply: (request: ChangeCliRequest) => Promise<Record<string, unknown>>;
 }
 
@@ -323,7 +324,8 @@ export async function executeProjector(
     }
     case "change": {
       const port = options.change ?? defaultChangePort(repositoryRoot);
-      report = { policy, ...await port.change({ repositoryRoot, intent: parsed.selector! }) };
+      const persist = policy.preset !== "observe" && parsed.policy.dryRun !== true && parsed.policy.auditOnly !== true;
+      report = { policy, ...await port.change({ repositoryRoot, intent: parsed.selector!, persist }) };
       break;
     }
     case "plan": {
@@ -335,7 +337,7 @@ export async function executeProjector(
       }
       if (parsed.selector !== undefined) {
         const port = options.change ?? defaultChangePort(repositoryRoot);
-        report = { policy, ...await port.plan({ repositoryRoot, selector: parsed.selector }) };
+        report = { policy, ...await port.plan({ repositoryRoot, selector: parsed.selector, persist: policy.preset !== "observe" && parsed.policy.dryRun !== true }) };
         break;
       }
       const prepared = await prepareMandatorySlice(repositoryRoot);
@@ -351,21 +353,19 @@ export async function executeProjector(
       break;
     }
     case "apply": {
-      if (parsed.selector !== undefined && !policy.allowAutoMutation) {
-        report = { policy, dryRun: true, selector: parsed.selector };
+      if (parsed.selector !== undefined) {
+        const port = options.change ?? defaultChangePort(repositoryRoot);
+        const resolved = await port.resolvePlan({ repositoryRoot, selector: parsed.selector });
+        if (!policy.allowAutoMutation) { report = { policy, dryRun: true, selector: parsed.selector, immutablePlanHash: resolved.planHash, approvalHash: resolved.approvalHash, capsuleHash: resolved.capsuleHash }; break; }
+        assertOperationRiskAuthorized(policy, resolved.risk);
+        report = { policy, ...await port.apply({ repositoryRoot, selector: parsed.selector }) };
+        const reportedRisk = typeof report.risk === "string" ? report.risk : report.risk?.class;
+        if (report.immutablePlanHash !== resolved.planHash || report.approvalHash !== resolved.approvalHash || report.capsuleHash !== resolved.capsuleHash || reportedRisk !== resolved.risk) throw new Error("applied result does not match the resolved immutable plan/approval/capsule/risk tuple");
+        exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
         break;
       }
       if (!policy.allowAutoMutation || policy.maximumAutomaticRisk === "R0") {
         return { exitCode: 3, output: "R1 approval required.", report: { policy, approvalRequired: true } };
-      }
-      if (parsed.selector !== undefined) {
-        const port = options.change ?? defaultChangePort(repositoryRoot);
-        const resolved = await port.resolvePlan({ repositoryRoot, selector: parsed.selector });
-        assertOperationRiskAuthorized(policy, resolved.risk);
-        report = { policy, ...await port.apply({ repositoryRoot, selector: parsed.selector }) };
-        if (typeof report.risk === "string" && report.risk !== resolved.risk || typeof report.risk === "object" && report.risk?.class !== undefined && report.risk.class !== resolved.risk) throw new Error("applied result risk does not match the authorized immutable plan");
-        exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
-        break;
       }
       const prepared = await prepareMandatorySlice(repositoryRoot);
       assertOperationRiskAuthorized(policy, prepared.risk.class);
@@ -436,11 +436,11 @@ export async function executeProjector(
 
 function defaultChangePort(repositoryRoot: string): ChangeCliPort {
   type Prepared = Awaited<ReturnType<typeof prepareMandatorySlice>>;
-  type ChangeRecord = { readonly kind: "compatibility-change"; readonly intent: string; readonly boundState: Prepared["plan"]["boundState"]; readonly analysis: Prepared["analysis"] };
-  type PlanRecord = { readonly kind: "compatibility-plan"; readonly changeSelector: string; readonly prepared: Prepared; readonly planHash: string };
+  type ChangeRecord = { readonly kind: "semantic-change"; readonly intent: string; readonly boundState: Prepared["plan"]["boundState"]; readonly analysis: Prepared["analysis"]; readonly compiled: Awaited<ReturnType<typeof compileSemanticChange>> };
+  type PlanRecord = { readonly kind: "semantic-plan"; readonly changeSelector: string; readonly prepared: Prepared; readonly compiled: Awaited<ReturnType<typeof compileSemanticChangePlan>>; readonly planHash: string };
   const recordRoot = join(repositoryRoot, ".projector", "task16-selections");
   const suffix = (selector: string, prefix: "change" | "plan"): string => {
-    const match = new RegExp(`^${prefix}:compat:([a-f0-9]{64})$`, "u").exec(selector);
+    const match = new RegExp(`^${prefix}:semantic:([a-f0-9]{64})$`, "u").exec(selector);
     if (match?.[1] === undefined) throw new Error(`unsupported or unauthenticated ${prefix} selector: ${selector}`);
     return match[1];
   };
@@ -452,7 +452,7 @@ function defaultChangePort(repositoryRoot: string): ChangeCliPort {
     catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || await readFile(path, "utf8") !== bytes) throw error;
     }
-    return `${prefix}:compat:${id}`;
+    return `${prefix}:semantic:${id}`;
   };
   const load = async <T extends ChangeRecord | PlanRecord>(prefix: "change" | "plan", selector: string): Promise<T> => {
     const id = suffix(selector, prefix); const path = join(recordRoot, `${prefix}-${id}.json`);
@@ -467,25 +467,41 @@ function defaultChangePort(repositoryRoot: string): ChangeCliPort {
     return current;
   };
   return {
-    change: async ({ intent }) => {
+    change: async ({ intent, persist: shouldPersist }) => {
       if (intent !== "repair-governed-state") throw new Error(`unsupported deterministic local change intent: ${intent}`);
       const prepared = await prepareMandatorySlice(repositoryRoot);
-      const record: ChangeRecord = { kind: "compatibility-change", intent, boundState: prepared.plan.boundState, analysis: prepared.analysis };
-      return { kind: "change", selector: await persist("change", record), intent, deterministic: true, compatibility: true, analysis: record.analysis, boundState: record.boundState, risk: "R1" };
+      const intentBase = { id: "intent:mandatory-repository-script", request: intent, normalizedIntent: "repair governed repository automation placement", statements: [{ kind: "behavior" as const, statement: "repair governed repository automation placement", origin: [], confidence: 1 }], ambiguity: [], assumptions: [] };
+      const intentAnalysis = { ...intentBase, contentHash: hashFramedDomain("change-intent-analysis", intentBase) };
+      const factsValue = { intentAnalysis, identityResolutionIds: ["identity:mandatory-repository-script"], relevanceClosureId: prepared.capsule.relevanceClosureId, analysisFacetKeys: ["cleanup"], operations: [{ provenance: "authenticated" as const, operation: { subjectType: "other" as const, subjectKey: "mandatory-repository-script", kind: "modify" as const, payload: { transformId: "move-reference-update" } } }], relations: [], assumptions: [...prepared.plan.assumptions], boundary: [...prepared.plan.boundary], boundState: prepared.binding };
+      const factsHash = hashFramedDomain("authenticated-change-compiler-facts", factsValue);
+      const compiled = await compileSemanticChange({ request: intent, currentState: prepared.state, context: { repositoryRoot, stateDigest: prepared.state, config: {}, signal: new AbortController().signal } }, { facts: { load: async () => ({ value: factsValue, contentHash: factsHash }) }, bindingValidator: { validate: async () => ({ status: "current", currentState: prepared.state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) }, authority: { verify: async ({ subjectHash }) => subjectHash === factsHash }, architecture: { preflight: async () => { const value = { allowed: true, decisionIds: [] as string[] }; return { ...value, contentHash: hashFramedDomain("change-architecture-preflight", value) }; } }, impact: { compile: async () => { const value = { knownAffectedUnitIds: prepared.plan.knownAffectedUnitIds, possibleFrontierUnitIds: prepared.plan.possibleFrontierUnitIds, unavailableSurfaceIds: prepared.plan.unavailableSurfaceIds, reasons: prepared.plan.knownAffectedUnitIds.map((unitId) => ({ unitId, kind: "exact" as const, reason: "mandatory analyzer closure" })), queryDependencyIds: prepared.binding.queryDependencies.map(({ query }) => query.id) }; return { value, contentHash: hashFramedDomain("authenticated-impact-closure", value) }; } }, risk: { assess: async () => ({ value: prepared.risk, contentHash: hashFramedDomain("authenticated-change-risk", prepared.risk) }) } });
+      const record: ChangeRecord = { kind: "semantic-change", intent, boundState: prepared.plan.boundState, analysis: prepared.analysis, compiled };
+      const selector = shouldPersist ? await persist("change", record) : `change:semantic:${hashFramedDomain("cli-immutable-change-selection", record).slice("sha256:v1:".length)}`;
+      return { kind: "change", selector, intent, deterministic: true, pipeline: "semantic-compiler", persisted: shouldPersist, analysis: record.analysis, boundState: record.boundState, semanticChange: compiled.change, risk: "R1" };
     },
-    plan: async ({ selector }) => {
+    plan: async (request) => {
+      const { selector } = request;
       const change = await load<ChangeRecord>("change", selector); const prepared = await assertCurrent(change.boundState);
-      const planHash = hashFramedDomain("cli-immutable-compatibility-plan", { plan: prepared.plan, capsule: prepared.capsule, approval: prepared.approval, risk: prepared.risk });
-      const record: PlanRecord = { kind: "compatibility-plan", changeSelector: selector, prepared, planHash };
-      return { kind: "plan", selector: await persist("plan", record), changeSelector: selector, immutablePlanHash: planHash, compatibility: true, ...prepared };
+      const planningValue = { change: change.compiled.change, boundState: change.compiled.boundState, compilerFactsHash: change.compiled.compilerFactsHash };
+      const compiled = await compileSemanticChangePlan({ changeId: change.compiled.change.id, revision: 1, sourceRunId: "run:mandatory-repository-script" }, { changes: { read: async () => ({ value: planningValue, contentHash: hashFramedDomain("authenticated-change-planning-input", planningValue) }) }, packets: { compile: async () => { const value = { proposals: [{ key: "mandatory-repository-script", title: "Repair governed repository automation", stage: "cleanup" as const, executionMode: "deterministic" as const, transformId: "move-reference-update", unitIds: prepared.plan.knownAffectedUnitIds, semanticOwnerIds: ["mandatory-repository-script"], writeSelectors: prepared.plan.boundary, dependencies: [], validatorIds: prepared.plan.completionCriteria.requiredValidators }], completionContract: prepared.plan.completionCriteria }; return { value, contentHash: hashFramedDomain("authenticated-change-packet-proposals", value) }; } } });
+      const planHash = hashFramedDomain("semantic-change-execution-plan", compiled.plan);
+      const record: PlanRecord = { kind: "semantic-plan", changeSelector: selector, prepared, compiled, planHash };
+      const planSelector = request.persist === false ? `plan:semantic:${hashFramedDomain("cli-immutable-plan-selection", record).slice("sha256:v1:".length)}` : await persist("plan", record);
+      return { kind: "plan", selector: planSelector, changeSelector: selector, immutablePlanHash: planHash, pipeline: "packet-planner", persisted: request.persist !== false, ...prepared, plan: compiled.plan, capsule: compiled.packets[0]!.capsule };
     },
-    resolvePlan: async ({ selector }) => { const record = await load<PlanRecord>("plan", selector); return { risk: record.prepared.risk.class, planHash: record.planHash }; },
+    resolvePlan: async ({ selector }) => { const record = await load<PlanRecord>("plan", selector); await assertCurrent(record.compiled.plan.boundState); const capsule = record.compiled.packets[0]!.capsule; const approval = { planHash: record.planHash, approvedRiskClass: record.prepared.risk.class, authorityProofHash: hashFramedDomain("cli-task16-authority", record.planHash) }; return { risk: record.prepared.risk.class, planHash: record.planHash, approvalHash: hashFramedDomain("cli-selection-approval", approval), capsuleHash: hashFramedDomain("cli-selection-capsule", capsule) }; },
     apply: async ({ selector }) => {
       const record = await load<PlanRecord>("plan", selector);
-      await assertCurrent(record.prepared.plan.boundState);
-      if (record.planHash !== hashFramedDomain("cli-immutable-compatibility-plan", { plan: record.prepared.plan, capsule: record.prepared.capsule, approval: record.prepared.approval, risk: record.prepared.risk })) throw new Error("immutable plan approval tuple is corrupt");
-      const result = await applyMandatorySlice(repositoryRoot, record.prepared);
-      return { kind: "apply", selector, immutablePlanHash: record.planHash, compatibility: true, risk: record.prepared.risk, plan: record.prepared.plan, capsule: record.prepared.capsule, preview: record.prepared.preview, ...result };
+      await assertCurrent(record.compiled.plan.boundState);
+      if (record.planHash !== hashFramedDomain("semantic-change-execution-plan", record.compiled.plan)) throw new Error("immutable plan approval tuple is corrupt");
+      const capsule = record.compiled.packets[0]!.capsule; const approval = { planHash: record.planHash, approvedRiskClass: record.prepared.risk.class, authorityProofHash: hashFramedDomain("cli-task16-authority", record.planHash) };
+      const envelopeValue = { plan: record.compiled.plan, packets: record.compiled.packets, executionOrder: record.compiled.executionOrder.map(({ packet }) => packet.id), approval };
+      let applied: Awaited<ReturnType<typeof applyMandatorySlice>> | undefined;
+      const beforeState = record.compiled.plan.boundState.compiledAgainst; const afterState = { ...beforeState, worktreeDigest: hashFramedDomain("cli-task16-applied-state", record.planHash) };
+      const observed = (phase: "before" | "after"): PacketObservation => ({ state: phase === "before" ? beforeState : afterState, pathContentHashes: phase === "before" ? { ".codex/hooks/validate-repo.mjs": hashFramedDomain("cli-path", "source"), ".codex/hooks/validate-repo.test.mjs": hashFramedDomain("cli-path", "test"), "package.json": hashFramedDomain("cli-path", "manifest-before") } : { "scripts/validate-repo.mjs": hashFramedDomain("cli-path", "source"), "scripts/validate-repo.test.mjs": hashFramedDomain("cli-path", "test"), "package.json": hashFramedDomain("cli-path", "manifest-after") }, renames: phase === "after" ? [{ from: ".codex/hooks/validate-repo.mjs", to: "scripts/validate-repo.mjs" }, { from: ".codex/hooks/validate-repo.test.mjs", to: "scripts/validate-repo.test.mjs" }] : [], deletedPaths: phase === "after" ? [".codex/hooks/validate-repo.mjs", ".codex/hooks/validate-repo.test.mjs"] : [], unitStates: Object.fromEntries(record.compiled.plan.knownAffectedUnitIds.map((id) => [id, "valid"])), canonicalEntityHashes: {}, externalStateHashes: {}, generatedArtifactHashes: {}, cleanWorkingTree: false, unknownCount: 0, divergenceCount: 0 });
+      const coordinator = await executePacketPlan({ value: envelopeValue, contentHash: hashFramedDomain("authenticated-packet-execution", envelopeValue) }, { lease: { acquire: async () => ({ assertOwned: async () => {}, release: async () => {} }) }, authority: { verify: async ({ subjectHash }) => subjectHash === record.planHash }, currentness: { validate: async () => ({ currentState: beforeState, valid: true, proofHash: hashFramedDomain("cli-task16-currentness", beforeState) }) }, transaction: { begin: async () => ({ apply: async () => {}, commit: async () => {}, rollback: async () => {} }) }, effect: { run: async () => { applied = await applyMandatorySlice(repositoryRoot, record.prepared); return { claimedChangedPaths: [], outputHash: hashFramedDomain("cli-task16-effect", applied.certificateHash), authorSource: "mandatory-transform" }; } }, observe: { capture: async ({ phase }) => { const value = observed(phase); return { value, contentHash: hashFramedDomain("authenticated-packet-observation", value) }; } }, validate: { run: async ({ packet, postState }) => packet.validatorIds.map((validatorId, index) => { const postStateHash = hashFramedDomain("packet-post-state", postState); const provenance = { validatorId, validatorVersion: "1", authorSource: "task16-validator-registry", independenceGroup: `validator:${validatorId}`, evidenceLane: index === 0 ? "runtime" : "test", assurance: "strong" as const }; const provenanceHash = hashFramedDomain("packet-validator-provenance", provenance); return { ...provenance, provenanceHash, postStateHash, invocationHash: hashFramedDomain("packet-validator-invocation", { packetId: packet.id, validatorId, validatorVersion: "1", postStateHash, provenanceHash }), status: "passed" as const }; }) }, validatorTrust: { verify: async ({ proof }) => ({ trusted: true, authorSource: proof.authorSource, independenceGroup: proof.independenceGroup }) }, reconciliation: { run: async ({ plan, observedImpact, finalState }) => { const value = { planId: plan.id, observedImpact, finalState, converged: true, iterations: 1 }; return { converged: true, iterations: 1, contentHash: hashFramedDomain("authenticated-plan-reconciliation", value) }; } }, artifacts: { put: async (artifact: PacketExecutionArtifact | PlanExecutionArtifact) => { const contentHash = hashFramedDomain("packet-execution-artifact", artifact); await mkdir(join(recordRoot, "artifacts"), { recursive: true }); const path = join(recordRoot, "artifacts", `${contentHash.slice("sha256:v1:".length)}.json`); const bytes = `${canonicalJson(artifact)}\n`; try { await writeFile(path, bytes, { encoding: "utf8", flag: "wx" }); } catch (error) { if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || await readFile(path, "utf8") !== bytes) throw error; } return { contentHash, replayed: false }; } } });
+      if (applied === undefined) throw new Error("semantic packet coordinator did not invoke the mandatory transform");
+      return { kind: "apply", selector, immutablePlanHash: record.planHash, approvalHash: hashFramedDomain("cli-selection-approval", approval), capsuleHash: hashFramedDomain("cli-selection-capsule", capsule), pipeline: "packet-coordinator", risk: record.prepared.risk, plan: record.compiled.plan, capsule, preview: record.prepared.preview, coordinator, ...applied };
     },
   };
 }
