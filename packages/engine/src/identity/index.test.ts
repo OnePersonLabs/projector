@@ -308,6 +308,49 @@ describe("semantic identity resolution", () => {
     expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(malformedFact).success).toBe(false);
   });
 
+  it("rejects a fully rehashed create-new resolution whose evidence set is not canonically ordered", async () => {
+    const input = {
+      ...base,
+      assessment: "distinct" as const,
+      records: [],
+      boundState: emptyBinding,
+      evidence: [
+        { evidenceId: "context", stance: "context" },
+        { evidenceId: "request", stance: "supports" as const },
+      ] as const,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    };
+    const requestEvidence = evidenceDocument({
+      ...authorityEvidence,
+      id: "request",
+      normativeAuthority: "supporting",
+      claims: outcomeClaims("distinct", input),
+    });
+    const authentic = await resolveSemanticIdentityFromEvidence(
+      input,
+      { loadEvidence: async () => requestEvidence },
+    );
+    const reordered = structuredClone(authentic);
+    reordered.evidence.reverse();
+    const rehashed = rehashResolution(reordered);
+
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(rehashed).success).toBe(false);
+    await expect(assertCanonicalCreationAllowed(
+      { resolutionId: rehashed.id, authorityRecordId: authority.id },
+      trustedRepository(rehashed),
+    )).rejects.toThrow(/canonical|evidence|order|unique/i);
+  });
+
+  it("rejects rehashed adjudication claim and fact sets whose canonical order was changed", async () => {
+    const authentic = await resolveTrusted({ ...base, assessment: "delete", proposedTargetIds: [] });
+    const reordered = structuredClone(authentic);
+    reordered.adjudication!.claims.reverse();
+    reordered.adjudication!.factPayloads.reverse();
+    const rehashed = rehashResolution(reordered);
+
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(rehashed).success).toBe(false);
+  });
+
   it("rejects a fully rehashed create-new resolution carrying a same fact and split lineage", async () => {
     const authentic = await resolveTrusted({
       ...base, assessment: "distinct", records: [], boundState: emptyBinding,
@@ -772,6 +815,48 @@ describe("semantic identity resolution", () => {
     expect(resolution.adjudication?.sourceIds).toEqual(["cap-midi-discovery"]);
   });
 
+  it("follows a weak historical root directly to its eligible active replacement", async () => {
+    const weakHistoricalRoot = record("old-midi-discovery", "superseded", ["cap-midi-discovery"]);
+    weakHistoricalRoot.candidate = candidate("old-midi-discovery", 0.1);
+    const input = {
+      ...base,
+      assessment: "same" as const,
+      records: [weakHistoricalRoot, record("cap-midi-discovery")],
+    };
+
+    const resolution = await resolveTrustedWithClaims(
+      input,
+      outcomeClaims("same", { ...input, records: [record("cap-midi-discovery")] }),
+    );
+
+    expect(resolution.outcome).toBe("reuse-existing");
+    expect(resolution.selectedEntityIds).toEqual(["cap-midi-discovery"]);
+    expect(resolution.adjudication?.sourceIds).toEqual(["cap-midi-discovery"]);
+  });
+
+  it("follows a weak historical root through eligible intermediates to the terminal identity", async () => {
+    const weakHistoricalRoot = record("old-midi-discovery", "superseded", ["deleted"]);
+    weakHistoricalRoot.candidate = candidate("old-midi-discovery", 0.1);
+    const input = {
+      ...base,
+      assessment: "same" as const,
+      records: [
+        weakHistoricalRoot,
+        record("deleted", "superseded", ["cap-midi-discovery"]),
+        record("cap-midi-discovery"),
+      ],
+    };
+
+    const resolution = await resolveTrustedWithClaims(
+      input,
+      outcomeClaims("same", { ...input, records: [record("cap-midi-discovery")] }),
+    );
+
+    expect(resolution.outcome).toBe("reuse-existing");
+    expect(resolution.selectedEntityIds).toEqual(["cap-midi-discovery"]);
+    expect(resolution.adjudication?.sourceIds).toEqual(["cap-midi-discovery"]);
+  });
+
   it("rejects a supersession edge whose replacement record is missing", async () => {
     const input = {
       ...base,
@@ -1065,6 +1150,64 @@ describe("semantic identity resolution", () => {
       const first = await resolveTrusted({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records, proposedTargetIds: ["merged"], incidental: { path: "old/place.ts" } });
       const second = await resolveTrusted({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records: [...records].reverse(), proposedTargetIds: ["merged"], incidental: { path: "new/place.ts" } });
       expect(first).toEqual(second);
+    }));
+  });
+
+  it("keeps stable resolution identity under order and duplicate variation in semantic sets", async () => {
+    await fc.assert(fc.asyncProperty(fc.shuffledSubarray([0, 1, 2], { minLength: 3, maxLength: 3 }), async (order) => {
+      const evidence = [
+        { evidenceId: "request", stance: "supports" as const },
+        { evidenceId: "context", stance: "context" as const },
+        { evidenceId: "request", stance: "supports" as const },
+      ];
+      const candidateEvidence = [
+        { evidenceId: "candidate-a", stance: "supports" as const },
+        { evidenceId: "candidate-context", stance: "context" as const },
+        { evidenceId: "candidate-a", stance: "supports" as const },
+      ];
+      const candidateRecord = record("a");
+      candidateRecord.candidate = { ...candidateRecord.candidate, evidence: order.map((index) => candidateEvidence[index]!) };
+      const input = {
+        ...base,
+        assessment: "same" as const,
+        records: [candidateRecord],
+        evidence: order.map((index) => evidence[index]!),
+        unknowns: order.map((index) => ["unknown-a", "unknown-b", "unknown-a"][index]!),
+      };
+      const claims = outcomeClaims("same", input);
+      const variedEvidence = evidenceDocument({
+        ...authorityEvidence,
+        id: "request",
+        normativeAuthority: "supporting",
+        claims,
+      });
+      const varied = await resolveSemanticIdentityFromEvidence(input, { loadEvidence: async () => variedEvidence });
+
+      const canonicalRecord = record("a");
+      canonicalRecord.candidate = {
+        ...canonicalRecord.candidate,
+        evidence: [
+          { evidenceId: "candidate-a", stance: "supports" },
+          { evidenceId: "candidate-context", stance: "context" },
+        ],
+      };
+      const canonicalInput = {
+        ...input,
+        records: [canonicalRecord],
+        evidence: [
+          { evidenceId: "context", stance: "context" as const },
+          { evidenceId: "request", stance: "supports" as const },
+        ],
+        unknowns: ["unknown-a", "unknown-b"],
+      };
+      const canonicalEvidence = evidenceDocument({
+        ...authorityEvidence,
+        id: "request",
+        normativeAuthority: "supporting",
+        claims: outcomeClaims("same", canonicalInput),
+      });
+      const canonical = await resolveSemanticIdentityFromEvidence(canonicalInput, { loadEvidence: async () => canonicalEvidence });
+      expect(varied).toEqual(canonical);
     }));
   });
 });

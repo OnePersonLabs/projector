@@ -43,6 +43,17 @@ const RequestedKindSchema = z.enum(["concept", "requirement", "scenario", "unkno
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
 
+function canonicalJsonSet<T>(values: readonly T[]): T[] {
+  const byCanonicalValue = new Map(values.map((value) => [canonicalJson(value), value]));
+  return [...byCanonicalValue.entries()]
+    .sort(([left], [right]) => compareStrings(left, right))
+    .map(([, value]) => structuredClone(value));
+}
+
+function isCanonicalJsonSet(values: readonly unknown[]): boolean {
+  return canonicalJson(values) === canonicalJson(canonicalJsonSet(values));
+}
+
 function normalizedTerm(value: string): string {
   return value.normalize("NFKC").trim();
 }
@@ -158,6 +169,9 @@ export const IdentityCandidateRecordSchema = z.strictObject({
   if ((record.lifecycle === "active" || record.lifecycle === "deprecated") && record.replacementIds.length > 0) {
     context.addIssue({ code: "custom", message: `${record.lifecycle} candidate records cannot declare replacement continuity` });
   }
+  if (!isCanonicalJsonSet(candidate.evidence)) {
+    context.addIssue({ code: "custom", message: "candidate evidence references must be canonically ordered and unique", path: ["candidate", "evidence"] });
+  }
 });
 
 export const IdentityAdjudicationSchema = z.strictObject({
@@ -185,6 +199,15 @@ export const IdentityAdjudicationSchema = z.strictObject({
     if (canonicalJson(values) !== canonicalJson(sortedUnique(values))) {
       context.addIssue({ code: "custom", message: `adjudication ${label} must be normalized, sorted, and unique` });
     }
+  }
+  if (!isCanonicalJsonSet(adjudication.claims)) {
+    context.addIssue({ code: "custom", message: "adjudication claims must be canonically ordered and unique", path: ["claims"] });
+  }
+  if (!isCanonicalJsonSet(adjudication.lineageProposals)) {
+    context.addIssue({ code: "custom", message: "adjudication lineage proposals must be canonically ordered and unique", path: ["lineageProposals"] });
+  }
+  if (!isCanonicalJsonSet(adjudication.tombstoneProposals)) {
+    context.addIssue({ code: "custom", message: "adjudication tombstone proposals must be canonically ordered and unique", path: ["tombstoneProposals"] });
   }
   reportAdjudicationSemanticIssues(adjudication as unknown as IdentityAdjudication, (message, path) => context.addIssue({ code: "custom", message, path }));
 });
@@ -214,6 +237,18 @@ export const AdjudicatedSemanticIdentityResolutionSchema = z.strictObject({
   if (canonicalJson(resolution.selectedEntityIds) !== canonicalJson(sortedUnique(resolution.selectedEntityIds))
     || canonicalJson(resolution.proposedTargetIds) !== canonicalJson(sortedUnique(resolution.proposedTargetIds))) {
     context.addIssue({ code: "custom", message: "resolution operation targets must be normalized, sorted, and unique" });
+  }
+  if (!isCanonicalJsonSet(resolution.evidence)) {
+    context.addIssue({ code: "custom", message: "resolution evidence references must be canonically ordered and unique", path: ["evidence"] });
+  }
+  if (canonicalJson(resolution.unknowns) !== canonicalJson(sortedUnique(resolution.unknowns))) {
+    context.addIssue({ code: "custom", message: "resolution unknowns must be sorted and unique", path: ["unknowns"] });
+  }
+  if (!isCanonicalJsonSet(resolution.lineageProposals)) {
+    context.addIssue({ code: "custom", message: "resolution lineage proposals must be canonically ordered and unique", path: ["lineageProposals"] });
+  }
+  if (!isCanonicalJsonSet(resolution.tombstoneProposals)) {
+    context.addIssue({ code: "custom", message: "resolution tombstone proposals must be canonically ordered and unique", path: ["tombstoneProposals"] });
   }
   if (resolution.adjudication !== undefined) {
     if (resolution.operation !== resolution.adjudication.operation
@@ -635,7 +670,7 @@ const verifiedOutcomeEvidence = new WeakSet<object>();
 function normalizeCandidate(candidate: SemanticIdentityCandidate): SemanticIdentityCandidate {
   return {
     ...structuredClone(candidate),
-    evidence: [...candidate.evidence].sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right))),
+    evidence: canonicalJsonSet(candidate.evidence),
   };
 }
 
@@ -847,15 +882,16 @@ function candidateAnalysis(
       lifecycleIssues.add(`identity lifecycle replacement cycle detected: ${[...path, id].join(" -> ")}`);
       return;
     }
-    if (!supportsRequestedIdentity(record, requestedKind)) {
+    const isTerminal = record.lifecycle === "active" || record.lifecycle === "deprecated";
+    if ((reachedByReplacement || isTerminal) && !supportsRequestedIdentity(record, requestedKind)) {
       lifecycleIssues.add(`identity lifecycle replacement ${id} is not eligible for the requested kind and meaning`);
       return;
     }
-    if ((semanticDependencyCounts.get(id) ?? 0) !== 1) {
+    if ((reachedByReplacement || isTerminal) && (semanticDependencyCounts.get(id) ?? 0) !== 1) {
       lifecycleIssues.add(`identity lifecycle replacement ${id} requires exactly one bound semantic candidate value`);
       return;
     }
-    if (record.lifecycle === "active" || record.lifecycle === "deprecated") {
+    if (isTerminal) {
       endpointIds.add(id);
       return;
     }
@@ -1031,7 +1067,7 @@ function resolvePreparedSemanticIdentity(
   if (input.durableEntity) validateCandidateValueDependencies(input.boundState, records);
   const candidates = records.map(({ candidate }) => candidate);
   const resolved = decision(input, records, analysis);
-  const evidence = [...input.evidence].sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
+  const evidence = canonicalJsonSet(input.evidence);
   const candidateScores = candidates.map(({ similarity, ownershipFit, boundaryFit }) => Math.min(similarity, ownershipFit, boundaryFit));
   const confidence = resolved.outcome === "no-durable-entity" ? 1
     : resolved.outcome === "unresolved" ? Math.min(0.49, ...candidates.map(({ similarity, ownershipFit, boundaryFit }) => Math.min(similarity, ownershipFit, boundaryFit)), 0.49)
@@ -1114,9 +1150,9 @@ function resolvePreparedSemanticIdentity(
     operation: input.assessment,
     sourceIds,
     proposedTargetIds,
-    factPayloads: [...(input.outcomeEvidence.verifiedClaims ?? [])].map(({ object }) => structuredClone(object)),
+    factPayloads: canonicalJsonSet(input.outcomeEvidence.verifiedClaims ?? []).map(({ object }) => structuredClone(object)),
     evidenceIds: sortedUnique(input.outcomeEvidence.evidenceIds),
-    claims: [...(input.outcomeEvidence.verifiedClaims ?? [])].map((claim) => structuredClone(claim)),
+    claims: canonicalJsonSet(input.outcomeEvidence.verifiedClaims ?? []),
     claimHashes: sortedUnique((input.outcomeEvidence.verifiedClaims ?? []).map((claim) => hashFramedDomain("identity-adjudication-claim-ref", claim))) as ContentHash[],
     lineageProposals: structuredClone(lineageProposals),
     tombstoneProposals: structuredClone(tombstoneProposals),
