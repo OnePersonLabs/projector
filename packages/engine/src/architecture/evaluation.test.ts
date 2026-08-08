@@ -1,13 +1,15 @@
-import type {
-  ArchitectureConcern,
-  ArchitectureDecision,
-  ContentHash,
-  DecisionOption,
-  DeveloperPreference,
-  RelevanceClosure,
-  SelectorExpr,
-  StateBindingValidation,
-  StateQueryDependency,
+import {
+  hashFramedDomain,
+  type AdapterContext,
+  type ArchitectureConcern,
+  type ArchitectureDecision,
+  type ContentHash,
+  type DecisionOption,
+  type DeveloperPreference,
+  type RelevanceClosure,
+  type SelectorExpr,
+  type StateBindingValidation,
+  type StateQueryDependency,
 } from "@projector/core";
 import { describe, expect, it, vi } from "vitest";
 
@@ -45,22 +47,31 @@ const option = (key: string, hardConstraintStatus: DecisionOption["hardConstrain
   key, title: key, description: key, hardConstraintStatus, tradeoffs: [], evidence: [], preferenceFit: [],
 });
 const preference = (id: string, key: string, preferenceScope: DeveloperPreference["scope"], strength: DeveloperPreference["strength"]): DeveloperPreference => ({
-  id, key, scope: preferenceScope, selector: scope("desktop"), strength, statement: key, status: "active", sourceClass: "authored", semanticHash: hash(id),
+  id, key, scope: preferenceScope, selector: scope("desktop"), strength, statement: key, status: "active", sourceClass: "authored",
+  semanticHash: hashFramedDomain("developer-preference", { id, key, scope: preferenceScope, selector: scope("desktop"), strength, statement: key, status: "active", sourceClass: "authored" }),
+});
+const adapterContext: AdapterContext = { repositoryRoot: "/repo", stateDigest: closure.boundState.compiledAgainst, config: {}, signal: new AbortController().signal };
+const evaluationPorts = (preferences: readonly DeveloperPreference[] = [], matches: Readonly<Record<string, readonly string[]>> = {}, research?: { verifyOptionSet: ReturnType<typeof vi.fn> }) => ({
+  ...(research === undefined ? {} : { research }),
+  preferences: { read: async (id: string) => preferences.find((item) => item.id === id), match: async ({ preference: item }: { preference: DeveloperPreference }) => matches[item.id] ?? [] },
+  authority: { read: async () => undefined },
 });
 
 describe("scoped decision proof and StateBinding", () => {
-  it("binds applicability and negative-space queries and never treats open empty results as absence", () => {
+  it("binds applicability and negative-space queries and never treats open empty results as absence", async () => {
     const binding = captureDecisionStateBinding({ closure, applicabilityQueries: [query("applicable", "closed", 1)], negativeSpaceQueries: [query("negative", "open", 0)] });
     expect(binding.queryDependencies.map(({ query: dependency }) => dependency.id)).toEqual(["applicable", "negative"]);
 
     const validation: StateBindingValidation = { status: "suspect", currentState: closure.boundState.compiledAgainst, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: ["open empty result"] };
-    expect(assessDecisionValidity({ decision, currentScope: scope("web"), applicable: true, bindingValidation: validation, firedTriggers: [], invalidatedAssumptions: [], staleEvidenceIds: [], governedPopulationCount: 1 })).toMatchObject({ state: "suspect", blocksCurrentChange: true });
+    await expect(assessDecisionValidity({ decision, currentScope: scope("web"), binding, currentState: closure.boundState.compiledAgainst, context: adapterContext, firedTriggers: [], invalidatedAssumptions: [], staleEvidenceIds: [] }, { bindingValidator: { validate: async () => validation }, applicability: { evaluate: async () => ({ applicable: false, governedPopulationCount: 0, dependency: query("negative", "open", 0) }) } })).resolves.toMatchObject({ state: "suspect", blocksCurrentChange: true });
   });
 
-  it("keeps disjoint decisions valid and treats lost proof as suspect rather than migration", () => {
+  it("keeps disjoint decisions valid and treats lost proof as suspect rather than migration", async () => {
     const current: StateBindingValidation = { status: "current", currentState: closure.boundState.compiledAgainst, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] };
-    expect(assessDecisionValidity({ decision, currentScope: scope("desktop"), applicable: false, bindingValidation: current, firedTriggers: [], invalidatedAssumptions: [], staleEvidenceIds: [], governedPopulationCount: 1 })).toMatchObject({ state: "valid", blocksCurrentChange: false });
-    const suspect = assessDecisionValidity({ decision, currentScope: scope("web"), applicable: true, bindingValidation: { ...current, status: "stale" }, firedTriggers: [{ type: "evidence-refresh-required", policyKey: "platform" }], invalidatedAssumptions: [], staleEvidenceIds: ["evidence:platform"], governedPopulationCount: 1 });
+    const dependency = query("disjoint", "closed", 0);
+    const binding = captureDecisionStateBinding({ closure, applicabilityQueries: [dependency], negativeSpaceQueries: [] });
+    await expect(assessDecisionValidity({ decision, currentScope: scope("desktop"), binding, currentState: closure.boundState.compiledAgainst, context: adapterContext, firedTriggers: [], invalidatedAssumptions: [], staleEvidenceIds: [] }, { bindingValidator: { validate: async () => current }, applicability: { evaluate: async () => ({ applicable: false, governedPopulationCount: 0, dependency }) } })).resolves.toMatchObject({ state: "valid", blocksCurrentChange: false });
+    const suspect = await assessDecisionValidity({ decision, currentScope: scope("web"), binding, currentState: closure.boundState.compiledAgainst, context: adapterContext, firedTriggers: [{ type: "evidence-refresh-required", policyKey: "platform" }], invalidatedAssumptions: [], staleEvidenceIds: ["evidence:platform"] }, { bindingValidator: { validate: async () => ({ ...current, status: "stale" }) }, applicability: { evaluate: async () => ({ applicable: false, governedPopulationCount: 0, dependency }) } });
     expect(suspect.state).toBe("suspect");
     expect(suspect.explanation).not.toMatch(/migration required/iu);
   });
@@ -69,13 +80,13 @@ describe("scoped decision proof and StateBinding", () => {
 describe("research, options, preferences, and deferral", () => {
   it("verifies only the affected option set through the port and blocks unavailable automatic acceptance", async () => {
     const verifyOptionSet = vi.fn().mockResolvedValue({ options: [option("retain")], evidenceIds: [], unavailable: true, uncertainty: ["official capability unavailable"] });
-    const result = await evaluateDecisionOptions({ concern, options: [option("retain"), option("replace")], preferences: [], preferenceMatches: {}, research: { required: true, affectedEvidenceIds: ["evidence:platform"] }, acceptance: "automatic" }, { verifyOptionSet });
+    const result = await evaluateDecisionOptions({ concern, options: [option("retain"), option("replace")], preferenceIds: [], research: { required: true, affectedEvidenceIds: ["evidence:platform"] }, acceptance: { kind: "automatic" } }, evaluationPorts([], {}, { verifyOptionSet }));
     expect(verifyOptionSet).toHaveBeenCalledWith(expect.objectContaining({ affectedEvidenceIds: ["evidence:platform"] }));
     expect(result.evaluation.outcome).toBe("insufficient-evidence");
     expect(result.acceptanceBlocked).toBe(true);
 
-    const explicit = await evaluateDecisionOptions({ concern, options: [option("retain")], preferences: [], preferenceMatches: {}, research: { required: true, affectedEvidenceIds: ["evidence:platform"] }, acceptance: "explicit-user" }, { verifyOptionSet });
-    expect(explicit.acceptanceBlocked).toBe(false);
+    const explicit = await evaluateDecisionOptions({ concern, options: [option("retain")], preferenceIds: [], research: { required: true, affectedEvidenceIds: ["evidence:platform"] }, acceptance: { kind: "explicit-user", authorityRecordId: "authority:missing" } }, evaluationPorts([], {}, { verifyOptionSet }));
+    expect(explicit.acceptanceBlocked).toBe(true);
     expect(explicit.evaluation.unknowns).toContain("official capability unavailable");
   });
 
@@ -85,11 +96,10 @@ describe("research, options, preferences, and deferral", () => {
     const result = await evaluateDecisionOptions({
       concern,
       options: [option("managed"), option("local"), option("forbidden", "fails"), option("uncertain", "unknown")],
-      preferences: [user, project],
-      preferenceMatches: { [user.id]: ["managed"], [project.id]: ["local"] },
+      preferenceIds: [user.id, project.id],
       research: { required: false, affectedEvidenceIds: [] },
-      acceptance: "automatic",
-    });
+      acceptance: { kind: "automatic" },
+    }, evaluationPorts([user, project], { [user.id]: ["managed"], [project.id]: ["local"] }));
     expect(result.evaluation.eliminatedOptionKeys).toEqual(["forbidden"]);
     expect(result.evaluation.recommendedOptionKey).toBe("local");
     expect(result.evaluation.unknowns.join(" ")).toMatch(/uncertain/iu);
@@ -98,7 +108,7 @@ describe("research, options, preferences, and deferral", () => {
   });
 
   it("accepts a negative/simple option and requires neutral, trigger-bound deferral", async () => {
-    const result = await evaluateDecisionOptions({ concern, options: [option("do-not-add-orchestrator")], preferences: [], preferenceMatches: {}, research: { required: false, affectedEvidenceIds: [] }, acceptance: "automatic" });
+    const result = await evaluateDecisionOptions({ concern, options: [option("do-not-add-orchestrator")], preferenceIds: [], research: { required: false, affectedEvidenceIds: [] }, acceptance: { kind: "automatic" } }, evaluationPorts());
     expect(result.evaluation.recommendedOptionKey).toBe("do-not-add-orchestrator");
     expect(result.governanceConsequences).toEqual([]);
     expect(validateDecisionDeferral({ rationale: "scripts suffice", preserveOptionality: ["portable task entrypoints"], forbiddenCommitments: ["orchestrator-specific task APIs"], reconsiderWhen: [{ type: "scale-signal" } as never] })).toMatchObject({ valid: false });

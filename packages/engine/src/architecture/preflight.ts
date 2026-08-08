@@ -14,7 +14,12 @@ import {
 } from "@projector/core";
 
 import { normalizeSelector } from "../governance/selectors.js";
-import { validateDecisionDeferral } from "./evaluation.js";
+import {
+  assessDecisionDeferral,
+  authorityRecordHashIsValid,
+  type AuthenticatedAuthorityPort,
+  type DecisionDeferralAssessmentPort,
+} from "./evaluation.js";
 import type { DecisionOverlapPort } from "./governance.js";
 
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
@@ -24,7 +29,7 @@ export interface ArchitecturePreflightInput {
   closure: RelevanceClosure;
   concerns: readonly ArchitectureConcern[];
   validity: readonly DecisionValidityAssessment[];
-  overrides: readonly AuthorityRecord[];
+  overrideAuthorityRecordIds: readonly string[];
   mode: ExecutionPolicy["preset"];
   risk: RiskClass;
 }
@@ -38,6 +43,8 @@ export interface ArchitecturePreflightResult {
   code: "architecture-frontier-clear" | "exploration-only" | "unresolved-architecture-frontier";
   reasons: string[];
   contentHash: ContentHash;
+  mode: ExecutionPolicy["preset"];
+  risk: RiskClass;
 }
 
 function authorizedOverride(concernId: string, raw: AuthorityRecord): boolean {
@@ -47,20 +54,37 @@ function authorizedOverride(concernId: string, raw: AuthorityRecord): boolean {
   return record.subjectId === concernId
     && record.status === "approved"
     && record.conclusion === "exception"
-    && (record.decidedBy === "user" || record.decidedBy === "policy");
+    && (record.decidedBy === "user" || record.decidedBy === "policy")
+    && authorityRecordHashIsValid(record);
 }
 
-function unresolvedBlockingConcern(concern: ArchitectureConcern, validity: readonly DecisionValidityAssessment[]): boolean {
+export interface ArchitecturePreflightPorts {
+  authority: AuthenticatedAuthorityPort;
+  deferral: DecisionDeferralAssessmentPort;
+  validity: { verify(input: { assessment: DecisionValidityAssessment; closure: RelevanceClosure }): Promise<boolean> };
+}
+
+async function unresolvedBlockingConcern(concern: ArchitectureConcern, validity: readonly DecisionValidityAssessment[], input: ArchitecturePreflightInput, ports: ArchitecturePreflightPorts): Promise<boolean> {
   if (concern.materiality !== "blocking-now" || concern.status === "resolved" || concern.status === "dismissed" || concern.status === "superseded") return false;
-  if (concern.status === "deferred" && concern.deferral !== undefined && validateDecisionDeferral(concern.deferral).valid) return false;
-  const assessments = validity.filter(({ decisionId }) => concern.decisionIds.includes(decisionId));
+  if (concern.status === "deferred" && concern.deferral !== undefined && (await assessDecisionDeferral(concern.deferral, ports.deferral)).valid) return false;
+  const assessments: DecisionValidityAssessment[] = [];
+  for (const assessment of validity.filter(({ decisionId }) => concern.decisionIds.includes(decisionId))) {
+    if (await ports.validity.verify({ assessment: structuredClone(assessment), closure: structuredClone(input.closure) })) assessments.push(assessment);
+  }
   return assessments.length === 0 || assessments.some(({ state, blocksCurrentChange }) => state !== "valid" || blocksCurrentChange);
 }
 
 /** Pure preflight consumes the supplied bounded closure and never mutates canonical or workspace state. */
-export function runArchitecturePreflight(input: ArchitecturePreflightInput): ArchitecturePreflightResult {
-  const unresolved = input.concerns.filter((concern) => unresolvedBlockingConcern(concern, input.validity)).sort((left, right) => compareStrings(left.id, right.id));
-  const overriddenConcernIds = unresolved.filter((concern) => input.overrides.some((record) => authorizedOverride(concern.id, record))).map(({ id }) => id);
+export async function runArchitecturePreflight(input: ArchitecturePreflightInput, ports: ArchitecturePreflightPorts): Promise<ArchitecturePreflightResult> {
+  const unresolved: ArchitectureConcern[] = [];
+  for (const concern of input.concerns) if (await unresolvedBlockingConcern(concern, input.validity, input, ports)) unresolved.push(concern);
+  unresolved.sort((left, right) => compareStrings(left.id, right.id));
+  const overrideRecords: AuthorityRecord[] = [];
+  for (const id of [...new Set(input.overrideAuthorityRecordIds)].sort(compareStrings)) {
+    const record = await ports.authority.read(id);
+    if (record !== undefined && record.id === id) overrideRecords.push(record);
+  }
+  const overriddenConcernIds = unresolved.filter((concern) => overrideRecords.some((record) => authorizedOverride(concern.id, record))).map(({ id }) => id);
   const unresolvedConcernIds = unresolved.map(({ id }) => id).filter((id) => !overriddenConcernIds.includes(id));
   const exploratory = input.mode === "observe" || input.mode === "guide";
   const policyBlocks = !exploratory && riskRank(input.risk) >= riskRank("R2") && unresolvedConcernIds.length > 0;
@@ -80,6 +104,8 @@ export function runArchitecturePreflight(input: ArchitecturePreflightInput): Arc
     code,
     reasons,
     contentHash: hashFramedDomain("architecture-preflight", stable),
+    mode: input.mode,
+    risk: input.risk,
   };
 }
 
@@ -129,23 +155,40 @@ export interface DecisionAuditReport {
 }
 
 function equivalenceKey(decision: ArchitectureDecision): string {
+  const normalized = normalizeDecisionSets(decision);
   return canonicalJson({
-    concernId: decision.concernId,
-    decision: decision.decision,
-    selectedOptionKey: decision.selectedOptionKey,
-    scope: normalizeSelector(decision.scope),
-    lifecycle: decision.lifecycle,
-    consequences: decision.consequences,
-    appliedPreferences: decision.appliedPreferences,
-    migrationId: decision.migrationId,
+    concernId: normalized.concernId,
+    decision: normalized.decision,
+    selectedOptionKey: normalized.selectedOptionKey,
+    scope: normalizeSelector(normalized.scope),
+    lifecycle: normalized.lifecycle,
+    consequences: normalized.consequences,
+    appliedPreferences: normalized.appliedPreferences,
+    migrationId: normalized.migrationId,
   });
+}
+
+function canonicalSet<T>(values: readonly T[]): T[] {
+  return [...new Map(values.map((value) => [canonicalJson(value), structuredClone(value)])).entries()]
+    .sort(([left], [right]) => compareStrings(left, right)).map(([, value]) => value);
+}
+
+function normalizeDecisionSets(decision: ArchitectureDecision): ArchitectureDecision {
+  return { ...structuredClone(decision), consequences: canonicalSet(decision.consequences), appliedPreferences: canonicalSet(decision.appliedPreferences) };
 }
 
 export async function auditArchitectureDecisions(
   input: { decisions: readonly ArchitectureDecision[]; concerns: readonly ArchitectureConcern[] },
   ports: { overlap: DecisionOverlapPort; population: DecisionPopulationPort },
 ): Promise<DecisionAuditReport> {
-  const decisions = [...new Map(input.decisions.map((decision) => [decision.id, structuredClone(decision)])).values()].sort((left, right) => compareStrings(left.id, right.id));
+  const byId = new Map<string, ArchitectureDecision>();
+  for (const raw of input.decisions) {
+    const decision = normalizeDecisionSets(raw);
+    const existing = byId.get(decision.id);
+    if (existing !== undefined && canonicalJson(existing) !== canonicalJson(decision)) throw new Error(`conflicting decision ${decision.id}`);
+    byId.set(decision.id, decision);
+  }
+  const decisions = [...byId.values()].sort((left, right) => compareStrings(left.id, right.id));
   const findings: DecisionAuditFinding[] = [];
   const equivalentGroups = new Map<string, ArchitectureDecision[]>();
   for (const decision of decisions) equivalentGroups.set(equivalenceKey(decision), [...(equivalentGroups.get(equivalenceKey(decision)) ?? []), decision]);
