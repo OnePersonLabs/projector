@@ -10,6 +10,9 @@
   "scripts": {
     "build": "pnpm -r --if-present build",
     "check:boundaries": "node scripts/check-package-boundaries.mjs",
+    "release:acceptance": "node scripts/run-release-acceptance.mjs",
+    "release:artifacts": "node scripts/generate-release-artifacts.mjs",
+    "release:artifacts:check": "node scripts/generate-release-artifacts.mjs --check",
     "test": "vitest run",
     "typecheck": "pnpm -r --if-present typecheck",
     "verify": "pnpm typecheck && pnpm test && pnpm check:boundaries"

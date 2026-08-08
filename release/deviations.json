@@ -1,0 +1,9 @@
+[
+  {
+    "id": "deviation:external-adapters-deferred",
+    "severity": "note",
+    "impact": "No live external provider ships in the local-kernel release; demand-selected adapters remain Task 21 and do not weaken local release gates.",
+    "evidenceIds": ["plan:task-21-demand-driven-external-adapters"],
+    "waivedGateIds": []
+  }
+]
