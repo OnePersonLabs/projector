@@ -47,16 +47,14 @@ describe("event and contract topology", () => {
     },
   ];
 
-  it("routes every known event and contract consumer deterministically with explicit assurance", () => {
+  it("routes every known event and contract consumer deterministically with conservatively capped raw assurance", () => {
     const topology = compileEventContractTopology(observations);
 
     expect(topology.routes.map(({ subjectId, consumerIds }) => [subjectId, consumerIds])).toEqual([
       ["contract-midi-api", ["mobile-app"]],
       ["event-midi-note", ["multiplayer-relay", "recorder"]],
     ]);
-    expect(topology.routes.flatMap(({ links }) => links).map(({ assurance }) => assurance)).toEqual([
-      "heuristic", "validated", "exact",
-    ]);
+    expect(topology.routes.flatMap(({ links }) => links).map(({ assurance }) => assurance)).toEqual(["heuristic", "heuristic", "heuristic"]);
   });
 
   it("uses stable semantic identities rather than paths and rejects conflicting duplicate observations", () => {
@@ -104,18 +102,26 @@ describe("event and contract topology", () => {
     expect(result.dependency.priorResult.resultCount).toBe(2);
   });
 
-  it("does not claim bounded heuristic enumeration without an explicit bounded proof", () => {
+  it("does not let the raw compiler promote heuristic observations with caller enumeration", () => {
     const route = compileEventContractTopology([observations[2]!]).routes[0]!;
     expect(route.observability).toBe("open");
     const bounded = compileEventContractTopology([observations[2]!], {
       observability: "bounded", method: "complete manifest scan", assumptions: ["manifest is authoritative"],
       blindSpots: [], dynamicMechanisms: [],
     }).routes[0]!;
-    expect(bounded.observability).toBe("bounded");
+    expect(bounded.observability).toBe("open");
   });
 
   it("defaults exact observed links to open without an explicit enumeration proof", () => {
     expect(compileEventContractTopology([observations[0]!]).routes[0]!.observability).toBe("open");
+  });
+
+  it("conservatively caps caller-declared proof on the raw public compiler", () => {
+    const route = compileEventContractTopology([observations[0]!], {
+      observability: "closed", method: "caller says exhaustive", assumptions: [], blindSpots: [], dynamicMechanisms: [],
+    }).routes[0]!;
+    expect(route.observability).toBe("open");
+    expect(route.links[0]).toMatchObject({ assurance: "heuristic" });
   });
 
   it("rejects a closed enumeration label without an exhaustive proof contract", () => {
