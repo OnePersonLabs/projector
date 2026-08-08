@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import { hashFramedDomain, type ContentHash } from "@projector/core";
 import type { BenchmarkGateResult } from "./benchmark.js";
@@ -9,8 +11,8 @@ export interface AcceptanceInventoryItem { readonly id: string; readonly stratum
 export interface AcceptanceSource { readonly path: string; readonly text: string }
 export interface TraceabilityEntry extends AcceptanceInventoryItem { readonly publicFacade: string; readonly testRef: string; readonly testSourceDigest: ContentHash; readonly mappingHash: ContentHash }
 export interface TraceabilityManifest { readonly version: 2; readonly entries: readonly TraceabilityEntry[]; readonly inventoryHash: ContentHash }
-export interface TraceabilityTestRun { readonly reporterOutput: string; readonly publicFacades: readonly string[] }
-export interface VerifiedTraceability { readonly verified: true; readonly inventoryHash: ContentHash; readonly runEvidenceHash: ContentHash; readonly contentHash: ContentHash }
+export interface VerifiedTraceability { readonly verified: true; readonly inventoryHash: ContentHash; readonly runEvidenceHash: ContentHash; readonly rawOutput?: string; readonly contentHash: ContentHash }
+const execute = promisify(execFile);
 
 const slug = (value: string) => value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
 const sourceDigest = (path: string, text: string) => hashFramedDomain("acceptance-authoritative-source", { path, text });
@@ -47,12 +49,14 @@ function validateManifestStructure(manifest: TraceabilityManifest, inventory: re
   }
 }
 
-export async function verifyTraceabilityManifest(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[], input: { readonly repositoryRoot: string; readonly run: TraceabilityTestRun }): Promise<VerifiedTraceability> {
+export async function verifyTraceabilityManifest(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[], input: { readonly repositoryRoot: string }): Promise<VerifiedTraceability> {
   validateManifestStructure(manifest, inventory);
-  let report: { success?: unknown; numTotalTests?: unknown; numPassedTests?: unknown; testResults?: unknown }; try { report = JSON.parse(input.run.reporterOutput) as typeof report; } catch { throw new Error("traceability requires raw Vitest JSON reporter run evidence"); }
+  if (Object.keys(input).some((key) => key !== "repositoryRoot")) throw new Error("caller-supplied traceability results are forbidden");
+  const root = resolve(input.repositoryRoot); const testFiles = [...new Set(manifest.entries.map(({ testRef }) => testRef.split("#", 1)[0]!))].sort(); const vitest = resolve(root, "node_modules/vitest/vitest.mjs"); let reporterOutput: string; try { ({ stdout: reporterOutput } = await execute(process.execPath, [vitest, "run", ...testFiles, "--reporter=json"], { cwd: root, encoding: "utf8", maxBuffer: 20_000_000 })); } catch (error) { throw new Error("authoritative mapped Vitest execution failed", { cause: error }); }
+  let report: { success?: unknown; numTotalTests?: unknown; numPassedTests?: unknown; testResults?: unknown }; try { report = JSON.parse(reporterOutput) as typeof report; } catch { throw new Error("authoritative Vitest JSON reporter output is invalid"); }
   if (report.success !== true || !Number.isSafeInteger(report.numTotalTests) || report.numTotalTests !== report.numPassedTests || !Array.isArray(report.testResults) || report.testResults.length === 0) throw new Error("traceability Vitest reporter contains failed or incomplete run evidence");
   const results = report.testResults as { name?: unknown; status?: unknown; assertionResults?: unknown }[];
-  const facades = new Set(input.run.publicFacades); const root = resolve(input.repositoryRoot);
+  const facades = new Set(["projector", "projector/cli", "projector/core", "projector/analyzers", "projector/engine", "projector/engine/architecture", "projector/engine/coverage", "projector/engine/modernization", "projector/runtime", "projector/integrations", "projector/integrations/surfaces", "projector/testkit"]);
   const sourceCache = new Map<string, string>();
   for (const entry of manifest.entries) {
     const [relativePath, anchor] = entry.testRef.split("#", 2);
@@ -62,8 +66,8 @@ export async function verifyTraceabilityManifest(manifest: TraceabilityManifest,
     let text = sourceCache.get(relativePath); if (text === undefined) { try { text = await readFile(path, "utf8"); } catch { throw new Error(`traceability test does not exist: ${relativePath}`); } sourceCache.set(relativePath, text); }
     if (hashFramedDomain("traceability-test-source", { path: relativePath, text }) !== entry.testSourceDigest || !text.includes(`describe("${anchor}"`)) throw new Error(`traceability test source or anchor is stale: ${entry.testRef}`);
   }
-  const runEvidenceHash = hashFramedDomain("vitest-json-reporter-output", input.run.reporterOutput); const body = { inventoryHash: manifest.inventoryHash, runEvidenceHash, entries: manifest.entries.map(({ mappingHash }) => mappingHash) };
-  return Object.freeze({ verified: true, inventoryHash: manifest.inventoryHash, runEvidenceHash, contentHash: hashFramedDomain("verified-traceability", body) });
+  const runEvidenceHash = hashFramedDomain("vitest-json-reporter-output", reporterOutput); const body = { inventoryHash: manifest.inventoryHash, runEvidenceHash, entries: manifest.entries.map(({ mappingHash }) => mappingHash) };
+  return Object.freeze({ verified: true, inventoryHash: manifest.inventoryHash, runEvidenceHash, rawOutput: reporterOutput, contentHash: hashFramedDomain("verified-traceability", body) });
 }
 
 export interface DerivedConformanceObservation { readonly derivedDigest: ContentHash; readonly semanticDigest: ContentHash; readonly entityIds: readonly string[] }
