@@ -26,7 +26,25 @@ export async function runStructuredInference<T>(request: StructuredModelRequest<
   const requestHash = hashFramedDomain("structured-model-request", normalized); const route = await ports.router.route(normalized);
   if (route.contentHash !== hashFramedDomain("authenticated-model-route", route.value)) throw new Error("model route identity is unauthenticated");
   const key = hashFramedDomain("structured-inference-cache-key", { requestHash, route: route.value, policy: { maximumAttempts: policy.maximumAttempts, maximumTokens: policy.maximumTokens, maximumCost: policy.maximumCost, timeoutMs: policy.timeoutMs, retry: [...policy.retry].sort(), resampleId: policy.resampleId ?? null } });
-  if (policy.replay === "allow") { const stored = await ports.store.read(key); if (stored !== undefined) return { ...(stored as Omit<InferenceArtifact<T>, "status">), status: "replayed" }; }
+  if (policy.replay === "allow") {
+    const stored = await ports.store.read(key);
+    if (stored !== undefined) {
+      if (stored === null || typeof stored !== "object") throw new Error("cached inference artifact is malformed");
+      const artifact = stored as Omit<InferenceArtifact<T>, "status">;
+      const response = artifact.response;
+      if (artifact.key !== key || artifact.requestHash !== requestHash || artifact.routeHash !== route.contentHash || response === undefined
+        || response.provider !== route.value.providerId || response.model !== route.value.model
+        || (route.value.providerRevision !== undefined && response.providerRevision !== route.value.providerRevision)
+        || response.rawResponseHash !== hashFramedDomain("structured-model-response-value", response.value)
+        || !ports.schema.validate(response.value, normalized.schema)
+        || !Number.isSafeInteger(response.attempt) || response.attempt < 1 || response.attempt > policy.maximumAttempts
+        || (response.inputTokens ?? 0) + (response.outputTokens ?? 0) > policy.maximumTokens
+        || artifact.candidateHash !== hashFramedDomain("structured-inference-candidate", { key, response, attempt: response.attempt, resampleId: policy.resampleId ?? null })) {
+        throw new Error("cached inference artifact failed authentication");
+      }
+      return { ...artifact, status: "replayed" };
+    }
+  }
   const started = Date.now(); let lastReason = "provider failure"; let consumedTokens = 0;
   for (let attempt = 1; attempt <= policy.maximumAttempts; attempt += 1) {
     if (Boolean(policy.signal?.aborted)) throw new InferenceFailure("inference-cancelled", "structured inference cancelled");

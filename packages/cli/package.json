@@ -21,6 +21,7 @@
     "@projector/analyzers": "workspace:*",
     "@projector/core": "workspace:*",
     "@projector/engine": "workspace:*",
+    "@projector/integrations": "workspace:*",
     "@projector/runtime": "workspace:*"
   }
 }

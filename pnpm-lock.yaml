@@ -38,6 +38,9 @@ importers:
       '@projector/engine':
         specifier: workspace:*
         version: link:../engine
+      '@projector/integrations':
+        specifier: workspace:*
+        version: link:../integrations
       '@projector/runtime':
         specifier: workspace:*
         version: link:../runtime

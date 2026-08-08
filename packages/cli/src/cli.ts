@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -8,6 +8,7 @@ import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type Archite
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import { compileSemanticChange, compileSemanticChangePlan, createStateBinding } from "@projector/engine";
 import { executePacketPlan, type PacketObservation, type PlanExecutionArtifact, type PacketExecutionArtifact } from "@projector/runtime";
+import { createBuiltProjectorMcpServer, REQUIRED_PROJECTOR_CONTROLLED_TOOLS, REQUIRED_PROJECTOR_READ_TOOLS } from "@projector/integrations";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -20,6 +21,7 @@ import {
 import { compileAuthenticatedCoverageSnapshot, REQUIRED_COVERAGE_LANES, type CoverageEvidenceSnapshot, type CoverageLaneEvidence, type RequiredCoverageLaneKey } from "@projector/engine/coverage";
 
 import { assertOperationRiskAuthorized, deriveOperationRisk, normalizeExecutionPolicy, type CliPolicyInput, type OperationRiskInput, type SliceCommand } from "./policy.js";
+import { createBuiltRunHostPort } from "./host-cli.js";
 import {
   analyzeMandatorySlice,
   applyMandatorySlice,
@@ -46,6 +48,7 @@ Commands:
   complete              Rank the next authenticated completion work
   cleanup               Resume a trusted cleanup continuation plan
   run <codex|claude> -- <args>  Run a bounded host session
+  mcp                   Start the built Projector MCP composition
   explain <target>      Explain findings for a path or finding identity
 
 Options:
@@ -75,11 +78,13 @@ export interface ProjectorCommandOptions {
   readonly runHost?: RunHostCliPort;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal;
+  readonly mcp?: McpCliPort;
 }
 
 export interface RunHostCliRequest { readonly host: "codex" | "claude"; readonly sessionSelector: string; readonly repositoryRoot: string; readonly argv: readonly string[]; readonly environment: Readonly<Record<string, string>>; readonly signal: AbortSignal }
 export interface RunHostCliResult { readonly status: "completed" | "failed" | "cancelled" | "unavailable"; readonly exitCode: number | null; readonly changedPaths: readonly string[]; readonly reconciled: boolean; readonly signal?: string }
-export interface RunHostCliPort { readonly run: (request: RunHostCliRequest) => Promise<RunHostCliResult> }
+export interface RunHostCliPort { readonly resolve: (request: Omit<RunHostCliRequest, "argv" | "environment" | "signal">) => Promise<{ readonly authenticated: true; readonly host: "codex" | "claude" }>; readonly run: (request: RunHostCliRequest) => Promise<RunHostCliResult> }
+export interface McpCliPort { readonly start: (request: { readonly repositoryRoot: string; readonly signal: AbortSignal }) => Promise<{ readonly status: "ready" | "unavailable"; readonly tools: readonly string[] }> }
 
 export interface ChangeCliRequest { readonly repositoryRoot: string; readonly selector: string; readonly persist?: boolean }
 export interface ChangeCliPort {
@@ -181,7 +186,7 @@ function validateArguments(arguments_: readonly string[], command: SliceCommand)
 function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const command = arguments_[0];
   if (command !== "init" && command !== "audit" && command !== "change" && command !== "plan" && command !== "apply"
-    && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run") {
+    && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run" && command !== "mcp") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
   const separator = arguments_.indexOf("--");
@@ -264,6 +269,7 @@ function outputFor(command: SliceCommand, report: unknown, format: "text" | "jso
   if (command === "explain") return (report as { explanation: string }).explanation;
   if (command === "coverage" || command === "complete" || command === "cleanup") return `${command}: ${(report as CoverageCliReport).proofStatement}`;
   if (command === "run") return (report as { dryRun?: boolean }).dryRun === true ? "run: dry-run" : `run: ${(report as RunHostCliResult).status}`;
+  if (command === "mcp") return `mcp: ${(report as { status: string }).status}`;
   return `${command} completed.`;
 }
 
@@ -431,8 +437,10 @@ export async function executeProjector(
       break;
     }
     case "run": {
+      const runHost = options.runHost ?? createBuiltRunHostPort();
+      const resolvedSession = await runHost.resolve({ host: parsed.host!, sessionSelector: parsed.sessionSelector!, repositoryRoot });
       if (!policy.allowAutoMutation) {
-        report = { policy, dryRun: true, host: parsed.host!, argv: parsed.hostArgv };
+        report = { policy, dryRun: true, host: resolvedSession.host, sessionAuthenticated: true, argv: parsed.hostArgv };
         break;
       }
       const allowedKeys = new Set(["CI", "LANG", "LC_ALL", "PATH", "TERM"]);
@@ -440,10 +448,14 @@ export async function executeProjector(
       const environmentEntries: [string, string][] = [];
       for (const [key, value] of Object.entries(sourceEnvironment)) if (allowedKeys.has(key) && value !== undefined) environmentEntries.push([key, value]);
       const environment = Object.fromEntries(environmentEntries.sort(([left], [right]) => left.localeCompare(right)));
-      const runResult = await (options.runHost ?? defaultRunHostPort()).run({ host: parsed.host!, sessionSelector: parsed.sessionSelector!, repositoryRoot, argv: parsed.hostArgv, environment, signal: options.signal ?? new AbortController().signal });
+      const runResult = await runHost.run({ host: parsed.host!, sessionSelector: parsed.sessionSelector!, repositoryRoot, argv: parsed.hostArgv, environment, signal: options.signal ?? new AbortController().signal });
       report = { policy, host: parsed.host!, sessionSelector: parsed.sessionSelector!, argv: parsed.hostArgv, ...runResult };
       exitCode = runResult.status === "completed" && runResult.reconciled ? 0 : runResult.status === "unavailable" ? 5 : 6;
       break;
+    }
+    case "mcp": {
+      const mcpResult = await (options.mcp ?? defaultMcpCliPort()).start({ repositoryRoot, signal: options.signal ?? new AbortController().signal });
+      report = { policy, ...mcpResult }; exitCode = mcpResult.status === "ready" ? 0 : 5; break;
     }
     case "explain": {
       if (parsed.target!.startsWith("decision:")) {
@@ -474,29 +486,14 @@ export async function executeProjector(
   return { exitCode, output: outputFor(parsed.command, report, parsed.format), report };
 }
 
-function defaultRunHostPort(): RunHostCliPort {
-  const changedPaths = async (repositoryRoot: string): Promise<string[]> => {
-    try {
-      const { stdout } = await execFileAsync("git", ["-C", repositoryRoot, "status", "--porcelain=v1", "-z"], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
-      return stdout.split("\0").filter(Boolean).map((entry) => entry.slice(3)).sort();
-    } catch { return []; }
-  };
-  return {
-    async run(request) {
-      const before = await changedPaths(request.repositoryRoot);
-      const outcome = await new Promise<{ code: number | null; signal?: string; unavailable: boolean }>((resolve) => {
-        let settled = false;
-        const finish = (value: { code: number | null; signal?: string; unavailable: boolean }) => { if (!settled) { settled = true; resolve(value); } };
-        const child = spawn(request.host, [...request.argv], { cwd: request.repositoryRoot, env: { ...request.environment }, shell: false, stdio: "inherit", signal: request.signal });
-        child.once("error", (caught) => finish({ code: null, unavailable: "code" in caught && caught.code === "ENOENT" }));
-        child.once("close", (code, signal) => finish({ code, ...(signal === null ? {} : { signal }), unavailable: false }));
-      });
-      const after = await changedPaths(request.repositoryRoot);
-      const paths = [...new Set([...before, ...after])].sort();
-      const status = outcome.unavailable ? "unavailable" as const : request.signal.aborted ? "cancelled" as const : outcome.code === 0 ? "completed" as const : "failed" as const;
-      return { status, exitCode: outcome.code, changedPaths: paths, reconciled: true, ...(outcome.signal === undefined ? {} : { signal: outcome.signal }) };
-    },
-  };
+function defaultMcpCliPort(): McpCliPort {
+  return { start: async () => {
+    const server = createBuiltProjectorMcpServer({ capability: { issue: async () => { throw new Error("built MCP capability issuer requires a trusted session store"); }, revoke: async () => { throw new Error("built MCP capability issuer requires a trusted session store"); }, consume: async () => { throw new Error("controlled MCP tool requires a trusted durable capability store"); } }, read: async ({ toolName }) => ({ status: "unavailable", toolName, reason: "repository read adapter must be selected by the MCP client request" }), controlled: { operation: "projector-controlled-mutation", risk: "R2", targets: () => ({ semanticScopes: [], writePaths: [] }), run: async () => { throw new Error("controlled MCP adapter is unavailable without a trusted session capability"); } } });
+    const listed = await server.transport.handle({ jsonrpc: "2.0", id: 1, method: "tools/list" }) as { result?: { tools?: readonly { name: string }[] } };
+    const tools = listed.result?.tools?.map(({ name }) => name).sort() ?? [];
+    const expected = [...REQUIRED_PROJECTOR_READ_TOOLS, ...REQUIRED_PROJECTOR_CONTROLLED_TOOLS].sort();
+    return { status: tools.length === expected.length && tools.every((name, index) => name === expected[index]) ? "ready" as const : "unavailable" as const, tools };
+  } };
 }
 
 function defaultChangePort(repositoryRoot: string): ChangeCliPort {
