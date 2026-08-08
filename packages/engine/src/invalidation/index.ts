@@ -12,26 +12,77 @@ import {
   type ObservabilityClass,
   type SemanticSignature,
   type StateBinding,
+  type StateQueryDependency,
+  type StateQueryKind,
   type ValidationResult,
 } from "@projector/core";
 
 import { evaluateSelector, type SelectorSubject } from "../governance/selectors.js";
+import { createStateBinding } from "../state/index.js";
 
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
 
+interface ParsedVersion {
+  numeric: string[];
+  prerelease: string[];
+}
+
+/**
+ * Versions in the invalidation registries use a deliberately small, documented
+ * SemVer-compatible contract. Numeric-only versions (for example `1` and
+ * `2.1`) remain valid for the existing profile/rule records. Opaque strings
+ * are rejected instead of being guessed by lexical ordering.
+ */
+function parseVersion(version: string): ParsedVersion {
+  const match = /^(\d+(?:\.\d+)*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u.exec(version);
+  if (match === null) throw new Error(`unsupported version format ${version}; use numeric dot segments with optional SemVer prerelease`);
+  return {
+    numeric: match[1]!.split("."),
+    prerelease: match[2] === undefined ? [] : match[2].split("."),
+  };
+}
+
+function compareNumericTokens(left: string, right: string): number {
+  const normalizedLeft = left.replace(/^0+(?=\d)/u, "");
+  const normalizedRight = right.replace(/^0+(?=\d)/u, "");
+  if (normalizedLeft.length !== normalizedRight.length) return normalizedLeft.length < normalizedRight.length ? -1 : 1;
+  return compareStrings(normalizedLeft, normalizedRight);
+}
+
 function compareVersions(left: string, right: string): number {
-  const leftParts = left.split(".");
-  const rightParts = right.split(".");
-  if (leftParts.every((part) => /^\d+$/u.test(part)) && rightParts.every((part) => /^\d+$/u.test(part))) {
-    const length = Math.max(leftParts.length, rightParts.length);
-    for (let index = 0; index < length; index += 1) {
-      const difference = Number(leftParts[index] ?? "0") - Number(rightParts[index] ?? "0");
-      if (difference !== 0) return difference < 0 ? -1 : 1;
-    }
-    return 0;
+  const leftParsed = parseVersion(left);
+  const rightParsed = parseVersion(right);
+  const numericLength = Math.max(leftParsed.numeric.length, rightParsed.numeric.length);
+  for (let index = 0; index < numericLength; index += 1) {
+    const difference = compareNumericTokens(leftParsed.numeric[index] ?? "0", rightParsed.numeric[index] ?? "0");
+    if (difference !== 0) return difference;
   }
-  return compareStrings(left, right);
+  if (leftParsed.prerelease.length === 0 && rightParsed.prerelease.length > 0) return 1;
+  if (leftParsed.prerelease.length > 0 && rightParsed.prerelease.length === 0) return -1;
+  const prereleaseLength = Math.max(leftParsed.prerelease.length, rightParsed.prerelease.length);
+  for (let index = 0; index < prereleaseLength; index += 1) {
+    const leftToken = leftParsed.prerelease[index];
+    const rightToken = rightParsed.prerelease[index];
+    if (leftToken === undefined) return -1;
+    if (rightToken === undefined) return 1;
+    const leftNumeric = /^\d+$/u.test(leftToken);
+    const rightNumeric = /^\d+$/u.test(rightToken);
+    if (leftNumeric && rightNumeric) {
+      const difference = compareNumericTokens(leftToken, rightToken);
+      if (difference !== 0) return difference;
+    } else if (leftNumeric !== rightNumeric) {
+      return leftNumeric ? -1 : 1;
+    } else {
+      const difference = compareStrings(leftToken, rightToken);
+      if (difference !== 0) return difference;
+    }
+  }
+  return 0;
+}
+
+function compareVersionStrings(left: string, right: string): number {
+  return compareVersions(left, right) || compareStrings(left, right);
 }
 
 const assuranceRank = {
@@ -74,6 +125,7 @@ export class SemanticSignatureProfileRegistry {
     if (profile.id.trim() === "" || profile.version.trim() === "" || profile.scope.trim() === "") {
       throw new Error("signature profile identity, version, and scope are required");
     }
+    parseVersion(profile.version);
     if ((profile.maximumAssurance === "exact" || profile.maximumAssurance === "validated")
       && profile.assuranceEvidence.length === 0) {
       throw new Error(`${profile.maximumAssurance} signature profile ${profile.id}@${profile.version} requires assurance evidence`);
@@ -113,7 +165,7 @@ export class SemanticSignatureProfileRegistry {
     return [...this.profiles.values()]
       .filter((profile) => profile.id === id)
       .map((profile) => profile.version)
-      .sort(compareVersions)
+      .sort(compareVersionStrings)
       .at(-1);
   }
 
@@ -285,6 +337,14 @@ export class DerivationIndex {
   private readonly groups = new Map<string, DerivationProofGroup>();
 
   constructor(records: readonly DerivationRecord[] = []) {
+    this.replaceRecords(records);
+  }
+
+  /** Replace the rebuildable derived index after a successful revalidation. */
+  replaceRecords(records: readonly DerivationRecord[]): void {
+    this.byUnit.clear();
+    this.reverse.clear();
+    this.groups.clear();
     for (const candidate of records) {
       const record = normalizeRecord(candidate);
       const existing = this.byUnit.get(record.unitId);
@@ -295,12 +355,22 @@ export class DerivationIndex {
     }
     for (const record of this.byUnit.values()) {
       for (const input of record.inputs) {
-        const dependents = this.reverse.get(input.id) ?? new Set<string>();
-        dependents.add(record.unitId);
-        this.reverse.set(input.id, dependents);
+        this.addReverseDependency(input.id, record.unitId);
       }
+      this.addReverseDependency(record.outputSemanticSignature.profileId, record.unitId);
+      this.addReverseDependency(record.outputStructuralSignature.profileId, record.unitId);
     }
     this.buildProofGroups();
+  }
+
+  upsert(record: DerivationRecord): void {
+    this.replaceRecords([...this.byUnit.values(), record]);
+  }
+
+  private addReverseDependency(subjectId: EntityId | string, dependentId: EntityId): void {
+    const dependents = this.reverse.get(subjectId) ?? new Set<string>();
+    dependents.add(dependentId);
+    this.reverse.set(subjectId, dependents);
   }
 
   records(): DerivationRecord[] {
@@ -374,20 +444,42 @@ export class DerivationIndex {
     };
     nodes.forEach((node) => { if (!indexes.has(node)) visit(node); });
 
-    const declared = new Map<string, string[]>();
-    for (const record of this.byUnit.values()) {
-      if (record.proofGroupId === undefined) continue;
-      declared.set(record.proofGroupId, [...(declared.get(record.proofGroupId) ?? []), record.unitId]);
-    }
-    for (const members of [...components, ...[...declared.values()].map((ids) => sortedUnique(ids))]) {
+    const declaredGroups = new Map<string, { memberIds: string[]; cyclic: boolean }>();
+    for (const members of components) {
+      const declaredIds = sortedUnique(members
+        .map((id) => this.byUnit.get(id)?.proofGroupId)
+        .filter((id): id is string => id !== undefined));
+      if (declaredIds.length > 1) {
+        throw new Error(`incompatible declared proof group IDs inside SCC ${members.join(", ")}: ${declaredIds.join(", ")}`);
+      }
       const selfCycle = members.length === 1 && (adjacency.get(members[0]!) ?? []).includes(members[0]!);
-      const declaredId = members.map((id) => this.byUnit.get(id)?.proofGroupId).find((id) => id !== undefined);
+      const declaredId = declaredIds[0];
+      if (declaredId === undefined) {
+        if (members.length > 1 || selfCycle) {
+          const group: DerivationProofGroup = {
+            id: `proof-group:${hashFramedDomain("derivation-proof-group", members).slice("sha256:v1:".length)}`,
+            memberIds: members,
+            cyclic: true,
+          };
+          members.forEach((id) => this.groups.set(id, group));
+        }
+        continue;
+      }
+      const existing = declaredGroups.get(declaredId);
+      if (existing === undefined) {
+        declaredGroups.set(declaredId, { memberIds: [...members], cyclic: members.length > 1 || selfCycle });
+      } else {
+        existing.memberIds.push(...members);
+        existing.cyclic ||= members.length > 1 || selfCycle || existing.memberIds.length > 1;
+      }
+    }
+    for (const [id, definition] of declaredGroups.entries()) {
       const group: DerivationProofGroup = {
-        id: declaredId ?? `proof-group:${hashFramedDomain("derivation-proof-group", members).slice("sha256:v1:".length)}`,
-        memberIds: members,
-        cyclic: members.length > 1 || selfCycle,
+        id,
+        memberIds: sortedUnique(definition.memberIds),
+        cyclic: definition.cyclic || definition.memberIds.length > 1,
       };
-      if (group.cyclic || declaredId !== undefined) members.forEach((id) => this.groups.set(id, group));
+      group.memberIds.forEach((memberId) => this.groups.set(memberId, group));
     }
   }
 }
@@ -400,6 +492,7 @@ export class ImpactRuleRegistry {
   }
 
   register(rule: ImpactRule): void {
+    parseVersion(rule.version);
     const key = `${rule.id}\u0000${rule.version}`;
     const existing = this.rules.get(key);
     if (existing !== undefined && canonicalJson(existing) !== canonicalJson(rule)) {
@@ -412,7 +505,7 @@ export class ImpactRuleRegistry {
     const byId = new Map<string, ImpactRule>();
     for (const rule of this.rules.values()) {
       const existing = byId.get(rule.id);
-      if (existing === undefined || compareVersions(existing.version, rule.version) < 0) byId.set(rule.id, rule);
+      if (existing === undefined || compareVersionStrings(existing.version, rule.version) < 0) byId.set(rule.id, rule);
     }
     return [...byId.values()].sort((left, right) => compareStrings(`${left.id}\u0000${left.version}`, `${right.id}\u0000${right.version}`))
       .map((rule) => structuredClone(rule));
@@ -425,11 +518,66 @@ export interface ImpactTraversalResult {
   unavailableIds: readonly EntityId[];
   observability: ObservabilityClass;
   reasons: Readonly<Record<EntityId, readonly string[]>>;
+  dependencyKeys?: readonly string[];
+  assumptions?: readonly string[];
+  unavailableLanes?: readonly string[];
 }
 
 export interface ImpactRuleEvaluationPort {
   subjects(rule: ImpactRule, phase: "before" | "after", event: InvalidationEvent): Promise<readonly SelectorSubject[]>;
   traverse(seedIds: readonly EntityId[], rule: ImpactRule, event: InvalidationEvent): Promise<ImpactTraversalResult>;
+}
+
+interface SyntheticQueryInput {
+  id: string;
+  kind: StateQueryKind;
+  programId: string;
+  programVersion: string;
+  input: Record<string, unknown>;
+  role: string;
+  result: unknown;
+  resultCount: number;
+  observability: ObservabilityClass;
+  assumptions?: readonly string[];
+  unavailableLanes?: readonly string[];
+  dependencyKeys: readonly string[];
+}
+
+function syntheticQueryDependency(input: SyntheticQueryInput): StateQueryDependency {
+  const semanticHash = hashFramedDomain("state-query", {
+    kind: input.kind,
+    programId: input.programId,
+    programVersion: input.programVersion,
+    input: input.input,
+  });
+  return {
+    query: {
+      id: input.id,
+      kind: input.kind,
+      programId: input.programId,
+      programVersion: input.programVersion,
+      input: structuredClone(input.input),
+      semanticHash,
+    },
+    priorResult: {
+      queryHash: semanticHash,
+      resultHash: hashFramedDomain("state-query-result", input.result),
+      resultCount: input.resultCount,
+      observability: input.observability,
+      assumptions: sortedUnique(input.assumptions ?? []),
+      unavailableLanes: sortedUnique(input.unavailableLanes ?? []),
+      dependencyKeys: sortedUnique(input.dependencyKeys.length > 0 ? input.dependencyKeys : [`query:${input.id}`]),
+    },
+    role: input.role,
+  };
+}
+
+function mergeImpactStateBinding(binding: StateBinding, event: InvalidationEvent, generated: readonly StateQueryDependency[]): StateBinding {
+  return createStateBinding({
+    compiledAgainst: binding.compiledAgainst ?? event.stateDigest,
+    valueDependencies: binding.valueDependencies ?? [],
+    queryDependencies: [...(binding.queryDependencies ?? []), ...generated],
+  });
 }
 
 const triggerFor = (eventKind: string): ImpactRule["trigger"] | undefined => {
@@ -441,7 +589,7 @@ const triggerFor = (eventKind: string): ImpactRule["trigger"] | undefined => {
 };
 
 export type ImpactProofClass = "exact-derivation" | "impact-rule" | "inferred" | "unavailable";
-export type ImpactDisposition = "known" | "possible" | "unavailable";
+export type ImpactDisposition = "known" | "possible" | "blocked" | "unavailable";
 
 export interface ImpactClosureEntry {
   unitId: EntityId;
@@ -452,11 +600,19 @@ export interface ImpactClosureEntry {
   reasons: string[];
 }
 
+export interface ImpactClosureBlock {
+  ruleId: EntityId;
+  ruleVersion: string;
+  unitIds: EntityId[];
+  reason: string;
+}
+
 export interface InternalImpactClosure {
   version: "impact-closure@1";
   event: InvalidationEvent;
   stateBinding: StateBinding;
   entries: ImpactClosureEntry[];
+  blocks: ImpactClosureBlock[];
   contentHash: ContentHash;
   ref: ImpactClosureRef;
 }
@@ -469,30 +625,43 @@ export interface ImpactClosureArtifactStore {
 
 function normalizeClosureEntries(entries: readonly ImpactClosureEntry[]): ImpactClosureEntry[] {
   const byKey = new Map<string, ImpactClosureEntry>();
-  const dispositionRank: Record<ImpactDisposition, number> = { possible: 0, unavailable: 1, known: 2 };
+  const proofRank: Record<ImpactProofClass, number> = { unavailable: 0, inferred: 1, "impact-rule": 2, "exact-derivation": 3 };
+  const observabilityRank: Record<ObservabilityClass, number> = { closed: 0, bounded: 1, sampled: 2, open: 3, unavailable: 4 };
+  const dispositionRank: Record<ImpactDisposition, number> = { known: 0, possible: 1, blocked: 2, unavailable: 3 };
   for (const candidate of entries) {
     const entry = { ...structuredClone(candidate), reasons: sortedUnique(candidate.reasons) };
-    const existing = byKey.get(entry.unitId);
-    if (existing === undefined || dispositionRank[entry.disposition] > dispositionRank[existing.disposition]) byKey.set(entry.unitId, entry);
-    else if (existing.disposition === entry.disposition) {
+    const key = `${entry.unitId}\u0000${entry.disposition}`;
+    const existing = byKey.get(key);
+    if (existing === undefined) byKey.set(key, entry);
+    else {
       existing.reasons = sortedUnique([...existing.reasons, ...entry.reasons]);
       existing.frontier ||= entry.frontier;
+      if (proofRank[entry.proofClass] > proofRank[existing.proofClass]) existing.proofClass = entry.proofClass;
+      if (observabilityRank[entry.observability] > observabilityRank[existing.observability]) existing.observability = entry.observability;
     }
   }
-  return [...byKey.values()].sort((left, right) => compareStrings(left.unitId, right.unitId));
+  return [...byKey.values()].sort((left, right) => compareStrings(left.unitId, right.unitId)
+    || dispositionRank[left.disposition] - dispositionRank[right.disposition]);
 }
 
 export function createImpactClosure(input: {
   event: InvalidationEvent;
   stateBinding: StateBinding;
   entries: readonly ImpactClosureEntry[];
+  blocks?: readonly ImpactClosureBlock[];
 }): InternalImpactClosure {
   const entries = normalizeClosureEntries(input.entries);
+  const blocks = [...(input.blocks ?? [])].map((block) => ({
+    ...structuredClone(block),
+    unitIds: sortedUnique(block.unitIds),
+  })).sort((left, right) => compareStrings(`${left.ruleId}\u0000${left.ruleVersion}`, `${right.ruleId}\u0000${right.ruleVersion}`)
+    || compareStrings(left.reason, right.reason));
   const payload = {
     version: "impact-closure@1" as const,
     event: structuredClone(input.event),
     stateBinding: structuredClone(input.stateBinding),
     entries,
+    blocks,
   };
   const contentHash = hashFramedDomain("impact-closure", payload);
   return {
@@ -500,9 +669,9 @@ export function createImpactClosure(input: {
     contentHash,
     ref: {
       contentHash,
-      knownAffectedUnitIds: entries.filter(({ disposition }) => disposition === "known").map(({ unitId }) => unitId),
-      possibleFrontierUnitIds: entries.filter(({ disposition }) => disposition === "possible").map(({ unitId }) => unitId),
-      unavailableSurfaceIds: entries.filter(({ disposition }) => disposition === "unavailable").map(({ unitId }) => unitId),
+      knownAffectedUnitIds: sortedUnique(entries.filter(({ disposition }) => disposition === "known" || disposition === "blocked").map(({ unitId }) => unitId)),
+      possibleFrontierUnitIds: sortedUnique(entries.filter(({ disposition }) => disposition === "possible").map(({ unitId }) => unitId)),
+      unavailableSurfaceIds: sortedUnique(entries.filter(({ disposition }) => disposition === "unavailable").map(({ unitId }) => unitId)),
     },
   };
 }
@@ -513,17 +682,50 @@ export interface RevalidatedUnit {
   validations?: readonly ValidationResult[];
 }
 
+function normalizeRevalidatedUnits(outputs: readonly RevalidatedUnit[]): RevalidatedUnit[] {
+  const byUnit = new Map<string, RevalidatedUnit>();
+  for (const candidate of outputs) {
+    const normalized: RevalidatedUnit = {
+      ...structuredClone(candidate),
+      ...(candidate.validations === undefined ? {} : {
+        validations: [...candidate.validations].map((validation) => structuredClone(validation))
+          .sort((left, right) => compareStrings(left.validatorId, right.validatorId) || compareStrings(left.summary, right.summary)),
+      }),
+    };
+    const existing = byUnit.get(normalized.unitId);
+    if (existing !== undefined) {
+      if (canonicalJson(existing) !== canonicalJson(normalized)) {
+        throw new Error(`duplicate revalidation output ${normalized.unitId} has conflicting signatures or validations`);
+      }
+      continue;
+    }
+    byUnit.set(normalized.unitId, normalized);
+  }
+  return [...byUnit.values()].sort((left, right) => compareStrings(left.unitId, right.unitId));
+}
+
 export interface InvalidationRunOptions {
   revalidate(unitIds: readonly EntityId[]): Promise<readonly RevalidatedUnit[]>;
   backdatingPolicy?: BackdatingPolicy;
   stateBinding?: StateBinding;
   maximumProofGroupIterations?: number;
+  derivationStore?: DerivationIndexStore;
+}
+
+export interface InvalidationBlock {
+  ruleId: EntityId;
+  ruleVersion: string;
+  unitIds: EntityId[];
+  reason: string;
 }
 
 export interface InvalidationRunResult {
   invalidation: InvalidationResult;
   backdatedUnitIds: EntityId[];
   validUnitIds: EntityId[];
+  revalidatedRecords: DerivationRecord[];
+  blocked: InvalidationBlock[];
+  blockedUnitIds: EntityId[];
   diagnostics: string[];
   impactClosure?: InternalImpactClosure;
 }
@@ -533,17 +735,23 @@ export class InvalidationEngine {
   private readonly impactRules: ImpactRuleRegistry | undefined;
   private readonly impactPort: ImpactRuleEvaluationPort | undefined;
   private readonly closureStore: ImpactClosureArtifactStore | undefined;
+  private readonly signatureProfiles: SemanticSignatureProfileRegistry | undefined;
+  private readonly derivationStore: DerivationIndexStore | undefined;
 
   constructor(options: {
     derivations: DerivationIndex;
     impactRules?: ImpactRuleRegistry;
     impactPort?: ImpactRuleEvaluationPort;
     closureStore?: ImpactClosureArtifactStore;
+    signatureProfiles?: SemanticSignatureProfileRegistry;
+    derivationStore?: DerivationIndexStore;
   }) {
     this.derivations = options.derivations;
     this.impactRules = options.impactRules;
     this.impactPort = options.impactPort;
     this.closureStore = options.closureStore;
+    this.signatureProfiles = options.signatureProfiles;
+    this.derivationStore = options.derivationStore;
     if ((this.impactRules === undefined) !== (this.impactPort === undefined)) {
       throw new Error("Impact Rules require an evaluation port and vice versa");
     }
@@ -555,10 +763,25 @@ export class InvalidationEngine {
     const possibleFrontier = new Set<string>();
     const unavailable = new Set<string>();
     const backdated = new Set<string>();
+    const refreshedRecords = new Map<string, DerivationRecord>();
+    const blocked = new Map<string, InvalidationBlock>();
     const diagnostics = new Set<string>();
+    const queryDependencies: StateQueryDependency[] = [];
     const reasons = new Map<string, Set<string>>();
     const proofClasses = new Map<string, ImpactProofClass>();
     const observability = new Map<string, ObservabilityClass>();
+    queryDependencies.push(syntheticQueryDependency({
+      id: `invalidation:reverse-derivation:${event.subjectId}`,
+      kind: "reverse-derivation",
+      programId: "invalidation.exact-reverse-derivation",
+      programVersion: "1",
+      input: { eventKind: event.eventKind, subjectId: event.subjectId },
+      role: "exact reverse derivation dependents",
+      result: sortedUnique([...directlyAffected]),
+      resultCount: directlyAffected.size,
+      observability: "closed",
+      dependencyKeys: [`reverse-derivations:${event.subjectId}`],
+    }));
     const addReason = (id: string, reason: string): void => {
       const values = reasons.get(id) ?? new Set<string>();
       values.add(reason);
@@ -568,6 +791,11 @@ export class InvalidationEngine {
       addReason(id, `exact derivation input ${event.subjectId} changed`);
       proofClasses.set(id, "exact-derivation");
       observability.set(id, "closed");
+      const record = this.derivations.get(id);
+      if (event.eventKind === "signature-profile-change" && record !== undefined
+        && (record.outputSemanticSignature.profileId === event.subjectId || record.outputStructuralSignature.profileId === event.subjectId)) {
+        addReason(id, `signature profile ${event.subjectId} changed; output derivation requires fresh proof`);
+      }
     });
 
     if (this.impactRules !== undefined && this.impactPort !== undefined) {
@@ -580,9 +808,39 @@ export class InvalidationEngine {
             this.impactPort.subjects(rule, "before", event),
             this.impactPort.subjects(rule, "after", event),
           ]);
-        } catch {
+          for (const [phase, subjects] of [["before", before], ["after", after]] as const) {
+            queryDependencies.push(syntheticQueryDependency({
+              id: `invalidation:${rule.id}:${rule.version}:selector-membership:${phase}`,
+              kind: "selector-membership",
+              programId: "invalidation.impact-rule-selector-membership",
+              programVersion: "1",
+              input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, phase },
+              role: "Impact Rule selector membership",
+              result: subjects.map(({ id, values }) => ({ id, values })),
+              resultCount: subjects.length,
+              observability: "closed",
+              dependencyKeys: subjects.flatMap(({ dependencyKeys }) => dependencyKeys),
+            }));
+          }
+        } catch (error) {
+          for (const phase of ["before", "after"] as const) {
+            queryDependencies.push(syntheticQueryDependency({
+              id: `invalidation:${rule.id}:${rule.version}:selector-membership:${phase}`,
+              kind: "selector-membership",
+              programId: "invalidation.impact-rule-selector-membership",
+              programVersion: "1",
+              input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, phase },
+              role: "Impact Rule selector membership",
+              result: [],
+              resultCount: 0,
+              observability: "unavailable",
+              unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} membership`],
+              dependencyKeys: [`impact-rule-membership:${rule.id}:${phase}`],
+            }));
+          }
           unavailable.add(event.subjectId);
           addReason(event.subjectId, `Impact Rule ${rule.id}@${rule.version} membership is unavailable`);
+          addReason(event.subjectId, `Impact Rule ${rule.id}@${rule.version} membership failure: ${error instanceof Error ? error.message : "unknown failure"}`);
           continue;
         }
         let seeds: string[];
@@ -590,9 +848,35 @@ export class InvalidationEngine {
           seeds = sortedUnique([...before, ...after]
             .filter((subject) => evaluateSelector(rule.selector, subject).matched)
             .map(({ id }) => id));
-        } catch {
+          queryDependencies.push(syntheticQueryDependency({
+            id: `invalidation:${rule.id}:${rule.version}:applicability`,
+            kind: "impact-rule-applicability",
+            programId: "invalidation.impact-rule-applicability",
+            programVersion: "1",
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version },
+            role: "Impact Rule applicability",
+            result: seeds,
+            resultCount: seeds.length,
+            observability: "closed",
+            dependencyKeys: [...before, ...after].flatMap(({ dependencyKeys }) => dependencyKeys),
+          }));
+        } catch (error) {
+          queryDependencies.push(syntheticQueryDependency({
+            id: `invalidation:${rule.id}:${rule.version}:applicability`,
+            kind: "impact-rule-applicability",
+            programId: "invalidation.impact-rule-applicability",
+            programVersion: "1",
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version },
+            role: "Impact Rule applicability",
+            result: [],
+            resultCount: 0,
+            observability: "unavailable",
+            unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} evaluation`],
+            dependencyKeys: [`impact-rule-applicability:${rule.id}`],
+          }));
           unavailable.add(event.subjectId);
           addReason(event.subjectId, `Impact Rule ${rule.id}@${rule.version} evaluation is unavailable`);
+          addReason(event.subjectId, `Impact Rule ${rule.id}@${rule.version} evaluation failure: ${error instanceof Error ? error.message : "unknown failure"}`);
           continue;
         }
         seeds.forEach((id) => {
@@ -602,8 +886,57 @@ export class InvalidationEngine {
           if (!observability.has(id)) observability.set(id, "closed");
         });
         if (seeds.length === 0 || rule.effect === "advisory") continue;
+        if (rule.effect === "block") {
+          const block: InvalidationBlock = {
+            ruleId: rule.id,
+            ruleVersion: rule.version,
+            unitIds: sortedUnique(seeds),
+            reason: `Impact Rule ${rule.id}@${rule.version} blocks planning and mutation for applicable selector members`,
+          };
+          blocked.set(`${rule.id}\u0000${rule.version}`, block);
+          block.unitIds.forEach((id) => {
+            addReason(id, block.reason);
+            proofClasses.set(id, "impact-rule");
+            observability.set(id, "closed");
+          });
+          diagnostics.add(`impact-rule-block:${rule.id}@${rule.version}`);
+          continue;
+        }
         try {
           const traversal = await this.impactPort.traverse(seeds, rule, event);
+          const traversalIds = [...traversal.knownIds, ...traversal.possibleIds, ...traversal.unavailableIds];
+          const traversalDependencyKeys = [
+            ...seeds.map((id) => `selector-member:${id}`),
+            ...(traversal.dependencyKeys ?? []),
+          ];
+          queryDependencies.push(syntheticQueryDependency({
+            id: `invalidation:${rule.id}:${rule.version}:reverse-traversal`,
+            kind: "reverse-derivation",
+            programId: "invalidation.impact-rule-reverse-traversal",
+            programVersion: "1",
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, seedIds: sortedUnique(seeds) },
+            role: "Impact Rule reverse derivation traversal",
+            result: { knownIds: sortedUnique(traversal.knownIds), possibleIds: sortedUnique(traversal.possibleIds), unavailableIds: sortedUnique(traversal.unavailableIds) },
+            resultCount: traversalIds.length,
+            observability: traversal.observability,
+            ...(traversal.assumptions === undefined ? {} : { assumptions: traversal.assumptions }),
+            ...(traversal.unavailableLanes === undefined ? {} : { unavailableLanes: traversal.unavailableLanes }),
+            dependencyKeys: traversalDependencyKeys,
+          }));
+          queryDependencies.push(syntheticQueryDependency({
+            id: `invalidation:${rule.id}:${rule.version}:enumeration`,
+            kind: "surface-enumeration",
+            programId: "invalidation.impact-rule-enumeration",
+            programVersion: "1",
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, seedIds: sortedUnique(seeds) },
+            role: "Impact Rule bounded consequence enumeration",
+            result: traversalIds,
+            resultCount: traversalIds.length,
+            observability: traversal.observability,
+            ...(traversal.assumptions === undefined ? {} : { assumptions: traversal.assumptions }),
+            ...(traversal.unavailableLanes === undefined ? {} : { unavailableLanes: traversal.unavailableLanes }),
+            dependencyKeys: traversalDependencyKeys,
+          }));
           traversal.knownIds.forEach((id) => {
             if (rule.effect === "widen-analysis") possibleFrontier.add(id);
             else transitivelyAffected.add(id);
@@ -627,8 +960,39 @@ export class InvalidationEngine {
           if (traversal.observability === "open" || traversal.observability === "sampled") {
             seeds.forEach((id) => addReason(id, `${traversal.observability} Impact Rule traversal cannot prove closure`));
           }
-        } catch {
-          seeds.forEach((id) => unavailable.add(id));
+        } catch (error) {
+          queryDependencies.push(syntheticQueryDependency({
+            id: `invalidation:${rule.id}:${rule.version}:reverse-traversal`,
+            kind: "reverse-derivation",
+            programId: "invalidation.impact-rule-reverse-traversal",
+            programVersion: "1",
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, seedIds: sortedUnique(seeds) },
+            role: "Impact Rule reverse derivation traversal",
+            result: [],
+            resultCount: 0,
+            observability: "unavailable",
+            unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} traversal`],
+            dependencyKeys: seeds.map((id) => `selector-member:${id}`),
+          }));
+          queryDependencies.push(syntheticQueryDependency({
+            id: `invalidation:${rule.id}:${rule.version}:enumeration`,
+            kind: "surface-enumeration",
+            programId: "invalidation.impact-rule-enumeration",
+            programVersion: "1",
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, seedIds: sortedUnique(seeds) },
+            role: "Impact Rule bounded consequence enumeration",
+            result: [],
+            resultCount: 0,
+            observability: "unavailable",
+            unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} enumeration`],
+            dependencyKeys: seeds.map((id) => `selector-member:${id}`),
+          }));
+          seeds.forEach((id) => {
+            unavailable.add(id);
+            proofClasses.set(id, "unavailable");
+            observability.set(id, "unavailable");
+            addReason(id, `Impact Rule ${rule.id}@${rule.version} traversal unavailable: ${error instanceof Error ? error.message : "unknown failure"}`);
+          });
         }
       }
     }
@@ -646,27 +1010,23 @@ export class InvalidationEngine {
       const priorRecords = memberIds.map((id) => this.derivations.get(id)).filter((item): item is DerivationRecord => item !== undefined);
       if (priorRecords.length === 0) continue;
       const maximumIterations = Math.max(1, options.maximumProofGroupIterations ?? 8);
-      let outputs: readonly RevalidatedUnit[] = [];
+      let outputs: RevalidatedUnit[] = [];
       let priorRoundHash: ContentHash | undefined;
       let fixedPointReached = group?.cyclic !== true;
       for (let iteration = 0; iteration < (group?.cyclic ? maximumIterations : 1); iteration += 1) {
         try {
-          outputs = await options.revalidate(memberIds);
-        } catch {
+          outputs = normalizeRevalidatedUnits(await options.revalidate(memberIds));
+        } catch (error) {
           outputs = [];
+          diagnostics.add(error instanceof Error ? error.message : "semantic revalidation failed");
           break;
         }
         const outputHash = hashFramedDomain("proof-group-output", [...outputs]
-          .map(({ unitId, signature }) => ({ unitId, signature }))
+          .map(({ unitId, signature, validations }) => ({ unitId, signature, validations }))
           .sort((left, right) => compareStrings(left.unitId, right.unitId)));
         const matchesEstablished = priorRecords.every((prior) => {
           const output = outputs.find(({ unitId }) => unitId === prior.unitId);
-          return output !== undefined && assessBackdating(
-            prior.outputSemanticSignature,
-            output.signature,
-            output.validations ?? [],
-            policy,
-          ).eligible;
+          return output !== undefined && this.assessBackdating(prior, output, event, policy).eligible;
         });
         if (matchesEstablished || priorRoundHash === outputHash) {
           fixedPointReached = true;
@@ -679,17 +1039,16 @@ export class InvalidationEngine {
         const output = byUnit.get(prior.unitId);
         return {
           unitId: prior.unitId,
-          assessment: output === undefined ? undefined : assessBackdating(
-            prior.outputSemanticSignature,
-            output.signature,
-            output.validations ?? [],
-            policy,
-          ),
+          assessment: output === undefined ? undefined : this.assessBackdating(prior, output, event, policy),
         };
       });
       const groupEligible = assessments.length === memberIds.length && assessments.every(({ assessment }) => assessment?.eligible);
       if (groupEligible) {
         memberIds.forEach((id) => backdated.add(id));
+        for (const prior of priorRecords) {
+          const output = byUnit.get(prior.unitId);
+          if (output !== undefined) refreshedRecords.set(prior.unitId, this.refreshDerivationRecord(prior, output, event));
+        }
         continue;
       }
       const anyUnavailable = assessments.some(({ assessment }) => assessment === undefined);
@@ -702,6 +1061,18 @@ export class InvalidationEngine {
       const reason = assessments.find(({ assessment }) => !assessment?.eligible)?.assessment?.reason
         ?? "semantic revalidation is unavailable";
       const downstream = this.transitiveDependents(memberIds, new Set(memberIds));
+      queryDependencies.push(syntheticQueryDependency({
+        id: `invalidation:reverse-derivation:downstream:${memberIds.join(",")}`,
+        kind: "reverse-derivation",
+        programId: "invalidation.transitive-reverse-derivation",
+        programVersion: "1",
+        input: { eventKind: event.eventKind, subjectId: event.subjectId, seedIds: sortedUnique(memberIds) },
+        role: "transitive reverse derivation dependents",
+        result: downstream,
+        resultCount: downstream.length,
+        observability: "closed",
+        dependencyKeys: memberIds.map((id) => `reverse-derivations:${id}`),
+      }));
       if (anyMaterial && fixedPointReached) downstream.forEach((id) => {
         if (!directlyAffected.has(id)) transitivelyAffected.add(id);
         addReason(id, reason);
@@ -714,6 +1085,13 @@ export class InvalidationEngine {
         unavailable.add(id);
         addReason(id, "semantic revalidation is unavailable");
       });
+    }
+
+    const revalidatedRecords = [...refreshedRecords.values()].sort((left, right) => compareStrings(left.unitId, right.unitId));
+    if (revalidatedRecords.length > 0) {
+      const refreshedById = new Map(revalidatedRecords.map((record) => [record.unitId, record]));
+      this.derivations.replaceRecords(this.derivations.records().map((record) => refreshedById.get(record.unitId) ?? record));
+      await (options.derivationStore ?? this.derivationStore)?.replace(this.derivations.snapshot());
     }
 
     directlyAffected.forEach((id) => {
@@ -735,26 +1113,91 @@ export class InvalidationEngine {
       ...invalidation.transitivelyAffected,
       ...invalidation.possibleFrontier,
       ...invalidation.unavailable,
+      ...[...blocked.values()].flatMap(({ unitIds }) => unitIds),
     ]);
-    backdated.forEach((id) => invalid.delete(id));
+    const blockedUnitIds = new Set([...blocked.values()].flatMap(({ unitIds }) => unitIds));
+    backdated.forEach((id) => {
+      if (!blockedUnitIds.has(id)) invalid.delete(id);
+    });
 
     const entries: ImpactClosureEntry[] = [
       ...invalidation.directlyAffected.map((unitId) => ({ unitId, disposition: "known" as const, proofClass: proofClasses.get(unitId) ?? "exact-derivation", observability: observability.get(unitId) ?? "closed", frontier: false, reasons: invalidation.reasons[unitId] ?? [] })),
       ...invalidation.transitivelyAffected.map((unitId) => ({ unitId, disposition: "known" as const, proofClass: proofClasses.get(unitId) ?? "exact-derivation", observability: observability.get(unitId) ?? "closed", frontier: false, reasons: invalidation.reasons[unitId] ?? [] })),
       ...invalidation.possibleFrontier.map((unitId) => ({ unitId, disposition: "possible" as const, proofClass: proofClasses.get(unitId) ?? "inferred", observability: observability.get(unitId) ?? "open", frontier: true, reasons: invalidation.reasons[unitId] ?? [] })),
+      ...[...blocked.values()].flatMap((block) => block.unitIds.map((unitId) => ({ unitId, disposition: "blocked" as const, proofClass: "impact-rule" as const, observability: observability.get(unitId) ?? "closed", frontier: true, reasons: [...(invalidation.reasons[unitId] ?? []), block.reason] }))),
       ...invalidation.unavailable.map((unitId) => ({ unitId, disposition: "unavailable" as const, proofClass: "unavailable" as const, observability: "unavailable" as const, frontier: true, reasons: invalidation.reasons[unitId] ?? [] })),
     ];
+    const normalizedBinding = options.stateBinding === undefined
+      ? undefined
+      : mergeImpactStateBinding(options.stateBinding, event, queryDependencies);
     const impactClosure = options.stateBinding === undefined
       ? undefined
-      : createImpactClosure({ event, stateBinding: options.stateBinding, entries });
+      : createImpactClosure({ event, stateBinding: normalizedBinding!, entries, blocks: [...blocked.values()] });
     if (impactClosure !== undefined) await this.closureStore?.put(impactClosure);
     return {
       invalidation,
       backdatedUnitIds: sortedUnique([...backdated]),
       validUnitIds: this.derivations.allUnitIds().filter((id) => !invalid.has(id)),
+      revalidatedRecords,
+      blocked: [...blocked.values()].sort((left, right) => compareStrings(`${left.ruleId}\u0000${left.ruleVersion}`, `${right.ruleId}\u0000${right.ruleVersion}`)),
+      blockedUnitIds: sortedUnique([...blocked.values()].flatMap(({ unitIds }) => unitIds)),
       diagnostics: sortedUnique([...diagnostics]),
       ...(impactClosure === undefined ? {} : { impactClosure }),
     };
+  }
+
+  private assessBackdating(
+    prior: DerivationRecord,
+    output: RevalidatedUnit,
+    event: InvalidationEvent,
+    policy: BackdatingPolicy,
+  ): BackdatingAssessment {
+    const profileChanged = event.eventKind === "signature-profile-change"
+      && (event.subjectId === prior.outputSemanticSignature.profileId || event.subjectId === prior.outputStructuralSignature.profileId);
+    if (profileChanged) {
+      return {
+        eligible: false,
+        materiallyChanged: true,
+        reason: "signature profile changed and requires a fresh derivation proof",
+        qualifyingValidatorIds: [],
+      };
+    }
+    if (this.signatureProfiles !== undefined) {
+      for (const candidate of [output.signature, prior.outputStructuralSignature]) {
+        const profileAssessment = this.signatureProfiles.assess(candidate);
+        if (!profileAssessment.current) {
+          return {
+            eligible: false,
+            materiallyChanged: true,
+            reason: profileAssessment.reason,
+            qualifyingValidatorIds: [],
+          };
+        }
+      }
+    }
+    return assessBackdating(prior.outputSemanticSignature, output.signature, output.validations ?? [], policy);
+  }
+
+  private refreshDerivationRecord(prior: DerivationRecord, output: RevalidatedUnit, event: InvalidationEvent): DerivationRecord {
+    const changedVersionHash = event.newHash ?? hashFramedDomain("invalidation-event-input", event);
+    const inputs = prior.inputs.map((input) => input.id === event.subjectId
+      ? { ...input, versionHash: changedVersionHash }
+      : input);
+    const profileDependency = event.eventKind === "signature-profile-change"
+      && (prior.outputSemanticSignature.profileId === event.subjectId || prior.outputStructuralSignature.profileId === event.subjectId)
+      && !inputs.some((input) => input.kind === "signature-profile" && input.id === event.subjectId);
+    if (profileDependency) inputs.push({
+      kind: "signature-profile",
+      id: event.subjectId,
+      versionHash: changedVersionHash,
+      role: "output-signature-profile",
+    });
+    return normalizeRecord({
+      ...prior,
+      inputs,
+      outputSemanticSignature: structuredClone(output.signature),
+      validators: output.validations === undefined ? prior.validators : [...output.validations],
+    });
   }
 
   private transitiveDependents(seedIds: readonly string[], excluded: ReadonlySet<string>): string[] {
@@ -777,6 +1220,11 @@ export interface CorrectnessOracleInput {
   rebuild: { incrementalHash: ContentHash; cleanHash: ContentHash };
   conformance: readonly ValidationResult[];
   historical: readonly ValidationResult[];
+  conformancePolicy?: {
+    minimumAssurance?: ValidationResult["assurance"];
+    minimumIndependentGroups?: number;
+    disallowedEvidenceLanes?: readonly ValidationResult["evidenceLane"][];
+  };
 }
 
 export interface CorrectnessOracleVerdict {
@@ -794,9 +1242,25 @@ export interface CorrectnessOracleVerdict {
 
 export function compareCorrectnessOracles(input: CorrectnessOracleInput): CorrectnessOracleVerdict {
   const rebuildConsistent = input.rebuild.incrementalHash === input.rebuild.cleanHash;
-  const independentConformance = input.conformance.filter(({ evidenceLane }) => evidenceLane !== "same-packet-agent");
-  const conformancePassed = independentConformance.length > 0
-    && independentConformance.every(({ status }) => status === "passed");
+  const minimumAssurance = input.conformancePolicy?.minimumAssurance ?? "strong";
+  const minimumIndependentGroups = Math.max(1, input.conformancePolicy?.minimumIndependentGroups ?? 1);
+  const disallowedEvidenceLanes = new Set<ValidationResult["evidenceLane"]>([
+    "same-packet-agent",
+    ...(input.conformancePolicy?.disallowedEvidenceLanes ?? []),
+  ]);
+  const qualifyingConformance = input.conformance.filter((result) =>
+    result.status === "passed"
+    && validationAssuranceRank[result.assurance] >= validationAssuranceRank[minimumAssurance]
+    && !disallowedEvidenceLanes.has(result.evidenceLane)
+    && result.independenceGroup.trim() !== ""
+    && result.authorSource.trim() !== ""
+    && result.evidenceIds.length > 0,
+  );
+  const independentGroups = new Set(qualifyingConformance.map(({ independenceGroup }) => independenceGroup.trim()));
+  const conformancePassed = input.conformance.length > 0
+    && input.conformance.every(({ status }) => status === "passed")
+    && qualifyingConformance.length > 0
+    && independentGroups.size >= minimumIndependentGroups;
   const historicalPassed = input.historical.length === 0
     ? undefined
     : input.historical.every(({ status }) => status === "passed");
