@@ -710,14 +710,35 @@ export interface RevalidatedUnit {
   validations?: readonly ValidationResult[];
 }
 
+const normalizeProofSignature = (signature: SemanticSignature): SemanticSignature => ({
+  ...structuredClone(signature),
+  evidenceIds: sortedUnique(signature.evidenceIds),
+});
+
+const normalizeProofInputs = (inputs: readonly DerivationInput[]): DerivationInput[] => [...inputs]
+  .map((input) => structuredClone(input))
+  .sort((left, right) => compareStrings(inputKey(left), inputKey(right)) || compareStrings(left.versionHash, right.versionHash));
+
+const normalizeProofValidation = (validation: ValidationResult): ValidationResult => ({
+  ...structuredClone(validation),
+  evidenceIds: sortedUnique(validation.evidenceIds),
+});
+
 function normalizeRevalidatedUnits(outputs: readonly RevalidatedUnit[]): RevalidatedUnit[] {
   const byUnit = new Map<string, RevalidatedUnit>();
   for (const candidate of outputs) {
     const normalized: RevalidatedUnit = {
       ...structuredClone(candidate),
+      signature: normalizeProofSignature(candidate.signature),
+      ...(candidate.structuralSignature === undefined ? {} : {
+        structuralSignature: normalizeProofSignature(candidate.structuralSignature),
+      }),
+      ...(candidate.inputs === undefined ? {} : { inputs: normalizeProofInputs(candidate.inputs) }),
       ...(candidate.validations === undefined ? {} : {
-        validations: [...candidate.validations].map((validation) => structuredClone(validation))
-          .sort((left, right) => compareStrings(left.validatorId, right.validatorId) || compareStrings(left.summary, right.summary)),
+        validations: [...candidate.validations].map(normalizeProofValidation)
+          .sort((left, right) => compareStrings(left.validatorId, right.validatorId)
+            || compareStrings(left.summary, right.summary)
+            || compareStrings(canonicalJson(left), canonicalJson(right))),
       }),
     };
     const existing = byUnit.get(normalized.unitId);
@@ -1100,16 +1121,15 @@ export class InvalidationEngine {
           diagnostics.add(error instanceof Error ? error.message : "semantic revalidation failed");
           break;
         }
+        // Outputs are normalized before hashing, so convergence covers the complete
+        // proof projection that refreshDerivationRecord publishes: semantic and
+        // structural signatures, current inputs, and validation evidence.
         const outputHash = hashFramedDomain("proof-group-output", [...outputs]
           .map(({ unitId, signature, structuralSignature, inputs, validations }) => ({ unitId, signature, structuralSignature, inputs, validations }))
           .sort((left, right) => compareStrings(left.unitId, right.unitId)));
         completeCoverage = outputs.length === memberIds.length
           && memberIds.every((memberId) => outputs.some(({ unitId }) => unitId === memberId));
-        const matchesEstablished = priorRecords.every((prior) => {
-          const output = outputs.find(({ unitId }) => unitId === prior.unitId);
-          return output !== undefined && this.assessBackdating(prior, output, event, policy).eligible;
-        });
-        if (completeCoverage && (matchesEstablished || priorRoundHash === outputHash)) {
+        if (completeCoverage && (group?.cyclic !== true || priorRoundHash === outputHash)) {
           fixedPointReached = true;
           break;
         }

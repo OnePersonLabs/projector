@@ -403,7 +403,10 @@ describe("derivation index and exact invalidation", () => {
       },
     });
 
-    expect(calls).toEqual([["contract-a", "contract-b"]]);
+    expect(calls).toEqual([
+      ["contract-a", "contract-b"],
+      ["contract-a", "contract-b"],
+    ]);
     expect(result.backdatedUnitIds).toEqual(["contract-a", "contract-b"]);
     expect(result.validUnitIds).toContain("consumer");
   });
@@ -439,7 +442,7 @@ describe("derivation index and exact invalidation", () => {
         return currentSccOutputs(round === 1 ? "a-intermediate" : "a-v1", "b-v1");
       },
     });
-    expect(round).toBe(2);
+    expect(round).toBe(3);
     expect(converged.backdatedUnitIds).toEqual(["contract-a", "contract-b"]);
 
     let oscillationRound = 0;
@@ -452,6 +455,50 @@ describe("derivation index and exact invalidation", () => {
     });
     expect(unresolved.diagnostics).toContain("derivation-cycle-unresolved");
     expect(unresolved.invalidation.possibleFrontier).toContain("consumer");
+  });
+
+  it("does not publish a cyclic proof when semantic equality hides changing structural proofs", async () => {
+    const index = new DerivationIndex([
+      record("contract-a", [["artifact", "internal"], ["unit", "contract-b"]], "a-v1"),
+      record("contract-b", [["unit", "contract-a"]], "b-v1"),
+      record("consumer", [["unit", "contract-a"]]),
+    ]);
+    const before = index.snapshot();
+    const stored: DerivationIndexSnapshot[] = [];
+    let round = 0;
+    const result = await new InvalidationEngine({ derivations: index }).invalidate(event("internal"), {
+      maximumProofGroupIterations: 3,
+      derivationStore: { load: async () => undefined, replace: async (snapshot) => { stored.push(snapshot); } },
+      revalidate: async () => {
+        round += 1;
+        return [
+          {
+            unitId: "contract-a",
+            signature: signature("a-v1"),
+            structuralSignature: { ...signature(`structure-a-round-${round}`), scope: "ast-shape" },
+            inputs: [
+              { kind: "artifact" as const, id: "internal", versionHash: hash("new"), role: "source" },
+              { kind: "unit" as const, id: "contract-b", versionHash: hash("b-v1"), role: "semantic-output" },
+            ],
+          },
+          {
+            unitId: "contract-b",
+            signature: signature("b-v1"),
+            structuralSignature: { ...signature(`structure-b-round-${round}`), scope: "ast-shape" },
+            inputs: [{ kind: "unit" as const, id: "contract-a", versionHash: hash("a-v1"), role: "semantic-output" }],
+          },
+        ];
+      },
+    });
+
+    expect(round).toBe(3);
+    expect(result.backdatedUnitIds).toEqual([]);
+    expect(result.invalidation.unavailable).toEqual(expect.arrayContaining(["contract-a", "contract-b"]));
+    expect(result.validUnitIds).not.toEqual(expect.arrayContaining(["contract-a", "contract-b"]));
+    expect(result.revalidatedRecords).toEqual([]);
+    expect(result.diagnostics).toContain("derivation-cycle-unresolved");
+    expect(index.snapshot()).toEqual(before);
+    expect(stored).toEqual([]);
   });
 
   it("propagates a materially changed SCC after its new signatures reach a fixed point", async () => {
