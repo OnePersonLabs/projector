@@ -846,5 +846,7 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
       expect.objectContaining({ unitId: "export", disposition: "known", proofClass: "exact-derivation", observability: "closed" }),
       expect.objectContaining({ unitId: "export", disposition: "unavailable", proofClass: "unavailable", observability: "unavailable" }),
     ]));
+    const known = result.impactClosure?.entries.find(({ unitId, disposition }) => unitId === "export" && disposition === "known");
+    expect(known?.reasons.some((reason) => reason.includes("reverse index unavailable"))).toBe(false);
   });
 });
