@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { executeProjector, type CoverageCliPort } from "./cli.js";
 
@@ -37,5 +40,23 @@ describe("coverage/complete/cleanup CLI composition", () => {
     expect((await executeProjector(["coverage", "--scope", "packages/api"], { coverage: { ...port, coverage: async () => ({ ...report, proofStatement: "proven-within-boundary", strictnessMet: true, boundary: ["other"] }) } })).exitCode).not.toBe(0);
     expect((await executeProjector(["coverage", "--strictness", "partial"], { cwd: process.cwd() })).exitCode).not.toBe(0);
     expect((await executeProjector(["coverage", "--strictness", "partial"], { coverage: { ...port, coverage: async () => ({ ...report, boundary: ["."], lanes: [] }) } })).exitCode).not.toBe(0);
+  });
+
+  it("composes deterministic built coverage from real Task14 repository analysis", async () => {
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "projector-coverage-"));
+    try {
+      await writeFile(join(repositoryRoot, "package.json"), JSON.stringify({ name: "fixture", scripts: { check: "node src/check.js" } }));
+      await writeFile(join(repositoryRoot, "bad.json"), "{\"broken\":");
+      const first = await executeProjector(["coverage", "--format", "json"], { cwd: repositoryRoot });
+      const second = await executeProjector(["coverage", "--format", "json"], { cwd: repositoryRoot });
+      expect(first.report.lanes).toHaveLength(17);
+      expect(new Set(first.report.lanes.map((lane: { key: string }) => lane.key))).toEqual(new Set(laneKeys));
+      expect(first.report.localAnalysis).toMatchObject({ artifactCount: 2, projectionUnitCount: 2 });
+      expect(first.report.localAnalysis.analyzerFailures).toContainEqual(expect.objectContaining({ capability: "document-parse", scope: "bad.json" }));
+      expect(first.report).not.toHaveProperty("adapter");
+      expect(second).toEqual(first);
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true });
+    }
   });
 });
