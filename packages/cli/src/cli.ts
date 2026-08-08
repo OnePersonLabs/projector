@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
+import { createInterface } from "node:readline";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,7 +9,6 @@ import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type Archite
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import { compileSemanticChange, compileSemanticChangePlan, createStateBinding } from "@projector/engine";
 import { executePacketPlan, type PacketObservation, type PlanExecutionArtifact, type PacketExecutionArtifact } from "@projector/runtime";
-import { createBuiltProjectorMcpServer, REQUIRED_PROJECTOR_CONTROLLED_TOOLS, REQUIRED_PROJECTOR_READ_TOOLS } from "@projector/integrations";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -22,6 +22,7 @@ import { compileAuthenticatedCoverageSnapshot, REQUIRED_COVERAGE_LANES, type Cov
 
 import { assertOperationRiskAuthorized, deriveOperationRisk, normalizeExecutionPolicy, type CliPolicyInput, type OperationRiskInput, type SliceCommand } from "./policy.js";
 import { createBuiltRunHostPort } from "./host-cli.js";
+import { createBuiltMcpCliPort } from "./mcp-cli.js";
 import {
   analyzeMandatorySlice,
   applyMandatorySlice,
@@ -84,7 +85,7 @@ export interface ProjectorCommandOptions {
 export interface RunHostCliRequest { readonly host: "codex" | "claude"; readonly sessionSelector: string; readonly repositoryRoot: string; readonly argv: readonly string[]; readonly environment: Readonly<Record<string, string>>; readonly signal: AbortSignal }
 export interface RunHostCliResult { readonly status: "completed" | "failed" | "cancelled" | "unavailable"; readonly exitCode: number | null; readonly changedPaths: readonly string[]; readonly reconciled: boolean; readonly signal?: string }
 export interface RunHostCliPort { readonly resolve: (request: Omit<RunHostCliRequest, "argv" | "environment" | "signal">) => Promise<{ readonly authenticated: true; readonly host: "codex" | "claude" }>; readonly run: (request: RunHostCliRequest) => Promise<RunHostCliResult> }
-export interface McpCliPort { readonly start: (request: { readonly repositoryRoot: string; readonly signal: AbortSignal }) => Promise<{ readonly status: "ready" | "unavailable"; readonly tools: readonly string[] }> }
+export interface McpCliPort { readonly start: (request: { readonly repositoryRoot: string; readonly signal: AbortSignal; readonly sessionSelector?: string }) => Promise<{ readonly status: "ready" | "unavailable"; readonly tools: readonly string[]; readonly capabilityToken?: string; readonly transport: { handle(request: { readonly jsonrpc: "2.0"; readonly id: string | number | null; readonly method: string; readonly params?: unknown }): Promise<unknown> } }> }
 
 export interface ChangeCliRequest { readonly repositoryRoot: string; readonly selector: string; readonly persist?: boolean }
 export interface ChangeCliPort {
@@ -213,7 +214,8 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
   if (command === "run" && hostValue !== "codex" && hostValue !== "claude") throw new Error(`unsupported host: ${hostValue ?? ""}`);
   const sessionSelector = optionValue(commandArguments, "--session");
   if (command === "run" && (sessionSelector === undefined || !/^session:[a-z0-9][a-z0-9._:-]*$/iu.test(sessionSelector))) throw new Error("run requires a safe explicit --session selector");
-  if (command !== "run" && sessionSelector !== undefined) throw new Error("--session is only valid with run");
+  if (command === "mcp" && sessionSelector !== undefined && !/^session:[a-z0-9][a-z0-9._:-]*$/iu.test(sessionSelector)) throw new Error("mcp requires a safe session selector");
+  if (command !== "run" && command !== "mcp" && sessionSelector !== undefined) throw new Error("--session is only valid with run or mcp");
   const decisions = commandArguments.includes("--decisions");
   if (decisions && command !== "audit") throw new Error("--decisions is only valid with audit");
   const coverageCommand = command === "coverage" || command === "complete" || command === "cleanup";
@@ -454,8 +456,8 @@ export async function executeProjector(
       break;
     }
     case "mcp": {
-      const mcpResult = await (options.mcp ?? defaultMcpCliPort()).start({ repositoryRoot, signal: options.signal ?? new AbortController().signal });
-      report = { policy, ...mcpResult }; exitCode = mcpResult.status === "ready" ? 0 : 5; break;
+      const mcpResult = await (options.mcp ?? createBuiltMcpCliPort()).start({ repositoryRoot, signal: options.signal ?? new AbortController().signal, ...(parsed.sessionSelector === undefined ? {} : { sessionSelector: parsed.sessionSelector }) });
+      report = { policy, status: mcpResult.status, tools: mcpResult.tools, transportActive: true, capabilityAvailable: mcpResult.capabilityToken !== undefined }; exitCode = mcpResult.status === "ready" ? 0 : 5; break;
     }
     case "explain": {
       if (parsed.target!.startsWith("decision:")) {
@@ -484,16 +486,6 @@ export async function executeProjector(
     }
   }
   return { exitCode, output: outputFor(parsed.command, report, parsed.format), report };
-}
-
-function defaultMcpCliPort(): McpCliPort {
-  return { start: async () => {
-    const server = createBuiltProjectorMcpServer({ capability: { issue: async () => { throw new Error("built MCP capability issuer requires a trusted session store"); }, revoke: async () => { throw new Error("built MCP capability issuer requires a trusted session store"); }, consume: async () => { throw new Error("controlled MCP tool requires a trusted durable capability store"); } }, read: async ({ toolName }) => ({ status: "unavailable", toolName, reason: "repository read adapter must be selected by the MCP client request" }), controlled: { operation: "projector-controlled-mutation", risk: "R2", targets: () => ({ semanticScopes: [], writePaths: [] }), run: async () => { throw new Error("controlled MCP adapter is unavailable without a trusted session capability"); } } });
-    const listed = await server.transport.handle({ jsonrpc: "2.0", id: 1, method: "tools/list" }) as { result?: { tools?: readonly { name: string }[] } };
-    const tools = listed.result?.tools?.map(({ name }) => name).sort() ?? [];
-    const expected = [...REQUIRED_PROJECTOR_READ_TOOLS, ...REQUIRED_PROJECTOR_CONTROLLED_TOOLS].sort();
-    return { status: tools.length === expected.length && tools.every((name, index) => name === expected[index]) ? "ready" as const : "unavailable" as const, tools };
-  } };
 }
 
 function defaultChangePort(repositoryRoot: string): ChangeCliPort {
@@ -634,6 +626,12 @@ export function renderCli(arguments_: readonly string[]): string {
 
 export async function main(arguments_ = process.argv.slice(2)): Promise<number> {
   try {
+    if (arguments_[0] === "mcp") {
+      const parsed = parseCommand(arguments_); const repositoryRoot = process.cwd(); const lifecycle = await createBuiltMcpCliPort().start({ repositoryRoot, signal: new AbortController().signal, ...(parsed.sessionSelector === undefined ? {} : { sessionSelector: parsed.sessionSelector }) });
+      process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", method: "projector/ready", params: { status: lifecycle.status, tools: lifecycle.tools, ...(lifecycle.capabilityToken === undefined ? {} : { capabilityToken: lifecycle.capabilityToken }) } })}\n`);
+      await serveMcpTransport(lifecycle.transport, createInterface({ input: process.stdin, crlfDelay: Infinity }), (line) => process.stdout.write(`${line}\n`));
+      return 0;
+    }
     const result = await executeProjector(arguments_);
     process.stdout.write(`${result.output}\n`);
     return result.exitCode;
@@ -641,6 +639,10 @@ export async function main(arguments_ = process.argv.slice(2)): Promise<number> 
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
+}
+
+export async function serveMcpTransport(transport: { handle(request: { readonly jsonrpc: "2.0"; readonly id: string | number | null; readonly method: string; readonly params?: unknown }): Promise<unknown> }, lines: AsyncIterable<string>, write: (line: string) => unknown): Promise<void> {
+  for await (const line of lines) { if (line.trim() === "") continue; let request: Parameters<typeof transport.handle>[0]; try { request = JSON.parse(line) as typeof request; } catch { write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } })); continue; } write(JSON.stringify(await transport.handle(request))); }
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

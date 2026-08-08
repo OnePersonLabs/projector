@@ -44,10 +44,10 @@ export function createProjectorMcpServer(dependencies: ProjectorMcpDependencies)
 export const REQUIRED_PROJECTOR_READ_TOOLS = Object.freeze(["status", "audit", "explain", "context", "coverage", "list_divergences", "preview_plan", "preview_transform", "preview_representation", "validate_representation", "validate", "resolve_identity", "relevance", "requirements", "scenarios", "impact"].map((name) => `projector.${name}`));
 export const REQUIRED_PROJECTOR_CONTROLLED_TOOLS = Object.freeze(["apply_transform", "execute_packet", "accept_decision", "create_exception", "apply_plan"].map((name) => `projector.${name}`));
 
-export function createBuiltProjectorMcpServer(dependencies: { readonly capability: MutationCapabilityService; readonly read: Tool; readonly controlled: ControlledTool }) {
+export function createBuiltProjectorMcpServer(dependencies: { readonly capability: MutationCapabilityService; readonly read: Tool; readonly controlled: ControlledTool | ((name: string) => ControlledTool) }) {
   return createProjectorMcpServer({
     capability: dependencies.capability,
     read: Object.fromEntries(REQUIRED_PROJECTOR_READ_TOOLS.map((name) => [name, (input: Readonly<Record<string, unknown>>) => dependencies.read({ ...input, toolName: name })])),
-    controlled: Object.fromEntries(REQUIRED_PROJECTOR_CONTROLLED_TOOLS.map((name) => [name, { ...dependencies.controlled, run: (input: Readonly<Record<string, unknown>>) => dependencies.controlled.run({ ...input, toolName: name }) }])),
+    controlled: Object.fromEntries(REQUIRED_PROJECTOR_CONTROLLED_TOOLS.map((name) => { const tool = typeof dependencies.controlled === "function" ? dependencies.controlled(name) : dependencies.controlled; return [name, { ...tool, run: (input: Readonly<Record<string, unknown>>) => tool.run({ ...input, toolName: name }) }]; })),
   });
 }

@@ -39,7 +39,7 @@ export function createNodeCapabilitySecurityPorts() {
 }
 
 const risk = new Map<CapabilityRisk, number>([["R0", 0], ["R1", 1], ["R2", 2], ["R3", 3], ["R4", 4]]);
-function matches(scope: string, value: string): boolean { if (scope === value || scope === "*") return true; return scope.endsWith("/**") && (value === scope.slice(0, -3) || value.startsWith(scope.slice(0, -2))); }
+function matches(scope: string, value: string): boolean { if (scope === value || scope === "*" || scope === "**") return true; return scope.endsWith("/**") && (value === scope.slice(0, -3) || value.startsWith(scope.slice(0, -2))); }
 function tokenHash(token: string): ContentHash { return hashFramedDomain("mcp-mutation-capability-token", token); }
 function tokenFrom(bytes: Uint8Array): string { return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join(""); }
 function bindingAuthentic(binding: StateBinding): boolean { return binding.dependencyDigest === hashFramedDomain("state-binding-dependencies", { valueDependencies: binding.valueDependencies, queryDependencies: binding.queryDependencies }); }
