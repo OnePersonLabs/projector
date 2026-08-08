@@ -38,4 +38,23 @@ describe("resumable cleanup and metrics", () => {
     expect(result).toMatchObject({ kind: "no-op", plan: { revision: 1 } });
     expect(cas).not.toHaveBeenCalled();
   });
+
+  it("clears approvals, proves checkpoints, and reserves durably before effects", async () => {
+    const initial = createCleanupPlan({ key: "cleanup:guarded", revision: 1, boundState: binding, frontierIds: [], completedWorkIds: [], remainingWork: [{ id: "work:a", tokenCost: 1, monetaryCost: 1 }], checkpoints: [{ id: "check:a", afterWorkIds: ["work:a"], requiredValidators: ["test"] }], assumptions: [], externalActions: [], approvalIds: ["approval:old"] });
+    const store = new InMemoryCleanupPlanStore(); await store.compareAndStore(undefined, initial);
+    const runChunk = vi.fn(async () => ({ completedWorkIds: ["work:a"], externalActions: [] }));
+    const checkpoints = { validate: vi.fn().mockResolvedValue([{ validatorId: "test", status: "failed" }]) };
+    const common = { store, bindingValidator: { validate: async () => ({ status: "current" as const, currentState: state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) }, progress: { authenticate: async () => ({ completedWorkIds: [], remainingWorkIds: ["work:a"], boundDependencyDigest: binding.dependencyDigest }) }, runChunk, checkpoints };
+    await expect(resumeCleanupPlan({ selector: initial.id, currentState: state, context, budget: { tokens: 1, cost: 1 } }, common)).rejects.toThrow(/validator|checkpoint/iu);
+    expect(runChunk).not.toHaveBeenCalled();
+    checkpoints.validate.mockResolvedValue([{ validatorId: "test", status: "passed" }]);
+    const result = await resumeCleanupPlan({ selector: initial.id, currentState: state, context, budget: { tokens: 1, cost: 1 } }, common);
+    expect(result.plan.approvalIds).toEqual([]);
+    expect(runChunk).toHaveBeenCalledTimes(1);
+
+    const conflictingStore = new InMemoryCleanupPlanStore(); await conflictingStore.compareAndStore(undefined, initial); vi.spyOn(conflictingStore, "reserve").mockResolvedValue({ status: "conflict" });
+    const sideEffect = vi.fn(async () => ({ completedWorkIds: ["work:a"], externalActions: [] }));
+    await expect(resumeCleanupPlan({ selector: initial.id, currentState: state, context, budget: { tokens: 1, cost: 1 } }, { ...common, store: conflictingStore, runChunk: sideEffect })).rejects.toThrow(/reservation|conflict/iu);
+    expect(sideEffect).not.toHaveBeenCalled();
+  });
 });

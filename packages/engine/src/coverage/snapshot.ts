@@ -38,20 +38,20 @@ export type RequiredCoverageLaneKey = (typeof REQUIRED_COVERAGE_LANES)[number];
 
 const CLAIM_KINDS: Readonly<Record<RequiredCoverageLaneKey, readonly string[]>> = {
   inventory: ["artifact-enumeration", "inventory-completeness", "inventory"],
-  "projection-unit-classification": ["projection-unit", "classification"],
+  "projection-unit-classification": ["projection-unit", "classification", "structured-document", "stable-path", "artifact-content", "artifact-metadata", "symlink-target"],
   "concept-mapping": ["concept", "semantic-mapping"],
-  relationship: ["relation", "dependency", "relationship"],
+  relationship: ["relation", "dependency", "relationship", "module-resolution", "package-script-invocations", "source-relationships"],
   lens: ["lens", "recognition"],
   "rule-enforceability": ["rule", "validator"],
   derivation: ["derivation", "source-relationships"],
   "validation-evidence": ["validation", "evidence-lane"],
   surface: ["surface", "external-ownership"],
   authority: ["authority", "governance"],
-  "historical-metamorphic": ["historical", "metamorphic"],
+  "historical-metamorphic": ["historical", "metamorphic", "introduction-history", "git-identity-and-moves"],
   "architecture-decision": ["architecture", "architecture-decision"],
-  "semantic-identity": ["identity", "semantic-identity", "overlap"],
+  "semantic-identity": ["identity", "semantic-identity", "overlap", "git-identity-and-moves", "stable-path"],
   "pre-change-relevance": ["relevance", "event-topology", "public-contract-topology"],
-  "representation-projection-fidelity": ["representation", "representation-projection", "markdown-structure", "protected-dimension"],
+  "representation-projection-fidelity": ["representation", "representation-projection", "markdown-structure", "protected-dimension", "structured-document", "stable-path", "document-parse", "duplicate-key"],
   "change-closure": ["change-closure", "impact"],
   "planning-surprise": ["planning-surprise", "predicted-impact", "observed-impact"],
 };
@@ -151,7 +151,7 @@ function normalizeLane(raw: CoverageLaneEvidence, failures: readonly AnalyzerFai
     .sort((left, right) => compare(canonicalJson(left), canonicalJson(right)));
   const requiredAssumptionsProven = assumptions.every((assumption) => proven.has(assumption));
   const exactClosureProvable = raw.applicability === "not-applicable"
-    || (raw.denominator !== undefined && (raw.observability === "closed" || raw.observability === "bounded") && (raw.observability !== "bounded" || requiredAssumptionsProven)
+    || (raw.denominator !== undefined && raw.numerator === raw.denominator && (raw.observability === "closed" || raw.observability === "bounded") && (raw.observability !== "bounded" || requiredAssumptionsProven)
       && blindSpots.length === 0 && analyzerFailures.length === 0 && staleObservationIds.length === 0);
   const lane: CoverageLaneReport = {
     key: raw.key,
@@ -203,6 +203,13 @@ export async function compileAuthenticatedCoverageSnapshot(
   }
   const missing = REQUIRED_COVERAGE_LANES.filter((key) => !byKey.has(key));
   if (missing.length > 0 || byKey.size !== REQUIRED_COVERAGE_LANES.length) throw new Error(`coverage evidence must contain exactly 17 required lanes; missing: ${missing.join(", ")}`);
+  for (const failure of evidence.analyzerFailures) {
+    const mapped = REQUIRED_COVERAGE_LANES.some((key) => {
+      const claims = new Set(CLAIM_KINDS[key]);
+      return claims.has(failure.capability) || failure.affectedClaimKinds.some((kind) => claims.has(kind));
+    });
+    if (!mapped) throw new Error(`analyzer failure ${failure.capability} omits all recognized dependent coverage claims`);
+  }
   const laneReports = REQUIRED_COVERAGE_LANES.map((key) => normalizeLane(byKey.get(key)!, evidence.analyzerFailures));
   const allExact = laneReports.every(({ exactClosureProvable }) => exactClosureProvable);
   const completeWithinBoundary = allExact && semanticCompletion(evidence) && evidence.unknownFrontierIds.length === 0 && evidence.unavailableSurfaceIds.length === 0;

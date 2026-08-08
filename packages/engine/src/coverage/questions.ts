@@ -101,7 +101,10 @@ function rank(candidate: CompletionQuestionCandidate): RankedCompletionQuestion 
   return { ...normalized, id: `completion_question_${idHash.slice(-32)}`, contentHash: hashFramedDomain("completion-question", semantic), utility };
 }
 
-export function rankCompletionQuestions(candidates: readonly CompletionQuestionCandidate[], settled: readonly SettledQuestionAnswer[], currentBindingDependencyDigest?: ContentHash): RankedCompletionQuestion[] {
+export async function rankCompletionQuestions(
+  candidates: readonly CompletionQuestionCandidate[],
+  input: { readonly store: SettledAnswerStore; readonly currentBindingDependencyDigest: ContentHash },
+): Promise<RankedCompletionQuestion[]> {
   const questions = new Map<string, RankedCompletionQuestion>();
   for (const candidate of candidates) {
     const question = rank(candidate);
@@ -109,23 +112,24 @@ export function rankCompletionQuestions(candidates: readonly CompletionQuestionC
     if (existing !== undefined && existing.contentHash !== question.contentHash) throw new Error(`conflicting completion question identity ${question.id}`);
     questions.set(question.id, existing ?? question);
   }
-  const settledByQuestion = new Map(settled.map((answer) => [answer.questionId, answer]));
-  return [...questions.values()].filter((question) => {
-    const answer = settledByQuestion.get(question.id);
-    return answer === undefined || answer.questionContentHash !== question.contentHash
-      || (currentBindingDependencyDigest !== undefined && answer.bindingDependencyDigest !== currentBindingDependencyDigest);
-  }).sort((left, right) => right.utility - left.utility || compare(left.id, right.id));
+  const unsettled: RankedCompletionQuestion[] = [];
+  for (const question of questions.values()) {
+    const answer = await input.store.read(question.id);
+    if (answer === undefined || answer.questionContentHash !== question.contentHash || answer.bindingDependencyDigest !== input.currentBindingDependencyDigest) unsettled.push(question);
+  }
+  return unsettled.sort((left, right) => right.utility - left.utility || compare(left.id, right.id));
 }
 
 export interface SettledAnswerStore {
   read(questionId: string): Promise<Readonly<SettledQuestionAnswer> | undefined>;
-  compareAndStore(expectedRevision: number | undefined, answer: Readonly<SettledQuestionAnswer>): Promise<{ readonly status: "stored" | "idempotent" | "conflict"; readonly answer?: Readonly<SettledQuestionAnswer> }>;
+  compareAndStore(expectedRevision: number | undefined, answer: Readonly<SettledQuestionAnswer>, validateAtCommit: () => Promise<void>): Promise<{ readonly status: "stored" | "idempotent" | "conflict"; readonly answer?: Readonly<SettledQuestionAnswer> }>;
 }
 
 export class InMemorySettledAnswerStore implements SettledAnswerStore {
   private readonly answers = new Map<string, Readonly<SettledQuestionAnswer>>();
   async read(questionId: string): Promise<Readonly<SettledQuestionAnswer> | undefined> { const answer = this.answers.get(questionId); return answer === undefined ? undefined : structuredClone(answer); }
-  async compareAndStore(expectedRevision: number | undefined, answer: Readonly<SettledQuestionAnswer>): Promise<{ status: "stored" | "idempotent" | "conflict"; answer?: Readonly<SettledQuestionAnswer> }> {
+  async compareAndStore(expectedRevision: number | undefined, answer: Readonly<SettledQuestionAnswer>, validateAtCommit: () => Promise<void>): Promise<{ status: "stored" | "idempotent" | "conflict"; answer?: Readonly<SettledQuestionAnswer> }> {
+    await validateAtCommit();
     const current = this.answers.get(answer.questionId);
     if (current !== undefined && canonicalJson(current) === canonicalJson(answer)) return { status: "idempotent", answer: structuredClone(current) };
     if ((current?.revision) !== expectedRevision) return { status: "conflict" };
@@ -135,10 +139,24 @@ export class InMemorySettledAnswerStore implements SettledAnswerStore {
 }
 
 export interface QuestionAuthorityPort { read(id: string): Promise<AuthorityRecord | undefined> }
+export interface QuestionExceptionalOutcomePort {
+  authenticate(input: { readonly outcome: "exception" | "defer"; readonly question: RankedCompletionQuestion; readonly authority: AuthorityRecord; readonly boundState: StateBinding; readonly answer: string }): Promise<boolean>;
+}
+
+function boundEvidence(question: RankedCompletionQuestion, binding: StateBinding): { hash: ContentHash; dependencies: unknown[] } {
+  const dependencies: unknown[] = [];
+  for (const id of question.evidenceDependencyIds) {
+    const value = binding.valueDependencies.find((item) => item.id === id);
+    const query = binding.queryDependencies.find((item) => item.query.id === id || item.priorResult.dependencyKeys.includes(id));
+    if (value === undefined && query === undefined) throw new Error(`settled answer evidence dependency ${id} is absent from the authenticated StateBinding`);
+    dependencies.push(value ?? query);
+  }
+  return { hash: hashFramedDomain("completion-question-bound-evidence", { evidenceDependencyIds: question.evidenceDependencyIds, questionContentHash: question.contentHash, bindingDependencyDigest: binding.dependencyDigest, dependencies }), dependencies };
+}
 
 export async function settleCompletionQuestion(
   input: { readonly question: RankedCompletionQuestion; readonly outcome: CompletionAnswerOutcome; readonly answer: string; readonly authorityRecordId: string; readonly boundState: StateBinding; readonly currentState: StateDigest; readonly context: AdapterContext },
-  ports: { readonly authority: QuestionAuthorityPort; readonly bindingValidator: StateBindingValidator; readonly store: SettledAnswerStore },
+  ports: { readonly authority: QuestionAuthorityPort; readonly bindingValidator: StateBindingValidator; readonly store: SettledAnswerStore; readonly exceptional?: QuestionExceptionalOutcomePort },
 ): Promise<SettledQuestionAnswer> {
   if (input.answer.trim() === "") throw new Error("settled answer must not be blank");
   const reranked = rank(input.question);
@@ -147,20 +165,27 @@ export async function settleCompletionQuestion(
   if (normalizedBinding.dependencyDigest !== input.boundState.dependencyDigest) throw new Error("settled answer StateBinding is invalid");
   const validation = await ports.bindingValidator.validate(normalizedBinding, input.currentState, input.context);
   if (validation.status !== "current" && validation.status !== "rebound") throw new Error(`settled answer binding is ${validation.status}`);
+  const effectiveBinding = createStateBinding(validation.status === "rebound" ? validation.rebound! : normalizedBinding);
+  if (canonicalJson(effectiveBinding.compiledAgainst) !== canonicalJson(input.currentState)) throw new Error("settled answer rebound binding is not compiled against current state");
   const current = await ports.store.read(input.question.id);
-  const boundEvidenceHash = hashFramedDomain("completion-question-bound-evidence", { evidenceDependencyIds: input.question.evidenceDependencyIds, questionContentHash: input.question.contentHash, bindingDependencyDigest: normalizedBinding.dependencyDigest });
+  const boundEvidenceHash = boundEvidence(input.question, effectiveBinding).hash;
   const revision = current === undefined ? 1 : current.revision + 1;
   const authorityRaw = await ports.authority.read(input.authorityRecordId);
   const parsed = AuthorityRecordSchema.safeParse(authorityRaw);
   if (!parsed.success) throw new Error("settled answer authority record is unavailable or invalid");
   const authority = parsed.data as AuthorityRecord;
   if (!authorityRecordHashIsValid(authority) || authority.subjectId !== input.question.id || !["approved", "auto-approved"].includes(authority.status)) throw new Error("settled answer authority proof is not approved for this question");
-  const semantic = { questionId: input.question.id, questionContentHash: input.question.contentHash, boundEvidenceHash, outcome: input.outcome, answer: input.answer.trim(), authorityRecordId: authority.id, authoritySemanticHash: authority.semanticHash, bindingDependencyDigest: normalizedBinding.dependencyDigest, revision };
+  if ((input.outcome === "exception" || input.outcome === "defer") && (ports.exceptional === undefined || !(await ports.exceptional.authenticate({ outcome: input.outcome, question: input.question, authority, boundState: effectiveBinding, answer: input.answer.trim() })))) throw new Error(`${input.outcome} requires an authenticated exceptional-outcome contract`);
+  const semantic = { questionId: input.question.id, questionContentHash: input.question.contentHash, boundEvidenceHash, outcome: input.outcome, answer: input.answer.trim(), authorityRecordId: authority.id, authoritySemanticHash: authority.semanticHash, bindingDependencyDigest: effectiveBinding.dependencyDigest, revision };
   const contentHash = hashFramedDomain("settled-completion-answer", semantic);
   const answer: SettledQuestionAnswer = { id: `settled_answer_${contentHash.slice(-32)}`, ...semantic, contentHash };
   if (current !== undefined && current.questionContentHash === answer.questionContentHash && current.boundEvidenceHash === answer.boundEvidenceHash && current.outcome === answer.outcome && current.answer === answer.answer && current.authoritySemanticHash === answer.authoritySemanticHash) return current as SettledQuestionAnswer;
   if (current !== undefined && input.outcome !== "correction") throw new Error("conflicting settled answer requires an explicit correction revision");
-  const stored = await ports.store.compareAndStore(current?.revision, answer);
+  const stored = await ports.store.compareAndStore(current?.revision, answer, async () => {
+    const commitValidation = await ports.bindingValidator.validate(effectiveBinding, input.currentState, input.context);
+    if (commitValidation.status !== "current") throw new Error(`settled answer binding changed before atomic commit: ${commitValidation.status}`);
+    boundEvidence(input.question, effectiveBinding);
+  });
   if (stored.status === "conflict") throw new Error("settled answer compare-and-store race conflict");
   return (stored.answer ?? answer) as SettledQuestionAnswer;
 }
