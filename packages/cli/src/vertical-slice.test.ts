@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +74,8 @@ describe("mandatory misplaced repository-script vertical slice", () => {
     expect(reconciled.report.steps).toHaveLength(17);
     expect(reconciled.report.fixedPoint.iterations).toHaveLength(2);
     expect(reconciled.report.secondReconciliation.invocation).toBe(2);
+    expect(reconciled.report.secondReconciliation.fixedPoint.iterations).toHaveLength(1);
+    expect(reconciled.report.secondReconciliation.beforeDigest).toBe(reconciled.report.secondReconciliation.afterDigest);
     expect(reconciled.report.secondRunMaterialDelta).toBe(false);
     expect(reconciled.report.cleanupPlan.unresolvedClusterWork).toBe(0);
     expect(reconciled.report.receipt).toBeDefined();
@@ -100,6 +102,8 @@ describe("mandatory misplaced repository-script vertical slice", () => {
     expect(identicalReconciliation.exitCode).toBe(0);
     expect(identicalReconciliation.report.secondRunMaterialDelta).toBe(false);
     expect(identicalReconciliation.report.fixedPoint.iterations).toHaveLength(1);
+    expect(identicalReconciliation.report.secondReconciliation.fixedPoint.iterations).toHaveLength(1);
+    expect(identicalReconciliation.report.secondReconciliation.beforeDigest).toBe(identicalReconciliation.report.secondReconciliation.afterDigest);
 
     const beforeDelete = reconciled.report.canonicalSemantics;
     await rm(join(repository.root, ".projector/state.db"), { force: true });
@@ -117,6 +121,44 @@ describe("mandatory misplaced repository-script vertical slice", () => {
     expect(repaired.exitCode, repaired.output).toBe(0);
     await rm(join(repository.root, ".projector/receipts"), { recursive: true, force: true });
     await rm(join(repository.root, ".projector/reports/certificates"), { recursive: true, force: true });
+    const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
+    const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
+    expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
+  });
+
+  it("rejects a hand-authored receipt/certificate pair with fabricated provenance", async () => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const repaired = await executeProjector(["reconcile", "--format", "json"], { cwd: repository.root });
+    expect(repaired.exitCode, repaired.output).toBe(0);
+    const receiptDirectory = join(repository.root, ".projector/receipts");
+    const certificateDirectory = join(repository.root, ".projector/reports/certificates");
+    const receiptName = (await readdir(receiptDirectory))[0];
+    const certificateName = (await readdir(certificateDirectory))[0];
+    if (receiptName === undefined || certificateName === undefined) throw new Error("expected receipt and certificate artifacts");
+    const receiptPath = join(receiptDirectory, receiptName);
+    const certificatePath = join(certificateDirectory, certificateName);
+    const receipt = JSON.parse(await readFile(receiptPath, "utf8")) as Record<string, unknown>;
+    receipt.semanticHash = `sha256:v1:${"f".repeat(64)}`;
+    await writeFile(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
+    const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
+    const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
+    expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
+    await writeFile(certificatePath, `${await readFile(certificatePath, "utf8")}tampered`, "utf8");
+    const afterTamper = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
+    const afterTamperCandidate = afterTamper.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
+    expect(afterTamperCandidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
+  });
+
+  it("rejects renamed and byte-tampered receipt artifacts", async () => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const repaired = await executeProjector(["reconcile", "--format", "json"], { cwd: repository.root });
+    expect(repaired.exitCode, repaired.output).toBe(0);
+    const receiptDirectory = join(repository.root, ".projector/receipts");
+    const names = await readdir(receiptDirectory);
+    const receiptName = names[0]!;
+    await rename(join(receiptDirectory, receiptName), join(receiptDirectory, "hand-authored.json"));
     const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
     const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
     expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
