@@ -157,6 +157,11 @@ function globRegex(glob: string): RegExp {
   return new RegExp(`${result}$`, "u");
 }
 
+/** Canonical governance glob semantics, shared by evaluation and proven exact-to-glob containment. */
+export function matchesCanonicalGlob(glob: string, candidate: string): boolean {
+  return candidate.length <= 4096 && globRegex(glob).test(candidate.replaceAll("\\", "/"));
+}
+
 interface DeterministicRegexToken {
   matches(character: string): boolean;
   repetition: "one" | "optional" | "star";
@@ -287,8 +292,7 @@ function atomMatches(atom: Extract<SelectorExpr, { op: "atom" }>, actual: unknow
     case "contains":
       return values.some((value) => typeof value === "string" && value.includes(atom.value as string));
     case "glob": {
-      const matcher = globRegex(atom.value as string);
-      return values.some((value) => typeof value === "string" && value.length <= 4096 && matcher.test(value.replaceAll("\\", "/")));
+      return values.some((value) => typeof value === "string" && matchesCanonicalGlob(atom.value as string, value));
     }
     case "regex": {
       const pattern = atom.value as string;

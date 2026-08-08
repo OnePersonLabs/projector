@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import fc from "fast-check";
 
 import { hashFramedDomain, type StateBinding } from "@projector/core";
 
@@ -272,6 +273,50 @@ describe("semantic representation compilation", () => {
       .rejects.toThrow(/parse|schema|unknown|candidate/u);
     await expect(compiler.validateCandidate({ source, profileKey: "machine-invariant@1", candidate: exactMachine.replace('"kind":"MachineInvariant"', '"kind":"MachineInvariant","kind":"PermitAll"') }))
       .rejects.toThrow(/parse|duplicate|candidate/u);
+  });
+
+  it("rejects duplicate protected keys in every embedded JSON kernel and permits cosmetic advisory edits", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const candidates = new Map<string, string>();
+    for (const profileKey of ["machine-invariant@1", "human-technical@1", "behavior-gherkin@1"] as const) {
+      const compiled = await compiler.compile({ source, binding, profileKey });
+      candidates.set(profileKey, (await artifacts.get(compiled.projection.contentHash))!);
+    }
+    const lessAggressive = await new RepresentationCompiler({
+      artifacts, tokenizer: measured, fallbackGate: (tier) => tier === "less-aggressive-compact",
+    }).compileBest({ source, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 100 });
+    candidates.set("agent-compact@1", (await artifacts.get(lessAggressive.projection.contentHash))!);
+
+    for (const [profileKey, exact] of candidates) {
+      for (const duplicate of [
+        exact.replace('"force":"forbid"', '"force":"permit","force":"forbid"'),
+        exact.replace('"negated":true', '"negated":false,"negated":true'),
+      ]) {
+        await expect(compiler.validateCandidate({
+          source, profileKey: profileKey as keyof typeof BUILT_IN_REPRESENTATION_PROFILES, candidate: duplicate,
+        })).rejects.toThrow(/duplicate.*JSON.*key|candidate.*parse/u);
+      }
+    }
+
+    const exactHuman = candidates.get("human-technical@1")!;
+    const cosmeticAdvisory = exactHuman.replace(
+      JSON.stringify(source.statements[0]!.text),
+      JSON.stringify("  MUST_NOT   delete production data unless explicit user approval!  "),
+    );
+    await expect(compiler.validateCandidate({ source, profileKey: "human-technical@1", candidate: cosmeticAdvisory }))
+      .resolves.toMatchObject({ assurance: "exact" });
+    await fc.assert(fc.asyncProperty(
+      fc.constantFrom("MUST_NOT delete production data unless explicit user approval!", "  MUST_NOT   delete production data unless explicit user approval...  ", "MUST_NOT delete production data unless explicit user approval?!"),
+      async (advisory) => {
+        const candidate = exactHuman.replace(JSON.stringify(source.statements[0]!.text), JSON.stringify(advisory));
+        await expect(compiler.validateCandidate({ source, profileKey: "human-technical@1", candidate })).resolves.toMatchObject({ assurance: "exact" });
+      },
+    ));
+    await expect(compiler.validateCandidate({
+      source, profileKey: "human-technical@1",
+      candidate: exactHuman.replace(JSON.stringify(source.statements[0]!.text), JSON.stringify("MUST_NOT delete data or backups.")),
+    })).rejects.toThrow(/advisory|semantic|candidate/u);
   });
 
   it("derives canonical membership and semantic identity from trusted structured input", async () => {
