@@ -40,6 +40,39 @@ export type IdentityLifecycle = "active" | "deprecated" | "superseded" | "tombst
 
 const IdentityAssessmentSchema = z.enum(["same", "overlap", "split", "merge", "replace", "delete", "distinct", "ambiguous"]);
 const RequestedKindSchema = z.enum(["concept", "requirement", "scenario", "unknown"]);
+const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
+
+function normalizedTerm(value: string): string {
+  return value.normalize("NFKC").trim();
+}
+
+function reportCanonicalBoundaryIssues(
+  boundary: NewSemanticBoundary,
+  issue: (message: string, path?: PropertyKey[]) => void,
+): void {
+  for (const field of ["owns", "excludes", "nearestEntityIds"] as const) {
+    const values = boundary[field];
+    const normalized = values.map(normalizedTerm);
+    if (normalized.some((value) => value.length === 0)) issue(`semantic boundary ${field} cannot contain blank values`, [field]);
+    if (canonicalJson(values) !== canonicalJson(sortedUnique(normalized))) {
+      issue(`semantic boundary ${field} must contain canonical normalized, sorted, unique values`, [field]);
+    }
+  }
+  if (boundary.rationale.length === 0 || boundary.rationale !== normalizedTerm(boundary.rationale)) {
+    issue("semantic boundary rationale must be canonical normalized, trimmed, and nonblank", ["rationale"]);
+  }
+  const excluded = new Set(boundary.excludes);
+  if (boundary.owns.some((value) => excluded.has(value))) {
+    issue("semantic boundary owns and excludes must be disjoint after normalization");
+  }
+}
+
+/** Persisted normalize-once boundary contract shared by resolution and distinct facts. */
+export const CanonicalSemanticBoundarySchema = NewSemanticBoundarySchema.superRefine((boundary, context) => {
+  reportCanonicalBoundaryIssues(boundary as NewSemanticBoundary, (message, path) => context.addIssue({ code: "custom", message, path }));
+});
+
 const OperationFactCommon = {
   version: z.literal(1),
   requestId: EntityIdSchema,
@@ -58,7 +91,7 @@ export const IdentityOperationFactSchema = z.union([
   z.strictObject({ ...OperationFactCommon, operation: z.literal("replace"), supersession: z.strictObject({ sourceId: EntityIdSchema, targetIds: z.array(EntityIdSchema) }) }),
   z.strictObject({ ...OperationFactCommon, operation: z.literal("delete"), durableMeaningCeased: z.literal(true) }),
   z.strictObject({ ...OperationFactCommon, operation: z.literal("delete"), noDurableEntity: z.literal(true) }),
-  z.strictObject({ ...OperationFactCommon, operation: z.literal("distinct"), boundary: NewSemanticBoundarySchema.nullable() }),
+  z.strictObject({ ...OperationFactCommon, operation: z.literal("distinct"), boundary: CanonicalSemanticBoundarySchema.nullable() }),
   z.strictObject({ ...OperationFactCommon, operation: z.literal("ambiguous"), unresolvedConflict: z.string().min(1) }),
 ]);
 export type IdentityOperationFact = z.infer<typeof IdentityOperationFactSchema>;
@@ -126,6 +159,7 @@ export const IdentityAdjudicationSchema = z.strictObject({
       context.addIssue({ code: "custom", message: `adjudication ${label} must be normalized, sorted, and unique` });
     }
   }
+  reportAdjudicationSemanticIssues(adjudication as unknown as IdentityAdjudication, (message, path) => context.addIssue({ code: "custom", message, path }));
 });
 
 /** Complete persistence/API contract for the engine-owned adjudicated resolution v1. */
@@ -137,7 +171,7 @@ export const AdjudicatedSemanticIdentityResolutionSchema = z.strictObject({
   outcome: z.enum(["reuse-existing", "coordinated-modification", "split-existing", "merge-existing", "replace-existing", "create-new", "no-durable-entity", "unresolved"]),
   candidates: z.array(SemanticIdentityCandidateSchema),
   selectedEntityIds: z.array(EntityIdSchema),
-  newBoundary: NewSemanticBoundarySchema.optional(),
+  newBoundary: CanonicalSemanticBoundarySchema.optional(),
   confidence: ConfidenceSchema,
   evidence: z.array(EvidenceRefSchema),
   unknowns: z.array(z.string()),
@@ -165,6 +199,7 @@ export const AdjudicatedSemanticIdentityResolutionSchema = z.strictObject({
       context.addIssue({ code: "custom", message: "same/overlap fact targets must exactly equal selected entity IDs" });
     }
   }
+  reportResolutionSemanticIssues(resolution as unknown as AdjudicatedSemanticIdentityResolution, (message, path) => context.addIssue({ code: "custom", message, path }));
 });
 
 type OutcomeFact =
@@ -278,14 +313,276 @@ export interface IdentityAdjudication {
   contentHash: ContentHash;
 }
 
+type SemanticIssue = (message: string, path?: PropertyKey[]) => void;
+
+const predicatesByOperation: Record<IdentityAssessment, readonly string[]> = {
+  same: ["identity-equivalent"],
+  overlap: ["identity-shared-ownership"],
+  split: ["identity-partition"],
+  merge: ["identity-convergence"],
+  replace: ["identity-supersession"],
+  delete: ["identity-cessation", "identity-no-durable-entity"],
+  distinct: ["identity-distinct-boundary"],
+  ambiguous: ["identity-conflict"],
+};
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function reportNormalizedIds(values: readonly string[], label: string, issue: SemanticIssue, path: PropertyKey[]): void {
+  if (!sameJson(values, sortedUnique(values.map(normalizedTerm)))) {
+    issue(`${label} must contain canonical normalized, sorted, unique entity IDs`, path);
+  }
+}
+
+function reportProposalIdentity(proposal: IdentityLineageProposal, issue: SemanticIssue, path: PropertyKey[]): void {
+  const { id: _id, canonical: _canonical, ...basis } = proposal;
+  const expected = `lineage_proposal_${hashFramedDomain("identity-lineage-proposal", basis).slice(-32)}`;
+  if (proposal.id !== expected) issue("lineage proposal ID must be bound to its exact semantic basis", path);
+}
+
+function reportTombstoneIdentity(proposal: IdentityTombstoneProposal, issue: SemanticIssue, path: PropertyKey[]): void {
+  const { id: _id, canonical: _canonical, ...basis } = proposal;
+  const expected = `tombstone_proposal_${hashFramedDomain("identity-tombstone-proposal", basis).slice(-32)}`;
+  if (proposal.id !== expected) issue("tombstone proposal ID must be bound to its exact semantic basis", path);
+}
+
+function reportAdjudicationSemanticIssues(adjudication: IdentityAdjudication, issue: SemanticIssue): void {
+  const operation = adjudication.operation;
+  const expectedPredicates = predicatesByOperation[operation];
+  const actualPredicates = adjudication.claims.map(({ predicate }) => predicate).sort(compareStrings);
+  if (adjudication.claims.length !== expectedPredicates.length
+    || !sameJson(actualPredicates, [...expectedPredicates].sort(compareStrings))) {
+    issue(`adjudication ${operation} claims must use the exact allowed predicate set`, ["claims"]);
+  }
+  if (adjudication.factPayloads.length !== expectedPredicates.length
+    || !sameJson(adjudication.factPayloads, adjudication.claims.map(({ object }) => object))) {
+    issue(`adjudication ${operation} facts must exactly equal its applicable claim payloads`, ["factPayloads"]);
+  }
+  if (!sameJson(adjudication.evidenceIds, sortedUnique(adjudication.claims.map(({ evidenceId }) => evidenceId)))) {
+    issue("adjudication evidence IDs must exactly equal its claim evidence endpoints", ["evidenceIds"]);
+  }
+
+  for (const [index, fact] of adjudication.factPayloads.entries()) {
+    reportNormalizedIds(fact.sourceIds, "fact source IDs", issue, ["factPayloads", index, "sourceIds"]);
+    reportNormalizedIds(fact.targetIds, "fact target IDs", issue, ["factPayloads", index, "targetIds"]);
+    if (fact.operation !== operation) issue(`adjudication ${operation} cannot contain a ${fact.operation} fact`, ["factPayloads", index, "operation"]);
+    if (!sameJson(fact.sourceIds, adjudication.sourceIds)) issue("fact source IDs must exactly equal adjudication source IDs", ["factPayloads", index, "sourceIds"]);
+  }
+  for (const [index, claim] of adjudication.claims.entries()) {
+    if (claim.object.operation !== operation) issue(`claim predicate ${claim.predicate} does not describe adjudication ${operation}`, ["claims", index]);
+    const predicateMatchesFact = claim.predicate === "identity-equivalent" ? claim.object.operation === "same"
+      : claim.predicate === "identity-shared-ownership" ? claim.object.operation === "overlap"
+        : claim.predicate === "identity-partition" ? claim.object.operation === "split"
+          : claim.predicate === "identity-convergence" ? claim.object.operation === "merge"
+            : claim.predicate === "identity-supersession" ? claim.object.operation === "replace"
+              : claim.predicate === "identity-cessation" ? claim.object.operation === "delete" && "durableMeaningCeased" in claim.object
+                : claim.predicate === "identity-no-durable-entity" ? claim.object.operation === "delete" && "noDurableEntity" in claim.object
+                  : claim.predicate === "identity-distinct-boundary" ? claim.object.operation === "distinct"
+                    : claim.predicate === "identity-conflict" && claim.object.operation === "ambiguous";
+    if (!predicateMatchesFact) issue(`claim predicate ${claim.predicate} does not match its typed fact`, ["claims", index, "predicate"]);
+  }
+
+  const facts = adjudication.factPayloads;
+  const expectedTargets = operation === "same" || operation === "overlap"
+    ? facts[0]?.targetIds ?? []
+    : adjudication.proposedTargetIds;
+  if (facts.some(({ targetIds }) => !sameJson(targetIds, expectedTargets))) {
+    issue(`adjudication ${operation} facts must use one exact target endpoint set`, ["factPayloads"]);
+  }
+
+  const sourceCount = adjudication.sourceIds.length;
+  const targetCount = adjudication.proposedTargetIds.length;
+  const exactLineage = (kind: IdentityLineageProposal["kind"]): void => {
+    if (adjudication.lineageProposals.length !== 1) {
+      issue(`${operation} requires exactly one ${kind} lineage proposal`, ["lineageProposals"]);
+      return;
+    }
+    const proposal = adjudication.lineageProposals[0]!;
+    if (proposal.kind !== kind || !sameJson(proposal.fromIds, adjudication.sourceIds)
+      || !sameJson(proposal.toIds, adjudication.proposedTargetIds)) {
+      issue(`${operation} lineage kind and endpoints must exactly describe the adjudicated operation`, ["lineageProposals"]);
+    }
+    reportProposalIdentity(proposal, issue, ["lineageProposals", 0, "id"]);
+  };
+  const noContinuity = (): void => {
+    if (adjudication.lineageProposals.length > 0 || adjudication.tombstoneProposals.length > 0) {
+      issue(`${operation} cannot authorize lineage or tombstone continuity`);
+    }
+  };
+
+  switch (operation) {
+    case "same": {
+      if (sourceCount < 1 || adjudication.proposedTargetIds.length !== 0 || expectedTargets.length < 1) issue("same requires supported source identities and exact selected targets");
+      const fact = facts[0];
+      if (fact?.operation === "same" && fact.equivalentMeaning !== fact.requestedMeaning) issue("same equivalence must name the exact requested meaning", ["factPayloads", 0]);
+      noContinuity();
+      break;
+    }
+    case "overlap": {
+      if (sourceCount < 1 || targetCount !== 0 || expectedTargets.length < 1) issue("coordinated overlap requires supported source identities and exact selected targets");
+      const fact = facts[0];
+      if (fact?.operation === "overlap" && !sameJson(fact.coordinatedSourceIds, adjudication.sourceIds)) issue("coordination facts must name the exact source identities", ["factPayloads", 0]);
+      noContinuity();
+      break;
+    }
+    case "split": {
+      if (sourceCount !== 1 || targetCount < 2) issue("split requires exactly one source and at least two proposed targets");
+      const fact = facts[0];
+      if (fact?.operation === "split" && !sameJson(fact.partitionTargetIds, adjudication.proposedTargetIds)) issue("split partition targets must exactly equal proposed targets", ["factPayloads", 0]);
+      exactLineage("split");
+      if (adjudication.tombstoneProposals.length > 0) issue("split cannot create tombstone proposals", ["tombstoneProposals"]);
+      break;
+    }
+    case "merge": {
+      if (sourceCount < 2 || targetCount !== 1) issue("merge requires at least two sources and exactly one proposed target");
+      const fact = facts[0];
+      if (fact?.operation === "merge" && (!sameJson(fact.convergence.sourceIds, adjudication.sourceIds)
+        || fact.convergence.targetId !== adjudication.proposedTargetIds[0])) issue("merge convergence must exactly describe sources and target", ["factPayloads", 0]);
+      exactLineage("merge");
+      if (adjudication.tombstoneProposals.length > 0) issue("merge cannot create tombstone proposals", ["tombstoneProposals"]);
+      break;
+    }
+    case "replace": {
+      if (sourceCount !== 1 || targetCount !== 1) issue("replace requires exactly one source and one proposed target");
+      const fact = facts[0];
+      if (fact?.operation === "replace" && (fact.supersession.sourceId !== adjudication.sourceIds[0]
+        || !sameJson(fact.supersession.targetIds, adjudication.proposedTargetIds))) issue("replace supersession must exactly describe source and target", ["factPayloads", 0]);
+      exactLineage("replace");
+      break;
+    }
+    case "delete": {
+      if (sourceCount !== 1 || targetCount !== 0 || facts.some(({ targetIds }) => targetIds.length > 0)) issue("delete requires exactly one source and empty destinations");
+      exactLineage("delete");
+      break;
+    }
+    case "distinct": {
+      if (targetCount !== 0 || facts.some(({ targetIds }) => targetIds.length > 0)) issue("distinct facts cannot name target identities");
+      noContinuity();
+      break;
+    }
+    case "ambiguous": {
+      if (targetCount !== 0 || facts.some(({ targetIds }) => targetIds.length > 0)) issue("conflict facts cannot authorize target continuity");
+      noContinuity();
+      break;
+    }
+  }
+
+  if (operation === "replace" || operation === "delete") {
+    if (adjudication.tombstoneProposals.length !== 1) issue(`${operation} requires exactly one source tombstone`, ["tombstoneProposals"]);
+    for (const [index, proposal] of adjudication.tombstoneProposals.entries()) {
+      if (proposal.entityId !== adjudication.sourceIds[0]
+        || !sameJson(proposal.replacementIds, adjudication.proposedTargetIds)
+        || proposal.reason !== adjudication.lineageProposals[0]?.reason) {
+        issue(`${operation} tombstone must exactly preserve its source and replacement continuity`, ["tombstoneProposals", index]);
+      }
+      reportTombstoneIdentity(proposal, issue, ["tombstoneProposals", index, "id"]);
+    }
+  }
+}
+
+function reportResolutionSemanticIssues(resolution: AdjudicatedSemanticIdentityResolution, issue: SemanticIssue): void {
+  const requestedMeaning = normalizedTerm(resolution.requestedMeaning);
+  if (requestedMeaning.length === 0 || requestedMeaning !== resolution.requestedMeaning) {
+    issue("resolution requested meaning must be canonical normalized, trimmed, and nonblank", ["requestedMeaning"]);
+  }
+  reportNormalizedIds(resolution.selectedEntityIds, "selected entity IDs", issue, ["selectedEntityIds"]);
+  reportNormalizedIds(resolution.proposedTargetIds, "proposed target IDs", issue, ["proposedTargetIds"]);
+  const allowedOutcomes: Record<IdentityAssessment, readonly SemanticIdentityResolution["outcome"][]> = {
+    same: ["reuse-existing", "unresolved"],
+    overlap: ["coordinated-modification", "unresolved"],
+    split: ["split-existing", "unresolved"],
+    merge: ["merge-existing", "unresolved"],
+    replace: ["replace-existing", "unresolved"],
+    delete: ["no-durable-entity", "unresolved"],
+    distinct: ["create-new", "no-durable-entity", "unresolved"],
+    ambiguous: ["unresolved"],
+  };
+  if (!allowedOutcomes[resolution.operation].includes(resolution.outcome)) {
+    issue(`resolution operation ${resolution.operation} is incompatible with outcome ${resolution.outcome}`);
+  }
+  if (resolution.adjudication === undefined) {
+    if (resolution.outcome !== "unresolved" && !(resolution.operation === "distinct" && resolution.outcome === "no-durable-entity")) {
+      issue("a resolved identity outcome requires persisted adjudication facts", ["adjudication"]);
+    }
+    if (resolution.selectedEntityIds.length > 0 || resolution.proposedTargetIds.length > 0) {
+      issue("unadjudicated identity cannot authorize selected or proposed targets");
+    }
+    if (resolution.lineageProposals.length > 0 || resolution.tombstoneProposals.length > 0) issue("unadjudicated resolution cannot authorize continuity");
+    return;
+  }
+
+  const adjudication = resolution.adjudication;
+  if (adjudication.kind !== resolution.operation || adjudication.operation !== resolution.operation) {
+    issue("outer operation and adjudication discriminants must exactly agree", ["adjudication"]);
+  }
+  if (!sameJson(resolution.proposedTargetIds, adjudication.proposedTargetIds)) issue("outer proposed targets must exactly equal adjudication targets");
+  const requestId = `identity_request_${hashFramedDomain("semantic-identity-request", {
+    requestedMeaning, requestedKind: resolution.requestedKind,
+  }).slice(-32)}`;
+  for (const [index, fact] of adjudication.factPayloads.entries()) {
+    if (fact.requestId !== requestId || fact.requestedMeaning !== requestedMeaning || fact.requestedKind !== resolution.requestedKind) {
+      issue("fact request identity, meaning, and kind must exactly describe the outer resolution", ["adjudication", "factPayloads", index]);
+    }
+  }
+  for (const [index, claim] of adjudication.claims.entries()) {
+    if (claim.subjectKey !== requestId || !sameJson(claim.object, adjudication.factPayloads[index])) {
+      issue("claim subject and payload endpoints must exactly describe the outer resolution", ["adjudication", "claims", index]);
+    }
+  }
+
+  if (resolution.outcome === "unresolved") {
+    if (resolution.selectedEntityIds.length > 0 || resolution.proposedTargetIds.length > 0
+      || resolution.lineageProposals.length > 0 || resolution.tombstoneProposals.length > 0) {
+      issue("unresolved identity cannot authorize selected targets, proposals, lineage, or tombstones");
+    }
+  } else if (resolution.operation === "same" || resolution.operation === "overlap") {
+    const factTargets = adjudication.factPayloads[0]?.targetIds ?? [];
+    if (!sameJson(resolution.selectedEntityIds, factTargets)) issue("same/coordinated selected identities must exactly equal fact targets");
+  } else if (["split", "merge", "replace", "delete"].includes(resolution.operation)) {
+    if (!sameJson(resolution.selectedEntityIds, adjudication.sourceIds)) issue("lifecycle selected identities must exactly equal operation sources");
+  } else if (resolution.selectedEntityIds.length > 0) {
+    issue(`${resolution.operation} cannot select canonical entity targets`, ["selectedEntityIds"]);
+  }
+
+  const distinctFact = adjudication.factPayloads.find((fact): fact is Extract<IdentityOperationFact, { operation: "distinct" }> => fact.operation === "distinct");
+  if (distinctFact !== undefined) {
+    const factBoundary = distinctFact.boundary ?? undefined;
+    if ((resolution.newBoundary === undefined) !== (factBoundary === undefined)
+      || (resolution.newBoundary !== undefined && !sameJson(resolution.newBoundary, factBoundary))) {
+      issue("distinct-boundary fact must exactly equal the outer normalized new boundary");
+    }
+  }
+  if (resolution.outcome === "create-new") {
+    if (resolution.operation !== "distinct" || adjudication.sourceIds.length !== 0
+      || distinctFact?.boundary === null || distinctFact?.boundary === undefined
+      || resolution.newBoundary === undefined || !sameJson(resolution.newBoundary, distinctFact.boundary)) {
+      issue("create-new requires one exact distinct-boundary fact equal to the outer canonical boundary");
+    }
+  } else if (resolution.newBoundary !== undefined) {
+    issue("only create-new may persist a new semantic boundary", ["newBoundary"]);
+  }
+
+  for (const [index, proposal] of adjudication.lineageProposals.entries()) {
+    if (proposal.stateDigest !== resolution.boundState.compiledAgainst.canonicalProjectorDigest) {
+      issue("lineage proposal state digest must equal the resolution canonical state digest", ["adjudication", "lineageProposals", index, "stateDigest"]);
+    }
+  }
+  for (const [index, proposal] of adjudication.tombstoneProposals.entries()) {
+    const semanticValues = resolution.boundState.valueDependencies.filter(({ kind, id, role }) =>
+      kind === "canonical-entity" && id === proposal.entityId && role === "identity candidate semantic value");
+    if (semanticValues.length !== 1 || semanticValues[0]!.versionHash !== proposal.lastSemanticHash) {
+      issue("tombstone last semantic hash must equal its exact bound source value", ["adjudication", "tombstoneProposals", index, "lastSemanticHash"]);
+    }
+  }
+}
+
 export interface TrustedIdentityEvidenceRepository {
   loadEvidence(evidenceId: string): Promise<unknown>;
 }
 
 const verifiedOutcomeEvidence = new WeakSet<object>();
-
-const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
-const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
 
 function normalizeCandidate(candidate: SemanticIdentityCandidate): SemanticIdentityCandidate {
   return {
@@ -508,7 +805,7 @@ function normalizeBoundary(boundary: NewSemanticBoundary | undefined): NewSemant
   nearestEntityIds.forEach((id) => EntityIdSchema.parse(id));
   const rationale = boundary.rationale.normalize("NFKC").trim();
   if (rationale.length === 0) throw new Error("semantic boundary rationale cannot be blank");
-  return { owns, excludes, nearestEntityIds, rationale };
+  return CanonicalSemanticBoundarySchema.parse({ owns, excludes, nearestEntityIds, rationale }) as NewSemanticBoundary;
 }
 
 function prepareIdentityInput(input: ResolveSemanticIdentityInput): ResolveSemanticIdentityInput {
@@ -617,7 +914,7 @@ function resolvePreparedSemanticIdentity(
     : resolved.outcome === "unresolved" ? Math.min(0.49, ...candidates.map(({ similarity, ownershipFit, boundaryFit }) => Math.min(similarity, ownershipFit, boundaryFit)), 0.49)
       : resolved.outcome === "create-new" ? candidates.length === 0 ? 1 : 1 - Math.max(...candidateScores)
         : candidates.length === 0 ? 1 : Math.min(...candidateScores);
-  const proposedTargetIds = sortedUnique(input.proposedTargetIds ?? []);
+  const proposedTargetIds = resolved.outcome === "unresolved" ? [] : sortedUnique(input.proposedTargetIds ?? []);
   const sourceIds = endpoints.sourceIds;
   const lineageKind: IdentityLineageProposal["kind"] | undefined = resolved.outcome === "split-existing" ? "split"
     : resolved.outcome === "merge-existing" ? "merge"
@@ -634,7 +931,7 @@ function resolvePreparedSemanticIdentity(
   }
   if (resolved.outcome === "split-existing" && (sourceIds.length !== 1 || proposedTargetIds.length < 2)) throw new Error("split lineage requires exactly one source and at least two targets");
   if (resolved.outcome === "merge-existing" && (sourceIds.length < 2 || proposedTargetIds.length !== 1)) throw new Error("merge lineage requires at least two sources and exactly one target");
-  if (resolved.outcome === "replace-existing" && (sourceIds.length !== 1 || proposedTargetIds.length < 1)) throw new Error("replace lineage requires one source and at least one replacement");
+  if (resolved.outcome === "replace-existing" && (sourceIds.length !== 1 || proposedTargetIds.length !== 1)) throw new Error("replace lineage requires exactly one source and one replacement");
   if (input.assessment === "delete" && resolved.outcome === "no-durable-entity" && sourceIds.length !== 1) throw new Error("delete lineage requires exactly one source");
   if (input.assessment === "delete" && proposedTargetIds.length !== 0) throw new Error("delete lineage cannot have destinations or replacements");
   const lineageBasis = lineageKind === undefined ? undefined : {
@@ -687,7 +984,8 @@ function resolvePreparedSemanticIdentity(
     unknowns: resolved.unknowns,
     boundState: structuredClone(input.boundState),
   };
-  const adjudication = input.outcomeEvidence !== undefined && verifiedOutcomeEvidence.has(input.outcomeEvidence) ? {
+  const adjudication = input.outcomeEvidence !== undefined && verifiedOutcomeEvidence.has(input.outcomeEvidence)
+    && (resolved.outcome !== "unresolved" || input.assessment === "ambiguous") ? {
     kind: input.outcomeEvidence.kind,
     operation: input.assessment,
     sourceIds,
@@ -711,7 +1009,7 @@ function resolvePreparedSemanticIdentity(
     tombstoneProposals,
     ...(adjudicationWithHash === undefined ? {} : { adjudication: adjudicationWithHash }),
   });
-  return {
+  const result = {
     id: `identity_resolution_${contentHash.slice(-32)}`,
     ...semantic,
     operation: input.assessment,
@@ -721,6 +1019,7 @@ function resolvePreparedSemanticIdentity(
     tombstoneProposals,
     contentHash,
   };
+  return AdjudicatedSemanticIdentityResolutionSchema.parse(result) as AdjudicatedSemanticIdentityResolution;
 }
 
 /** Loads and hash-verifies directly applicable typed claims before deciding any durable identity outcome. */
