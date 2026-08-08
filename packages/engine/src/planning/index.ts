@@ -10,6 +10,8 @@ import {
   type ValidatorBinding,
 } from "@projector/core";
 
+export * from "./change-plan.js";
+
 import { createStateBinding } from "../state/index.js";
 
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
