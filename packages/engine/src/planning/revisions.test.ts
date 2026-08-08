@@ -30,7 +30,7 @@ describe("immutable plan revision rebind and semantic rebase", () => {
       original, validation, completedPackets: ["packet:a", "packet:b"],
       isCompletedPacketCurrent: async (id) => id === "packet:a",
       capsuleIdsByPacket: { "packet:a": "capsule:a", "packet:b": "capsule:b" },
-      recompile: async () => ({ boundState: binding("new"), packetIds: ["packet:a", "packet:c"], assumptions: ["recomputed consumers"], relevanceClosureId: "closure:2", recompiledCapsuleIds: ["capsule:a2", "capsule:c"] }),
+      recompile: async () => ({ boundState: binding("new"), packetIds: ["packet:a", "packet:c"], assumptions: ["recomputed consumers"], relevanceClosureId: "closure:2", predictedImpactClosureHash: hashFramedDomain("test", "impact:2"), checkpoints: [], recompiledCapsuleIds: ["capsule:a2", "capsule:c"] }),
     });
     expect(result.kind).toBe("semantic-rebase");
     expect(result.carriedCompletedPacketIds).toEqual(["packet:a"]);
@@ -38,7 +38,7 @@ describe("immutable plan revision rebind and semantic rebase", () => {
     expect(result.plan.packetIds).toEqual(["packet:a", "packet:c"]);
     expect(result.plan.assumptions).toEqual(["recomputed consumers"]);
     expect(result.plan.relevanceClosureId).toBe("closure:2");
-    expect(result.invalidatedCapsuleIds).toEqual(["capsule:b"]);
+    expect(result.invalidatedCapsuleIds).toEqual(["capsule:a", "capsule:b"]);
     expect(result.recompiledCapsuleIds).toEqual(["capsule:a2", "capsule:c"]);
   });
 
@@ -56,5 +56,44 @@ describe("immutable plan revision rebind and semantic rebase", () => {
       original: plan(), validation: { status, currentState: digest("new"), changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [status] },
       completedPackets: ["packet:a"], isCompletedPacketCurrent: async () => true, recompile: async () => ({ boundState: binding("new") }),
     })).rejects.toThrow(/cannot be safely rebased/u);
+  });
+
+  it("rejects rebound and semantic outputs that remain compiled against stale state", async () => {
+    await expect(rebaseExecutionPlan({
+      original: plan(), validation: { status: "rebound", currentState: digest("new"), changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] },
+      completedPackets: [], isCompletedPacketCurrent: async () => true, recompile: async () => ({}),
+    })).rejects.toThrow(/rebound binding/u);
+    await expect(rebaseExecutionPlan({
+      original: plan(), validation: { status: "stale", currentState: digest("new"), changedValueDependencyIds: ["x"], changedQueryDependencyIds: [], reasons: [] },
+      completedPackets: [], isCompletedPacketCurrent: async () => true,
+      recompile: async () => ({ boundState: binding("old"), packetIds: [], assumptions: [], relevanceClosureId: "closure:new", predictedImpactClosureHash: hashFramedDomain("test", "impact"), checkpoints: [], recompiledCapsuleIds: [] }),
+    })).rejects.toThrow(/current state/u);
+  });
+
+  it("requires complete semantic recomputation and invalidates every stale packet and capsule", async () => {
+    await expect(rebaseExecutionPlan({
+      original: plan(), validation: { status: "stale", currentState: digest("new"), changedValueDependencyIds: ["x"], changedQueryDependencyIds: [], reasons: [] },
+      completedPackets: [], isCompletedPacketCurrent: async () => true,
+      recompile: async () => ({ boundState: binding("new") }),
+    })).rejects.toThrow(/complete semantic recomputation/u);
+    const result = await rebaseExecutionPlan({
+      original: plan(), validation: { status: "stale", currentState: digest("new"), changedValueDependencyIds: ["x"], changedQueryDependencyIds: [], reasons: [] },
+      completedPackets: [], isCompletedPacketCurrent: async () => true,
+      capsuleIdsByPacket: { "packet:a": "capsule:a", "packet:b": "capsule:b" },
+      recompile: async () => ({ boundState: binding("new"), packetIds: ["packet:c"], assumptions: [], relevanceClosureId: "closure:new", predictedImpactClosureHash: hashFramedDomain("test", "impact"), checkpoints: [], recompiledCapsuleIds: ["capsule:c"] }),
+    });
+    expect(result.invalidatedPacketIds).toEqual(["packet:a", "packet:b"]);
+    expect(result.invalidatedCapsuleIds).toEqual(["capsule:a", "capsule:b"]);
+  });
+
+  it("isolates mutable caller objects on both store writes and reads", async () => {
+    const store = new InMemoryPlanRevisionStore();
+    const mutable = structuredClone(plan()) as ExecutionPlan;
+    await store.put(mutable);
+    (mutable.boundary as string[]).push("caller/**");
+    const first = await store.get(mutable.id);
+    expect(first?.boundary).toEqual(["src/**"]);
+    expect(() => (first!.boundary as string[]).push("reader/**")).toThrow();
+    expect((await store.get(mutable.id))?.boundary).toEqual(["src/**"]);
   });
 });

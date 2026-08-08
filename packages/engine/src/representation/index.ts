@@ -117,6 +117,9 @@ export function lintHumanTechnical(content: string): HumanTechnicalLintReport {
 }
 
 function normalizedSource(source: CanonicalRepresentationSource): CanonicalRepresentationSource {
+  if (new Set(source.sourceEntityIds).size !== source.sourceEntityIds.length) {
+    throw new TypeError("duplicate source membership is not permitted");
+  }
   const statementById = new Map<EntityId, CanonicalRepresentationStatement>();
   for (const statement of source.statements) {
     const prior = statementById.get(statement.id);
@@ -133,15 +136,34 @@ function normalizedSource(source: CanonicalRepresentationSource): CanonicalRepre
     }
     scenarioById.set(scenario.id, scenario);
   }
-  return {
-    sourceEntityIds: unique(source.sourceEntityIds),
-    sourceSemanticHash: source.sourceSemanticHash,
-    statements: [...statementById.values()].map((statement) => ({
+  const statements = [...statementById.values()].map((statement) => ({
       ...structuredClone(statement), scope: unique(statement.scope), exceptions: unique(statement.exceptions),
       conceptIds: unique(statement.conceptIds), protectedLiterals: unique(statement.protectedLiterals),
-    })).sort((a, b) => compare(a.id, b.id)),
-    scenarios: [...scenarioById.values()].map((scenario) => structuredClone(scenario)).sort((a, b) => compare(a.id, b.id)),
+    })).sort((a, b) => compare(a.id, b.id));
+  const scenarios = [...scenarioById.values()].map((scenario) => structuredClone(scenario)).sort((a, b) => compare(a.id, b.id));
+  const derivedIds = unique([...statements.map(({ id }) => id), ...scenarios.map(({ id }) => id)]);
+  const suppliedIds = [...source.sourceEntityIds].sort(compare);
+  if (canonicalJson(derivedIds) !== canonicalJson(suppliedIds)) {
+    throw new TypeError("source membership must exactly match canonical statements and scenarios");
+  }
+  const sourceSemanticHash = hashFramedDomain("canonical-representation-source", {
+    sourceEntityIds: derivedIds, statements, scenarios,
+  });
+  if (source.sourceSemanticHash !== sourceSemanticHash) {
+    throw new TypeError("source semantic hash does not authenticate canonical structured input");
+  }
+  return {
+    sourceEntityIds: derivedIds,
+    sourceSemanticHash,
+    statements,
+    scenarios,
   };
+}
+
+function entitySemanticHash(source: CanonicalRepresentationSource, id: EntityId): ContentHash {
+  const entity = source.statements.find((item) => item.id === id) ?? source.scenarios.find((item) => item.id === id);
+  if (entity === undefined) throw new TypeError(`canonical source member is missing: ${id}`);
+  return hashFramedDomain("canonical-representation-entity", entity);
 }
 
 function dimensionValue(source: CanonicalRepresentationSource, dimension: PreservationDimension): unknown {
@@ -296,6 +318,10 @@ function assertCandidate(
       }
     }
   }
+  const expected = render(source, profileKey);
+  if (candidate !== expected) {
+    throw new RepresentationFidelityError("normative-force", "candidate semantic form is not the canonical exact rendering");
+  }
 }
 
 export interface CompileRepresentationInput {
@@ -330,7 +356,7 @@ export class RepresentationCompiler {
       compiledAgainst: input.binding.compiledAgainst,
       valueDependencies: [
         ...input.binding.valueDependencies,
-        ...source.sourceEntityIds.map((id) => ({ kind: "canonical-entity" as const, id, versionHash: source.sourceSemanticHash, role: "representation-source" })),
+        ...source.sourceEntityIds.map((id) => ({ kind: "canonical-entity" as const, id, versionHash: entitySemanticHash(source, id), role: "representation-source" })),
         { kind: "representation-profile" as const, id: selected.id, versionHash: selected.semanticHash, role: "representation-profile" },
       ],
       queryDependencies: input.binding.queryDependencies,
@@ -366,11 +392,11 @@ export class RepresentationCompiler {
   async compileBest(input: Omit<CompileRepresentationInput, "profileKey"> & { requestedProfileKey: BuiltInRepresentationProfileKey }): Promise<{ readonly projection: Readonly<RepresentationProjection> }> {
     const requested = await this.compile({ ...input, profileKey: input.requestedProfileKey });
     if (input.requestedProfileKey !== "agent-compact@1" || (requested.projection.tokenAccounting?.estimatedNetTokens ?? 0) > 0) return requested;
-    const fallback = await this.compile({ ...input, profileKey: "human-technical@1" });
-    const requestedAccounting = requested.projection.tokenAccounting;
+    // The first conservative tier is the exact machine kernel. It is freshly compiled,
+    // measured, bound and validated; rejected compact accounting is never carried over.
+    const fallback = await this.compile({ ...input, profileKey: "machine-invariant@1" });
     const base = {
       ...fallback.projection, status: "fallback-used" as const,
-      ...(requestedAccounting === undefined ? {} : { tokenAccounting: requestedAccounting }),
     };
     return { projection: deepFreeze({ ...base, semanticHash: hashFramedDomain("representation-projection", { ...base, semanticHash: undefined }) }) };
   }
