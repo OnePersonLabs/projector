@@ -42,3 +42,7 @@ Findings 1–4, 6, and 7 closed. Finding 5 remained: same-owner reserve replaced
 ## Final finding 5 closure
 
 All unexpired reservations, including repeated owner IDs, now remain in-flight without token replacement. An expired durable record behind an extant lock returns explicit `recovery-required`; it never enters validation or compensation, while owner-plus-token checks prevent stale executors from mutating a taken-over reservation. Exact same-owner, stale-lock, and stale-token regressions are covered.
+
+## Final independent closure — PASS (`489050d..5de0c20`)
+
+The two exact lease blockers close on exported public journals. A same-owner repeat during the live lease returns `in-flight`, preserves the original lease token, and that token still renews. An expired record behind a crash-left file lock returns `recovery-required` with the durable prior owner/expiry; a competing owner cannot mark it compensated, so no validation, replay, or compensation races the uncertain effect. Focused surface tests (5), integrations typecheck, exact-range diff check, and direct runtime repros pass. No material regression remains in finding 5; the frozen 613-test/build gate was relied upon.

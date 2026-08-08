@@ -41,3 +41,7 @@ Focused operations/benchmark/policy tests pass (18/18), runtime/testkit/CLI type
 - Built watch accepts token/cost budgets and `watch:default`. Exit 7 is emitted only after an authenticated, atomically stored root-confined checkpoint exists. Pending events and cumulative sequence resume from that checkpoint; successful cancellation clears it after each queued event effect has run exactly once.
 
 Closure-focused result: 12/12 runtime/CLI assertions passed, including the built budget/resume path; runtime and CLI typechecks plus diff check passed. Final frozen gate passed with 71 files / 640 tests, every workspace build/typecheck, both boundary checks, and diff check.
+
+## Final independent closure — PASS (`86e0c61..f97c769`)
+
+The two remaining blockers are closed on supported paths. Whole-repository byte snapshots (excluding Git internals) stayed identical across built `ci --dry-run`, `ci --mode observe`, `verify --clean --dry-run`, and `verify --clean --mode observe --dry-run`, including binary `state.db` and pre-existing `.projector` content. Built watch accepted its budget/continuation flags, returned authenticated exit 7 with an atomically persisted checkpoint containing queued events, then resumed and cleared it; an independent lifecycle probe observed queued effects exactly once (`a.ts`, then `b.ts`). Focused runtime/CLI tests passed 12/12, affected typechecks and diff check passed; the frozen 640-test/build gate is relied upon. No exact material regression remains.

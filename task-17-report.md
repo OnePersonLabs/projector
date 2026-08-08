@@ -34,3 +34,7 @@ The targeted closure review retained three blockers: programmatic-only hosts sti
 - Consolidated repair commit: `760e3f1`.
 - Fake providers/hosts only; no live or paid call.
 - Final frozen gate passed: 64 files/613 tests, workspace build, package boundaries, and diff check.
+
+## Final independent closure — PASS (`760e3f1..9b7045b`)
+
+The three retained blockers close on supported paths. A programmatic-only host now reports level 1/instruction-only; the built empty-dependency session rebinds after an unrelated commit, while the exact malformed committed-governance repro returns exit 6/failed instead of false reconciliation. The built `projector mcp` process remains active across JSON-lines requests through EOF, lists all 21 tools, returns a real analyzed `projector.status`, and the authenticated-session test performs one durable capability-bound `apply_transform`. Focused host/CLI tests (8), integrations and CLI typechecks, exact-range diff check, and the built two-request MCP smoke pass. No material regression remains in the three reviewed seams; the frozen 613-test/build gate was relied upon.
