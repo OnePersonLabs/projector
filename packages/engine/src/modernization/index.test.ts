@@ -1,0 +1,58 @@
+import { hashFramedDomain, hashSemantic, type ArchitectureConcern, type AuthorityRecord, type ContentHash, type DecisionOption, type StateQueryDependency } from "@projector/core";
+import { describe, expect, it, vi } from "vitest";
+
+import { compileUpgradePlan, createFrictionObservation, createResearchRecord, evaluateModernization, researchConcern } from "./index.js";
+
+const hash = (value: string): ContentHash => `sha256:v1:${value.padEnd(64, "0")}`;
+const state = { gitBase: "base", worktreeDigest: hash("worktree"), canonicalProjectorDigest: hash("canonical"), toolchainDigest: hash("toolchain") };
+const binding = { compiledAgainst: state, valueDependencies: [], queryDependencies: [], dependencyDigest: hashFramedDomain("state-binding-dependencies", { valueDependencies: [], queryDependencies: [] }) };
+const concern = { id: "concern:upgrade", key: "upgrade", title: "Upgrade", question: "How?", scope: { op: "atom", field: "path", matcher: "glob", value: "src/**" }, sourceClass: "derived", status: "active", materiality: "blocking-now", activationReasons: [], relatedConceptIds: [], relatedRequirementIds: [], decisionIds: [], evidence: [], semanticHash: hash("concern") } satisfies ArchitectureConcern;
+const option = (key: string): DecisionOption => ({ key, title: key, description: key, hardConstraintStatus: "passes", tradeoffs: [], evidence: [], preferenceFit: [] });
+const viableQuery = (keys: readonly string[]): StateQueryDependency => { const query = { id: "query:viable", kind: "custom" as const, programId: "modernization.viable-options", programVersion: "1", input: { concernId: concern.id }, semanticHash: hashFramedDomain("state-query", { kind: "custom", programId: "modernization.viable-options", programVersion: "1", input: { concernId: concern.id } }) }; return { role: "modernization-viable-options", query, priorResult: { queryHash: query.semanticHash, resultHash: hashFramedDomain("modernization-viable-option-result", [...keys].sort()), resultCount: keys.length, observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: [`concern:${concern.id}`] } }; };
+
+describe("modernization public composition", () => {
+  it("authenticates independent friction revisions and refuses endogenous recurrence inflation", async () => {
+    const external = createFrictionObservation({ id: "obs:external", trigger: "repeated-agent-difficulty", recurrenceKey: "build-loop", sourceId: "issue:7", sourceRevision: "3", sourceContentHash: hash("issue"), observedAt: "2026-08-01T00:00:00Z", endogenous: false, affectedUnitIds: ["unit:a"] });
+    const generated = createFrictionObservation({ id: "obs:generated", trigger: "repeated-agent-difficulty", recurrenceKey: "build-loop", sourceId: "projector:run", sourceRevision: "8", sourceContentHash: hash("run"), observedAt: "2026-08-02T00:00:00Z", endogenous: true, affectedUnitIds: ["unit:a"] });
+    const sources = { read: vi.fn(async (id: string, revision: string) => id === "issue:7" && revision === "3" ? { contentHash: hash("issue"), current: true } : { contentHash: hash("run"), current: true }) };
+    const result = await evaluateModernization.aggregateFriction([generated, external], sources);
+    expect(result[0]).toMatchObject({ recurrenceKey: "build-loop", authenticatedOccurrences: 2, independentOccurrences: 1, repeated: false });
+    const forged = createFrictionObservation({ id: "obs:forged", trigger: "repeated-agent-difficulty", recurrenceKey: "build-loop", sourceId: "issue:7", sourceRevision: "3", sourceContentHash: hash("forged"), observedAt: "2026-08-01T00:00:00Z", endogenous: false, affectedUnitIds: ["unit:a"] });
+    await expect(evaluateModernization.aggregateFriction([forged], sources)).rejects.toThrow(/source revision authentication/iu);
+  });
+
+  it("uses current scoped research offline, reports unavailable truthfully, and binds even an empty viable set", async () => {
+    const record = createResearchRecord({ id: "research:one", concernId: concern.id, sourceId: "docs", sourceRevision: "v4", sourceContentHash: hash("docs"), observedAt: "2026-08-01T00:00:00Z", validUntil: "2026-09-01T00:00:00Z", options: [option("retain")], evidenceIds: ["evidence:docs"], assumptions: [], uncertainty: [] });
+    const offline = await researchConcern({ concern, candidateOptions: [option("retain")], affectedEvidenceIds: [], mode: "offline", now: "2026-08-08T00:00:00Z", pinned: [record] }, { sources: { read: async () => ({ contentHash: hash("docs"), current: true }) } });
+    expect(offline).toMatchObject({ unavailable: false, evidenceIds: ["evidence:docs"] });
+    const stale = await researchConcern({ concern, candidateOptions: [], affectedEvidenceIds: [], mode: "offline", now: "2026-10-08T00:00:00Z", pinned: [record] }, { sources: { read: async () => ({ contentHash: hash("docs"), current: true }) } });
+    expect(stale).toMatchObject({ unavailable: true });
+
+    const problem = { currentState: "manual bridge", observedCost: "weekly failures", targetOutcome: "stable cutover", affectedConceptIds: ["concept:a"], affectedRequirementIds: ["requirement:a"], relevanceClosureIds: ["closure:a"], estimatedAffectedUnits: 0, compatibilityStrategy: "dual read", phases: ["bridge", "cutover", "cleanup"], rollback: "restore old route", cleanupCriteria: ["zero old consumers"], risk: "R2" as const, confidence: 0.8, evidenceIds: ["evidence:docs"], counterEvidenceIds: [], alternatives: ["retain"] };
+    const candidate = await evaluateModernization.recommend({ concern, problem, options: [], preferenceIds: [], viableOptionEnumeration: viableQuery([]), baseBinding: binding, research: { required: false, affectedEvidenceIds: [] }, acceptance: { kind: "automatic" } }, { preferences: { read: async () => undefined, match: async () => [] }, authority: { read: async () => undefined } });
+    expect(candidate.status).toBe("candidate");
+    expect(candidate.boundState.queryDependencies.map(({ query }) => query.id)).toContain("query:viable");
+
+    const authorityBase: Omit<AuthorityRecord, "semanticHash"> = { id: "authority:offline", key: "offline", subjectId: concern.id, status: "approved", conclusion: "exception", rationale: "user explicitly accepts current offline uncertainty", alternatives: [], assumptions: ["pinned evidence remains representative"], reconsiderWhen: [{ type: "manual-review" }], vector: { explicitDecisionAlignment: 1, productConstraintFit: 1, semanticFit: 1, independentOccurrence: 1, historicalStability: 1, independentValidationSupport: 1, boundaryCoherence: 1, maintenanceOutcome: 1, platformCompatibility: 1, externalRationale: 0, ecosystemHealth: 0, securitySupport: 1, reversibility: 1, migrationCost: 1, counterEvidence: 0 }, assessmentConfidence: "medium", evidence: [], governanceRiskClass: "R2", decidedBy: "user", createdAt: "2026-08-08" };
+    const authority = { ...authorityBase, semanticHash: hashSemantic("authority-record", authorityBase) };
+    const acceptedUncertainty = await evaluateModernization.recommend({ concern, problem, options: [option("retain")], preferenceIds: [], viableOptionEnumeration: viableQuery(["retain"]), baseBinding: binding, research: { required: true, affectedEvidenceIds: ["evidence:docs"] }, acceptance: { kind: "explicit-user", authorityRecordId: authority.id } }, { research: { verifyOptionSet: async () => ({ options: [option("retain")], evidenceIds: [], unavailable: true, uncertainty: ["offline evidence unavailable; explicit uncertainty retained"] }) }, preferences: { read: async () => undefined, match: async () => [] }, authority: { read: async () => authority } });
+    expect(acceptedUncertainty.evaluation).toMatchObject({ outcome: "recommended", unknowns: expect.arrayContaining([expect.stringMatching(/explicit uncertainty/iu)]) });
+    expect(acceptedUncertainty.status).toBe("candidate");
+  });
+
+  it("routes an approved reversible migration through the Task16 compiler and returns a deeply immutable plan", async () => {
+    const compiled = await compileUpgradePlan({ recommendationId: "upgrade:one", semanticChangeId: "change:one", revision: 1, sourceRunId: "run:one", approval: { recommendationId: "upgrade:one", decisionId: "decision:one", authorityRecordId: "authority:one", recommendationHash: hash("recommendation"), stateDependencyDigest: binding.dependencyDigest }, phases: [
+      { key: "bridge", kind: "compatibility-bridge", title: "bridge", unitIds: ["unit:bridge"], writeSelectors: ["bridge/**"], validatorIds: ["validate:bridge"], transformId: "transform:bridge" },
+      { key: "consumers", kind: "all-consumers", title: "consumers", unitIds: ["unit:consumers"], writeSelectors: ["consumers/**"], validatorIds: ["validate:consumers"], transformId: "transform:consumers", dependencies: ["bridge"] },
+      { key: "cutover", kind: "incremental-cutover", title: "cutover", unitIds: ["unit:cutover"], writeSelectors: ["cutover/**"], validatorIds: ["validate:cutover"], transformId: "transform:cutover", dependencies: ["consumers"] },
+      { key: "residue", kind: "residue-zero-cleanup", title: "cleanup", unitIds: ["unit:cleanup"], writeSelectors: ["cleanup/**"], validatorIds: ["validate:residue-zero"], transformId: "transform:cleanup", dependencies: ["cutover"] },
+    ] }, {
+      approvals: { authenticate: async () => ({ current: true, decisionCurrent: true, governanceBasisCurrent: true, recommendationHash: hash("recommendation"), stateDependencyDigest: binding.dependencyDigest }) },
+      changes: { read: async () => { const value = { change: { id: "change:one", request: "upgrade", normalizedIntent: "upgrade", intentAnalysisId: "intent:one", identityResolutionIds: [], relevanceClosureId: "closure:a", analysisFacetKeys: [], operations: [], decisionIds: ["decision:one"], assumptions: [], boundary: ["bridge", "consumers", "cutover", "cleanup"], risk: { class: "R2" as const, inherentOperationRisk: 2, affectedUnitCount: 4, affectedSurfaceCount: 0, publicContractImpact: false, externalImpact: false, dataImpact: false, reversibility: "full" as const, validationStrength: "strong" as const, closureConfidence: "bounded" as const, unresolvedIdentityCount: 0, relevanceFrontierCount: 0, openWorldDependencies: false, unresolvedBlockingConcernCount: 0, suspectDecisionCount: 0, compensationAvailable: true, reasons: [] }, status: "approved" as const }, boundState: binding, compilerFactsHash: hash("facts") }; return { value, contentHash: hashFramedDomain("authenticated-change-planning-input", value) }; } },
+    });
+    expect(compiled.plan.packetIds).toHaveLength(4);
+    expect(Object.isFrozen(compiled.plan)).toBe(true);
+    expect(Object.isFrozen(compiled.plan.packetIds)).toBe(true);
+    expect(() => (compiled.plan.packetIds as string[]).push("forged")).toThrow();
+  });
+});

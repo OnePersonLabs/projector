@@ -1,0 +1,277 @@
+import {
+  canonicalJson,
+  hashFramedDomain,
+  hashSemantic,
+  type ArchitectureConcern,
+  type ArchitectureDecision,
+  type AuthorityRecord,
+  type ContentHash,
+  type DecisionOption,
+  type EntityId,
+  type ExecutionPlan,
+  type RiskClass,
+  type StateBinding,
+  type StateQueryDependency,
+} from "@projector/core";
+
+import {
+  authorityRecordHashIsValid,
+  evaluateDecisionOptions,
+  type ArchitectureResearchPort,
+  type AuthenticatedAuthorityPort,
+  type AuthenticatedPreferencePort,
+} from "../architecture/evaluation.js";
+import { compileSemanticChangePlan, type AuthenticatedChangePlanningInput, type CompiledSemanticChangePlan } from "../planning/change-plan.js";
+import { createStateBinding } from "../state/index.js";
+
+const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
+function deepFreeze<T>(value: T): Readonly<T> { if (value !== null && typeof value === "object" && !Object.isFrozen(value)) { for (const child of Object.values(value)) deepFreeze(child); Object.freeze(value); } return value; }
+
+export type FrictionTrigger =
+  | "repeated-divergence" | "repeated-agent-difficulty" | "planning-surprise" | "high-invalidation-fan-out"
+  | "duplicated-abstraction" | "unsupported-dependency" | "security-or-support" | "slow-feedback"
+  | "architecture-erosion" | "migration-overlay" | "platform-incompatibility" | "user-request";
+
+export interface FrictionObservation {
+  readonly id: EntityId;
+  readonly trigger: FrictionTrigger;
+  readonly recurrenceKey: string;
+  readonly sourceId: string;
+  readonly sourceRevision: string;
+  readonly sourceContentHash: ContentHash;
+  readonly observedAt: string;
+  readonly endogenous: boolean;
+  readonly affectedUnitIds: readonly EntityId[];
+  readonly semanticHash: ContentHash;
+}
+
+type FrictionObservationInput = Omit<FrictionObservation, "affectedUnitIds" | "semanticHash"> & { readonly affectedUnitIds: readonly EntityId[] };
+
+export function createFrictionObservation(input: FrictionObservationInput): Readonly<FrictionObservation> {
+  if (input.id.trim() === "" || input.recurrenceKey.trim() === "" || input.sourceId.trim() === "" || input.sourceRevision.trim() === "") {
+    throw new TypeError("friction observation requires stable identity, recurrence, source, and revision");
+  }
+  const semantic = { ...structuredClone(input), affectedUnitIds: unique(input.affectedUnitIds) };
+  if (!Number.isFinite(Date.parse(input.observedAt))) throw new TypeError("friction observation requires a valid observed-at timestamp");
+  return deepFreeze({ ...semantic, semanticHash: hashFramedDomain("modernization-friction-observation", semantic) });
+}
+
+export interface EvidenceRevisionPort {
+  read(sourceId: string, sourceRevision: string): Promise<{ readonly contentHash: ContentHash; readonly current: boolean } | undefined>;
+}
+
+export interface FrictionSignal {
+  readonly recurrenceKey: string;
+  readonly triggers: readonly FrictionTrigger[];
+  readonly observationIds: readonly EntityId[];
+  readonly affectedUnitIds: readonly EntityId[];
+  readonly authenticatedOccurrences: number;
+  readonly independentOccurrences: number;
+  readonly repeated: boolean;
+}
+
+async function aggregateFriction(observations: readonly FrictionObservation[], sources: EvidenceRevisionPort): Promise<ReadonlyArray<Readonly<FrictionSignal>>> {
+  const byId = new Map<string, FrictionObservation>();
+  for (const raw of observations) {
+    const { semanticHash, ...semantic } = structuredClone(raw);
+    if (semanticHash !== hashFramedDomain("modernization-friction-observation", semantic)) throw new Error(`friction observation ${raw.id} failed semantic authentication`);
+    const existing = byId.get(raw.id);
+    if (existing !== undefined && canonicalJson(existing) !== canonicalJson(raw)) throw new Error(`conflicting friction observation ${raw.id}`);
+    const revision = await sources.read(raw.sourceId, raw.sourceRevision);
+    if (revision === undefined || !revision.current || revision.contentHash !== raw.sourceContentHash) throw new Error(`source revision authentication failed for ${raw.sourceId}@${raw.sourceRevision}`);
+    byId.set(raw.id, structuredClone(raw));
+  }
+  const groups = new Map<string, FrictionObservation[]>();
+  for (const item of byId.values()) groups.set(item.recurrenceKey, [...(groups.get(item.recurrenceKey) ?? []), item]);
+  return [...groups.entries()].sort(([left], [right]) => compare(left, right)).map(([recurrenceKey, items]) => {
+    const independent = new Set(items.filter(({ endogenous }) => !endogenous).map(({ sourceId, sourceRevision }) => `${sourceId}@${sourceRevision}`));
+    return deepFreeze({ recurrenceKey, triggers: unique(items.map(({ trigger }) => trigger)) as FrictionTrigger[], observationIds: unique(items.map(({ id }) => id)), affectedUnitIds: unique(items.flatMap(({ affectedUnitIds }) => affectedUnitIds)), authenticatedOccurrences: items.length, independentOccurrences: independent.size, repeated: independent.size >= 2 });
+  });
+}
+
+export interface ConcernResearchRecord {
+  readonly id: EntityId;
+  readonly concernId: EntityId;
+  readonly sourceId: string;
+  readonly sourceRevision: string;
+  readonly sourceContentHash: ContentHash;
+  readonly observedAt: string;
+  readonly validUntil: string;
+  readonly options: readonly DecisionOption[];
+  readonly evidenceIds: readonly EntityId[];
+  readonly assumptions: readonly string[];
+  readonly uncertainty: readonly string[];
+  readonly semanticHash: ContentHash;
+}
+
+type ResearchRecordInput = Omit<ConcernResearchRecord, "options" | "evidenceIds" | "assumptions" | "uncertainty" | "semanticHash"> & {
+  readonly options: readonly DecisionOption[]; readonly evidenceIds: readonly EntityId[]; readonly assumptions: readonly string[]; readonly uncertainty: readonly string[];
+};
+
+function normalizeOptions(options: readonly DecisionOption[]): DecisionOption[] {
+  const byKey = new Map<string, DecisionOption>();
+  for (const option of options) {
+    const candidate = structuredClone(option);
+    const existing = byKey.get(candidate.key);
+    if (existing !== undefined && canonicalJson(existing) !== canonicalJson(candidate)) throw new Error(`conflicting researched option ${candidate.key}`);
+    byKey.set(candidate.key, candidate);
+  }
+  return [...byKey.values()].sort((left, right) => compare(left.key, right.key));
+}
+
+export function createResearchRecord(input: ResearchRecordInput): Readonly<ConcernResearchRecord> {
+  const observedAt = Date.parse(input.observedAt); const validUntil = Date.parse(input.validUntil);
+  if (!Number.isFinite(observedAt) || !Number.isFinite(validUntil) || validUntil < observedAt) throw new TypeError("research record requires a valid freshness interval");
+  const semantic = { ...structuredClone(input), options: normalizeOptions(input.options), evidenceIds: unique(input.evidenceIds), assumptions: unique(input.assumptions), uncertainty: unique(input.uncertainty) };
+  return deepFreeze({ ...semantic, semanticHash: hashFramedDomain("modernization-concern-research", semantic) });
+}
+
+export interface ResearchConcernInput {
+  readonly concern: ArchitectureConcern;
+  readonly candidateOptions: readonly DecisionOption[];
+  readonly affectedEvidenceIds: readonly EntityId[];
+  readonly mode: "online" | "offline";
+  readonly now: string;
+  readonly pinned: readonly ConcernResearchRecord[];
+}
+
+export async function researchConcern(input: ResearchConcernInput, ports: { readonly sources: EvidenceRevisionPort; readonly fetch?: (concern: ArchitectureConcern, options: readonly DecisionOption[]) => Promise<ConcernResearchRecord> }): Promise<{ options: readonly DecisionOption[]; evidenceIds: readonly EntityId[]; unavailable: boolean; uncertainty: readonly string[]; recordIds: readonly EntityId[] }> {
+  const records = input.mode === "online" && ports.fetch !== undefined
+    ? [await ports.fetch(structuredClone(input.concern), normalizeOptions(input.candidateOptions))]
+    : input.pinned.filter(({ concernId }) => concernId === input.concern.id);
+  const valid: ConcernResearchRecord[] = [];
+  const byId = new Map<string, string>();
+  const uncertainty: string[] = [];
+  for (const record of records) {
+    const { semanticHash, ...semantic } = structuredClone(record);
+    if (semanticHash !== hashFramedDomain("modernization-concern-research", semantic)) throw new Error(`research ${record.id} failed semantic authentication`);
+    const serialized = canonicalJson(record); const existing = byId.get(record.id);
+    if (existing !== undefined && existing !== serialized) throw new Error(`conflicting research identity ${record.id}`);
+    byId.set(record.id, serialized);
+    const source = await ports.sources.read(record.sourceId, record.sourceRevision);
+    if (source === undefined || source.contentHash !== record.sourceContentHash) throw new Error(`research source revision authentication failed for ${record.sourceId}@${record.sourceRevision}`);
+    if (!source.current || Date.parse(record.validUntil) < Date.parse(input.now)) {
+      uncertainty.push(`research ${record.id} is stale for concern ${input.concern.id}`);
+      continue;
+    }
+    valid.push(structuredClone(record));
+  }
+  if (valid.length === 0) return { options: normalizeOptions(input.candidateOptions), evidenceIds: [], unavailable: true, uncertainty: unique([...uncertainty, `${input.mode} current research unavailable for concern ${input.concern.id}`]), recordIds: [] };
+  return { options: normalizeOptions(valid.flatMap(({ options }) => options)), evidenceIds: unique(valid.flatMap(({ evidenceIds }) => evidenceIds)), unavailable: false, uncertainty: unique(valid.flatMap((record) => [...record.assumptions.map((item) => `assumption: ${item}`), ...record.uncertainty])), recordIds: unique(valid.map(({ id }) => id)) };
+}
+
+export interface ModernizationProblem {
+  readonly currentState: string;
+  readonly observedCost: string;
+  readonly targetOutcome: string;
+  readonly affectedConceptIds: readonly EntityId[];
+  readonly affectedRequirementIds: readonly EntityId[];
+  readonly relevanceClosureIds: readonly EntityId[];
+  readonly estimatedAffectedUnits?: number;
+  readonly compatibilityStrategy: string;
+  readonly phases: readonly string[];
+  readonly rollback: string;
+  readonly cleanupCriteria: readonly string[];
+  readonly risk: RiskClass;
+  readonly confidence: number;
+  readonly evidenceIds: readonly EntityId[];
+  readonly counterEvidenceIds: readonly EntityId[];
+  readonly alternatives: readonly string[];
+  readonly currentMeetsRequirementsAtLowerCost?: boolean;
+  readonly targetSupportImmature?: boolean;
+  readonly speculativeScaleBenefit?: boolean;
+  readonly poorReversibility?: boolean;
+}
+
+export interface UpgradeRecommendation {
+  readonly id: EntityId;
+  readonly concernId: EntityId;
+  readonly problem: ModernizationProblem;
+  readonly evaluationId: EntityId;
+  readonly boundState: StateBinding;
+  readonly semanticHash: ContentHash;
+}
+
+export interface ModernizationRecommendationInput {
+  readonly concern: ArchitectureConcern;
+  readonly problem: ModernizationProblem;
+  readonly options: readonly DecisionOption[];
+  readonly preferenceIds: readonly EntityId[];
+  readonly viableOptionEnumeration: StateQueryDependency;
+  readonly baseBinding: StateBinding;
+  readonly research: { readonly required: boolean; readonly affectedEvidenceIds: readonly EntityId[] };
+  readonly acceptance: { readonly kind: "automatic" } | { readonly kind: "explicit-user"; readonly authorityRecordId: EntityId };
+  readonly evaluatedAt?: string;
+}
+
+export interface UpgradeApprovalPort {
+  authenticate(input: { concernId: EntityId; evaluationId: EntityId; recommendedOptionKey: string }): Promise<{ decision: ArchitectureDecision; authority: AuthorityRecord; current: boolean }>;
+}
+
+function validateViableEnumeration(concernId: string, dependency: StateQueryDependency): void {
+  if (dependency.role !== "modernization-viable-options" || dependency.query.programId !== "modernization.viable-options" || dependency.query.input.concernId !== concernId) throw new Error("viable-option enumeration is not bound to the current concern");
+  if (dependency.priorResult.queryHash !== dependency.query.semanticHash) throw new Error("viable-option enumeration query hash mismatch");
+  const queryHash = hashFramedDomain("state-query", { kind: dependency.query.kind, programId: dependency.query.programId, programVersion: dependency.query.programVersion, input: dependency.query.input });
+  if (dependency.query.semanticHash !== queryHash || !dependency.priorResult.dependencyKeys.includes(`concern:${concernId}`)) throw new Error("viable-option enumeration query is unauthenticated");
+  if (dependency.priorResult.observability !== "closed" || dependency.priorResult.unavailableLanes.length > 0) throw new Error("viable-option enumeration must be closed and available, including empty results");
+}
+
+async function recommend(input: ModernizationRecommendationInput, ports: { readonly preferences: AuthenticatedPreferencePort; readonly authority: AuthenticatedAuthorityPort; readonly research?: ArchitectureResearchPort; readonly approval?: UpgradeApprovalPort }): Promise<{ status: "candidate" | "approved" | "rejected"; reasons: readonly string[]; recommendation: Readonly<UpgradeRecommendation>; boundState: StateBinding; evaluation: Awaited<ReturnType<typeof evaluateDecisionOptions>>["evaluation"] }> {
+  validateViableEnumeration(input.concern.id, input.viableOptionEnumeration);
+  const boundState = createStateBinding({ compiledAgainst: input.baseBinding.compiledAgainst, valueDependencies: input.baseBinding.valueDependencies, queryDependencies: [...input.baseBinding.queryDependencies, input.viableOptionEnumeration] });
+  const evaluationResult = await evaluateDecisionOptions({ concern: input.concern, options: input.options, preferenceIds: input.preferenceIds, research: input.research, acceptance: input.acceptance, ...(input.evaluatedAt === undefined ? {} : { evaluatedAt: input.evaluatedAt }) }, ports);
+  const currentViableOptions = evaluationResult.evaluation.options.filter(({ hardConstraintStatus }) => hardConstraintStatus === "passes").map(({ key }) => key).sort(compare);
+  const viableResultHash = hashFramedDomain("modernization-viable-option-result", currentViableOptions);
+  if (input.viableOptionEnumeration.priorResult.resultCount !== currentViableOptions.length || input.viableOptionEnumeration.priorResult.resultHash !== viableResultHash) throw new Error("viable-option enumeration is stale or unauthenticated");
+  const fashionReasons = unique([
+    ...(input.problem.currentState.trim() === "" || input.problem.observedCost.trim() === "" || input.problem.targetOutcome.trim() === "" ? ["problem, observed cost, and target outcome must precede technology"] : []),
+    ...(input.problem.currentMeetsRequirementsAtLowerCost === true ? ["current state meets requirements at lower total cost"] : []),
+    ...(input.problem.targetSupportImmature === true ? ["target support is immature"] : []),
+    ...(input.problem.speculativeScaleBenefit === true ? ["benefit depends on speculative scale"] : []),
+    ...(input.problem.poorReversibility === true && input.problem.confidence < 0.8 ? ["reversibility is poor and evidence is weak"] : []),
+    ...(input.problem.estimatedAffectedUnits === undefined ? ["affected-unit denominator is unavailable"] : []),
+  ]);
+  const stable = { concernId: input.concern.id, problem: structuredClone(input.problem), evaluationId: evaluationResult.evaluation.id, evaluationHash: evaluationResult.evaluation.semanticHash, boundState };
+  const semanticHash = hashFramedDomain("modernization-upgrade-recommendation", stable);
+  const recommendation = deepFreeze({ id: `upgrade:${semanticHash.slice(-24)}`, concernId: input.concern.id, problem: structuredClone(input.problem), evaluationId: evaluationResult.evaluation.id, boundState, semanticHash });
+  if (fashionReasons.some((reason) => reason !== "affected-unit denominator is unavailable")) return { status: "rejected", reasons: fashionReasons, recommendation, boundState, evaluation: evaluationResult.evaluation };
+  if (evaluationResult.acceptanceBlocked || evaluationResult.evaluation.outcome !== "recommended" || evaluationResult.evaluation.recommendedOptionKey === undefined || ports.approval === undefined) return { status: "candidate", reasons: unique([...fashionReasons, ...evaluationResult.evaluation.unknowns]), recommendation, boundState, evaluation: evaluationResult.evaluation };
+  const proof = await ports.approval.authenticate({ concernId: input.concern.id, evaluationId: evaluationResult.evaluation.id, recommendedOptionKey: evaluationResult.evaluation.recommendedOptionKey });
+  const decisionValid = proof.decision.semanticHash === hashSemantic("architecture-decision", proof.decision) && proof.decision.concernId === input.concern.id && proof.decision.selectedOptionKey === evaluationResult.evaluation.recommendedOptionKey && proof.decision.governanceBasis.length > 0;
+  const authorityValid = proof.authority.id === proof.decision.authorityRecordId && proof.authority.subjectId === input.concern.id && authorityRecordHashIsValid(proof.authority) && (proof.authority.status === "approved" || proof.authority.status === "auto-approved") && proof.authority.conclusion !== "unknown" && proof.authority.conclusion !== "exception";
+  return proof.current && decisionValid && authorityValid
+    ? { status: "approved", reasons: fashionReasons, recommendation, boundState, evaluation: evaluationResult.evaluation }
+    : { status: "candidate", reasons: unique([...fashionReasons, "current authority, decision, and governance basis are required"]), recommendation, boundState, evaluation: evaluationResult.evaluation };
+}
+
+export const evaluateModernization = Object.freeze({ aggregateFriction, recommend });
+
+export type UpgradePhaseKind = "compatibility-bridge" | "all-consumers" | "incremental-cutover" | "residue-zero-cleanup";
+export interface UpgradePhase { readonly key: string; readonly kind: UpgradePhaseKind; readonly title: string; readonly unitIds: readonly EntityId[]; readonly writeSelectors: readonly string[]; readonly validatorIds: readonly string[]; readonly transformId: string; readonly dependencies?: readonly string[] }
+export interface UpgradeExecutionApproval { readonly recommendationId: EntityId; readonly decisionId: EntityId; readonly authorityRecordId: EntityId; readonly recommendationHash: ContentHash; readonly stateDependencyDigest: ContentHash }
+
+export async function compileUpgradePlan(input: { readonly recommendationId: EntityId; readonly semanticChangeId: EntityId; readonly revision: number; readonly sourceRunId: EntityId; readonly approval: UpgradeExecutionApproval; readonly phases: readonly UpgradePhase[] }, ports: {
+  readonly approvals: { authenticate(approval: UpgradeExecutionApproval): Promise<{ current: boolean; decisionCurrent: boolean; governanceBasisCurrent: boolean; recommendationHash: ContentHash; stateDependencyDigest: ContentHash }> };
+  readonly changes: { read(changeId: string): Promise<AuthenticatedChangePlanningInput> };
+}): Promise<CompiledSemanticChangePlan> {
+  if (input.approval.recommendationId !== input.recommendationId) throw new Error("upgrade approval is bound to another recommendation");
+  const proof = await ports.approvals.authenticate(input.approval);
+  if (!proof.current || !proof.decisionCurrent || !proof.governanceBasisCurrent || proof.recommendationHash !== input.approval.recommendationHash || proof.stateDependencyDigest !== input.approval.stateDependencyDigest) throw new Error("stale upgrade approval requires refresh or rebase");
+  const kinds = new Set(input.phases.map(({ kind }) => kind));
+  for (const required of ["compatibility-bridge", "all-consumers", "incremental-cutover", "residue-zero-cleanup"] as const) if (!kinds.has(required)) throw new Error(`upgrade migration is missing ${required}`);
+  if (input.phases.some(({ validatorIds }) => validatorIds.length === 0)) throw new Error("every upgrade phase requires validation");
+  const result = await compileSemanticChangePlan({ changeId: input.semanticChangeId, revision: input.revision, sourceRunId: input.sourceRunId }, {
+    changes: ports.changes,
+    packets: { compile: async () => {
+      const proposals = input.phases.map((phase) => ({ key: phase.key, title: phase.title, stage: phase.kind === "compatibility-bridge" ? "bridge" as const : phase.kind === "all-consumers" ? "consumer" as const : phase.kind === "incremental-cutover" ? "cutover" as const : "cleanup" as const, executionMode: "deterministic" as const, transformId: phase.transformId, unitIds: [...phase.unitIds], semanticOwnerIds: [...phase.unitIds], writeSelectors: [...phase.writeSelectors], dependencies: [...(phase.dependencies ?? [])], validatorIds: [...phase.validatorIds] }));
+      const completionContract = { requiredUnitStates: unique(input.phases.flatMap(({ unitIds }) => unitIds)).map((unitId) => ({ unitId, state: "valid" as const })), requiredValidators: unique(input.phases.flatMap(({ validatorIds }) => validatorIds)), requiredEvidenceLanes: ["test" as const], minimumValidationAssurance: "strong" as const, requireIndependentValidation: true, maximumNewDivergences: 0, maximumUnknowns: 0, allowUnavailableExternalActions: false, requiredArtifacts: ["residue-zero-certificate", "rollback-checkpoints"], cleanWorkingTree: true };
+      const value = { proposals, completionContract };
+      return { value, contentHash: hashFramedDomain("authenticated-change-packet-proposals", value) };
+    } },
+  });
+  if (result.plan.boundState.dependencyDigest !== input.approval.stateDependencyDigest) throw new Error("compiled upgrade plan no longer matches approved state");
+  return result;
+}
+
+export type ImmutableUpgradePlan = Readonly<ExecutionPlan>;
