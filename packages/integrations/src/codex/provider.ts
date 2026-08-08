@@ -24,6 +24,7 @@ export interface CodexExecCapabilities {
   readonly programmaticExecution: boolean;
   readonly cancellation: boolean;
   readonly filesystemAccess: "read-only";
+  readonly toolIsolation: "all-stable-tools-disabled" | "unavailable";
   readonly configuration: "isolated";
   readonly tokenBudgetEnforcement: "preflight-and-observed";
   readonly monetaryCostMetering: false;
@@ -56,7 +57,10 @@ export interface CodexExecProviderOptions {
 const PROVIDER_ID = "codex-cli-chatgpt" as const;
 const DEFAULT_MAXIMUM_OUTPUT_BYTES = 1024 * 1024;
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
-const REQUIRED_EXEC_FLAGS = ["--output-schema", "--json", "--output-last-message", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "--cd"] as const;
+const REQUIRED_EXEC_FLAGS = ["--output-schema", "--json", "--output-last-message", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "--cd", "--disable"] as const;
+export const DISABLED_CODEX_EXEC_FEATURES = [
+  "apps", "auth_elicitation", "browser_use", "browser_use_external", "browser_use_full_cdp_access", "code_mode_host", "computer_use", "goals", "hooks", "image_generation", "in_app_browser", "multi_agent", "multi_agent_v2", "plugins", "remote_plugin", "shell_snapshot", "shell_tool", "skill_mcp_dependency_install", "skill_search", "tool_call_mcp_elicitation", "tool_suggest", "unified_exec", "view_image", "workspace_dependencies",
+] as const;
 
 function validBound(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive safe integer`);
@@ -100,7 +104,7 @@ export class SpawnCodexProcessRunner implements CodexProcessRunner {
 }
 
 function unavailable(executable: boolean, reason: string, authKind: CodexExecCapabilities["authKind"] = "unavailable", providerRevision?: string): CodexExecCapabilities {
-  return { providerId: PROVIDER_ID, available: false, executable, authenticated: false, authKind, ...(providerRevision === undefined ? {} : { providerRevision }), structuredOutput: false, programmaticExecution: false, cancellation: true, filesystemAccess: "read-only", configuration: "isolated", tokenBudgetEnforcement: "preflight-and-observed", monetaryCostMetering: false, reason };
+  return { providerId: PROVIDER_ID, available: false, executable, authenticated: false, authKind, ...(providerRevision === undefined ? {} : { providerRevision }), structuredOutput: false, programmaticExecution: false, cancellation: true, filesystemAccess: "read-only", toolIsolation: "unavailable", configuration: "isolated", tokenBudgetEnforcement: "preflight-and-observed", monetaryCostMetering: false, reason };
 }
 
 function parseUsage(stdout: string): { readonly inputTokens: number; readonly outputTokens: number } {
@@ -152,7 +156,10 @@ export function createCodexExecProvider(options: CodexExecProviderOptions): Code
     let help: CodexProcessResult; try { help = await invoke(cwd, ["exec", "--help"], remaining(), signal); } catch (error) { if (error instanceof CodexExecProviderError && (error.code === "cancelled" || error.code === "timeout")) throw error; return unavailable(true, "Codex CLI exec contract is unavailable", "chatgpt-subscription", providerRevision); }
     const missing = REQUIRED_EXEC_FLAGS.filter((flag) => !help.stdout.includes(flag));
     if (help.exitCode !== 0 || missing.length > 0) return unavailable(true, "Codex CLI does not expose the required bounded structured-exec contract", "chatgpt-subscription", providerRevision);
-    return { providerId: PROVIDER_ID, available: true, executable: true, authenticated: true, authKind: "chatgpt-subscription", providerRevision, structuredOutput: true, programmaticExecution: true, cancellation: true, filesystemAccess: "read-only", configuration: "isolated", tokenBudgetEnforcement: "preflight-and-observed", monetaryCostMetering: false };
+    let features: CodexProcessResult; try { features = await invoke(cwd, ["features", "list"], remaining(), signal); } catch (error) { if (error instanceof CodexExecProviderError && (error.code === "cancelled" || error.code === "timeout")) throw error; return unavailable(true, "Codex CLI feature inventory is unavailable", "chatgpt-subscription", providerRevision); }
+    const stableFeatures = new Set(features.stdout.split(/\r?\n/u).flatMap((line) => { const match = /^(\S+)\s+stable\s+(?:true|false)\s*$/u.exec(line); return match?.[1] === undefined ? [] : [match[1]]; }));
+    if (features.exitCode !== 0 || DISABLED_CODEX_EXEC_FEATURES.some((feature) => !stableFeatures.has(feature))) return unavailable(true, "Codex CLI cannot prove the required stable tool-disable inventory", "chatgpt-subscription", providerRevision);
+    return { providerId: PROVIDER_ID, available: true, executable: true, authenticated: true, authKind: "chatgpt-subscription", providerRevision, structuredOutput: true, programmaticExecution: true, cancellation: true, filesystemAccess: "read-only", toolIsolation: "all-stable-tools-disabled", configuration: "isolated", tokenBudgetEnforcement: "preflight-and-observed", monetaryCostMetering: false };
   }
   async function capabilities(signal?: AbortSignal): Promise<CodexExecCapabilities> { return probe(signal, probeTimeoutMs); }
 
@@ -167,7 +174,8 @@ export function createCodexExecProvider(options: CodexExecProviderOptions): Code
     const timeoutMs = validBound(control?.timeoutMs ?? probeTimeoutMs, "timeoutMs"); const temporary = await mkdtemp(join(tmpdir(), "projector-codex-exec-")); const schemaPath = join(temporary, "schema.json"); const outputPath = join(temporary, "response.json");
     try {
       await writeFile(schemaPath, schemaText, { encoding: "utf8", mode: 0o600, flag: "wx" });
-      const result = await invoke(cwd, ["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only", "--color", "never", "--output-schema", schemaPath, "--output-last-message", outputPath, "--json", "--cd", cwd, "--model", model, "-"], timeoutMs, control?.signal, prompt);
+      const disabledFeatures = DISABLED_CODEX_EXEC_FEATURES.flatMap((feature) => ["--disable", feature]);
+      const result = await invoke(cwd, ["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only", ...disabledFeatures, "--color", "never", "--output-schema", schemaPath, "--output-last-message", outputPath, "--json", "--cd", cwd, "--model", model, "-"], timeoutMs, control?.signal, prompt);
       if (result.exitCode !== 0) throw new CodexExecProviderError("process-failed", `Codex CLI structured execution failed with exit code ${result.exitCode}`);
       const usage = parseUsage(result.stdout); if (usage.inputTokens > request.maxInputTokens! || usage.outputTokens > request.maxOutputTokens!) throw new CodexExecProviderError("token-budget", "Codex CLI exceeded the declared token budget");
       const raw = await boundedRead(outputPath, maximumOutputBytes); let value: T; try { value = JSON.parse(raw) as T; } catch { throw new CodexExecProviderError("malformed-response", "Codex CLI returned malformed structured JSON"); }
