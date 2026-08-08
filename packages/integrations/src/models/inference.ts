@@ -1,9 +1,10 @@
 import { hashFramedDomain, type ContentHash, type StructuredModelRequest, type StructuredModelResponse } from "@projector/core";
 
 export interface InferencePolicy { readonly maximumAttempts: number; readonly maximumTokens: number; readonly maximumCost: number; readonly timeoutMs: number; readonly retry: readonly ("schema-invalid" | "transient")[]; readonly replay: "allow" | "deny"; readonly resampleId?: string; readonly signal?: AbortSignal }
-export interface AuthenticatedModelRoute { readonly value: { readonly providerId: string; readonly model: string; readonly providerRevision?: string }; readonly contentHash: ContentHash; readonly provider: { generateStructured(request: StructuredModelRequest<unknown>): Promise<StructuredModelResponse<unknown>> } }
+export interface ModelCallControl { readonly signal?: AbortSignal; readonly timeoutMs: number }
+export interface AuthenticatedModelRoute { readonly value: { readonly providerId: string; readonly model: string; readonly providerRevision?: string }; readonly contentHash: ContentHash; readonly provider: { generateStructured(request: StructuredModelRequest<unknown>, control?: ModelCallControl): Promise<StructuredModelResponse<unknown>> } }
 export interface InferenceArtifactStore { read(key: string): Promise<unknown>; write(key: string, value: unknown): Promise<void> }
-export interface InferencePorts { readonly router: { route(request: StructuredModelRequest<unknown>): Promise<AuthenticatedModelRoute> }; readonly schema: { validate(value: unknown, schema: unknown): boolean }; readonly store: InferenceArtifactStore }
+export interface InferencePorts { readonly router: { route(request: StructuredModelRequest<unknown>, control?: ModelCallControl): Promise<AuthenticatedModelRoute> }; readonly schema: { validate(value: unknown, schema: unknown): boolean }; readonly store: InferenceArtifactStore }
 export interface InferenceArtifact<T> { readonly status: "recorded" | "replayed"; readonly key: ContentHash; readonly requestHash: ContentHash; readonly routeHash: ContentHash; readonly response: StructuredModelResponse<T>; readonly candidateHash: ContentHash }
 export class InferenceFailure extends Error { constructor(readonly code: "inference-cancelled" | "inference-exhausted" | "inference-timeout", message: string) { super(message); this.name = "InferenceFailure"; } }
 
@@ -23,7 +24,7 @@ export async function runStructuredInference<T>(request: StructuredModelRequest<
   const requestedTokens = (request.maxInputTokens ?? 0) + (request.maxOutputTokens ?? 0);
   if (requestedTokens > policy.maximumTokens || (request.maxCost ?? 0) > policy.maximumCost) throw new Error("structured inference request exceeds policy budget");
   const normalized = { purpose: request.purpose.trim(), role: request.role, programVersion: request.programVersion, schemaName: request.schemaName, schemaVersion: request.schemaVersion, schema: request.schema, input: request.input, inputHash: request.inputHash, ...(request.executionCapsule === undefined ? {} : { executionCapsule: request.executionCapsule }), risk: request.risk, ...(request.maxInputTokens === undefined ? {} : { maxInputTokens: request.maxInputTokens }), ...(request.maxOutputTokens === undefined ? {} : { maxOutputTokens: request.maxOutputTokens }), maxCost: Math.min(request.maxCost ?? policy.maximumCost, policy.maximumCost / policy.maximumAttempts) } satisfies StructuredModelRequest<T>;
-  const requestHash = hashFramedDomain("structured-model-request", normalized); const route = await ports.router.route(normalized);
+  const started = Date.now(); const requestHash = hashFramedDomain("structured-model-request", normalized); const routeControl: ModelCallControl = { timeoutMs: policy.timeoutMs, ...(policy.signal === undefined ? {} : { signal: policy.signal }) }; const route = await boundedProviderCall(ports.router.route(normalized, routeControl), policy.timeoutMs, policy.signal);
   if (route.contentHash !== hashFramedDomain("authenticated-model-route", route.value)) throw new Error("model route identity is unauthenticated");
   const key = hashFramedDomain("structured-inference-cache-key", { requestHash, route: route.value, policy: { maximumAttempts: policy.maximumAttempts, maximumTokens: policy.maximumTokens, maximumCost: policy.maximumCost, timeoutMs: policy.timeoutMs, retry: [...policy.retry].sort(), resampleId: policy.resampleId ?? null } });
   if (policy.replay === "allow") {
@@ -45,14 +46,14 @@ export async function runStructuredInference<T>(request: StructuredModelRequest<
       return { ...artifact, status: "replayed" };
     }
   }
-  const started = Date.now(); let lastReason = "provider failure"; let consumedTokens = 0;
+  let lastReason = "provider failure"; let consumedTokens = 0;
   for (let attempt = 1; attempt <= policy.maximumAttempts; attempt += 1) {
     if (Boolean(policy.signal?.aborted)) throw new InferenceFailure("inference-cancelled", "structured inference cancelled");
     if (Date.now() - started >= policy.timeoutMs) throw new InferenceFailure("inference-timeout", "structured inference timed out");
     try {
       const remainingMs = policy.timeoutMs - (Date.now() - started);
       if (remainingMs <= 0) throw new InferenceFailure("inference-timeout", "structured inference timed out");
-      const response = await boundedProviderCall(route.provider.generateStructured(normalized), remainingMs, policy.signal) as StructuredModelResponse<T>;
+      const callControl: ModelCallControl = { timeoutMs: remainingMs, ...(policy.signal === undefined ? {} : { signal: policy.signal }) }; const response = await boundedProviderCall(route.provider.generateStructured(normalized, callControl), remainingMs, policy.signal) as StructuredModelResponse<T>;
       if (response.provider !== route.value.providerId || response.model !== route.value.model || (route.value.providerRevision !== undefined && response.providerRevision !== route.value.providerRevision)) throw new Error("provider response route identity mismatch");
       if (response.rawResponseHash !== hashFramedDomain("structured-model-response-value", response.value)) throw new Error("provider response hash mismatch");
       consumedTokens += (response.inputTokens ?? normalized.maxInputTokens ?? policy.maximumTokens) + (response.outputTokens ?? normalized.maxOutputTokens ?? policy.maximumTokens);
