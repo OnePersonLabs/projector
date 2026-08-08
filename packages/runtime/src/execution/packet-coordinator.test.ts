@@ -57,8 +57,10 @@ describe("packet execution coordinator", () => {
     let effectsRun = 0;
     await expect(executePacketPlan(input, { ...common, authority: { verify: async () => false }, effect: { run: async ({ packet }) => { effectsRun += 1; const value = { source: "transform", group: "transform" }; return { claimedChangedPaths: [], outputHash: digest("out"), author: { ...value, contentHash: hashFramedDomain("authenticated-effect-author", { ...value, packetId: packet.id }) } }; } } })).rejects.toThrow(/authority|approval/iu);
     expect(effectsRun).toBe(0);
-    const selfAttested = await executePacketPlan(input, { ...common, transaction: { begin: async () => ({ apply: async () => {}, commit: async () => {}, rollback: async () => {} }) }, validatorTrust: { verify: async () => ({ trusted: true, authorSource: "transform", independenceGroup: "transform" }) } });
+    let selfAttestedCommits = 0;
+    const selfAttested = await executePacketPlan(input, { ...common, transaction: { begin: async () => ({ apply: async () => {}, commit: async () => { selfAttestedCommits += 1; }, rollback: async () => {} }) }, validatorTrust: { verify: async () => ({ trusted: true, authorSource: "transform", independenceGroup: "transform" }) } });
     expect(selfAttested.status).toBe("partial");
+    expect(selfAttestedCommits).toBe(0);
   });
 
   it("rejects a declared SCC before effects when no staging adapter exists", async () => {

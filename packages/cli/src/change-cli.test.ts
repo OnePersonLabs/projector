@@ -47,6 +47,14 @@ describe("change/plan/apply CLI composition", () => {
       const planned = await executeProjector(["plan", compiled.report.selector, "--format", "json"], { cwd: repositoryRoot });
       expect(planned.report).toMatchObject({ kind: "plan", changeSelector: compiled.report.selector, selector: expect.stringMatching(/^plan:semantic:[a-f0-9]{64}$/u), risk: { class: "R1" }, pipeline: "packet-planner" });
       expect(planned.report.plan.boundState).toEqual(planned.report.capsule.boundState);
+      const successRoot = await mkdtemp(join(tmpdir(), "projector-change-success-"));
+      try {
+        await cp(repositoryRoot, successRoot, { recursive: true });
+        const applied = await executeProjector(["apply", planned.report.selector, "--mode", "govern"], { cwd: successRoot });
+        expect(applied.report).toMatchObject({ outcome: "success", pipeline: "packet-coordinator", coordinator: { status: "completed", surprises: [] } });
+        expect(applied.report.coordinator.observedImpact.changedUnitIds.length).toBeGreaterThan(0);
+        expect(new Set(applied.report.coordinator.observedImpact.changedUnitIds)).toEqual(new Set(applied.report.plan.knownAffectedUnitIds));
+      } finally { await rm(successRoot, { recursive: true, force: true }); }
       await writeFile(join(repositoryRoot, ".codex/hooks/validate-repo.mjs"), "// relevant drift\n", { flag: "a" });
       await expect(executeProjector(["apply", planned.report.selector, "--mode", "govern"], { cwd: repositoryRoot })).rejects.toThrow(/stale|rebase/iu);
     } finally {
