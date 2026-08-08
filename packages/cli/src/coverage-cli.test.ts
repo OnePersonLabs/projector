@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { executeProjector, type CoverageCliPort } from "./cli.js";
 
-const report = { proofStatement: "bounded" as const, approvalRequired: false, budgetExhausted: false, continuationPersisted: false, boundary: ["packages/api"], lanes: [], unavailableSurfaceIds: [] };
+const laneKeys = ["inventory", "projection-unit-classification", "concept-mapping", "relationship", "lens", "rule-enforceability", "derivation", "validation-evidence", "surface", "authority", "historical-metamorphic", "architecture-decision", "semantic-identity", "pre-change-relevance", "representation-projection-fidelity", "change-closure", "planning-surprise"];
+const report = { proofStatement: "bounded" as const, approvalRequired: false, budgetExhausted: false, continuationPersisted: false, boundary: ["packages/api"], lanes: laneKeys.map((key) => ({ key, observability: "bounded" as const })), unavailableSurfaceIds: [] };
 
 describe("coverage/complete/cleanup CLI composition", () => {
   it("normalizes scope, strictness, budgets and uses one provider report for text/JSON", async () => {
@@ -32,8 +33,9 @@ describe("coverage/complete/cleanup CLI composition", () => {
     await expect(executeProjector(["coverage", "--mystery"], { coverage: port })).rejects.toThrow(/unknown.*flag|argument/iu);
     await expect(executeProjector(["cleanup", "--dry-run", "--dry-run"], { coverage: port })).rejects.toThrow(/duplicate.*dry-run/iu);
     const dryRun = await executeProjector(["cleanup", "--dry-run", "--mode", "observe"], { coverage: port });
-    expect(dryRun.report).toMatchObject({ dryRun: true }); expect(cleanup).not.toHaveBeenCalled();
+    expect(dryRun.report).toMatchObject({ dryRun: true }); expect(dryRun.exitCode).toBe(4); expect(cleanup).not.toHaveBeenCalled();
     expect((await executeProjector(["coverage", "--scope", "packages/api"], { coverage: { ...port, coverage: async () => ({ ...report, proofStatement: "proven-within-boundary", strictnessMet: true, boundary: ["other"] }) } })).exitCode).not.toBe(0);
-    expect((await executeProjector(["coverage", "--strictness", "partial"], { cwd: process.cwd() })).exitCode).toBe(0);
+    expect((await executeProjector(["coverage", "--strictness", "partial"], { cwd: process.cwd() })).exitCode).not.toBe(0);
+    expect((await executeProjector(["coverage", "--strictness", "partial"], { coverage: { ...port, coverage: async () => ({ ...report, boundary: ["."], lanes: [] }) } })).exitCode).not.toBe(0);
   });
 });

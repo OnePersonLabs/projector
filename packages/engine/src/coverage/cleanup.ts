@@ -74,7 +74,7 @@ export class InMemoryCleanupPlanStore implements CleanupPlanStore {
     const existing = this.plans.get(plan.id);
     if (existing !== undefined) return canonicalJson(existing) === canonicalJson(plan) ? "idempotent" : "conflict";
     const latest = [...this.plans.values()].filter(({ key }) => key === plan.key).sort((a, b) => b.revision - a.revision)[0];
-    if (latest?.revision !== expectedRevision) return "conflict";
+    if (latest?.revision !== expectedRevision || (latest !== undefined && [...this.reservations.values()].some((item) => item.planId === latest.id))) return "conflict";
     this.plans.set(plan.id, structuredClone(plan)); return "stored";
   }
   async reserve(expectedRevision: number, plan: Readonly<CleanupContinuationPlan>, workIds: readonly string[]): Promise<{ status: "reserved"; reservationId: string } | { status: "conflict" }> {
@@ -87,7 +87,8 @@ export class InMemoryCleanupPlanStore implements CleanupPlanStore {
   }
   async commitReservation(reservationId: string, plan: Readonly<CleanupContinuationPlan>): Promise<"stored" | "conflict"> {
     const reservation = this.reservations.get(reservationId);
-    if (reservation === undefined || plan.revision !== reservation.revision + 1 || plan.supersedesPlanId !== reservation.planId
+    const latest = reservation === undefined ? undefined : [...this.plans.values()].filter(({ key }) => key === plan.key).sort((a, b) => b.revision - a.revision)[0];
+    if (reservation === undefined || latest?.id !== reservation.planId || latest.revision !== reservation.revision || plan.revision !== reservation.revision + 1 || plan.supersedesPlanId !== reservation.planId
       || reservation.workIds.some((id) => !plan.completedWorkIds.includes(id) || plan.remainingWork.some((item) => item.id === id))) return "conflict";
     this.plans.set(plan.id, structuredClone(plan)); this.reservations.delete(reservationId); return "stored";
   }

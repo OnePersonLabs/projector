@@ -58,6 +58,14 @@ const CLAIM_KINDS: Readonly<Record<RequiredCoverageLaneKey, readonly string[]>> 
 
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
+const normalizedPath = (value: string): string => value.trim().replace(/\\/gu, "/").replace(/^\.\//u, "").replace(/\/+$/u, "") || ".";
+const insideBoundary = (scope: string, boundary: readonly string[]): boolean => {
+  const normalizedScope = normalizedPath(scope);
+  return boundary.some((item) => {
+    const normalized = normalizedPath(item);
+    return normalized === "." || normalizedScope === normalized || normalizedScope.startsWith(`${normalized}/`);
+  });
+};
 
 export interface CoverageLaneEvidence {
   readonly key: RequiredCoverageLaneKey;
@@ -203,14 +211,15 @@ export async function compileAuthenticatedCoverageSnapshot(
   }
   const missing = REQUIRED_COVERAGE_LANES.filter((key) => !byKey.has(key));
   if (missing.length > 0 || byKey.size !== REQUIRED_COVERAGE_LANES.length) throw new Error(`coverage evidence must contain exactly 17 required lanes; missing: ${missing.join(", ")}`);
-  for (const failure of evidence.analyzerFailures) {
+  const relevantFailures = evidence.analyzerFailures.filter((failure) => insideBoundary(failure.scope, boundary));
+  for (const failure of relevantFailures) {
     const mapped = REQUIRED_COVERAGE_LANES.some((key) => {
       const claims = new Set(CLAIM_KINDS[key]);
       return claims.has(failure.capability) || failure.affectedClaimKinds.some((kind) => claims.has(kind));
     });
     if (!mapped) throw new Error(`analyzer failure ${failure.capability} omits all recognized dependent coverage claims`);
   }
-  const laneReports = REQUIRED_COVERAGE_LANES.map((key) => normalizeLane(byKey.get(key)!, evidence.analyzerFailures));
+  const laneReports = REQUIRED_COVERAGE_LANES.map((key) => normalizeLane(byKey.get(key)!, relevantFailures));
   const allExact = laneReports.every(({ exactClosureProvable }) => exactClosureProvable);
   const completeWithinBoundary = allExact && semanticCompletion(evidence) && evidence.unknownFrontierIds.length === 0 && evidence.unavailableSurfaceIds.length === 0;
   const anyUnavailable = laneReports.some(({ observability }) => observability === "unavailable") || evidence.unavailableSurfaceIds.length > 0;

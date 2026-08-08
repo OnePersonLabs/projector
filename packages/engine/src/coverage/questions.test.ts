@@ -15,26 +15,28 @@ function authority(questionId: string): AuthorityRecord {
 }
 
 describe("completion questions and settled answers", () => {
+  const authorityPort = { read: async () => undefined };
   it("uses stable semantic identities, collapses display/order duplicates, rejects conflicts, and prioritizes material questions", async () => {
     const store = new InMemorySettledAnswerStore();
-    const ranked = await rankCompletionQuestions([candidate(), candidate({ displayText: "Different wording", scopeIds: ["pkg:a", "pkg:b"] }), candidate({ uncertaintyKey: "architecture:block", kind: "blocking-architecture", displayText: "Choose platform", affectedUnitCount: 1 })], { store, currentBindingDependencyDigest: binding.dependencyDigest });
+    const ranked = await rankCompletionQuestions([candidate(), candidate({ displayText: "Different wording", scopeIds: ["pkg:a", "pkg:b"] }), candidate({ uncertaintyKey: "architecture:block", kind: "blocking-architecture", displayText: "Choose platform", affectedUnitCount: 1 })], { store, currentBinding: binding, authority: authorityPort });
     expect(ranked).toHaveLength(2);
     expect(ranked[0]?.kind).toBe("blocking-architecture");
-    await expect(rankCompletionQuestions([candidate(), candidate({ affectedUnitCount: 9 })], { store, currentBindingDependencyDigest: binding.dependencyDigest })).rejects.toThrow(/conflicting.*question/iu);
-    await expect(rankCompletionQuestions([candidate({ userEffort: 0 })], { store, currentBindingDependencyDigest: binding.dependencyDigest })).rejects.toThrow(/cost|effort/iu);
+    await expect(rankCompletionQuestions([candidate(), candidate({ affectedUnitCount: 9 })], { store, currentBinding: binding, authority: authorityPort })).rejects.toThrow(/conflicting.*question/iu);
+    await expect(rankCompletionQuestions([candidate({ userEffort: 0 })], { store, currentBinding: binding, authority: authorityPort })).rejects.toThrow(/cost|effort/iu);
   });
 
   it("atomically authenticates answers, is idempotent, rejects races, and reopens only changed evidence", async () => {
     const store = new InMemorySettledAnswerStore();
-    const [question] = await rankCompletionQuestions([candidate()], { store, currentBindingDependencyDigest: binding.dependencyDigest });
+    const [question] = await rankCompletionQuestions([candidate()], { store, currentBinding: binding, authority: authorityPort });
     const record = authority(question!.id);
     const ports = { authority: { read: async () => record }, bindingValidator: { validate: async () => ({ status: "current" as const, currentState: state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) }, store };
     const first = await settleCompletionQuestion({ question: question!, outcome: "approve", answer: "canonical checkout", authorityRecordId: record.id, boundState: binding, currentState: state, context: { repositoryRoot: "/repo", stateDigest: state, config: {}, signal: new AbortController().signal } }, ports);
     const replay = await settleCompletionQuestion({ question: question!, outcome: "approve", answer: "canonical checkout", authorityRecordId: record.id, boundState: binding, currentState: state, context: { repositoryRoot: "/repo", stateDigest: state, config: {}, signal: new AbortController().signal } }, ports);
     expect(replay).toEqual(first);
-    expect(await rankCompletionQuestions([candidate()], { store, currentBindingDependencyDigest: binding.dependencyDigest })).toHaveLength(0);
-    expect(await rankCompletionQuestions([candidate()], { store, currentBindingDependencyDigest: hash("new-binding") })).toHaveLength(1);
-    expect(await rankCompletionQuestions([candidate({ evidenceDependencyIds: ["evidence:changed"] })], { store, currentBindingDependencyDigest: binding.dependencyDigest })).toHaveLength(1);
+    expect(await rankCompletionQuestions([candidate()], { store, currentBinding: binding, authority: { read: async () => record } })).toHaveLength(0);
+    const changedBinding = createStateBinding({ ...binding, valueDependencies: [{ ...binding.valueDependencies[0]!, versionHash: hash("new-binding") }] });
+    expect(await rankCompletionQuestions([candidate()], { store, currentBinding: changedBinding, authority: { read: async () => record } })).toHaveLength(1);
+    expect(await rankCompletionQuestions([candidate({ evidenceDependencyIds: ["evidence:changed"] })], { store, currentBinding: binding, authority: { read: async () => record } })).toHaveLength(1);
     const racing = vi.spyOn(store, "compareAndStore").mockResolvedValueOnce({ status: "conflict" });
     await expect(settleCompletionQuestion({ question: question!, outcome: "correction", answer: "new", authorityRecordId: record.id, boundState: binding, currentState: state, context: { repositoryRoot: "/repo", stateDigest: state, config: {}, signal: new AbortController().signal } }, ports)).rejects.toThrow(/race|conflict/iu);
     racing.mockRestore();
@@ -42,9 +44,7 @@ describe("completion questions and settled answers", () => {
 
   it("ignores forged answer DTOs and binds rebound/evidence/exception proof at CAS", async () => {
     const store = new InMemorySettledAnswerStore();
-    const [question] = await rankCompletionQuestions([candidate({ kind: "blocking-architecture" })], { store, currentBindingDependencyDigest: binding.dependencyDigest });
-    const forgedInput = { store, currentBindingDependencyDigest: binding.dependencyDigest, settled: [{ questionId: question!.id, questionContentHash: question!.contentHash }] } as unknown as { store: InMemorySettledAnswerStore; currentBindingDependencyDigest: ContentHash };
-    expect(await rankCompletionQuestions([candidate({ kind: "blocking-architecture" })], forgedInput)).toHaveLength(1);
+    const [question] = await rankCompletionQuestions([candidate({ kind: "blocking-architecture" })], { store, currentBinding: binding, authority: authorityPort });
     const rebound = createStateBinding({ ...binding, compiledAgainst: state, valueDependencies: [{ ...binding.valueDependencies[0]!, versionHash: hash("rebound-evidence") }] });
     const reboundValidation = { status: "rebound" as const, currentState: state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [], rebound };
     const validate = vi.fn().mockResolvedValueOnce(reboundValidation).mockResolvedValueOnce(reboundValidation).mockResolvedValue({ status: "current" as const, currentState: state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] });
@@ -54,5 +54,17 @@ describe("completion questions and settled answers", () => {
     const settled = await settleCompletionQuestion({ question: question!, outcome: "exception", answer: "temporary", authorityRecordId: authority(question!.id).id, boundState: binding, currentState: state, context: { repositoryRoot: "/repo", stateDigest: state, config: {}, signal: new AbortController().signal } }, { authority: { read: async () => authority(question!.id) }, bindingValidator: { validate }, store, exceptional });
     expect(settled.bindingDependencyDigest).toBe(rebound.dependencyDigest);
     expect(validate).toHaveBeenCalledTimes(3);
+  });
+
+  it("fails closed on malformed or conflicting authenticated-store settlement rows", async () => {
+    const empty = new InMemorySettledAnswerStore();
+    const [question] = await rankCompletionQuestions([candidate({ kind: "blocking-architecture" })], { store: empty, currentBinding: binding, authority: authorityPort });
+    const malformed = { read: async () => [{ questionId: question!.id, questionContentHash: question!.contentHash, bindingDependencyDigest: binding.dependencyDigest }], compareAndStore: vi.fn() };
+    await expect(rankCompletionQuestions([candidate({ kind: "blocking-architecture" })], { store: malformed, currentBinding: binding, authority: authorityPort })).rejects.toThrow(/malformed|authenticated|hash/iu);
+    const realStore = new InMemorySettledAnswerStore(); const record = authority(question!.id);
+    const settled = await settleCompletionQuestion({ question: question!, outcome: "approve", answer: "canonical", authorityRecordId: record.id, boundState: binding, currentState: state, context: { repositoryRoot: "/repo", stateDigest: state, config: {}, signal: new AbortController().signal } }, { authority: { read: async () => record }, bindingValidator: { validate: async () => ({ status: "current" as const, currentState: state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) }, store: realStore });
+    const conflicting = { ...settled, answer: "different" };
+    const conflictStore = { read: async () => [settled, conflicting], compareAndStore: vi.fn() };
+    await expect(rankCompletionQuestions([candidate({ kind: "blocking-architecture" })], { store: conflictStore, currentBinding: binding, authority: { read: async () => record } })).rejects.toThrow(/conflicting|malformed|hash/iu);
   });
 });
