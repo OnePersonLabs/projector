@@ -181,6 +181,23 @@ const resolveTrusted = (
   }, { loadEvidence: async () => evidence });
 };
 
+const resolveTrustedWithClaims = (
+  input: Parameters<typeof resolveSemanticIdentity>[0],
+  claims: Evidence["claims"],
+): Promise<Awaited<ReturnType<typeof resolveSemanticIdentityFromEvidence>>> => {
+  const evidence = evidenceDocument({
+    ...authorityEvidence,
+    id: "request",
+    normativeAuthority: "supporting",
+    claims,
+  });
+  const { outcomeEvidence: _callerOutcome, ...unverifiedInput } = input;
+  return resolveSemanticIdentityFromEvidence({
+    ...unverifiedInput,
+    evidence: [{ evidenceId: evidence.id, stance: "supports" }],
+  }, { loadEvidence: async () => evidence });
+};
+
 function publicResolution(resolution: ReturnType<typeof resolveSemanticIdentity>) {
   return structuredClone(resolution);
 }
@@ -742,16 +759,97 @@ describe("semantic identity resolution", () => {
     expect(resolution.selectedEntityIds).toEqual([]);
   });
 
-  it("follows superseded identity history to the surviving replacement instead of resurrecting a duplicate", async () => {
+  it("follows a direct supersession edge to its persisted active replacement", async () => {
     const resolution = await resolveTrusted({
       ...base,
       assessment: "same",
       outcomeEvidence: adjudication("same"),
-      records: [record("old-midi-discovery", "superseded", ["cap-midi-discovery"])],
+      records: [record("old-midi-discovery", "superseded", ["cap-midi-discovery"]), record("cap-midi-discovery")],
     });
 
     expect(resolution.outcome).toBe("reuse-existing");
     expect(resolution.selectedEntityIds).toEqual(["cap-midi-discovery"]);
+    expect(resolution.adjudication?.sourceIds).toEqual(["cap-midi-discovery"]);
+  });
+
+  it("rejects a supersession edge whose replacement record is missing", async () => {
+    const input = {
+      ...base,
+      assessment: "same" as const,
+      records: [record("old-midi-discovery", "superseded", ["replacement"])],
+    };
+
+    await expect(resolveTrustedWithClaims(
+      input,
+      outcomeClaims("same", { ...input, records: [record("replacement")] }),
+    )).rejects.toThrow(/replacement|persisted|lifecycle|missing/i);
+  });
+
+  it("rejects a supersession edge whose persisted replacement is ineligible", async () => {
+    const weakReplacement = record("replacement");
+    weakReplacement.candidate = candidate("replacement", 0.1);
+    const input = {
+      ...base,
+      assessment: "same" as const,
+      records: [record("old-midi-discovery", "superseded", ["replacement"]), weakReplacement],
+    };
+
+    await expect(resolveTrustedWithClaims(
+      input,
+      outcomeClaims("same", { ...input, records: [record("replacement")] }),
+    )).rejects.toThrow(/replacement|eligible|supported|lifecycle/i);
+  });
+
+  it("rejects a supersession edge whose replacement has the wrong requested kind", async () => {
+    const wrongKindReplacement = record("concept-timing");
+    wrongKindReplacement.candidate = { ...wrongKindReplacement.candidate, entityKind: "requirement" };
+    const input = {
+      ...base,
+      assessment: "same" as const,
+      records: [record("old-midi-discovery", "superseded", ["concept-timing"]), wrongKindReplacement],
+    };
+
+    await expect(resolveTrustedWithClaims(
+      input,
+      outcomeClaims("same", { ...input, records: [record("concept-timing")] }),
+    )).rejects.toThrow(/replacement|kind|eligible|lifecycle/i);
+  });
+
+  it("resolves a persisted supersession chain only to its terminal active identity", async () => {
+    const input = {
+      ...base,
+      assessment: "same" as const,
+      records: [
+        record("old-midi-discovery", "superseded", ["deleted"]),
+        record("deleted", "superseded", ["cap-midi-discovery"]),
+        record("cap-midi-discovery"),
+      ],
+    };
+
+    const resolution = await resolveTrustedWithClaims(
+      input,
+      outcomeClaims("same", { ...input, records: [record("cap-midi-discovery")] }),
+    );
+
+    expect(resolution.outcome).toBe("reuse-existing");
+    expect(resolution.selectedEntityIds).toEqual(["cap-midi-discovery"]);
+    expect(resolution.adjudication?.sourceIds).toEqual(["cap-midi-discovery"]);
+  });
+
+  it("rejects a cyclic supersession chain instead of exposing historical endpoints", async () => {
+    const input = {
+      ...base,
+      assessment: "same" as const,
+      records: [
+        record("old-midi-discovery", "superseded", ["deleted"]),
+        record("deleted", "tombstone", ["old-midi-discovery"]),
+      ],
+    };
+
+    await expect(resolveTrustedWithClaims(
+      input,
+      outcomeClaims("same", input),
+    )).rejects.toThrow(/cycle|cyclic|replacement|lifecycle/i);
   });
 
   it("blocks create-new when an active, deprecated, superseded, or tombstoned identity still overlaps", async () => {

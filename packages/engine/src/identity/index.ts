@@ -522,7 +522,10 @@ function reportResolutionSemanticIssues(resolution: AdjudicatedSemanticIdentityR
   }
   reportNormalizedIds(resolution.selectedEntityIds, "selected entity IDs", issue, ["selectedEntityIds"]);
   reportNormalizedIds(resolution.proposedTargetIds, "proposed target IDs", issue, ["proposedTargetIds"]);
-  const analysis = candidateAnalysis(resolution.candidateRecords, resolution.requestedKind);
+  const analysis = candidateAnalysis(resolution.candidateRecords, resolution.requestedKind, resolution.boundState);
+  for (const lifecycleIssue of analysis.lifecycleIssues) {
+    issue(lifecycleIssue, ["candidateRecords"]);
+  }
   if (!sameJson(resolution.candidateRecords, normalizeRecords(resolution.candidateRecords))) {
     issue("persisted candidate records must be canonical normalized and uniquely identified", ["candidateRecords"]);
   }
@@ -634,13 +637,6 @@ function normalizeCandidate(candidate: SemanticIdentityCandidate): SemanticIdent
     ...structuredClone(candidate),
     evidence: [...candidate.evidence].sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right))),
   };
-}
-
-function activeTargets(records: readonly IdentityCandidateRecord[]): string[] {
-  return sortedUnique(records.flatMap(({ candidate, lifecycle, replacementIds }) =>
-    (lifecycle === "superseded" || lifecycle === "tombstone")
-      ? replacementIds
-      : [candidate.entityId]));
 }
 
 function hasUnresolvedCandidateSearchBlocker(binding: StateBinding, records: readonly IdentityCandidateRecord[]): boolean {
@@ -826,21 +822,94 @@ interface CandidateAnalysis {
   supportedRecords: IdentityCandidateRecord[];
   endpointIds: string[];
   unresolvedHistoricalBlockers: IdentityCandidateRecord[];
+  lifecycleIssues: string[];
 }
 
 function candidateAnalysis(
   records: readonly IdentityCandidateRecord[],
   requestedKind: ResolveSemanticIdentityInput["requestedKind"],
+  binding: StateBinding,
 ): CandidateAnalysis {
   const supportedRecords = records.filter((record) => supportsRequestedIdentity(record, requestedKind));
+  const recordsById = new Map(records.map((record) => [record.candidate.entityId, record]));
+  const semanticDependencyCounts = new Map<string, number>();
+  for (const dependency of binding.valueDependencies) {
+    if (dependency.kind === "canonical-entity" && dependency.role === "identity candidate semantic value") {
+      semanticDependencyCounts.set(String(dependency.id), (semanticDependencyCounts.get(String(dependency.id)) ?? 0) + 1);
+    }
+  }
+  const lifecycleIssues = new Set<string>();
+  const endpointIds = new Set<string>();
+
+  const resolveReplacement = (record: IdentityCandidateRecord, path: readonly string[], reachedByReplacement: boolean): void => {
+    const id = record.candidate.entityId;
+    if (path.includes(id)) {
+      lifecycleIssues.add(`identity lifecycle replacement cycle detected: ${[...path, id].join(" -> ")}`);
+      return;
+    }
+    if (!supportsRequestedIdentity(record, requestedKind)) {
+      lifecycleIssues.add(`identity lifecycle replacement ${id} is not eligible for the requested kind and meaning`);
+      return;
+    }
+    if ((semanticDependencyCounts.get(id) ?? 0) !== 1) {
+      lifecycleIssues.add(`identity lifecycle replacement ${id} requires exactly one bound semantic candidate value`);
+      return;
+    }
+    if (record.lifecycle === "active" || record.lifecycle === "deprecated") {
+      endpointIds.add(id);
+      return;
+    }
+    if (record.replacementIds.length === 0) {
+      if (reachedByReplacement) {
+        lifecycleIssues.add(`identity lifecycle replacement ${id} is a nonterminal historical endpoint`);
+      }
+      return;
+    }
+
+    // Tombstones may name multiple successors after a split. Every branch must
+    // independently resolve; only its canonical terminal set becomes eligible.
+    for (const replacementId of record.replacementIds) {
+      if (replacementId === id) {
+        lifecycleIssues.add(`identity lifecycle replacement ${id} cannot point to itself`);
+        continue;
+      }
+      const replacement = recordsById.get(replacementId);
+      if (replacement === undefined) {
+        lifecycleIssues.add(`identity lifecycle replacement ${replacementId} is missing its persisted candidate record`);
+        continue;
+      }
+      if (requestedKind !== "unknown" && replacement.candidate.entityKind !== requestedKind) {
+        lifecycleIssues.add(`identity lifecycle replacement ${replacementId} has the wrong requested kind`);
+        continue;
+      }
+      resolveReplacement(replacement, [...path, id], true);
+    }
+  };
+
+  for (const record of records) {
+    const matchesRequestedKind = requestedKind === "unknown" || record.candidate.entityKind === requestedKind;
+    if (!matchesRequestedKind || (record.lifecycle !== "superseded" && record.lifecycle !== "tombstone")) continue;
+    if (record.replacementIds.length > 0) resolveReplacement(record, [], false);
+  }
+  for (const record of supportedRecords) {
+    if (record.lifecycle === "active" || record.lifecycle === "deprecated") resolveReplacement(record, [], false);
+  }
+
   return {
     supportedRecords,
-    endpointIds: activeTargets(supportedRecords),
+    endpointIds: sortedUnique([...endpointIds]),
     unresolvedHistoricalBlockers: records.filter(({ candidate, lifecycle, replacementIds }) =>
       (requestedKind === "unknown" || candidate.entityKind === requestedKind)
       && (lifecycle === "superseded" || lifecycle === "tombstone")
       && replacementIds.length === 0),
+    lifecycleIssues: [...lifecycleIssues].sort(compareStrings),
   };
+}
+
+function assertValidLifecycleAnalysis(analysis: CandidateAnalysis): void {
+  if (analysis.lifecycleIssues.length > 0) {
+    throw new Error(`invalid identity lifecycle replacement graph: ${analysis.lifecycleIssues.join("; ")}`);
+  }
 }
 
 function normalizeBoundary(boundary: NewSemanticBoundary | undefined): NewSemanticBoundary | undefined {
@@ -947,7 +1016,9 @@ function decision(input: ResolveSemanticIdentityInput, records: readonly Identit
 /** Deterministically adjudicates an already evidence-backed semantic comparison. It never creates canonical state. */
 export function resolveSemanticIdentity(input: ResolveSemanticIdentityInput): AdjudicatedSemanticIdentityResolution {
   const prepared = prepareIdentityInput(input);
-  return resolvePreparedSemanticIdentity(prepared, candidateAnalysis(prepared.records, prepared.requestedKind));
+  const analysis = candidateAnalysis(prepared.records, prepared.requestedKind, prepared.boundState);
+  assertValidLifecycleAnalysis(analysis);
+  return resolvePreparedSemanticIdentity(prepared, analysis);
 }
 
 function resolvePreparedSemanticIdentity(
@@ -1081,7 +1152,8 @@ export async function resolveSemanticIdentityFromEvidence(
   repository: TrustedIdentityEvidenceRepository,
 ): Promise<AdjudicatedSemanticIdentityResolution> {
   const prepared = prepareIdentityInput(input);
-  const analysis = candidateAnalysis(prepared.records, prepared.requestedKind);
+  const analysis = candidateAnalysis(prepared.records, prepared.requestedKind, prepared.boundState);
+  assertValidLifecycleAnalysis(analysis);
   const supportingIds = sortedUnique(prepared.evidence.filter(({ stance }) => stance === "supports").map(({ evidenceId }) => evidenceId));
   const evidence = await Promise.all(supportingIds.map(async (id) => parseVerifiedEvidence(await repository.loadEvidence(id), id)));
   const applicable = evidence.filter((item) => item.applicability === "direct" && item.reliability !== "low" && item.reliability !== "untrusted");
@@ -1229,7 +1301,8 @@ export async function assertCanonicalCreationAllowed(
   if (resolution.outcome !== "create-new") {
     throw new Error(`canonical creation refused: identity outcome ${resolution.outcome} is unresolved or overlaps existing authority`);
   }
-  const candidateEligibility = candidateAnalysis(resolution.candidateRecords, resolution.requestedKind);
+  const candidateEligibility = candidateAnalysis(resolution.candidateRecords, resolution.requestedKind, resolution.boundState);
+  assertValidLifecycleAnalysis(candidateEligibility);
   if (candidateEligibility.supportedRecords.length > 0
     || candidateEligibility.unresolvedHistoricalBlockers.length > 0
     || hasUnresolvedCandidateSearchBlocker(resolution.boundState, resolution.candidateRecords)) {
