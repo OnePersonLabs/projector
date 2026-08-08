@@ -10,3 +10,8 @@ export * from "./invalidation/index.js";
 export * from "./identity/index.js";
 export * from "./relevance/index.js";
 export * from "./context/index.js";
+export * from "./representation/index.js";
+export * from "./representation/upgrades.js";
+export * from "./governance/execution-policy.js";
+export * from "./governance/ignore-policy.js";
+export * from "./planning/revisions.js";
