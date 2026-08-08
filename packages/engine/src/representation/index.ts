@@ -524,7 +524,7 @@ function protectedAdvisorySpans(text: string, declaredLiterals: readonly string[
   addMatches(/\b(?:[A-Za-z]+[A-Z][A-Za-z0-9]*|[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+|--?[a-z][a-z0-9-]*|[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9.]*)\b/gu);
   addMatches(/\b\d+(?:\.\d+)?(?:[ \t]+)?(?:B|KB|MB|GB|TB|KiB|MiB|GiB|ms|s|min|h|Hz|kHz|MHz|GHz|%|px|rem|em)\b/giu);
   addMatches(/\b(?:Error|Exception):[^\r\n]+/gu);
-  addMatches(/\bE[A-Z0-9_]{2,}:[^\r\n]+/gu);
+  addMatches(/\b(?:EACCES|EEXIST|EINVAL|ENOENT|ENOTSUP|EPERM):[^\r\n]+/gu);
 
   const merged: ProtectedAdvisorySpan[] = [];
   for (const span of spans.sort((left, right) => left.start - right.start || right.end - left.end)) {

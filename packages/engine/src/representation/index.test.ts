@@ -404,6 +404,23 @@ describe("semantic representation compilation", () => {
     ));
   });
 
+  it("permits cosmetic whitespace normalization after an ordinary uppercase prose label", async () => {
+    const canonicalText = "EXAMPLE: ordinary  prose remains readable.";
+    const body = {
+      ...sourceBody,
+      statements: [{ ...sourceBody.statements[0]!, text: canonicalText, protectedLiterals: [] }],
+    };
+    const proseSource = { ...body, sourceSemanticHash: canonicalSourceHash(body) };
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const compiled = await compiler.compile({ source: proseSource, binding, profileKey: "human-technical@1" });
+    const exact = (await artifacts.get(compiled.projection.contentHash))!;
+    const candidate = exact.replace(JSON.stringify(canonicalText), JSON.stringify("EXAMPLE: ordinary prose remains readable."));
+
+    await expect(compiler.validateCandidate({ source: proseSource, profileKey: "human-technical@1", candidate }))
+      .resolves.toMatchObject({ assurance: "exact" });
+  });
+
   it("permits cosmetic wrapping around exact literals and rejects literal byte, count, and boundary drift", async () => {
     const canonicalText = "Run command `pnpm  test` after approval, preserve \"Exact  error\", call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.";
     const body = {
