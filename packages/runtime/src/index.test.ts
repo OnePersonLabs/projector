@@ -10,6 +10,7 @@ import {
   WriterLeaseManager,
   assertSupportedCanonicalVersions,
   currentSqliteSchemaVersion,
+  executePacketPlan,
 } from "./index.js";
 
 describe("runtime public entrypoint", () => {
@@ -23,5 +24,6 @@ describe("runtime public entrypoint", () => {
     expect(MoveReferenceTransform).toBeTypeOf("function");
     expect(assertSupportedCanonicalVersions).toBeTypeOf("function");
     expect(currentSqliteSchemaVersion).toBe(1);
+    expect(executePacketPlan).toBeTypeOf("function");
   });
 });
