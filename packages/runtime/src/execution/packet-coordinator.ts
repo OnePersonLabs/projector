@@ -91,7 +91,8 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
   const attemptedImpacts: ObservedImpact[] = [];
   const resultFor = async (status: "completed" | "partial", recovery: PacketExecutionResult["recovery"], failureSurprises: readonly string[] = []): Promise<PacketExecutionResult> => {
     const combine = (impacts: readonly ObservedImpact[]): ObservedImpact => ({ changedPaths: unique(impacts.flatMap((item) => item.changedPaths)), changedUnitIds: unique(impacts.flatMap((item) => item.changedUnitIds)), changedCanonicalIds: unique(impacts.flatMap((item) => item.changedCanonicalIds)), externalOperationIds: unique(impacts.flatMap((item) => item.externalOperationIds)), generatedOutputIds: unique(impacts.flatMap((item) => item.generatedOutputIds)) });
-    const observedImpact = combine(results.map(({ observedImpact }) => observedImpact)); const attemptedImpact = combine(attemptedImpacts);
+    const combinedObserved = combine(results.map(({ observedImpact }) => observedImpact));
+    const observedImpact = { ...combinedObserved, changedUnitIds: unique([...combinedObserved.changedUnitIds, ...results.flatMap(({ packetId }) => byId.get(packetId)?.packet.unitIds ?? [])]) }; const attemptedImpact = combine(attemptedImpacts);
     const changedUnitIds = observedImpact.changedUnitIds;
     const predicted = new Set([...input.value.plan.knownAffectedUnitIds, ...input.value.plan.possibleFrontierUnitIds, ...input.value.plan.unavailableSurfaceIds]); const observedIds = unique([...changedUnitIds, ...observedImpact.changedCanonicalIds, ...observedImpact.externalOperationIds, ...observedImpact.generatedOutputIds]); const observed = new Set(observedIds);
     const surprises = unique([...failureSurprises, ...observedIds.filter((id) => !predicted.has(id)).map((id) => `unexpected-observed-subject:${id}`), ...input.value.plan.knownAffectedUnitIds.filter((id) => !observed.has(id)).map((id) => `predicted-unit-not-observed:${id}`)]);
@@ -132,7 +133,9 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
       const effect = await ports.effect.run({ packet: item.packet, capsule: item.capsule });
       if (effect.author.contentHash !== hashFramedDomain("authenticated-effect-author", { source: effect.author.source, group: effect.author.group, packetId })) throw new Error("effect author provenance is unauthenticated");
       const after = authenticateObservation(await ports.observe.capture({ packet: item.packet, phase: "after" }));
-      attemptedAfter = after; attemptedImpact = impactBetween(before, after); attemptedImpacts.push(attemptedImpact);
+      attemptedAfter = after; attemptedImpact = impactBetween(before, after);
+      if (attemptedImpact.changedPaths.length > 0 || canonicalJson(before.state) !== canonicalJson(after.state)) attemptedImpact = { ...attemptedImpact, changedUnitIds: unique([...attemptedImpact.changedUnitIds, ...item.packet.unitIds]) };
+      attemptedImpacts.push(attemptedImpact);
       const authoritativePaths = attemptedImpact.changedPaths;
       const inPlanBoundary = (path: string): boolean => input.value.plan.boundary.some((boundary) => selectorRoot(path) === selectorRoot(boundary) || selectorRoot(path).startsWith(`${selectorRoot(boundary)}/`));
       if (authoritativePaths.some((path) => !inPlanBoundary(path) || !item.capsule.allowedWrites.some(({ selector }) => selectorAllows(selector, path)) || item.capsule.forbiddenWrites.some(({ selector }) => selectorAllows(selector, path)))) throw new Error(`packet ${packetId} widened plan/capsule scope`);
@@ -140,6 +143,7 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
       if (changedUnits.some((id) => !item.packet.unitIds.includes(id))) throw new Error(`packet ${packetId} changed an undeclared unit`);
       for (const [kind, left, right] of [["canonical", before.canonicalEntityHashes, after.canonicalEntityHashes], ["external", before.externalStateHashes, after.externalStateHashes], ["generated", before.generatedArtifactHashes, after.generatedArtifactHashes]] as const) if (changedKeys(left, right).some((id) => !item.packet.unitIds.includes(id))) throw new Error(`packet ${packetId} changed undeclared ${kind} state`);
       const validationProofs = [...await ports.validate.run({ packet: item.packet, capsule: item.capsule, postState: after.state })];
+      const packetTrusted: Array<PacketValidationProof & { readonlySource: string; readonlyGroup: string; effectSource: string; effectGroup: string }> = [];
       const proofIds = new Set<string>(); const postStateHash = hashFramedDomain("packet-post-state", after.state);
       for (const proof of validationProofs) {
         const key = `${proof.validatorId}@${proof.validatorVersion}`;
@@ -149,9 +153,11 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
         if (proof.provenanceHash !== provenanceHash || proof.status !== "passed" || proof.postStateHash !== postStateHash || proof.invocationHash !== hashFramedDomain("packet-validator-invocation", { packetId, validatorId: proof.validatorId, validatorVersion: proof.validatorVersion, postStateHash, provenanceHash })) throw new Error(`validator ${key} did not prove the packet post-state`);
         const trust = await ports.validatorTrust.verify({ proof, packet: item.packet, postState: after.state });
         if (!trust.trusted) throw new Error(`validator ${key} is not registered/trusted`);
-        trustedValidations.push({ ...proof, readonlySource: trust.authorSource, readonlyGroup: trust.independenceGroup, effectSource: effect.author.source, effectGroup: effect.author.group });
+        const authenticatedProof = { ...proof, readonlySource: trust.authorSource, readonlyGroup: trust.independenceGroup, effectSource: effect.author.source, effectGroup: effect.author.group };
+        trustedValidations.push(authenticatedProof); packetTrusted.push(authenticatedProof);
       }
       if (item.packet.validatorIds.some((id) => !validationProofs.some((proof) => proof.validatorId === id)) || item.packet.unitIds.some((id) => after.unitStates[id] === "invalid")) throw new Error("packet-local postcondition is not satisfied");
+      if (item.capsule.completionContract.requireIndependentValidation && !packetTrusted.some((proof) => proof.readonlySource !== proof.effectSource && proof.readonlyGroup !== proof.effectGroup)) throw new Error("packet-local independent validation is missing");
       Object.assign(combinedUnitStates, after.unitStates); finalObservation = after;
       intent = { status: "intent", planId: input.value.plan.id, packetId, packetHash: item.packetHash, capsuleHash: item.capsuleHash, before, after, observedImpact: attemptedImpact, attemptedImpact, changedPaths: authoritativePaths, outputHash: effect.outputHash, validationProofs, currentnessProofHash: currentness.proofHash, recovery: "required" };
       await lease.assertOwned();

@@ -31,6 +31,9 @@ Closure-focused verification: 99 affected tests passed; engine/runtime/CLI typec
 
 Focused runtime/CLI tests, both typechecks and diff check pass. Full gate remains deferred.
 
-## Final narrow closure — FAIL (`205d62f..064c6c7`)
+## Precommit validation and built-impact closure
 
-Focused runtime/CLI tests pass (52), typechecks and diff check pass. Combined completion, pre-effect SCC rejection, before/current equality, durable certificate/receipt byte-hash identity, observe/dry-run selector safety, immutable applied-tuple checks, and the built compiler→planner→coordinator mandatory outcome are repaired. Three material runtime blockers remain: (1) trusted independence is compared with the literal `"effect"`, not the actual effect author/group—a registry result identifying the validator as the same `"transform"` that performed the effect still completed under `requireIndependentValidation`; (2) observed impact is inferred from changed paths and declared packet units rather than authenticated unit/canonical/external/generated deltas—a same-path `unit:a` transition from invalid to valid completed with empty observed units and no surprise; and (3) commit failure/rollback never recaptures rolled-back state, so partial-plan reconciliation and its stored certificate are bound to the attempted after-observation rather than actual final recovery state. These are supported `executePacketPlan` repros with direct independent-validation, actual-impact/Planning-Surprise, and rollback-truth consequences; all other six-finding closure siblings passed.
+- Trusted registry provenance and independence now pass packet-local checks before intent persistence or durable commit. A validator matching the authenticated effect source/group rolls back with zero commits.
+- Successful packet observations map authenticated state/path change to the packet's affected units before reconciliation. The built mandatory pipeline now reports its exact predicted unit set with no false missing-unit surprises.
+
+Focused runtime/CLI tests and typechecks pass; runtime was rebuilt before the built CLI assertion. Diff check passes; full gate remains deferred.
