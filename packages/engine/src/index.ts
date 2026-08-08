@@ -7,3 +7,6 @@ export * from "./planning/index.js";
 export * from "./change/index.js";
 export * from "./reconciliation/index.js";
 export * from "./invalidation/index.js";
+export * from "./identity/index.js";
+export * from "./relevance/index.js";
+export * from "./context/index.js";
