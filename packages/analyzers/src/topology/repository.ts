@@ -22,9 +22,11 @@ export function compileRepositoryTopology(javaScript: JavaScriptFacts, capabilit
   const observations = [...javaScript.events.map((fact) => ({ ...fact, subjectKind: "event" as const })), ...javaScript.contracts.map((fact) => ({ ...fact, subjectKind: "contract" as const, dynamic: false }))];
   const bySubject = new Map<string, typeof observations>();
   for (const observation of observations) bySubject.set(observation.subjectId, [...(bySubject.get(observation.subjectId) ?? []), observation]);
+  const uncertainEventReceivers = new Set(javaScript.eventUncertainties.map(({ receiver }) => receiver));
   const subjects: AuthenticatedTopologySubject[] = [...bySubject.values()].map((group) => {
     const producer = group.find(({ role }) => role === "producer") ?? group[0]!;
-    return { subjectId: producer.subjectId, subjectKind: producer.subjectKind, semanticKey: producer.semanticKey, scopeKey: producer.scopeKey, artifactHash: producer.artifactHash, dynamic: group.some(({ dynamic }) => dynamic) };
+    const receiver = "receiver" in producer ? producer.receiver : undefined;
+    return { subjectId: producer.subjectId, subjectKind: producer.subjectKind, semanticKey: producer.semanticKey, scopeKey: producer.scopeKey, artifactHash: producer.artifactHash, dynamic: group.some(({ dynamic }) => dynamic) || (receiver !== undefined && uncertainEventReceivers.has(receiver)) };
   });
   const participants: AuthenticatedTopologyParticipant[] = observations.map(({ subjectId, participantId, role, evidenceId, artifactHash }) => ({ subjectId, participantId, role, evidenceIds: [evidenceId], artifactHash }));
   return compileAuthenticatedAnalyzerTopology({ subjects, participants, capabilities, failures });
@@ -42,7 +44,10 @@ export function detectMechanicalDivergences(javaScript: JavaScriptFacts, actions
   for (const file of javaScript.files) for (const declaration of file.declarations.filter(({ exported }) => exported)) {
     const key = `${file.scopeKey}\u0000${declaration.name}`; publicExports.set(key, [...(publicExports.get(key) ?? []), { path: file.path, id: declaration.id }]);
   }
-  for (const duplicates of publicExports.values()) if (duplicates.length > 1) result.push(divergence("duplicate-public-export", duplicates.map(({ path }) => path).sort(compareCodePoint)[0]!, duplicates.map(({ id }) => id), "The same package scope exposes multiple declarations with one public name.", duplicates.map(({ id }) => id), "Barrel export resolution and declaration merging are not inferred."));
+  for (const candidates of publicExports.values()) {
+    const duplicates = [...new Map(candidates.map((candidate) => [candidate.path, candidate])).values()];
+    if (duplicates.length > 1) result.push(divergence("duplicate-public-export", duplicates.map(({ path }) => path).sort(compareCodePoint)[0]!, duplicates.map(({ id }) => id), "The same package scope exposes multiple declarations with one public name.", duplicates.map(({ id }) => id), "Declaration merging remains outside exact duplicate classification."));
+  }
   for (const workflow of actions) {
     const jobIds = new Set(workflow.jobs.map(({ id }) => id));
     for (const job of workflow.jobs) for (const missing of job.needs.filter((need) => !jobIds.has(need))) result.push(divergence("actions-needs-gap", workflow.path, [`actions-job:${job.id}`, `actions-job:${missing}`], `Job ${job.id} needs missing job ${missing}.`, [`${workflow.path}:${job.line}`], "Only literal needs entries in this workflow are checked."));

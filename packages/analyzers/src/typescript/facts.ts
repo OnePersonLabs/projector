@@ -53,11 +53,21 @@ export interface SemanticDeclarationFact {
 export interface EventSyntaxFact {
   readonly subjectId: string;
   readonly semanticKey: string;
+  readonly receiver: string;
   readonly scopeKey: string;
   readonly participantId: string;
   readonly role: "producer" | "consumer";
   readonly dynamic: boolean;
   readonly location: SourceLocationFact;
+  readonly evidenceId: string;
+  readonly artifactHash: ContentHash;
+}
+
+export interface EventUncertaintyFact {
+  readonly receiver: string;
+  readonly role: "producer" | "consumer";
+  readonly scopeKey: string;
+  readonly participantId: string;
   readonly evidenceId: string;
   readonly artifactHash: ContentHash;
 }
@@ -96,6 +106,7 @@ export interface JavaScriptFacts {
   readonly dependencies: ModuleDependencyFact[];
   readonly testTargets: TestTargetFact[];
   readonly events: EventSyntaxFact[];
+  readonly eventUncertainties: EventUncertaintyFact[];
   readonly contracts: ContractSyntaxFact[];
   readonly failures: AnalyzerFailure[];
 }
@@ -409,8 +420,9 @@ function fileParticipantId(scopeKey: string, declarations: readonly SemanticDecl
   return `ts_participant_${hashFramedDomain("typescript-participant", { scopeKey, anchor: anchors.length > 0 ? anchors : normalizedSemantics }).slice(-32)}`;
 }
 
-function extractEvents(tokens: readonly Token[], content: string, scopeKey: string, participantId: string, artifactHash: ContentHash): { events: EventSyntaxFact[]; unknowns: string[] } {
+function extractEvents(tokens: readonly Token[], content: string, scopeKey: string, participantId: string, artifactHash: ContentHash): { events: EventSyntaxFact[]; uncertainties: EventUncertaintyFact[]; unknowns: string[] } {
   const events: EventSyntaxFact[] = [];
+  const uncertainties: EventUncertaintyFact[] = [];
   const unknowns: string[] = [];
   const values = significantTokens(tokens);
   for (let index = 0; index < values.length - 4; index += 1) {
@@ -419,23 +431,28 @@ function extractEvents(tokens: readonly Token[], content: string, scopeKey: stri
     const operation = values[index + 2]!.value;
     if (!["emit", "publish", "dispatchEvent", "on", "addEventListener", "subscribe"].includes(operation)) continue;
     const argument = values[index + 4];
-    if (argument?.kind !== "string") { unknowns.push(`dynamic event name for ${receiver}.${operation}`); continue; }
-    const semanticKey = stringLiteralValue(argument.value);
     const role = ["emit", "publish", "dispatchEvent"].includes(operation) ? "producer" as const : "consumer" as const;
+    if (argument?.kind !== "string") {
+      const evidenceId = `event_uncertainty_${hashFramedDomain("event-uncertainty", { receiver, role, scopeKey, participantId }).slice(-32)}`;
+      uncertainties.push({ receiver, role, scopeKey, participantId, evidenceId, artifactHash });
+      unknowns.push(`dynamic event name for ${receiver}.${operation}`);
+      continue;
+    }
+    const semanticKey = stringLiteralValue(argument.value);
     const subjectId = `event_${hashFramedDomain("event-subject", { receiver, semanticKey }).slice(-32)}`;
     const offset = content.indexOf(argument.value);
     const location = sourceLocation(content, Math.max(0, offset), Math.max(0, offset) + argument.value.length);
-    events.push({ subjectId, semanticKey, scopeKey, participantId, role, dynamic: false, location, evidenceId: `event_evidence_${hashFramedDomain("event-evidence", { participantId, role, semanticKey, location }).slice(-32)}`, artifactHash });
+    events.push({ subjectId, semanticKey, receiver, scopeKey, participantId, role, dynamic: false, location, evidenceId: `event_evidence_${hashFramedDomain("event-evidence", { participantId, role, semanticKey, location }).slice(-32)}`, artifactHash });
   }
   if (values.some((token, index) => token.value === "import" && values[index + 1]?.value === "(")) unknowns.push("dynamic import cannot prove a static dependency");
-  return { events: events.sort((left, right) => compareCodePoint(left.subjectId, right.subjectId) || compareCodePoint(left.participantId, right.participantId) || compareCodePoint(left.role, right.role)), unknowns: [...new Set(unknowns)].sort(compareCodePoint) };
+  return { events: events.sort((left, right) => compareCodePoint(left.subjectId, right.subjectId) || compareCodePoint(left.participantId, right.participantId) || compareCodePoint(left.role, right.role)), uncertainties: uncertainties.sort((left, right) => compareCodePoint(left.receiver, right.receiver) || compareCodePoint(left.participantId, right.participantId)), unknowns: [...new Set(unknowns)].sort(compareCodePoint) };
 }
 
 function resolveLocalImport(importerPath: string, specifier: string, paths: ReadonlySet<string>): string | undefined {
   if (!specifier.startsWith(".")) return undefined;
   const base = posix.normalize(posix.join(posix.dirname(importerPath), specifier));
   const candidates = extname(base).length > 0
-    ? [base]
+    ? [base, ...(base.endsWith(".js") ? [`${base.slice(0, -3)}.ts`, `${base.slice(0, -3)}.tsx`] : []), ...(base.endsWith(".mjs") ? [`${base.slice(0, -4)}.mts`] : []), ...(base.endsWith(".cjs") ? [`${base.slice(0, -4)}.cts`] : [])]
     : [...sourceExtensions.map((extension) => `${base}${extension}`), ...sourceExtensions.map((extension) => `${base}/index${extension}`)];
   return candidates.find((candidate) => paths.has(candidate));
 }
@@ -447,6 +464,7 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScrip
   const files: JavaScriptFileFacts[] = [];
   const dependencies: ModuleDependencyFact[] = [];
   const events: EventSyntaxFact[] = [];
+  const eventUncertainties: EventUncertaintyFact[] = [];
   const contracts: ContractSyntaxFact[] = [];
   const failures: AnalyzerFailure[] = [];
 
@@ -460,6 +478,7 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScrip
     const participantId = fileParticipantId(scopeKey, declarations, normalizedSemantics);
     const extractedEvents = extractEvents(tokens, entry.content, scopeKey, participantId, entry.contentHash);
     events.push(...extractedEvents.events);
+    eventUncertainties.push(...extractedEvents.uncertainties);
     files.push({
       path: entry.path,
       exports,
@@ -517,33 +536,49 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScrip
     }))
     .sort((left, right) => compareCodePoint(left.testPath, right.testPath) || compareCodePoint(left.targetPath, right.targetPath));
   files.sort((left, right) => compareCodePoint(left.path, right.path));
-  const packageExports = new Map<string, Map<string, SemanticDeclarationFact>>();
+  interface ContractSymbol { semanticKey: string; declaration: SemanticDeclarationFact; exportPath: string; location: SourceLocationFact }
+  const declarationsByScope = new Map<string, Map<string, SemanticDeclarationFact>>();
   for (const file of files) {
-    const exported = packageExports.get(file.scopeKey) ?? new Map<string, SemanticDeclarationFact>();
-    for (const declaration of file.declarations.filter(({ exported, kind, name }) => exported && (["interface", "type", "class"].includes(kind) || name.endsWith("Schema")))) exported.set(declaration.name, declaration);
+    const declarations = declarationsByScope.get(file.scopeKey) ?? new Map<string, SemanticDeclarationFact>();
+    for (const declaration of file.declarations.filter(({ kind, name }) => ["interface", "type", "class"].includes(kind) || name.endsWith("Schema"))) declarations.set(declaration.name, declaration);
+    declarationsByScope.set(file.scopeKey, declarations);
+  }
+  const packageExports = new Map<string, Map<string, ContractSymbol>>();
+  for (const file of files) {
+    const exported = packageExports.get(file.scopeKey) ?? new Map<string, ContractSymbol>();
+    for (const declaration of file.declarations.filter(({ exported, kind, name }) => exported && (["interface", "type", "class"].includes(kind) || name.endsWith("Schema")))) exported.set(declaration.name, { semanticKey: declaration.name, declaration, exportPath: file.path, location: declaration.location });
+    for (const fact of file.exportFacts) {
+      if (fact.exportedName === undefined || fact.localName === undefined || fact.wildcard) continue;
+      const declaration = declarationsByScope.get(file.scopeKey)?.get(fact.localName);
+      if (declaration !== undefined) exported.set(fact.exportedName, { semanticKey: fact.exportedName, declaration, exportPath: file.path, location: fact.location });
+    }
     packageExports.set(file.scopeKey, exported);
+  }
+  for (const [scopeKey, exported] of [...packageExports.entries()].sort(([left], [right]) => compareCodePoint(left, right))) {
+    for (const symbol of [...exported.values()].sort((left, right) => compareCodePoint(left.semanticKey, right.semanticKey))) {
+      const exportFile = files.find(({ path }) => path === symbol.exportPath)!;
+      const sourceEntry = sourceEntries.find(({ path }) => path === symbol.exportPath)!;
+      const participantId = fileParticipantId(scopeKey, exportFile.declarations, exportFile.normalizedSemantics);
+      const subjectId = `contract_${hashFramedDomain("public-contract-subject", { scopeKey, semanticKey: symbol.semanticKey }).slice(-32)}`;
+      contracts.push({ subjectId, semanticKey: symbol.semanticKey, scopeKey, participantId, role: "producer", location: symbol.location, evidenceId: `contract_evidence_${hashFramedDomain("contract-evidence", { participantId, declarationId: symbol.declaration.id, semanticKey: symbol.semanticKey }).slice(-32)}`, artifactHash: sourceEntry.contentHash });
+    }
   }
   for (const file of files) {
     const participantId = fileParticipantId(file.scopeKey, file.declarations, file.normalizedSemantics);
     const sourceEntry = sourceEntries.find(({ path }) => path === file.path)!;
-    for (const declaration of packageExports.get(file.scopeKey)?.values() ?? []) {
-      if (!file.declarations.some(({ id }) => id === declaration.id)) continue;
-      const subjectId = `contract_${hashFramedDomain("public-contract-subject", { scopeKey: file.scopeKey, semanticKey: declaration.name }).slice(-32)}`;
-      contracts.push({ subjectId, semanticKey: declaration.name, scopeKey: file.scopeKey, participantId, role: "producer", location: declaration.location, evidenceId: `contract_evidence_${hashFramedDomain("contract-evidence", { participantId, declarationId: declaration.id }).slice(-32)}`, artifactHash: sourceEntry.contentHash });
-    }
     for (const dependency of normalizedDependencies.filter(({ importerPath }) => importerPath === file.path)) {
       const sourceScope = dependency.resolvedPath === undefined ? dependency.specifier : scopes.get(dependency.resolvedPath) ?? dependency.specifier;
       const exports = packageExports.get(sourceScope);
       if (exports === undefined) continue;
       for (const binding of dependency.bindings) {
-        const declaration = exports.get(binding.imported);
-        if (declaration === undefined) continue;
-        const subjectId = `contract_${hashFramedDomain("public-contract-subject", { scopeKey: sourceScope, semanticKey: declaration.name }).slice(-32)}`;
-        contracts.push({ subjectId, semanticKey: declaration.name, scopeKey: sourceScope, participantId, role: "consumer", location: sourceLocation(sourceEntry.content, 0, 0), evidenceId: `contract_evidence_${hashFramedDomain("contract-import-evidence", { participantId, sourceScope, imported: binding.imported, local: binding.local }).slice(-32)}`, artifactHash: sourceEntry.contentHash });
+        const symbol = exports.get(binding.imported);
+        if (symbol === undefined) continue;
+        const subjectId = `contract_${hashFramedDomain("public-contract-subject", { scopeKey: sourceScope, semanticKey: symbol.semanticKey }).slice(-32)}`;
+        contracts.push({ subjectId, semanticKey: symbol.semanticKey, scopeKey: sourceScope, participantId, role: "consumer", location: sourceLocation(sourceEntry.content, 0, 0), evidenceId: `contract_evidence_${hashFramedDomain("contract-import-evidence", { participantId, sourceScope, imported: binding.imported, local: binding.local }).slice(-32)}`, artifactHash: sourceEntry.contentHash });
       }
     }
   }
   events.sort((left, right) => compareCodePoint(left.subjectId, right.subjectId) || compareCodePoint(left.participantId, right.participantId) || compareCodePoint(left.role, right.role));
   contracts.sort((left, right) => compareCodePoint(left.subjectId, right.subjectId) || compareCodePoint(left.participantId, right.participantId) || compareCodePoint(left.role, right.role));
-  return { files, dependencies: normalizedDependencies, testTargets, events, contracts, failures };
+  return { files, dependencies: normalizedDependencies, testTargets, events, eventUncertainties, contracts, failures };
 }

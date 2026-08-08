@@ -138,8 +138,8 @@ export function compileEventContractTopology(
     const head = group[0]!;
     const links: TopologyLink[] = group
       .sort((left, right) => compareStrings(left.participantId, right.participantId) || compareStrings(left.role, right.role))
-      .map(({ participantId, role, assurance, confidence, evidenceIds, adapterVersion, artifactHash }) => ({
-        participantId, role, assurance, confidence, evidenceIds: [...evidenceIds], adapterVersion, artifactHash,
+      .map(({ participantId, role, confidence, evidenceIds, adapterVersion, artifactHash }) => ({
+        participantId, role, assurance: "heuristic" as const, confidence: Math.min(confidence, 0.5), evidenceIds: [...evidenceIds], adapterVersion, artifactHash,
       }));
     const routeIdentity = { subjectId: head.subjectId, subjectKind: head.subjectKind };
     const defaultObservability: ObservabilityClass = "open";
@@ -151,7 +151,7 @@ export function compileEventContractTopology(
       producerIds: sortedUnique(links.filter(({ role }) => role === "producer").map(({ participantId }) => participantId)),
       consumerIds: sortedUnique(links.filter(({ role }) => role === "consumer").map(({ participantId }) => participantId)),
       links,
-      observability: enumeration?.observability ?? defaultObservability,
+      observability: defaultObservability,
       ...(enumeration === undefined ? {} : { enumeration: {
         method: enumeration.method,
         assumptions: sortedUnique(enumeration.assumptions),
@@ -201,7 +201,15 @@ export function compileAuthenticatedAnalyzerTopology(input: AuthenticatedTopolog
   const capabilities = input.capabilities.filter(({ executesRepositoryCode }) => !executesRepositoryCode);
   const routes = [...subjects.values()].map((subject): EventContractTopologyRoute => {
     const semantic = subject.subjectKind === "event" ? "event-topology" : "public-contract-topology";
-    const capability = capabilities.find(({ supportedSemantics }) => supportedSemantics.includes(semantic));
+    const candidates = capabilities.filter(({ supportedSemantics }) => supportedSemantics.includes(semantic));
+    const profiles = new Map(candidates.map((candidate) => [canonicalJson({
+      ...candidate,
+      supportedLanguages: sortedUnique(candidate.supportedLanguages),
+      supportedSemantics: sortedUnique(candidate.supportedSemantics),
+      enumeration: { ...candidate.enumeration, assumptions: sortedUnique(candidate.enumeration.assumptions), blindSpots: sortedUnique(candidate.enumeration.blindSpots), dynamicMechanisms: sortedUnique(candidate.enumeration.dynamicMechanisms) },
+    }), candidate]));
+    if (profiles.size > 1) throw new Error(`conflicting authenticated capability profiles for ${semantic}`);
+    const capability = profiles.values().next().value as AnalyzerCapabilities | undefined;
     const localFailures = input.failures.filter(({ analyzerId, scope, affectedClaimKinds, capability: failedCapability }) =>
       capability?.analyzerId === analyzerId && (scope === subject.scopeKey || scope === subject.subjectId) && (affectedClaimKinds.includes(semantic) || failedCapability === semantic));
     const authenticated = capability !== undefined && localFailures.length === 0;
@@ -293,7 +301,11 @@ export function createTopologyRelevanceQueryStatePort(topology: EventContractTop
           reasonExplanation: `${link.role} of ${route.semanticKey} observed with ${link.assurance} assurance`,
         })),
         observability: route.observability,
-        assumptions: route.enumeration?.assumptions ?? [],
+        assumptions: sortedUnique([
+          ...(route.enumeration?.assumptions ?? []),
+          ...(route.enumeration?.blindSpots.map((value) => `blind-spot:${value}`) ?? []),
+          ...(route.enumeration?.dynamicMechanisms.map((value) => `dynamic:${value}`) ?? []),
+        ]),
         unavailableLanes: [],
         dependencyKeys: [`topology:${subjectId}`],
       };

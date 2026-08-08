@@ -31,4 +31,11 @@ describe("authenticated route-local topology", () => {
     expect(failed.observability).toBe("bounded");
     expect(failed.links[0]?.assurance).toBe("exact");
   });
+
+  it("fails closed on conflicting authenticated capability profiles independent of input order", () => {
+    const input = { subjects: [{ subjectId: "event:a", subjectKind: "event" as const, semanticKey: "a", scopeKey: "pkg:a", artifactHash: hash("a"), dynamic: false }], participants: [], failures: [] };
+    for (const capabilities of [[capability("2"), capability("3")], [capability("3"), capability("2")]]) {
+      expect(() => compileAuthenticatedAnalyzerTopology({ ...input, capabilities })).toThrow(/conflicting.*capabilit|profile|version/iu);
+    }
+  });
 });
