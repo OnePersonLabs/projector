@@ -9,9 +9,7 @@ export interface AcceptanceInventoryItem { readonly id: string; readonly stratum
 export interface AcceptanceSource { readonly path: string; readonly text: string }
 export interface TraceabilityEntry extends AcceptanceInventoryItem { readonly publicFacade: string; readonly testRef: string; readonly testSourceDigest: ContentHash; readonly mappingHash: ContentHash }
 export interface TraceabilityManifest { readonly version: 2; readonly entries: readonly TraceabilityEntry[]; readonly inventoryHash: ContentHash }
-export interface TraceabilityAssertionResult { readonly identity: string; readonly status: "passed" | "failed" | "skipped" }
-export interface TraceabilityTestArtifact { readonly testRef: string; readonly status: "passed" | "failed"; readonly assertions: readonly TraceabilityAssertionResult[]; readonly outputHash: ContentHash; readonly contentHash: ContentHash }
-export interface TraceabilityTestRun { readonly artifacts: readonly TraceabilityTestArtifact[]; readonly publicFacades: readonly string[] }
+export interface TraceabilityTestRun { readonly reporterOutput: string; readonly publicFacades: readonly string[] }
 export interface VerifiedTraceability { readonly verified: true; readonly inventoryHash: ContentHash; readonly runEvidenceHash: ContentHash; readonly contentHash: ContentHash }
 
 const slug = (value: string) => value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
@@ -34,7 +32,6 @@ export function deriveAcceptanceInventory(input: { readonly scenarios: readonly 
 const inventoryBody = (entries: readonly Pick<AcceptanceInventoryItem, "id" | "stratum" | "ordinal" | "title" | "sourcePath" | "sourceDigest">[]) => entries.map(({ id, stratum, ordinal, title, sourcePath, sourceDigest }) => ({ id, stratum, ordinal, title, sourcePath, sourceDigest }));
 export function traceabilityInventoryHash(inventory: readonly AcceptanceInventoryItem[]): ContentHash { return hashFramedDomain("release-traceability-inventory", inventoryBody(inventory)); }
 export function traceabilityEntryHash(entry: Omit<TraceabilityEntry, "mappingHash">): ContentHash { return hashFramedDomain("release-traceability-entry", entry); }
-export function createTraceabilityTestArtifact(input: Pick<TraceabilityTestArtifact, "testRef" | "status" | "assertions">): TraceabilityTestArtifact { const assertions = [...input.assertions].map(({ identity, status }) => ({ identity, status })).sort((a, b) => a.identity.localeCompare(b.identity)); const outputHash = hashFramedDomain("traceability-test-output", assertions); const body = { testRef: input.testRef, status: input.status, assertions, outputHash }; return Object.freeze({ ...body, contentHash: hashFramedDomain("traceability-test-artifact", body) }); }
 
 function validateManifestStructure(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[]): void {
   if (manifest.version !== 2 || manifest.inventoryHash !== traceabilityInventoryHash(inventory)) throw new Error("traceability inventory hash is stale");
@@ -52,19 +49,20 @@ function validateManifestStructure(manifest: TraceabilityManifest, inventory: re
 
 export async function verifyTraceabilityManifest(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[], input: { readonly repositoryRoot: string; readonly run: TraceabilityTestRun }): Promise<VerifiedTraceability> {
   validateManifestStructure(manifest, inventory);
-  if (input.run.artifacts.length === 0) throw new Error("traceability requires exact passing test artifacts");
-  const artifacts = new Map<string, TraceabilityTestArtifact>(); for (const artifact of input.run.artifacts) { const recomputed = createTraceabilityTestArtifact(artifact); if (artifact.contentHash !== recomputed.contentHash || artifact.outputHash !== recomputed.outputHash || artifact.status !== "passed" || artifact.assertions.length === 0 || artifact.assertions.some(({ status }) => status !== "passed") || artifacts.has(artifact.testRef)) throw new Error(`invalid passing test artifact ${artifact.testRef}`); artifacts.set(artifact.testRef, artifact); }
+  let report: { success?: unknown; numTotalTests?: unknown; numPassedTests?: unknown; testResults?: unknown }; try { report = JSON.parse(input.run.reporterOutput) as typeof report; } catch { throw new Error("traceability requires raw Vitest JSON reporter run evidence"); }
+  if (report.success !== true || !Number.isSafeInteger(report.numTotalTests) || report.numTotalTests !== report.numPassedTests || !Array.isArray(report.testResults) || report.testResults.length === 0) throw new Error("traceability Vitest reporter contains failed or incomplete run evidence");
+  const results = report.testResults as { name?: unknown; status?: unknown; assertionResults?: unknown }[];
   const facades = new Set(input.run.publicFacades); const root = resolve(input.repositoryRoot);
   const sourceCache = new Map<string, string>();
   for (const entry of manifest.entries) {
     const [relativePath, anchor] = entry.testRef.split("#", 2);
-    const artifact = artifacts.get(entry.testRef);
-    if (relativePath === undefined || anchor === undefined || anchor.trim() === "" || artifact === undefined || !artifact.assertions.some(({ identity }) => identity === anchor || identity.startsWith(`${anchor} `)) || !facades.has(entry.publicFacade)) throw new Error(`traceability test result or public facade was not observed: ${entry.testRef}`);
+    const result = results.find(({ name }) => typeof name === "string" && (resolve(name) === resolve(root, relativePath ?? "") || name === relativePath)); const assertions = Array.isArray(result?.assertionResults) ? result.assertionResults as { ancestorTitles?: unknown; fullName?: unknown; status?: unknown }[] : [];
+    if (relativePath === undefined || anchor === undefined || anchor.trim() === "" || result?.status !== "passed" || assertions.length === 0 || !assertions.some(({ ancestorTitles, fullName, status }) => status === "passed" && Array.isArray(ancestorTitles) && ancestorTitles.includes(anchor) && typeof fullName === "string") || assertions.some(({ status }) => status !== "passed") || !facades.has(entry.publicFacade)) throw new Error(`traceability passing test result or public facade was not observed: ${entry.testRef}`);
     const path = resolve(root, relativePath); if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error(`traceability test escapes repository: ${relativePath}`);
     let text = sourceCache.get(relativePath); if (text === undefined) { try { text = await readFile(path, "utf8"); } catch { throw new Error(`traceability test does not exist: ${relativePath}`); } sourceCache.set(relativePath, text); }
     if (hashFramedDomain("traceability-test-source", { path: relativePath, text }) !== entry.testSourceDigest || !text.includes(`describe("${anchor}"`)) throw new Error(`traceability test source or anchor is stale: ${entry.testRef}`);
   }
-  const runEvidenceHash = hashFramedDomain("traceability-test-run", [...artifacts.values()].map(({ contentHash }) => contentHash).sort()); const body = { inventoryHash: manifest.inventoryHash, runEvidenceHash, entries: manifest.entries.map(({ mappingHash }) => mappingHash) };
+  const runEvidenceHash = hashFramedDomain("vitest-json-reporter-output", input.run.reporterOutput); const body = { inventoryHash: manifest.inventoryHash, runEvidenceHash, entries: manifest.entries.map(({ mappingHash }) => mappingHash) };
   return Object.freeze({ verified: true, inventoryHash: manifest.inventoryHash, runEvidenceHash, contentHash: hashFramedDomain("verified-traceability", body) });
 }
 
