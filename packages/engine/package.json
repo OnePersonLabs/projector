@@ -15,6 +15,10 @@
     "./coverage": {
       "types": "./dist/coverage/index.d.ts",
       "default": "./dist/coverage/index.js"
+    },
+    "./modernization": {
+      "types": "./dist/modernization/index.d.ts",
+      "default": "./dist/modernization/index.js"
     }
   },
   "files": ["dist"],

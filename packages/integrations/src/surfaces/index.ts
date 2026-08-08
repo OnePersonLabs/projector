@@ -1,9 +1,13 @@
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import {
   ArtifactFingerprintSchema,
   ArtifactSchema,
   SurfaceApplyResultSchema,
   SurfacePlanSchema,
   SurfaceSchema,
+  canonicalJson,
   hashFramedDomain,
   type AdapterContext,
   type Artifact,
@@ -113,6 +117,7 @@ async function collectArtifacts(adapter: SnapshotSurfaceAdapter, surface: Surfac
 }
 
 export async function captureSurfaceSnapshot(adapter: SnapshotSurfaceAdapter, context: AdapterContext, observedAt: string): Promise<Readonly<SurfaceSnapshotRevision>> {
+  if (!Number.isFinite(Date.parse(observedAt))) throw new Error("surface snapshot requires a valid observed-at timestamp");
   if (adapter.id.trim() === "" || adapter.version.trim() === "") throw new Error("surface adapter requires stable id and version");
   if (adapter.capabilities.write && (adapter.plan === undefined || adapter.apply === undefined || adapter.validate === undefined)) throw new Error(`writable adapter ${adapter.id} is missing mutation methods`);
   if (!adapter.capabilities.write && (adapter.plan !== undefined || adapter.apply !== undefined)) throw new Error(`read-only adapter ${adapter.id} must not expose mutation methods`);
@@ -129,6 +134,7 @@ export async function captureSurfaceSnapshot(adapter: SnapshotSurfaceAdapter, co
   for (const surface of surfaces) {
     for (const raw of await collectArtifacts(adapter, surface, context)) {
       const artifact = ArtifactSchema.parse(raw) as Artifact;
+      if (!Number.isFinite(Date.parse(artifact.observedAt)) || artifact.observationRevision.trim() === "") throw new Error(`artifact ${artifact.id} lacks a valid observation timestamp or revision`);
       if (artifact.surfaceId !== surface.id) throw new Error(`artifact ${artifact.id} escaped surface ${surface.id}`);
       if (artifactsById.has(artifact.id)) throw new Error(`duplicate artifact identity ${artifact.id}`);
       if (artifact.metadata.observedContent !== undefined) {
@@ -152,24 +158,60 @@ export async function captureSurfaceSnapshot(adapter: SnapshotSurfaceAdapter, co
   return deepFreeze({ revisionId: `snapshot:${snapshotDigest.slice(-32)}`, ...revision, enumeration: structuredClone(adapter.enumeration), snapshotDigest, surfaces, artifacts, fingerprints, unavailableSurfaceIds, observability, provesCompleteAbsence: observability === "closed" && blindSpots.length === 0, blindSpots });
 }
 
-export type ExternalReservation =
-  | { readonly state: "reserved" }
-  | { readonly state: "completed"; readonly result: SurfaceApplyResult }
-  | { readonly state: "ambiguous" | "compensated" };
-
-export interface ExternalOperationJournal {
-  reserve(input: { operationId: string; planHash: ContentHash; snapshotDigest: ContentHash }): Promise<ExternalReservation>;
-  complete(operationId: string, result: SurfaceApplyResult): Promise<void>;
-  markAmbiguous(operationId: string): Promise<void>;
-  markCompensated(operationId: string): Promise<void>;
+export interface SurfaceSnapshotStore {
+  put(snapshot: SurfaceSnapshotRevision): Promise<void>;
+  read(snapshotDigest: ContentHash): Promise<SurfaceSnapshotRevision | undefined>;
 }
 
-interface JournalRecord { state: "reserved" | "completed" | "ambiguous" | "compensated"; planHash: ContentHash; snapshotDigest: ContentHash; result?: SurfaceApplyResult }
+function authenticateSnapshot(snapshot: SurfaceSnapshotRevision): void {
+  const semanticDigest = snapshotSemanticDigest(snapshot);
+  const snapshotDigest = hashFramedDomain("external-surface-snapshot-revision", { adapterId: snapshot.adapterId, adapterVersion: snapshot.adapterVersion, observedAt: snapshot.observedAt, semanticDigest });
+  if (!Number.isFinite(Date.parse(snapshot.observedAt)) || semanticDigest !== snapshot.semanticDigest || snapshotDigest !== snapshot.snapshotDigest || snapshot.revisionId !== `snapshot:${snapshotDigest.slice(-32)}`) throw new Error("external snapshot revision failed content authentication");
+}
+
+export class FileSurfaceSnapshotStore implements SurfaceSnapshotStore {
+  readonly #root: string;
+  constructor(root: string) { this.#root = root; }
+  #path(digest: ContentHash): string { if (!/^sha256:v1:[0-9a-f]{64}$/u.test(digest)) throw new Error("snapshot digest is invalid"); return join(this.#root, `${digest.slice("sha256:v1:".length)}.json`); }
+  async put(snapshot: SurfaceSnapshotRevision): Promise<void> {
+    authenticateSnapshot(snapshot); await mkdir(this.#root, { recursive: true });
+    const bytes = `${canonicalSnapshotJson(snapshot)}\n`; const path = this.#path(snapshot.snapshotDigest);
+    try { await writeFile(path, bytes, { encoding: "utf8", flag: "wx" }); } catch (error) { if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || await readFile(path, "utf8") !== bytes) throw error; }
+  }
+  async read(snapshotDigest: ContentHash): Promise<SurfaceSnapshotRevision | undefined> {
+    let parsed: SurfaceSnapshotRevision; try { parsed = JSON.parse(await readFile(this.#path(snapshotDigest), "utf8")) as SurfaceSnapshotRevision; } catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined; throw error; }
+    authenticateSnapshot(parsed); if (parsed.snapshotDigest !== snapshotDigest) throw new Error("snapshot store returned a different revision"); return deepFreeze(parsed);
+  }
+}
+
+function canonicalSnapshotJson(snapshot: SurfaceSnapshotRevision): string { return canonicalJson(snapshot); }
+export async function captureAndPersistSurfaceSnapshot(adapter: SnapshotSurfaceAdapter, context: AdapterContext, observedAt: string, store: SurfaceSnapshotStore): Promise<Readonly<SurfaceSnapshotRevision>> { const snapshot = await captureSurfaceSnapshot(adapter, context, observedAt); await store.put(snapshot); return snapshot; }
+export async function rebuildPinnedSurfaceSnapshot(state: StateDigest, store: SurfaceSnapshotStore): Promise<Readonly<SurfaceSnapshotRevision>> { if (state.pinnedExternalSnapshotDigest === undefined) throw new Error("state has no pinned external snapshot revision"); const snapshot = await store.read(state.pinnedExternalSnapshotDigest); if (snapshot === undefined) throw new Error("pinned external snapshot revision is unavailable"); authenticateSnapshot(snapshot); return snapshot; }
+
+export type ExternalReservation =
+  | { readonly state: "acquired"; readonly leaseToken: ContentHash }
+  | { readonly state: "in-flight"; readonly ownerId: string; readonly leaseExpiresAt: string }
+  | { readonly state: "completed"; readonly result: SurfaceApplyResult }
+  | { readonly state: "ambiguous"; readonly leaseToken: ContentHash }
+  | { readonly state: "compensated" };
+
+export interface ExternalReservationInput { readonly operationId: string; readonly planHash: ContentHash; readonly snapshotDigest: ContentHash; readonly ownerId: string; readonly now: string; readonly leaseDurationMs: number }
+
+export interface ExternalOperationJournal {
+  reserve(input: ExternalReservationInput): Promise<ExternalReservation>;
+  renew(operationId: string, ownerId: string, leaseToken: ContentHash, now: string, leaseDurationMs: number): Promise<boolean>;
+  complete(operationId: string, ownerId: string, leaseToken: ContentHash, result: SurfaceApplyResult): Promise<void>;
+  markAmbiguous(operationId: string, ownerId: string, leaseToken: ContentHash): Promise<void>;
+  markCompensated(operationId: string, ownerId: string, leaseToken: ContentHash): Promise<void>;
+}
+
+interface JournalRecord { state: "reserved" | "completed" | "ambiguous" | "compensated"; planHash: ContentHash; snapshotDigest: ContentHash; ownerId: string; leaseExpiresAt: string; leaseToken: ContentHash; result?: SurfaceApplyResult }
 
 export class InMemoryExternalOperationJournal implements ExternalOperationJournal {
   readonly #records = new Map<string, JournalRecord>();
 
-  async reserve(input: { operationId: string; planHash: ContentHash; snapshotDigest: ContentHash }): Promise<ExternalReservation> {
+  async reserve(input: ExternalReservationInput): Promise<ExternalReservation> {
+    const now = Date.parse(input.now); if (!Number.isFinite(now) || !Number.isSafeInteger(input.leaseDurationMs) || input.leaseDurationMs < 1 || input.ownerId.trim() === "") throw new Error("external reservation requires valid owner, time, and lease duration");
     const existing = this.#records.get(input.operationId);
     if (existing !== undefined) {
       if (existing.planHash !== input.planHash || existing.snapshotDigest !== input.snapshotDigest) throw new Error("external operation id was reused for different authority or snapshot");
@@ -177,16 +219,59 @@ export class InMemoryExternalOperationJournal implements ExternalOperationJourna
         if (existing.result === undefined) throw new Error("completed external operation is missing its durable result");
         return { state: "completed", result: structuredClone(existing.result) };
       }
-      return { state: existing.state === "reserved" ? "ambiguous" : existing.state };
+      if ((existing.state === "reserved" || existing.state === "ambiguous") && Date.parse(existing.leaseExpiresAt) > now && existing.ownerId !== input.ownerId) return { state: "in-flight", ownerId: existing.ownerId, leaseExpiresAt: existing.leaseExpiresAt };
+      if (existing.state === "compensated") return { state: "compensated" };
+      const leaseExpiresAt = new Date(now + input.leaseDurationMs).toISOString(); const leaseToken = hashFramedDomain("external-operation-recovery-lease", { ...input, leaseExpiresAt, priorLeaseToken: existing.leaseToken });
+      this.#records.set(input.operationId, { ...existing, state: "ambiguous", ownerId: input.ownerId, leaseExpiresAt, leaseToken }); return { state: "ambiguous", leaseToken };
     }
-    this.#records.set(input.operationId, { state: "reserved", planHash: input.planHash, snapshotDigest: input.snapshotDigest });
-    return { state: "reserved" };
+    const leaseExpiresAt = new Date(now + input.leaseDurationMs).toISOString(); const leaseToken = hashFramedDomain("external-operation-lease", { ...input, leaseExpiresAt });
+    this.#records.set(input.operationId, { state: "reserved", planHash: input.planHash, snapshotDigest: input.snapshotDigest, ownerId: input.ownerId, leaseExpiresAt, leaseToken });
+    return { state: "acquired", leaseToken };
   }
 
-  async complete(operationId: string, result: SurfaceApplyResult): Promise<void> { const record = this.required(operationId); this.#records.set(operationId, { ...record, state: "completed", result: structuredClone(result) }); }
-  async markAmbiguous(operationId: string): Promise<void> { const record = this.required(operationId); this.#records.set(operationId, { ...record, state: "ambiguous" }); }
-  async markCompensated(operationId: string): Promise<void> { const record = this.required(operationId); this.#records.set(operationId, { ...record, state: "compensated" }); }
+  async complete(operationId: string, ownerId: string, leaseToken: ContentHash, result: SurfaceApplyResult): Promise<void> { const record = this.owned(operationId, ownerId, leaseToken); this.#records.set(operationId, { ...record, state: "completed", result: structuredClone(result) }); }
+  async renew(operationId: string, ownerId: string, leaseToken: ContentHash, now: string, leaseDurationMs: number): Promise<boolean> { const record = this.required(operationId); const timestamp = Date.parse(now); if ((record.state !== "reserved" && record.state !== "ambiguous") || record.ownerId !== ownerId || record.leaseToken !== leaseToken || !Number.isFinite(timestamp) || timestamp >= Date.parse(record.leaseExpiresAt)) return false; this.#records.set(operationId, { ...record, leaseExpiresAt: new Date(timestamp + leaseDurationMs).toISOString() }); return true; }
+  async markAmbiguous(operationId: string, ownerId: string, leaseToken: ContentHash): Promise<void> { const record = this.owned(operationId, ownerId, leaseToken); this.#records.set(operationId, { ...record, state: "ambiguous" }); }
+  async markCompensated(operationId: string, ownerId: string, leaseToken: ContentHash): Promise<void> { const record = this.owned(operationId, ownerId, leaseToken); this.#records.set(operationId, { ...record, state: "compensated" }); }
   private required(operationId: string): JournalRecord { const record = this.#records.get(operationId); if (record === undefined) throw new Error(`unknown external operation ${operationId}`); return record; }
+  private owned(operationId: string, ownerId: string, leaseToken: ContentHash): JournalRecord { const record = this.required(operationId); if (record.ownerId !== ownerId || record.leaseToken !== leaseToken) throw new Error("external operation lease is owned by another executor"); return record; }
+}
+
+export class FileExternalOperationJournal implements ExternalOperationJournal {
+  readonly #root: string;
+  constructor(root: string) { this.#root = root; }
+  #key(operationId: string): string { return hashFramedDomain("external-operation-journal-key", operationId).slice("sha256:v1:".length); }
+  #path(operationId: string): string { return join(this.#root, `${this.#key(operationId)}.json`); }
+  #lockPath(operationId: string): string { return join(this.#root, `${this.#key(operationId)}.lock`); }
+  async #read(operationId: string): Promise<JournalRecord | undefined> { try { return JSON.parse(await readFile(this.#path(operationId), "utf8")) as JournalRecord; } catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined; throw error; } }
+  async #write(operationId: string, record: JournalRecord): Promise<void> { const temporary = `${this.#path(operationId)}.${record.leaseToken.slice(-12)}.tmp`; await writeFile(temporary, `${canonicalJson(record)}\n`, "utf8"); await rename(temporary, this.#path(operationId)); }
+  async #locked<T>(operationId: string, action: () => Promise<T>, contention: () => Promise<T>): Promise<T> {
+    await mkdir(this.#root, { recursive: true }); const lock = this.#lockPath(operationId);
+    try { await writeFile(lock, "locked\n", { flag: "wx" }); } catch (error) { if (error instanceof Error && "code" in error && error.code === "EEXIST") return contention(); throw error; }
+    try { return await action(); } finally { await unlink(lock).catch(() => undefined); }
+  }
+  async reserve(input: ExternalReservationInput): Promise<ExternalReservation> {
+    const now = Date.parse(input.now); if (!Number.isFinite(now) || input.ownerId.trim() === "" || !Number.isSafeInteger(input.leaseDurationMs) || input.leaseDurationMs < 1) throw new Error("external reservation requires valid owner, time, and lease duration");
+    return this.#locked(input.operationId, async () => {
+      const existing = await this.#read(input.operationId);
+      if (existing !== undefined) {
+        if (existing.planHash !== input.planHash || existing.snapshotDigest !== input.snapshotDigest) throw new Error("external operation id was reused for different authority or snapshot");
+        if (existing.state === "completed") { if (existing.result === undefined) throw new Error("completed external operation is missing its durable result"); return { state: "completed", result: existing.result }; }
+        if ((existing.state === "reserved" || existing.state === "ambiguous") && Date.parse(existing.leaseExpiresAt) > now && existing.ownerId !== input.ownerId) return { state: "in-flight", ownerId: existing.ownerId, leaseExpiresAt: existing.leaseExpiresAt };
+        if (existing.state === "compensated") return { state: "compensated" };
+        const leaseExpiresAt = new Date(now + input.leaseDurationMs).toISOString(); const leaseToken = hashFramedDomain("external-operation-recovery-lease", { ...input, leaseExpiresAt, priorLeaseToken: existing.leaseToken });
+        const recovered = { ...existing, state: "ambiguous" as const, ownerId: input.ownerId, leaseExpiresAt, leaseToken };
+        await this.#write(input.operationId, recovered); return { state: "ambiguous", leaseToken };
+      }
+      const leaseExpiresAt = new Date(now + input.leaseDurationMs).toISOString(); const leaseToken = hashFramedDomain("external-operation-lease", { ...input, leaseExpiresAt });
+      await this.#write(input.operationId, { state: "reserved", planHash: input.planHash, snapshotDigest: input.snapshotDigest, ownerId: input.ownerId, leaseExpiresAt, leaseToken }); return { state: "acquired", leaseToken };
+    }, async () => { const existing = await this.#read(input.operationId); return { state: "in-flight", ownerId: existing?.ownerId ?? "reservation-lock", leaseExpiresAt: existing?.leaseExpiresAt ?? new Date(now + input.leaseDurationMs).toISOString() }; });
+  }
+  async complete(operationId: string, ownerId: string, leaseToken: ContentHash, result: SurfaceApplyResult): Promise<void> { await this.#update(operationId, ownerId, leaseToken, (record) => ({ ...record, state: "completed", result })); }
+  async renew(operationId: string, ownerId: string, leaseToken: ContentHash, now: string, leaseDurationMs: number): Promise<boolean> { let renewed = false; await this.#update(operationId, ownerId, leaseToken, (record) => { const timestamp = Date.parse(now); if ((record.state !== "reserved" && record.state !== "ambiguous") || !Number.isFinite(timestamp) || timestamp >= Date.parse(record.leaseExpiresAt)) return record; renewed = true; return { ...record, leaseExpiresAt: new Date(timestamp + leaseDurationMs).toISOString() }; }).catch(() => undefined); return renewed; }
+  async markAmbiguous(operationId: string, ownerId: string, leaseToken: ContentHash): Promise<void> { await this.#update(operationId, ownerId, leaseToken, (record) => ({ ...record, state: "ambiguous" })); }
+  async markCompensated(operationId: string, ownerId: string, leaseToken: ContentHash): Promise<void> { await this.#update(operationId, ownerId, leaseToken, (record) => ({ ...record, state: "compensated" })); }
+  async #update(operationId: string, ownerId: string, leaseToken: ContentHash, update: (record: JournalRecord) => JournalRecord): Promise<void> { await this.#locked(operationId, async () => { const record = await this.#read(operationId); if (record === undefined) throw new Error(`unknown external operation ${operationId}`); if (record.ownerId !== ownerId || record.leaseToken !== leaseToken) throw new Error("external operation lease is owned by another executor"); await this.#write(operationId, update(record)); }, async () => { throw new Error("external operation journal is locked by another executor"); }); }
 }
 
 export interface SurfaceExecutionResult {
@@ -198,7 +283,7 @@ export interface SurfaceExecutionResult {
   readonly compensated: boolean;
 }
 
-export async function executeSurfacePlan(input: { readonly plan: ExecutionPlan; readonly capsule: ExecutionCapsule; readonly approval: ExecutionApproval; readonly surfacePlan: SurfacePlan; readonly snapshot: SurfaceSnapshotRevision; readonly manualContinuation: boolean }, adapter: SnapshotSurfaceAdapter, context: AdapterContext, ports: { readonly state: { current(): Promise<StateDigest> }; readonly bindingValidator: StateBindingValidator; readonly journal: ExternalOperationJournal }): Promise<Readonly<SurfaceExecutionResult>> {
+export async function executeSurfacePlan(input: { readonly plan: ExecutionPlan; readonly capsule: ExecutionCapsule; readonly approval: ExecutionApproval; readonly surfacePlan: SurfacePlan; readonly snapshot: SurfaceSnapshotRevision; readonly manualContinuation: boolean; readonly reservationOwnerId: string; readonly leaseDurationMs?: number }, adapter: SnapshotSurfaceAdapter, context: AdapterContext, ports: { readonly state: { current(): Promise<StateDigest> }; readonly bindingValidator: StateBindingValidator; readonly journal: ExternalOperationJournal; readonly clock: { now(): string } }): Promise<Readonly<SurfaceExecutionResult>> {
   const refuse = (reason: string): Readonly<SurfaceExecutionResult> => deepFreeze({ outcome: "refused", reasons: [reason], validations: [], compensated: false });
   if (!SurfacePlanSchema.safeParse(input.surfacePlan).success) return refuse("surface plan failed the normative contract");
   const recomputedSemanticDigest = snapshotSemanticDigest(input.snapshot);
@@ -206,46 +291,61 @@ export async function executeSurfacePlan(input: { readonly plan: ExecutionPlan; 
   if (recomputedSemanticDigest !== input.snapshot.semanticDigest || recomputedSnapshotDigest !== input.snapshot.snapshotDigest || input.snapshot.revisionId !== `snapshot:${recomputedSnapshotDigest.slice(-32)}`) return refuse("external snapshot revision failed content authentication");
   if (input.approval.planId !== input.plan.id || input.approval.planRevision !== input.plan.revision || input.approval.planHash !== executionPlanHash(input.plan) || input.approval.dependencyDigest !== input.plan.boundState.dependencyDigest || input.approval.capsuleId !== input.capsule.id || input.approval.capsuleHash !== executionCapsuleHash(input.capsule)) return refuse("stale approval requires Task16 refresh or rebase");
   if (input.surfacePlan.adapterId !== adapter.id || input.snapshot.adapterId !== adapter.id || input.snapshot.adapterVersion !== adapter.version) return refuse("surface plan or snapshot belongs to another adapter revision");
+  const target = input.snapshot.surfaces.find(({ id }) => id === input.surfacePlan.surfaceId);
+  if (target === undefined || target.access !== "read-write" || !target.capabilities.write) return refuse("surface plan target is absent from the pinned writable snapshot");
   if (!adapter.capabilities.write || adapter.apply === undefined || adapter.validate === undefined) return refuse("surface adapter is not writable");
+  if (input.surfacePlan.riskClass !== input.capsule.risk.class) return refuse("surface risk is not bound to the approved capsule risk");
+  const operationNames = input.surfacePlan.operations.map((operation) => operation.operation).filter((operation): operation is string => typeof operation === "string" && operation.length > 0);
+  if (!input.capsule.unitIds.includes(input.surfacePlan.surfaceId) || operationNames.length !== input.surfacePlan.operations.length || operationNames.some((operation) => operation !== input.capsule.operation && !input.capsule.availablePrimitives.includes(`surface-operation:${input.surfacePlan.surfaceId}:${operation}`))) return refuse("surface target or operations are outside the approved capsule");
   if ((input.surfacePlan.riskClass === "R3" || input.surfacePlan.riskClass === "R4") && !input.manualContinuation) return refuse("high-risk external operation requires explicit manual continuation");
-  if (input.surfacePlan.requiredApprovals.length === 0 && adapter.capabilities.humanApprovalRequired) return refuse("surface adapter requires explicit approval");
+  if (adapter.capabilities.humanApprovalRequired && !input.surfacePlan.requiredApprovals.includes(input.approval.id)) return refuse("surface adapter requires the authenticated Task16 approval identity");
   if (input.surfacePlan.boundState.dependencyDigest !== input.plan.boundState.dependencyDigest || input.capsule.boundState.dependencyDigest !== input.plan.boundState.dependencyDigest) return refuse("surface plan is outside the immutable Task16 state binding");
   const current = await ports.state.current();
   if (current.pinnedExternalSnapshotDigest !== input.snapshot.snapshotDigest || input.surfacePlan.boundState.compiledAgainst.pinnedExternalSnapshotDigest !== input.snapshot.snapshotDigest) return refuse("external snapshot is stale or not pinned by the approved plan");
   const binding = await ports.bindingValidator.validate(input.surfacePlan.boundState, current, context);
   if (binding.status !== "current" && binding.status !== "rebound") return refuse(`surface state binding is ${binding.status}`);
   const planHash = executionPlanHash(input.plan);
-  const operationId = `external-operation:${hashFramedDomain("external-operation-reservation", { planId: input.plan.id, planRevision: input.plan.revision, planHash, surfacePlan: input.surfacePlan, snapshotDigest: input.snapshot.snapshotDigest }).slice(-32)}`;
-  const reservation = await ports.journal.reserve({ operationId, planHash, snapshotDigest: input.snapshot.snapshotDigest });
+  const capsuleHash = executionCapsuleHash(input.capsule);
+  const operationId = `external-operation:${hashFramedDomain("external-operation-reservation", { planId: input.plan.id, planRevision: input.plan.revision, planHash, capsuleHash, approvalId: input.approval.id, surfacePlan: input.surfacePlan, snapshotDigest: input.snapshot.snapshotDigest }).slice(-32)}`;
+  const leaseDurationMs = input.leaseDurationMs ?? 30_000;
+  const reservation = await ports.journal.reserve({ operationId, planHash, snapshotDigest: input.snapshot.snapshotDigest, ownerId: input.reservationOwnerId, now: ports.clock.now(), leaseDurationMs });
   if (reservation.state === "completed") return deepFreeze({ outcome: "success", operationId, reasons: ["idempotent replay returned the durable result"], validations: [], result: reservation.result, compensated: false });
+  if (reservation.state === "in-flight") return deepFreeze({ outcome: "partial", operationId, reasons: [`external operation is in flight under owner ${reservation.ownerId} until ${reservation.leaseExpiresAt}`], validations: [], compensated: false });
+  if (reservation.state === "compensated") return deepFreeze({ outcome: "partial", operationId, reasons: ["ambiguous external operation was already compensated and was not replayed"], validations: [], compensated: true });
+  const leaseToken = reservation.leaseToken;
+  let leaseLost = false;
+  const heartbeat = setInterval(() => { void ports.journal.renew(operationId, input.reservationOwnerId, leaseToken, ports.clock.now(), leaseDurationMs).then((renewed) => { if (!renewed) leaseLost = true; }).catch(() => { leaseLost = true; }); }, Math.max(10, Math.floor(leaseDurationMs / 3)));
   const compensate = async (): Promise<boolean> => {
-    if (reservation.state === "compensated") return true;
     if (adapter.compensate === undefined) return false;
+    if (leaseLost || !(await ports.journal.renew(operationId, input.reservationOwnerId, leaseToken, ports.clock.now(), leaseDurationMs))) return false;
     await adapter.compensate(operationId, input.surfacePlan, context);
-    await ports.journal.markCompensated(operationId);
+    if (leaseLost || !(await ports.journal.renew(operationId, input.reservationOwnerId, leaseToken, ports.clock.now(), leaseDurationMs))) return false;
+    await ports.journal.markCompensated(operationId, input.reservationOwnerId, leaseToken);
     return true;
   };
-  if (reservation.state === "ambiguous" || reservation.state === "compensated") {
-    const validations = await adapter.validate(input.surfacePlan, context);
-    if (validations.length > 0 && validations.every(({ status }) => status === "passed")) return deepFreeze({ outcome: "partial", operationId, reasons: ["ambiguous operation validated but lacks an authenticated apply result; manual reconciliation required"], validations, compensated: false });
-    const compensated = await compensate();
-    return deepFreeze({ outcome: "partial", operationId, reasons: ["ambiguous external operation was not replayed"], validations, compensated });
-  }
   try {
+    if (reservation.state === "ambiguous") {
+      const validations = await adapter.validate(input.surfacePlan, context);
+      if (validations.length > 0 && validations.every(({ status }) => status === "passed")) return deepFreeze({ outcome: "partial", operationId, reasons: ["ambiguous operation validated but lacks an authenticated apply result; manual reconciliation required"], validations, compensated: false });
+      const compensated = await compensate();
+      return deepFreeze({ outcome: "partial", operationId, reasons: ["ambiguous external operation was not replayed"], validations, compensated });
+    }
     const result = SurfaceApplyResultSchema.parse(await adapter.apply(input.surfacePlan, context)) as SurfaceApplyResult;
+    if (leaseLost || !(await ports.journal.renew(operationId, input.reservationOwnerId, leaseToken, ports.clock.now(), leaseDurationMs))) throw new Error("external operation lease was lost during apply; outcome is ambiguous");
     const validations = await adapter.validate(input.surfacePlan, context);
     if (validations.length === 0 || validations.some(({ status }) => status !== "passed")) {
-      await ports.journal.markAmbiguous(operationId);
+      await ports.journal.markAmbiguous(operationId, input.reservationOwnerId, leaseToken);
       const compensated = await compensate();
       return deepFreeze({ outcome: "partial", operationId, reasons: ["external apply validation did not establish success"], validations, result, compensated });
     }
-    await ports.journal.complete(operationId, result);
+    await ports.journal.complete(operationId, input.reservationOwnerId, leaseToken, result);
     return deepFreeze({ outcome: "success", operationId, reasons: [], validations, result, compensated: false });
   } catch (error) {
-    await ports.journal.markAmbiguous(operationId);
-    const compensated = await compensate();
+    if (leaseLost) return deepFreeze({ outcome: "partial", operationId, reasons: [error instanceof Error ? error.message : "external operation lease was lost; outcome is ambiguous"], validations: [], compensated: false });
+    try { await ports.journal.markAmbiguous(operationId, input.reservationOwnerId, leaseToken); } catch { return deepFreeze({ outcome: "partial", operationId, reasons: ["external operation lease ownership changed; manual recovery is required"], validations: [], compensated: false }); }
+    const compensated = await compensate().catch(() => false);
     return deepFreeze({ outcome: "partial", operationId, reasons: [error instanceof Error ? error.message : "external operation outcome is ambiguous"], validations: [], compensated });
-  }
+  } finally { clearInterval(heartbeat); }
 }
 
 export interface FakeSurfaceAdapterOptions {
