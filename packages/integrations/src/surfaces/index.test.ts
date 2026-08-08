@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -90,13 +90,23 @@ describe("surface snapshots and Task16 composition", () => {
     expect(first).toMatchObject({ state: "acquired" });
     if (first.state !== "acquired") throw new Error("expected lease acquisition");
     await expect(journal.markAmbiguous(base.operationId, "owner:a", hash("forged-lease"))).rejects.toThrow(/owned/iu);
+    expect(await journal.reserve({ ...base, ownerId: "owner:a", now: "2026-08-08T00:00:01Z" })).toMatchObject({ state: "in-flight", ownerId: "owner:a" });
+    expect(await journal.renew(base.operationId, "owner:a", first.leaseToken, "2026-08-08T00:00:02Z", base.leaseDurationMs)).toBe(true);
     expect(await journal.reserve({ ...base, ownerId: "owner:b", now: "2026-08-08T00:00:01Z" })).toMatchObject({ state: "in-flight", ownerId: "owner:a" });
     expect(await journal.reserve({ ...base, ownerId: "owner:b", now: "2026-08-08T00:02:00Z" })).toMatchObject({ state: "ambiguous" });
+    await expect(journal.markCompensated(base.operationId, "owner:a", first.leaseToken)).rejects.toThrow(/owned/iu);
     expect(await journal.reserve({ ...base, ownerId: "owner:a", now: "2026-08-08T00:02:01Z" })).toMatchObject({ state: "in-flight", ownerId: "owner:b" });
     const root = await mkdtemp(join(tmpdir(), "projector-operation-journal-"));
     try {
-      expect(await new FileExternalOperationJournal(root).reserve({ ...base, ownerId: "owner:file-a", now: "2026-08-08T00:00:00Z" })).toMatchObject({ state: "acquired" });
-      expect(await new FileExternalOperationJournal(root).reserve({ ...base, ownerId: "owner:file-b", now: "2026-08-08T00:00:01Z" })).toMatchObject({ state: "in-flight", ownerId: "owner:file-a" });
+      const fileJournal = new FileExternalOperationJournal(root);
+      const fileFirst = await fileJournal.reserve({ ...base, leaseDurationMs: 1_000, ownerId: "owner:file-a", now: "2026-08-08T00:00:00Z" });
+      expect(fileFirst).toMatchObject({ state: "acquired" });
+      expect(await fileJournal.reserve({ ...base, leaseDurationMs: 1_000, ownerId: "owner:file-a", now: "2026-08-08T00:00:00.500Z" })).toMatchObject({ state: "in-flight", ownerId: "owner:file-a" });
+      const key = hashFramedDomain("external-operation-journal-key", base.operationId).slice("sha256:v1:".length);
+      await writeFile(join(root, `${key}.lock`), "crash-left-lock\n", "utf8");
+      expect(await new FileExternalOperationJournal(root).reserve({ ...base, leaseDurationMs: 1_000, ownerId: "owner:file-b", now: "2026-08-08T00:10:00Z" })).toMatchObject({ state: "recovery-required", ownerId: "owner:file-a" });
+      if (fileFirst.state !== "acquired") throw new Error("expected durable lease acquisition");
+      await expect(fileJournal.markCompensated(base.operationId, "owner:file-b", fileFirst.leaseToken)).rejects.toThrow(/locked|owned/iu);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

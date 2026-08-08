@@ -191,6 +191,7 @@ export async function rebuildPinnedSurfaceSnapshot(state: StateDigest, store: Su
 export type ExternalReservation =
   | { readonly state: "acquired"; readonly leaseToken: ContentHash }
   | { readonly state: "in-flight"; readonly ownerId: string; readonly leaseExpiresAt: string }
+  | { readonly state: "recovery-required"; readonly ownerId: string; readonly leaseExpiresAt: string; readonly reason: string }
   | { readonly state: "completed"; readonly result: SurfaceApplyResult }
   | { readonly state: "ambiguous"; readonly leaseToken: ContentHash }
   | { readonly state: "compensated" };
@@ -219,7 +220,7 @@ export class InMemoryExternalOperationJournal implements ExternalOperationJourna
         if (existing.result === undefined) throw new Error("completed external operation is missing its durable result");
         return { state: "completed", result: structuredClone(existing.result) };
       }
-      if ((existing.state === "reserved" || existing.state === "ambiguous") && Date.parse(existing.leaseExpiresAt) > now && existing.ownerId !== input.ownerId) return { state: "in-flight", ownerId: existing.ownerId, leaseExpiresAt: existing.leaseExpiresAt };
+      if ((existing.state === "reserved" || existing.state === "ambiguous") && Date.parse(existing.leaseExpiresAt) > now) return { state: "in-flight", ownerId: existing.ownerId, leaseExpiresAt: existing.leaseExpiresAt };
       if (existing.state === "compensated") return { state: "compensated" };
       const leaseExpiresAt = new Date(now + input.leaseDurationMs).toISOString(); const leaseToken = hashFramedDomain("external-operation-recovery-lease", { ...input, leaseExpiresAt, priorLeaseToken: existing.leaseToken });
       this.#records.set(input.operationId, { ...existing, state: "ambiguous", ownerId: input.ownerId, leaseExpiresAt, leaseToken }); return { state: "ambiguous", leaseToken };
@@ -252,12 +253,12 @@ export class FileExternalOperationJournal implements ExternalOperationJournal {
   }
   async reserve(input: ExternalReservationInput): Promise<ExternalReservation> {
     const now = Date.parse(input.now); if (!Number.isFinite(now) || input.ownerId.trim() === "" || !Number.isSafeInteger(input.leaseDurationMs) || input.leaseDurationMs < 1) throw new Error("external reservation requires valid owner, time, and lease duration");
-    return this.#locked(input.operationId, async () => {
+    return this.#locked<ExternalReservation>(input.operationId, async () => {
       const existing = await this.#read(input.operationId);
       if (existing !== undefined) {
         if (existing.planHash !== input.planHash || existing.snapshotDigest !== input.snapshotDigest) throw new Error("external operation id was reused for different authority or snapshot");
         if (existing.state === "completed") { if (existing.result === undefined) throw new Error("completed external operation is missing its durable result"); return { state: "completed", result: existing.result }; }
-        if ((existing.state === "reserved" || existing.state === "ambiguous") && Date.parse(existing.leaseExpiresAt) > now && existing.ownerId !== input.ownerId) return { state: "in-flight", ownerId: existing.ownerId, leaseExpiresAt: existing.leaseExpiresAt };
+        if ((existing.state === "reserved" || existing.state === "ambiguous") && Date.parse(existing.leaseExpiresAt) > now) return { state: "in-flight", ownerId: existing.ownerId, leaseExpiresAt: existing.leaseExpiresAt };
         if (existing.state === "compensated") return { state: "compensated" };
         const leaseExpiresAt = new Date(now + input.leaseDurationMs).toISOString(); const leaseToken = hashFramedDomain("external-operation-recovery-lease", { ...input, leaseExpiresAt, priorLeaseToken: existing.leaseToken });
         const recovered = { ...existing, state: "ambiguous" as const, ownerId: input.ownerId, leaseExpiresAt, leaseToken };
@@ -265,7 +266,13 @@ export class FileExternalOperationJournal implements ExternalOperationJournal {
       }
       const leaseExpiresAt = new Date(now + input.leaseDurationMs).toISOString(); const leaseToken = hashFramedDomain("external-operation-lease", { ...input, leaseExpiresAt });
       await this.#write(input.operationId, { state: "reserved", planHash: input.planHash, snapshotDigest: input.snapshotDigest, ownerId: input.ownerId, leaseExpiresAt, leaseToken }); return { state: "acquired", leaseToken };
-    }, async () => { const existing = await this.#read(input.operationId); return { state: "in-flight", ownerId: existing?.ownerId ?? "reservation-lock", leaseExpiresAt: existing?.leaseExpiresAt ?? new Date(now + input.leaseDurationMs).toISOString() }; });
+    }, async () => {
+      const existing = await this.#read(input.operationId);
+      if (existing !== undefined && (existing.planHash !== input.planHash || existing.snapshotDigest !== input.snapshotDigest)) throw new Error("external operation id was reused for different authority or snapshot");
+      const ownerId = existing?.ownerId ?? "unknown-lock-owner"; const leaseExpiresAt = existing?.leaseExpiresAt ?? input.now;
+      if (existing !== undefined && (existing.state === "reserved" || existing.state === "ambiguous") && Date.parse(leaseExpiresAt) > now) return { state: "in-flight", ownerId, leaseExpiresAt };
+      return { state: "recovery-required", ownerId, leaseExpiresAt, reason: "external operation journal lock outlived its durable owner lease; operator recovery is required" };
+    });
   }
   async complete(operationId: string, ownerId: string, leaseToken: ContentHash, result: SurfaceApplyResult): Promise<void> { await this.#update(operationId, ownerId, leaseToken, (record) => ({ ...record, state: "completed", result })); }
   async renew(operationId: string, ownerId: string, leaseToken: ContentHash, now: string, leaseDurationMs: number): Promise<boolean> { let renewed = false; await this.#update(operationId, ownerId, leaseToken, (record) => { const timestamp = Date.parse(now); if ((record.state !== "reserved" && record.state !== "ambiguous") || !Number.isFinite(timestamp) || timestamp >= Date.parse(record.leaseExpiresAt)) return record; renewed = true; return { ...record, leaseExpiresAt: new Date(timestamp + leaseDurationMs).toISOString() }; }).catch(() => undefined); return renewed; }
@@ -311,6 +318,7 @@ export async function executeSurfacePlan(input: { readonly plan: ExecutionPlan; 
   const reservation = await ports.journal.reserve({ operationId, planHash, snapshotDigest: input.snapshot.snapshotDigest, ownerId: input.reservationOwnerId, now: ports.clock.now(), leaseDurationMs });
   if (reservation.state === "completed") return deepFreeze({ outcome: "success", operationId, reasons: ["idempotent replay returned the durable result"], validations: [], result: reservation.result, compensated: false });
   if (reservation.state === "in-flight") return deepFreeze({ outcome: "partial", operationId, reasons: [`external operation is in flight under owner ${reservation.ownerId} until ${reservation.leaseExpiresAt}`], validations: [], compensated: false });
+  if (reservation.state === "recovery-required") return deepFreeze({ outcome: "partial", operationId, reasons: [reservation.reason], validations: [], compensated: false });
   if (reservation.state === "compensated") return deepFreeze({ outcome: "partial", operationId, reasons: ["ambiguous external operation was already compensated and was not replayed"], validations: [], compensated: true });
   const leaseToken = reservation.leaseToken;
   let leaseLost = false;
