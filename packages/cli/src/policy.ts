@@ -11,12 +11,18 @@ export interface CliPolicyInput {
 }
 
 export function normalizeExecutionPolicy(input: CliPolicyInput): Readonly<ExecutionPolicy> {
-  const preset = input.mode ?? "guide";
+  if (input.auditOnly === true && input.mode !== undefined && input.mode !== "observe" && input.mode !== "guide") {
+    throw new Error("contradictory audit-only and mutation-capable mode flags");
+  }
+  const preset = input.auditOnly === true && input.mode === undefined ? "observe" : (input.mode ?? "guide");
   const mutationCommand = input.command === "init" || input.command === "apply" || input.command === "reconcile";
+  if (input.auditOnly === true && mutationCommand) {
+    throw new Error("contradictory mutation and audit-only flags");
+  }
   if (preset === "observe" && mutationCommand && input.dryRun !== true) {
     throw new Error(`observe mode cannot ${input.command}`);
   }
-  if (input.auditOnly === true && (mutationCommand || input.dryRun === true)) {
+  if (input.auditOnly === true && input.dryRun === true) {
     throw new Error("contradictory mutation and audit-only/dry-run flags");
   }
   const allowAutoMutation = mutationCommand && input.dryRun !== true && preset !== "observe";

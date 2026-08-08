@@ -1,0 +1,199 @@
+import { describe, expect, it } from "vitest";
+
+import { hashFramedDomain, type StateBinding } from "@projector/core";
+
+import {
+  BUILT_IN_REPRESENTATION_PROFILES,
+  RepresentationCompiler,
+  type CanonicalRepresentationSource,
+  type RepresentationArtifactStore,
+  type TokenMeasurementPort,
+  lintHumanTechnical,
+} from "./index.js";
+
+const state = {
+  gitBase: "base",
+  worktreeDigest: hashFramedDomain("test", "worktree"),
+  canonicalProjectorDigest: hashFramedDomain("test", "canonical"),
+  toolchainDigest: hashFramedDomain("test", "toolchain"),
+};
+const binding: StateBinding = {
+  compiledAgainst: state,
+  valueDependencies: [{ kind: "canonical-governance", id: "rule:delete", versionHash: hashFramedDomain("test", "rule"), role: "source" }],
+  queryDependencies: [],
+  dependencyDigest: hashFramedDomain("state-binding-dependencies", {
+    valueDependencies: [{ kind: "canonical-governance", id: "rule:delete", versionHash: hashFramedDomain("test", "rule"), role: "source" }],
+    queryDependencies: [],
+  }),
+};
+
+const source: CanonicalRepresentationSource = {
+  sourceEntityIds: ["scenario:delete", "rule:delete"],
+  sourceSemanticHash: hashFramedDomain("test", "canonical-delete-semantics"),
+  statements: [{
+    id: "rule:delete",
+    text: "MUST_NOT delete production data unless explicit user approval.",
+    normativeForce: "forbid",
+    negated: true,
+    scope: ["production data"],
+    cardinality: "exactly-one",
+    connective: "iff",
+    guard: "explicit user approval",
+    exceptions: ["explicit user approval"],
+    dependencies: ["authenticate", "approve", "delete"],
+    conceptIds: ["concept:production-data"],
+    protectedLiterals: ["MUST_NOT", "deleteProductionData", "src/data/delete.ts", "30 GB"],
+  }],
+  scenarios: [{
+    id: "scenario:delete",
+    title: "Approved production deletion",
+    steps: [
+      { role: "precondition", statement: "production data exists" },
+      { role: "trigger", statement: "the user approves deletion" },
+      { role: "expected-outcome", statement: "deleteProductionData runs" },
+      { role: "forbidden-outcome", statement: "deletion runs before approval" },
+    ],
+  }],
+};
+
+class MemoryArtifacts implements RepresentationArtifactStore {
+  readonly values = new Map<string, string>();
+  async put(hash: string, content: string): Promise<void> { this.values.set(hash, content); }
+  async get(hash: string): Promise<string | undefined> { return this.values.get(hash); }
+}
+
+const measured: TokenMeasurementPort = {
+  profileId: "test-tokenizer@1",
+  measure: (text) => text.trim().split(/\s+/u).length,
+};
+
+describe("semantic representation compilation", () => {
+  it("compiles all built-ins from one canonical source while keeping rendered content behind the artifact port", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const keys = ["human-technical@1", "behavior-gherkin@1", "agent-compact@1", "machine-invariant@1"] as const;
+    const results = await Promise.all(keys.map((profileKey) => compiler.compile({ source, binding, profileKey })));
+
+    expect(new Set(results.map(({ projection }) => projection.sourceSemanticHash))).toEqual(new Set([source.sourceSemanticHash]));
+    expect(new Set(results.map(({ projection }) => projection.contentHash)).size).toBe(4);
+    expect(results.every(({ projection }) => projection.preservation.unsupportedDimensions.length === 0)).toBe(true);
+    expect(results.every(({ projection }) => projection.preservation.assurance === "exact")).toBe(true);
+    expect(results.map(({ projection }) => projection.sourceEntityIds)).toEqual(Array(4).fill(["rule:delete", "scenario:delete"]));
+    expect(Object.keys(results[0]!.projection)).not.toContain("content");
+    expect(artifacts.values.size).toBe(4);
+    expect(results[0]!.projection.boundState.valueDependencies.map(({ kind, id }) => `${kind}:${id}`).sort()).toEqual([
+      "canonical-entity:rule:delete", "canonical-entity:scenario:delete", "canonical-governance:rule:delete", "representation-profile:profile:human-technical",
+    ].sort());
+    expect(() => results[0]!.projection.boundState.valueDependencies.push(binding.valueDependencies[0]!)).toThrow();
+  });
+
+  it("preserves Gherkin source identity and step roles in order", async () => {
+    const artifacts = new MemoryArtifacts();
+    const result = await new RepresentationCompiler({ artifacts, tokenizer: measured })
+      .compile({ source, binding, profileKey: "behavior-gherkin@1" });
+    const rendered = await artifacts.get(result.projection.contentHash);
+
+    expect(rendered).toContain("# source: scenario:delete");
+    expect(rendered).toMatch(/Given production data exists[\s\S]*When the user approves deletion[\s\S]*Then deleteProductionData runs[\s\S]*But deletion runs before approval/u);
+  });
+
+  it.each([
+    ["Avoid deleting production data without approval", "normative-force"],
+    ["MUST delete production data when explicit user approval", "logical-connective"],
+    ["MUST_NOT delete one or more production data unless explicit user approval", "quantifier-cardinality"],
+    ["MUST_NOT delete production data", "exception"],
+  ] as const)("fails closed for protected drift in %s", async (candidate, dimension) => {
+    const compiler = new RepresentationCompiler({ artifacts: new MemoryArtifacts(), tokenizer: measured });
+    await expect(compiler.validateCandidate({ source, profileKey: "agent-compact@1", candidate }))
+      .rejects.toMatchObject({ dimension });
+  });
+
+  it("accepts the exact machine kernel and preserves every protected literal", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const result = await compiler.compile({ source, binding, profileKey: "machine-invariant@1" });
+    const rendered = await artifacts.get(result.projection.contentHash);
+    for (const literal of source.statements[0]!.protectedLiterals) expect(rendered).toContain(literal);
+    await expect(compiler.validateCandidate({ source, profileKey: "machine-invariant@1", candidate: rendered! })).resolves.toBeDefined();
+  });
+
+  it("rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const compact = await compiler.compile({ source, binding, profileKey: "agent-compact@1" });
+    const compactText = (await artifacts.get(compact.projection.contentHash))!;
+    const failures = [
+      [compactText.replace("production data", "data"), "scope"],
+      [compactText.replace("IF explicit user approval", "explicit user approval"), "condition-guard"],
+      [compactText.replace("authenticate > approve > delete", "delete > approve > authenticate"), "dependency-order"],
+      [compactText.replace("concept:production-data", "concept:data"), "concept-identity"],
+      [compactText.replace("src/data/delete.ts", "src/data/remove.ts"), "identifier-literal"],
+    ] as const;
+    for (const [candidate, dimension] of failures) {
+      await expect(compiler.validateCandidate({ source, profileKey: "agent-compact@1", candidate })).rejects.toMatchObject({ dimension });
+    }
+    const gherkin = await compiler.compile({ source, binding, profileKey: "behavior-gherkin@1" });
+    const swapped = (await artifacts.get(gherkin.projection.contentHash))!.replace("Given production data exists", "When production data exists");
+    await expect(compiler.validateCandidate({ source, profileKey: "behavior-gherkin@1", candidate: swapped }))
+      .rejects.toMatchObject({ dimension: "behavior-step-role" });
+  });
+
+  it("rejects invented compact abbreviations unless measured utility and clarity are supplied", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const compact = await compiler.compile({ source, binding, profileKey: "agent-compact@1" });
+    const invented = `${(await artifacts.get(compact.projection.contentHash))!}\nPDA`;
+    await expect(compiler.validateCandidate({ source, profileKey: "agent-compact@1", candidate: invented }))
+      .rejects.toMatchObject({ dimension: "identifier-literal" });
+    await expect(compiler.validateCandidate({
+      source,
+      profileKey: "agent-compact@1", candidate: invented,
+      measuredAbbreviations: [{ abbreviation: "PDA", tokenSavings: 2, clarityValidated: true }],
+    })).resolves.toBeDefined();
+  });
+
+  it("falls back for measured net-negative compact output but selects compact for measured positive utility", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const terse = { ...source, statements: [{ ...source.statements[0]!, text: "MUST_NOT delete." }] };
+    const negative = await compiler.compileBest({ source: terse, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 50 });
+    const large = { ...source, statements: [{ ...source.statements[0]!, text: Array(30).fill("Please note that the system really must not delete production data unless explicit user approval.").join(" ") }] };
+    const positive = await compiler.compileBest({ source: large, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 1 });
+
+    expect(negative.projection.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["human-technical@1"].id);
+    expect(negative.projection.status).toBe("fallback-used");
+    expect(negative.projection.tokenAccounting?.estimatedNetTokens).toBeLessThanOrEqual(0);
+    expect(positive.projection.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].id);
+    expect(positive.projection.tokenAccounting?.estimatedNetTokens).toBeGreaterThan(0);
+  });
+
+  it("keeps style lint separate from semantic truth and reports blocking mechanics deterministically", () => {
+    const report = lintHumanTechnical("Obviously, we'll simply utilize this amazing API; it is very clear.");
+    expect(report.blocking.map(({ rule }) => rule)).toEqual(["contraction", "marketing-language", "modal-filler", "semicolon", "verbose-wording"]);
+    expect(report.semanticEquivalenceEstablished).toBe(false);
+    expect(report.truthEstablished).toBe(false);
+  });
+
+  it("detects edited or missing derived artifacts without mutating canonical source", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const before = structuredClone(source);
+    const result = await compiler.compile({ source, binding, profileKey: "human-technical@1" });
+    artifacts.values.set(result.projection.contentHash, "edited derived rendering");
+    expect(await compiler.verifyArtifact(result.projection)).toMatchObject({ status: "invalid" });
+    expect(source).toEqual(before);
+  });
+
+  it("keeps projection identity stable under incidental source ordering and rejects conflicting duplicate source IDs", async () => {
+    const compiler = new RepresentationCompiler({ artifacts: new MemoryArtifacts(), tokenizer: measured });
+    const first = await compiler.compile({ source, binding, profileKey: "machine-invariant@1" });
+    const reordered = await compiler.compile({ source: {
+      ...source, sourceEntityIds: [...source.sourceEntityIds].reverse(), statements: [...source.statements].reverse(), scenarios: [...source.scenarios].reverse(),
+    }, binding, profileKey: "machine-invariant@1" });
+    expect(reordered.projection.id).toBe(first.projection.id);
+    expect(reordered.projection.contentHash).toBe(first.projection.contentHash);
+    await expect(compiler.compile({ source: {
+      ...source, statements: [source.statements[0]!, { ...source.statements[0]!, normativeForce: "permit" }],
+    }, binding, profileKey: "machine-invariant@1" })).rejects.toThrow(/conflicting canonical representation source/u);
+  });
+});
