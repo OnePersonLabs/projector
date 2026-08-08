@@ -13,11 +13,11 @@ import {
   type SemanticSignature,
   type StateBinding,
   type StateQueryDependency,
-  type StateQueryKind,
   type ValidationResult,
 } from "@projector/core";
 
-import { evaluateSelector, type SelectorSubject } from "../governance/selectors.js";
+import { evaluateSelector, selectorHash, type SelectorSubject } from "../governance/selectors.js";
+import { BUILT_IN_QUERY_PROGRAM_IDS, createBuiltInQueryDependency } from "../query/index.js";
 import { createStateBinding } from "../state/index.js";
 
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
@@ -542,13 +542,10 @@ export interface ImpactRuleEvaluationPort {
 
 interface SyntheticQueryInput {
   id: string;
-  kind: StateQueryKind;
   programId: string;
-  programVersion: string;
   input: Record<string, unknown>;
   role: string;
   result: readonly Record<string, unknown>[];
-  resultCount: number;
   observability: ObservabilityClass;
   assumptions?: readonly string[];
   unavailableLanes?: readonly string[];
@@ -556,32 +553,19 @@ interface SyntheticQueryInput {
 }
 
 function syntheticQueryDependency(input: SyntheticQueryInput): StateQueryDependency {
-  const semanticHash = hashFramedDomain("state-query", {
-    kind: input.kind,
+  return createBuiltInQueryDependency({
+    id: input.id,
     programId: input.programId,
-    programVersion: input.programVersion,
     input: input.input,
-  });
-  return {
-    query: {
-      id: input.id,
-      kind: input.kind,
-      programId: input.programId,
-      programVersion: input.programVersion,
-      input: structuredClone(input.input),
-      semanticHash,
-    },
-    priorResult: {
-      queryHash: semanticHash,
-      resultHash: hashFramedDomain("state-query-result", input.result),
-      resultCount: input.resultCount,
-      observability: input.observability,
-      assumptions: sortedUnique(input.assumptions ?? []),
-      unavailableLanes: sortedUnique(input.unavailableLanes ?? []),
-      dependencyKeys: sortedUnique(input.dependencyKeys.length > 0 ? input.dependencyKeys : [`query:${input.id}`]),
-    },
     role: input.role,
-  };
+    observed: {
+      results: input.result,
+      observability: input.observability,
+      assumptions: input.assumptions ?? [],
+      unavailableLanes: input.unavailableLanes ?? [],
+      dependencyKeys: input.dependencyKeys.length > 0 ? input.dependencyKeys : [`query:${input.id}`],
+    },
+  });
 }
 
 function queryIdResults(ids: readonly string[], disposition?: string): Array<Record<string, unknown>> {
@@ -612,8 +596,14 @@ function normalizeSubjectResults(subjects: readonly SelectorSubject[]): Array<Re
     .sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
 }
 
-function selectorHash(rule: ImpactRule): ContentHash {
-  return hashFramedDomain("impact-rule-selector", rule.selector);
+function impactSelectorHash(rule: ImpactRule): ContentHash {
+  try {
+    return selectorHash(rule.selector);
+  } catch {
+    // An invalid selector has no canonical membership contract. Its versioned
+    // rule hash is used only to identify the unavailable, fail-closed query.
+    return rule.semanticHash;
+  }
 }
 
 const triggerFor = (eventKind: string): ImpactRule["trigger"] | undefined => {
@@ -715,6 +705,8 @@ export function createImpactClosure(input: {
 export interface RevalidatedUnit {
   unitId: EntityId;
   signature: SemanticSignature;
+  structuralSignature?: SemanticSignature;
+  inputs?: readonly DerivationInput[];
   validations?: readonly ValidationResult[];
 }
 
@@ -813,13 +805,10 @@ export class InvalidationEngine {
     const observabilityRank: Record<ObservabilityClass, number> = { closed: 0, bounded: 1, sampled: 2, open: 3, unavailable: 4 };
     queryDependencies.push(syntheticQueryDependency({
       id: `invalidation:reverse-derivation:${event.subjectId}`,
-      kind: "reverse-derivation",
-      programId: "invalidation.exact-reverse-derivation",
-      programVersion: "1",
+      programId: BUILT_IN_QUERY_PROGRAM_IDS.exactReverseDerivation,
       input: { eventKind: event.eventKind, subjectId: event.subjectId },
       role: "exact reverse derivation dependents",
       result: queryIdResults([...directlyAffected]),
-      resultCount: directlyAffected.size,
       observability: "closed",
       dependencyKeys: [`reverse-derivations:${event.subjectId}`],
     }));
@@ -878,13 +867,16 @@ export class InvalidationEngine {
           for (const [phase, subjects] of [["before", before], ["after", after]] as const) {
             queryDependencies.push(syntheticQueryDependency({
               id: `invalidation:${rule.id}:${rule.version}:selector-membership:${phase}`,
-              kind: "selector-membership",
-              programId: "invalidation.impact-rule-selector-membership",
-              programVersion: "1",
-              input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), phase },
+              programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleSelectorMembership,
+              input: {
+                eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version,
+                selectorHash: impactSelectorHash(rule), phase,
+                historicalMemberIds: phase === "before" ? sortedUnique(subjects.map(({ id }) => id)) : [],
+                observability: "closed", assumptions: [], unavailableLanes: [],
+                dependencyKeys: sortedUnique(subjects.flatMap(({ dependencyKeys }) => dependencyKeys)),
+              },
               role: "Impact Rule selector membership",
               result: normalizeSubjectResults(subjects),
-              resultCount: new Set(subjects.map(({ id }) => id)).size,
               observability: "closed",
               dependencyKeys: subjects.flatMap(({ dependencyKeys }) => dependencyKeys),
             }));
@@ -893,13 +885,15 @@ export class InvalidationEngine {
           for (const phase of ["before", "after"] as const) {
             queryDependencies.push(syntheticQueryDependency({
               id: `invalidation:${rule.id}:${rule.version}:selector-membership:${phase}`,
-              kind: "selector-membership",
-              programId: "invalidation.impact-rule-selector-membership",
-              programVersion: "1",
-              input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), phase },
+              programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleSelectorMembership,
+              input: {
+                eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version,
+                selectorHash: impactSelectorHash(rule), phase, historicalMemberIds: [], observability: "unavailable",
+                assumptions: [], unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} membership`],
+                dependencyKeys: [`impact-rule-membership:${rule.id}:${phase}`],
+              },
               role: "Impact Rule selector membership",
               result: [],
-              resultCount: 0,
               observability: "unavailable",
               unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} membership`],
               dependencyKeys: [`impact-rule-membership:${rule.id}:${phase}`],
@@ -917,26 +911,30 @@ export class InvalidationEngine {
             .map(({ id }) => id));
           queryDependencies.push(syntheticQueryDependency({
             id: `invalidation:${rule.id}:${rule.version}:applicability`,
-            kind: "impact-rule-applicability",
-            programId: "invalidation.impact-rule-applicability",
-            programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule) },
+            programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleApplicability,
+            input: {
+              eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version,
+              selectorHash: impactSelectorHash(rule), beforeMemberIds: sortedUnique(before.map(({ id }) => id)),
+              observability: "closed", assumptions: [], unavailableLanes: [],
+              dependencyKeys: sortedUnique([...before, ...after].flatMap(({ dependencyKeys }) => dependencyKeys)),
+            },
             role: "Impact Rule applicability",
             result: queryIdResults(seeds),
-            resultCount: seeds.length,
             observability: "closed",
             dependencyKeys: [...before, ...after].flatMap(({ dependencyKeys }) => dependencyKeys),
           }));
         } catch (error) {
           queryDependencies.push(syntheticQueryDependency({
             id: `invalidation:${rule.id}:${rule.version}:applicability`,
-            kind: "impact-rule-applicability",
-            programId: "invalidation.impact-rule-applicability",
-            programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule) },
+            programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleApplicability,
+            input: {
+              eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version,
+              selectorHash: impactSelectorHash(rule), beforeMemberIds: [], observability: "unavailable", assumptions: [],
+              unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} evaluation`],
+              dependencyKeys: [`impact-rule-applicability:${rule.id}`],
+            },
             role: "Impact Rule applicability",
             result: [],
-            resultCount: 0,
             observability: "unavailable",
             unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} evaluation`],
             dependencyKeys: [`impact-rule-applicability:${rule.id}`],
@@ -972,20 +970,24 @@ export class InvalidationEngine {
         try {
           const traversal = await this.impactPort.traverse(seeds, rule, event);
           const traversalResults = queryTraversalResults(traversal);
-          const traversalIds = traversalResults.map(({ id }) => String(id));
           const traversalDependencyKeys = [
             ...seeds.map((id) => `selector-member:${id}`),
             ...(traversal.dependencyKeys ?? []),
           ];
+          const traversalRebindable = traversal.possibleIds.length === 0 && traversal.unavailableIds.length === 0;
+          const traversalQueryInput = {
+            eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version,
+            selectorHash: impactSelectorHash(rule), seedIds: sortedUnique(seeds), excludedIds: sortedUnique(seeds),
+            rebindable: traversalRebindable, observability: traversal.observability,
+            assumptions: sortedUnique(traversal.assumptions ?? []), unavailableLanes: sortedUnique(traversal.unavailableLanes ?? []),
+            dependencyKeys: sortedUnique(traversalDependencyKeys),
+          };
           queryDependencies.push(syntheticQueryDependency({
             id: `invalidation:${rule.id}:${rule.version}:reverse-traversal`,
-            kind: "reverse-derivation",
-            programId: "invalidation.impact-rule-reverse-traversal",
-            programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), seedIds: sortedUnique(seeds) },
+            programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleReverseTraversal,
+            input: traversalQueryInput,
             role: "Impact Rule reverse derivation traversal",
             result: traversalResults,
-            resultCount: traversalIds.length,
             observability: traversal.observability,
             ...(traversal.assumptions === undefined ? {} : { assumptions: traversal.assumptions }),
             ...(traversal.unavailableLanes === undefined ? {} : { unavailableLanes: traversal.unavailableLanes }),
@@ -993,13 +995,10 @@ export class InvalidationEngine {
           }));
           queryDependencies.push(syntheticQueryDependency({
             id: `invalidation:${rule.id}:${rule.version}:enumeration`,
-            kind: "surface-enumeration",
-            programId: "invalidation.impact-rule-enumeration",
-            programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), seedIds: sortedUnique(seeds) },
+            programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleEnumeration,
+            input: traversalQueryInput,
             role: "Impact Rule bounded consequence enumeration",
             result: traversalResults,
-            resultCount: traversalIds.length,
             observability: traversal.observability,
             ...(traversal.assumptions === undefined ? {} : { assumptions: traversal.assumptions }),
             ...(traversal.unavailableLanes === undefined ? {} : { unavailableLanes: traversal.unavailableLanes }),
@@ -1025,33 +1024,39 @@ export class InvalidationEngine {
             setObservability(id, "unavailable", "unavailable");
             addUnavailableReason(id, `Impact Rule ${rule.id}@${rule.version} traversal unavailable`);
           });
-          for (const [id, values] of Object.entries(traversal.reasons)) values.forEach((reason) => addReason(id, reason));
+          for (const [id, values] of Object.entries(traversal.reasons)) {
+            values.forEach((reason) => traversal.unavailableIds.includes(id) ? addUnavailableReason(id, reason) : addReason(id, reason));
+          }
           if (traversal.observability === "open" || traversal.observability === "sampled") {
             seeds.forEach((id) => addReason(id, `${traversal.observability} Impact Rule traversal cannot prove closure`));
           }
         } catch (error) {
           queryDependencies.push(syntheticQueryDependency({
             id: `invalidation:${rule.id}:${rule.version}:reverse-traversal`,
-            kind: "reverse-derivation",
-            programId: "invalidation.impact-rule-reverse-traversal",
-            programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), seedIds: sortedUnique(seeds) },
+            programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleReverseTraversal,
+            input: {
+              eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version,
+              selectorHash: impactSelectorHash(rule), seedIds: sortedUnique(seeds), excludedIds: sortedUnique(seeds), rebindable: false,
+              observability: "unavailable", assumptions: [], unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} traversal`],
+              dependencyKeys: seeds.map((id) => `selector-member:${id}`),
+            },
             role: "Impact Rule reverse derivation traversal",
             result: [],
-            resultCount: 0,
             observability: "unavailable",
             unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} traversal`],
             dependencyKeys: seeds.map((id) => `selector-member:${id}`),
           }));
           queryDependencies.push(syntheticQueryDependency({
             id: `invalidation:${rule.id}:${rule.version}:enumeration`,
-            kind: "surface-enumeration",
-            programId: "invalidation.impact-rule-enumeration",
-            programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), seedIds: sortedUnique(seeds) },
+            programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleEnumeration,
+            input: {
+              eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version,
+              selectorHash: impactSelectorHash(rule), seedIds: sortedUnique(seeds), excludedIds: sortedUnique(seeds), rebindable: false,
+              observability: "unavailable", assumptions: [], unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} enumeration`],
+              dependencyKeys: seeds.map((id) => `selector-member:${id}`),
+            },
             role: "Impact Rule bounded consequence enumeration",
             result: [],
-            resultCount: 0,
             observability: "unavailable",
             unavailableLanes: [`Impact Rule ${rule.id}@${rule.version} enumeration`],
             dependencyKeys: seeds.map((id) => `selector-member:${id}`),
@@ -1082,6 +1087,7 @@ export class InvalidationEngine {
       let outputs: RevalidatedUnit[] = [];
       let priorRoundHash: ContentHash | undefined;
       let fixedPointReached = group?.cyclic !== true;
+      let completeCoverage = group?.cyclic !== true;
       for (let iteration = 0; iteration < (group?.cyclic ? maximumIterations : 1); iteration += 1) {
         try {
           outputs = normalizeRevalidatedUnits(await options.revalidate(memberIds));
@@ -1091,13 +1097,15 @@ export class InvalidationEngine {
           break;
         }
         const outputHash = hashFramedDomain("proof-group-output", [...outputs]
-          .map(({ unitId, signature, validations }) => ({ unitId, signature, validations }))
+          .map(({ unitId, signature, structuralSignature, inputs, validations }) => ({ unitId, signature, structuralSignature, inputs, validations }))
           .sort((left, right) => compareStrings(left.unitId, right.unitId)));
+        completeCoverage = outputs.length === memberIds.length
+          && memberIds.every((memberId) => outputs.some(({ unitId }) => unitId === memberId));
         const matchesEstablished = priorRecords.every((prior) => {
           const output = outputs.find(({ unitId }) => unitId === prior.unitId);
           return output !== undefined && this.assessBackdating(prior, output, event, policy).eligible;
         });
-        if (matchesEstablished || priorRoundHash === outputHash) {
+        if (completeCoverage && (matchesEstablished || priorRoundHash === outputHash)) {
           fixedPointReached = true;
           break;
         }
@@ -1111,7 +1119,20 @@ export class InvalidationEngine {
           assessment: output === undefined ? undefined : this.assessBackdating(prior, output, event, policy),
         };
       });
-      if (fixedPointReached) {
+      const hasCompleteCurrentProof = group?.cyclic !== true || (completeCoverage && priorRecords.every((prior) => {
+        const output = byUnit.get(prior.unitId);
+        if (output?.inputs === undefined || output.structuralSignature === undefined) return false;
+        const inputs = [...output.inputs];
+        const inputKey = (input: DerivationInput): string => `${input.kind}\u0000${input.id}\u0000${input.role}`;
+        if (new Set(inputs.map(inputKey)).size !== inputs.length) return false;
+        if (!prior.inputs.every((priorInput) => inputs.some((input) => inputKey(input) === inputKey(priorInput)))) return false;
+        return inputs.every((input) => {
+          if (input.id === event.subjectId) return input.versionHash === (event.newHash ?? hashFramedDomain("invalidation-event-input", event));
+          if (input.kind !== "unit" || !memberIds.includes(input.id)) return true;
+          return input.versionHash === byUnit.get(input.id)?.signature.hash;
+        });
+      }));
+      if (fixedPointReached && completeCoverage && hasCompleteCurrentProof) {
         for (const prior of priorRecords) {
           const output = byUnit.get(prior.unitId);
           const assessment = assessments.find(({ unitId }) => unitId === prior.unitId)?.assessment;
@@ -1137,13 +1158,10 @@ export class InvalidationEngine {
       const downstream = this.transitiveDependents(memberIds, new Set(memberIds));
       queryDependencies.push(syntheticQueryDependency({
         id: `invalidation:reverse-derivation:downstream:${memberIds.join(",")}`,
-        kind: "reverse-derivation",
-        programId: "invalidation.transitive-reverse-derivation",
-        programVersion: "1",
-        input: { eventKind: event.eventKind, subjectId: event.subjectId, seedIds: sortedUnique(memberIds) },
+        programId: BUILT_IN_QUERY_PROGRAM_IDS.transitiveReverseDerivation,
+        input: { eventKind: event.eventKind, subjectId: event.subjectId, seedIds: sortedUnique(memberIds), excludedIds: sortedUnique(memberIds) },
         role: "transitive reverse derivation dependents",
         result: queryIdResults(downstream),
-        resultCount: downstream.length,
         observability: "closed",
         dependencyKeys: memberIds.map((id) => `reverse-derivations:${id}`),
       }));
@@ -1164,8 +1182,10 @@ export class InvalidationEngine {
     const revalidatedRecords = [...refreshedRecords.values()].sort((left, right) => compareStrings(left.unitId, right.unitId));
     if (revalidatedRecords.length > 0) {
       const refreshedById = new Map(revalidatedRecords.map((record) => [record.unitId, record]));
-      this.derivations.replaceRecords(this.derivations.records().map((record) => refreshedById.get(record.unitId) ?? record));
-      await (options.derivationStore ?? this.derivationStore)?.replace(this.derivations.snapshot());
+      const replacementRecords = this.derivations.records().map((record) => refreshedById.get(record.unitId) ?? record);
+      const replacementIndex = new DerivationIndex(replacementRecords);
+      await (options.derivationStore ?? this.derivationStore)?.replace(replacementIndex.snapshot());
+      this.derivations.replaceRecords(replacementRecords);
     }
 
     directlyAffected.forEach((id) => {
@@ -1254,9 +1274,9 @@ export class InvalidationEngine {
 
   private refreshDerivationRecord(prior: DerivationRecord, output: RevalidatedUnit, event: InvalidationEvent): DerivationRecord {
     const changedVersionHash = event.newHash ?? hashFramedDomain("invalidation-event-input", event);
-    const inputs = prior.inputs.map((input) => input.id === event.subjectId
+    const inputs = output.inputs === undefined ? prior.inputs.map((input) => input.id === event.subjectId
       ? { ...input, versionHash: changedVersionHash }
-      : input);
+      : input) : [...output.inputs].map((input) => structuredClone(input));
     const profileDependency = event.eventKind === "signature-profile-change"
       && (prior.outputSemanticSignature.profileId === event.subjectId || prior.outputStructuralSignature.profileId === event.subjectId)
       && !inputs.some((input) => input.kind === "signature-profile" && input.id === event.subjectId);
@@ -1270,6 +1290,7 @@ export class InvalidationEngine {
       ...prior,
       inputs,
       outputSemanticSignature: structuredClone(output.signature),
+      outputStructuralSignature: structuredClone(output.structuralSignature ?? prior.outputStructuralSignature),
       validators: output.validations === undefined ? prior.validators : [...output.validations],
     });
   }

@@ -24,6 +24,7 @@ import {
   type ImpactRuleEvaluationPort,
 } from "./index.js";
 import { InMemoryGraphReader, QueryDependencyRegistry } from "../query/index.js";
+import { selectorHash as canonicalSelectorHash } from "../governance/selectors.js";
 import { DependencyScopedStateBindingValidator, createStateBinding } from "../state/index.js";
 
 const hash = (value: string): ContentHash => `sha256:v1:${value.padEnd(64, "0").slice(0, 64)}`;
@@ -453,6 +454,111 @@ describe("derivation index and exact invalidation", () => {
     expect(result.invalidation.transitivelyAffected).toEqual(["consumer"]);
     expect(result.diagnostics).toEqual([]);
   });
+
+  it("does not publish or persist a partial cyclic proof-group refresh", async () => {
+    const index = new DerivationIndex([
+      record("contract-a", [["artifact", "internal"], ["unit", "contract-b"]], "a-v1"),
+      record("contract-b", [["unit", "contract-a"]], "b-v1"),
+    ]);
+    const before = index.snapshot();
+    const stored: DerivationIndexSnapshot[] = [];
+    const result = await new InvalidationEngine({ derivations: index }).invalidate(event("internal"), {
+      maximumProofGroupIterations: 2,
+      derivationStore: { load: async () => undefined, replace: async (snapshot) => { stored.push(snapshot); } },
+      revalidate: async () => [{
+        unitId: "contract-a",
+        signature: signature("a-v2"),
+        structuralSignature: { ...signature("structure-a-v2"), scope: "ast-shape" },
+        inputs: [
+          { kind: "artifact", id: "internal", versionHash: hash("new"), role: "source" },
+          { kind: "unit", id: "contract-b", versionHash: hash("b-v2"), role: "semantic-output" },
+        ],
+      }],
+    });
+
+    expect(result.diagnostics).toContain("derivation-cycle-unresolved");
+    expect(result.revalidatedRecords).toEqual([]);
+    expect(index.snapshot()).toEqual(before);
+    expect(stored).toEqual([]);
+  });
+
+  it("atomically refreshes every cyclic member with current peer inputs and both output signatures", async () => {
+    const index = new DerivationIndex([
+      record("contract-a", [["artifact", "internal"], ["unit", "contract-b"]], "a-v1"),
+      record("contract-b", [["unit", "contract-a"]], "b-v1"),
+    ]);
+    const stored: DerivationIndexSnapshot[] = [];
+    const result = await new InvalidationEngine({ derivations: index }).invalidate(event("internal"), {
+      maximumProofGroupIterations: 2,
+      derivationStore: { load: async () => undefined, replace: async (snapshot) => { stored.push(snapshot); } },
+      revalidate: async () => [
+        {
+          unitId: "contract-a",
+          signature: signature("a-v2"),
+          structuralSignature: { ...signature("structure-a-v2"), scope: "ast-shape" },
+          inputs: [
+            { kind: "artifact", id: "internal", versionHash: hash("new"), role: "source" },
+            { kind: "unit", id: "contract-b", versionHash: hash("b-v2"), role: "semantic-output" },
+          ],
+        },
+        {
+          unitId: "contract-b",
+          signature: signature("b-v2"),
+          structuralSignature: { ...signature("structure-b-v2"), scope: "ast-shape" },
+          inputs: [{ kind: "unit", id: "contract-a", versionHash: hash("a-v2"), role: "semantic-output" }],
+        },
+      ],
+    });
+
+    expect(result.revalidatedRecords).toHaveLength(2);
+    expect(result.revalidatedRecords.find(({ unitId }) => unitId === "contract-a")).toMatchObject({
+      outputSemanticSignature: { hash: hash("a-v2") },
+      outputStructuralSignature: { hash: hash("structure-a-v2") },
+      inputs: expect.arrayContaining([
+        expect.objectContaining({ id: "contract-b", versionHash: hash("b-v2") }),
+        expect.objectContaining({ id: "internal", versionHash: hash("new") }),
+      ]),
+    });
+    expect(result.revalidatedRecords.find(({ unitId }) => unitId === "contract-b")).toMatchObject({
+      outputSemanticSignature: { hash: hash("b-v2") },
+      outputStructuralSignature: { hash: hash("structure-b-v2") },
+      inputs: [expect.objectContaining({ id: "contract-a", versionHash: hash("a-v2") })],
+    });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toEqual(index.snapshot());
+  });
+
+  it("refuses cyclic persistence when a claimed current peer input disagrees with the peer output", async () => {
+    const index = new DerivationIndex([
+      record("contract-a", [["artifact", "internal"], ["unit", "contract-b"]], "a-v1"),
+      record("contract-b", [["unit", "contract-a"]], "b-v1"),
+    ]);
+    const before = index.snapshot();
+    const stored: DerivationIndexSnapshot[] = [];
+    const result = await new InvalidationEngine({ derivations: index }).invalidate(event("internal"), {
+      maximumProofGroupIterations: 2,
+      derivationStore: { load: async () => undefined, replace: async (snapshot) => { stored.push(snapshot); } },
+      revalidate: async () => [
+        {
+          unitId: "contract-a", signature: signature("a-v2"),
+          structuralSignature: { ...signature("structure-a-v2"), scope: "ast-shape" },
+          inputs: [
+            { kind: "artifact", id: "internal", versionHash: hash("new"), role: "source" },
+            { kind: "unit", id: "contract-b", versionHash: hash("stale-b"), role: "semantic-output" },
+          ],
+        },
+        {
+          unitId: "contract-b", signature: signature("b-v2"),
+          structuralSignature: { ...signature("structure-b-v2"), scope: "ast-shape" },
+          inputs: [{ kind: "unit", id: "contract-a", versionHash: hash("a-v2"), role: "semantic-output" }],
+        },
+      ],
+    });
+
+    expect(result.revalidatedRecords).toEqual([]);
+    expect(index.snapshot()).toEqual(before);
+    expect(stored).toEqual([]);
+  });
 });
 
 describe("Impact Rules, selector membership, closure provenance, and oracles", () => {
@@ -515,6 +621,93 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     expect(result.impactClosure?.stateBinding.queryDependencies.some(({ priorResult }) => priorResult.dependencyKeys.includes("membership:before"))).toBe(true);
     const registry = new QueryDependencyRegistry(new InMemoryGraphReader());
     result.impactClosure?.stateBinding.queryDependencies.forEach(({ query }) => expect(() => registry.assertCurrent(query)).not.toThrow());
+  });
+
+  it("rebinds a GraphReader-reproducible Impact Rule closure and stales only on a semantic query change", async () => {
+    const rule = publicRule();
+    const selectorHash = canonicalSelectorHash(rule.selector);
+    const port: ImpactRuleEvaluationPort = {
+      subjects: async (_rule, phase) => phase === "before"
+        ? [{ id: "before-export", values: { tag: ["public"] }, dependencyKeys: ["membership:before"] }]
+        : [{ id: "after-export", values: { tag: ["public"] }, dependencyKeys: ["membership:after"] }],
+      traverse: async () => ({
+        knownIds: ["docs"], possibleIds: [], unavailableIds: [], observability: "closed", reasons: {},
+      }),
+    };
+    const originalState = event("selector:public").stateDigest;
+    const result = await new InvalidationEngine({
+      derivations: new DerivationIndex(), impactRules: new ImpactRuleRegistry([rule]), impactPort: port,
+    }).invalidate(event("selector:public", "membership-change"), {
+      stateBinding: createStateBinding({ compiledAgainst: originalState, valueDependencies: [], queryDependencies: [] }),
+      revalidate: async () => [],
+    });
+    const graph = new InMemoryGraphReader({
+      selectorMemberships: [{ selectorHash, memberIds: ["after-export"] }],
+      reverseDerivations: [
+        { subjectId: "before-export", dependentIds: ["docs"] },
+        { subjectId: "after-export", dependentIds: ["docs"] },
+      ],
+    });
+    const registry = new QueryDependencyRegistry(graph);
+    const validator = new DependencyScopedStateBindingValidator({
+      values: { readVersionHash: async () => undefined }, queries: registry,
+    });
+    const nextState = { ...originalState, worktreeDigest: hash("unrelated") };
+    const context: AdapterContext = { repositoryRoot: "/repo", stateDigest: nextState, config: {}, signal: new AbortController().signal };
+
+    await expect(validator.validate(result.impactClosure!.stateBinding, nextState, context)).resolves.toMatchObject({
+      status: "rebound", changedQueryDependencyIds: [],
+    });
+    expect(result.impactClosure!.stateBinding.queryDependencies
+      .filter(({ query }) => query.kind === "selector-membership")
+      .every(({ query }) => query.input.selectorHash === selectorHash)).toBe(true);
+
+    graph.replace({
+      selectorMemberships: [{ selectorHash, memberIds: ["after-export"] }],
+      reverseDerivations: [
+        { subjectId: "before-export", dependentIds: ["docs", "new-consumer"] },
+        { subjectId: "after-export", dependentIds: ["docs", "new-consumer"] },
+      ],
+    });
+    await expect(validator.validate(result.impactClosure!.stateBinding, nextState, context)).resolves.toMatchObject({ status: "stale" });
+  });
+
+  it("fails closed with an explicit non-rebindable contract for port-only traversal semantics", async () => {
+    const rule = publicRule();
+    const port: ImpactRuleEvaluationPort = {
+      subjects: async () => [{ id: "export", values: { tag: ["public"] }, dependencyKeys: ["membership:export"] }],
+      traverse: async () => ({
+        knownIds: ["docs"], possibleIds: ["unknown-consumer"], unavailableIds: ["remote-consumer"],
+        observability: "bounded", assumptions: ["registry snapshot pinned"], unavailableLanes: ["remote registry"],
+        dependencyKeys: ["adapter:registry@1"], reasons: {},
+      }),
+    };
+    const originalState = event("selector:public").stateDigest;
+    const result = await new InvalidationEngine({
+      derivations: new DerivationIndex(), impactRules: new ImpactRuleRegistry([rule]), impactPort: port,
+    }).invalidate(event("selector:public", "membership-change"), {
+      stateBinding: createStateBinding({ compiledAgainst: originalState, valueDependencies: [], queryDependencies: [] }),
+      revalidate: async () => [],
+    });
+    const nextState = { ...originalState, worktreeDigest: hash("unrelated") };
+    const registry = new QueryDependencyRegistry(new InMemoryGraphReader({
+      selectorMemberships: [{ selectorHash: canonicalSelectorHash(rule.selector), memberIds: ["export"] }],
+    }));
+    const validator = new DependencyScopedStateBindingValidator({ values: { readVersionHash: async () => undefined }, queries: registry });
+    const context: AdapterContext = { repositoryRoot: "/repo", stateDigest: nextState, config: {}, signal: new AbortController().signal };
+    const validation = await validator.validate(result.impactClosure!.stateBinding, nextState, context);
+
+    expect(validation.status).toBe("unavailable");
+    expect(validation.reasons.some((reason) => reason.includes("non-rebindable"))).toBe(true);
+    const traversal = result.impactClosure!.stateBinding.queryDependencies
+      .find(({ query }) => query.kind === "reverse-derivation" && query.id.includes("reverse-traversal"));
+    expect(traversal?.priorResult).toMatchObject({
+      resultCount: 3,
+      observability: "bounded",
+      assumptions: ["registry snapshot pinned"],
+      unavailableLanes: ["remote registry"],
+      dependencyKeys: expect.arrayContaining(["adapter:registry@1"]),
+    });
   });
 
   it("emits query dependencies that the public registry can evaluate immediately", async () => {
@@ -848,5 +1041,27 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     ]));
     const known = result.impactClosure?.entries.find(({ unitId, disposition }) => unitId === "export" && disposition === "known");
     expect(known?.reasons.some((reason) => reason.includes("reverse index unavailable"))).toBe(false);
+  });
+
+  it("keeps successful traversal unavailable reasons off an independent exact-known entry", async () => {
+    const port: ImpactRuleEvaluationPort = {
+      subjects: async () => [{ id: "export", values: { tag: ["public"] }, dependencyKeys: ["unit:export"] }],
+      traverse: async () => ({
+        knownIds: [], possibleIds: [], unavailableIds: ["export"], observability: "bounded",
+        reasons: { export: ["external reverse lane unavailable"] },
+      }),
+    };
+    const result = await new InvalidationEngine({
+      derivations: new DerivationIndex([record("export", [["artifact", "selector:public"]])]),
+      impactRules: new ImpactRuleRegistry([publicRule()]), impactPort: port,
+    }).invalidate(event("selector:public", "membership-change"), {
+      stateBinding: createStateBinding({ compiledAgainst: event("selector:public").stateDigest, valueDependencies: [], queryDependencies: [] }),
+      revalidate: async () => [],
+    });
+
+    const known = result.impactClosure?.entries.find(({ unitId, disposition }) => unitId === "export" && disposition === "known");
+    const unavailable = result.impactClosure?.entries.find(({ unitId, disposition }) => unitId === "export" && disposition === "unavailable");
+    expect(known?.reasons).not.toContain("external reverse lane unavailable");
+    expect(unavailable?.reasons).toContain("external reverse lane unavailable");
   });
 });
