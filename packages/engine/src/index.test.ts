@@ -8,6 +8,8 @@ import {
   QueryDependencyRegistry,
   compileProjectionLenses,
   compileAuthenticatedCoverageSnapshot,
+  compileSemanticChange,
+  compileSemanticChangePlan,
   createExecutionCapsule,
   createStateBinding,
   evaluateSelector,
@@ -25,6 +27,8 @@ describe("engine public entrypoint", () => {
     expect(evaluateSelector).toBeTypeOf("function");
     expect(compileProjectionLenses).toBeTypeOf("function");
     expect(compileAuthenticatedCoverageSnapshot).toBeTypeOf("function");
+    expect(compileSemanticChange).toBeTypeOf("function");
+    expect(compileSemanticChangePlan).toBeTypeOf("function");
     expect(createExecutionCapsule).toBeTypeOf("function");
     expect(StateBoundChangeExecutor).toBeTypeOf("function");
     expect(reconcileToFixedPoint).toBeTypeOf("function");
