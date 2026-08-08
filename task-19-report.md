@@ -27,3 +27,17 @@ Frozen repository gate passed:
 - `pnpm check:boundaries` and `git diff --check`.
 
 No live model, paid host, external adapter, or repository-code execution was used. Journal internals and Task 20 publication scope were not reopened.
+
+## Targeted independent closure — FAIL (`f824a81..86e0c61`)
+
+Focused operations/benchmark/policy tests pass (18/18), runtime/testkit/CLI typechecks pass, dogfood/spec lint passes, and the repaired redaction, report validation, cross-store JSONL sequencing, held-out/oracle fail-closure, cancellation, and telemetry-symlink probes close their recorded cases. Two material blockers remain:
+
+1. Built non-mutating policy still writes repository state. On a temporary committed repository with `.projector/state.db` containing `SENTINEL`, `projector verify --clean --dry-run --format json` replaced it with rebuilt JSON and created `.projector/telemetry/runs.jsonl`; `projector ci --dry-run` likewise created telemetry. This contradicts the normalized `ExecutionPolicy.allowAutoMutation=false` boundary and Observe's specified “No repository/canonical mutation” semantics. Consequence: inspection/dry-run can delete or persist governed state despite explicit refusal of mutation.
+2. The repaired watch event budget has no supported built path or durable continuation. `projector watch --budget-tokens 1 --format json` exits 1 with “coverage scope, strictness, and budgets are only valid with coverage, complete, or cleanup”; internally the lifecycle result is only ephemeral and watch telemetry/checkpoint persistence is unconditionally skipped. This contradicts the Task 19 requirement that watch resume from durable budget/checkpoint state and the built-path requirement to validate budgets, and prevents the specified authenticated exit 7/resume workflow.
+
+## Final narrow closure
+
+- `ci --dry-run`, `verify --clean --dry-run`, and Observe now suppress every operational repository/derived/telemetry write; an existing `state.db` remains byte-identical.
+- Built watch accepts token/cost budgets and `watch:default`. Exit 7 is emitted only after an authenticated, atomically stored root-confined checkpoint exists. Pending events and cumulative sequence resume from that checkpoint; successful cancellation clears it after each queued event effect has run exactly once.
+
+Closure-focused result: 12/12 runtime/CLI assertions passed, including the built budget/resume path; runtime and CLI typechecks plus diff check passed. Final frozen gate passed with 71 files / 640 tests, every workspace build/typecheck, both boundary checks, and diff check.
