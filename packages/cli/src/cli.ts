@@ -35,6 +35,7 @@ Usage: projector <command> [options]
 Commands:
   init                  Initialize local Projector derived state
   audit                 Analyze governed state; add --decisions for architecture decisions
+  change <intent>       Compile a supported local semantic change
   plan                  Preview a state-bound deterministic repair
   apply                 Apply the approved R1 repair once
   reconcile             Apply and reconcile the repair to a fixed point
@@ -66,6 +67,14 @@ export interface ProjectorCommandOptions {
   };
   readonly architecture?: ArchitectureCliPort;
   readonly coverage?: CoverageCliPort;
+  readonly change?: ChangeCliPort;
+}
+
+export interface ChangeCliRequest { readonly repositoryRoot: string; readonly selector: string }
+export interface ChangeCliPort {
+  readonly change: (request: { readonly repositoryRoot: string; readonly intent: string }) => Promise<Record<string, unknown>>;
+  readonly plan: (request: ChangeCliRequest) => Promise<Record<string, unknown>>;
+  readonly apply: (request: ChangeCliRequest) => Promise<Record<string, unknown>>;
 }
 
 export type CoverageStrictness = "proven" | "bounded" | "high-confidence" | "partial";
@@ -109,6 +118,7 @@ interface ParsedCommand {
   readonly policy: CliPolicyInput;
   readonly decisions: boolean;
   readonly coverageRequest: CoverageCliRequest;
+  readonly selector?: string;
 }
 
 function optionValue(arguments_: readonly string[], name: string): string | undefined {
@@ -149,13 +159,13 @@ function validateArguments(arguments_: readonly string[], command: SliceCommand)
       seen.add(argument); continue;
     }
     if (argument.startsWith("-")) throw new Error(`unknown flag: ${argument}`);
-    if (command !== "explain" || index !== 1) throw new Error(`unknown argument: ${argument}`);
+    if ((command !== "explain" && command !== "change" && command !== "plan" && command !== "apply") || index !== 1) throw new Error(`unknown argument: ${argument}`);
   }
 }
 
 function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const command = arguments_[0];
-  if (command !== "init" && command !== "audit" && command !== "plan" && command !== "apply"
+  if (command !== "init" && command !== "audit" && command !== "change" && command !== "plan" && command !== "apply"
     && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
@@ -171,6 +181,9 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     ? arguments_[1]
     : undefined;
   if (command === "explain" && target === undefined) throw new Error("explain requires a target");
+  const positional = (command === "change" || command === "plan" || command === "apply") && arguments_[1] !== undefined && !arguments_[1].startsWith("-") ? arguments_[1] : undefined;
+  if (command === "change" && positional === undefined) throw new Error("change requires an intent selector");
+  if (positional !== undefined && !/^[a-z0-9][a-z0-9._:-]*$/iu.test(positional)) throw new Error("change/plan/apply selector must be a safe repository-local identity");
   const decisions = arguments_.includes("--decisions");
   if (decisions && command !== "audit") throw new Error("--decisions is only valid with audit");
   const coverageCommand = command === "coverage" || command === "complete" || command === "cleanup";
@@ -197,6 +210,7 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
       ...(budgetCost === undefined ? {} : { budgetCost }),
       ...(continuationSelector === undefined ? {} : { continuationSelector: continuationSelector.trim() }),
     },
+    ...(positional === undefined ? {} : { selector: positional }),
     policy: {
       command,
       ...(modeValue === undefined ? {} : { mode: modeValue }),
@@ -218,6 +232,7 @@ function outputFor(command: SliceCommand, report: unknown, format: "text" | "jso
     return count === 0 ? "No governed divergences found." : `${count} governed divergences found.`;
   }
   if (command === "plan") return (report as { preview: { expectedDiff: string } }).preview.expectedDiff;
+  if (command === "change") return `change: ${(report as { selector: string }).selector}`;
   if (command === "explain") return (report as { explanation: string }).explanation;
   if (command === "coverage" || command === "complete" || command === "cleanup") return `${command}: ${(report as CoverageCliReport).proofStatement}`;
   return `${command} completed.`;
@@ -303,12 +318,22 @@ export async function executeProjector(
       exitCode = analysis.divergences.length === 0 ? 0 : 2;
       break;
     }
+    case "change": {
+      const port = options.change ?? defaultChangePort(repositoryRoot);
+      report = { policy, ...await port.change({ repositoryRoot, intent: parsed.selector! }) };
+      break;
+    }
     case "plan": {
       if (options.architecture?.preflight !== undefined) {
         if (options.architecture.preflightPorts === undefined) return { exitCode: 3, output: "architecture preflight proof ports are unavailable", report: { policy, blocked: true } };
         const providerInput = await options.architecture.preflight();
         const architecturePreflight = await runArchitecturePreflight({ ...providerInput, mode: policy.preset, risk: operationRisk }, options.architecture.preflightPorts);
         if (!architecturePreflight.planningAllowed) return { exitCode: 3, output: architecturePreflight.reasons.join("\n"), report: { policy, architecturePreflight, blocked: true } };
+      }
+      if (parsed.selector !== undefined) {
+        const port = options.change ?? defaultChangePort(repositoryRoot);
+        report = { policy, ...await port.plan({ repositoryRoot, selector: parsed.selector }) };
+        break;
       }
       const prepared = await prepareMandatorySlice(repositoryRoot);
       report = {
@@ -323,8 +348,18 @@ export async function executeProjector(
       break;
     }
     case "apply": {
+      if (parsed.selector !== undefined && !policy.allowAutoMutation) {
+        report = { policy, dryRun: true, selector: parsed.selector };
+        break;
+      }
       if (!policy.allowAutoMutation || policy.maximumAutomaticRisk === "R0") {
         return { exitCode: 3, output: "R1 approval required.", report: { policy, approvalRequired: true } };
+      }
+      if (parsed.selector !== undefined) {
+        const port = options.change ?? defaultChangePort(repositoryRoot);
+        report = { policy, ...await port.apply({ repositoryRoot, selector: parsed.selector }) };
+        exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
+        break;
       }
       const prepared = await prepareMandatorySlice(repositoryRoot);
       assertOperationRiskAuthorized(policy, prepared.risk.class);
@@ -391,6 +426,33 @@ export async function executeProjector(
     }
   }
   return { exitCode, output: outputFor(parsed.command, report, parsed.format), report };
+}
+
+function defaultChangePort(repositoryRoot: string): ChangeCliPort {
+  const requireChangeSelector = (selector: string): void => {
+    if (selector !== "change:mandatory-slice") throw new Error(`unsupported or unauthenticated change selector: ${selector}`);
+  };
+  const requirePlanSelector = (selector: string): void => {
+    if (selector !== "plan:mandatory-slice") throw new Error(`unsupported or unauthenticated plan selector: ${selector}`);
+  };
+  return {
+    change: async ({ intent }) => {
+      if (intent !== "repair-governed-state") throw new Error(`unsupported deterministic local change intent: ${intent}`);
+      const analysis = await analyzeMandatorySlice(repositoryRoot);
+      return { kind: "change", selector: "change:mandatory-slice", intent, deterministic: true, analysis, risk: "R1" };
+    },
+    plan: async ({ selector }) => {
+      requireChangeSelector(selector);
+      const prepared = await prepareMandatorySlice(repositoryRoot);
+      return { kind: "plan", selector: "plan:mandatory-slice", changeSelector: selector, ...prepared };
+    },
+    apply: async ({ selector }) => {
+      requirePlanSelector(selector);
+      const prepared = await prepareMandatorySlice(repositoryRoot);
+      const result = await applyMandatorySlice(repositoryRoot, prepared);
+      return { kind: "apply", selector, risk: prepared.risk, plan: prepared.plan, capsule: prepared.capsule, preview: prepared.preview, ...result };
+    },
+  };
 }
 
 function defaultCoveragePort(repositoryRoot: string): CoverageCliPort {

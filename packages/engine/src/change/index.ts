@@ -19,6 +19,8 @@ import {
   type ValidationResult,
 } from "@projector/core";
 
+export * from "./compiler.js";
+
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
 
