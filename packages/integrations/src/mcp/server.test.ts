@@ -39,11 +39,16 @@ describe("MCP transport and durable mutation capabilities", () => {
     const issued = await service.issue(grant); const mutate = vi.fn(async () => ({ ok: true, apiToken: "must-not-leak" }));
     const server = createProjectorMcpServer({ capability: service, read: { "projector.query": async () => ({ units: ["Authorization: Bearer live-secret", "password=hunter2"], secret: "drop" }) }, controlled: { "projector.write": { operation: "write-file", risk: "R1", targets: () => ({ semanticScopes: ["unit:api"], writePaths: ["src/a.ts"] }), run: mutate } } });
     const listed = await server.transport.handle({ jsonrpc: "2.0", id: 1, method: "tools/list" });
-    expect(listed).toMatchObject({ result: { tools: [{ name: "projector.query" }, { name: "projector.write" }] } });
+    expect(listed).toMatchObject({ result: { tools: [
+      { name: "projector.query", description: expect.stringMatching(/authenticated/iu), inputSchema: { type: "object", additionalProperties: true } },
+      { name: "projector.write", description: expect.stringMatching(/single-use/iu), inputSchema: { type: "object", required: ["capabilityToken"], properties: { capabilityToken: { type: "string" } } } },
+    ] } });
     const read = await server.transport.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.query", arguments: {} } });
-    expect(JSON.stringify(read)).not.toMatch(/secret|drop|hunter|Bearer/iu); expect(mutate).not.toHaveBeenCalled();
+    expect(JSON.stringify(read)).not.toMatch(/secret|drop|hunter|Bearer/iu);
+    expect(read).toMatchObject({ result: { content: [{ type: "text", text: expect.any(String) }], structuredContent: { units: ["[REDACTED]", "[REDACTED]"] }, isError: false } });
+    expect(mutate).not.toHaveBeenCalled();
     const written = await server.transport.handle({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "projector.write", arguments: { capabilityToken: issued.token, value: "x" } } });
-    expect(written).toMatchObject({ result: { content: [{ type: "json", value: { ok: true } }] } }); expect(mutate).toHaveBeenCalledOnce();
+    expect(written).toMatchObject({ result: { content: [{ type: "text", text: "{\"ok\":true}" }], structuredContent: { ok: true }, isError: false } }); expect(mutate).toHaveBeenCalledOnce();
     const replay = await server.transport.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.write", arguments: { capabilityToken: issued.token } } });
     expect(replay).toHaveProperty("error"); expect(mutate).toHaveBeenCalledOnce();
   });

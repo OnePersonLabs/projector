@@ -75,6 +75,21 @@ function parseTracked(output: string): Map<string, string> {
   return result;
 }
 
+function parseIntroductionHistory(output: string): Map<string, string> {
+  const introductions = new Map<string, string>();
+  for (const segment of output.split("\x1e").slice(1)) {
+    const separator = segment.indexOf("\0");
+    if (separator < 1) continue;
+    const commit = segment.slice(0, separator);
+    if (!/^[0-9a-f]+$/u.test(commit)) continue;
+    let names = segment.slice(separator + 1);
+    if (names.startsWith("\0\n")) names = names.slice(2);
+    else if (names.startsWith("\n")) names = names.slice(1);
+    for (const path of names.split("\0").filter(Boolean)) introductions.set(path, commit);
+  }
+  return introductions;
+}
+
 function parseMoves(output: string): GitMoveFact[] {
   const records = output.split("\0");
   const moves: GitMoveFact[] = [];
@@ -161,12 +176,43 @@ export async function collectGitFacts(repositoryRoot: string, paths: readonly st
     const trackedOutput = (commandResults[1] as PromiseFulfilledResult<string>).value;
     const statusOutput = (commandResults[2] as PromiseFulfilledResult<string>).value;
     const tracked = parseTracked(trackedOutput);
+    let introductionHistory: Map<string, string>;
+    try {
+      introductionHistory = parseIntroductionHistory(await safeGit(repositoryRoot, ["log", "--no-ext-diff", "--diff-filter=A", "--format=%x1e%H%x00", "--name-only", "-z", "--"]));
+    } catch (error) {
+      const identities = paths.map((path): GitIdentityFact => {
+        const objectId = tracked.get(path);
+        return objectId === undefined
+          ? { sourceClass: "derived", path, tracked: false, availability: "available", introductionHistory: "not-applicable" }
+          : { sourceClass: "derived", path, tracked: true, availability: "available", introductionHistory: "unavailable", objectId };
+      });
+      const failures = identities.filter(({ tracked: isTracked }) => isTracked === true).map(({ path }): AnalyzerFailure => ({
+        analyzerId: "projector.git-local",
+        capability: "introduction-history",
+        scope: path,
+        message: error instanceof Error ? error.message : String(error),
+        recoverable: true,
+        affectedClaimKinds: ["git-introduction-commit"],
+      }));
+      const explicitMoves = parseMoves(statusOutput);
+      const inferredMoves = await inferUnstagedMoves(repositoryRoot, statusOutput);
+      return {
+        availability: "available",
+        revision: revisionOutput.trim(),
+        identities: identities.sort((left, right) => compareCodePoint(left.path, right.path)),
+        moves: [...explicitMoves, ...inferredMoves]
+          .filter((move, index, moves) => moves.findIndex((candidate) => candidate.fromPath === move.fromPath && candidate.toPath === move.toPath) === index)
+          .sort((left, right) => compareCodePoint(left.fromPath, right.fromPath) || compareCodePoint(left.toPath, right.toPath)),
+        failures: failures.sort((left, right) => compareCodePoint(left.scope, right.scope)),
+      };
+    }
     const identityResults = await Promise.all(paths.map(async (path): Promise<{ identity: GitIdentityFact; failure?: AnalyzerFailure }> => {
       const objectId = tracked.get(path);
       if (objectId === undefined) {
         return { identity: { sourceClass: "derived", path, tracked: false, availability: "available", introductionHistory: "not-applicable" } };
       }
-      let introductionCommit: string | undefined;
+      let introductionCommit = introductionHistory.get(path);
+      if (introductionCommit !== undefined) return { identity: { sourceClass: "derived", path, tracked: true, availability: "available", introductionHistory: "available", objectId, introductionCommit } };
       try {
         const history = await safeGit(repositoryRoot, ["log", "--no-ext-diff", "--follow", "--diff-filter=A", "--format=%H", "--", path]);
         introductionCommit = history.trim().split("\n").filter(Boolean).at(-1);

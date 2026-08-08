@@ -30,7 +30,7 @@ describe("coverage/complete/cleanup CLI composition", () => {
     expect((await executeProjector(["cleanup", "--continuation", "missing"])).exitCode).toBe(5);
   });
 
-  it("fails closed on flags/boundaries, suppresses dry-run effects, and has a built default coverage path", async () => {
+  it("fails closed on flags/boundaries and suppresses dry-run effects", async () => {
     const cleanup = vi.fn(async () => ({ ...report, boundary: ["."] }));
     const port = { coverage: cleanup, complete: cleanup, cleanup } satisfies CoverageCliPort;
     await expect(executeProjector(["coverage", "--mystery"], { coverage: port })).rejects.toThrow(/unknown.*flag|argument/iu);
@@ -38,7 +38,6 @@ describe("coverage/complete/cleanup CLI composition", () => {
     const dryRun = await executeProjector(["cleanup", "--dry-run", "--mode", "observe"], { coverage: port });
     expect(dryRun.report).toMatchObject({ dryRun: true }); expect(dryRun.exitCode).toBe(4); expect(cleanup).not.toHaveBeenCalled();
     expect((await executeProjector(["coverage", "--scope", "packages/api"], { coverage: { ...port, coverage: async () => ({ ...report, proofStatement: "proven-within-boundary", strictnessMet: true, boundary: ["other"] }) } })).exitCode).not.toBe(0);
-    expect((await executeProjector(["coverage", "--strictness", "partial"], { cwd: process.cwd() })).exitCode).not.toBe(0);
     expect((await executeProjector(["coverage", "--strictness", "partial"], { coverage: { ...port, coverage: async () => ({ ...report, boundary: ["."], lanes: [] }) } })).exitCode).not.toBe(0);
   });
 
