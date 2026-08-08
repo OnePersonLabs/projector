@@ -13,6 +13,7 @@ import {
   InMemoryGraphReader,
   QueryDependencyRegistry,
   UnknownQueryProgramError,
+  createIdentityBoundaryQueryPrograms,
   createTopologyQueryBindingPort,
   createTopologyRelevanceQueryPrograms,
 } from "./index.js";
@@ -127,6 +128,52 @@ describe("registered topology query contract", () => {
 });
 
 describe("registered query dependencies", () => {
+  it("replays each identity boundary lane through its authoritative lane evaluator", async () => {
+    const laneState = new Map<string, string[]>([
+      ["exact", ["exact-a"]],
+      ["alias", ["alias-a"]],
+      ["lineage", ["lineage-a"]],
+      ["tombstone", ["tombstone-a"]],
+      ["relations", ["relation-a"]],
+      ["topology", ["topology-a"]],
+    ]);
+    const registry = new QueryDependencyRegistry(new InMemoryGraphReader(), false);
+    for (const program of createIdentityBoundaryQueryPrograms({
+      inspect: (lane) => ({
+        results: (laneState.get(lane) ?? []).map((id) => ({ id, lane })),
+        observability: "closed",
+        assumptions: [],
+        unavailableLanes: [],
+        dependencyKeys: [`identity-boundary:${lane}`],
+      }),
+    })) registry.register(program);
+
+    for (const lane of ["exact", "alias", "lineage", "tombstone", "relations", "topology"] as const) {
+      const programId = `identity.${lane === "exact" ? "exact-search" : lane === "alias" ? "alias-search" : lane}`;
+      const query = registry.createSpec({
+        id: `identity-${lane}`,
+        programId,
+        input: { requestedMeaning: "wireless MIDI", requestedKind: "concept" },
+      });
+      const before = await registry.evaluate(query, context);
+      laneState.set(lane, [`${lane}-b`]);
+      const after = await registry.evaluate(query, context);
+
+      expect(after.resultHash, `${lane} must observe its own lane`).not.toBe(before.resultHash);
+      expect(after.dependencyKeys).toEqual([`identity-boundary:${lane}`]);
+    }
+  });
+
+  it("does not ship six identity boundary names backed by the generic graph text search", () => {
+    const registry = new QueryDependencyRegistry(new InMemoryGraphReader());
+
+    expect(() => registry.createSpec({
+      id: "dishonest-lineage",
+      programId: "identity.lineage",
+      input: { requestedMeaning: "wireless MIDI", requestedKind: "concept" },
+    })).toThrow(UnknownQueryProgramError);
+  });
+
   it("normalizes result ordering and dependency keys before fingerprinting", async () => {
     const graph = new InMemoryGraphReader();
     const registry = new QueryDependencyRegistry(graph);

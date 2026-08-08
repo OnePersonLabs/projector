@@ -325,12 +325,6 @@ function idResults(ids: readonly string[], disposition?: string): QueryResult[] 
 }
 
 export const BUILT_IN_QUERY_PROGRAM_IDS = Object.freeze({
-  identityExactSearch: "identity.exact-search",
-  identityAliasSearch: "identity.alias-search",
-  identityLineage: "identity.lineage",
-  identityTombstone: "identity.tombstone",
-  identityRelations: "identity.relations",
-  identityTopology: "identity.topology",
   eventTopologyRelevance: "projector.topology.event-relevance",
   contractTopologyRelevance: "projector.topology.contract-relevance",
   exactReverseDerivation: "invalidation.exact-reverse-derivation",
@@ -339,6 +333,16 @@ export const BUILT_IN_QUERY_PROGRAM_IDS = Object.freeze({
   impactRuleApplicability: "invalidation.impact-rule-applicability",
   impactRuleReverseTraversal: "invalidation.impact-rule-reverse-traversal",
   impactRuleEnumeration: "invalidation.impact-rule-enumeration",
+} as const);
+
+/** Canonical IDs for host-registered identity boundary programs; these are deliberately not generic built-ins. */
+export const IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS = Object.freeze({
+  exact: "identity.exact-search",
+  alias: "identity.alias-search",
+  lineage: "identity.lineage",
+  tombstone: "identity.tombstone",
+  relations: "identity.relations",
+  topology: "identity.topology",
 } as const);
 
 export interface TopologyRelevanceQueryStatePort {
@@ -356,27 +360,46 @@ export function createTopologyRelevanceQueryPrograms(port: TopologyRelevanceQuer
   return [create("event"), create("contract")];
 }
 
-function identityBoundaryProgram(id: string, kind: StateQueryKind): RegisteredQueryProgram {
-  const normalize = (input: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+export type IdentityBoundaryLane = "exact" | "alias" | "lineage" | "tombstone" | "relations" | "topology";
+
+export interface IdentityBoundaryQueryStatePort {
+  inspect(
+    lane: IdentityBoundaryLane,
+    input: { requestedMeaning: string; requestedKind: "concept" | "requirement" | "scenario" | "unknown" },
+    context: AdapterContext,
+  ): QueryProgramResult | Promise<QueryProgramResult>;
+}
+
+const identityBoundaryDefinitions = [
+  ["exact", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.exact, "semantic-identity-search"],
+  ["alias", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.alias, "semantic-identity-search"],
+  ["lineage", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.lineage, "custom"],
+  ["tombstone", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.tombstone, "custom"],
+  ["relations", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.relations, "relation-neighborhood"],
+  ["topology", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.topology, "custom"],
+] as const satisfies readonly [IdentityBoundaryLane, string, StateQueryKind][];
+
+/**
+ * Registers host-authoritative identity lanes. GraphReader cannot truthfully replay
+ * aliases, lineage, tombstones, relations, and topology through one text search,
+ * so none of these programs are installed as generic graph built-ins.
+ */
+export function createIdentityBoundaryQueryPrograms(port: IdentityBoundaryQueryStatePort): RegisteredQueryProgram[] {
+  const normalize = (input: Readonly<Record<string, unknown>>) => {
     const requestedMeaning = requireString(input, "requestedMeaning").normalize("NFKC").trim();
     const requestedKind = requireString(input, "requestedKind");
     if (!["concept", "requirement", "scenario", "unknown"].includes(requestedKind)) {
       throw new InvalidQuerySpecError("identity requestedKind is invalid");
     }
-    return { requestedMeaning, requestedKind };
+    return { requestedMeaning, requestedKind: requestedKind as "concept" | "requirement" | "scenario" | "unknown" };
   };
-  return {
-    id, version: "1", kind, normalizeInput: normalize,
-    evaluate: ({ input, graph }) => {
-      const normalized = normalize(input);
-      const requestedKind = normalized.requestedKind as string;
-      const kinds = requestedKind === "unknown" ? undefined : [requestedKind as SemanticIdentityKind];
-      return {
-        results: graph.searchSemanticIdentities(normalized.requestedMeaning as string, kinds).map((resultId) => ({ id: resultId })),
-        observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: [`${id}:${requestedKind}`],
-      };
-    },
-  };
+  return identityBoundaryDefinitions.map(([lane, id, kind]) => ({
+    id,
+    version: "2",
+    kind,
+    normalizeInput: normalize,
+    evaluate: ({ input, context }) => port.inspect(lane, normalize(input), context),
+  }));
 }
 
 function impactTraversalProgram(
@@ -406,12 +429,6 @@ function impactTraversalProgram(
 
 function builtInPrograms(): RegisteredQueryProgram[] {
   return [
-    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityExactSearch, "semantic-identity-search"),
-    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityAliasSearch, "semantic-identity-search"),
-    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityLineage, "custom"),
-    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityTombstone, "custom"),
-    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityRelations, "relation-neighborhood"),
-    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityTopology, "event-topology"),
     {
       id: "graph.semantic-identity-search",
       version: "1",

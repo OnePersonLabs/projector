@@ -12,11 +12,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertCanonicalCreationAllowed,
+  computeEvidenceContentHash,
   resolveSemanticIdentityFromSearch,
+  resolveSemanticIdentityFromEvidence,
   resolveSemanticIdentity,
   type IdentityCandidateRecord,
 } from "./index.js";
-import { InMemoryGraphReader, QueryDependencyRegistry } from "../query/index.js";
+import { createIdentityBoundaryQueryPrograms, InMemoryGraphReader, QueryDependencyRegistry } from "../query/index.js";
 import { createStateBinding } from "../state/index.js";
 
 const hash = (value: string): ContentHash => hashFramedDomain("identity-test", value);
@@ -27,6 +29,11 @@ const state: StateDigest = {
   toolchainDigest: hash("toolchain"),
 };
 const queryRegistry = new QueryDependencyRegistry(new InMemoryGraphReader());
+for (const program of createIdentityBoundaryQueryPrograms({
+  inspect: (lane) => ({
+    results: [], observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: [`identity-boundary:${lane}`],
+  }),
+})) queryRegistry.register(program);
 const binding: StateBinding = createStateBinding({
   compiledAgainst: state,
   valueDependencies: ["cap-midi-discovery", "concept-timing", "deleted", "existing", "same-id", "a", "b", "child-a", "child-b", "split-a", "split-b", "merged", "replacement", "req-device-enumeration", "old-midi-discovery"]
@@ -37,7 +44,7 @@ const binding: StateBinding = createStateBinding({
     ["identity-lineage", "custom", "identity.lineage"],
     ["identity-tombstones", "custom", "identity.tombstone"],
     ["identity-relations", "relation-neighborhood", "identity.relations"],
-    ["identity-topology", "event-topology", "identity.topology"],
+    ["identity-topology", "custom", "identity.topology"],
   ].map(([id, _kind, programId]) => {
     const query = queryRegistry.createSpec({ id: id!, programId: programId!, input: { requestedMeaning: "wireless MIDI device enumeration", requestedKind: "concept" } });
     return ({
@@ -85,6 +92,25 @@ const adjudication = (kind: import("./index.js").IdentityAssessment): import("./
   }
 };
 
+const outcomeClaims = (
+  kind: import("./index.js").IdentityAssessment,
+  subjectKey = "wireless MIDI device enumeration",
+): Evidence["claims"] => {
+  switch (kind) {
+    case "same": return [{ subjectKey, predicate: "identity-equivalent", object: true }];
+    case "overlap": return [{ subjectKey, predicate: "identity-shared-ownership", object: true }];
+    case "split": return [{ subjectKey, predicate: "identity-partition", object: ["partition A", "partition B"] }];
+    case "merge": return [{ subjectKey, predicate: "identity-convergence", object: "merged meaning" }];
+    case "replace": return [{ subjectKey, predicate: "identity-supersession", object: "old meaning is superseded" }];
+    case "delete": return [
+      { subjectKey, predicate: "identity-cessation", object: true },
+      { subjectKey, predicate: "identity-no-durable-entity", object: true },
+    ];
+    case "distinct": return [{ subjectKey, predicate: "identity-distinct-boundary", object: true }];
+    case "ambiguous": return [{ subjectKey, predicate: "identity-conflict", object: "ownership conflict" }];
+  }
+};
+
 const base = {
   requestedMeaning: "wireless MIDI device enumeration",
   requestedKind: "concept" as const,
@@ -97,11 +123,33 @@ const base = {
   unknowns: [],
 };
 
-const authorityEvidence: Evidence = {
+const evidenceDocument = (input: Omit<Evidence, "contentHash"> | Evidence): Evidence => {
+  const { contentHash: _contentHash, ...projection } = input as Evidence;
+  const draft = { ...projection, contentHash: hash("placeholder") } as Evidence;
+  return { ...draft, contentHash: computeEvidenceContentHash(draft) };
+};
+
+const authorityEvidence: Evidence = evidenceDocument({
   id: "user-approval", kind: "user-decision", locator: "decision:user-approval", capturedAt: "2026-08-07T00:00:00Z",
-  contentHash: hash("approval"), claims: [{ subjectKey: "new-identity", predicate: "canonical-creation-approved", object: true }],
+  claims: [{ subjectKey: "new-identity", predicate: "canonical-creation-approved", object: true }],
   reliability: "high", normativeAuthority: "binding-decision", independenceGroup: "user", applicability: "direct", freshness: 1,
   causalOrigin: { kind: "human" }, metadata: {},
+});
+
+const resolveTrusted = (
+  input: Parameters<typeof resolveSemanticIdentity>[0],
+): Promise<Awaited<ReturnType<typeof resolveSemanticIdentityFromEvidence>>> => {
+  const evidence = evidenceDocument({
+    ...authorityEvidence,
+    id: "request",
+    normativeAuthority: "supporting",
+    claims: outcomeClaims(input.assessment, input.requestedMeaning.normalize("NFKC").trim()),
+  });
+  const { outcomeEvidence: _callerOutcome, ...unverifiedInput } = input;
+  return resolveSemanticIdentityFromEvidence({
+    ...unverifiedInput,
+    evidence: [{ evidenceId: evidence.id, stance: "supports" }],
+  }, { loadEvidence: async () => evidence });
 };
 
 function publicResolution(resolution: ReturnType<typeof resolveSemanticIdentity>) {
@@ -113,16 +161,19 @@ function trustedRepository(
   resolution: ReturnType<typeof resolveSemanticIdentity>,
   options: { evidence?: Evidence; authority?: AuthorityRecord; current?: boolean } = {},
 ) {
-  const evidence = options.evidence ?? {
+  const evidence = options.evidence ?? evidenceDocument({
     ...authorityEvidence,
     claims: [{ subjectKey: resolution.id, predicate: "canonical-creation-approved", object: true }],
-  };
-  const resolutionEvidence: Evidence = {
+  });
+  const resolutionEvidence: Evidence = evidenceDocument({
     ...authorityEvidence,
     id: "request",
     normativeAuthority: "supporting",
-    claims: [{ subjectKey: resolution.id, predicate: "identity-create-new-supported", object: true }],
-  };
+    claims: [
+      ...(resolution.adjudication?.claims.map(({ evidenceId: _evidenceId, ...claim }) => claim) ?? []),
+      { subjectKey: resolution.id, predicate: "identity-create-new-supported", object: true },
+    ],
+  });
   const authorityPayload = { ...(options.authority ?? authority), subjectId: resolution.id, evidence: [{ evidenceId: evidence.id, stance: "supports" as const }] };
   const authorityEnvelope = withCanonicalHashes({
     apiVersion: "projector/v2", schemaVersion: "2", kind: "authority-record", id: authorityPayload.id,
@@ -148,6 +199,118 @@ const authority: AuthorityRecord = {
 };
 
 describe("semantic identity resolution", () => {
+  it("rejects repository evidence substitution when distinct claim payloads reuse one declared content hash", async () => {
+    const resolution = await resolveTrusted({
+      ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+    const repository = trustedRepository(resolution);
+    const authentic = await repository.loadEvidence("request") as Evidence;
+    const substituted: Evidence = {
+      ...authentic,
+      claims: [{ subjectKey: resolution.id, predicate: "canonical-creation-approved", object: true }],
+      contentHash: authentic.contentHash,
+    };
+
+    await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, {
+      ...repository,
+      loadEvidence: async (evidenceId: string) => evidenceId === "request" ? substituted : repository.loadEvidence(evidenceId),
+    })).rejects.toThrow(/evidence.*content hash|integrity/i);
+  });
+
+  it("loads typed outcome claims and refuses incompatible outcomes from the same evidence basis", async () => {
+    const sameEvidence: Evidence = {
+      ...authorityEvidence,
+      id: "same-proof",
+      normativeAuthority: "supporting",
+      claims: [{ subjectKey: "cap-midi-discovery", predicate: "identity-equivalent", object: true }],
+    };
+    sameEvidence.contentHash = computeEvidenceContentHash(sameEvidence);
+    const evidenceRepository = { loadEvidence: async () => sameEvidence };
+
+    const { outcomeEvidence: _callerOutcome, ...unverifiedBase } = base;
+    const same = await resolveSemanticIdentityFromEvidence({
+      ...unverifiedBase,
+      assessment: "same",
+      evidence: [{ evidenceId: sameEvidence.id, stance: "supports" }],
+    }, evidenceRepository);
+    const replace = await resolveSemanticIdentityFromEvidence({
+      ...unverifiedBase,
+      assessment: "replace",
+      proposedTargetIds: ["replacement"],
+      evidence: [{ evidenceId: sameEvidence.id, stance: "supports" }],
+    }, evidenceRepository);
+
+    expect(same.outcome).toBe("reuse-existing");
+    expect(same.adjudication).toMatchObject({ kind: "same", evidenceIds: ["same-proof"] });
+    expect(replace.outcome).toBe("unresolved");
+  });
+
+  it("rejects mutually inconsistent typed outcome facts from one Evidence record", async () => {
+    const conflicting = evidenceDocument({
+      ...authorityEvidence,
+      id: "conflicting-proof",
+      normativeAuthority: "supporting",
+      claims: [
+        { subjectKey: base.requestedMeaning, predicate: "identity-equivalent", object: true },
+        { subjectKey: base.requestedMeaning, predicate: "identity-supersession", object: "replace it" },
+      ],
+    });
+
+    await expect(resolveSemanticIdentityFromEvidence({
+      ...base,
+      assessment: "same",
+      evidence: [{ evidenceId: conflicting.id, stance: "supports" }],
+    }, { loadEvidence: async () => conflicting })).rejects.toThrow(/mutually inconsistent.*same.*replace/i);
+  });
+
+  it("fails closed when the direct caller supplies unverified outcome booleans", () => {
+    const result = resolveSemanticIdentity({ ...base, assessment: "same", outcomeEvidence: adjudication("same") });
+    expect(result.outcome).toBe("unresolved");
+  });
+
+  it("refuses a hash-consistent create-new resolution without persisted distinct adjudication facts", async () => {
+    const trusted = await resolveTrusted({
+      ...base, assessment: "distinct", records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+    const {
+      adjudication: _adjudication, lineageProposals: _lineage, tombstoneProposals: _tombstones,
+      id: _id, contentHash: _contentHash, ...semantic
+    } = trusted;
+    const contentHash = hashFramedDomain("semantic-identity-resolution", semantic);
+    const forged = { ...semantic, id: `identity_resolution_${contentHash.slice(-32)}`, contentHash } as typeof trusted;
+
+    await expect(assertCanonicalCreationAllowed({ resolutionId: forged.id, authorityRecordId: authority.id }, trustedRepository(forged)))
+      .rejects.toThrow(/adjudication|distinct.*facts/i);
+  });
+
+  it("accepts a dependency-local rebound and rejects an internally inconsistent current result", async () => {
+    const resolution = await resolveTrusted({
+      ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+    const reboundState = { ...state, worktreeDigest: hash("unrelated-change") };
+    const rebound = createStateBinding({ ...emptyBinding, compiledAgainst: reboundState });
+    const repository = trustedRepository(resolution);
+
+    await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, {
+      ...repository,
+      validateBinding: async () => ({
+        status: "rebound", currentState: reboundState, changedValueDependencyIds: [], changedQueryDependencyIds: [],
+        reasons: ["bound facts unchanged"], rebound,
+      }),
+    })).resolves.toEqual(rebound);
+
+    await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, {
+      ...repository,
+      validateBinding: async () => ({
+        status: "current", currentState: resolution.boundState.compiledAgainst,
+        changedValueDependencyIds: ["unexpected-change"], changedQueryDependencyIds: [], reasons: [],
+      }),
+    })).rejects.toThrow(/current.*changed|inconsistent/i);
+  });
+
   it.each([
     ["same", "reuse-existing", ["cap-midi-discovery"]],
     ["overlap", "coordinated-modification", ["cap-midi-discovery"]],
@@ -155,8 +318,8 @@ describe("semantic identity resolution", () => {
     ["replace", "replace-existing", ["cap-midi-discovery"]],
     ["distinct", "create-new", []],
     ["ambiguous", "unresolved", []],
-  ] as const)("maps a %s assessment to %s", (assessment, outcome, selectedEntityIds) => {
-    const resolution = resolveSemanticIdentity({
+  ] as const)("maps a %s assessment to %s", async (assessment, outcome, selectedEntityIds) => {
+    const resolution = await resolveTrusted({
       ...base,
       assessment,
       outcomeEvidence: adjudication(assessment),
@@ -178,11 +341,11 @@ describe("semantic identity resolution", () => {
     expect(resolution.selectedEntityIds).toEqual(selectedEntityIds);
   });
 
-  it("uses coordinated modification for multiple owners and merge only for an explicit merge assessment", () => {
+  it("uses coordinated modification for multiple owners and merge only for an explicit merge assessment", async () => {
     const records = [record("cap-midi-discovery"), record("req-device-enumeration")];
-    expect(resolveSemanticIdentity({ ...base, assessment: "overlap", outcomeEvidence: adjudication("overlap"), records }).outcome)
+    expect((await resolveTrusted({ ...base, assessment: "overlap", outcomeEvidence: adjudication("overlap"), records })).outcome)
       .toBe("coordinated-modification");
-    expect(resolveSemanticIdentity({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records, proposedTargetIds: ["merged"] }).outcome)
+    expect((await resolveTrusted({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records, proposedTargetIds: ["merged"] })).outcome)
       .toBe("merge-existing");
   });
 
@@ -200,8 +363,8 @@ describe("semantic identity resolution", () => {
     expect(resolution.selectedEntityIds).toEqual([]);
   });
 
-  it("follows superseded identity history to the surviving replacement instead of resurrecting a duplicate", () => {
-    const resolution = resolveSemanticIdentity({
+  it("follows superseded identity history to the surviving replacement instead of resurrecting a duplicate", async () => {
+    const resolution = await resolveTrusted({
       ...base,
       assessment: "same",
       outcomeEvidence: adjudication("same"),
@@ -214,14 +377,14 @@ describe("semantic identity resolution", () => {
 
   it("blocks create-new when an active, deprecated, superseded, or tombstoned identity still overlaps", async () => {
     for (const lifecycle of ["active", "deprecated", "superseded", "tombstone"] as const) {
-      const resolution = resolveSemanticIdentity({ ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [record("existing", lifecycle)] });
+      const resolution = await resolveTrusted({ ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [record("existing", lifecycle)] });
       await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, trustedRepository(resolution)))
         .rejects.toThrow(/duplicate|overlap|unresolved/i);
     }
   });
 
   it("requires an inspectable owns/excludes boundary before a genuinely distinct identity can be created", async () => {
-    const resolution = resolveSemanticIdentity({ ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [], boundState: emptyBinding });
+    const resolution = await resolveTrusted({ ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [], boundState: emptyBinding });
     expect(resolution.outcome).toBe("unresolved");
     expect(resolution.unknowns).toContain("new semantic boundary is incomplete");
     await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, trustedRepository(resolution)))
@@ -229,7 +392,7 @@ describe("semantic identity resolution", () => {
   });
 
   it("keeps a create-new resolution as derived evidence until user or policy acceptance authorizes canonical creation", async () => {
-    const resolution = resolveSemanticIdentity({
+    const resolution = await resolveTrusted({
       ...base,
       assessment: "distinct",
       outcomeEvidence: adjudication("distinct"),
@@ -244,11 +407,11 @@ describe("semantic identity resolution", () => {
     await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, {
       ...trustedRepository(resolution), loadAuthorityEnvelope: async () => { throw new Error("authoritative acceptance missing"); },
     })).rejects.toThrow(/authority|accept/i);
-    await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, trustedRepository(resolution))).resolves.toBeUndefined();
+    await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, trustedRepository(resolution))).resolves.toEqual(resolution.boundState);
   });
 
   it("does not accept fabricated caller objects as trusted creation provenance", async () => {
-    const resolution = resolveSemanticIdentity({
+    const resolution = await resolveTrusted({
       ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [], boundState: emptyBinding,
       newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
     });
@@ -263,7 +426,7 @@ describe("semantic identity resolution", () => {
   });
 
   it("rejects a self-rehashed trusted resolution whose ID or binding digest no longer matches", async () => {
-    const resolution = resolveSemanticIdentity({
+    const resolution = await resolveTrusted({
       ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [], boundState: emptyBinding,
       newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
     });
@@ -278,15 +441,15 @@ describe("semantic identity resolution", () => {
   });
 
   it("requires trusted directly applicable evidence claims for the create-new adjudication", async () => {
-    const resolution = resolveSemanticIdentity({
+    const resolution = await resolveTrusted({
       ...base, assessment: "distinct", outcomeEvidence: adjudication("distinct"), records: [], boundState: emptyBinding,
       newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
     });
     const repository = trustedRepository(resolution);
-    const irrelevant: Evidence = {
+    const irrelevant: Evidence = evidenceDocument({
       ...authorityEvidence, id: "request", normativeAuthority: "supporting",
       claims: [{ subjectKey: "some-other-resolution", predicate: "identity-create-new-supported", object: true }],
-    };
+    });
 
     await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, {
       ...repository,
@@ -345,7 +508,7 @@ describe("semantic identity resolution", () => {
       }
     });
 
-    expect(outcomes).toEqual(["reuse-existing", "unresolved", "unresolved", "unresolved"]);
+    expect(outcomes).toEqual(["unresolved", "unresolved", "unresolved", "unresolved"]);
   });
 
   it("constructs a dependency-complete identity binding from an injected read-only search port", async () => {
@@ -355,7 +518,12 @@ describe("semantic identity resolution", () => {
       compiledAgainst: state,
       context: { repositoryRoot: "/repo", stateDigest: state, config: {}, signal: new AbortController().signal },
       search: { inspect: async () => ({ records: base.records, valueDependencies: binding.valueDependencies, queryDependencies: binding.queryDependencies }) },
-      evidence: base.evidence, unknowns: [],
+      evidence: [{ evidenceId: "request", stance: "supports" }], unknowns: [],
+      evidenceRepository: {
+        loadEvidence: async () => evidenceDocument({
+          ...authorityEvidence, id: "request", normativeAuthority: "supporting", claims: outcomeClaims("same"),
+        }),
+      },
     });
     expect(resolution.outcome).toBe("reuse-existing");
     expect(resolution.boundState.queryDependencies.map(({ query }) => query.programId)).toEqual([
@@ -363,20 +531,20 @@ describe("semantic identity resolution", () => {
     ]);
   });
 
-  it("returns validated noncanonical split, merge, replace, and delete continuity proposals", () => {
-    const split = resolveSemanticIdentity({ ...base, assessment: "split", outcomeEvidence: adjudication("split"), proposedTargetIds: ["child-a", "child-b"] });
-    const merge = resolveSemanticIdentity({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records: [record("a"), record("b")], proposedTargetIds: ["merged"] });
-    const replace = resolveSemanticIdentity({ ...base, assessment: "replace", outcomeEvidence: adjudication("replace"), proposedTargetIds: ["replacement"] });
-    const deletion = resolveSemanticIdentity({ ...base, assessment: "delete", outcomeEvidence: adjudication("delete"), proposedTargetIds: [] });
+  it("returns validated noncanonical split, merge, replace, and delete continuity proposals", async () => {
+    const split = await resolveTrusted({ ...base, assessment: "split", outcomeEvidence: adjudication("split"), proposedTargetIds: ["child-a", "child-b"] });
+    const merge = await resolveTrusted({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records: [record("a"), record("b")], proposedTargetIds: ["merged"] });
+    const replace = await resolveTrusted({ ...base, assessment: "replace", outcomeEvidence: adjudication("replace"), proposedTargetIds: ["replacement"] });
+    const deletion = await resolveTrusted({ ...base, assessment: "delete", outcomeEvidence: adjudication("delete"), proposedTargetIds: [] });
     expect(split.lineageProposals[0]).toMatchObject({ kind: "split", canonical: false, fromIds: ["cap-midi-discovery"], toIds: ["child-a", "child-b"] });
     expect(merge.lineageProposals[0]).toMatchObject({ kind: "merge", canonical: false, fromIds: ["a", "b"], toIds: ["merged"] });
     expect(replace.tombstoneProposals[0]).toMatchObject({ entityId: "cap-midi-discovery", replacementIds: ["replacement"], canonical: false });
     expect(deletion.tombstoneProposals[0]).toMatchObject({ entityId: "cap-midi-discovery", replacementIds: [], canonical: false });
-    expect(() => resolveSemanticIdentity({ ...base, assessment: "replace", outcomeEvidence: adjudication("replace"), proposedTargetIds: ["cap-midi-discovery"] })).toThrow(/lineage|target|continuity/i);
-    expect(() => resolveSemanticIdentity({ ...base, assessment: "split", outcomeEvidence: adjudication("split"), proposedTargetIds: ["", "child"] })).toThrow(/lineage|target|blank/i);
+    await expect(resolveTrusted({ ...base, assessment: "replace", outcomeEvidence: adjudication("replace"), proposedTargetIds: ["cap-midi-discovery"] })).rejects.toThrow(/lineage|target|continuity/i);
+    await expect(resolveTrusted({ ...base, assessment: "split", outcomeEvidence: adjudication("split"), proposedTargetIds: ["", "child"] })).rejects.toThrow(/lineage|target|blank/i);
   });
 
-  it("takes tombstone continuity only from the explicit semantic candidate dependency", () => {
+  it("takes tombstone continuity only from the explicit semantic candidate dependency", async () => {
     const competing = createStateBinding({
       ...binding,
       valueDependencies: [
@@ -384,15 +552,15 @@ describe("semantic identity resolution", () => {
         ...binding.valueDependencies,
       ],
     });
-    const replacement = resolveSemanticIdentity({ ...base, assessment: "replace", outcomeEvidence: adjudication("replace"), proposedTargetIds: ["replacement"], boundState: competing });
+    const replacement = await resolveTrusted({ ...base, assessment: "replace", outcomeEvidence: adjudication("replace"), proposedTargetIds: ["replacement"], boundState: competing });
 
     expect(replacement.tombstoneProposals[0]!.lastSemanticHash).toBe(hash("candidate-cap-midi-discovery"));
   });
 
-  it("keeps stable resolution identity independent of candidate order and incidental paths", () => {
-    fc.assert(fc.property(fc.shuffledSubarray([record("a"), record("b")], { minLength: 2, maxLength: 2 }), (records) => {
-      const first = resolveSemanticIdentity({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records, proposedTargetIds: ["merged"], incidental: { path: "old/place.ts" } });
-      const second = resolveSemanticIdentity({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records: [...records].reverse(), proposedTargetIds: ["merged"], incidental: { path: "new/place.ts" } });
+  it("keeps stable resolution identity independent of candidate order and incidental paths", async () => {
+    await fc.assert(fc.asyncProperty(fc.shuffledSubarray([record("a"), record("b")], { minLength: 2, maxLength: 2 }), async (records) => {
+      const first = await resolveTrusted({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records, proposedTargetIds: ["merged"], incidental: { path: "old/place.ts" } });
+      const second = await resolveTrusted({ ...base, assessment: "merge", outcomeEvidence: adjudication("merge"), records: [...records].reverse(), proposedTargetIds: ["merged"], incidental: { path: "new/place.ts" } });
       expect(first).toEqual(second);
     }));
   });

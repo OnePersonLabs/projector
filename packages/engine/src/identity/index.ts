@@ -38,7 +38,20 @@ type OutcomeFact =
   | { kind: "distinct"; independentBoundary: true }
   | { kind: "ambiguous"; unresolvedConflict: string };
 
-export type IdentityOutcomeEvidence = OutcomeFact & { evidenceIds: readonly string[]; rationale: string };
+interface VerifiedIdentityClaimRef {
+  evidenceId: string;
+  subjectKey: string;
+  predicate: string;
+  object: unknown;
+  inferenceConfidence?: number;
+}
+
+export type IdentityOutcomeEvidence = OutcomeFact & {
+  evidenceIds: readonly string[];
+  rationale: string;
+  /** Present only on repository-loaded adjudication; direct caller values are never trusted. */
+  verifiedClaims?: readonly VerifiedIdentityClaimRef[];
+};
 
 export interface IdentityCandidateRecord {
   candidate: SemanticIdentityCandidate;
@@ -81,6 +94,7 @@ export interface ResolveSemanticIdentityFromSearchInput extends Omit<ResolveSema
   compiledAgainst: StateDigest;
   context: AdapterContext;
   search: IdentitySearchPort;
+  evidenceRepository: TrustedIdentityEvidenceRepository;
 }
 
 export interface IdentityLineageProposal {
@@ -103,9 +117,24 @@ export interface IdentityTombstoneProposal {
 }
 
 export interface AdjudicatedSemanticIdentityResolution extends SemanticIdentityResolution {
+  adjudication?: IdentityAdjudication;
   lineageProposals: IdentityLineageProposal[];
   tombstoneProposals: IdentityTombstoneProposal[];
 }
+
+export interface IdentityAdjudication {
+  kind: IdentityAssessment;
+  evidenceIds: string[];
+  claims: VerifiedIdentityClaimRef[];
+  claimHashes: ContentHash[];
+  contentHash: ContentHash;
+}
+
+export interface TrustedIdentityEvidenceRepository {
+  loadEvidence(evidenceId: string): Promise<unknown>;
+}
+
+const verifiedOutcomeEvidence = new WeakSet<object>();
 
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
@@ -167,7 +196,7 @@ function validateCandidateValueDependencies(binding: StateBinding, records: read
 
 function hasOutcomeEvidence(input: ResolveSemanticIdentityInput): boolean {
   const basis = input.outcomeEvidence;
-  if (basis === undefined || basis.kind !== input.assessment || basis.rationale.trim().length === 0 || basis.evidenceIds.length === 0) return false;
+  if (basis === undefined || !verifiedOutcomeEvidence.has(basis) || basis.kind !== input.assessment || basis.rationale.trim().length === 0 || basis.evidenceIds.length === 0) return false;
   const supporting = new Set(input.evidence.filter(({ stance }) => stance === "supports").map(({ evidenceId }) => evidenceId));
   if (!basis.evidenceIds.every((id) => id.trim().length > 0 && supporting.has(id))) return false;
   switch (basis.kind) {
@@ -180,6 +209,84 @@ function hasOutcomeEvidence(input: ResolveSemanticIdentityInput): boolean {
     case "distinct": return basis.independentBoundary === true;
     case "ambiguous": return basis.unresolvedConflict.trim().length > 0;
   }
+}
+
+/** Canonical complete Evidence projection. No claim-bearing or authority field is excluded. */
+export function computeEvidenceContentHash(evidence: Evidence): ContentHash {
+  const parsed = EvidenceSchema.parse(evidence) as Evidence;
+  const { contentHash: _declared, ...projection } = parsed;
+  return hashFramedDomain("evidence-content", projection);
+}
+
+function parseVerifiedEvidence(value: unknown, expectedId: string): Evidence {
+  const evidence = EvidenceSchema.parse(value) as Evidence;
+  if (evidence.id !== expectedId) throw new Error(`trusted Evidence ID mismatch for ${expectedId}`);
+  if (computeEvidenceContentHash(evidence) !== evidence.contentHash) {
+    throw new Error(`trusted Evidence content hash integrity mismatch for ${expectedId}`);
+  }
+  return evidence;
+}
+
+function outcomeFactFromEvidence(
+  assessment: IdentityAssessment,
+  evidence: readonly Evidence[],
+  input: Pick<ResolveSemanticIdentityInput, "requestedMeaning" | "records">,
+): IdentityOutcomeEvidence | undefined {
+  const evidenceIds = sortedUnique(evidence.map(({ id }) => id));
+  const applicableSubjects = new Set([
+    input.requestedMeaning.normalize("NFKC").trim(),
+    ...input.records.map(({ candidate }) => candidate.entityId),
+  ]);
+  const claims = evidence.flatMap((item) => item.claims
+    .filter(({ subjectKey }) => applicableSubjects.has(subjectKey))
+    .map((claim) => ({ evidenceId: item.id, claim })));
+  const matching = <T>(predicate: string, accept: (value: unknown) => T | undefined): Array<{ evidenceId: string; value: T }> =>
+    claims.flatMap(({ evidenceId, claim }) => {
+      if (claim.predicate !== predicate) return [];
+      const value = accept(claim.object);
+      return value === undefined ? [] : [{ evidenceId, value }];
+    });
+  const facts: IdentityOutcomeEvidence[] = [];
+  if (matching("identity-equivalent", (value) => value === true ? true : undefined).length > 0) {
+    facts.push({ kind: "same", equivalentMeaning: true, evidenceIds, rationale: "verified identity equivalence claim" });
+  }
+  if (matching("identity-shared-ownership", (value) => value === true ? true : undefined).length > 0) {
+    facts.push({ kind: "overlap", sharedOwnership: true, evidenceIds, rationale: "verified coordination claim" });
+  }
+  const partitions = matching("identity-partition", (value) => Array.isArray(value) && value.length >= 2 && value.every((item) => typeof item === "string" && item.trim().length > 0) ? value as string[] : undefined);
+  if (partitions.length > 0) facts.push({ kind: "split", partitionMeanings: partitions[0]!.value, evidenceIds, rationale: "verified partition claim" });
+  const convergence = matching("identity-convergence", (value) => typeof value === "string" && value.trim().length > 0 ? value : undefined);
+  if (convergence.length > 0) facts.push({ kind: "merge", convergentTargetMeaning: convergence[0]!.value, evidenceIds, rationale: "verified convergence claim" });
+  const supersession = matching("identity-supersession", (value) => typeof value === "string" && value.trim().length > 0 ? value : undefined);
+  if (supersession.length > 0) facts.push({ kind: "replace", incompatibility: supersession[0]!.value, evidenceIds, rationale: "verified continuity and supersession claim" });
+  const cessation = matching("identity-cessation", (value) => value === true ? true : undefined).length > 0;
+  const noDurable = matching("identity-no-durable-entity", (value) => value === true ? true : undefined).length > 0;
+  if (cessation && noDurable) facts.push({ kind: "delete", durableMeaningCeased: true, evidenceIds, rationale: "verified cessation and no-durable-entity claims" });
+  if (matching("identity-distinct-boundary", (value) => value === true ? true : undefined).length > 0) {
+    facts.push({ kind: "distinct", independentBoundary: true, evidenceIds, rationale: "verified distinct boundary claim" });
+  }
+  const conflicts = matching("identity-conflict", (value) => typeof value === "string" && value.trim().length > 0 ? value : undefined);
+  if (conflicts.length > 0) facts.push({ kind: "ambiguous", unresolvedConflict: conflicts[0]!.value, evidenceIds, rationale: "verified conflicting identity claims" });
+  if (facts.length > 1) throw new Error(`mutually inconsistent identity outcome facts: ${facts.map(({ kind }) => kind).join(", ")}`);
+  const fact = facts[0];
+  if (fact?.kind !== assessment) return undefined;
+  const predicatesByKind: Record<IdentityAssessment, readonly string[]> = {
+    same: ["identity-equivalent"],
+    overlap: ["identity-shared-ownership"],
+    split: ["identity-partition"],
+    merge: ["identity-convergence"],
+    replace: ["identity-supersession"],
+    delete: ["identity-cessation", "identity-no-durable-entity"],
+    distinct: ["identity-distinct-boundary"],
+    ambiguous: ["identity-conflict"],
+  };
+  return {
+    ...fact,
+    verifiedClaims: claims
+      .filter(({ claim }) => predicatesByKind[fact.kind].includes(claim.predicate))
+      .map(({ evidenceId, claim }) => ({ evidenceId, ...structuredClone(claim) }))
+      .sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right))),
+  };
 }
 
 function normalizeRecords(records: readonly IdentityCandidateRecord[]): IdentityCandidateRecord[] {
@@ -344,14 +451,42 @@ export function resolveSemanticIdentity(input: ResolveSemanticIdentityInput): Ad
     unknowns: resolved.unknowns,
     boundState: structuredClone(input.boundState),
   };
-  const contentHash = hashFramedDomain("semantic-identity-resolution", semantic);
+  const adjudication = input.outcomeEvidence !== undefined && verifiedOutcomeEvidence.has(input.outcomeEvidence) ? {
+    kind: input.outcomeEvidence.kind,
+    evidenceIds: sortedUnique(input.outcomeEvidence.evidenceIds),
+    claims: [...(input.outcomeEvidence.verifiedClaims ?? [])].map((claim) => structuredClone(claim)),
+    claimHashes: sortedUnique((input.outcomeEvidence.verifiedClaims ?? []).map((claim) => hashFramedDomain("identity-adjudication-claim-ref", claim))) as ContentHash[],
+  } : undefined;
+  const adjudicationWithHash = adjudication === undefined ? undefined : {
+    ...adjudication,
+    contentHash: hashFramedDomain("identity-adjudication", adjudication),
+  };
+  const contentHash = hashFramedDomain("semantic-identity-resolution", {
+    ...semantic,
+    ...(adjudicationWithHash === undefined ? {} : { adjudication: adjudicationWithHash }),
+  });
   return {
     id: `identity_resolution_${contentHash.slice(-32)}`,
     ...semantic,
+    ...(adjudicationWithHash === undefined ? {} : { adjudication: adjudicationWithHash }),
     lineageProposals,
     tombstoneProposals,
     contentHash,
   };
+}
+
+/** Loads and hash-verifies directly applicable typed claims before deciding any durable identity outcome. */
+export async function resolveSemanticIdentityFromEvidence(
+  input: ResolveSemanticIdentityInput,
+  repository: TrustedIdentityEvidenceRepository,
+): Promise<AdjudicatedSemanticIdentityResolution> {
+  const supportingIds = sortedUnique(input.evidence.filter(({ stance }) => stance === "supports").map(({ evidenceId }) => evidenceId));
+  const evidence = await Promise.all(supportingIds.map(async (id) => parseVerifiedEvidence(await repository.loadEvidence(id), id)));
+  const applicable = evidence.filter((item) => item.applicability === "direct" && item.reliability !== "low" && item.reliability !== "untrusted");
+  const outcomeEvidence = outcomeFactFromEvidence(input.assessment, applicable, input);
+  if (outcomeEvidence !== undefined) verifiedOutcomeEvidence.add(outcomeEvidence);
+  const { outcomeEvidence: _callerOutcome, ...trustedInput } = input;
+  return resolveSemanticIdentity(outcomeEvidence === undefined ? trustedInput : { ...trustedInput, outcomeEvidence });
 }
 
 /** Executes the complete read-only identity boundary and binds its selected values and negative-space queries. */
@@ -367,8 +502,8 @@ export async function resolveSemanticIdentityFromSearch(
     valueDependencies: search.valueDependencies,
     queryDependencies: search.queryDependencies,
   });
-  const { compiledAgainst: _compiledAgainst, context: _context, search: _search, ...resolutionInput } = input;
-  return resolveSemanticIdentity({ ...resolutionInput, records: search.records, boundState });
+  const { compiledAgainst: _compiledAgainst, context: _context, search: _search, evidenceRepository, ...resolutionInput } = input;
+  return resolveSemanticIdentityFromEvidence({ ...resolutionInput, records: search.records, boundState }, evidenceRepository);
 }
 
 export interface TrustedIdentityCreationRepository {
@@ -384,15 +519,61 @@ export interface CanonicalCreationRequest {
   authorityRecordId: string;
 }
 
+function parseIdentityAdjudication(value: unknown): IdentityAdjudication {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("trusted identity adjudication is invalid");
+  const record = value as Record<string, unknown>;
+  if (!requiredIdentityAssessment(record.kind)
+    || !Array.isArray(record.evidenceIds) || record.evidenceIds.some((id) => typeof id !== "string" || id.length === 0)
+    || !Array.isArray(record.claims) || record.claims.some((claim) => {
+      if (typeof claim !== "object" || claim === null || Array.isArray(claim)) return true;
+      const candidate = claim as Record<string, unknown>;
+      return typeof candidate.evidenceId !== "string" || candidate.evidenceId.length === 0
+        || typeof candidate.subjectKey !== "string" || typeof candidate.predicate !== "string" || !("object" in candidate);
+    })
+    || !Array.isArray(record.claimHashes) || record.claimHashes.some((hash) => typeof hash !== "string" || !hash.startsWith("sha256:v1:"))
+    || typeof record.contentHash !== "string") {
+    throw new Error("trusted identity adjudication is invalid");
+  }
+  const claims = (record.claims as VerifiedIdentityClaimRef[])
+    .map((claim) => structuredClone(claim))
+    .sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
+  const expectedClaimHashes = sortedUnique(claims.map((claim) => hashFramedDomain("identity-adjudication-claim-ref", claim))) as ContentHash[];
+  const basis = {
+    kind: record.kind,
+    evidenceIds: sortedUnique(record.evidenceIds as string[]),
+    claims,
+    claimHashes: sortedUnique(record.claimHashes as string[]) as ContentHash[],
+  };
+  if (canonicalJson(basis.claimHashes) !== canonicalJson(expectedClaimHashes)
+    || claims.some(({ evidenceId }) => !basis.evidenceIds.includes(evidenceId))) {
+    throw new Error("trusted identity adjudication claim references are invalid");
+  }
+  if (hashFramedDomain("identity-adjudication", basis) !== record.contentHash) throw new Error("trusted identity adjudication content hash mismatch");
+  return { ...basis, contentHash: record.contentHash as ContentHash };
+}
+
+function requiredIdentityAssessment(value: unknown): value is IdentityAssessment {
+  return ["same", "overlap", "split", "merge", "replace", "delete", "distinct", "ambiguous"].includes(String(value));
+}
+
 /** Explicit mutation gate. All provenance is loaded from an injected authoritative repository. */
 export async function assertCanonicalCreationAllowed(
   request: CanonicalCreationRequest,
   repository: TrustedIdentityCreationRepository,
-): Promise<void> {
-  const resolution = SemanticIdentityResolutionSchema.parse(await repository.loadResolution(request.resolutionId)) as SemanticIdentityResolution;
+): Promise<StateBinding> {
+  const storedResolution = await repository.loadResolution(request.resolutionId);
+  if (typeof storedResolution !== "object" || storedResolution === null || Array.isArray(storedResolution)) {
+    throw new Error("canonical creation refused: trusted resolution schema is invalid");
+  }
+  const { adjudication: storedAdjudication, lineageProposals: _lineage, tombstoneProposals: _tombstones, ...publicResolution } = storedResolution as Record<string, unknown>;
+  const resolution = SemanticIdentityResolutionSchema.parse(publicResolution) as SemanticIdentityResolution;
   if (resolution.id !== request.resolutionId) throw new Error("canonical creation refused: trusted resolution ID mismatch");
   const { id: _id, contentHash: _contentHash, ...resolutionSemantic } = resolution;
-  if (hashFramedDomain("semantic-identity-resolution", resolutionSemantic) !== resolution.contentHash) {
+  const adjudication = storedAdjudication === undefined ? undefined : parseIdentityAdjudication(storedAdjudication);
+  if (hashFramedDomain("semantic-identity-resolution", {
+    ...resolutionSemantic,
+    ...(adjudication === undefined ? {} : { adjudication }),
+  }) !== resolution.contentHash) {
     throw new Error("canonical creation refused: trusted resolution content hash mismatch");
   }
   if (resolution.id !== `identity_resolution_${resolution.contentHash.slice(-32)}`) {
@@ -405,11 +586,31 @@ export async function assertCanonicalCreationAllowed(
     throw new Error("canonical creation refused: trusted repository has no verified adjudication provenance for this resolution");
   }
   const validation = StateBindingValidationSchema.parse(await repository.validateBinding(resolution.boundState)) as StateBindingValidation;
-  if (validation.status !== "current" || canonicalJson(validation.currentState) !== canonicalJson(resolution.boundState.compiledAgainst)) {
+  if (validation.changedValueDependencyIds.length > 0 || validation.changedQueryDependencyIds.length > 0) {
+    throw new Error(`canonical creation refused: ${validation.status} binding validation is inconsistent with changed dependencies`);
+  }
+  let mutationBinding: StateBinding;
+  if (validation.status === "current") {
+    if (validation.rebound !== undefined || canonicalJson(validation.currentState) !== canonicalJson(resolution.boundState.compiledAgainst)) {
+      throw new Error("canonical creation refused: current binding validation is internally inconsistent");
+    }
+    mutationBinding = resolution.boundState;
+  } else if (validation.status === "rebound") {
+    if (validation.rebound === undefined
+      || canonicalJson(validation.rebound.compiledAgainst) !== canonicalJson(validation.currentState)
+      || createStateBinding(validation.rebound).dependencyDigest !== validation.rebound.dependencyDigest
+      || validation.rebound.dependencyDigest !== resolution.boundState.dependencyDigest) {
+      throw new Error("canonical creation refused: rebound binding validation is internally inconsistent");
+    }
+    mutationBinding = validation.rebound;
+  } else {
     throw new Error("canonical creation refused: identity resolution was not adjudicated against current authoritative state");
   }
   if (resolution.outcome !== "create-new") {
     throw new Error(`canonical creation refused: identity outcome ${resolution.outcome} is unresolved or overlaps existing authority`);
+  }
+  if (adjudication?.kind !== "distinct" || adjudication.claims.length === 0) {
+    throw new Error("canonical creation refused: persisted hash-bound distinct adjudication facts are required");
   }
   if (!validBoundary(resolution.newBoundary)) throw new Error("canonical creation refused: inspectable semantic boundary is required");
   if (resolution.confidence < 0.75 || resolution.evidence.every(({ evidenceId, stance }) => evidenceId.trim().length === 0 || stance !== "supports")) {
@@ -418,7 +619,7 @@ export async function assertCanonicalCreationAllowed(
   const supportingResolutionRefs = resolution.evidence.filter(({ stance }) => stance === "supports");
   const resolutionEvidence = await Promise.all(supportingResolutionRefs.map(async ({ evidenceId }) => ({
     evidenceId,
-    evidence: EvidenceSchema.parse(await repository.loadEvidence(evidenceId)) as Evidence,
+    evidence: parseVerifiedEvidence(await repository.loadEvidence(evidenceId), evidenceId),
   })));
   if (resolutionEvidence.length === 0 || resolutionEvidence.some(({ evidenceId, evidence: item }) =>
     item.id !== evidenceId
@@ -428,6 +629,13 @@ export async function assertCanonicalCreationAllowed(
     || !item.claims.some(({ subjectKey, predicate, object }) =>
       subjectKey === resolution.id && predicate === "identity-create-new-supported" && object === true))) {
     throw new Error("canonical creation refused: trusted directly applicable resolution evidence claim is required");
+  }
+  const resolutionEvidenceById = new Map(resolutionEvidence.map(({ evidenceId, evidence: item }) => [evidenceId, item]));
+  if (adjudication.claims.some(({ evidenceId, ...expectedClaim }) => {
+    const item = resolutionEvidenceById.get(evidenceId);
+    return item === undefined || !item.claims.some((claim) => canonicalJson(claim) === canonicalJson(expectedClaim));
+  })) {
+    throw new Error("canonical creation refused: persisted adjudication facts do not match hash-verified repository Evidence");
   }
   const authorityEnvelope = CanonicalDocumentEnvelopeSchema.parse(await repository.loadAuthorityEnvelope(request.authorityRecordId)) as CanonicalDocumentEnvelope;
   if (authorityEnvelope.kind !== "authority-record" || authorityEnvelope.id !== request.authorityRecordId) {
@@ -440,7 +648,7 @@ export async function assertCanonicalCreationAllowed(
   if (authority.subjectId !== resolution.id || authority.rationale.trim().length === 0) {
     throw new Error("canonical creation refused: Authority Record must directly govern this identity resolution");
   }
-  const evidence = await Promise.all(authority.evidence.map(async ({ evidenceId }) => EvidenceSchema.parse(await repository.loadEvidence(evidenceId)) as Evidence));
+  const evidence = await Promise.all(authority.evidence.map(async ({ evidenceId }) => parseVerifiedEvidence(await repository.loadEvidence(evidenceId), evidenceId)));
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
   if (authority.evidence.length === 0 || authority.evidence.some(({ evidenceId, stance }) => {
     const item = evidenceById.get(evidenceId);
@@ -451,4 +659,5 @@ export async function assertCanonicalCreationAllowed(
       || !item.claims.some(({ subjectKey, predicate, object }) =>
         subjectKey === resolution.id && predicate === "canonical-creation-approved" && object === true);
   })) throw new Error("canonical creation refused: validated nonblank authoritative evidence is required");
+  return structuredClone(mutationBinding);
 }
