@@ -2,8 +2,10 @@ import {
   AuthorityRecordSchema,
   CanonicalDocumentEnvelopeSchema,
   EvidenceSchema,
+  LineageRecordSchema,
   SemanticIdentityResolutionSchema,
   StateBindingValidationSchema,
+  TombstoneSchema,
   canonicalJson,
   hashFramedDomain,
   type AuthorityRecord,
@@ -21,6 +23,7 @@ import {
   type StateQueryDependency,
   type StateBindingValidation,
   type StateValueDependencyRef,
+  validateLineage,
 } from "@projector/core";
 
 import { createStateBinding } from "../state/index.js";
@@ -117,6 +120,8 @@ export interface IdentityTombstoneProposal {
 }
 
 export interface AdjudicatedSemanticIdentityResolution extends SemanticIdentityResolution {
+  operation: IdentityAssessment;
+  proposedTargetIds: string[];
   adjudication?: IdentityAdjudication;
   lineageProposals: IdentityLineageProposal[];
   tombstoneProposals: IdentityTombstoneProposal[];
@@ -124,9 +129,15 @@ export interface AdjudicatedSemanticIdentityResolution extends SemanticIdentityR
 
 export interface IdentityAdjudication {
   kind: IdentityAssessment;
+  operation: IdentityAssessment;
+  sourceIds: string[];
+  proposedTargetIds: string[];
+  factPayloads: unknown[];
   evidenceIds: string[];
   claims: VerifiedIdentityClaimRef[];
   claimHashes: ContentHash[];
+  lineageProposals: IdentityLineageProposal[];
+  tombstoneProposals: IdentityTombstoneProposal[];
   contentHash: ContentHash;
 }
 
@@ -230,60 +241,67 @@ function parseVerifiedEvidence(value: unknown, expectedId: string): Evidence {
 function outcomeFactFromEvidence(
   assessment: IdentityAssessment,
   evidence: readonly Evidence[],
-  input: Pick<ResolveSemanticIdentityInput, "requestedMeaning" | "records">,
+  input: Pick<ResolveSemanticIdentityInput, "requestedMeaning" | "requestedKind" | "records" | "proposedTargetIds" | "newBoundary">,
 ): IdentityOutcomeEvidence | undefined {
-  const evidenceIds = sortedUnique(evidence.map(({ id }) => id));
-  const applicableSubjects = new Set([
-    input.requestedMeaning.normalize("NFKC").trim(),
-    ...input.records.map(({ candidate }) => candidate.entityId),
-  ]);
-  const claims = evidence.flatMap((item) => item.claims
-    .filter(({ subjectKey }) => applicableSubjects.has(subjectKey))
-    .map((claim) => ({ evidenceId: item.id, claim })));
-  const matching = <T>(predicate: string, accept: (value: unknown) => T | undefined): Array<{ evidenceId: string; value: T }> =>
-    claims.flatMap(({ evidenceId, claim }) => {
-      if (claim.predicate !== predicate) return [];
-      const value = accept(claim.object);
-      return value === undefined ? [] : [{ evidenceId, value }];
-    });
-  const facts: IdentityOutcomeEvidence[] = [];
-  if (matching("identity-equivalent", (value) => value === true ? true : undefined).length > 0) {
-    facts.push({ kind: "same", equivalentMeaning: true, evidenceIds, rationale: "verified identity equivalence claim" });
-  }
-  if (matching("identity-shared-ownership", (value) => value === true ? true : undefined).length > 0) {
-    facts.push({ kind: "overlap", sharedOwnership: true, evidenceIds, rationale: "verified coordination claim" });
-  }
-  const partitions = matching("identity-partition", (value) => Array.isArray(value) && value.length >= 2 && value.every((item) => typeof item === "string" && item.trim().length > 0) ? value as string[] : undefined);
-  if (partitions.length > 0) facts.push({ kind: "split", partitionMeanings: partitions[0]!.value, evidenceIds, rationale: "verified partition claim" });
-  const convergence = matching("identity-convergence", (value) => typeof value === "string" && value.trim().length > 0 ? value : undefined);
-  if (convergence.length > 0) facts.push({ kind: "merge", convergentTargetMeaning: convergence[0]!.value, evidenceIds, rationale: "verified convergence claim" });
-  const supersession = matching("identity-supersession", (value) => typeof value === "string" && value.trim().length > 0 ? value : undefined);
-  if (supersession.length > 0) facts.push({ kind: "replace", incompatibility: supersession[0]!.value, evidenceIds, rationale: "verified continuity and supersession claim" });
-  const cessation = matching("identity-cessation", (value) => value === true ? true : undefined).length > 0;
-  const noDurable = matching("identity-no-durable-entity", (value) => value === true ? true : undefined).length > 0;
-  if (cessation && noDurable) facts.push({ kind: "delete", durableMeaningCeased: true, evidenceIds, rationale: "verified cessation and no-durable-entity claims" });
-  if (matching("identity-distinct-boundary", (value) => value === true ? true : undefined).length > 0) {
-    facts.push({ kind: "distinct", independentBoundary: true, evidenceIds, rationale: "verified distinct boundary claim" });
-  }
-  const conflicts = matching("identity-conflict", (value) => typeof value === "string" && value.trim().length > 0 ? value : undefined);
-  if (conflicts.length > 0) facts.push({ kind: "ambiguous", unresolvedConflict: conflicts[0]!.value, evidenceIds, rationale: "verified conflicting identity claims" });
-  if (facts.length > 1) throw new Error(`mutually inconsistent identity outcome facts: ${facts.map(({ kind }) => kind).join(", ")}`);
-  const fact = facts[0];
-  if (fact?.kind !== assessment) return undefined;
-  const predicatesByKind: Record<IdentityAssessment, readonly string[]> = {
-    same: ["identity-equivalent"],
-    overlap: ["identity-shared-ownership"],
-    split: ["identity-partition"],
-    merge: ["identity-convergence"],
-    replace: ["identity-supersession"],
-    delete: ["identity-cessation", "identity-no-durable-entity"],
-    distinct: ["identity-distinct-boundary"],
-    ambiguous: ["identity-conflict"],
+  const requestedMeaning = input.requestedMeaning.normalize("NFKC").trim();
+  const requestId = `identity_request_${hashFramedDomain("semantic-identity-request", {
+    requestedMeaning, requestedKind: input.requestedKind,
+  }).slice(-32)}`;
+  const sourceIds = sortedUnique(input.records.map(({ candidate }) => candidate.entityId));
+  const proposedTargetIds = sortedUnique(input.proposedTargetIds ?? []);
+  const targetIds = assessment === "same" || assessment === "overlap" ? activeTargets(input.records) : proposedTargetIds;
+  const common = {
+    version: 1, requestId, requestedMeaning, requestedKind: input.requestedKind,
+    operation: assessment, sourceIds, targetIds,
   };
+  const expectedByPredicate: Partial<Record<string, unknown>> = assessment === "same"
+    ? { "identity-equivalent": { ...common, equivalentMeaning: requestedMeaning } }
+    : assessment === "overlap"
+      ? { "identity-shared-ownership": { ...common, coordinatedSourceIds: sourceIds } }
+      : assessment === "split"
+        ? { "identity-partition": { ...common, partitionTargetIds: targetIds } }
+        : assessment === "merge"
+          ? { "identity-convergence": { ...common, convergence: { sourceIds, targetId: targetIds[0] } } }
+          : assessment === "replace"
+            ? { "identity-supersession": { ...common, supersession: { sourceId: sourceIds[0], targetIds } } }
+            : assessment === "delete"
+              ? {
+                "identity-cessation": { ...common, durableMeaningCeased: true },
+                "identity-no-durable-entity": { ...common, noDurableEntity: true },
+              }
+              : assessment === "distinct"
+                ? { "identity-distinct-boundary": { ...common, boundary: input.newBoundary ?? null } }
+                : { "identity-conflict": { ...common, unresolvedConflict: "ownership conflict" } };
+  const expectedPredicates = Object.keys(expectedByPredicate);
+  const claims = evidence.flatMap((item) => item.claims
+    .filter(({ subjectKey, predicate }) => subjectKey === requestId && expectedPredicates.includes(predicate))
+    .map((claim) => ({ evidenceId: item.id, claim })));
+  for (const predicate of expectedPredicates) {
+    const payloads = claims.filter(({ claim }) => claim.predicate === predicate).map(({ claim }) => claim.object);
+    if (payloads.some((payload) => canonicalJson(payload) !== canonicalJson(expectedByPredicate[predicate]))) {
+      throw new Error(`incompatible ${predicate} payload for the requested identity operation`);
+    }
+    if (payloads.length === 0) return undefined;
+  }
+  const evidenceIds = sortedUnique(claims.map(({ evidenceId }) => evidenceId));
+  const fact: IdentityOutcomeEvidence = assessment === "same"
+    ? { kind: "same", equivalentMeaning: true, evidenceIds, rationale: "verified request-bound identity equivalence claim" }
+    : assessment === "overlap"
+      ? { kind: "overlap", sharedOwnership: true, evidenceIds, rationale: "verified request-bound coordination claim" }
+      : assessment === "split"
+        ? { kind: "split", partitionMeanings: targetIds, evidenceIds, rationale: "verified request-bound partition claim" }
+        : assessment === "merge"
+          ? { kind: "merge", convergentTargetMeaning: targetIds[0] ?? "", evidenceIds, rationale: "verified request-bound convergence claim" }
+          : assessment === "replace"
+            ? { kind: "replace", incompatibility: `${sourceIds[0] ?? ""}->${targetIds.join(",")}`, evidenceIds, rationale: "verified request-bound supersession claim" }
+            : assessment === "delete"
+              ? { kind: "delete", durableMeaningCeased: true, evidenceIds, rationale: "verified request-bound cessation claims" }
+              : assessment === "distinct"
+                ? { kind: "distinct", independentBoundary: true, evidenceIds, rationale: "verified request-bound distinct boundary claim" }
+                : { kind: "ambiguous", unresolvedConflict: "ownership conflict", evidenceIds, rationale: "verified request-bound conflict claim" };
   return {
     ...fact,
     verifiedClaims: claims
-      .filter(({ claim }) => predicatesByKind[fact.kind].includes(claim.predicate))
       .map(({ evidenceId, claim }) => ({ evidenceId, ...structuredClone(claim) }))
       .sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right))),
   };
@@ -383,6 +401,8 @@ function decision(input: ResolveSemanticIdentityInput, records: readonly Identit
 /** Deterministically adjudicates an already evidence-backed semantic comparison. It never creates canonical state. */
 export function resolveSemanticIdentity(input: ResolveSemanticIdentityInput): AdjudicatedSemanticIdentityResolution {
   if (input.requestedMeaning.trim().length === 0) throw new Error("requested semantic meaning cannot be blank");
+  if ((input.proposedTargetIds ?? []).some((id) => id.trim().length === 0)) throw new Error("identity lineage target IDs cannot be blank");
+  if (new Set(input.proposedTargetIds ?? []).size !== (input.proposedTargetIds ?? []).length) throw new Error("identity lineage target IDs must be unique");
   if (input.durableEntity) validateIdentityBinding(input.boundState, input.requestedMeaning, input.requestedKind, input.queryRegistry);
   const records = normalizeRecords(input.records);
   if (input.durableEntity) validateCandidateValueDependencies(input.boundState, records);
@@ -395,12 +415,12 @@ export function resolveSemanticIdentity(input: ResolveSemanticIdentityInput): Ad
       : resolved.outcome === "create-new" ? candidates.length === 0 ? 1 : 1 - Math.max(...candidateScores)
         : candidates.length === 0 ? 1 : Math.min(...candidateScores);
   const proposedTargetIds = sortedUnique(input.proposedTargetIds ?? []);
-  const sourceIds = resolved.selectedEntityIds;
+  const sourceIds = sortedUnique(records.map(({ candidate }) => candidate.entityId));
   const lineageKind: IdentityLineageProposal["kind"] | undefined = resolved.outcome === "split-existing" ? "split"
     : resolved.outcome === "merge-existing" ? "merge"
       : resolved.outcome === "replace-existing" ? "replace"
         : input.assessment === "delete" && resolved.outcome === "no-durable-entity" && input.durableEntity ? "delete" : undefined;
-  if (lineageKind !== undefined && (proposedTargetIds.some((id) => id.trim().length === 0) || proposedTargetIds.some((id) => sourceIds.includes(id)))) {
+  if (lineageKind !== undefined && proposedTargetIds.some((id) => sourceIds.includes(id))) {
     throw new Error(`${lineageKind} lineage targets must be nonblank and distinct from source identities to preserve continuity`);
   }
   if (lineageKind !== undefined && lineageKind !== "delete") {
@@ -413,14 +433,24 @@ export function resolveSemanticIdentity(input: ResolveSemanticIdentityInput): Ad
   if (resolved.outcome === "merge-existing" && (sourceIds.length < 2 || proposedTargetIds.length !== 1)) throw new Error("merge lineage requires at least two sources and exactly one target");
   if (resolved.outcome === "replace-existing" && (sourceIds.length !== 1 || proposedTargetIds.length < 1)) throw new Error("replace lineage requires one source and at least one replacement");
   if (input.assessment === "delete" && resolved.outcome === "no-durable-entity" && sourceIds.length !== 1) throw new Error("delete lineage requires exactly one source");
+  if (input.assessment === "delete" && proposedTargetIds.length !== 0) throw new Error("delete lineage cannot have destinations or replacements");
   const lineageBasis = lineageKind === undefined ? undefined : {
     kind: lineageKind, fromIds: sourceIds, toIds: proposedTargetIds,
     reason: `evidence-backed ${lineageKind} of requested meaning`, stateDigest: input.boundState.compiledAgainst.canonicalProjectorDigest,
   };
-  const lineageProposals: IdentityLineageProposal[] = lineageBasis === undefined ? [] : [{
-    id: `lineage_proposal_${hashFramedDomain("identity-lineage-proposal", lineageBasis).slice(-32)}`,
-    canonical: false, ...lineageBasis,
-  }];
+  const lineageProposals: IdentityLineageProposal[] = lineageBasis === undefined ? [] : (() => {
+    const lineageErrors = validateLineage(lineageBasis);
+    if (lineageErrors.length > 0) throw new Error(`invalid identity lineage proposal: ${lineageErrors.join("; ")}`);
+    const proposal = {
+      id: `lineage_proposal_${hashFramedDomain("identity-lineage-proposal", lineageBasis).slice(-32)}`,
+      canonical: false as const, ...lineageBasis,
+    };
+    LineageRecordSchema.parse({
+      id: proposal.id, kind: proposal.kind, fromIds: proposal.fromIds, toIds: proposal.toIds,
+      reason: proposal.reason, stateDigest: proposal.stateDigest,
+    });
+    return [proposal];
+  })();
   const tombstoneProposals: IdentityTombstoneProposal[] = lineageKind === "replace" || lineageKind === "delete"
     ? sourceIds.map((entityId) => {
       const semanticDependencies = input.boundState.valueDependencies.filter(({ kind, id, role }) =>
@@ -430,6 +460,8 @@ export function resolveSemanticIdentity(input: ResolveSemanticIdentityInput): Ad
       }
       const lastSemanticHash = semanticDependencies[0]!.versionHash;
       const basis = { entityId, lastSemanticHash, replacementIds: proposedTargetIds, reason: lineageBasis!.reason };
+      if (lineageKind === "delete" && basis.replacementIds.length !== 0) throw new Error("delete tombstone cannot have replacement IDs");
+      TombstoneSchema.parse({ ...basis, deletedAtRevision: 0 });
       return { id: `tombstone_proposal_${hashFramedDomain("identity-tombstone-proposal", basis).slice(-32)}`, canonical: false as const, ...basis };
     }) : [];
   const semantic = {
@@ -453,9 +485,15 @@ export function resolveSemanticIdentity(input: ResolveSemanticIdentityInput): Ad
   };
   const adjudication = input.outcomeEvidence !== undefined && verifiedOutcomeEvidence.has(input.outcomeEvidence) ? {
     kind: input.outcomeEvidence.kind,
+    operation: input.assessment,
+    sourceIds,
+    proposedTargetIds,
+    factPayloads: [...(input.outcomeEvidence.verifiedClaims ?? [])].map(({ object }) => structuredClone(object)),
     evidenceIds: sortedUnique(input.outcomeEvidence.evidenceIds),
     claims: [...(input.outcomeEvidence.verifiedClaims ?? [])].map((claim) => structuredClone(claim)),
     claimHashes: sortedUnique((input.outcomeEvidence.verifiedClaims ?? []).map((claim) => hashFramedDomain("identity-adjudication-claim-ref", claim))) as ContentHash[],
+    lineageProposals: structuredClone(lineageProposals),
+    tombstoneProposals: structuredClone(tombstoneProposals),
   } : undefined;
   const adjudicationWithHash = adjudication === undefined ? undefined : {
     ...adjudication,
@@ -463,11 +501,17 @@ export function resolveSemanticIdentity(input: ResolveSemanticIdentityInput): Ad
   };
   const contentHash = hashFramedDomain("semantic-identity-resolution", {
     ...semantic,
+    operation: input.assessment,
+    proposedTargetIds,
+    lineageProposals,
+    tombstoneProposals,
     ...(adjudicationWithHash === undefined ? {} : { adjudication: adjudicationWithHash }),
   });
   return {
     id: `identity_resolution_${contentHash.slice(-32)}`,
     ...semantic,
+    operation: input.assessment,
+    proposedTargetIds,
     ...(adjudicationWithHash === undefined ? {} : { adjudication: adjudicationWithHash }),
     lineageProposals,
     tombstoneProposals,
@@ -523,6 +567,10 @@ function parseIdentityAdjudication(value: unknown): IdentityAdjudication {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("trusted identity adjudication is invalid");
   const record = value as Record<string, unknown>;
   if (!requiredIdentityAssessment(record.kind)
+    || !requiredIdentityAssessment(record.operation) || record.kind !== record.operation
+    || !Array.isArray(record.sourceIds) || record.sourceIds.some((id) => typeof id !== "string" || id.length === 0)
+    || !Array.isArray(record.proposedTargetIds) || record.proposedTargetIds.some((id) => typeof id !== "string" || id.length === 0)
+    || !Array.isArray(record.factPayloads)
     || !Array.isArray(record.evidenceIds) || record.evidenceIds.some((id) => typeof id !== "string" || id.length === 0)
     || !Array.isArray(record.claims) || record.claims.some((claim) => {
       if (typeof claim !== "object" || claim === null || Array.isArray(claim)) return true;
@@ -531,6 +579,7 @@ function parseIdentityAdjudication(value: unknown): IdentityAdjudication {
         || typeof candidate.subjectKey !== "string" || typeof candidate.predicate !== "string" || !("object" in candidate);
     })
     || !Array.isArray(record.claimHashes) || record.claimHashes.some((hash) => typeof hash !== "string" || !hash.startsWith("sha256:v1:"))
+    || !Array.isArray(record.lineageProposals) || !Array.isArray(record.tombstoneProposals)
     || typeof record.contentHash !== "string") {
     throw new Error("trusted identity adjudication is invalid");
   }
@@ -538,12 +587,40 @@ function parseIdentityAdjudication(value: unknown): IdentityAdjudication {
     .map((claim) => structuredClone(claim))
     .sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
   const expectedClaimHashes = sortedUnique(claims.map((claim) => hashFramedDomain("identity-adjudication-claim-ref", claim))) as ContentHash[];
+  const expectedFactPayloads = claims.map(({ object }) => structuredClone(object));
   const basis = {
     kind: record.kind,
+    operation: record.operation,
+    sourceIds: sortedUnique(record.sourceIds as string[]),
+    proposedTargetIds: sortedUnique(record.proposedTargetIds as string[]),
+    factPayloads: structuredClone(record.factPayloads as unknown[]),
     evidenceIds: sortedUnique(record.evidenceIds as string[]),
     claims,
     claimHashes: sortedUnique(record.claimHashes as string[]) as ContentHash[],
+    lineageProposals: structuredClone(record.lineageProposals as IdentityLineageProposal[]),
+    tombstoneProposals: structuredClone(record.tombstoneProposals as IdentityTombstoneProposal[]),
   };
+  if (canonicalJson(record.sourceIds) !== canonicalJson(basis.sourceIds)
+    || canonicalJson(record.proposedTargetIds) !== canonicalJson(basis.proposedTargetIds)
+    || canonicalJson(basis.factPayloads) !== canonicalJson(expectedFactPayloads)) {
+    throw new Error("trusted identity adjudication endpoint sets are not normalized and unique");
+  }
+  for (const proposal of basis.lineageProposals) {
+    if (proposal.canonical !== false || validateLineage(proposal).length > 0) throw new Error("trusted identity adjudication lineage proposal is invalid");
+    LineageRecordSchema.parse({
+      id: proposal.id, kind: proposal.kind, fromIds: proposal.fromIds, toIds: proposal.toIds,
+      reason: proposal.reason, stateDigest: proposal.stateDigest,
+    });
+  }
+  for (const proposal of basis.tombstoneProposals) {
+    if (proposal.canonical !== false || new Set(proposal.replacementIds).size !== proposal.replacementIds.length) {
+      throw new Error("trusted identity adjudication tombstone proposal is invalid");
+    }
+    TombstoneSchema.parse({
+      entityId: proposal.entityId, deletedAtRevision: 0, lastSemanticHash: proposal.lastSemanticHash,
+      replacementIds: proposal.replacementIds, reason: proposal.reason,
+    });
+  }
   if (canonicalJson(basis.claimHashes) !== canonicalJson(expectedClaimHashes)
     || claims.some(({ evidenceId }) => !basis.evidenceIds.includes(evidenceId))) {
     throw new Error("trusted identity adjudication claim references are invalid");
@@ -565,13 +642,36 @@ export async function assertCanonicalCreationAllowed(
   if (typeof storedResolution !== "object" || storedResolution === null || Array.isArray(storedResolution)) {
     throw new Error("canonical creation refused: trusted resolution schema is invalid");
   }
-  const { adjudication: storedAdjudication, lineageProposals: _lineage, tombstoneProposals: _tombstones, ...publicResolution } = storedResolution as Record<string, unknown>;
+  const {
+    adjudication: storedAdjudication,
+    operation: storedOperation,
+    proposedTargetIds: storedTargetIds,
+    lineageProposals: storedLineage,
+    tombstoneProposals: storedTombstones,
+    ...publicResolution
+  } = storedResolution as Record<string, unknown>;
   const resolution = SemanticIdentityResolutionSchema.parse(publicResolution) as SemanticIdentityResolution;
   if (resolution.id !== request.resolutionId) throw new Error("canonical creation refused: trusted resolution ID mismatch");
   const { id: _id, contentHash: _contentHash, ...resolutionSemantic } = resolution;
   const adjudication = storedAdjudication === undefined ? undefined : parseIdentityAdjudication(storedAdjudication);
+  if (!requiredIdentityAssessment(storedOperation)
+    || !Array.isArray(storedTargetIds) || storedTargetIds.some((id) => typeof id !== "string" || id.length === 0)
+    || !Array.isArray(storedLineage) || !Array.isArray(storedTombstones)) {
+    throw new Error("canonical creation refused: trusted resolution operation continuity is invalid");
+  }
+  if (canonicalJson(sortedUnique(storedTargetIds as string[])) !== canonicalJson(storedTargetIds)
+    || (adjudication !== undefined && (adjudication.operation !== storedOperation
+      || canonicalJson(adjudication.proposedTargetIds) !== canonicalJson(storedTargetIds)
+      || canonicalJson(adjudication.lineageProposals) !== canonicalJson(storedLineage)
+      || canonicalJson(adjudication.tombstoneProposals) !== canonicalJson(storedTombstones)))) {
+    throw new Error("canonical creation refused: resolution continuity differs from its adjudication");
+  }
   if (hashFramedDomain("semantic-identity-resolution", {
     ...resolutionSemantic,
+    operation: storedOperation,
+    proposedTargetIds: storedTargetIds,
+    lineageProposals: storedLineage,
+    tombstoneProposals: storedTombstones,
     ...(adjudication === undefined ? {} : { adjudication }),
   }) !== resolution.contentHash) {
     throw new Error("canonical creation refused: trusted resolution content hash mismatch");
@@ -648,16 +748,20 @@ export async function assertCanonicalCreationAllowed(
   if (authority.subjectId !== resolution.id || authority.rationale.trim().length === 0) {
     throw new Error("canonical creation refused: Authority Record must directly govern this identity resolution");
   }
+  if (authority.conclusion !== "normalize") {
+    throw new Error(`canonical creation refused: Authority Record conclusion ${authority.conclusion} does not normatively authorize create-new`);
+  }
   const evidence = await Promise.all(authority.evidence.map(async ({ evidenceId }) => parseVerifiedEvidence(await repository.loadEvidence(evidenceId), evidenceId)));
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
   if (authority.evidence.length === 0 || authority.evidence.some(({ evidenceId, stance }) => {
     const item = evidenceById.get(evidenceId);
+    const creationClaims = item?.claims.filter(({ subjectKey, predicate }) =>
+      subjectKey === resolution.id && predicate === "canonical-creation-approved") ?? [];
     return evidenceId.trim().length === 0 || item === undefined || item.id !== evidenceId || item.applicability !== "direct"
       || item.reliability === "low" || item.reliability === "untrusted"
       || stance !== "supports"
       || (item.normativeAuthority !== "binding-decision" && item.normativeAuthority !== "hard-constraint")
-      || !item.claims.some(({ subjectKey, predicate, object }) =>
-        subjectKey === resolution.id && predicate === "canonical-creation-approved" && object === true);
+      || creationClaims.length === 0 || creationClaims.some(({ object }) => object !== true);
   })) throw new Error("canonical creation refused: validated nonblank authoritative evidence is required");
   return structuredClone(mutationBinding);
 }
