@@ -17,6 +17,7 @@ import {
   resolveSemanticIdentityFromSearch,
   resolveSemanticIdentityFromEvidence,
   resolveSemanticIdentity,
+  type AdjudicatedSemanticIdentityResolution,
   type IdentityCandidateRecord,
 } from "./index.js";
 import { createIdentityBoundaryQueryPrograms, InMemoryGraphReader, QueryDependencyRegistry } from "../query/index.js";
@@ -184,6 +185,18 @@ function publicResolution(resolution: ReturnType<typeof resolveSemanticIdentity>
   return structuredClone(resolution);
 }
 
+function rehashResolution(resolution: AdjudicatedSemanticIdentityResolution): AdjudicatedSemanticIdentityResolution {
+  const rehashed = structuredClone(resolution);
+  if (rehashed.adjudication !== undefined) {
+    const { contentHash: _adjudicationHash, ...adjudicationBasis } = rehashed.adjudication;
+    rehashed.adjudication.contentHash = hashFramedDomain("identity-adjudication", adjudicationBasis);
+  }
+  const { id: _id, contentHash: _resolutionHash, ...semantic } = rehashed;
+  rehashed.contentHash = hashFramedDomain("semantic-identity-resolution", semantic);
+  rehashed.id = `identity_resolution_${rehashed.contentHash.slice(-32)}`;
+  return rehashed;
+}
+
 function trustedRepository(
   resolution: ReturnType<typeof resolveSemanticIdentity>,
   options: { evidence?: Evidence; authority?: AuthorityRecord; current?: boolean } = {},
@@ -276,6 +289,64 @@ describe("semantic identity resolution", () => {
     const malformedFact = structuredClone(resolution);
     malformedFact.adjudication!.factPayloads[0] = { operation: "same", equivalentMeaning: true } as never;
     expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(malformedFact).success).toBe(false);
+  });
+
+  it("rejects a fully rehashed create-new resolution carrying a same fact and split lineage", async () => {
+    const authentic = await resolveTrusted({
+      ...base, assessment: "distinct", records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+    const forged = structuredClone(authentic);
+    const requestId = forged.adjudication!.claims[0]!.subjectKey;
+    const sameFact = {
+      version: 1 as const, requestId, requestedMeaning: forged.requestedMeaning, requestedKind: forged.requestedKind,
+      operation: "same" as const, sourceIds: ["cap-midi-discovery"], targetIds: ["cap-midi-discovery"],
+      equivalentMeaning: forged.requestedMeaning,
+    };
+    const claim = { evidenceId: "request", subjectKey: requestId, predicate: "identity-equivalent", object: sameFact };
+    const lineageBasis = {
+      kind: "split" as const, fromIds: ["cap-midi-discovery"], toIds: ["child-a", "child-b"],
+      reason: "forged split continuity", stateDigest: state.canonicalProjectorDigest,
+    };
+    const lineage = {
+      id: `lineage_proposal_${hashFramedDomain("identity-lineage-proposal", lineageBasis).slice(-32)}`,
+      canonical: false as const, ...lineageBasis,
+    };
+    forged.adjudication = {
+      ...forged.adjudication!, sourceIds: [], proposedTargetIds: [], factPayloads: [sameFact], claims: [claim],
+      claimHashes: [hashFramedDomain("identity-adjudication-claim-ref", claim)], lineageProposals: [lineage], tombstoneProposals: [],
+    };
+    forged.lineageProposals = [lineage];
+    const rehashed = rehashResolution(forged);
+
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(rehashed).success).toBe(false);
+    await expect(assertCanonicalCreationAllowed(
+      { resolutionId: rehashed.id, authorityRecordId: authority.id }, trustedRepository(rehashed),
+    )).rejects.toThrow(/operation|fact|predicate|lineage|continuity/i);
+  });
+
+  it("rejects a fully rehashed persisted boundary that is not canonical and disjoint", async () => {
+    const authentic = await resolveTrusted({
+      ...base, assessment: "distinct", records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+    const forged = structuredClone(authentic);
+    const malformedBoundary = {
+      owns: [" x ", ""], excludes: ["x"], nearestEntityIds: [], rationale: " r ",
+    };
+    forged.newBoundary = malformedBoundary;
+    const fact = { ...forged.adjudication!.factPayloads[0]!, boundary: malformedBoundary };
+    const claim = { ...forged.adjudication!.claims[0]!, object: fact };
+    forged.adjudication = {
+      ...forged.adjudication!, factPayloads: [fact], claims: [claim],
+      claimHashes: [hashFramedDomain("identity-adjudication-claim-ref", claim)],
+    };
+    const rehashed = rehashResolution(forged);
+
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(rehashed).success).toBe(false);
+    await expect(assertCanonicalCreationAllowed(
+      { resolutionId: rehashed.id, authorityRecordId: authority.id }, trustedRepository(rehashed),
+    )).rejects.toThrow(/boundary|normalized|blank|overlap|disjoint/i);
   });
 
   it("normalizes semantic boundary sets once before claims and all identity hashes", async () => {
@@ -588,6 +659,8 @@ describe("semantic identity resolution", () => {
         nearestEntityIds: ["cap-midi-discovery"], rationale: "independently governed transport behavior",
       },
     });
+
+    expect(AdjudicatedSemanticIdentityResolutionSchema.parse(JSON.parse(JSON.stringify(resolution)))).toEqual(resolution);
 
     await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, {
       ...trustedRepository(resolution), loadAuthorityEnvelope: async () => { throw new Error("authoritative acceptance missing"); },
