@@ -105,6 +105,7 @@ export async function compileSemanticChange(
   const authenticated = await ports.facts.load(input.request, input.currentState);
   if (authenticated.contentHash !== hashFramedDomain("authenticated-change-compiler-facts", authenticated.value)) throw new Error("change compiler facts hash is not authenticated");
   const facts = structuredClone(authenticated.value);
+  if (facts.intentAnalysis.request !== input.request) throw new Error("authenticated intent request does not equal the compiler request");
   const { contentHash: _intentHash, ...intentFields } = facts.intentAnalysis;
   if (facts.intentAnalysis.contentHash !== hashFramedDomain("change-intent-analysis", intentFields)) throw new Error("change intent analysis hash is invalid");
   if (facts.identityResolutionIds.length === 0 || facts.intentAnalysis.ambiguity.length > 0) throw new Error("semantic identity is missing or ambiguous");
@@ -119,7 +120,8 @@ export async function compileSemanticChange(
   if (!(await ports.authority.verify({ subjectHash: authenticated.contentHash, binding: boundState, currentState: input.currentState }))) throw new Error("semantic change compiler facts lack current authority");
   const normalized = normalizeOperations(facts.operations);
   validateRelationIntegrity(normalized.accepted, facts.relations);
-  const material = normalized.accepted.some((operation) => operation.subjectType === "requirement" || operation.subjectType === "scenario") || facts.intentAnalysis.statements.some(({ kind }) => kind === "constraint");
+  const architectureSubjects = new Set(["requirement", "scenario", "decision", "rule", "relation", "surface"]);
+  const material = normalized.accepted.some((operation) => architectureSubjects.has(operation.subjectType)) || facts.analysisFacetKeys.includes("architecture") || facts.intentAnalysis.statements.some(({ kind }) => kind === "constraint");
   let decisionIds: readonly string[] = [];
   if (material) {
     const architecture = await ports.architecture.preflight(facts);
@@ -128,13 +130,15 @@ export async function compileSemanticChange(
   }
   const impact = await ports.impact.compile(facts);
   if (impact.contentHash !== hashFramedDomain("authenticated-impact-closure", impact.value)) throw new Error("impact closure hash is invalid");
+  const boundQueryIds = new Set(boundState.queryDependencies.map(({ query }) => query.id));
+  if (impact.value.queryDependencyIds.some((id) => !boundQueryIds.has(id))) throw new Error("impact negative-space query is absent from the final StateBinding");
   if (impact.value.reasons.some(({ kind }) => kind === "open") && impact.value.possibleFrontierUnitIds.length === 0) throw new Error("open impact evidence must widen the possible frontier");
   const risk = await ports.risk.assess({ facts, impact: impact.value });
   if (risk.contentHash !== hashFramedDomain("authenticated-change-risk", risk.value)) throw new Error("change risk hash is invalid");
   if (riskRank(risk.value.class) < riskRank(minimumRisk(normalized.accepted))) throw new Error("authenticated change risk is downgraded below inherent operation risk");
   const impactRef: ImpactClosureRef = { contentHash: impact.contentHash, knownAffectedUnitIds: unique(impact.value.knownAffectedUnitIds), possibleFrontierUnitIds: unique(impact.value.possibleFrontierUnitIds), unavailableSurfaceIds: unique(impact.value.unavailableSurfaceIds) };
-  const stable = { normalizedIntent: facts.intentAnalysis.normalizedIntent.trim(), intentAnalysisId: facts.intentAnalysis.id, identityResolutionIds: unique(facts.identityResolutionIds), relevanceClosureId: facts.relevanceClosureId, analysisFacetKeys: unique(facts.analysisFacetKeys), operations: normalized.accepted, decisionIds: unique(decisionIds), assumptions: unique(facts.assumptions), boundary: unique(facts.boundary), predictedImpact: impactRef, risk: risk.value };
-  const identityHash = hashFramedDomain("semantic-change-identity", stable);
-  const change: SemanticChange = { id: `semantic_change_${identityHash.slice(-32)}`, request: facts.intentAnalysis.request, ...stable, status: "analyzed" };
+  const semanticFields = { normalizedIntent: facts.intentAnalysis.normalizedIntent.trim(), intentAnalysisId: facts.intentAnalysis.id, identityResolutionIds: unique(facts.identityResolutionIds), relevanceClosureId: facts.relevanceClosureId, analysisFacetKeys: unique(facts.analysisFacetKeys), operations: normalized.accepted, decisionIds: unique(decisionIds), assumptions: unique(facts.assumptions), boundary: unique(facts.boundary), predictedImpact: impactRef, risk: risk.value };
+  const identityHash = hashFramedDomain("semantic-change-identity", { ...semanticFields, stateBindingDigest: boundState.dependencyDigest, compiledAgainst: boundState.compiledAgainst });
+  const change: SemanticChange = { id: `semantic_change_${identityHash.slice(-32)}`, request: facts.intentAnalysis.request, ...semanticFields, status: "analyzed" };
   return { change: Object.freeze(change), candidateOperations: Object.freeze(normalized.candidates), boundState: Object.freeze(boundState), compilerFactsHash: authenticated.contentHash, impactReasons: Object.freeze([...impact.value.reasons]), impactQueryDependencyIds: Object.freeze(unique(impact.value.queryDependencyIds)) };
 }
