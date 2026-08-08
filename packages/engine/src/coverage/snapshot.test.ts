@@ -54,6 +54,17 @@ describe("authenticated coverage snapshot", () => {
     expect(degraded.snapshot.lanes.find(({ key }) => key === "representation-projection-fidelity")?.analyzerFailures).toContainEqual(documentFailure);
   });
 
+  it("degrades analyzer failures only inside the authenticated coverage boundary", async () => {
+    const failure: AnalyzerFailure = { analyzerId: "projector.structured-documents", capability: "document-parse", scope: "packages/other/package.json", message: "bad JSON", recoverable: true, affectedClaimKinds: ["structured-document", "stable-path"] };
+    const outside = await compileAuthenticatedCoverageSnapshot({ graphRevision: 1, boundary: ["packages/api"], binding, currentState: state, context }, ports(evidence(undefined, [failure])));
+    expect(outside.snapshot.completeWithinBoundary).toBe(true);
+    expect(outside.snapshot.lanes.every(({ analyzerFailures }) => analyzerFailures.length === 0)).toBe(true);
+    const insideFailure = { ...failure, scope: "packages/api/package.json" };
+    const inside = await compileAuthenticatedCoverageSnapshot({ graphRevision: 1, boundary: ["packages/api"], binding, currentState: state, context }, ports(evidence(undefined, [insideFailure])));
+    expect(inside.snapshot.completeWithinBoundary).toBe(false);
+    expect(inside.snapshot.lanes.find(({ key }) => key === "representation-projection-fidelity")?.analyzerFailures).toContainEqual(insideFailure);
+  });
+
   it("treats reordered set evidence identically and requires proof for bounded assumptions or exclusions", async () => {
     const inventory = lane("inventory", { observability: "bounded", assumptions: ["b", "a"], provenAssumptions: ["a"] });
     const observed = evidence([...REQUIRED_COVERAGE_LANES.map((key) => key === "inventory" ? inventory : key === "planning-surprise" ? lane(key, { applicability: "not-applicable", boundaryExclusion: "no executed changes", denominator: 0, numerator: 0 }) : lane(key)), { ...inventory, assumptions: ["a", "b"], provenAssumptions: ["a"] }]);

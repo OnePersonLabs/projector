@@ -14,6 +14,7 @@ import {
   type DecisionOverlapPort,
   type DecisionPopulationPort,
 } from "@projector/engine/architecture";
+import { REQUIRED_COVERAGE_LANES } from "@projector/engine/coverage";
 
 import { assertOperationRiskAuthorized, deriveOperationRisk, normalizeExecutionPolicy, type CliPolicyInput, type OperationRiskInput, type SliceCommand } from "./policy.js";
 import {
@@ -75,7 +76,7 @@ export interface CoverageCliReport {
   readonly budgetExhausted: boolean;
   readonly continuationPersisted: boolean;
   readonly boundary: readonly string[];
-  readonly lanes: readonly { readonly observability: ObservabilityClass }[];
+  readonly lanes: readonly { readonly key: string; readonly observability: ObservabilityClass }[];
   readonly unavailableSurfaceIds: readonly string[];
   readonly [key: string]: unknown;
 }
@@ -222,6 +223,22 @@ function outputFor(command: SliceCommand, report: unknown, format: "text" | "jso
   return `${command} completed.`;
 }
 
+function coverageExitCode(request: CoverageCliRequest, report: CoverageCliReport): number {
+  const boundaryMatches = report.boundary.length === 1 && report.boundary[0] === request.scope;
+  const laneKeys = [...new Set(report.lanes.map(({ key }) => key))].sort();
+  const requiredKeys = [...REQUIRED_COVERAGE_LANES].sort();
+  const exactLaneInventory = report.lanes.length === REQUIRED_COVERAGE_LANES.length && JSON.stringify(laneKeys) === JSON.stringify(requiredKeys);
+  const requiredUnavailable = !boundaryMatches || !exactLaneInventory || report.unavailableSurfaceIds.length > 0 || report.lanes.some(({ observability }) => observability === "unavailable");
+  const proofRank: Record<CoverageSnapshot["proofStatement"], number> = { "not-established": -1, partial: 0, "high-confidence": 1, bounded: 2, "proven-within-boundary": 3 };
+  const requestedRank: Record<CoverageStrictness, number> = { partial: 0, "high-confidence": 1, bounded: 2, proven: 3 };
+  const strictnessMet = boundaryMatches && exactLaneInventory && proofRank[report.proofStatement] >= requestedRank[request.strictness];
+  return requiredUnavailable ? 5
+    : report.budgetExhausted && report.continuationPersisted ? 7
+      : report.budgetExhausted ? 1
+        : report.approvalRequired ? 3
+          : !strictnessMet ? 4 : 0;
+}
+
 export async function executeProjector(
   arguments_: readonly string[],
   options: ProjectorCommandOptions = {},
@@ -335,23 +352,16 @@ export async function executeProjector(
     case "complete":
     case "cleanup": {
       if (parsed.command === "cleanup" && !policy.allowAutoMutation) {
-        report = { policy, dryRun: true, proofStatement: "partial", boundary: [parsed.coverageRequest.scope], lanes: [], unavailableSurfaceIds: [], approvalRequired: false, budgetExhausted: false, continuationPersisted: false } satisfies CoverageCliReport & { policy: typeof policy; dryRun: true };
+        const dryRunReport = { proofStatement: "partial" as const, boundary: [parsed.coverageRequest.scope], lanes: REQUIRED_COVERAGE_LANES.map((key) => ({ key, observability: "bounded" as const })), unavailableSurfaceIds: [], approvalRequired: false, budgetExhausted: false, continuationPersisted: false };
+        report = { policy, dryRun: true, ...dryRunReport } satisfies CoverageCliReport & { policy: typeof policy; dryRun: true };
+        exitCode = coverageExitCode(parsed.coverageRequest, dryRunReport);
         break;
       }
       const coveragePort = options.coverage ?? defaultCoveragePort(repositoryRoot);
       const provider = parsed.command === "coverage" ? coveragePort.coverage : parsed.command === "complete" ? coveragePort.complete : coveragePort.cleanup;
       const coverageReport = await provider(parsed.coverageRequest);
       report = { policy, ...coverageReport };
-      const boundaryMatches = coverageReport.boundary.length === 1 && coverageReport.boundary[0] === parsed.coverageRequest.scope;
-      const requiredUnavailable = !boundaryMatches || coverageReport.unavailableSurfaceIds.length > 0 || coverageReport.lanes.some(({ observability }) => observability === "unavailable");
-      const proofRank: Record<CoverageSnapshot["proofStatement"], number> = { "not-established": -1, partial: 0, "high-confidence": 1, bounded: 2, "proven-within-boundary": 3 };
-      const requestedRank: Record<CoverageStrictness, number> = { partial: 0, "high-confidence": 1, bounded: 2, proven: 3 };
-      const strictnessMet = boundaryMatches && proofRank[coverageReport.proofStatement] >= requestedRank[parsed.coverageRequest.strictness];
-      exitCode = requiredUnavailable ? 5
-        : coverageReport.budgetExhausted && coverageReport.continuationPersisted ? 7
-          : coverageReport.budgetExhausted ? 1
-          : coverageReport.approvalRequired ? 3
-            : !strictnessMet ? 4 : 0;
+      exitCode = coverageExitCode(parsed.coverageRequest, coverageReport);
       break;
     }
     case "explain": {

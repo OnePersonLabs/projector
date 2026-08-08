@@ -103,8 +103,10 @@ function rank(candidate: CompletionQuestionCandidate): RankedCompletionQuestion 
 
 export async function rankCompletionQuestions(
   candidates: readonly CompletionQuestionCandidate[],
-  input: { readonly store: SettledAnswerStore; readonly currentBindingDependencyDigest: ContentHash },
+  input: { readonly store: SettledAnswerStore; readonly currentBinding: StateBinding; readonly authority: QuestionAuthorityPort },
 ): Promise<RankedCompletionQuestion[]> {
+  const currentBinding = createStateBinding(input.currentBinding);
+  if (currentBinding.dependencyDigest !== input.currentBinding.dependencyDigest) throw new Error("completion ranking StateBinding is invalid");
   const questions = new Map<string, RankedCompletionQuestion>();
   for (const candidate of candidates) {
     const question = rank(candidate);
@@ -114,20 +116,20 @@ export async function rankCompletionQuestions(
   }
   const unsettled: RankedCompletionQuestion[] = [];
   for (const question of questions.values()) {
-    const answer = await input.store.read(question.id);
-    if (answer === undefined || answer.questionContentHash !== question.contentHash || answer.bindingDependencyDigest !== input.currentBindingDependencyDigest) unsettled.push(question);
+    const answer = await authenticatedStoredAnswer(question, currentBinding, input.store, input.authority);
+    if (answer === undefined) unsettled.push(question);
   }
   return unsettled.sort((left, right) => right.utility - left.utility || compare(left.id, right.id));
 }
 
 export interface SettledAnswerStore {
-  read(questionId: string): Promise<Readonly<SettledQuestionAnswer> | undefined>;
+  read(questionId: string): Promise<readonly unknown[]>;
   compareAndStore(expectedRevision: number | undefined, answer: Readonly<SettledQuestionAnswer>, validateAtCommit: () => Promise<void>): Promise<{ readonly status: "stored" | "idempotent" | "conflict"; readonly answer?: Readonly<SettledQuestionAnswer> }>;
 }
 
 export class InMemorySettledAnswerStore implements SettledAnswerStore {
   private readonly answers = new Map<string, Readonly<SettledQuestionAnswer>>();
-  async read(questionId: string): Promise<Readonly<SettledQuestionAnswer> | undefined> { const answer = this.answers.get(questionId); return answer === undefined ? undefined : structuredClone(answer); }
+  async read(questionId: string): Promise<readonly unknown[]> { const answer = this.answers.get(questionId); return answer === undefined ? [] : [structuredClone(answer)]; }
   async compareAndStore(expectedRevision: number | undefined, answer: Readonly<SettledQuestionAnswer>, validateAtCommit: () => Promise<void>): Promise<{ status: "stored" | "idempotent" | "conflict"; answer?: Readonly<SettledQuestionAnswer> }> {
     await validateAtCommit();
     const current = this.answers.get(answer.questionId);
@@ -154,6 +156,37 @@ function boundEvidence(question: RankedCompletionQuestion, binding: StateBinding
   return { hash: hashFramedDomain("completion-question-bound-evidence", { evidenceDependencyIds: question.evidenceDependencyIds, questionContentHash: question.contentHash, bindingDependencyDigest: binding.dependencyDigest, dependencies }), dependencies };
 }
 
+const answerKeys = ["answer", "authorityRecordId", "authoritySemanticHash", "bindingDependencyDigest", "boundEvidenceHash", "contentHash", "id", "outcome", "questionContentHash", "questionId", "revision"];
+function parseStoredAnswer(raw: unknown): SettledQuestionAnswer {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw) || canonicalJson(Object.keys(raw).sort(compare)) !== canonicalJson(answerKeys)) throw new Error("stored settled answer is malformed");
+  const item = raw as Record<string, unknown>;
+  const strings = ["id", "questionId", "questionContentHash", "boundEvidenceHash", "outcome", "answer", "authorityRecordId", "authoritySemanticHash", "bindingDependencyDigest", "contentHash"];
+  if (strings.some((key) => typeof item[key] !== "string" || (item[key] as string).trim() === "") || !Number.isSafeInteger(item.revision) || (item.revision as number) < 1
+    || !["approve", "alternative", "correction", "exception", "defer", "policy"].includes(item.outcome as string)) throw new Error("stored settled answer is malformed");
+  const semantic = { questionId: item.questionId, questionContentHash: item.questionContentHash, boundEvidenceHash: item.boundEvidenceHash, outcome: item.outcome, answer: item.answer, authorityRecordId: item.authorityRecordId, authoritySemanticHash: item.authoritySemanticHash, bindingDependencyDigest: item.bindingDependencyDigest, revision: item.revision };
+  const contentHash = hashFramedDomain("settled-completion-answer", semantic);
+  if (item.contentHash !== contentHash || item.id !== `settled_answer_${contentHash.slice(-32)}`) throw new Error("stored settled answer semantic hash is invalid");
+  return raw as SettledQuestionAnswer;
+}
+
+function oneStoredAnswer(rows: readonly unknown[]): SettledQuestionAnswer | undefined {
+  if (rows.length === 0) return undefined;
+  const parsed = rows.map(parseStoredAnswer);
+  if (parsed.some((item) => canonicalJson(item) !== canonicalJson(parsed[0]))) throw new Error("conflicting stored settled answers");
+  return parsed[0];
+}
+
+async function authenticatedStoredAnswer(question: RankedCompletionQuestion, binding: StateBinding, store: SettledAnswerStore, authorityPort: QuestionAuthorityPort): Promise<SettledQuestionAnswer | undefined> {
+  const answer = oneStoredAnswer(await store.read(question.id));
+  if (answer === undefined || answer.questionContentHash !== question.contentHash || answer.bindingDependencyDigest !== binding.dependencyDigest) return undefined;
+  if (answer.boundEvidenceHash !== boundEvidence(question, binding).hash) throw new Error("stored settled answer evidence authentication failed");
+  const parsed = AuthorityRecordSchema.safeParse(await authorityPort.read(answer.authorityRecordId));
+  if (!parsed.success) throw new Error("stored settled answer authority authentication failed");
+  const authority = parsed.data as AuthorityRecord;
+  if (!authorityRecordHashIsValid(authority) || authority.semanticHash !== answer.authoritySemanticHash || authority.subjectId !== question.id || !["approved", "auto-approved"].includes(authority.status)) throw new Error("stored settled answer authority authentication failed");
+  return answer;
+}
+
 export async function settleCompletionQuestion(
   input: { readonly question: RankedCompletionQuestion; readonly outcome: CompletionAnswerOutcome; readonly answer: string; readonly authorityRecordId: string; readonly boundState: StateBinding; readonly currentState: StateDigest; readonly context: AdapterContext },
   ports: { readonly authority: QuestionAuthorityPort; readonly bindingValidator: StateBindingValidator; readonly store: SettledAnswerStore; readonly exceptional?: QuestionExceptionalOutcomePort },
@@ -167,7 +200,7 @@ export async function settleCompletionQuestion(
   if (validation.status !== "current" && validation.status !== "rebound") throw new Error(`settled answer binding is ${validation.status}`);
   const effectiveBinding = createStateBinding(validation.status === "rebound" ? validation.rebound! : normalizedBinding);
   if (canonicalJson(effectiveBinding.compiledAgainst) !== canonicalJson(input.currentState)) throw new Error("settled answer rebound binding is not compiled against current state");
-  const current = await ports.store.read(input.question.id);
+  const current = oneStoredAnswer(await ports.store.read(input.question.id));
   const boundEvidenceHash = boundEvidence(input.question, effectiveBinding).hash;
   const revision = current === undefined ? 1 : current.revision + 1;
   const authorityRaw = await ports.authority.read(input.authorityRecordId);

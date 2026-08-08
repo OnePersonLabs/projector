@@ -57,4 +57,19 @@ describe("resumable cleanup and metrics", () => {
     await expect(resumeCleanupPlan({ selector: initial.id, currentState: state, context, budget: { tokens: 1, cost: 1 } }, { ...common, store: conflictingStore, runChunk: sideEffect })).rejects.toThrow(/reservation|conflict/iu);
     expect(sideEffect).not.toHaveBeenCalled();
   });
+
+  it("holds an exclusive store-owned reservation through effect commit", async () => {
+    const initial = createCleanupPlan({ key: "cleanup:exclusive", revision: 1, boundState: binding, frontierIds: [], completedWorkIds: [], remainingWork: [{ id: "work:a", tokenCost: 1, monetaryCost: 1 }], checkpoints: [], assumptions: [], externalActions: [] });
+    const store = new InMemoryCleanupPlanStore(); await store.compareAndStore(undefined, initial);
+    let release!: () => void; const blocked = new Promise<void>((resolve) => { release = resolve; }); const effects = vi.fn(async () => { await blocked; return { completedWorkIds: ["work:a"], externalActions: [] }; });
+    const ports = { store, bindingValidator: { validate: async () => ({ status: "current" as const, currentState: state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) }, progress: { authenticate: async () => ({ completedWorkIds: [], remainingWorkIds: ["work:a"], boundDependencyDigest: binding.dependencyDigest }) }, runChunk: effects };
+    const first = resumeCleanupPlan({ selector: initial.id, currentState: state, context, budget: { tokens: 1, cost: 1 } }, ports);
+    await vi.waitFor(() => expect(effects).toHaveBeenCalledTimes(1));
+    await expect(resumeCleanupPlan({ selector: initial.id, currentState: state, context, budget: { tokens: 1, cost: 1 } }, ports)).rejects.toThrow(/reservation|conflict/iu);
+    const { id: _initialId, contentHash: _initialHash, ...initialFields } = initial;
+    const divergent = createCleanupPlan({ ...initialFields, revision: 2, supersedesPlanId: initial.id, completedWorkIds: ["work:a"], remainingWork: [] });
+    expect(await store.compareAndStore(1, divergent)).toBe("conflict");
+    release(); const completed = await first;
+    expect(completed.plan.revision).toBe(2); expect(effects).toHaveBeenCalledTimes(1);
+  });
 });
