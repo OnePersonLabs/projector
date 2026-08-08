@@ -90,7 +90,7 @@ describe("semantic representation compilation", () => {
     expect(Object.keys(results[0]!.projection)).not.toContain("content");
     expect(artifacts.values.size).toBe(4);
     expect(results[0]!.projection.boundState.valueDependencies.map(({ kind, id }) => `${kind}:${id}`).sort()).toEqual([
-      "canonical-entity:rule:delete", "canonical-entity:scenario:delete", "canonical-governance:rule:delete", "representation-profile:profile:human-technical",
+      "canonical-entity:statement:rule:delete", "canonical-entity:scenario:scenario:delete", "canonical-governance:rule:delete", "representation-profile:profile:human-technical",
     ].sort());
     expect(() => results[0]!.projection.boundState.valueDependencies.push(binding.valueDependencies[0]!)).toThrow();
   });
@@ -105,15 +105,20 @@ describe("semantic representation compilation", () => {
     expect(rendered).toMatch(/Given production data exists[\s\S]*When the user approves deletion[\s\S]*Then deleteProductionData runs[\s\S]*But deletion runs before approval/u);
   });
 
-  it.each([
-    ["Avoid deleting production data without approval", "normative-force"],
-    ["MUST delete production data when explicit user approval", "logical-connective"],
-    ["MUST_NOT delete one or more production data unless explicit user approval", "quantifier-cardinality"],
-    ["MUST_NOT delete production data", "exception"],
-  ] as const)("fails closed for protected drift in %s", async (candidate, dimension) => {
-    const compiler = new RepresentationCompiler({ artifacts: new MemoryArtifacts(), tokenizer: measured });
-    await expect(compiler.validateCandidate({ source, profileKey: "agent-compact@1", candidate }))
-      .rejects.toMatchObject({ dimension });
+  it("fails closed for independently parsed protected drift", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const projection = await compiler.compile({ source, binding, profileKey: "agent-compact@1" });
+    const exact = (await artifacts.get(projection.projection.contentHash))!;
+    const cases = [
+      [exact.replace("FORBID NOT", "PERMIT NOT"), "normative-force"],
+      [exact.replace("IFF", "AND"), "logical-connective"],
+      [exact.replace("EXACTLY-ONE", "ONE-OR-MORE"), "quantifier-cardinality"],
+      [exact.replace(" | EXCEPT explicit user approval", ""), "exception"],
+    ] as const;
+    for (const [candidate, dimension] of cases) {
+      await expect(compiler.validateCandidate({ source, profileKey: "agent-compact@1", candidate })).rejects.toMatchObject({ dimension });
+    }
   });
 
   it("accepts the exact machine kernel and preserves every protected literal", async () => {
@@ -123,6 +128,23 @@ describe("semantic representation compilation", () => {
     const rendered = await artifacts.get(result.projection.contentHash);
     for (const literal of source.statements[0]!.protectedLiterals) expect(rendered).toContain(literal);
     await expect(compiler.validateCandidate({ source, profileKey: "machine-invariant@1", candidate: rendered! })).resolves.toBeDefined();
+  });
+
+  it("derives exact observations by parsing candidate structure rather than comparing bytes", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const result = await compiler.compile({ source, binding, profileKey: "machine-invariant@1" });
+    const exact = (await artifacts.get(result.projection.contentHash))!;
+    const cosmetic = JSON.stringify(JSON.parse(exact), null, 2);
+    await expect(compiler.validateCandidate({ source, profileKey: "machine-invariant@1", candidate: cosmetic }))
+      .resolves.toMatchObject({ assurance: "exact", unsupportedDimensions: [] });
+
+    const contradictory = JSON.parse(exact) as { statements: Array<{ force: string }> };
+    contradictory.statements[0]!.force = "permit";
+    await expect(compiler.validateCandidate({ source, profileKey: "machine-invariant@1", candidate: JSON.stringify(contradictory) }))
+      .rejects.toMatchObject({ dimension: "normative-force" });
+    await expect(compiler.validateCandidate({ source, profileKey: "machine-invariant@1", candidate: "not a deterministic kernel" }))
+      .rejects.toThrow(/parse|prove|unsupported/u);
   });
 
   it("rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles", async () => {
@@ -150,7 +172,7 @@ describe("semantic representation compilation", () => {
     const artifacts = new MemoryArtifacts();
     const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
     const compact = await compiler.compile({ source, binding, profileKey: "agent-compact@1" });
-    const invented = `${(await artifacts.get(compact.projection.contentHash))!}\nPDA`;
+    const invented = `${(await artifacts.get(compact.projection.contentHash))!.replace("\nSCENARIO", " | PDA\nSCENARIO")}`;
     await expect(compiler.validateCandidate({ source, profileKey: "agent-compact@1", candidate: invented }))
       .rejects.toMatchObject({ dimension: "identifier-literal" });
     await expect(compiler.validateCandidate({
@@ -172,6 +194,8 @@ describe("semantic representation compilation", () => {
 
     expect(negative.projection.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["machine-invariant@1"].id);
     expect(negative.projection.status).toBe("fallback-used");
+    expect(negative.fallback?.tier).toBe("exact-machine-plus-advisory-compact");
+    expect(negative.advisoryProjection?.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].id);
     expect(negative.projection.tokenAccounting?.estimatedNetTokens).toBeLessThanOrEqual(0);
     expect(positive.projection.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].id);
     expect(positive.projection.tokenAccounting?.estimatedNetTokens).toBeGreaterThan(0);
@@ -244,5 +268,58 @@ describe("semantic representation compilation", () => {
     const accepted = (await artifacts.get(result.projection.contentHash))!;
     expect(result.projection.tokenAccounting?.outputTokens).toBe(measured.measure(accepted));
     expect(result.projection.profileId).not.toBe(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].id);
+  });
+
+  it("binds each typed source member exactly once and rejects cross-kind identity collisions", async () => {
+    const result = await new RepresentationCompiler({ artifacts: new MemoryArtifacts(), tokenizer: measured })
+      .compile({ source, binding, profileKey: "machine-invariant@1" });
+    const sourceDependencies = result.projection.boundState.valueDependencies
+      .filter(({ role }) => role.startsWith("representation-source:"));
+    expect(sourceDependencies.map(({ id, role }) => `${role}:${id}`).sort()).toEqual([
+      "representation-source:statement:statement:rule:delete",
+      "representation-source:scenario:scenario:scenario:delete",
+    ].sort());
+    expect(new Set(sourceDependencies.map(({ id, versionHash }) => `${id}:${versionHash}`)).size).toBe(2);
+
+    const collisionBody = {
+      ...sourceBody,
+      sourceEntityIds: ["rule:delete"],
+      scenarios: [{ ...sourceBody.scenarios[0]!, id: "rule:delete" }],
+    };
+    await expect(new RepresentationCompiler({ artifacts: new MemoryArtifacts() }).compile({
+      source: { ...collisionBody, sourceSemanticHash: canonicalSourceHash(collisionBody) }, binding, profileKey: "machine-invariant@1",
+    })).rejects.toThrow(/cross-kind|collision/u);
+  });
+
+  it("attempts every safer fallback tier in order and blocks after exhausting them", async () => {
+    const attempted: string[] = [];
+    const compiler = new RepresentationCompiler({
+      artifacts: new MemoryArtifacts(), tokenizer: measured,
+      fallbackGate: (tier) => { attempted.push(tier); return tier === "human-technical"; },
+    });
+    const result = await compiler.compileBest({ source, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 100 });
+    expect(attempted).toEqual(["exact-machine-plus-advisory-compact", "less-aggressive-compact", "human-technical"]);
+    expect(result.fallback).toMatchObject({ tier: "human-technical", status: "fallback-used" });
+    expect(result.projection.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["human-technical@1"].id);
+    expect(result.projection.tokenAccounting?.outputTokens).toBeGreaterThan(0);
+
+    const lessArtifacts = new MemoryArtifacts();
+    const lessAggressive = await new RepresentationCompiler({
+      artifacts: lessArtifacts, tokenizer: measured,
+      fallbackGate: (tier) => tier === "less-aggressive-compact",
+    }).compileBest({ source, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 100 });
+    expect(lessAggressive.fallback).toEqual({ tier: "less-aggressive-compact", status: "fallback-used" });
+    expect(await lessArtifacts.get(lessAggressive.projection.contentHash)).toMatch(/^STATEMENT /u);
+    expect(lessAggressive.projection.tokenAccounting?.outputTokens)
+      .toBe(measured.measure((await lessArtifacts.get(lessAggressive.projection.contentHash))!));
+
+    const blockedAttempts: string[] = [];
+    const blocked = new RepresentationCompiler({
+      artifacts: new MemoryArtifacts(), tokenizer: measured,
+      fallbackGate: (tier) => { blockedAttempts.push(tier); return false; },
+    });
+    await expect(blocked.compileBest({ source, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 100 }))
+      .rejects.toThrow(/fallback.*block/u);
+    expect(blockedAttempts).toEqual(["exact-machine-plus-advisory-compact", "less-aggressive-compact", "human-technical"]);
   });
 });

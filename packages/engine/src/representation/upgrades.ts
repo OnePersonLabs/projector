@@ -22,14 +22,18 @@ export const upgradeDeclarationHash = (declaration: SerializedUpgradeDeclaration
   return hashFramedDomain("upgrade-declaration:v1", { ...parsed, affectedDependencyKeys: normalizeKeys(parsed.affectedDependencyKeys) });
 };
 export interface UpgradeDependent { readonly id: string; readonly dependencyKeys: readonly string[]; readonly kind: "representation" | "context" | "capsule" | "derivation" | "canonical-source" }
+export interface UpgradeDependencyRegistry { readonly knownDependencyKeys: readonly string[] }
 
-export function planUpgradeInvalidation(declaration: UpgradeDeclaration, dependents: readonly UpgradeDependent[]): {
+export function planUpgradeInvalidation(declaration: UpgradeDeclaration, dependents: readonly UpgradeDependent[], registry: UpgradeDependencyRegistry): {
   readonly invalidatedIds: string[]; readonly preservedCanonicalSourceIds: string[]; readonly requiredAction: UpgradeDeclaration["requiredAction"];
 } {
   if (declaration.fromVersion === declaration.toVersion) throw new TypeError("upgrade versions must differ");
   if (declaration.requiredAction === "none") throw new TypeError("semantic interpretation upgrade and profile upgrade require a non-none action");
   const keys = normalizeKeys(declaration.affectedDependencyKeys);
   if (keys.length === 0) throw new TypeError("upgrade must declare affected dependency keys");
+  const known = new Set(normalizeKeys(registry.knownDependencyKeys));
+  const unresolved = keys.filter((key) => !known.has(key));
+  if (unresolved.length > 0) throw new TypeError(`affected dependency keys do not resolve in the known dependency registry: ${unresolved.join(", ")}`);
   const definitions = new Map<string, string>();
   for (const dependent of dependents) {
     const normalized = canonicalJson({ ...dependent, dependencyKeys: normalizeKeys(dependent.dependencyKeys) });
@@ -50,6 +54,7 @@ export function planUpgradeInvalidation(declaration: UpgradeDeclaration, depende
       }
     }
   }
+  if (invalidated.size === 0) throw new TypeError("semantic upgrade must produce a nonempty actual invalidation; vacuous dependency keys are not permitted");
   return {
     invalidatedIds: [...invalidated].sort(),
     preservedCanonicalSourceIds: normalizedDependents.filter(({ kind }) => kind === "canonical-source").map(({ id }) => id).sort(),

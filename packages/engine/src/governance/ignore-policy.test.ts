@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import fc from "fast-check";
 import { compileIgnorePolicy, IgnorePolicyConflictError, compileLayeredIgnorePolicy } from "./ignore-policy.js";
 import { projectionUnit, tagSelector } from "./test-fixtures.js";
 
@@ -52,5 +53,29 @@ describe("layered ignore policy", () => {
       ...(["inventory", "inferenceAuthority", "mutation", "reporting", "modelContext", "coverageDenominator"] as const)
         .map((concern) => ({ id: `all-${concern}`, layer: "rule" as const, concern, effect: "ignore" as const, selector: tagSelector("vendor") })),
     ] })).toThrow(/all semantic roles/u);
+  });
+
+  it("prefers semantic exactness over broad any selectors at the same layer", () => {
+    const unit = projectionUnit("vendor", { tags: ["vendor"] });
+    const broad = { op: "any" as const, items: [tagSelector("vendor"), tagSelector("generated")] };
+    const result = compileLayeredIgnorePolicy({ units: [unit], rules: [
+      { id: "broad", layer: "rule", concern: "mutation", effect: "ignore", selector: broad },
+      { id: "exact", layer: "rule", concern: "mutation", effect: "include", selector: tagSelector("vendor") },
+    ] });
+    expect(result.byUnit[unit.id]!.mutation).toBe(false);
+  });
+
+  it("keeps exact atoms above any/not/glob breadth regardless of branch count", () => {
+    fc.assert(fc.property(fc.integer({ min: 2, max: 20 }), (count) => {
+      const unit = projectionUnit("vendor", { tags: ["vendor"] });
+      const broad = { op: "any" as const, items: Array.from({ length: count }, (_, index) => index === 0
+        ? tagSelector("vendor")
+        : ({ op: "atom" as const, field: "path" as const, matcher: "glob" as const, value: `**/${index}/**` })) };
+      const result = compileLayeredIgnorePolicy({ units: [unit], rules: [
+        { id: "broad", layer: "rule", concern: "reporting", effect: "ignore", selector: broad },
+        { id: "exact", layer: "rule", concern: "reporting", effect: "include", selector: tagSelector("vendor") },
+      ] });
+      expect(result.byUnit[unit.id]!.reporting).toBe(false);
+    }));
   });
 });
