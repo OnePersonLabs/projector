@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
@@ -11,6 +12,7 @@ import {
   hashRootManifest,
   hashSemantic,
   ChangeCertificateSchema,
+  TransactionJournalEntrySchema,
   TransactionReceiptSchema,
   withCanonicalHashes,
   type AuthorityRecord,
@@ -195,14 +197,23 @@ function patternCandidates(
 }
 
 interface PersistedJournalRecord {
+  readonly version?: number;
   readonly entry?: {
     readonly transactionId?: string;
     readonly planId?: string;
     readonly phase?: string;
+    readonly worktreePath?: string;
+    readonly beforeState?: StateDigest;
+    readonly checkpointIds?: string[];
+    readonly externalOperationIds?: string[];
     readonly touchedPaths?: string[];
+    readonly updatedAt?: string;
   };
+  readonly allowedWriteRoots?: string[];
+  readonly checkpoints?: Array<{ readonly id?: string; readonly phase?: string; readonly operationCount?: number }>;
   readonly operations?: Array<{
     readonly id?: string;
+    readonly kind?: string;
     readonly status?: string;
     readonly changes?: Array<{ readonly path?: string }>;
   }>;
@@ -224,6 +235,10 @@ function sameStringSet(left: readonly string[], right: readonly string[]): boole
   return left.length === right.length && new Set(left).size === left.length && left.every((value) => right.includes(value));
 }
 
+function sameOrdered(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function operationPaths(summary: string): string[] {
   const moved = /^moved (\S+) to (\S+)$/u.exec(summary);
   if (moved !== null) return [moved[1]!, moved[2]!];
@@ -231,6 +246,10 @@ function operationPaths(summary: string): string[] {
   if (updated !== null) return [updated[1]!];
   const wrote = /^wrote canonical [^ ]+ at (\S+)$/u.exec(summary);
   return wrote === null ? [] : [wrote[1]!];
+}
+
+function operationKind(summary: string): "move-file" | "write-file" | undefined {
+  return summary.startsWith("moved ") ? "move-file" : summary.startsWith("updated registered reference ") || summary.startsWith("wrote canonical ") ? "write-file" : undefined;
 }
 
 async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Set<string>> {
@@ -242,9 +261,9 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
   let journalNames: string[] = [];
   try { journalNames = (await readdir(journalRoot)).filter((name) => name.endsWith(".json")); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  const journals: PersistedJournalRecord[] = [];
+  const journals: Array<PersistedJournalRecord & { readonly name: string }> = [];
   for (const journalName of journalNames) {
-    try { journals.push(JSON.parse(await readFile(join(journalRoot, journalName), "utf8")) as PersistedJournalRecord); }
+    try { journals.push({ ...(JSON.parse(await readFile(join(journalRoot, journalName), "utf8")) as PersistedJournalRecord), name: journalName }); }
     catch { /* malformed journals cannot establish provenance */ }
   }
   for (const receiptName of receiptNames.filter((name) => name.endsWith(".json"))) {
@@ -291,7 +310,26 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
       const journal = journals.find(({ entry }) => entry !== undefined && entry.planId === receipt.planId && entry.phase === "committed"
         && sameStringSet(entry.touchedPaths ?? [], operations.flatMap((operation) => operationPaths(operation.summary ?? ""))));
       if (journal === undefined || journal.entry?.transactionId === undefined || !Array.isArray(journal.operations)
+        || journal.entry.transactionId !== "transaction:mandatory-repository-script:1"
+        || journal.name !== `${createHash("sha256").update(journal.entry.transactionId).digest("hex")}.json`
+        || journal.version !== 1 || journal.entry.worktreePath !== repositoryRoot
+        || !TransactionJournalEntrySchema.safeParse(journal.entry).success
+        || !Array.isArray(journal.allowedWriteRoots) || !journal.allowedWriteRoots.includes(".")
         || journal.operations.length !== operations.length || journal.operations.some((operation) => operation.status !== "applied")) continue;
+      const checkpointIds = journal.checkpoints?.map(({ id }) => id);
+      const expectedCheckpointIds = ["before-transform", "move-reference-update@1:before", "move-reference-update@1:after", "after-validation"];
+      if (!sameOrdered(checkpointIds?.filter((id): id is string => id !== undefined) ?? [], expectedCheckpointIds)
+        || journal.entry.checkpointIds?.length !== expectedCheckpointIds.length
+        || !sameOrdered(journal.entry.checkpointIds ?? [], expectedCheckpointIds)
+        || artifact.lastCheckpointId !== "after-validation") continue;
+      const journalPaths = journal.operations.flatMap((operation) => operation.changes?.map(({ path }) => path).filter((path): path is string => path !== undefined) ?? []);
+      if (!sameStringSet(journalPaths, operations.flatMap((operation) => operationPaths(operation.summary ?? "")))) continue;
+      if (journal.operations.some((operation, index) => {
+        const summary = operations[index]?.summary ?? "";
+        const expectedKind = operationKind(summary);
+        const actualPaths = operation.changes?.map(({ path }) => path).filter((path): path is string => path !== undefined) ?? [];
+        return expectedKind === undefined || operation.kind !== expectedKind || !sameStringSet(actualPaths, operationPaths(summary));
+      })) continue;
       const movedPaths = operations.flatMap((operation) => {
         const summary = operation.summary ?? "";
         const match = /^moved .+ to (.+)$/u.exec(summary);

@@ -164,6 +164,56 @@ describe("mandatory misplaced repository-script vertical slice", () => {
     expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
   });
 
+  it("rejects certificate operation and touched-unit mismatches against the journal", async () => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const repaired = await executeProjector(["reconcile", "--format", "json"], { cwd: repository.root });
+    expect(repaired.exitCode, repaired.output).toBe(0);
+    const certificatePath = repaired.report.certificateRef as string;
+    const certificate = JSON.parse(await readFile(certificatePath, "utf8")) as {
+      certificate: { deterministicOperations: Array<{ summary: string }> };
+    };
+    certificate.certificate.deterministicOperations[0]!.summary = "moved .codex/hooks/validate-repo.mjs to scripts/fabricated.mjs";
+    await writeFile(certificatePath, `${JSON.stringify(certificate)}\n`, "utf8");
+    const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
+    const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
+    expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
+  });
+
+  it("rejects journal plan, transaction, and touched-path mismatches", async () => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const repaired = await executeProjector(["reconcile", "--format", "json"], { cwd: repository.root });
+    expect(repaired.exitCode, repaired.output).toBe(0);
+    const journalDirectory = join(repository.root, ".projector/runtime/journal");
+    const journalName = (await readdir(journalDirectory))[0];
+    if (journalName === undefined) throw new Error("expected committed journal");
+    const journalPath = join(journalDirectory, journalName);
+    const journal = JSON.parse(await readFile(journalPath, "utf8")) as { entry: { planId: string; transactionId: string; touchedPaths: string[] } };
+    journal.entry.planId = "plan:forged";
+    journal.entry.transactionId = "transaction:forged";
+    journal.entry.touchedPaths[0] = "scripts/forged.mjs";
+    await writeFile(journalPath, `${JSON.stringify(journal)}\n`, "utf8");
+    const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
+    const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
+    expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
+  });
+
+  it("rejects receipt touched-unit and plan mismatches", async () => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const repaired = await executeProjector(["reconcile", "--format", "json"], { cwd: repository.root });
+    expect(repaired.exitCode, repaired.output).toBe(0);
+    const receiptPath = repaired.report.receiptRef as string;
+    const receipt = JSON.parse(await readFile(receiptPath, "utf8")) as { planId: string; changedUnitIds: string[] };
+    receipt.planId = "plan:forged";
+    receipt.changedUnitIds = [];
+    await writeFile(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
+    const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
+    const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
+    expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
+  });
+
   it("refuses after a post-approval canonical edit before any workspace mutation", async () => {
     const repository = await createTempGitRepository();
     repositories.push(repository);
