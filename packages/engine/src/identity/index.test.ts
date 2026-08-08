@@ -341,6 +341,23 @@ describe("semantic identity resolution", () => {
     )).rejects.toThrow(/canonical|evidence|order|unique/i);
   });
 
+  it("rejects a fully rehashed create-new resolution whose StateBinding dependency sets are not canonical", async () => {
+    const authentic = await resolveTrusted({
+      ...base, assessment: "distinct", records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+    const forged = structuredClone(authentic);
+    forged.boundState.queryDependencies.reverse();
+    forged.boundState.dependencyDigest = createStateBinding(forged.boundState).dependencyDigest;
+    const rehashed = rehashResolution(forged);
+
+    expect(AdjudicatedSemanticIdentityResolutionSchema.safeParse(rehashed).success).toBe(false);
+    await expect(assertCanonicalCreationAllowed(
+      { resolutionId: rehashed.id, authorityRecordId: authority.id },
+      trustedRepository(rehashed),
+    )).rejects.toThrow(/StateBinding|canonical|dependenc/i);
+  });
+
   it("rejects rehashed adjudication claim and fact sets whose canonical order was changed", async () => {
     const authentic = await resolveTrusted({ ...base, assessment: "delete", proposedTargetIds: [] });
     const reordered = structuredClone(authentic);
@@ -748,6 +765,25 @@ describe("semantic identity resolution", () => {
         changedValueDependencyIds: ["unexpected-change"], changedQueryDependencyIds: [], reasons: [],
       }),
     })).rejects.toThrow(/current.*changed|inconsistent/i);
+  });
+
+  it("rejects a dependency-local rebound whose raw StateBinding sets are not canonical", async () => {
+    const resolution = await resolveTrusted({
+      ...base, assessment: "distinct", records: [], boundState: emptyBinding,
+      newBoundary: { owns: ["BLE"], excludes: ["wired"], nearestEntityIds: [], rationale: "separate" },
+    });
+    const reboundState = { ...state, worktreeDigest: hash("unrelated-change") };
+    const rebound = createStateBinding({ ...emptyBinding, compiledAgainst: reboundState });
+    rebound.queryDependencies.reverse();
+    const repository = trustedRepository(resolution);
+
+    await expect(assertCanonicalCreationAllowed({ resolutionId: resolution.id, authorityRecordId: authority.id }, {
+      ...repository,
+      validateBinding: async () => ({
+        status: "rebound", currentState: reboundState, changedValueDependencyIds: [], changedQueryDependencyIds: [],
+        reasons: ["bound facts unchanged"], rebound,
+      }),
+    })).rejects.toThrow(/rebound|StateBinding|canonical/i);
   });
 
   it.each([
@@ -1209,5 +1245,42 @@ describe("semantic identity resolution", () => {
       const canonical = await resolveSemanticIdentityFromEvidence(canonicalInput, { loadEvidence: async () => canonicalEvidence });
       expect(varied).toEqual(canonical);
     }));
+  });
+
+  it("canonicalizes StateBinding dependency sets and nested fingerprint sets before emitting identity", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.shuffledSubarray([0, 1, 2, 3, 4, 5, 6], { minLength: 7, maxLength: 7 }),
+      async (order) => {
+        const valueDependencies = [
+          binding.valueDependencies.find(({ id }) => id === "cap-midi-discovery")!,
+          binding.valueDependencies.find(({ id }) => id === "concept-timing")!,
+          binding.valueDependencies.find(({ id }) => id === "cap-midi-discovery")!,
+        ];
+        const queryDependencies = [
+          ...binding.queryDependencies,
+          binding.queryDependencies[0]!,
+        ];
+        const rawBinding: StateBinding = {
+          compiledAgainst: structuredClone(binding.compiledAgainst),
+          valueDependencies: order.map((index) => structuredClone(valueDependencies[index % valueDependencies.length]!)),
+          queryDependencies: order.map((index) => {
+            const dependency = structuredClone(queryDependencies[index]!);
+            dependency.priorResult.assumptions = order.map((nestedIndex) => ["bounded", "verified", "bounded"][nestedIndex % 3]!);
+            dependency.priorResult.unavailableLanes = order.map((nestedIndex) => ["history", "topology", "history"][nestedIndex % 3]!);
+            dependency.priorResult.dependencyKeys = order.map((nestedIndex) => ["identity:b", "identity:a", "identity:b"][nestedIndex % 3]!);
+            return dependency;
+          }),
+          dependencyDigest: emptyBinding.dependencyDigest,
+        };
+        rawBinding.dependencyDigest = createStateBinding(rawBinding).dependencyDigest;
+        const canonicalBinding = createStateBinding(rawBinding);
+        const varied = await resolveTrusted({ ...base, assessment: "same", boundState: rawBinding });
+        const canonical = await resolveTrusted({ ...base, assessment: "same", boundState: canonicalBinding });
+
+        expect(varied).toEqual(canonical);
+        expect(varied.boundState).toEqual(canonicalBinding);
+        expect(AdjudicatedSemanticIdentityResolutionSchema.parse(varied)).toEqual(varied);
+      },
+    ));
   });
 });

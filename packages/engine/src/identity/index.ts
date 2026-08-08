@@ -54,6 +54,43 @@ function isCanonicalJsonSet(values: readonly unknown[]): boolean {
   return canonicalJson(values) === canonicalJson(canonicalJsonSet(values));
 }
 
+function canonicalStateBinding(binding: StateBinding): StateBinding {
+  return createStateBinding({
+    compiledAgainst: binding.compiledAgainst,
+    valueDependencies: binding.valueDependencies,
+    queryDependencies: binding.queryDependencies,
+  });
+}
+
+function reportCanonicalStateBindingIssues(
+  binding: StateBinding,
+  issue: (message: string, path?: PropertyKey[]) => void,
+): void {
+  let canonical: StateBinding;
+  try {
+    canonical = canonicalStateBinding(binding);
+  } catch (error) {
+    issue(error instanceof Error ? error.message : "StateBinding cannot be canonicalized");
+    return;
+  }
+  if (canonicalJson(binding.valueDependencies) !== canonicalJson(canonical.valueDependencies)) {
+    issue("StateBinding value dependencies must be canonically ordered and unique", ["valueDependencies"]);
+  }
+  if (canonicalJson(binding.queryDependencies) !== canonicalJson(canonical.queryDependencies)) {
+    issue("StateBinding query dependencies and nested fingerprint sets must be canonical", ["queryDependencies"]);
+  }
+  if (binding.dependencyDigest !== canonical.dependencyDigest) {
+    issue("StateBinding dependency digest must equal its canonical dependency projection", ["dependencyDigest"]);
+  }
+}
+
+function requireCanonicalStateBinding(binding: StateBinding, message: string): StateBinding {
+  const issues: string[] = [];
+  reportCanonicalStateBindingIssues(binding, (issue) => issues.push(issue));
+  if (issues.length > 0) throw new Error(`${message}: ${issues.join("; ")}`);
+  return canonicalStateBinding(binding);
+}
+
 function normalizedTerm(value: string): string {
   return value.normalize("NFKC").trim();
 }
@@ -250,6 +287,10 @@ export const AdjudicatedSemanticIdentityResolutionSchema = z.strictObject({
   if (!isCanonicalJsonSet(resolution.tombstoneProposals)) {
     context.addIssue({ code: "custom", message: "resolution tombstone proposals must be canonically ordered and unique", path: ["tombstoneProposals"] });
   }
+  reportCanonicalStateBindingIssues(
+    resolution.boundState as StateBinding,
+    (message, path) => context.addIssue({ code: "custom", message, path: ["boundState", ...(path ?? [])] }),
+  );
   if (resolution.adjudication !== undefined) {
     if (resolution.operation !== resolution.adjudication.operation
       || canonicalJson(resolution.proposedTargetIds) !== canonicalJson(resolution.adjudication.proposedTargetIds)
@@ -978,6 +1019,7 @@ function prepareIdentityInput(input: ResolveSemanticIdentityInput): ResolveSeman
     ...inputWithoutBoundary,
     requestedMeaning: input.requestedMeaning.normalize("NFKC").trim(),
     records: normalizeRecords(input.records),
+    boundState: canonicalStateBinding(input.boundState),
     proposedTargetIds,
     ...(newBoundary === undefined ? {} : { newBoundary }),
   };
@@ -1291,6 +1333,10 @@ export async function assertCanonicalCreationAllowed(
   const resolution = AdjudicatedSemanticIdentityResolutionSchema.parse(
     await repository.loadResolution(request.resolutionId),
   ) as AdjudicatedSemanticIdentityResolution;
+  requireCanonicalStateBinding(
+    resolution.boundState,
+    "canonical creation refused: trusted resolution StateBinding is not canonical",
+  );
   if (resolution.id !== request.resolutionId) throw new Error("canonical creation refused: trusted resolution ID mismatch");
   const { id: _id, contentHash: _contentHash, ...resolutionSemantic } = resolution;
   const adjudication = resolution.adjudication === undefined ? undefined : parseIdentityAdjudication(resolution.adjudication);
@@ -1307,9 +1353,6 @@ export async function assertCanonicalCreationAllowed(
   if (resolution.id !== `identity_resolution_${resolution.contentHash.slice(-32)}`) {
     throw new Error("canonical creation refused: trusted resolution ID is not bound to its content hash");
   }
-  if (createStateBinding(resolution.boundState).dependencyDigest !== resolution.boundState.dependencyDigest) {
-    throw new Error("canonical creation refused: trusted resolution StateBinding digest mismatch");
-  }
   if (!await repository.verifyAdjudication(resolution)) {
     throw new Error("canonical creation refused: trusted repository has no verified adjudication provenance for this resolution");
   }
@@ -1324,13 +1367,18 @@ export async function assertCanonicalCreationAllowed(
     }
     mutationBinding = resolution.boundState;
   } else if (validation.status === "rebound") {
-    if (validation.rebound === undefined
-      || canonicalJson(validation.rebound.compiledAgainst) !== canonicalJson(validation.currentState)
-      || createStateBinding(validation.rebound).dependencyDigest !== validation.rebound.dependencyDigest
-      || validation.rebound.dependencyDigest !== resolution.boundState.dependencyDigest) {
+    if (validation.rebound === undefined) {
       throw new Error("canonical creation refused: rebound binding validation is internally inconsistent");
     }
-    mutationBinding = validation.rebound;
+    const rebound = requireCanonicalStateBinding(
+      validation.rebound,
+      "canonical creation refused: rebound StateBinding is not canonical",
+    );
+    if (canonicalJson(rebound.compiledAgainst) !== canonicalJson(validation.currentState)
+      || rebound.dependencyDigest !== resolution.boundState.dependencyDigest) {
+      throw new Error("canonical creation refused: rebound binding validation is internally inconsistent");
+    }
+    mutationBinding = rebound;
   } else {
     throw new Error("canonical creation refused: identity resolution was not adjudicated against current authoritative state");
   }
