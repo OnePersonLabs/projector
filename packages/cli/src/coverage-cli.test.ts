@@ -48,13 +48,32 @@ describe("coverage/complete/cleanup CLI composition", () => {
       await writeFile(join(repositoryRoot, "package.json"), JSON.stringify({ name: "fixture", scripts: { check: "node src/check.js" } }));
       await writeFile(join(repositoryRoot, "bad.json"), "{\"broken\":");
       const first = await executeProjector(["coverage", "--format", "json"], { cwd: repositoryRoot });
-      const second = await executeProjector(["coverage", "--format", "json"], { cwd: repositoryRoot });
+      const second = await executeProjector(["coverage"], { cwd: repositoryRoot });
       expect(first.report.lanes).toHaveLength(17);
       expect(new Set(first.report.lanes.map((lane: { key: string }) => lane.key))).toEqual(new Set(laneKeys));
       expect(first.report.localAnalysis).toMatchObject({ artifactCount: 2, projectionUnitCount: 2 });
       expect(first.report.localAnalysis.analyzerFailures).toContainEqual(expect.objectContaining({ capability: "document-parse", scope: "bad.json" }));
+      expect(first.report.lanes.find((lane: { key: string }) => lane.key === "representation-projection-fidelity")).toMatchObject({ numerator: 1, denominator: 2 });
+      expect(first.report.boundState).toMatchObject({ dependencyDigest: expect.stringMatching(/^sha256:v1:/u) });
+      expect(first.report.bindingValidation).toMatchObject({ status: "current", currentState: first.report.boundState.compiledAgainst });
+      expect(first.report.bindingIdentity).toBe(first.report.boundState.dependencyDigest);
       expect(first.report).not.toHaveProperty("adapter");
-      expect(second).toEqual(first);
+      expect(second.report).toEqual(first.report);
+      expect(second.output).toBe(`coverage: ${first.report.proofStatement}`);
+      expect(JSON.parse(first.output)).toEqual(first.report);
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("excludes sibling structured-document failures from fidelity coverage", async () => {
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "projector-coverage-formats-"));
+    try {
+      await writeFile(join(repositoryRoot, "valid.toml"), "name = \"fixture\"\n");
+      await writeFile(join(repositoryRoot, "duplicate.yaml"), "name: first\nname: second\n");
+      const result = await executeProjector(["coverage"], { cwd: repositoryRoot });
+      expect(result.report.localAnalysis.analyzerFailures).toContainEqual(expect.objectContaining({ capability: "duplicate-key", scope: "duplicate.yaml" }));
+      expect(result.report.lanes.find((lane: { key: string }) => lane.key === "representation-projection-fidelity")).toMatchObject({ numerator: 1, denominator: 2 });
     } finally {
       await rm(repositoryRoot, { recursive: true, force: true });
     }
