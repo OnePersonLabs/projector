@@ -45,7 +45,7 @@ const derivedTopLevelDirectories = new Set([
   "plans",
   "reports",
 ]);
-const operationalTopLevelDirectories = new Set(["runtime", "task16-selections", "task17-host-journals", "telemetry", "watch"]);
+const operationalTopLevelDirectories = new Set(["runtime", "task16-selections", "task17-host-journals", "task17-sessions", "task17-capabilities", "task18-upgrades", "telemetry", "watch"]);
 const operationalRootFiles = new Set(["dogfood.json", "governance.json"]);
 
 async function canonicalJsonFiles(root: string): Promise<string[]> {
