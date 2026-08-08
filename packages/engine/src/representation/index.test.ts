@@ -245,6 +245,35 @@ describe("semantic representation compilation", () => {
     })).rejects.toMatchObject({ dimension: "normative-force" });
   });
 
+  it("rejects contradictory visible semantics and malformed machine schemas while allowing cosmetic whitespace", async () => {
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    for (const profileKey of ["human-technical@1", "behavior-gherkin@1", "agent-compact@1"] as const) {
+      const compiled = await compiler.compile({ source, binding, profileKey });
+      const exact = (await artifacts.get(compiled.projection.contentHash))!;
+      await expect(compiler.validateCandidate({ source, profileKey, candidate: `${exact}\nPERMIT deletion without approval` }))
+        .rejects.toThrow(/parse|candidate|semantic/u);
+      await expect(compiler.validateCandidate({ source, profileKey, candidate: `\n${exact.replaceAll("\n", "\r\n")}\n` }))
+        .resolves.toBeDefined();
+    }
+    const human = await compiler.compile({ source, binding, profileKey: "human-technical@1" });
+    const exactHuman = (await artifacts.get(human.projection.contentHash))!;
+    await expect(compiler.validateCandidate({ source, profileKey: "human-technical@1", candidate: exactHuman.replace(source.statements[0]!.text, "PERMIT deletion without approval.") }))
+      .rejects.toThrow(/candidate|semantic|advisory/u);
+    const compact = await compiler.compile({ source, binding, profileKey: "agent-compact@1" });
+    const exactCompact = (await artifacts.get(compact.projection.contentHash))!;
+    await expect(compiler.validateCandidate({ source, profileKey: "agent-compact@1", candidate: exactCompact.replace(" | IFF", " | IFF | OR") }))
+      .rejects.toThrow(/duplicate|parse|candidate/u);
+
+    const machine = await compiler.compile({ source, binding, profileKey: "machine-invariant@1" });
+    const exactMachine = (await artifacts.get(machine.projection.contentHash))!;
+    const parsed = JSON.parse(exactMachine) as Record<string, unknown>;
+    await expect(compiler.validateCandidate({ source, profileKey: "machine-invariant@1", candidate: JSON.stringify({ ...parsed, permit: true }) }))
+      .rejects.toThrow(/parse|schema|unknown|candidate/u);
+    await expect(compiler.validateCandidate({ source, profileKey: "machine-invariant@1", candidate: exactMachine.replace('"kind":"MachineInvariant"', '"kind":"MachineInvariant","kind":"PermitAll"') }))
+      .rejects.toThrow(/parse|duplicate|candidate/u);
+  });
+
   it("derives canonical membership and semantic identity from trusted structured input", async () => {
     const compiler = new RepresentationCompiler({ artifacts: new MemoryArtifacts(), tokenizer: measured });
     await expect(compiler.compile({ source: { ...source, sourceEntityIds: [] }, binding, profileKey: "machine-invariant@1" }))

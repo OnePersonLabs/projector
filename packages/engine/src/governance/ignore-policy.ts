@@ -21,18 +21,30 @@ export interface LayeredIgnoreRule {
 }
 
 const LAYER_RANK: Record<IgnoreLayer, number> = { repository: 0, config: 1, lens: 2, rule: 3 };
-function selectorSpecificity(selector: SelectorExpr): number {
-  switch (selector.op) {
-    case "atom": {
-      const matcherRank = { equals: 1_000, in: 850, "matches-structural-query": 800, contains: 400, glob: 200, regex: 150, exists: 50 } as const;
-      return matcherRank[selector.matcher];
-    }
-    case "not": return selectorSpecificity(selector.item) - 10_000;
-    case "all": return selector.items.length === 0 ? -20_000
-      : selector.items.reduce((sum, item) => sum + selectorSpecificity(item), 0) + selector.items.length * 100;
-    case "any": return selector.items.length === 0 ? -20_000
-      : Math.max(...selector.items.map(selectorSpecificity)) - 10_000 - selector.items.length;
+type Containment = "yes" | "no" | "unknown";
+const same = (left: SelectorExpr, right: SelectorExpr): boolean => canonicalJson(left) === canonicalJson(right);
+const includesValue = (values: readonly unknown[], value: unknown): boolean => values.some((item) => canonicalJson(item) === canonicalJson(value));
+
+/** Proves set containment for the supported selector algebra. Unknown is deliberately never used as precedence. */
+function selectorContainedBy(left: SelectorExpr, right: SelectorExpr): Containment {
+  if (same(left, right)) return "yes";
+  if (right.op === "all" && right.items.length === 0) return "yes";
+  if (left.op === "any" && left.items.length === 0) return "yes";
+  if (left.op === "not" || right.op === "not") return "unknown";
+  if (right.op === "all") return right.items.every((item) => selectorContainedBy(left, item) === "yes") ? "yes" : "unknown";
+  if (left.op === "any") return left.items.every((item) => selectorContainedBy(item, right) === "yes") ? "yes" : "unknown";
+  if (right.op === "any") return right.items.some((item) => selectorContainedBy(left, item) === "yes") ? "yes" : "unknown";
+  if (left.op === "all") return left.items.some((item) => selectorContainedBy(item, right) === "yes") ? "yes" : "unknown";
+  if (left.op !== "atom" || right.op !== "atom" || left.field !== right.field) return "unknown";
+  if (left.matcher === "equals" && right.matcher === "in" && Array.isArray(right.value)) return includesValue(right.value, left.value) ? "yes" : "no";
+  if (left.matcher === "in" && right.matcher === "in" && Array.isArray(left.value) && Array.isArray(right.value)) {
+    return left.value.every((value) => includesValue(right.value as readonly unknown[], value)) ? "yes" : "no";
   }
+  if (left.matcher === "equals" && right.matcher === "glob" && typeof left.value === "string" && typeof right.value === "string") {
+    const escaped = right.value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&").replaceAll("**", "\u0000").replaceAll("*", "[^/]*").replaceAll("\u0000", ".*");
+    return new RegExp(`^${escaped}$`, "u").test(left.value) ? "yes" : "no";
+  }
+  return "unknown";
 }
 
 export function compileLayeredIgnorePolicy(input: { readonly units: readonly ProjectionUnit[]; readonly rules: readonly LayeredIgnoreRule[] }): {
@@ -55,8 +67,9 @@ export function compileLayeredIgnorePolicy(input: { readonly units: readonly Pro
       const matching = normalizedRules.filter((rule) => rule.concern === concern && evaluateSelector(rule.selector, subject).matched);
       const highest = matching.reduce((rank, rule) => Math.max(rank, LAYER_RANK[rule.layer]), -1);
       const layerWinners = matching.filter((rule) => LAYER_RANK[rule.layer] === highest);
-      const specificity = layerWinners.reduce((rank, rule) => Math.max(rank, selectorSpecificity(rule.selector)), -1);
-      const atHighest = layerWinners.filter((rule) => selectorSpecificity(rule.selector) === specificity);
+      const atHighest = layerWinners.filter((candidate) => !layerWinners.some((other) => other !== candidate
+        && selectorContainedBy(other.selector, candidate.selector) === "yes"
+        && selectorContainedBy(candidate.selector, other.selector) !== "yes"));
       if (new Set(atHighest.map(({ effect }) => effect)).size > 1) {
         throw new IgnorePolicyConflictError(`conflicting layered ignore for ${unit.id}:${concern}`);
       }
