@@ -497,8 +497,93 @@ function parseCandidate(candidate: string, profileKey: BuiltInRepresentationProf
   }
 }
 
-function normalizeAdvisoryText(value: string): string {
-  return value.normalize("NFKC").trim().replace(/\s+/gu, " ");
+interface ProtectedAdvisorySpan { readonly start: number; readonly end: number }
+
+function protectedAdvisorySpans(text: string, declaredLiterals: readonly string[]): ProtectedAdvisorySpan[] {
+  const spans: ProtectedAdvisorySpan[] = [];
+  const addMatches = (pattern: RegExp): void => {
+    for (const match of text.matchAll(pattern)) {
+      if (match.index !== undefined && match[0].length > 0) spans.push({ start: match.index, end: match.index + match[0].length });
+    }
+  };
+  for (const literal of declaredLiterals) {
+    if (literal.length === 0) continue;
+    let offset = 0;
+    while (offset <= text.length - literal.length) {
+      const start = text.indexOf(literal, offset);
+      if (start < 0) break;
+      spans.push({ start, end: start + literal.length });
+      offset = start + literal.length;
+    }
+  }
+  addMatches(/`[^`\r\n]+`/gu);
+  addMatches(/"(?:[^"\\\r\n]|\\.)*"|'(?:[^'\\\r\n]|\\.)*'/gu);
+  addMatches(/\bhttps?:\/\/[^\s,;"'`()]+/gu);
+  addMatches(/\b(?:[A-Za-z]:[\\/]|\.{0,2}[\\/]|[A-Za-z0-9_.-]+[\\/])[^\s,;:"'`()]+/gu);
+  addMatches(/\b(?:[A-Za-z]+[A-Z][A-Za-z0-9]*|[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+|--?[a-z][a-z0-9-]*|[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9.]*)\b/gu);
+  addMatches(/\b\d+(?:\.\d+)?(?:[ \t]+)?(?:B|KB|MB|GB|TB|KiB|MiB|GiB|ms|s|min|h|Hz|kHz|MHz|GHz|%|px|rem|em)\b/giu);
+  addMatches(/\b(?:Error|Exception):[^\r\n]+/gu);
+
+  const merged: ProtectedAdvisorySpan[] = [];
+  for (const span of spans.sort((left, right) => left.start - right.start || right.end - left.end)) {
+    const prior = merged.at(-1);
+    if (prior === undefined || span.start >= prior.end) merged.push(span);
+    else if (span.end > prior.end) merged[merged.length - 1] = { start: prior.start, end: span.end };
+  }
+  return merged;
+}
+
+function normalizeCosmeticWhitespace(value: string, trimStart: boolean, trimEnd: boolean): string {
+  let normalized = value.replace(/\s+/gu, " ");
+  if (trimStart) normalized = normalized.trimStart();
+  if (trimEnd) normalized = normalized.trimEnd();
+  return normalized;
+}
+
+function hasExactLiteralInventory(source: string, candidate: string, declaredLiterals: readonly string[]): boolean {
+  const expected = new Map<string, number>();
+  for (const span of protectedAdvisorySpans(source, declaredLiterals)) {
+    const literal = source.slice(span.start, span.end);
+    expected.set(literal, (expected.get(literal) ?? 0) + 1);
+  }
+  for (const [literal, expectedCount] of expected) {
+    let observedCount = 0;
+    let offset = 0;
+    while (offset <= candidate.length - literal.length) {
+      const matchOffset = candidate.indexOf(literal, offset);
+      if (matchOffset < 0) break;
+      observedCount += 1;
+      offset = matchOffset + literal.length;
+    }
+    if (observedCount !== expectedCount) return false;
+  }
+  return true;
+}
+
+function advisoryMatchesWithExactLiterals(source: string, candidate: string, declaredLiterals: readonly string[]): boolean {
+  const spans = protectedAdvisorySpans(source, declaredLiterals);
+  if (spans.length === 0) return normalizeCosmeticWhitespace(source, true, true) === normalizeCosmeticWhitespace(candidate, true, true);
+
+  let successfulMappings = 0;
+  const search = (spanIndex: number, sourceOffset: number, candidateOffset: number): void => {
+    if (successfulMappings > 1) return;
+    if (spanIndex === spans.length) {
+      if (normalizeCosmeticWhitespace(source.slice(sourceOffset), false, true)
+        === normalizeCosmeticWhitespace(candidate.slice(candidateOffset), false, true)) successfulMappings += 1;
+      return;
+    }
+    const span = spans[spanIndex]!;
+    const literal = source.slice(span.start, span.end);
+    const expectedProse = normalizeCosmeticWhitespace(source.slice(sourceOffset, span.start), spanIndex === 0, false);
+    let matchOffset = candidate.indexOf(literal, candidateOffset);
+    while (matchOffset >= 0) {
+      const observedProse = normalizeCosmeticWhitespace(candidate.slice(candidateOffset, matchOffset), spanIndex === 0, false);
+      if (observedProse === expectedProse) search(spanIndex + 1, span.end, matchOffset + literal.length);
+      matchOffset = candidate.indexOf(literal, matchOffset + 1);
+    }
+  };
+  search(0, 0, 0);
+  return successfulMappings === 1;
 }
 
 function assertCandidate(
@@ -523,10 +608,17 @@ function assertCandidate(
     || canonicalJson(source.scenarios) !== canonicalJson(normalizedObserved.scenarios)) {
     throw new RepresentationFidelityError("normative-force", "candidate contains unparsed or contradictory semantic content");
   }
-  if (profileKey === "human-technical@1"
-    && canonicalJson(source.statements.map(({ id, text }) => ({ id, text: normalizeAdvisoryText(text) })))
-      !== canonicalJson(normalizedObserved.statements.map(({ id, text }) => ({ id, text: normalizeAdvisoryText(text) })))) {
-    throw new RepresentationFidelityError("normative-force", "human candidate advisory envelope contains changed semantic words");
+  if (profileKey === "human-technical@1") {
+    for (const statement of source.statements) {
+      const observedStatement = normalizedObserved.statements.find(({ id }) => id === statement.id);
+      if (observedStatement === undefined
+        || !advisoryMatchesWithExactLiterals(statement.text, observedStatement.text, statement.protectedLiterals)) {
+        const dimension = observedStatement !== undefined
+          && !hasExactLiteralInventory(statement.text, observedStatement.text, statement.protectedLiterals)
+          ? "identifier-literal" : "normative-force";
+        throw new RepresentationFidelityError(dimension, "human candidate advisory envelope changed semantic prose or an exact literal");
+      }
+    }
   }
   if (profileKey === "agent-compact@1") {
     const structural = new Set(["FORBID", "NOT", "MUST", "IFF", "IF", "ORDER", "SCOPE", "TITLE", "ONE", "MORE", "MOST", "ALL", "NONE", "AND", "OR"]);

@@ -336,6 +336,72 @@ describe("semantic representation compilation", () => {
     })).rejects.toThrow(/advisory|semantic|candidate/u);
   });
 
+  it("rejects collapsed whitespace inside a declared protected advisory literal", async () => {
+    const body = {
+      ...sourceBody,
+      statements: [{
+        ...sourceBody.statements[0]!,
+        text: "Keep X  Y unchanged.",
+        protectedLiterals: ["X  Y"],
+      }],
+    };
+    const literalSource = { ...body, sourceSemanticHash: canonicalSourceHash(body) };
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const compiled = await compiler.compile({ source: literalSource, binding, profileKey: "human-technical@1" });
+    const exact = (await artifacts.get(compiled.projection.contentHash))!;
+    const collapsed = exact.replace(JSON.stringify("Keep X  Y unchanged."), JSON.stringify("Keep X Y unchanged."));
+
+    await expect(compiler.validateCandidate({ source: literalSource, profileKey: "human-technical@1", candidate: collapsed }))
+      .rejects.toMatchObject({ dimension: "identifier-literal" });
+  });
+
+  it("permits cosmetic wrapping around exact literals and rejects literal byte, count, and boundary drift", async () => {
+    const canonicalText = "Run command `pnpm  test` after approval, preserve \"Exact  error\", call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.";
+    const body = {
+      ...sourceBody,
+      statements: [{
+        ...sourceBody.statements[0]!,
+        text: canonicalText,
+        protectedLiterals: ["café"],
+      }],
+    };
+    const literalSource = { ...body, sourceSemanticHash: canonicalSourceHash(body) };
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const compiled = await compiler.compile({ source: literalSource, binding, profileKey: "human-technical@1" });
+    const exact = (await artifacts.get(compiled.projection.contentHash))!;
+    const candidateFor = (advisory: string) => exact.replace(JSON.stringify(canonicalText), JSON.stringify(advisory));
+
+    await fc.assert(fc.asyncProperty(
+      fc.constantFrom(" ", "\n", "\t", " \r\n  "),
+      fc.constantFrom(" ", "\n", "\t", "  \n"),
+      async (beforeLiteral, afterLiteral) => {
+        const advisory = `Run command${beforeLiteral}\`pnpm  test\`${afterLiteral}after approval, preserve \"Exact  error\", call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.`;
+        await expect(compiler.validateCandidate({ source: literalSource, profileKey: "human-technical@1", candidate: candidateFor(advisory) }))
+          .resolves.toMatchObject({ assurance: "exact" });
+      },
+    ));
+
+    await fc.assert(fc.asyncProperty(
+      fc.constantFrom(
+        "Run command `pnpm test` after approval, preserve \"Exact  error\", call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.",
+        "Run command `pnpm  test` after approval, preserve \"Exact error\", call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.",
+        "Run command `pnpm  test` after approval, preserve 'Exact  error', call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.",
+        "Run command `pnpm  test` after approval, preserve \"Exact  error\", call deleteProductionData at src/data/delete.ts with 30GB, then keep café.",
+        "Run command `pnpm  test` after approval, preserve \"Exact  error\", call deleteProductionData at src/data/remove.ts with 30 GB, then keep café.",
+        "Run command `pnpm  test` after approval, preserve \"Exact  error\", call deleteProductionData at src/data/delete.ts with 30 GB, then keep cafe\u0301.",
+        "Run command `pnpm  test` after approval, preserve \"Exact  error\" \"Exact  error\", call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.",
+        "Run command `pnpm  test` after approval, preserve, call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.",
+        "Run command`pnpm  test` after approval, preserve \"Exact  error\", call deleteProductionData at src/data/delete.ts with 30 GB, then keep café.",
+      ),
+      async (advisory) => {
+        await expect(compiler.validateCandidate({ source: literalSource, profileKey: "human-technical@1", candidate: candidateFor(advisory) }))
+          .rejects.toThrow(/literal|advisory|semantic|candidate/u);
+      },
+    ));
+  });
+
   it("does not grant exact assurance when punctuation changes advisory force or scope", async () => {
     const body = {
       ...sourceBody,
@@ -349,7 +415,7 @@ describe("semantic representation compilation", () => {
     const ambiguous = exact.replace(JSON.stringify("No users allowed."), JSON.stringify("No, users allowed."));
 
     await expect(compiler.validateCandidate({ source: punctuationSource, profileKey: "human-technical@1", candidate: ambiguous }))
-      .rejects.toThrow(/advisory|semantic|candidate/u);
+      .rejects.toMatchObject({ dimension: "normative-force" });
   });
 
   it("derives canonical membership and semantic identity from trusted structured input", async () => {
