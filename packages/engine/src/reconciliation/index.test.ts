@@ -61,7 +61,7 @@ describe("mandatory vertical-slice evidence", () => {
         divergenceIds: ["divergence:fixture"], counterEvidenceIds: ["evidence:counter"],
         planId: "plan:fixture", operationKinds: ["move-reference-update"], touchedUnitIds: ["unit:fixture"],
         planDependencyDigest: `sha256:v1:${"1".repeat(64)}`, capsuleDependencyDigest: `sha256:v1:${"1".repeat(64)}`, approvalDependencyDigest: `sha256:v1:${"1".repeat(64)}`,
-        leaseId: "lease:fixture", transactionId: "transaction:fixture", journalPhases: ["prepared", "committed"], touchedPaths: ["path:fixture"],
+        leaseId: "lease:fixture", transactionId: "transaction:fixture", journalRef: `journal:${"a".repeat(64)}`, journalPhases: ["prepared", "committed"], touchedPaths: ["path:fixture"],
         operationIds: ["operation:fixture"], pathSummaries: ["moved source to destination", "updated registered reference in package.json"],
         validatorIds: ["validator:fixture"], validationStatuses: ["passed"], validatorEvidenceIds: ["evidence:validator"],
         iterationDigests: [`sha256:v1:${"2".repeat(64)}`], materialChanged: [true], terminalIteration: true,
@@ -158,5 +158,54 @@ describe("mandatory vertical-slice evidence", () => {
       );
       expect(() => assertMandatoryVerticalSliceEvidence(forged, context), `step ${index + 1}`).toThrow(/correspond|proof field|typed predicate/u);
     }
+  });
+
+  it("requires bidirectional exact proof/context keys, including journalRef", () => {
+    const actual = evidence();
+    const context = contextFor(actual);
+
+    const missingObservedField = evidence();
+    const missingObservedProof = { ...missingObservedField[0]!.details.proof } as Record<string, unknown>;
+    delete missingObservedProof.observedAt;
+    missingObservedField[0]!.details.proof = missingObservedProof as typeof missingObservedField[number]["details"]["proof"];
+    missingObservedField[0]!.details.outputDigest = mandatoryVerticalSliceEvidenceDigest(
+      missingObservedField[0]!.step,
+      missingObservedField[0]!.details.evidenceKind,
+      missingObservedField[0]!.details.artifactRefs,
+      missingObservedProof,
+    );
+    expect(() => assertMandatoryVerticalSliceEvidence(missingObservedField, context)).toThrow(/proof keys|correspond/u);
+
+    const missingJournalRef = evidence();
+    const missingJournalProof = { ...missingJournalRef[8]!.details.proof } as Record<string, unknown>;
+    delete missingJournalProof.journalRef;
+    missingJournalRef[8]!.details.proof = missingJournalProof as typeof missingJournalRef[number]["details"]["proof"];
+    missingJournalRef[8]!.details.outputDigest = mandatoryVerticalSliceEvidenceDigest(
+      missingJournalRef[8]!.step,
+      missingJournalRef[8]!.details.evidenceKind,
+      missingJournalRef[8]!.details.artifactRefs,
+      missingJournalProof,
+    );
+    expect(() => assertMandatoryVerticalSliceEvidence(missingJournalRef, context)).toThrow(/proof field|proof keys|correspond/u);
+
+    const extraProof = evidence();
+    const extraProofValue = { ...extraProof[0]!.details.proof, contextOnly: "forged" };
+    extraProof[0]!.details.proof = extraProofValue;
+    extraProof[0]!.details.outputDigest = mandatoryVerticalSliceEvidenceDigest(
+      extraProof[0]!.step,
+      extraProof[0]!.details.evidenceKind,
+      extraProof[0]!.details.artifactRefs,
+      extraProofValue,
+    );
+    expect(() => assertMandatoryVerticalSliceEvidence(extraProof, context)).toThrow(/proof keys|correspond/u);
+
+    const contextObservation = structuredClone(context.observations) as Record<string, Record<string, unknown>>;
+    contextObservation.inventory!.contextOnly = "forged";
+    const contextWithExtra = createMandatoryVerticalSliceExecutionContext({
+      observations: contextObservation as never,
+      artifactRefs: context.artifactRefs,
+      artifacts: context.artifacts,
+    });
+    expect(() => assertMandatoryVerticalSliceEvidence(actual, contextWithExtra)).toThrow(/proof keys|correspond/u);
   });
 });

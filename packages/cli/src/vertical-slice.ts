@@ -231,6 +231,29 @@ interface PersistedJournalRecord {
   readonly compensations?: unknown[];
 }
 
+const MANDATORY_JOURNAL_CHECKPOINTS = [
+  { id: "before-transform", phase: "prepared", operationCount: 0 },
+  { id: "move-reference-update@1:before", phase: "prepared", operationCount: 0 },
+  { id: "move-reference-update@1:after", phase: "workspace-mutating", operationCount: 3 },
+  { id: "after-validation", phase: "validating", operationCount: 5 },
+] as const;
+
+function hasExactMandatoryJournalIntegrity(record: PersistedJournalRecord): boolean {
+  const checkpoints = record.checkpoints ?? [];
+  const checkpointIds = checkpoints.map(({ id }) => id).filter((id): id is string => id !== undefined);
+  return checkpoints.length === MANDATORY_JOURNAL_CHECKPOINTS.length
+    && checkpoints.every((checkpoint, index) => {
+      const expected = MANDATORY_JOURNAL_CHECKPOINTS[index];
+      return expected !== undefined && checkpoint.id === expected.id && checkpoint.phase === expected.phase
+        && checkpoint.operationCount === expected.operationCount;
+    })
+    && sameOrdered(checkpointIds, MANDATORY_JOURNAL_CHECKPOINTS.map(({ id }) => id))
+    && (record.entry?.checkpointIds?.length ?? 0) === MANDATORY_JOURNAL_CHECKPOINTS.length
+    && sameOrdered(record.entry?.checkpointIds ?? [], MANDATORY_JOURNAL_CHECKPOINTS.map(({ id }) => id))
+    && (record.compensations?.length ?? 0) === 0
+    && (record.entry?.externalOperationIds?.length ?? 0) === 0;
+}
+
 async function parseCanonicalArtifact(path: string): Promise<unknown> {
   const source = await readFile(path, "utf8");
   const parsed = parseCanonicalJson(source);
@@ -432,12 +455,7 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
         || !TransactionJournalEntrySchema.safeParse(journal.entry).success
         || !Array.isArray(journal.allowedWriteRoots) || !journal.allowedWriteRoots.includes(".")
         || journal.operations.length !== operations.length || journal.operations.some((operation) => operation.status !== "applied")) continue;
-      const checkpointIds = journal.checkpoints?.map(({ id }) => id);
-      const expectedCheckpointIds = ["before-transform", "move-reference-update@1:before", "move-reference-update@1:after", "after-validation"];
-      if (!sameOrdered(checkpointIds?.filter((id): id is string => id !== undefined) ?? [], expectedCheckpointIds)
-        || journal.entry.checkpointIds?.length !== expectedCheckpointIds.length
-        || !sameOrdered(journal.entry.checkpointIds ?? [], expectedCheckpointIds)
-        || artifact.lastCheckpointId !== "after-validation") continue;
+      if (!hasExactMandatoryJournalIntegrity(journal) || artifact.lastCheckpointId !== "after-validation") continue;
       const journalPaths = journal.operations.flatMap((operation) => operation.changes?.map(({ path }) => path).filter((path): path is string => path !== undefined) ?? []);
       if (!sameOrdered(journalPaths, operations.flatMap((operation) => operationPaths(operation.summary ?? "")))) continue;
       if (journal.operations.some((operation, index) => {
@@ -867,7 +885,8 @@ async function readCommittedJournalEvidence(repositoryRoot: string, transactionI
       const record = parsed as PersistedJournalRecord;
       if (record.entry?.transactionId !== transactionId || record.entry.phase !== "committed"
         || name !== `${createHash("sha256").update(transactionId).digest("hex")}.json`
-        || record.entry.worktreePath !== repositoryRoot) continue;
+        || record.entry.worktreePath !== repositoryRoot
+        || !hasExactMandatoryJournalIntegrity(record)) continue;
       const phases = [...new Set(["prepared", ...(record.checkpoints ?? []).map(({ phase }) => phase).filter((phase): phase is string => phase !== undefined), record.entry.phase])];
       return { leaseId: "", transactionId, journalPhases: phases, touchedPaths: record.entry.touchedPaths ?? [], journalPath, journalRecord: record, journalBytes, journalRef: journalContentReference(journalBytes) };
     } catch { /* malformed journals are not execution evidence */ }
