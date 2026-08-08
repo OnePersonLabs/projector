@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { hashFramedDomain } from "@projector/core";
 
 import { RepositoryPathService } from "../security/repository-path.js";
-import { WatchCoordinator, runWatchLifecycle } from "./watch.js";
+import { WatchCoordinator, runWatchLifecycle, type AuthenticatedWatchCheckpoint, type WatchCheckpointStore } from "./watch.js";
 import { JsonlTelemetryStore, createOperationalReport, deriveOperationalExitCode, redactBeforeBoundary, renderOperationalReport, unavailableOperationalEvidence } from "./telemetry.js";
 
 const proof = { commandFailed: false, blockingInvalidity: false, approvalRequired: false, incompleteCoverage: false, requiredUnavailable: false, recoveryFailure: false, budgetExhausted: false, resumable: false } as const;
@@ -42,5 +42,12 @@ describe("operational watch and trust boundary", () => {
   it("derives the complete operational exit table and precedence from authenticated proof", () => {
     const cases = [[{}, 0], [{ commandFailed: true }, 1], [{ blockingInvalidity: true }, 2], [{ approvalRequired: true }, 3], [{ incompleteCoverage: true }, 4], [{ requiredUnavailable: true }, 5], [{ recoveryFailure: true }, 6], [{ budgetExhausted: true, resumable: true }, 7]] as const;
     for (const [overrides, expected] of cases) expect(deriveOperationalExitCode({ ...proof, ...overrides })).toBe(expected); expect(deriveOperationalExitCode({ ...proof, blockingInvalidity: true, recoveryFailure: true })).toBe(6);
+  });
+
+  it("persists over-budget events before exit and resumes each event effect exactly once", async () => {
+    let durable: AuthenticatedWatchCheckpoint | null = null; const store: WatchCheckpointStore = { load: async () => durable, save: async (checkpoint) => (durable = checkpoint), clear: async () => { durable = null; } }; const effects: string[] = []; const firstController = new AbortController();
+    const coordinator = new WatchCoordinator({ scan: async ({ paths }) => { const value = { digest: hashFramedDomain("watch-resume", paths), affectedDependencyIds: paths, generatedEventIds: [] }; return { ...value, contentHash: hashFramedDomain("authenticated-watch-scan", value) }; }, process: async ({ digest, affectedDependencyIds }) => { effects.push(...affectedDependencyIds); return { digest, cacheKeys: [] }; } });
+    const first = await runWatchLifecycle(coordinator, { subscribe: (listener) => { queueMicrotask(() => { listener({ kind: "change", path: "a.ts" }); listener({ kind: "change", path: "b.ts" }); }); return () => undefined; } }, { signal: firstController.signal, maximumEvents: 1, checkpointStore: store }); expect(first).toMatchObject({ budgetExhausted: true, checkpoint: { pendingEvents: [{ path: "b.ts" }] } }); expect(effects).toEqual(["a.ts"]);
+    const secondController = new AbortController(); const resumedCoordinator = new WatchCoordinator({ scan: async ({ paths }) => { const value = { digest: hashFramedDomain("watch-resume", paths), affectedDependencyIds: paths, generatedEventIds: [] }; return { ...value, contentHash: hashFramedDomain("authenticated-watch-scan", value) }; }, process: async ({ digest, affectedDependencyIds }) => { effects.push(...affectedDependencyIds); if (affectedDependencyIds.includes("b.ts")) secondController.abort(); return { digest, cacheKeys: [] }; } }); await expect(runWatchLifecycle(resumedCoordinator, { subscribe: () => () => undefined }, { signal: secondController.signal, maximumEvents: 2, checkpointStore: store })).resolves.toMatchObject({ cancelled: true }); expect(effects).toEqual(["a.ts", "b.ts"]); expect(durable).toBeNull();
   });
 });
