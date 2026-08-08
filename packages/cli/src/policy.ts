@@ -1,6 +1,6 @@
 import type { ExecutionPolicy, RiskClass } from "@projector/core";
 
-export type SliceCommand = "init" | "audit" | "change" | "plan" | "apply" | "reconcile" | "explain" | "coverage" | "complete" | "cleanup" | "run";
+export type SliceCommand = "init" | "audit" | "change" | "plan" | "apply" | "reconcile" | "explain" | "coverage" | "complete" | "cleanup" | "run" | "mcp";
 
 export interface CliPolicyInput {
   readonly command: SliceCommand;

@@ -1,7 +1,7 @@
-import { hashFramedDomain, type ContentHash, type ExecutionCapsule, type StateBinding, type StateDigest } from "@projector/core";
+import { hashFramedDomain, type AdapterContext, type ContentHash, type ExecutionCapsule, type StateBinding, type StateBindingValidator, type StateDigest } from "@projector/core";
 
 export type HostName = "codex" | "claude";
-export type HostFeature = "instruction-installation" | "lifecycle-hooks" | "programmatic-execution" | "subagents" | "isolated-worktrees" | "structured-result" | "tool-observation" | "filesystem-observation" | "cancellation";
+export type HostFeature = "instruction-installation" | "lifecycle-hooks" | "programmatic-execution" | "subagents" | "isolated-worktrees" | "structured-result" | "tool-observation" | "filesystem-observation" | "cancellation" | "state-capability";
 
 export interface HostProbe {
   executable(name: string): Promise<boolean>;
@@ -21,6 +21,7 @@ export interface HostCapabilities {
   readonly toolObservation: boolean;
   readonly filesystemObservation: boolean;
   readonly cancellation: boolean;
+  readonly stateCapability: boolean;
   readonly enforcement: "instruction-only" | "observed" | "state-bound";
 }
 
@@ -39,6 +40,7 @@ export interface HostRunRequest {
 
 export interface HostObservation { readonly state: StateDigest; readonly paths: readonly string[]; readonly contentHash: ContentHash }
 export interface HostRunPorts {
+  readonly bindingValidator: StateBindingValidator;
   readonly authority: { verify(input: { readonly sessionId: string; readonly capsule: ExecutionCapsule; readonly binding: StateBinding; readonly currentState: StateDigest }): Promise<boolean> };
   readonly journal: {
     prepare(input: { readonly requestHash: ContentHash; readonly host: HostName; readonly capsuleHash: ContentHash }): Promise<{ readonly id: string; readonly contentHash: ContentHash }>;
@@ -63,12 +65,12 @@ export function createHostAdapter(host: HostName, executable: string, dependenci
   async function capabilities(): Promise<HostCapabilities> {
     const available = await dependencies.probe.executable(executable);
     const enabled = async (feature: HostFeature): Promise<boolean> => available && dependencies.probe.feature(feature);
-    const [instructionInstallation, lifecycleHooks, programmaticExecution, subagents, isolatedWorktrees, structuredResult, toolObservation, filesystemObservation, cancellation] = await Promise.all([
-      enabled("instruction-installation"), enabled("lifecycle-hooks"), enabled("programmatic-execution"), enabled("subagents"), enabled("isolated-worktrees"), enabled("structured-result"), enabled("tool-observation"), enabled("filesystem-observation"), enabled("cancellation"),
+    const [instructionInstallation, lifecycleHooks, programmaticExecution, subagents, isolatedWorktrees, structuredResult, toolObservation, filesystemObservation, cancellation, stateCapability] = await Promise.all([
+      enabled("instruction-installation"), enabled("lifecycle-hooks"), enabled("programmatic-execution"), enabled("subagents"), enabled("isolated-worktrees"), enabled("structured-result"), enabled("tool-observation"), enabled("filesystem-observation"), enabled("cancellation"), enabled("state-capability"),
     ]);
     const observable = toolObservation || filesystemObservation || lifecycleHooks;
-    const level: 1 | 2 | 3 = available && structuredResult && observable ? 3 : available && observable ? 2 : 1;
-    return { host, level, executable: available, instructionInstallation, lifecycleHooks, programmaticExecution: available && (programmaticExecution || level >= 2), subagents, isolatedWorktrees, structuredResult, toolObservation, filesystemObservation, cancellation, enforcement: level === 3 ? "state-bound" : level === 2 ? "observed" : "instruction-only" };
+    const level: 1 | 2 | 3 = available && programmaticExecution && structuredResult && observable && stateCapability ? 3 : available && (programmaticExecution || observable) ? 2 : 1;
+    return { host, level, executable: available, instructionInstallation, lifecycleHooks, programmaticExecution, subagents, isolatedWorktrees, structuredResult, toolObservation, filesystemObservation, cancellation, stateCapability, enforcement: level === 3 ? "state-bound" : level === 2 ? "observed" : "instruction-only" };
   }
 
   return {
@@ -76,11 +78,15 @@ export function createHostAdapter(host: HostName, executable: string, dependenci
     async run(request, ports) {
       const capability = await capabilities();
       if (!capability.executable) return { status: "manual", changedPaths: [], failure: `${host} executable is unavailable` };
-      if (!sameState(request.binding.compiledAgainst, request.currentState) || !sameState(request.capsule.boundState.compiledAgainst, request.currentState)) throw new Error("host request is not bound to current state");
       if (request.binding.dependencyDigest !== request.capsule.boundState.dependencyDigest) throw new Error("host binding does not match execution capsule");
+      const context: AdapterContext = { repositoryRoot: request.repositoryRoot, stateDigest: request.currentState, config: {}, signal: request.signal };
+      const validation = await ports.bindingValidator.validate(request.binding, request.currentState, context);
+      if (validation.status !== "current" && validation.status !== "rebound") throw new Error(`host StateBinding is ${validation.status}`);
+      const effectiveBinding = validation.status === "rebound" ? validation.rebound : request.binding;
+      if (effectiveBinding === undefined || !sameState(effectiveBinding.compiledAgainst, request.currentState) || effectiveBinding.dependencyDigest !== request.binding.dependencyDigest) throw new Error("host StateBinding rebound is unauthenticated");
       if (!request.instructions.sourceHashes.includes(request.capsule.normativeKernelHash)) throw new Error("host instructions omit the normative kernel source");
-      if (!await ports.authority.verify({ sessionId: request.sessionId, capsule: request.capsule, binding: request.binding, currentState: request.currentState })) throw new Error("host authority is absent or stale");
-      const requestHash = hashFramedDomain("host-run-request", { sessionId: request.sessionId, repositoryRoot: request.repositoryRoot, argv: request.argv, environmentKeys: request.allowedEnvironmentKeys, capsuleHash: request.capsule.contextHash, bindingDigest: request.binding.dependencyDigest, currentState: request.currentState, instructions: request.instructions });
+      if (!await ports.authority.verify({ sessionId: request.sessionId, capsule: request.capsule, binding: effectiveBinding, currentState: request.currentState })) throw new Error("host authority is absent or stale");
+      const requestHash = hashFramedDomain("host-run-request", { sessionId: request.sessionId, repositoryRoot: request.repositoryRoot, argv: request.argv, environmentKeys: request.allowedEnvironmentKeys, capsuleHash: request.capsule.contextHash, bindingDigest: effectiveBinding.dependencyDigest, currentState: request.currentState, instructions: request.instructions });
       const capsuleHash = hashFramedDomain("host-execution-capsule", request.capsule);
       const journal = await ports.journal.prepare({ requestHash, host, capsuleHash });
       const before = await ports.observe.capture({ phase: "before", repositoryRoot: request.repositoryRoot });

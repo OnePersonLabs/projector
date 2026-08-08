@@ -13,7 +13,7 @@ describe("truthful Codex/Claude host adapters", () => {
     const missing = createCodexHostAdapter({ probe: { executable: async () => false, feature: async () => false } });
     expect(await missing.capabilities()).toMatchObject({ level: 1, executable: false, programmaticExecution: false, enforcement: "instruction-only" });
     const codex = createCodexHostAdapter({ probe: { executable: async () => true, feature: async (name) => ["structured-result", "tool-observation", "cancellation"].includes(name) } });
-    expect(await codex.capabilities()).toMatchObject({ executable: true, structuredResult: true, toolObservation: true, cancellation: true, level: 3 });
+    expect(await codex.capabilities()).toMatchObject({ executable: true, structuredResult: true, toolObservation: true, cancellation: true, programmaticExecution: false, level: 2, enforcement: "observed" });
     const claude = createClaudeHostAdapter({ probe: { executable: async () => true, feature: async () => false } });
     expect((await claude.capabilities()).host).toBe("claude");
   });
@@ -21,10 +21,18 @@ describe("truthful Codex/Claude host adapters", () => {
   it("journals/snapshots before launch and reconciles final diff after crash or cancellation", async () => {
     const events: string[] = []; const launcher = vi.fn(async () => { events.push("launch"); throw new Error("host crashed"); });
     const adapter = createCodexHostAdapter({ probe: { executable: async () => true, feature: async () => true } });
-    const ports = { authority: { verify: async () => true }, journal: { prepare: async () => { events.push("journal"); return { id: "journal:1", contentHash: hashFramedDomain("host-journal", "1") }; }, finish: async ({ status }: { status: string }) => { events.push(`finish:${status}`); } }, observe: { capture: async ({ phase }: { phase: string }) => { events.push(`observe:${phase}`); return { state, paths: phase === "before" ? [] : ["src/a.ts"], contentHash: hashFramedDomain("host-observation", phase) }; } }, launcher: { launch: launcher }, reconcile: { run: async () => { events.push("reconcile"); return { status: "recovered" as const, changedPaths: ["src/a.ts"] }; } } };
+    const ports = { bindingValidator: { validate: async () => ({ status: "current" as const, currentState: state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) }, authority: { verify: async () => true }, journal: { prepare: async () => { events.push("journal"); return { id: "journal:1", contentHash: hashFramedDomain("host-journal", "1") }; }, finish: async ({ status }: { status: string }) => { events.push(`finish:${status}`); } }, observe: { capture: async ({ phase }: { phase: string }) => { events.push(`observe:${phase}`); return { state, paths: phase === "before" ? [] : ["src/a.ts"], contentHash: hashFramedDomain("host-observation", phase) }; } }, launcher: { launch: launcher }, reconcile: { run: async () => { events.push("reconcile"); return { status: "recovered" as const, changedPaths: ["src/a.ts"] }; } } };
     const result = await adapter.run({ sessionId: "session", repositoryRoot: "/repo", argv: ["--fake"], environment: { SAFE: "1", SECRET: "drop" }, allowedEnvironmentKeys: ["SAFE"], capsule, binding, currentState: state, instructions: { text: "bounded", sourceHashes: [capsule.normativeKernelHash], representationId: "profile:full" }, signal: new AbortController().signal }, ports);
     expect(result).toMatchObject({ status: "recovered", changedPaths: ["src/a.ts"] });
     expect(events.slice(0, 3)).toEqual(["journal", "observe:before", "launch"]); expect(events).toContain("observe:after"); expect(events).toContain("reconcile");
     expect((launcher.mock.calls as unknown as readonly [readonly [{ executable: string; args: readonly string[]; env: Readonly<Record<string, string>> }]])[0]![0]).toMatchObject({ executable: "codex", args: ["--fake"], env: { SAFE: "1" } });
+  });
+
+  it("accepts a dependency-local rebound only through the authenticated binding validator", async () => {
+    const currentState = { ...state, worktreeDigest: hashFramedDomain("host", "unrelated-root-change") };
+    const adapter = createCodexHostAdapter({ probe: { executable: async () => true, feature: async () => true } });
+    const rebound = { ...binding, compiledAgainst: currentState };
+    const ports = { bindingValidator: { validate: async () => ({ status: "rebound" as const, currentState, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [], rebound }) }, authority: { verify: async ({ binding: verified }: { binding: StateBinding }) => verified === rebound }, journal: { prepare: async () => ({ id: "j", contentHash: hashFramedDomain("j", "1") }), finish: async () => undefined }, observe: { capture: async () => ({ state: currentState, paths: [], contentHash: hashFramedDomain("o", "1") }) }, launcher: { launch: async () => ({ exitCode: 0 }) }, reconcile: { run: async () => ({ status: "completed" as const, changedPaths: [] }) } };
+    await expect(adapter.run({ sessionId: "s", repositoryRoot: "/repo", argv: [], environment: {}, allowedEnvironmentKeys: [], capsule, binding, currentState, instructions: { text: "x", sourceHashes: [capsule.normativeKernelHash], representationId: "p" }, signal: new AbortController().signal }, ports)).resolves.toMatchObject({ status: "completed" });
   });
 });

@@ -17,6 +17,8 @@ describe("provider-neutral structured inference", () => {
     const replay = await runStructuredInference(request(), { maximumAttempts: 2, maximumTokens: 200, maximumCost: 2, timeoutMs: 1000, retry: ["schema-invalid"], replay: "allow" }, ports);
     expect(replay.status).toBe("replayed"); expect(provider.generateStructured).toHaveBeenCalledTimes(2);
     await expect(runStructuredInference({ ...request(), inputHash: hashFramedDomain("forged", {}) }, { maximumAttempts: 1, maximumTokens: 20, maximumCost: 1, timeoutMs: 10, retry: [], replay: "deny" }, ports)).rejects.toThrow(/input.*hash|request/iu);
+    const forgedStore: InferenceArtifactStore = { read: async () => ({ key: hashFramedDomain("forged", "key"), requestHash: hashFramedDomain("forged", "request"), routeHash: hashFramedDomain("forged", "route"), response: { value: { nope: true }, provider: "attacker", model: "wrong", rawResponseHash: hashFramedDomain("forged", "response"), attempt: 99 }, candidateHash: hashFramedDomain("forged", "candidate") }), write: async () => undefined };
+    await expect(runStructuredInference(request(), { maximumAttempts: 2, maximumTokens: 200, maximumCost: 2, timeoutMs: 1000, retry: ["schema-invalid"], replay: "allow" }, { ...ports, store: forgedStore })).rejects.toThrow(/cache|replay|artifact/iu);
   });
 
   it("fails explicitly on cancellation/exhaustion and makes resampling a distinct candidate", async () => {
