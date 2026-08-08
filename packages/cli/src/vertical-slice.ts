@@ -43,6 +43,7 @@ import {
   inferPatternFamilies,
   MANDATORY_VERTICAL_SLICE_STEPS,
   assertMandatoryVerticalSliceEvidence,
+  mandatoryVerticalSliceEvidenceDigest,
   reconcileToFixedPoint,
   selectorHash,
   type ApprovedTransformContext,
@@ -928,18 +929,21 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
     { evidenceKind: "receipt-certificate", actual: [successfulApplied.receipt.changedCanonicalEntityIds, successfulApplied.certificate.changedUnits.filter((id) => id === authorityId || id === activeLensId)], expected: [[authorityId, activeLensId], [authorityId, activeLensId]], refs: [`receipt:${successfulApplied.receiptRef}`, `certificate:${successfulApplied.certificateRef}`], proof: { receiptRef: successfulApplied.receiptRef, certificateRef: successfulApplied.certificateRef, receiptHash: successfulApplied.receiptHash, certificateHash: successfulApplied.certificateHash } },
     { evidenceKind: "rebuild", actual: rebuild.canonicalSemantics, expected: acceptedSemantics, refs: [`rebuild:${rebuild.rootDigest}`, `state:${acceptedSemantics.rootDigest}`], proof: { beforeDigest: acceptedSemantics.rootDigest, afterDigest: rebuild.rootDigest, semanticHashPairs: rebuild.canonicalSemantics } },
   ];
-  const steps: MandatoryVerticalSliceStepEvidence[] = MANDATORY_VERTICAL_SLICE_STEPS.map((step, index) => ({
-    step, sequence: index + 1, summary: [
-      ...summaries,
-    ][index]!,
-    details: {
-      outputDigest: hashFramedDomain(`mandatory-slice-step:${step}`, outputs[index]),
-      artifactRefs: outputs[index]!.refs,
-      evidenceKind: outputs[index]!.evidenceKind,
-      proof: { ...outputs[index]!.proof, artifactRefs: outputs[index]!.refs },
-      assertions: [{ claim: summaries[index]!, observed: outputs[index]!.actual, expected: outputs[index]!.expected, passed: canonicalJson(outputs[index]!.actual) === canonicalJson(outputs[index]!.expected) }],
-    },
-  }));
+  const steps: MandatoryVerticalSliceStepEvidence[] = MANDATORY_VERTICAL_SLICE_STEPS.map((step, index) => {
+    const summary = summaries[index]!;
+    const output = outputs[index]!;
+    const proof = { ...output.proof, artifactRefs: output.refs };
+    return {
+      step, sequence: index + 1, summary,
+      details: {
+        outputDigest: mandatoryVerticalSliceEvidenceDigest(step, output.evidenceKind, output.refs, proof),
+        artifactRefs: output.refs,
+        evidenceKind: output.evidenceKind,
+        proof,
+        assertions: [{ claim: summary, observed: output.actual, expected: output.expected, passed: canonicalJson(output.actual) === canonicalJson(output.expected) }],
+      },
+    };
+  });
   assertMandatoryVerticalSliceEvidence(steps);
   return {
     analysis: prepared.analysis,

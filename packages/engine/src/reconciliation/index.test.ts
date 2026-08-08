@@ -5,6 +5,7 @@ import type { ContentHash } from "@projector/core";
 import {
   MANDATORY_VERTICAL_SLICE_STEPS,
   MANDATORY_VERTICAL_SLICE_EVIDENCE_KINDS,
+  mandatoryVerticalSliceEvidenceDigest,
   NonconvergentReconciliationError,
   assertMandatoryVerticalSliceEvidence,
   reconcileToFixedPoint,
@@ -42,15 +43,10 @@ describe("reconcileToFixedPoint", () => {
 });
 
 describe("mandatory vertical-slice evidence", () => {
-  const evidence = () => MANDATORY_VERTICAL_SLICE_STEPS.map((step, index) => ({
-    step,
-    sequence: index + 1,
-    summary: `evidence for ${step}`,
-    details: {
-      outputDigest: `sha256:v1:${String(index).padStart(64, "0")}` as ContentHash,
-      evidenceKind: MANDATORY_VERTICAL_SLICE_EVIDENCE_KINDS[index]!,
-      artifactRefs: [`artifact:concrete:${index + 1}`],
-      proof: {
+  const evidence = () => MANDATORY_VERTICAL_SLICE_STEPS.map((step, index) => {
+    const evidenceKind = MANDATORY_VERTICAL_SLICE_EVIDENCE_KINDS[index]!;
+    const artifactRefs = [`artifact:concrete:${index + 1}`];
+    const proof = {
         stepIndex: index + 1,
         artifactId: `artifact:concrete:${index + 1}`,
         artifactRefs: [`artifact:concrete:${index + 1}`],
@@ -72,10 +68,20 @@ describe("mandatory vertical-slice evidence", () => {
         unresolvedClusterWork: 0, unresolvedDivergenceIds: [], computedFrom: "state:fixture",
         receiptRef: "/tmp/receipt:fixture", certificateRef: "/tmp/certificate:fixture", receiptHash: `sha256:v1:${"4".repeat(64)}`, certificateHash: `sha256:v1:${"5".repeat(64)}`,
         semanticHashPairs: [{ before: `sha256:v1:${"6".repeat(64)}`, after: `sha256:v1:${"6".repeat(64)}` }],
+    };
+    return {
+      step,
+      sequence: index + 1,
+      summary: `evidence for ${step}`,
+      details: {
+        outputDigest: mandatoryVerticalSliceEvidenceDigest(step, evidenceKind, artifactRefs, proof),
+        evidenceKind,
+        artifactRefs,
+        proof,
+        assertions: [{ claim: `observed output for ${step}`, observed: true, expected: true, passed: true }],
       },
-      assertions: [{ claim: `observed output for ${step}`, observed: true, expected: true, passed: true }],
-    },
-  }));
+    };
+  });
 
   it("requires all seventeen steps in normative order", () => {
     expect(MANDATORY_VERTICAL_SLICE_STEPS).toHaveLength(17);
@@ -116,7 +122,7 @@ describe("mandatory vertical-slice evidence", () => {
       const proof = { ...forged[index]!.details.proof };
       delete proof[field];
       forged[index]!.details.proof = proof as typeof forged[number]["details"]["proof"];
-      expect(() => assertMandatoryVerticalSliceEvidence(forged)).toThrow(/proof field|typed predicate/u);
+      expect(() => assertMandatoryVerticalSliceEvidence(forged)).toThrow(/proof field|typed predicate|output digest/u);
     }
   });
 
