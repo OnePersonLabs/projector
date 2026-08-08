@@ -53,6 +53,9 @@ importers:
       '@projector/core':
         specifier: workspace:*
         version: link:../core
+      zod:
+        specifier: ^4.0.15
+        version: 4.4.3
 
   packages/runtime:
     dependencies:
