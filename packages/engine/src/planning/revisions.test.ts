@@ -151,4 +151,54 @@ describe("immutable plan revision rebind and semantic rebase", () => {
         .rejects.toThrow(/capsule|packet|state|content hash/u);
     }
   });
+
+  it("accepts authenticated nonempty-to-empty rebases and invalidates old capsules and approvals", async () => {
+    const result = await rebaseExecutionPlan({
+      original: plan(), validation: stale, completedPackets: ["packet:a"], isCompletedPacketCurrent: async () => true,
+      ...ports(oldCapsules(), []), recompile: async () => ({ ...recompute(), packetIds: [] }),
+    });
+
+    expect(result.plan.packetIds).toEqual([]);
+    expect(result.carriedCompletedPacketIds).toEqual([]);
+    expect(result.invalidatedPacketIds).toEqual(["packet:a", "packet:b"]);
+    expect(result.invalidatedCapsuleIds).toEqual(["capsule:a", "capsule:b"]);
+    expect(result.invalidatedApprovalIds).toEqual(["approval:a", "approval:b"]);
+    expect(result.recompiledCapsuleIds).toEqual([]);
+    expect(result.newCapsuleMapping).toEqual([]);
+  });
+
+  it("accepts authenticated empty-to-empty rebases", async () => {
+    const original = createExecutionPlan({ ...plan(), id: "plan:empty", packetIds: [] });
+    const result = await rebaseExecutionPlan({
+      original, validation: stale, completedPackets: [], isCompletedPacketCurrent: async () => true,
+      capsuleInventoryPort: { enumerateAuthenticated: async () => [] },
+      capsuleCompilerVerifier: { compileAndVerify: async () => [] },
+      recompile: async () => ({ ...recompute(), packetIds: [] }),
+    });
+
+    expect(result.plan.packetIds).toEqual([]);
+    expect(result.oldCapsuleMapping).toEqual([]);
+    expect(result.newCapsuleMapping).toEqual([]);
+    expect(result.invalidatedPacketIds).toEqual([]);
+    expect(result.invalidatedCapsuleIds).toEqual([]);
+  });
+
+  it("rejects empty packet or capsule proofs whenever the corresponding plan still has packets", async () => {
+    await expect(rebaseExecutionPlan({
+      original: plan(), validation: stale, completedPackets: [], isCompletedPacketCurrent: async () => true,
+      ...ports([], replacements()), recompile: async () => recompute(),
+    })).rejects.toThrow(/inventory|packet|every original/u);
+    await expect(rebaseExecutionPlan({
+      original: plan(), validation: stale, completedPackets: [], isCompletedPacketCurrent: async () => true,
+      ...ports(oldCapsules(), []), recompile: async () => recompute(),
+    })).rejects.toThrow(/packet|capsule|recompile/u);
+
+    const emptyOriginal = createExecutionPlan({ ...plan(), id: "plan:empty", packetIds: [] });
+    await expect(rebaseExecutionPlan({
+      original: emptyOriginal, validation: stale, completedPackets: [], isCompletedPacketCurrent: async () => true,
+      capsuleInventoryPort: { enumerateAuthenticated: async () => [{ ...oldCapsules()[0]!, planId: "plan:empty" }] },
+      capsuleCompilerVerifier: { compileAndVerify: async () => [] },
+      recompile: async () => ({ ...recompute(), packetIds: [] }),
+    })).rejects.toThrow(/inventory|packet|original/u);
+  });
 });

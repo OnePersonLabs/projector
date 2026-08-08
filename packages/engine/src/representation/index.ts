@@ -498,7 +498,7 @@ function parseCandidate(candidate: string, profileKey: BuiltInRepresentationProf
 }
 
 function normalizeAdvisoryText(value: string): string {
-  return value.normalize("NFKC").replace(/[^\p{L}\p{N}_]+/gu, "");
+  return value.normalize("NFKC").trim().replace(/\s+/gu, " ");
 }
 
 function assertCandidate(

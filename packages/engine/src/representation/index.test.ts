@@ -275,7 +275,7 @@ describe("semantic representation compilation", () => {
       .rejects.toThrow(/parse|duplicate|candidate/u);
   });
 
-  it("rejects duplicate protected keys in every embedded JSON kernel and permits cosmetic advisory edits", async () => {
+  it("rejects duplicate protected keys and semantic advisory punctuation while permitting whitespace-only edits", async () => {
     const artifacts = new MemoryArtifacts();
     const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
     const candidates = new Map<string, string>();
@@ -302,21 +302,54 @@ describe("semantic representation compilation", () => {
     const exactHuman = candidates.get("human-technical@1")!;
     const cosmeticAdvisory = exactHuman.replace(
       JSON.stringify(source.statements[0]!.text),
-      JSON.stringify("  MUST_NOT   delete production data unless explicit user approval!  "),
+      JSON.stringify("  MUST_NOT   delete production\n  data unless explicit user approval.  "),
     );
     await expect(compiler.validateCandidate({ source, profileKey: "human-technical@1", candidate: cosmeticAdvisory }))
       .resolves.toMatchObject({ assurance: "exact" });
     await fc.assert(fc.asyncProperty(
-      fc.constantFrom("MUST_NOT delete production data unless explicit user approval!", "  MUST_NOT   delete production data unless explicit user approval...  ", "MUST_NOT delete production data unless explicit user approval?!"),
+      fc.constantFrom(
+        "MUST_NOT delete production data unless explicit user approval.",
+        "  MUST_NOT   delete production data unless explicit user approval.  ",
+        "MUST_NOT\n delete production\tdata unless explicit user approval.",
+      ),
       async (advisory) => {
         const candidate = exactHuman.replace(JSON.stringify(source.statements[0]!.text), JSON.stringify(advisory));
         await expect(compiler.validateCandidate({ source, profileKey: "human-technical@1", candidate })).resolves.toMatchObject({ assurance: "exact" });
+      },
+    ));
+    await fc.assert(fc.asyncProperty(
+      fc.constantFrom(
+        "MUST_NOT delete production data unless explicit user approval!",
+        "MUST_NOT delete production data unless explicit user approval...",
+        "MUST_NOT delete production data, unless explicit user approval.",
+        "MUST_NOT delete production data unless explicit user approval?",
+      ),
+      async (advisory) => {
+        const candidate = exactHuman.replace(JSON.stringify(source.statements[0]!.text), JSON.stringify(advisory));
+        await expect(compiler.validateCandidate({ source, profileKey: "human-technical@1", candidate }))
+          .rejects.toThrow(/advisory|semantic|candidate/u);
       },
     ));
     await expect(compiler.validateCandidate({
       source, profileKey: "human-technical@1",
       candidate: exactHuman.replace(JSON.stringify(source.statements[0]!.text), JSON.stringify("MUST_NOT delete data or backups.")),
     })).rejects.toThrow(/advisory|semantic|candidate/u);
+  });
+
+  it("does not grant exact assurance when punctuation changes advisory force or scope", async () => {
+    const body = {
+      ...sourceBody,
+      statements: [{ ...sourceBody.statements[0]!, text: "No users allowed." }],
+    };
+    const punctuationSource = { ...body, sourceSemanticHash: canonicalSourceHash(body) };
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    const compiled = await compiler.compile({ source: punctuationSource, binding, profileKey: "human-technical@1" });
+    const exact = (await artifacts.get(compiled.projection.contentHash))!;
+    const ambiguous = exact.replace(JSON.stringify("No users allowed."), JSON.stringify("No, users allowed."));
+
+    await expect(compiler.validateCandidate({ source: punctuationSource, profileKey: "human-technical@1", candidate: ambiguous }))
+      .rejects.toThrow(/advisory|semantic|candidate/u);
   });
 
   it("derives canonical membership and semantic identity from trusted structured input", async () => {

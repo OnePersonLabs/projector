@@ -22,7 +22,12 @@ export const upgradeDeclarationHash = (declaration: SerializedUpgradeDeclaration
   const parsed = UpgradeDeclarationSchema.parse(declaration);
   return hashFramedDomain("upgrade-declaration:v1", { ...parsed, affectedDependencyKeys: normalizeKeys(parsed.affectedDependencyKeys) });
 };
-export interface UpgradeDependent { readonly id: string; readonly dependencyKeys: readonly string[]; readonly kind: "representation" | "context" | "capsule" | "derivation" | "canonical-source" }
+export interface UpgradeDependent {
+  readonly id: string;
+  readonly dependencyKeys: readonly string[];
+  /** Canonical entities are authority; canonical-source rows are derivation proofs about that authority. */
+  readonly kind: "representation" | "context" | "capsule" | "derivation" | "canonical-source" | "canonical-entity";
+}
 export interface UpgradeDependencyRegistry {
   readonly knownDependencyKeys: readonly string[];
   readonly ownedDependencyKeys: Readonly<Record<string, { readonly kind: UpgradeComponentKind; readonly id: string }>>;
@@ -31,7 +36,7 @@ export interface UpgradeDependencyRegistry {
 }
 
 export function planUpgradeInvalidation(declaration: UpgradeDeclaration, dependents: readonly UpgradeDependent[], registry: UpgradeDependencyRegistry): {
-  readonly invalidatedIds: string[]; readonly preservedCanonicalSourceIds: string[]; readonly requiredAction: UpgradeDeclaration["requiredAction"];
+  readonly invalidatedIds: string[]; readonly preservedCanonicalEntityIds: string[]; readonly requiredAction: UpgradeDeclaration["requiredAction"];
 } {
   for (const value of [declaration.id, declaration.fromVersion, declaration.toVersion, ...declaration.affectedDependencyKeys]) {
     if (value.trim() === "" || value !== value.trim()) throw new TypeError("upgrade identities, versions, and dependency keys must be nonblank and trimmed");
@@ -83,7 +88,7 @@ export function planUpgradeInvalidation(declaration: UpgradeDeclaration, depende
     const dependencyKey = pending.shift()!;
     for (const id of registry.directDependentIdsByDependencyKey[dependencyKey] ?? []) {
       const dependent = dependentsById.get(id)!;
-      if (dependent.kind === "canonical-source" || invalidated.has(id)) continue;
+      if (dependent.kind === "canonical-entity" || invalidated.has(id)) continue;
       invalidated.add(id);
       const producedKey = `${dependent.kind}:${dependent.id}`;
       if (known.has(producedKey) && !affected.has(producedKey)) {
@@ -95,7 +100,7 @@ export function planUpgradeInvalidation(declaration: UpgradeDeclaration, depende
   if (invalidated.size === 0) throw new TypeError("semantic upgrade must produce a nonempty actual invalidation; vacuous dependency keys are not permitted");
   return {
     invalidatedIds: [...invalidated].sort(),
-    preservedCanonicalSourceIds: normalizedDependents.filter(({ kind }) => kind === "canonical-source").map(({ id }) => id).sort(),
+    preservedCanonicalEntityIds: normalizedDependents.filter(({ kind }) => kind === "canonical-entity").map(({ id }) => id).sort(),
     requiredAction: declaration.requiredAction,
   };
 }
