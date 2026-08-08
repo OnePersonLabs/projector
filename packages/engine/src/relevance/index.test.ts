@@ -217,6 +217,41 @@ describe("bounded four-band Relevance Closure", () => {
     })).rejects.toThrow(/state|snapshot|stale/i);
   });
 
+  it("refuses discovery observed from a context snapshot different from compiledAgainst", async () => {
+    const otherContext = { ...context, stateDigest: { ...state, worktreeDigest: hash("other-worktree") } };
+    await expect(compileRelevanceClosure({
+      request: "incoherent discovery", seeds: [seed("midi-timing")], identityResolution: identityResolution(),
+      activatedFacetKeys: [], compiledAgainst: state, context: otherContext,
+      discovery: { discover: async (subjectId) => ({ edges: [], dependency: dependency(`q-${subjectId}`, 0) }) },
+      valueDependencies: [], policy: { maxEntries: 2, maxDepth: 0, maxCost: 1, minimumScore: 0.1 },
+    })).rejects.toThrow(/context|snapshot|state/i);
+  });
+
+  it("merges duplicate entity edges before budgeting and keeps included and frontier disjoint", async () => {
+    const compile = (reverse: boolean) => compileRelevanceClosure({
+      request: "duplicate edges", seeds: [seed("root")], identityResolution: identityResolution(["root"]),
+      activatedFacetKeys: [], compiledAgainst: state, context,
+      discovery: {
+        discover: async (subjectId) => ({
+          edges: subjectId === "root" ? (reverse ? [...duplicateEdges].reverse() : duplicateEdges) : [],
+          dependency: dependency(`dupes-${subjectId}`, subjectId === "root" ? 3 : 0),
+        }),
+      },
+      valueDependencies: [], policy: { maxEntries: 4, maxDepth: 1, maxCost: 10, minimumScore: 0.1 },
+    });
+    const duplicateEdges = [
+      { entityId: "x", band: "possible" as const, score: 0.8, requiredForPlanning: false, reason: reason("semantic-similarity", "root"), cost: 8 },
+      { entityId: "x", band: "consequence" as const, score: 0.8, requiredForPlanning: true, reason: reason("depends-on", "root"), cost: 1 },
+      { entityId: "y", band: "consequence" as const, score: 0.7, requiredForPlanning: false, reason: reason("depends-on", "root"), cost: 3 },
+    ];
+    const forward = await compile(false);
+    const reverse = await compile(true);
+    expect(forward).toEqual(reverse);
+    expect(forward.closure.entries.map(({ entityId }) => entityId)).toEqual(["root", "x", "y"]);
+    expect(forward.frontier.filter((id) => forward.closure.entries.some((entry) => entry.entityId === id))).toEqual([]);
+    expect(forward.metrics).toMatchObject({ duplicateEdgeCount: 1, budgetDeferredEdgeCount: 0, belowThresholdEdgeCount: 0 });
+  });
+
   it("fails visibly when a required discovery lane is unavailable", async () => {
     const compiled = await compileRelevanceClosure({
       request: "change public MIDI contract",
@@ -310,11 +345,11 @@ describe("predicted versus observed Planning Surprises", () => {
       }],
     });
 
-    expect(result.surprise.kind).toBe("missing-relation");
-    expect(result.surprise.disposition).toBe("accept-and-learn");
-    expect(result.proposals).toHaveLength(1);
-    expect(result.proposals[0]).toMatchObject({ status: "proposed", canonical: false });
-    expect(result.proposals[0]?.evidence).toHaveLength(1);
+    expect(result!.surprise.kind).toBe("missing-relation");
+    expect(result!.surprise.disposition).toBe("accept-and-learn");
+    expect(result!.proposals).toHaveLength(1);
+    expect(result!.proposals[0]).toMatchObject({ status: "proposed", canonical: false });
+    expect(result!.proposals[0]?.evidence).toHaveLength(1);
   });
 
   it("classifies unrelated agent edits as overreach and refuses to learn a false relationship", () => {
@@ -330,9 +365,9 @@ describe("predicted versus observed Planning Surprises", () => {
       }],
     });
 
-    expect(result.surprise.kind).toBe("agent-overreach");
-    expect(result.surprise.disposition).toBe("revert-overreach");
-    expect(result.proposals).toEqual([]);
+    expect(result!.surprise.kind).toBe("agent-overreach");
+    expect(result!.surprise.disposition).toBe("revert-overreach");
+    expect(result!.proposals).toEqual([]);
   });
 
   it("maps analysis deficiency and benign incidental mutation to stable normative surprise kinds", () => {
@@ -344,9 +379,42 @@ describe("predicted versus observed Planning Surprises", () => {
       planId: "plan", predictedEntityIds: [],
       observed: [{ entityId: "formatter", impact: "code", legitimacy: "incidental", authorized: true, evidence: [] }],
     });
-    expect(deficiency.classification).toBe("missing-predicted-impact");
-    expect(deficiency.surprise.kind).toBe("unpredicted-code-impact");
-    expect(incidental.classification).toBe("incidental-change");
-    expect(incidental.surprise.kind).toBe("benign-discovery");
+    expect(deficiency!.classification).toBe("missing-predicted-impact");
+    expect(deficiency!.surprise.kind).toBe("unpredicted-code-impact");
+    expect(incidental!.classification).toBe("incidental-change");
+    expect(incidental!.surprise.kind).toBe("benign-discovery");
+  });
+
+  it("keeps authorized required scope deficiency distinct, preserves valid proposals beside overreach, and emits nothing for empty input", () => {
+    const required = classifyPlanningSurprise({
+      planId: "plan", predictedEntityIds: ["root"],
+      observed: [{ entityId: "required", impact: "semantic", legitimacy: "required", authorized: true, evidence: [{ evidenceId: "scope", stance: "supports" }] }],
+    });
+    expect(required?.classification).toBe("legitimate-scope-expansion");
+    expect(required?.surprise.kind).toBe("scope-expansion");
+
+    const mixed = classifyPlanningSurprise({
+      planId: "plan", predictedEntityIds: ["root"],
+      observed: [
+        { entityId: "needed", impact: "semantic", legitimacy: "required", authorized: true, evidence: [{ evidenceId: "relation", stance: "supports" }], proposedRelation: { fromId: "root", toId: "needed", type: "depends-on" } },
+        { entityId: "avatar", impact: "code", legitimacy: "unexplained", authorized: false, evidence: [{ evidenceId: "diff", stance: "supports" }] },
+      ],
+    });
+    expect(mixed?.classification).toBe("agent-overreach");
+    expect(mixed?.impactClassifications).toEqual([
+      { entityId: "avatar", classification: "agent-overreach" },
+      { entityId: "needed", classification: "legitimate-new-relationship" },
+    ]);
+    expect(mixed?.proposals).toHaveLength(1);
+    expect(classifyPlanningSurprise({ planId: "plan", predictedEntityIds: ["root"], observed: [] })).toBeUndefined();
+  });
+
+  it("rejects malformed relationship proposal endpoints and evidence", () => {
+    expect(() => classifyPlanningSurprise({
+      planId: "plan", predictedEntityIds: ["root"], observed: [{
+        entityId: "needed", impact: "semantic", legitimacy: "required", authorized: true,
+        evidence: [{ evidenceId: "", stance: "supports" }], proposedRelation: { fromId: "", toId: "elsewhere", type: "depends-on" },
+      }],
+    })).toThrow(/proposal|endpoint|evidence/i);
   });
 });
