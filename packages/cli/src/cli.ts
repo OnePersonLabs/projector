@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
-import { hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
+import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import { createStateBinding } from "@projector/engine";
 import {
@@ -74,6 +76,7 @@ export interface ChangeCliRequest { readonly repositoryRoot: string; readonly se
 export interface ChangeCliPort {
   readonly change: (request: { readonly repositoryRoot: string; readonly intent: string }) => Promise<Record<string, unknown>>;
   readonly plan: (request: ChangeCliRequest) => Promise<Record<string, unknown>>;
+  readonly resolvePlan: (request: ChangeCliRequest) => Promise<{ readonly risk: RiskClass; readonly planHash: string }>;
   readonly apply: (request: ChangeCliRequest) => Promise<Record<string, unknown>>;
 }
 
@@ -357,7 +360,10 @@ export async function executeProjector(
       }
       if (parsed.selector !== undefined) {
         const port = options.change ?? defaultChangePort(repositoryRoot);
+        const resolved = await port.resolvePlan({ repositoryRoot, selector: parsed.selector });
+        assertOperationRiskAuthorized(policy, resolved.risk);
         report = { policy, ...await port.apply({ repositoryRoot, selector: parsed.selector }) };
+        if (typeof report.risk === "string" && report.risk !== resolved.risk || typeof report.risk === "object" && report.risk?.class !== undefined && report.risk.class !== resolved.risk) throw new Error("applied result risk does not match the authorized immutable plan");
         exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
         break;
       }
@@ -429,28 +435,57 @@ export async function executeProjector(
 }
 
 function defaultChangePort(repositoryRoot: string): ChangeCliPort {
-  const requireChangeSelector = (selector: string): void => {
-    if (selector !== "change:mandatory-slice") throw new Error(`unsupported or unauthenticated change selector: ${selector}`);
+  type Prepared = Awaited<ReturnType<typeof prepareMandatorySlice>>;
+  type ChangeRecord = { readonly kind: "compatibility-change"; readonly intent: string; readonly boundState: Prepared["plan"]["boundState"]; readonly analysis: Prepared["analysis"] };
+  type PlanRecord = { readonly kind: "compatibility-plan"; readonly changeSelector: string; readonly prepared: Prepared; readonly planHash: string };
+  const recordRoot = join(repositoryRoot, ".projector", "task16-selections");
+  const suffix = (selector: string, prefix: "change" | "plan"): string => {
+    const match = new RegExp(`^${prefix}:compat:([a-f0-9]{64})$`, "u").exec(selector);
+    if (match?.[1] === undefined) throw new Error(`unsupported or unauthenticated ${prefix} selector: ${selector}`);
+    return match[1];
   };
-  const requirePlanSelector = (selector: string): void => {
-    if (selector !== "plan:mandatory-slice") throw new Error(`unsupported or unauthenticated plan selector: ${selector}`);
+  const persist = async (prefix: "change" | "plan", body: ChangeRecord | PlanRecord): Promise<string> => {
+    const hash = hashFramedDomain(`cli-immutable-${prefix}-selection`, body); const id = hash.slice("sha256:v1:".length);
+    await mkdir(recordRoot, { recursive: true });
+    const path = join(recordRoot, `${prefix}-${id}.json`); const bytes = `${canonicalJson(body)}\n`;
+    try { await writeFile(path, bytes, { encoding: "utf8", flag: "wx" }); }
+    catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || await readFile(path, "utf8") !== bytes) throw error;
+    }
+    return `${prefix}:compat:${id}`;
+  };
+  const load = async <T extends ChangeRecord | PlanRecord>(prefix: "change" | "plan", selector: string): Promise<T> => {
+    const id = suffix(selector, prefix); const path = join(recordRoot, `${prefix}-${id}.json`);
+    let body: T;
+    try { body = JSON.parse(await readFile(path, "utf8")) as T; } catch { throw new Error(`immutable ${prefix} selector is unavailable: ${selector}`); }
+    if (hashFramedDomain(`cli-immutable-${prefix}-selection`, body).slice("sha256:v1:".length) !== id) throw new Error(`immutable ${prefix} selector content is corrupt`);
+    return body;
+  };
+  const assertCurrent = async (boundState: Prepared["plan"]["boundState"]): Promise<Prepared> => {
+    const current = await prepareMandatorySlice(repositoryRoot);
+    if (canonicalJson(current.plan.boundState) !== canonicalJson(boundState)) throw new Error("immutable selection is stale; explicit rebase is required");
+    return current;
   };
   return {
     change: async ({ intent }) => {
       if (intent !== "repair-governed-state") throw new Error(`unsupported deterministic local change intent: ${intent}`);
-      const analysis = await analyzeMandatorySlice(repositoryRoot);
-      return { kind: "change", selector: "change:mandatory-slice", intent, deterministic: true, analysis, risk: "R1" };
+      const prepared = await prepareMandatorySlice(repositoryRoot);
+      const record: ChangeRecord = { kind: "compatibility-change", intent, boundState: prepared.plan.boundState, analysis: prepared.analysis };
+      return { kind: "change", selector: await persist("change", record), intent, deterministic: true, compatibility: true, analysis: record.analysis, boundState: record.boundState, risk: "R1" };
     },
     plan: async ({ selector }) => {
-      requireChangeSelector(selector);
-      const prepared = await prepareMandatorySlice(repositoryRoot);
-      return { kind: "plan", selector: "plan:mandatory-slice", changeSelector: selector, ...prepared };
+      const change = await load<ChangeRecord>("change", selector); const prepared = await assertCurrent(change.boundState);
+      const planHash = hashFramedDomain("cli-immutable-compatibility-plan", { plan: prepared.plan, capsule: prepared.capsule, approval: prepared.approval, risk: prepared.risk });
+      const record: PlanRecord = { kind: "compatibility-plan", changeSelector: selector, prepared, planHash };
+      return { kind: "plan", selector: await persist("plan", record), changeSelector: selector, immutablePlanHash: planHash, compatibility: true, ...prepared };
     },
+    resolvePlan: async ({ selector }) => { const record = await load<PlanRecord>("plan", selector); return { risk: record.prepared.risk.class, planHash: record.planHash }; },
     apply: async ({ selector }) => {
-      requirePlanSelector(selector);
-      const prepared = await prepareMandatorySlice(repositoryRoot);
-      const result = await applyMandatorySlice(repositoryRoot, prepared);
-      return { kind: "apply", selector, risk: prepared.risk, plan: prepared.plan, capsule: prepared.capsule, preview: prepared.preview, ...result };
+      const record = await load<PlanRecord>("plan", selector);
+      await assertCurrent(record.prepared.plan.boundState);
+      if (record.planHash !== hashFramedDomain("cli-immutable-compatibility-plan", { plan: record.prepared.plan, capsule: record.prepared.capsule, approval: record.prepared.approval, risk: record.prepared.risk })) throw new Error("immutable plan approval tuple is corrupt");
+      const result = await applyMandatorySlice(repositoryRoot, record.prepared);
+      return { kind: "apply", selector, immutablePlanHash: record.planHash, compatibility: true, risk: record.prepared.risk, plan: record.prepared.plan, capsule: record.prepared.capsule, preview: record.prepared.preview, ...result };
     },
   };
 }

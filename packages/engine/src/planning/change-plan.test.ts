@@ -29,5 +29,10 @@ describe("impact-aware semantic change plan compiler", () => {
     await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(cycle) } })).rejects.toThrow(/cycle|convergen/iu);
     const nonconvergent = cycle.map((item) => ({ ...item, convergence: { group: "contract-cycle", maximumIterations: 0 } }));
     await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(nonconvergent) } })).rejects.toThrow(/convergen|iteration/iu);
+    const outside = [{ ...baseProposals[0]!, writeSelectors: ["packages/other/**"] }];
+    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(outside) } })).rejects.toThrow(/boundary|scope/iu);
+    const convergent = cycle.map((item) => ({ ...item, convergence: { group: "contract-cycle", maximumIterations: 3 } }));
+    const compiled = await compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(convergent) } });
+    expect(compiled.executionOrder.every(({ convergence }) => convergence?.group === "contract-cycle" && convergence.maximumIterations === 3)).toBe(true);
   });
 });
