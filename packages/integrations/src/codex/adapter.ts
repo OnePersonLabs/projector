@@ -69,7 +69,7 @@ export function createHostAdapter(host: HostName, executable: string, dependenci
       enabled("instruction-installation"), enabled("lifecycle-hooks"), enabled("programmatic-execution"), enabled("subagents"), enabled("isolated-worktrees"), enabled("structured-result"), enabled("tool-observation"), enabled("filesystem-observation"), enabled("cancellation"), enabled("state-capability"),
     ]);
     const observable = toolObservation || filesystemObservation || lifecycleHooks;
-    const level: 1 | 2 | 3 = available && programmaticExecution && structuredResult && observable && stateCapability ? 3 : available && (programmaticExecution || observable) ? 2 : 1;
+    const level: 1 | 2 | 3 = available && programmaticExecution && structuredResult && observable && stateCapability ? 3 : available && observable ? 2 : 1;
     return { host, level, executable: available, instructionInstallation, lifecycleHooks, programmaticExecution, subagents, isolatedWorktrees, structuredResult, toolObservation, filesystemObservation, cancellation, stateCapability, enforcement: level === 3 ? "state-bound" : level === 2 ? "observed" : "instruction-only" };
   }
 

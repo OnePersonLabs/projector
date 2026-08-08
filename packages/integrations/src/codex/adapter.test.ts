@@ -16,6 +16,8 @@ describe("truthful Codex/Claude host adapters", () => {
     expect(await codex.capabilities()).toMatchObject({ executable: true, structuredResult: true, toolObservation: true, cancellation: true, programmaticExecution: false, level: 2, enforcement: "observed" });
     const claude = createClaudeHostAdapter({ probe: { executable: async () => true, feature: async () => false } });
     expect((await claude.capabilities()).host).toBe("claude");
+    const executionOnly = createCodexHostAdapter({ probe: { executable: async () => true, feature: async (name) => name === "programmatic-execution" } });
+    expect(await executionOnly.capabilities()).toMatchObject({ programmaticExecution: true, level: 1, enforcement: "instruction-only" });
   });
 
   it("journals/snapshots before launch and reconciles final diff after crash or cancellation", async () => {
