@@ -178,6 +178,52 @@ describe("semantic signature profiles and assurance", () => {
     expect(() => profiles.sign("unstable", "1", {}, { assurance: "exact", evidenceIds: [] }))
       .toThrow(/nondeterministic normalization/);
   });
+
+  it("orders prerelease versions below their stable release and compares large numeric versions exactly", () => {
+    const profiles = new SemanticSignatureProfileRegistry();
+    const base = {
+      id: "typescript-public-interface",
+      scope: "exported-declarations",
+      normalization: "declarations",
+      ignoredDifferences: [] as string[],
+      adapterId: "typescript",
+      adapterVersion: "1",
+      maximumAssurance: "exact" as const,
+      assuranceEvidence: ["grammar"],
+      unsupportedConstructs: [] as string[],
+      normalize: (input: unknown) => input,
+    };
+    profiles.register({ ...base, version: "1.0.0-alpha" });
+    profiles.register({ ...base, version: "1.0.0" });
+    profiles.register({ ...base, version: "999999999999999999999999999999.0" });
+    expect(profiles.currentVersion(base.id)).toBe("999999999999999999999999999999.0");
+
+    const rules = new ImpactRuleRegistry([
+      {
+        ...({
+          id: "rule:version-order",
+          key: "version-order",
+          version: "1.0.0-alpha",
+          selector: { op: "atom", field: "tag", matcher: "equals", value: "public" },
+          trigger: "manual",
+          direction: "both",
+          effect: "advisory",
+          semanticHash: hash("alpha"),
+        } satisfies ImpactRule),
+      },
+      {
+        id: "rule:version-order",
+        key: "version-order",
+        version: "1.0.0",
+        selector: { op: "atom", field: "tag", matcher: "equals", value: "public" },
+        trigger: "manual",
+        direction: "both",
+        effect: "advisory",
+        semanticHash: hash("stable"),
+      },
+    ]);
+    expect(rules.current().find(({ id }) => id === "rule:version-order")?.version).toBe("1.0.0");
+  });
 });
 
 describe("derivation index and exact invalidation", () => {
@@ -204,8 +250,21 @@ describe("derivation index and exact invalidation", () => {
       reverseDependencies: [
         { subjectId: "contract", dependentIds: ["client"] },
         { subjectId: "handler", dependentIds: ["contract"] },
+        { subjectId: "typescript-public-interface", dependentIds: ["client", "contract"] },
       ],
     });
+  });
+
+  it("rejects incompatible declared proof groups inside one Tarjan SCC", () => {
+    expect(() => new DerivationIndex([
+      record("contract-a", [["unit", "contract-b"]], "a-v1", "group-a"),
+      record("contract-b", [["unit", "contract-a"]], "b-v1", "group-b"),
+    ])).toThrow(/incompatible.*proof group/i);
+  });
+
+  it("indexes output signature profiles even when the input list omits the profile dependency", () => {
+    const index = new DerivationIndex([record("contract", [["artifact", "handler"]])]);
+    expect(index.reverseDependents("typescript-public-interface")).toEqual(["contract"]);
   });
 
   it("backdates an unchanged exact public contract and keeps clients valid", async () => {
@@ -222,6 +281,26 @@ describe("derivation index and exact invalidation", () => {
     expect(result.invalidation.transitivelyAffected).toEqual([]);
     expect(result.backdatedUnitIds).toEqual(["contract"]);
     expect(result.validUnitIds).toContain("client");
+  });
+
+  it("persists refreshed derivation inputs when an unchanged unit is backdated", async () => {
+    const index = new DerivationIndex([record("contract", [["artifact", "handler"]], "public-v1")]);
+    let stored: ReturnType<DerivationIndex["snapshot"]> | undefined;
+    const engine = new InvalidationEngine({
+      derivations: index,
+      derivationStore: {
+        load: async () => stored,
+        replace: async (snapshot) => { stored = snapshot; },
+      },
+    });
+    const changed = event("handler");
+    const result = await engine.invalidate(changed, {
+      revalidate: async () => [{ unitId: "contract", signature: signature("public-v1") }],
+    });
+
+    expect(result.revalidatedRecords[0]?.inputs.find(({ id }) => id === "handler")?.versionHash).toBe(changed.newHash);
+    expect(index.get("contract")?.inputs.find(({ id }) => id === "handler")?.versionHash).toBe(changed.newHash);
+    expect(stored?.records[0]?.inputs.find(({ id }) => id === "handler")?.versionHash).toBe(changed.newHash);
   });
 
   it("refuses heuristic equality and widens to downstream clients", async () => {
@@ -260,8 +339,8 @@ describe("derivation index and exact invalidation", () => {
     const result = await engine.invalidate(event("typescript-public-interface", "signature-profile-change"), {
       revalidate: async () => [{ unitId: "contract", signature: signature("public-v1", "exact", "2") }],
     });
-    expect(result.invalidation.transitivelyAffected).toEqual(["client"]);
-    expect(result.invalidation.reasons.client).toContain("signature profile, version, or scope changed");
+    expect(result.invalidation.directlyAffected).toEqual(["client", "contract"]);
+    expect(result.invalidation.reasons.client).toContain("signature profile typescript-public-interface changed; output derivation requires fresh proof");
   });
 
   it("accepts validated equality only with sufficient independent evidence", () => {
@@ -411,6 +490,27 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     ]);
   });
 
+  it("binds selector membership, rule applicability, reverse traversal, and enumeration queries", async () => {
+    const port: ImpactRuleEvaluationPort = {
+      subjects: async (_rule, phase) => phase === "before"
+        ? [{ id: "before-export", values: { tag: ["public"] }, dependencyKeys: ["membership:before"] }]
+        : [{ id: "after-export", values: { tag: ["public"] }, dependencyKeys: ["membership:after"] }],
+      traverse: async () => ({
+        knownIds: ["docs"], possibleIds: ["unknown-consumer"], unavailableIds: [], observability: "bounded", reasons: {},
+      }),
+    };
+    const binding = { compiledAgainst: event("selector:public").stateDigest, valueDependencies: [], queryDependencies: [], dependencyDigest: hash("binding") } as StateBinding;
+    const result = await new InvalidationEngine({
+      derivations: new DerivationIndex(), impactRules: new ImpactRuleRegistry([publicRule()]), impactPort: port,
+    }).invalidate(event("selector:public", "membership-change"), {
+      stateBinding: binding,
+      revalidate: async () => [],
+    });
+    const kinds = result.impactClosure?.stateBinding.queryDependencies.map(({ query }) => query.kind) ?? [];
+    expect(kinds).toEqual(expect.arrayContaining(["selector-membership", "impact-rule-applicability", "reverse-derivation", "surface-enumeration"]));
+    expect(result.impactClosure?.stateBinding.queryDependencies.some(({ priorResult }) => priorResult.dependencyKeys.includes("membership:before"))).toBe(true);
+  });
+
   it("keeps widen-analysis Impact Rule results in the possible frontier", async () => {
     const wideningRule = { ...publicRule(), effect: "widen-analysis" as const };
     const port: ImpactRuleEvaluationPort = {
@@ -446,6 +546,37 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     }).invalidate(event("selector:public", "membership-change"), { revalidate: async () => [] });
     expect(result.invalidation.unavailable).toEqual(["selector:public"]);
     expect(result.invalidation.reasons["selector:public"]).toContain("Impact Rule impact:public-api@1 evaluation is unavailable");
+  });
+
+  it("retains unavailable provenance when a unit is also known", () => {
+    const binding = { dependencyDigest: hash("binding") } as StateBinding;
+    const closure = createImpactClosure({
+      event: event("handler"),
+      stateBinding: binding,
+      entries: [
+        { unitId: "contract", disposition: "known", proofClass: "exact-derivation", observability: "closed", frontier: false, reasons: ["direct"] },
+        { unitId: "contract", disposition: "unavailable", proofClass: "unavailable", observability: "unavailable", frontier: true, reasons: ["traversal failed"] },
+      ],
+    });
+    expect(closure.ref.unavailableSurfaceIds).toEqual(["contract"]);
+    expect(closure.entries.map(({ disposition }) => disposition)).toEqual(["known", "unavailable"]);
+  });
+
+  it("merges duplicate provenance by a deterministic conservative profile", () => {
+    const binding = { dependencyDigest: hash("binding") } as StateBinding;
+    const first = createImpactClosure({
+      event: event("handler"),
+      stateBinding: binding,
+      entries: [
+        { unitId: "contract", disposition: "known", proofClass: "exact-derivation", observability: "closed", frontier: false, reasons: ["direct"] },
+        { unitId: "contract", disposition: "known", proofClass: "impact-rule", observability: "open", frontier: true, reasons: ["rule"] },
+      ],
+    });
+    const second = createImpactClosure({ event: event("handler"), stateBinding: binding, entries: [...first.entries].reverse() });
+    expect(first.contentHash).toBe(second.contentHash);
+    expect(first.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ unitId: "contract", proofClass: "exact-derivation", observability: "open", frontier: true, reasons: ["direct", "rule"] }),
+    ]));
   });
 
   it("keeps unrelated work valid under an unrelated root mutation", async () => {
@@ -511,6 +642,48 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     expect(result.impactClosure?.entries.find(({ unitId }) => unitId === "docs")?.proofClass).toBe("impact-rule");
   });
 
+  it("returns a structured block effect that prevents valid completion", async () => {
+    const blockedRule = { ...publicRule(), effect: "block" as const };
+    const port: ImpactRuleEvaluationPort = {
+      subjects: async () => [{ id: "export", values: { tag: ["public"] }, dependencyKeys: ["unit:export"] }],
+      traverse: async () => ({ knownIds: [], possibleIds: [], unavailableIds: [], observability: "closed", reasons: {} }),
+    };
+    const result = await new InvalidationEngine({
+      derivations: new DerivationIndex(), impactRules: new ImpactRuleRegistry([blockedRule]), impactPort: port,
+    }).invalidate(event("selector:public", "membership-change"), { revalidate: async () => [] });
+    expect(result.blockedUnitIds).toEqual(["export"]);
+    expect(result.blocked).toEqual([{ ruleId: "impact:public-api", ruleVersion: "1", unitIds: ["export"], reason: expect.stringContaining("blocks") }]);
+    expect(result.validUnitIds).not.toContain("export");
+  });
+
+  it("retains traversal failure reasons and unavailable observability", async () => {
+    const port: ImpactRuleEvaluationPort = {
+      subjects: async () => [{ id: "export", values: { tag: ["public"] }, dependencyKeys: ["unit:export"] }],
+      traverse: async () => { throw new Error("reverse index unavailable"); },
+    };
+    const result = await new InvalidationEngine({
+      derivations: new DerivationIndex(), impactRules: new ImpactRuleRegistry([publicRule()]), impactPort: port,
+    }).invalidate(event("selector:public", "membership-change"), { revalidate: async () => [] });
+    expect(result.invalidation.unavailable).toEqual(["export"]);
+    expect(result.invalidation.reasons.export?.some((reason) => reason.includes("reverse index unavailable"))).toBe(true);
+    expect(result.impactClosure).toBeUndefined();
+  });
+
+  it("rejects conflicting duplicate revalidation outputs instead of last-write-wins", async () => {
+    const engine = new InvalidationEngine({ derivations: new DerivationIndex([
+      record("contract", [["artifact", "handler"]], "public-v1"),
+      record("client", [["unit", "contract"]]),
+    ]) });
+    const result = await engine.invalidate(event("handler"), {
+      revalidate: async () => [
+        { unitId: "contract", signature: signature("public-v1") },
+        { unitId: "contract", signature: signature("public-v2") },
+      ],
+    });
+    expect(result.backdatedUnitIds).toEqual([]);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.includes("duplicate revalidation output contract"))).toBe(true);
+  });
+
   it("does not let a shared-bug clean rebuild override contradictory independent conformance", () => {
     const verdict = compareCorrectnessOracles({
       rebuild: { incrementalHash: hash("same-wrong"), cleanHash: hash("same-wrong") },
@@ -526,6 +699,16 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     const verdict = compareCorrectnessOracles({
       rebuild: { incrementalHash: hash("same"), cleanHash: hash("same") },
       conformance: [validation({ evidenceLane: "same-packet-agent", independenceGroup: "packet" })],
+      historical: [],
+    });
+    expect(verdict.conformancePassed).toBe(false);
+    expect(verdict.strongCompletion).toBe(false);
+  });
+
+  it("does not grant strong completion to weak, ungrouped, correlated conformance evidence", () => {
+    const verdict = compareCorrectnessOracles({
+      rebuild: { incrementalHash: hash("same"), cleanHash: hash("same") },
+      conformance: [validation({ assurance: "weak", independenceGroup: "", authorSource: "same-packet-agent" })],
       historical: [],
     });
     expect(verdict.conformancePassed).toBe(false);
