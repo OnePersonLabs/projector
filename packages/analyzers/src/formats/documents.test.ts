@@ -57,4 +57,13 @@ describe("bounded structured document, Actions, and Markdown extraction", () => 
       jobs: [expect.objectContaining({ environment: "production", matrix: [expect.objectContaining({ key: "node", values: ["20", "22"] })], inputs: [expect.objectContaining({ key: "mode", value: "strict" })], outputs: [expect.objectContaining({ key: "artifact", value: "${{ steps.pack.outputs.name }}" })] })],
     });
   });
+
+  it("preserves block-form paths-ignore entries as exclusions through the public analyzer", () => {
+    const result = analyzeDocuments([entry(".github/workflows/ignore.yml", [
+      "on:", "  pull_request:", "    paths-ignore:", "      - docs/**", "      - examples/**", "jobs:", "  check:", "    steps:", "      - run: pnpm test",
+    ].join("\n"))]);
+    expect(result.actions[0]?.pathFilters).toEqual([
+      expect.objectContaining({ trigger: "pull_request", include: [], exclude: ["docs/**", "examples/**"] }),
+    ]);
+  });
 });
