@@ -6,8 +6,12 @@ import { promisify } from "node:util";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import {
   canonicalJson,
+  parseCanonicalJson,
   hashFramedDomain,
   hashRootManifest,
+  hashSemantic,
+  ChangeCertificateSchema,
+  TransactionReceiptSchema,
   withCanonicalHashes,
   type AuthorityRecord,
   type CanonicalDocumentEnvelope,
@@ -189,29 +193,112 @@ function patternCandidates(
   return inferPatternFamilies(observations);
 }
 
+interface PersistedJournalRecord {
+  readonly entry?: {
+    readonly transactionId?: string;
+    readonly planId?: string;
+    readonly phase?: string;
+    readonly touchedPaths?: string[];
+  };
+  readonly operations?: Array<{
+    readonly id?: string;
+    readonly status?: string;
+    readonly changes?: Array<{ readonly path?: string }>;
+  }>;
+}
+
+async function parseCanonicalArtifact(path: string): Promise<unknown> {
+  const source = await readFile(path, "utf8");
+  const parsed = parseCanonicalJson(source);
+  if (canonicalJson(parsed) + "\n" !== source) throw new Error(`non-canonical artifact bytes at ${path}`);
+  return parsed;
+}
+
+function contentHashFromArtifactName(name: string): ContentHash | undefined {
+  const match = /^(sha256:v1:)?([0-9a-f]{64})\.json$/u.exec(name);
+  return match === null ? undefined : `sha256:v1:${match[2]}` as ContentHash;
+}
+
+function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && new Set(left).size === left.length && left.every((value) => right.includes(value));
+}
+
+function operationPaths(summary: string): string[] {
+  const moved = /^moved (\S+) to (\S+)$/u.exec(summary);
+  if (moved !== null) return [moved[1]!, moved[2]!];
+  const updated = /^updated registered reference in (\S+)$/u.exec(summary);
+  if (updated !== null) return [updated[1]!];
+  const wrote = /^wrote canonical [^ ]+ at (\S+)$/u.exec(summary);
+  return wrote === null ? [] : [wrote[1]!];
+}
+
 async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Set<string>> {
   const repaired = new Set<string>();
   let receiptNames: string[];
   try { receiptNames = await readdir(join(repositoryRoot, ".projector", "receipts")); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return repaired; throw error; }
+  const journalRoot = join(repositoryRoot, ".projector", "runtime", "journal");
+  let journalNames: string[] = [];
+  try { journalNames = (await readdir(journalRoot)).filter((name) => name.endsWith(".json")); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  const journals: PersistedJournalRecord[] = [];
+  for (const journalName of journalNames) {
+    try { journals.push(JSON.parse(await readFile(join(journalRoot, journalName), "utf8")) as PersistedJournalRecord); }
+    catch { /* malformed journals cannot establish provenance */ }
+  }
   for (const receiptName of receiptNames.filter((name) => name.endsWith(".json"))) {
     try {
-      const receipt = JSON.parse(await readFile(join(repositoryRoot, ".projector", "receipts", receiptName), "utf8")) as {
-        planId?: string; certificateHash?: string; changedUnitIds?: string[];
+      const receiptHashFromName = contentHashFromArtifactName(receiptName);
+      if (receiptHashFromName === undefined) continue;
+      const receiptPath = join(repositoryRoot, ".projector", "receipts", receiptName);
+      const receipt = await parseCanonicalArtifact(receiptPath) as {
+        id?: string; planId?: string; certificateHash?: ContentHash; changedUnitIds?: string[];
+        changedCanonicalEntityIds?: string[]; semanticHash?: ContentHash; beforeState?: StateDigest; afterState?: StateDigest; validationSummaryHash?: ContentHash;
       };
-      if (receipt.planId !== "plan:mandatory-repository-script" || receipt.certificateHash === undefined
-        || !Array.isArray(receipt.changedUnitIds)) continue;
-      const certificateName = `${receipt.certificateHash.replace(/^sha256:v1:/u, "")}.json`;
-      const artifact = JSON.parse(await readFile(join(repositoryRoot, ".projector", "reports", "certificates", certificateName), "utf8")) as {
-        outcome?: string; certificate?: { planId?: string; deterministicOperations?: Array<{ unitIds?: string[]; summary?: string }> };
+      if (!TransactionReceiptSchema.safeParse(receipt).success || receipt.id !== "receipt:plan:mandatory-repository-script:approval:r1-mandatory-repository-script"
+        || receipt.planId !== "plan:mandatory-repository-script"
+        || receipt.certificateHash === undefined || !Array.isArray(receipt.changedUnitIds)
+        || !Array.isArray(receipt.changedCanonicalEntityIds) || receipt.semanticHash === undefined) continue;
+      const { semanticHash, ...receiptWithoutHash } = receipt;
+      if (hashSemantic("transaction-receipt", receiptWithoutHash) !== semanticHash) continue;
+      if (hashFramedDomain("transaction-receipt-artifact", receipt) !== receiptHashFromName) continue;
+      const certificateName = `${receipt.certificateHash.slice("sha256:v1:".length)}.json`;
+      if (contentHashFromArtifactName(certificateName) !== receipt.certificateHash) continue;
+      const certificatePath = join(repositoryRoot, ".projector", "reports", "certificates", certificateName);
+      const artifact = await parseCanonicalArtifact(certificatePath) as {
+        outcome?: string; journalPhase?: string; lastCheckpointId?: string; certificate?: {
+          id?: string; planId?: string; changedUnits?: string[];
+          beforeState?: unknown; afterState?: unknown; validations?: ValidationResult[];
+          deterministicOperations?: Array<{ operationId?: string; unitIds?: string[]; summary?: string }>;
+        };
       };
-      if (artifact.outcome !== "success" || artifact.certificate?.planId !== receipt.planId) continue;
-      for (const operation of artifact.certificate.deterministicOperations ?? []) {
-        const match = /^moved .+ to (.+)$/u.exec(operation.summary ?? "");
-        if (match?.[1] !== undefined && operation.unitIds?.some((id) => receipt.changedUnitIds!.includes(id))) repaired.add(match[1]);
-      }
+      if (hashFramedDomain("change-certificate-artifact", artifact) !== receipt.certificateHash
+        || !ChangeCertificateSchema.safeParse(artifact.certificate).success
+        || artifact.outcome !== "success" || artifact.journalPhase !== "committed"
+        || artifact.certificate?.planId !== receipt.planId || artifact.certificate.id !== `certificate:${receipt.planId}:approval:r1-mandatory-repository-script`
+        || !Array.isArray(artifact.certificate.changedUnits) || !sameStringSet(artifact.certificate.changedUnits, receipt.changedUnitIds)) continue;
+      const operations = artifact.certificate.deterministicOperations ?? [];
+      if (operations.length === 0 || operations.some((operation) => !operation.operationId || !Array.isArray(operation.unitIds)
+        || operation.unitIds.length === 0 || operation.unitIds.some((id) => !receipt.changedUnitIds!.includes(id))
+        || operationPaths(operation.summary ?? "").length === 0)) continue;
+      if (!sameStringSet(operations.flatMap((operation) => operation.unitIds ?? []), receipt.changedUnitIds)
+        || canonicalJson(artifact.certificate.beforeState) !== canonicalJson(receipt.beforeState)
+        || canonicalJson(artifact.certificate.afterState) !== canonicalJson(receipt.afterState)
+        || (artifact.certificate.validations !== undefined && hashFramedDomain("validation-summary", artifact.certificate.validations) !== receipt.validationSummaryHash)) continue;
+      if (receipt.changedCanonicalEntityIds.length !== 2
+        || !sameStringSet(receipt.changedCanonicalEntityIds, [authorityId, activeLensId])) continue;
+      const journal = journals.find(({ entry }) => entry !== undefined && entry.planId === receipt.planId && entry.phase === "committed"
+        && sameStringSet(entry.touchedPaths ?? [], operations.flatMap((operation) => operationPaths(operation.summary ?? ""))));
+      if (journal === undefined || journal.entry?.transactionId === undefined || !Array.isArray(journal.operations)
+        || journal.operations.length !== operations.length || journal.operations.some((operation) => operation.status !== "applied")) continue;
+      const movedPaths = operations.flatMap((operation) => {
+        const summary = operation.summary ?? "";
+        const match = /^moved .+ to (.+)$/u.exec(summary);
+        return match?.[1] === undefined ? [] : [match[1]];
+      });
+      for (const path of movedPaths) repaired.add(path);
     } catch {
-      // Invalid or incomplete artifacts do not establish Projector repair provenance.
+      // Invalid, renamed, tampered, or incomplete artifacts do not establish provenance.
     }
   }
   return repaired;
@@ -528,14 +615,14 @@ async function independentValidators(repositoryRoot: string): Promise<Validation
       });
       if (result.exitCode !== 0) throw Object.assign(new Error(`validator exited ${result.exitCode}`), result);
       results.push({
-        validatorId: specification.id, status: "passed", summary: `${specification.summary} passed`, evidenceIds: [],
+        validatorId: specification.id, status: "passed", summary: `${specification.summary} passed`, evidenceIds: [`validator-evidence:${specification.id}:passed`],
         evidenceLane: specification.lane, independenceGroup: specification.id, assurance: "strong", authorSource: "fixture-authored",
         sideEffectClass: "read-only", details: { stdout: result.stdout.trim(), stderr: result.stderr.trim() }, startedAt, completedAt: fixedTime,
       });
     } catch (error) {
       const failure = error as Error & { stdout?: string; stderr?: string };
       results.push({
-        validatorId: specification.id, status: "failed", summary: `${specification.summary} failed`, evidenceIds: [],
+        validatorId: specification.id, status: "failed", summary: `${specification.summary} failed`, evidenceIds: [`validator-evidence:${specification.id}:failed`],
         evidenceLane: specification.lane, independenceGroup: specification.id, assurance: "strong", authorSource: "fixture-authored",
         sideEffectClass: "read-only", details: { message: failure.message, stdout: failure.stdout ?? "", stderr: failure.stderr ?? "" }, startedAt, completedAt: fixedTime,
       });
@@ -569,7 +656,8 @@ class SliceTransformPort {
     return enriched;
   }
   async verify(result: TransformResult, context: TransformContext): Promise<ValidationResult[]> {
-    return [...await this.base.verify(this.baseResults.get(result) ?? result, context), ...await independentValidators(context.repositoryRoot)];
+    const base = await this.base.verify(this.baseResults.get(result) ?? result, context);
+    return [...base.map((validation) => ({ ...validation, evidenceIds: [`validator-evidence:${validation.validatorId}:${validation.status}`] })), ...await independentValidators(context.repositoryRoot)];
   }
   private async preflightCanonical(): Promise<void> {
     for (const write of this.writes) {
@@ -592,11 +680,40 @@ class ArtifactStore implements ChangeArtifactStore {
   }
 }
 
+interface SliceExecutionEvidence {
+  readonly leaseId: string;
+  readonly transactionId: string;
+  readonly journalPhases: readonly string[];
+  readonly touchedPaths: readonly string[];
+}
+
+const executionEvidence = new WeakMap<object, SliceExecutionEvidence>();
+
+async function readCommittedJournalEvidence(repositoryRoot: string, transactionId: string): Promise<SliceExecutionEvidence | undefined> {
+  const journalRoot = join(repositoryRoot, ".projector", "runtime", "journal");
+  let names: string[];
+  try { names = await readdir(journalRoot); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
+  for (const name of names.filter((item) => item.endsWith(".json"))) {
+    try {
+      const record = JSON.parse(await readFile(join(journalRoot, name), "utf8")) as {
+        entry?: { transactionId?: string; phase?: string; touchedPaths?: string[] };
+        checkpoints?: Array<{ phase?: string }>;
+      };
+      if (record.entry?.transactionId !== transactionId || record.entry.phase !== "committed") continue;
+      const phases = [...new Set(["prepared", ...(record.checkpoints ?? []).map(({ phase }) => phase).filter((phase): phase is string => phase !== undefined), record.entry.phase])];
+      return { leaseId: "", transactionId, journalPhases: phases, touchedPaths: record.entry.touchedPaths ?? [] };
+    } catch { /* malformed journals are not execution evidence */ }
+  }
+  return undefined;
+}
+
 export async function applyMandatorySlice(repositoryRoot: string, prepared: SlicePreparation): Promise<StateBoundChangeResult> {
   const paths = await RepositoryPathService.create(repositoryRoot);
   const leases = new WriterLeaseManager(paths, { staleAfterMs: 60_000, now: () => new Date(fixedTime) });
   const journal = new FileTransactionJournal(paths, { now: () => new Date(fixedTime) });
   const session = await new GovernedWorktreeRuntime(leases, journal).open({ sessionId: "projector-cli", processId: process.pid, stateBinding: prepared.binding });
+  const leaseOwner = JSON.parse(await readFile(join(repositoryRoot, ".projector", "runtime", "writer-lease.lock", "owner.json"), "utf8")) as { leaseId?: string };
   const mutation = new DirectMutationPort(paths);
   let transactionCounter = 0;
   const transactions: ChangeTransactionPort = {
@@ -640,9 +757,17 @@ export async function applyMandatorySlice(repositoryRoot: string, prepared: Slic
     environment: { repositoryRoot, signal: new AbortController().signal }, now: () => fixedTime,
   });
   try {
-    return await executor.execute({
+    const result = await executor.execute({
       plan: prepared.plan, capsule: prepared.capsule, approval: prepared.approval, transformInput: prepared.transformInput,
     });
+    const journalEvidence = await readCommittedJournalEvidence(repositoryRoot, "transaction:mandatory-repository-script:1");
+    executionEvidence.set(result, {
+      leaseId: leaseOwner.leaseId ?? "",
+      transactionId: journalEvidence?.transactionId ?? "transaction:mandatory-repository-script:1",
+      journalPhases: journalEvidence?.journalPhases ?? [],
+      touchedPaths: journalEvidence?.touchedPaths ?? [],
+    });
+    return result;
   } finally {
     await session.close();
   }
@@ -681,29 +806,35 @@ export async function canonicalSemantics(repositoryRoot: string, rebuildIfMissin
   };
 }
 
-export async function reconcileMandatorySlice(repositoryRoot: string, policy: ExecutionPolicy): Promise<Record<string, unknown>> {
+interface MandatoryReconciliationPass {
+  readonly analysis: SliceAnalysis;
+  readonly fixedPoint: Awaited<ReturnType<typeof reconcileToFixedPoint>>;
+  readonly prepared?: SlicePreparation;
+  readonly applied?: StateBoundChangeResult;
+  readonly beforeState: StateDigest;
+  readonly afterState: StateDigest;
+  readonly materialDelta: boolean;
+}
+
+async function runMandatoryReconciliationPass(repositoryRoot: string, policy: ExecutionPolicy): Promise<MandatoryReconciliationPass> {
   if (!policy.allowAutoMutation || policy.maximumAutomaticRisk === "R0") throw new Error("R1 reconciliation is not authorized by execution policy");
+  const beforeState = await currentSliceState(repositoryRoot);
   const initialAnalysis = await analyzeMandatorySlice(repositoryRoot);
   if (initialAnalysis.divergences.length === 0) {
     const fixedPoint = await reconcileToFixedPoint({
-      async iterate() {
-        const current = await currentSliceState(repositoryRoot, initialAnalysis);
+      async iterate(iteration) {
+        const analysis = await analyzeMandatorySlice(repositoryRoot);
+        const current = await currentSliceState(repositoryRoot, analysis);
         return {
           governedStateDigest: hashFramedDomain("governed-slice-state", current),
           materialChanged: false,
-          fixedPointTerminal: true,
+          fixedPointTerminal: analysis.divergences.length === 0,
+          details: { invocation: "full-orchestrator", iteration, divergenceCount: analysis.divergences.length, stateDigest: current.worktreeDigest },
         };
       },
     });
-    return {
-      analysis: initialAnalysis,
-      divergences: [],
-      fixedPoint,
-      secondRunMaterialDelta: false,
-      cleanupPlan: { unresolvedClusterWork: 0, divergences: [] },
-      steps: [],
-      canonicalSemantics: await canonicalSemantics(repositoryRoot, true),
-    };
+    const afterState = await currentSliceState(repositoryRoot);
+    return { analysis: initialAnalysis, fixedPoint, beforeState, afterState, materialDelta: hashFramedDomain("reconcile-pass-state", beforeState) !== hashFramedDomain("reconcile-pass-state", afterState) };
   }
   let prepared: SlicePreparation | undefined;
   let applied: StateBoundChangeResult | undefined;
@@ -714,35 +845,42 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
         applied = await applyMandatorySlice(repositoryRoot, prepared);
         if (applied.outcome !== "success") throw new Error(`mandatory repair failed: ${applied.reasons.join("; ")}`);
         const after = await currentSliceState(repositoryRoot);
-        return { governedStateDigest: hashFramedDomain("governed-slice-state", after), materialChanged: applied.transformResult?.changed === true, fixedPointTerminal: true };
+        return { governedStateDigest: hashFramedDomain("governed-slice-state", after), materialChanged: applied.transformResult?.changed === true, fixedPointTerminal: true, details: { invocation: "full-orchestrator", iteration, operationCount: applied.transformResult?.operations.length ?? 0 } };
       }
       const analysis = await analyzeMandatorySlice(repositoryRoot);
       const after = await currentSliceState(repositoryRoot, analysis);
-      return { governedStateDigest: hashFramedDomain("governed-slice-state", after), materialChanged: false, fixedPointTerminal: analysis.divergences.length === 0 };
+      return { governedStateDigest: hashFramedDomain("governed-slice-state", after), materialChanged: false, fixedPointTerminal: analysis.divergences.length === 0, details: { invocation: "full-orchestrator", iteration, divergenceCount: analysis.divergences.length, stateDigest: after.worktreeDigest } };
     },
   });
   if (prepared === undefined || applied === undefined) throw new Error("reconciliation produced no applied slice result");
-  const successfulApplied = applied;
+  const afterState = await currentSliceState(repositoryRoot);
+  return { analysis: prepared.analysis, fixedPoint, prepared, applied, beforeState, afterState, materialDelta: hashFramedDomain("reconcile-pass-state", beforeState) !== hashFramedDomain("reconcile-pass-state", afterState) };
+}
+
+export async function reconcileMandatorySlice(repositoryRoot: string, policy: ExecutionPolicy): Promise<Record<string, unknown>> {
+  const first = await runMandatoryReconciliationPass(repositoryRoot, policy);
+  const beforeSecond = hashFramedDomain("observed-second-reconciliation", await currentSliceState(repositoryRoot));
+  const second = await runMandatoryReconciliationPass(repositoryRoot, policy);
+  const afterSecond = hashFramedDomain("observed-second-reconciliation", await currentSliceState(repositoryRoot));
+  const secondRunMaterialDelta = beforeSecond !== afterSecond || second.materialDelta || second.fixedPoint.iterations.some(({ materialChanged }) => materialChanged);
+  if (secondRunMaterialDelta) throw new Error("second independent reconciliation produced a material delta");
+  if (first.prepared === undefined || first.applied === undefined) {
+    return {
+      analysis: first.analysis,
+      divergences: first.analysis.divergences,
+      fixedPoint: first.fixedPoint,
+      secondReconciliation: { invocation: 2, beforeDigest: beforeSecond, afterDigest: afterSecond, fixedPoint: second.fixedPoint },
+      secondRunMaterialDelta,
+      cleanupPlan: { unresolvedClusterWork: first.analysis.divergences.length, divergences: first.analysis.divergences.map(({ id }) => id) },
+      steps: [],
+      canonicalSemantics: await canonicalSemantics(repositoryRoot, true),
+    };
+  }
+  const prepared = first.prepared;
+  const successfulApplied = first.applied;
   const rebuild = await rebuildAcceptedState(repositoryRoot);
   const acceptedSemantics = await canonicalSemantics(repositoryRoot);
-  const beforeSecond = hashFramedDomain("observed-second-reconciliation", await currentSliceState(repositoryRoot));
-  const secondFixedPoint = await reconcileToFixedPoint({
-    async iterate() {
-      const analysis = await analyzeMandatorySlice(repositoryRoot);
-      const state = await currentSliceState(repositoryRoot, analysis);
-      return {
-        governedStateDigest: hashFramedDomain("governed-slice-state", state),
-        materialChanged: false,
-        fixedPointTerminal: analysis.divergences.length === 0,
-        details: { invocation: 2, divergenceCount: analysis.divergences.length },
-      };
-    },
-  });
-  const afterSecond = hashFramedDomain("observed-second-reconciliation", await currentSliceState(repositoryRoot));
-  const secondRunMaterialDelta = beforeSecond !== afterSecond;
-  if (secondRunMaterialDelta || secondFixedPoint.iterations.some(({ materialChanged }) => materialChanged)) {
-    throw new Error("second independent reconciliation produced a material delta");
-  }
+  const secondFixedPoint = second.fixedPoint;
   const summaries = [
     "Static inventory classified stable projection units without executing repository code.",
     "Four descriptive pattern families were inferred from causal evidence.",
@@ -762,24 +900,33 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
     "A compact receipt and verbose certificate were emitted.",
     "Deleting and rebuilding derived state preserves canonical semantic hashes.",
   ];
-  const outputs: Array<{ actual: unknown; expected: unknown; refs: string[] }> = [
-    { actual: prepared.analysis.executedRepositoryCode, expected: false, refs: prepared.analysis.repository.artifacts.map(({ locator }) => locator) },
-    { actual: prepared.analysis.patternCandidates.length, expected: 4, refs: prepared.analysis.patternCandidates.map(({ key }) => `pattern:${key}`) },
-    { actual: prepared.analysis.divergences.length, expected: 2, refs: prepared.analysis.divergences.map(({ id }) => id) },
-    { actual: prepared.analysis.authority.id, expected: authorityId, refs: [prepared.analysis.authority.id, prepared.analysis.activeLens.id] },
-    { actual: (await analyzeMandatorySlice(repositoryRoot)).patternCandidates.find(({ key }) => key === "repository-automation")?.independenceGroups.includes("authored:scripts/validate-repo.mjs") ?? false, expected: false, refs: [successfulApplied.receiptRef] },
-    { actual: [prepared.analysis.activeLens.status, prepared.analysis.shadowLens.status], expected: ["active", "shadow"], refs: [prepared.analysis.activeLens.id, prepared.analysis.shadowLens.id] },
-    { actual: prepared.analysis.divergences.every(({ rationale, counterEvidence, coverageCaveat }) => rationale.length > 0 && counterEvidence.length > 0 && coverageCaveat.length > 0), expected: true, refs: prepared.analysis.divergences.map(({ id }) => id) },
-    { actual: prepared.preview.touchedUnitIds.length, expected: prepared.capsule.unitIds.length, refs: [prepared.plan.id, prepared.capsule.id] },
-    { actual: [prepared.plan.boundState.dependencyDigest, prepared.capsule.boundState.dependencyDigest, prepared.approval.dependencyDigest], expected: Array(3).fill(prepared.binding.dependencyDigest), refs: [prepared.plan.id, prepared.capsule.id, prepared.approval.id] },
-    { actual: successfulApplied.outcome, expected: "success", refs: [successfulApplied.certificateRef] },
-    { actual: prepared.canonicalWrites.every(({ entityId }) => successfulApplied.transformResult?.touchedUnitIds.includes(entityId)), expected: true, refs: successfulApplied.transformResult?.operations.map(({ operationId }) => operationId) ?? [] },
-    { actual: successfulApplied.validations.every(({ status }) => status === "passed"), expected: true, refs: successfulApplied.validations.map(({ validatorId }) => validatorId) },
-    { actual: fixedPoint.converged, expected: true, refs: [fixedPoint.reconciliationHash] },
-    { actual: secondRunMaterialDelta, expected: false, refs: [beforeSecond, afterSecond, secondFixedPoint.reconciliationHash] },
-    { actual: 0, expected: 0, refs: ["cleanup:mandatory-repository-script"] },
-    { actual: [successfulApplied.receipt.changedCanonicalEntityIds, successfulApplied.certificate.changedUnits.filter((id) => id === authorityId || id === activeLensId)], expected: [[authorityId, activeLensId], [authorityId, activeLensId]], refs: [successfulApplied.receiptRef, successfulApplied.certificateRef] },
-    { actual: rebuild.canonicalSemantics, expected: acceptedSemantics, refs: [rebuild.rootDigest] },
+  const inventoryUnitIds = prepared.analysis.repository.projectionUnits.map(({ id }) => id);
+  const classificationIds = Object.entries(prepared.analysis.classifications).map(([path, role]) => `classification:${path}:${role}`);
+  const operationEvidence = successfulApplied.transformResult?.operations ?? [];
+  const journalEvidence = executionEvidence.get(successfulApplied) ?? { leaseId: "lease:missing", transactionId: "transaction:missing", journalPhases: [], touchedPaths: [] };
+  const validatorIds = successfulApplied.validations.map(({ validatorId }) => validatorId);
+  const validatorEvidenceIds = successfulApplied.validations.flatMap(({ evidenceIds }) => evidenceIds);
+  const outputs: Array<{
+    actual: unknown; expected: unknown; refs: string[]; evidenceKind: import("@projector/engine").MandatoryVerticalSliceEvidenceKind;
+    proof: Record<string, unknown>;
+  }> = [
+    { evidenceKind: "inventory", actual: prepared.analysis.executedRepositoryCode, expected: false, refs: [`inventory:${inventoryUnitIds.length}`, ...inventoryUnitIds.slice(0, 3).map((id) => `unit:${id}`)], proof: { inventoryUnitIds, classificationIds, executedRepositoryCode: prepared.analysis.executedRepositoryCode } },
+    { evidenceKind: "pattern-families", actual: prepared.analysis.patternCandidates.length, expected: 4, refs: prepared.analysis.patternCandidates.map(({ key }) => `pattern:${key}`), proof: { familyKeys: prepared.analysis.patternCandidates.map(({ key }) => key), familyCount: prepared.analysis.patternCandidates.length } },
+    { evidenceKind: "causal-classification", actual: prepared.analysis.divergences.length, expected: 2, refs: prepared.analysis.divergences.flatMap(({ unitIds, evidence }) => [...unitIds.map((id) => `unit:${id}`), ...evidence.map(({ evidenceId }) => evidenceId)]), proof: { sourceUnitId: `unit:${prepared.analysis.repository.projectionUnits.find(({ key }) => key === ".codex/hooks/validate-repo.mjs")?.id ?? "missing"}`, testUnitId: `unit:${prepared.analysis.repository.projectionUnits.find(({ key }) => key === ".codex/hooks/validate-repo.test.mjs")?.id ?? "missing"}`, causalEvidenceIds: prepared.analysis.divergences.flatMap(({ evidence }) => evidence.map(({ evidenceId }) => evidenceId)) } },
+    { evidenceKind: "authority-lens", actual: prepared.analysis.authority.id, expected: authorityId, refs: [`authority:${prepared.analysis.authority.id}`, `lens:${prepared.analysis.activeLens.id}`], proof: { authorityId: prepared.analysis.authority.id, activeLensId: prepared.analysis.activeLens.id, authorityStatus: prepared.analysis.authority.status } },
+    { evidenceKind: "generated-exclusion", actual: (await analyzeMandatorySlice(repositoryRoot)).patternCandidates.find(({ key }) => key === "repository-automation")?.independenceGroups.includes("authored:scripts/validate-repo.mjs") ?? false, expected: false, refs: [`receipt:${successfulApplied.receiptRef}`, "path:scripts/validate-repo.mjs"], proof: { repairedPaths: ["scripts/validate-repo.mjs", "scripts/validate-repo.test.mjs"], independenceGroups: (await analyzeMandatorySlice(repositoryRoot)).patternCandidates.find(({ key }) => key === "repository-automation")?.independenceGroups ?? [], provenanceRef: `receipt:${successfulApplied.receiptRef}` } },
+    { evidenceKind: "governance", actual: [prepared.analysis.activeLens.status, prepared.analysis.shadowLens.status], expected: ["active", "shadow"], refs: [`lens:${prepared.analysis.activeLens.id}`, `lens:${prepared.analysis.shadowLens.id}`], proof: { activeLensId: prepared.analysis.activeLens.id, shadowLensId: prepared.analysis.shadowLens.id, ruleIds: prepared.analysis.activeLens.rules.map(({ id }) => id) } },
+    { evidenceKind: "divergences", actual: prepared.analysis.divergences.every(({ rationale, counterEvidence, coverageCaveat }) => rationale.length > 0 && counterEvidence.length > 0 && coverageCaveat.length > 0), expected: true, refs: prepared.analysis.divergences.map(({ id }) => id), proof: { divergenceIds: prepared.analysis.divergences.map(({ id }) => id), counterEvidenceIds: prepared.analysis.divergences.flatMap(({ counterEvidence }) => counterEvidence.map(({ evidenceId }) => evidenceId)) } },
+    { evidenceKind: "preview", actual: prepared.preview.touchedUnitIds.length, expected: prepared.capsule.unitIds.length, refs: [`plan:${prepared.plan.id}`, `capsule:${prepared.capsule.id}`, ...prepared.preview.touchedUnitIds.map((id) => `unit:${id}`)], proof: { planId: prepared.plan.id, operationKinds: prepared.preview.operations.map(({ kind }) => kind), touchedUnitIds: prepared.preview.touchedUnitIds } },
+    { evidenceKind: "binding", actual: [prepared.plan.boundState.dependencyDigest, prepared.capsule.boundState.dependencyDigest, prepared.approval.dependencyDigest], expected: Array(3).fill(prepared.binding.dependencyDigest), refs: [`plan:${prepared.plan.id}`, `capsule:${prepared.capsule.id}`, `approval:${prepared.approval.id}`], proof: { planDependencyDigest: prepared.plan.boundState.dependencyDigest, capsuleDependencyDigest: prepared.capsule.boundState.dependencyDigest, approvalDependencyDigest: prepared.approval.dependencyDigest } },
+    { evidenceKind: "lease-journal", actual: successfulApplied.outcome, expected: "success", refs: [`lease:${journalEvidence.leaseId}`, `transaction:${journalEvidence.transactionId}`, ...journalEvidence.journalPhases.map((phase) => `journal:${phase}`)], proof: { leaseId: journalEvidence.leaseId, transactionId: journalEvidence.transactionId, journalPhases: journalEvidence.journalPhases, touchedPaths: journalEvidence.touchedPaths } },
+    { evidenceKind: "operations", actual: prepared.canonicalWrites.every(({ entityId }) => successfulApplied.transformResult?.touchedUnitIds.includes(entityId)), expected: true, refs: operationEvidence.map(({ operationId }) => `operation:${operationId}`), proof: { operationIds: operationEvidence.map(({ operationId }) => operationId), touchedUnitIds: successfulApplied.transformResult?.touchedUnitIds ?? [], pathSummaries: operationEvidence.map(({ summary }) => summary) } },
+    { evidenceKind: "validators", actual: successfulApplied.validations.every(({ status }) => status === "passed"), expected: true, refs: validatorEvidenceIds.map((id) => `evidence:${id}`), proof: { validatorIds, validationStatuses: successfulApplied.validations.map(({ status }) => status), validatorEvidenceIds } },
+    { evidenceKind: "fixed-point", actual: first.fixedPoint.converged, expected: true, refs: [`fixed-point:${first.fixedPoint.reconciliationHash}`, ...first.fixedPoint.iterations.map(({ governedStateDigest }) => `iteration:${governedStateDigest}`)], proof: { iterationDigests: first.fixedPoint.iterations.map(({ governedStateDigest }) => governedStateDigest), materialChanged: first.fixedPoint.iterations.map(({ materialChanged }) => materialChanged), terminalIteration: first.fixedPoint.iterations.at(-1)?.fixedPointTerminal ?? false } },
+    { evidenceKind: "second-run", actual: secondRunMaterialDelta, expected: false, refs: [`second-run:before:${beforeSecond}`, `second-run:after:${afterSecond}`, `fixed-point:${secondFixedPoint.reconciliationHash}`], proof: { invocation: 2, beforeDigest: beforeSecond, afterDigest: afterSecond, materialDelta: secondRunMaterialDelta } },
+    { evidenceKind: "cleanup", actual: 0, expected: 0, refs: ["cleanup:mandatory-repository-script", `state:divergences:${second.analysis.divergences.length}`], proof: { unresolvedClusterWork: second.analysis.divergences.length, unresolvedDivergenceIds: second.analysis.divergences.map(({ id }) => id), computedFrom: `state:${afterSecond}` } },
+    { evidenceKind: "receipt-certificate", actual: [successfulApplied.receipt.changedCanonicalEntityIds, successfulApplied.certificate.changedUnits.filter((id) => id === authorityId || id === activeLensId)], expected: [[authorityId, activeLensId], [authorityId, activeLensId]], refs: [`receipt:${successfulApplied.receiptRef}`, `certificate:${successfulApplied.certificateRef}`], proof: { receiptRef: successfulApplied.receiptRef, certificateRef: successfulApplied.certificateRef, receiptHash: successfulApplied.receiptHash, certificateHash: successfulApplied.certificateHash } },
+    { evidenceKind: "rebuild", actual: rebuild.canonicalSemantics, expected: acceptedSemantics, refs: [`rebuild:${rebuild.rootDigest}`, `state:${acceptedSemantics.rootDigest}`], proof: { beforeDigest: acceptedSemantics.rootDigest, afterDigest: rebuild.rootDigest, semanticHashPairs: rebuild.canonicalSemantics } },
   ];
   const steps: MandatoryVerticalSliceStepEvidence[] = MANDATORY_VERTICAL_SLICE_STEPS.map((step, index) => ({
     step, sequence: index + 1, summary: [
@@ -788,6 +935,8 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
     details: {
       outputDigest: hashFramedDomain(`mandatory-slice-step:${step}`, outputs[index]),
       artifactRefs: outputs[index]!.refs,
+      evidenceKind: outputs[index]!.evidenceKind,
+      proof: { ...outputs[index]!.proof, artifactRefs: outputs[index]!.refs },
       assertions: [{ claim: summaries[index]!, observed: outputs[index]!.actual, expected: outputs[index]!.expected, passed: canonicalJson(outputs[index]!.actual) === canonicalJson(outputs[index]!.expected) }],
     },
   }));
@@ -799,14 +948,14 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
     capsule: prepared.capsule,
     risk: prepared.risk,
     preview: prepared.preview,
-    fixedPoint,
+    fixedPoint: first.fixedPoint,
     secondReconciliation: { invocation: 2, beforeDigest: beforeSecond, afterDigest: afterSecond, fixedPoint: secondFixedPoint },
     secondRunMaterialDelta,
     cleanupPlan: { unresolvedClusterWork: 0, divergences: [] },
-    receipt: applied.receipt,
-    receiptRef: applied.receiptRef,
-    certificate: applied.certificate,
-    certificateRef: applied.certificateRef,
+    receipt: successfulApplied.receipt,
+    receiptRef: successfulApplied.receiptRef,
+    certificate: successfulApplied.certificate,
+    certificateRef: successfulApplied.certificateRef,
     steps,
     canonicalSemantics: acceptedSemantics,
     rebuild,

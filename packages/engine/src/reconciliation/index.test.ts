@@ -4,6 +4,7 @@ import type { ContentHash } from "@projector/core";
 
 import {
   MANDATORY_VERTICAL_SLICE_STEPS,
+  MANDATORY_VERTICAL_SLICE_EVIDENCE_KINDS,
   NonconvergentReconciliationError,
   assertMandatoryVerticalSliceEvidence,
   reconcileToFixedPoint,
@@ -47,8 +48,32 @@ describe("mandatory vertical-slice evidence", () => {
     summary: `evidence for ${step}`,
     details: {
       outputDigest: `sha256:v1:${String(index).padStart(64, "0")}` as ContentHash,
-      artifactRefs: [`artifact:${step}`],
-      assertions: [{ claim: step, observed: true, expected: true, passed: true }],
+      evidenceKind: MANDATORY_VERTICAL_SLICE_EVIDENCE_KINDS[index]!,
+      artifactRefs: [`artifact:concrete:${index + 1}`],
+      proof: {
+        stepIndex: index + 1,
+        artifactId: `artifact:concrete:${index + 1}`,
+        artifactRefs: [`artifact:concrete:${index + 1}`],
+        observedAt: `event:${index + 1}`,
+        inventoryUnitIds: ["unit:fixture"], classificationIds: ["classification:fixture"], executedRepositoryCode: false,
+        familyKeys: ["family:fixture"], familyCount: 1,
+        sourceUnitId: "unit:source", testUnitId: "unit:test", causalEvidenceIds: ["evidence:causal"],
+        authorityId: "authority:fixture", activeLensId: "lens:fixture", authorityStatus: "approved",
+        repairedPaths: ["scripts/validate-repo.mjs"], independenceGroups: ["group:fixture"], provenanceRef: "receipt:fixture",
+        shadowLensId: "lens:fixture:shadow", ruleIds: ["rule:fixture"],
+        divergenceIds: ["divergence:fixture"], counterEvidenceIds: ["evidence:counter"],
+        planId: "plan:fixture", operationKinds: ["move-reference-update"], touchedUnitIds: ["unit:fixture"],
+        planDependencyDigest: `sha256:v1:${"1".repeat(64)}`, capsuleDependencyDigest: `sha256:v1:${"1".repeat(64)}`, approvalDependencyDigest: `sha256:v1:${"1".repeat(64)}`,
+        leaseId: "lease:fixture", transactionId: "transaction:fixture", journalPhases: ["prepared", "committed"], touchedPaths: ["path:fixture"],
+        operationIds: ["operation:fixture"], pathSummaries: ["moved source to destination", "updated registered reference in package.json"],
+        validatorIds: ["validator:fixture"], validationStatuses: ["passed"], validatorEvidenceIds: ["evidence:validator"],
+        iterationDigests: [`sha256:v1:${"2".repeat(64)}`], materialChanged: [true], terminalIteration: true,
+        invocation: 2, beforeDigest: `sha256:v1:${"3".repeat(64)}`, afterDigest: `sha256:v1:${"3".repeat(64)}`, materialDelta: false,
+        unresolvedClusterWork: 0, unresolvedDivergenceIds: [], computedFrom: "state:fixture",
+        receiptRef: "/tmp/receipt:fixture", certificateRef: "/tmp/certificate:fixture", receiptHash: `sha256:v1:${"4".repeat(64)}`, certificateHash: `sha256:v1:${"5".repeat(64)}`,
+        semanticHashPairs: [{ before: `sha256:v1:${"6".repeat(64)}`, after: `sha256:v1:${"6".repeat(64)}` }],
+      },
+      assertions: [{ claim: `observed output for ${step}`, observed: true, expected: true, passed: true }],
     },
   }));
 
@@ -70,5 +95,35 @@ describe("mandatory vertical-slice evidence", () => {
     const falseClaim = evidence();
     falseClaim[13]!.details.assertions[0]!.passed = false;
     expect(() => assertMandatoryVerticalSliceEvidence(falseClaim)).toThrow(/failed assertion/u);
+  });
+
+  it("rejects evidence with a deleted load-bearing proof family for every step", () => {
+    for (const index of MANDATORY_VERTICAL_SLICE_STEPS.keys()) {
+      const forged = evidence();
+      forged[index]!.details.proof = {} as unknown as typeof forged[number]["details"]["proof"];
+      expect(() => assertMandatoryVerticalSliceEvidence(forged)).toThrow(/step/u);
+    }
+  });
+
+  it("rejects falsification of each step's distinct proof field", () => {
+    const proofFields = [
+      "inventoryUnitIds", "familyKeys", "causalEvidenceIds", "authorityId", "provenanceRef", "ruleIds", "divergenceIds",
+      "planId", "planDependencyDigest", "leaseId", "operationIds", "validatorIds", "iterationDigests", "beforeDigest",
+      "computedFrom", "certificateHash", "semanticHashPairs",
+    ] as const;
+    for (const [index, field] of proofFields.entries()) {
+      const forged = evidence();
+      const proof = { ...forged[index]!.details.proof };
+      delete proof[field];
+      forged[index]!.details.proof = proof as typeof forged[number]["details"]["proof"];
+      expect(() => assertMandatoryVerticalSliceEvidence(forged)).toThrow(/proof field|typed predicate/u);
+    }
+  });
+
+  it("rejects self-corresponding labels that only repeat the step name", () => {
+    const forged = evidence();
+    forged[0]!.details.artifactRefs = ["artifact:inventory-and-classify-without-execution"];
+    forged[0]!.details.proof = { step: "inventory-and-classify-without-execution" } as unknown as typeof forged[number]["details"]["proof"];
+    expect(() => assertMandatoryVerticalSliceEvidence(forged)).toThrow(/step/u);
   });
 });
