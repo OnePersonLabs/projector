@@ -13,6 +13,7 @@ import {
   type Relation,
   type Requirement,
   type StateQueryKind,
+  type StateQueryDependency,
   type StateQueryReader,
   type StateQueryResultFingerprint,
   type StateQuerySpec,
@@ -254,13 +255,18 @@ function requireStringArray(input: Readonly<Record<string, unknown>>, key: strin
   return sortedUniqueStrings(value as string[]);
 }
 
-function reverseClosure(graph: GraphReader, seedIds: readonly string[]): string[] {
+function optionalStringArray(input: Readonly<Record<string, unknown>>, key: string): string[] {
+  return input[key] === undefined ? [] : requireStringArray(input, key);
+}
+
+function reverseClosure(graph: GraphReader, seedIds: readonly string[], excludedIds: readonly string[] = []): string[] {
   const seen = new Set<string>();
+  const excluded = new Set(excludedIds);
   const pending = [...seedIds].sort(compareStrings);
   while (pending.length > 0) {
     const current = pending.shift()!;
     for (const dependent of graph.reverseDerivationDependents(current).slice().sort(compareStrings)) {
-      if (seen.has(dependent)) continue;
+      if (excluded.has(dependent) || seen.has(dependent)) continue;
       seen.add(dependent);
       pending.push(dependent);
       pending.sort(compareStrings);
@@ -269,11 +275,87 @@ function reverseClosure(graph: GraphReader, seedIds: readonly string[]): string[
   return sortedUniqueStrings([...seen]);
 }
 
+function requireBoolean(input: Readonly<Record<string, unknown>>, key: string): boolean {
+  const value = input[key];
+  if (typeof value !== "boolean") throw new InvalidQuerySpecError(`query input ${key} must be a boolean`);
+  return value;
+}
+
+function requireObservability(input: Readonly<Record<string, unknown>>): ObservabilityClass {
+  const value = input.observability;
+  if (!["closed", "bounded", "sampled", "open", "unavailable"].includes(String(value))) {
+    throw new InvalidQuerySpecError("query input observability is invalid");
+  }
+  return value as ObservabilityClass;
+}
+
+function observationMetadata(input: Readonly<Record<string, unknown>>): Omit<QueryProgramResult, "results"> {
+  return {
+    observability: requireObservability(input),
+    assumptions: requireStringArray(input, "assumptions"),
+    unavailableLanes: requireStringArray(input, "unavailableLanes"),
+    dependencyKeys: requireStringArray(input, "dependencyKeys"),
+  };
+}
+
+function normalizeObservationInput(input: Readonly<Record<string, unknown>>, arrays: readonly string[]): Record<string, unknown> {
+  return {
+    ...structuredClone(input),
+    ...Object.fromEntries(arrays.map((key) => [key, requireStringArray(input, key)])),
+    observability: requireObservability(input),
+    assumptions: requireStringArray(input, "assumptions"),
+    unavailableLanes: requireStringArray(input, "unavailableLanes"),
+    dependencyKeys: requireStringArray(input, "dependencyKeys"),
+  };
+}
+
+export class NonRebindableQueryError extends UnknownQueryProgramError {
+  constructor(programId: string) {
+    super(programId);
+    this.message = `query program ${programId} has an explicit non-rebindable observation contract`;
+    this.name = "NonRebindableQueryError";
+  }
+}
+
 function idResults(ids: readonly string[], disposition?: string): QueryResult[] {
   return sortedUniqueStrings(ids).map((id) => ({
     id,
     ...(disposition === undefined ? {} : { disposition }),
   }));
+}
+
+export const BUILT_IN_QUERY_PROGRAM_IDS = Object.freeze({
+  exactReverseDerivation: "invalidation.exact-reverse-derivation",
+  transitiveReverseDerivation: "invalidation.transitive-reverse-derivation",
+  impactRuleSelectorMembership: "invalidation.impact-rule-selector-membership",
+  impactRuleApplicability: "invalidation.impact-rule-applicability",
+  impactRuleReverseTraversal: "invalidation.impact-rule-reverse-traversal",
+  impactRuleEnumeration: "invalidation.impact-rule-enumeration",
+} as const);
+
+function impactTraversalProgram(
+  id: typeof BUILT_IN_QUERY_PROGRAM_IDS.impactRuleReverseTraversal | typeof BUILT_IN_QUERY_PROGRAM_IDS.impactRuleEnumeration,
+  kind: "reverse-derivation" | "surface-enumeration",
+): RegisteredQueryProgram {
+  return {
+    id,
+    version: "1",
+    kind,
+    normalizeInput: (input) => ({
+      ...normalizeObservationInput(input, ["seedIds", "excludedIds"]),
+      rebindable: requireBoolean(input, "rebindable"),
+    }),
+    evaluate: ({ input, graph }) => {
+      if (!requireBoolean(input, "rebindable")) throw new NonRebindableQueryError(id);
+      return {
+        results: idResults(
+          reverseClosure(graph, requireStringArray(input, "seedIds"), requireStringArray(input, "excludedIds")),
+          "known",
+        ),
+        ...observationMetadata(input),
+      };
+    },
+  };
 }
 
 function builtInPrograms(): RegisteredQueryProgram[] {
@@ -367,7 +449,7 @@ function builtInPrograms(): RegisteredQueryProgram[] {
       },
     },
     {
-      id: "invalidation.exact-reverse-derivation",
+      id: BUILT_IN_QUERY_PROGRAM_IDS.exactReverseDerivation,
       version: "1",
       kind: "reverse-derivation",
       normalizeInput: (input) => ({ ...structuredClone(input), subjectId: requireString(input, "subjectId") }),
@@ -383,14 +465,19 @@ function builtInPrograms(): RegisteredQueryProgram[] {
       },
     },
     {
-      id: "invalidation.transitive-reverse-derivation",
+      id: BUILT_IN_QUERY_PROGRAM_IDS.transitiveReverseDerivation,
       version: "1",
       kind: "reverse-derivation",
-      normalizeInput: (input) => ({ ...structuredClone(input), seedIds: requireStringArray(input, "seedIds") }),
+      normalizeInput: (input) => ({
+        ...structuredClone(input),
+        seedIds: requireStringArray(input, "seedIds"),
+        excludedIds: optionalStringArray(input, "excludedIds"),
+      }),
       evaluate: ({ input, graph }) => {
         const seedIds = requireStringArray(input, "seedIds");
+        const excludedIds = requireStringArray(input, "excludedIds");
         return {
-          results: idResults(reverseClosure(graph, seedIds)),
+          results: idResults(reverseClosure(graph, seedIds, excludedIds)),
           observability: "closed",
           assumptions: [],
           unavailableLanes: [],
@@ -399,69 +486,49 @@ function builtInPrograms(): RegisteredQueryProgram[] {
       },
     },
     {
-      id: "invalidation.impact-rule-selector-membership",
+      id: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleSelectorMembership,
       version: "1",
       kind: "selector-membership",
-      normalizeInput: (input) => ({ ...structuredClone(input), selectorHash: requireString(input, "selectorHash") }),
+      normalizeInput: (input) => ({
+        ...normalizeObservationInput(input, ["historicalMemberIds"]),
+        selectorHash: requireString(input, "selectorHash"),
+        phase: requireString(input, "phase"),
+      }),
       evaluate: ({ input, graph }) => {
         const selectorHash = requireString(input, "selectorHash") as ContentHash;
+        const phase = requireString(input, "phase");
+        if (phase !== "before" && phase !== "after") throw new InvalidQuerySpecError("membership phase must be before or after");
+        const memberIds = phase === "before"
+          ? requireStringArray(input, "historicalMemberIds")
+          : graph.querySelectorDependencies(selectorHash);
         return {
-          results: idResults(graph.querySelectorDependencies(selectorHash)),
-          observability: "closed",
-          assumptions: [],
-          unavailableLanes: [],
-          dependencyKeys: [`selector-membership:${selectorHash}`],
+          results: idResults(memberIds),
+          ...observationMetadata(input),
         };
       },
     },
     {
-      id: "invalidation.impact-rule-applicability",
+      id: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleApplicability,
       version: "1",
       kind: "impact-rule-applicability",
-      normalizeInput: (input) => ({ ...structuredClone(input), selectorHash: requireString(input, "selectorHash") }),
+      normalizeInput: (input) => ({
+        ...normalizeObservationInput(input, ["beforeMemberIds"]),
+        selectorHash: requireString(input, "selectorHash"),
+      }),
       evaluate: ({ input, graph }) => {
         const selectorHash = requireString(input, "selectorHash") as ContentHash;
+        const ids = sortedUniqueStrings([
+          ...requireStringArray(input, "beforeMemberIds"),
+          ...graph.querySelectorDependencies(selectorHash),
+        ]);
         return {
-          results: idResults(graph.querySelectorDependencies(selectorHash)),
-          observability: "closed",
-          assumptions: [],
-          unavailableLanes: [],
-          dependencyKeys: [`selector-membership:${selectorHash}`],
+          results: idResults(ids),
+          ...observationMetadata(input),
         };
       },
     },
-    {
-      id: "invalidation.impact-rule-reverse-traversal",
-      version: "1",
-      kind: "reverse-derivation",
-      normalizeInput: (input) => ({ ...structuredClone(input), seedIds: requireStringArray(input, "seedIds") }),
-      evaluate: ({ input, graph }) => {
-        const seedIds = requireStringArray(input, "seedIds");
-        return {
-          results: idResults(reverseClosure(graph, seedIds), "known"),
-          observability: "closed",
-          assumptions: [],
-          unavailableLanes: [],
-          dependencyKeys: seedIds.map((id) => `reverse-derivations:${id}`),
-        };
-      },
-    },
-    {
-      id: "invalidation.impact-rule-enumeration",
-      version: "1",
-      kind: "surface-enumeration",
-      normalizeInput: (input) => ({ ...structuredClone(input), seedIds: requireStringArray(input, "seedIds") }),
-      evaluate: ({ input, graph }) => {
-        const seedIds = requireStringArray(input, "seedIds");
-        return {
-          results: idResults(reverseClosure(graph, seedIds), "known"),
-          observability: "closed",
-          assumptions: [],
-          unavailableLanes: [],
-          dependencyKeys: seedIds.map((id) => `reverse-derivations:${id}`),
-        };
-      },
-    },
+    impactTraversalProgram(BUILT_IN_QUERY_PROGRAM_IDS.impactRuleReverseTraversal, "reverse-derivation"),
+    impactTraversalProgram(BUILT_IN_QUERY_PROGRAM_IDS.impactRuleEnumeration, "surface-enumeration"),
   ];
 }
 
@@ -469,6 +536,51 @@ export interface CreateQuerySpecInput {
   id: string;
   programId: string;
   input: Record<string, unknown>;
+}
+
+function normalizeProgramResult(programId: string, queryHash: ContentHash, raw: QueryProgramResult): StateQueryResultFingerprint {
+  const normalizedById = new Map<string, { json: string; result: QueryResult }>();
+  for (const result of raw.results) {
+    if (typeof result !== "object" || result === null || Array.isArray(result) || typeof result.id !== "string" || result.id.length === 0) {
+      throw new Error(`query program ${programId} returned a result without a stable id`);
+    }
+    const json = canonicalJson(result);
+    const existing = normalizedById.get(result.id);
+    if (existing !== undefined && existing.json !== json) {
+      throw new Error(`query program ${programId} returned conflicting projections for stable id ${result.id}`);
+    }
+    normalizedById.set(result.id, { json, result: structuredClone(result) });
+  }
+  const normalizedResults = [...normalizedById.entries()]
+    .sort(([left], [right]) => compareStrings(left, right))
+    .map(([, { result }]) => result);
+  const dependencyKeys = sortedUniqueStrings(raw.dependencyKeys);
+  if (dependencyKeys.length === 0) throw new Error(`query program ${programId} returned no dependency keys`);
+  return {
+    queryHash,
+    resultHash: hashFramedDomain("state-query-result", normalizedResults),
+    resultCount: normalizedResults.length,
+    observability: raw.observability,
+    assumptions: sortedUniqueStrings(raw.assumptions),
+    unavailableLanes: sortedUniqueStrings(raw.unavailableLanes),
+    dependencyKeys,
+  };
+}
+
+export function createBuiltInQueryDependency(input: CreateQuerySpecInput & {
+  role: string;
+  observed: QueryProgramResult;
+}): StateQueryDependency {
+  const program = builtInPrograms().find(({ id }) => id === input.programId);
+  if (program === undefined) throw new UnknownQueryProgramError(input.programId);
+  const normalizedInput = program.normalizeInput?.(structuredClone(input.input)) ?? structuredClone(input.input);
+  const basis = { kind: program.kind, programId: program.id, programVersion: program.version, input: normalizedInput };
+  const semanticHash = querySemanticHash(basis);
+  return {
+    query: { id: input.id, ...basis, semanticHash },
+    priorResult: normalizeProgramResult(program.id, semanticHash, input.observed),
+    role: input.role,
+  };
 }
 
 /** Registry is intentionally data-only at the query boundary: inputs are normalized serializable records, never executable payloads. */
@@ -522,31 +634,6 @@ export class QueryDependencyRegistry implements StateQueryReader {
     const program = this.programs.get(query.programId)!;
     const expectedHash = querySemanticHash(query);
     const raw = await program.evaluate({ input: structuredClone(query.input), graph: this.graph, context });
-    const normalizedById = new Map<string, { json: string; result: QueryResult }>();
-    for (const result of raw.results) {
-      if (typeof result !== "object" || result === null || Array.isArray(result) || typeof result.id !== "string" || result.id.length === 0) {
-        throw new Error(`query program ${program.id} returned a result without a stable id`);
-      }
-      const json = canonicalJson(result);
-      const existing = normalizedById.get(result.id);
-      if (existing !== undefined && existing.json !== json) {
-        throw new Error(`query program ${program.id} returned conflicting projections for stable id ${result.id}`);
-      }
-      normalizedById.set(result.id, { json, result: structuredClone(result) });
-    }
-    const normalizedResults = [...normalizedById.entries()]
-      .sort(([left], [right]) => compareStrings(left, right))
-      .map(([, { result }]) => result);
-    const dependencyKeys = sortedUniqueStrings(raw.dependencyKeys);
-    if (dependencyKeys.length === 0) throw new Error(`query program ${program.id} returned no dependency keys`);
-    return {
-      queryHash: expectedHash,
-      resultHash: hashFramedDomain("state-query-result", normalizedResults),
-      resultCount: normalizedResults.length,
-      observability: raw.observability,
-      assumptions: sortedUniqueStrings(raw.assumptions),
-      unavailableLanes: sortedUniqueStrings(raw.unavailableLanes),
-      dependencyKeys,
-    };
+    return normalizeProgramResult(program.id, expectedHash, raw);
   }
 }
