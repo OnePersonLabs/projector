@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
-import { stat } from "node:fs/promises";
-import { resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { ArchitectureConcern, ArchitectureDecision, CoverageSnapshot, DecisionValidityAssessment, ObservabilityClass, RiskClass } from "@projector/core";
+import { hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
+import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
+import { createStateBinding } from "@projector/engine";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -14,7 +14,7 @@ import {
   type DecisionOverlapPort,
   type DecisionPopulationPort,
 } from "@projector/engine/architecture";
-import { REQUIRED_COVERAGE_LANES } from "@projector/engine/coverage";
+import { compileAuthenticatedCoverageSnapshot, REQUIRED_COVERAGE_LANES, type CoverageEvidenceSnapshot, type CoverageLaneEvidence, type RequiredCoverageLaneKey } from "@projector/engine/coverage";
 
 import { assertOperationRiskAuthorized, deriveOperationRisk, normalizeExecutionPolicy, type CliPolicyInput, type OperationRiskInput, type SliceCommand } from "./policy.js";
 import {
@@ -394,16 +394,54 @@ export async function executeProjector(
 }
 
 function defaultCoveragePort(repositoryRoot: string): CoverageCliPort {
-  const observe = async (request: CoverageCliRequest): Promise<CoverageCliReport> => {
-    try {
-      const target = resolve(repositoryRoot, request.scope);
-      await stat(target);
-      return { proofStatement: "partial", boundary: [request.scope], lanes: [], unavailableSurfaceIds: [], approvalRequired: false, budgetExhausted: false, continuationPersisted: false, adapter: "repository-boundary-observation" };
-    } catch {
-      return { proofStatement: "not-established", boundary: [request.scope], lanes: [], unavailableSurfaceIds: [request.scope], approvalRequired: false, budgetExhausted: false, continuationPersisted: false, adapter: "repository-boundary-unavailable" };
-    }
-  };
+  const observe = async (request: CoverageCliRequest): Promise<CoverageCliReport> => compileRepositoryCoverage(repositoryRoot, request);
   return { coverage: observe, complete: observe, cleanup: async (request) => ({ ...(await observe(request)), proofStatement: "not-established", unavailableSurfaceIds: ["cleanup-continuation-adapter"] }) };
+}
+
+const normalizedRepositoryPath = (value: string): string => value.replace(/\\/gu, "/").replace(/^\.\//u, "").replace(/\/+$/u, "") || ".";
+function inRequestedScope(path: string, scope: string): boolean {
+  const boundary = normalizedRepositoryPath(scope); const candidate = normalizedRepositoryPath(path);
+  return boundary === "." || candidate === boundary || candidate.startsWith(`${boundary}/`);
+}
+
+function unavailableLane(key: RequiredCoverageLaneKey, reason: string): CoverageLaneEvidence {
+  return { key, applicability: "required", observability: "unavailable", numerator: 0, confidence: 0, assumptions: [], provenAssumptions: [], blindSpots: [reason], staleObservationIds: [] };
+}
+
+function knownLane(key: RequiredCoverageLaneKey, numerator: number, denominator: number, analysis: LocalRepositoryAnalysis): CoverageLaneEvidence {
+  const enumeration = analysis.surface.enumeration;
+  return { key, applicability: "required", observability: enumeration.observability, numerator, denominator, confidence: enumeration.observability === "unavailable" ? 0 : 0.8, assumptions: [...enumeration.assumptions], provenAssumptions: [], blindSpots: [...enumeration.blindSpots], staleObservationIds: [] };
+}
+
+async function compileRepositoryCoverage(repositoryRoot: string, request: CoverageCliRequest): Promise<CoverageCliReport> {
+  const analysis = await analyzeLocalRepository({ repositoryRoot });
+  const artifacts = analysis.artifacts.filter(({ locator }) => inRequestedScope(locator, request.scope));
+  const units = analysis.projectionUnits.filter(({ key }) => inRequestedScope(key, request.scope));
+  const files = analysis.files.filter(({ path }) => inRequestedScope(path, request.scope));
+  const dependencies = analysis.dependencies.filter(({ importerPath }) => inRequestedScope(importerPath, request.scope));
+  const documentDenominator = artifacts.filter(({ mediaType }) => ["application/json", "application/yaml", "application/toml", "text/markdown"].includes(mediaType)).length;
+  const documentNumerator = analysis.documents.filter(({ path }) => inRequestedScope(path, request.scope)).length + analysis.markdown.filter(({ path }) => inRequestedScope(path, request.scope)).length;
+  const identities = analysis.gitIdentities.filter(({ path }) => inRequestedScope(path, request.scope));
+  const unknownKeys = new Set<RequiredCoverageLaneKey>(["concept-mapping", "lens", "rule-enforceability", "derivation", "validation-evidence", "authority", "architecture-decision", "semantic-identity", "pre-change-relevance"]);
+  const lanes = REQUIRED_COVERAGE_LANES.map((key): CoverageLaneEvidence => {
+    if (key === "inventory") return knownLane(key, artifacts.length, artifacts.length, analysis);
+    if (key === "projection-unit-classification") return knownLane(key, units.length, artifacts.length, analysis);
+    if (key === "relationship") return knownLane(key, dependencies.length, dependencies.length, analysis);
+    if (key === "surface") return knownLane(key, analysis.surface.access === "unavailable" ? 0 : 1, 1, analysis);
+    if (key === "historical-metamorphic") return analysis.git.availability === "unavailable" ? unavailableLane(key, "Git identity/history is unavailable") : knownLane(key, identities.filter(({ availability }) => availability === "available").length, files.length, analysis);
+    if (key === "representation-projection-fidelity") return knownLane(key, documentNumerator, documentDenominator, analysis);
+    if (key === "change-closure" || key === "planning-surprise") return { key, applicability: "not-applicable", boundaryExclusion: "no semantic change execution is requested by coverage observation", observability: "closed", numerator: 0, denominator: 0, confidence: 1, assumptions: [], provenAssumptions: [], blindSpots: [], staleObservationIds: [] };
+    if (unknownKeys.has(key)) return unavailableLane(key, `local repository analysis does not prove ${key}`);
+    return unavailableLane(key, `local repository composition has no proof adapter for ${key}`);
+  });
+  const analysisDigest = hashFramedDomain("cli-local-coverage-analysis", { surface: analysis.surface, artifacts: artifacts.map(({ id, contentHash }) => ({ id, contentHash })), units: units.map(({ id, membershipHash }) => ({ id, membershipHash })), capabilities: analysis.capabilities, failures: analysis.failures.map(({ analyzerId, capability, scope, affectedClaimKinds }) => ({ analyzerId, capability, scope, affectedClaimKinds })) });
+  const currentState: StateDigest = { gitBase: analysis.git.revision, worktreeDigest: analysisDigest, canonicalProjectorDigest: hashFramedDomain("cli-local-coverage-canonical", []), toolchainDigest: hashFramedDomain("cli-local-coverage-toolchain", analysis.capabilities) };
+  const binding = createStateBinding({ compiledAgainst: currentState, valueDependencies: [{ kind: "adapter", id: "projector.local-repository", versionHash: analysisDigest, role: "authenticated Task14 local repository coverage evidence" }], queryDependencies: [] });
+  const failureIds = analysis.failures.filter(({ scope }) => inRequestedScope(scope, request.scope)).map(({ analyzerId, capability, scope }) => `${analyzerId}:${capability}:${scope}`).sort();
+  const evidence: CoverageEvidenceSnapshot = { boundState: binding, lanes, analyzerFailures: analysis.failures, unknownFrontierIds: [...unknownKeys].map((key) => `coverage:${key}`).sort(), unavailableSurfaceIds: analysis.surface.access === "unavailable" ? [analysis.surface.id] : [], completion: { artifactsClassified: units.length === artifacts.length, semanticMappingsResolved: false, identityDispositionsResolved: false, expectedProjectionsAccounted: false, relevanceNegativeSpaceProven: false, lensesAndRulesOperational: false, externalOwnershipAssigned: analysis.surface.access !== "unavailable", blockerIds: failureIds, unknownUnitIds: units.map(({ id }) => id).sort(), validationIndependenceSatisfied: false, architectureFrontierIds: ["coverage:architecture-decision"] } };
+  const context = { repositoryRoot, stateDigest: currentState, config: {}, signal: new AbortController().signal };
+  const compiled = await compileAuthenticatedCoverageSnapshot({ graphRevision: 0, boundary: [request.scope], binding, currentState, context }, { bindingValidator: { validate: async () => ({ status: "current", currentState, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) }, evidence: { observe: async () => evidence } });
+  return { proofStatement: compiled.snapshot.proofStatement, boundary: compiled.snapshot.boundary, lanes: compiled.snapshot.lanes, unavailableSurfaceIds: compiled.snapshot.unavailableSurfaceIds, approvalRequired: false, budgetExhausted: false, continuationPersisted: false, snapshot: compiled.snapshot, localAnalysis: { artifactCount: artifacts.length, projectionUnitCount: units.length, dependencyCount: dependencies.length, analyzerFailureCount: failureIds.length, analyzerFailures: analysis.failures.filter(({ scope }) => inRequestedScope(scope, request.scope)) } };
 }
 
 export function renderCli(arguments_: readonly string[]): string {
