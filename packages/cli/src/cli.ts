@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -45,6 +45,7 @@ Commands:
   coverage              Report authenticated multi-dimensional coverage
   complete              Rank the next authenticated completion work
   cleanup               Resume a trusted cleanup continuation plan
+  run <codex|claude> -- <args>  Run a bounded host session
   explain <target>      Explain findings for a path or finding identity
 
 Options:
@@ -71,7 +72,14 @@ export interface ProjectorCommandOptions {
   readonly architecture?: ArchitectureCliPort;
   readonly coverage?: CoverageCliPort;
   readonly change?: ChangeCliPort;
+  readonly runHost?: RunHostCliPort;
+  readonly environment?: Readonly<Record<string, string | undefined>>;
+  readonly signal?: AbortSignal;
 }
+
+export interface RunHostCliRequest { readonly host: "codex" | "claude"; readonly sessionSelector: string; readonly repositoryRoot: string; readonly argv: readonly string[]; readonly environment: Readonly<Record<string, string>>; readonly signal: AbortSignal }
+export interface RunHostCliResult { readonly status: "completed" | "failed" | "cancelled" | "unavailable"; readonly exitCode: number | null; readonly changedPaths: readonly string[]; readonly reconciled: boolean; readonly signal?: string }
+export interface RunHostCliPort { readonly run: (request: RunHostCliRequest) => Promise<RunHostCliResult> }
 
 export interface ChangeCliRequest { readonly repositoryRoot: string; readonly selector: string; readonly persist?: boolean }
 export interface ChangeCliPort {
@@ -123,6 +131,9 @@ interface ParsedCommand {
   readonly decisions: boolean;
   readonly coverageRequest: CoverageCliRequest;
   readonly selector?: string;
+  readonly host?: "codex" | "claude";
+  readonly hostArgv: readonly string[];
+  readonly sessionSelector?: string;
 }
 
 function optionValue(arguments_: readonly string[], name: string): string | undefined {
@@ -148,7 +159,7 @@ function normalizeScope(raw: string | undefined): string {
   return scope;
 }
 
-const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--continuation"]);
+const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--continuation", "--session"]);
 const booleanFlags = new Set(["--decisions", "--dry-run", "--audit-only", "--non-interactive"]);
 function validateArguments(arguments_: readonly string[], command: SliceCommand): void {
   const seen = new Set<string>();
@@ -163,20 +174,25 @@ function validateArguments(arguments_: readonly string[], command: SliceCommand)
       seen.add(argument); continue;
     }
     if (argument.startsWith("-")) throw new Error(`unknown flag: ${argument}`);
-    if ((command !== "explain" && command !== "change" && command !== "plan" && command !== "apply") || index !== 1) throw new Error(`unknown argument: ${argument}`);
+    if ((command !== "explain" && command !== "change" && command !== "plan" && command !== "apply" && command !== "run") || index !== 1) throw new Error(`unknown argument: ${argument}`);
   }
 }
 
 function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const command = arguments_[0];
   if (command !== "init" && command !== "audit" && command !== "change" && command !== "plan" && command !== "apply"
-    && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup") {
+    && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
-  validateArguments(arguments_, command);
-  const formatValue = optionValue(arguments_, "--format") ?? "text";
+  const separator = arguments_.indexOf("--");
+  if (command === "run" && separator < 0) throw new Error("run requires the -- argv separator");
+  if (command !== "run" && separator >= 0) throw new Error("argv separator is only valid with run");
+  const commandArguments = command === "run" ? arguments_.slice(0, separator) : arguments_;
+  const hostArgv = command === "run" ? arguments_.slice(separator + 1) : [];
+  validateArguments(commandArguments, command);
+  const formatValue = optionValue(commandArguments, "--format") ?? "text";
   if (formatValue !== "text" && formatValue !== "json") throw new Error(`unsupported format: ${formatValue}`);
-  const modeValue = optionValue(arguments_, "--mode");
+  const modeValue = optionValue(commandArguments, "--mode");
   if (modeValue !== undefined && modeValue !== "observe" && modeValue !== "guide" && modeValue !== "govern"
     && modeValue !== "autonomous" && modeValue !== "salvage") {
     throw new Error(`unsupported mode: ${modeValue}`);
@@ -188,17 +204,22 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const positional = (command === "change" || command === "plan" || command === "apply") && arguments_[1] !== undefined && !arguments_[1].startsWith("-") ? arguments_[1] : undefined;
   if (command === "change" && positional === undefined) throw new Error("change requires an intent selector");
   if (positional !== undefined && !/^[a-z0-9][a-z0-9._:-]*$/iu.test(positional)) throw new Error("change/plan/apply selector must be a safe repository-local identity");
-  const decisions = arguments_.includes("--decisions");
+  const hostValue = command === "run" ? commandArguments[1] : undefined;
+  if (command === "run" && hostValue !== "codex" && hostValue !== "claude") throw new Error(`unsupported host: ${hostValue ?? ""}`);
+  const sessionSelector = optionValue(commandArguments, "--session");
+  if (command === "run" && (sessionSelector === undefined || !/^session:[a-z0-9][a-z0-9._:-]*$/iu.test(sessionSelector))) throw new Error("run requires a safe explicit --session selector");
+  if (command !== "run" && sessionSelector !== undefined) throw new Error("--session is only valid with run");
+  const decisions = commandArguments.includes("--decisions");
   if (decisions && command !== "audit") throw new Error("--decisions is only valid with audit");
   const coverageCommand = command === "coverage" || command === "complete" || command === "cleanup";
-  const explicitStrictness = optionValue(arguments_, "--strictness");
-  const rawScope = optionValue(arguments_, "--scope");
-  const rawBudgetTokens = optionValue(arguments_, "--budget-tokens");
-  const rawBudgetCost = optionValue(arguments_, "--budget-cost");
+  const explicitStrictness = optionValue(commandArguments, "--strictness");
+  const rawScope = optionValue(commandArguments, "--scope");
+  const rawBudgetTokens = optionValue(commandArguments, "--budget-tokens");
+  const rawBudgetCost = optionValue(commandArguments, "--budget-cost");
   if (!coverageCommand && [explicitStrictness, rawScope, rawBudgetTokens, rawBudgetCost].some((value) => value !== undefined)) throw new Error("coverage scope, strictness, and budgets are only valid with coverage, complete, or cleanup");
   const strictnessValue = explicitStrictness ?? "bounded";
   if (strictnessValue !== "proven" && strictnessValue !== "bounded" && strictnessValue !== "high-confidence" && strictnessValue !== "partial") throw new Error(`unsupported coverage strictness: ${strictnessValue}`);
-  const continuationSelector = optionValue(arguments_, "--continuation");
+  const continuationSelector = optionValue(commandArguments, "--continuation");
   if (continuationSelector !== undefined && command !== "cleanup") throw new Error("--continuation is only valid with cleanup");
   const budgetTokens = positiveNumber(rawBudgetTokens, "--budget-tokens", true);
   const budgetCost = positiveNumber(rawBudgetCost, "--budget-cost");
@@ -207,6 +228,9 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     ...(target === undefined ? {} : { target }),
     format: formatValue,
     decisions,
+    hostArgv,
+    ...(hostValue === "codex" || hostValue === "claude" ? { host: hostValue } : {}),
+    ...(sessionSelector === undefined ? {} : { sessionSelector }),
     coverageRequest: {
       scope: normalizeScope(rawScope),
       strictness: strictnessValue,
@@ -218,9 +242,9 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     policy: {
       command,
       ...(modeValue === undefined ? {} : { mode: modeValue }),
-      dryRun: arguments_.includes("--dry-run"),
-      auditOnly: arguments_.includes("--audit-only"),
-      nonInteractive: arguments_.includes("--non-interactive"),
+      dryRun: commandArguments.includes("--dry-run"),
+      auditOnly: commandArguments.includes("--audit-only"),
+      nonInteractive: commandArguments.includes("--non-interactive"),
     },
   };
 }
@@ -239,6 +263,7 @@ function outputFor(command: SliceCommand, report: unknown, format: "text" | "jso
   if (command === "change") return `change: ${(report as { selector: string }).selector}`;
   if (command === "explain") return (report as { explanation: string }).explanation;
   if (command === "coverage" || command === "complete" || command === "cleanup") return `${command}: ${(report as CoverageCliReport).proofStatement}`;
+  if (command === "run") return (report as { dryRun?: boolean }).dryRun === true ? "run: dry-run" : `run: ${(report as RunHostCliResult).status}`;
   return `${command} completed.`;
 }
 
@@ -272,7 +297,7 @@ export async function executeProjector(
   const repositoryRoot = options.cwd ?? process.cwd();
   const defaultOperation: OperationRiskInput = parsed.command === "init"
     ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
-    : parsed.command === "apply" || parsed.command === "reconcile" || parsed.command === "cleanup"
+    : parsed.command === "apply" || parsed.command === "reconcile" || parsed.command === "cleanup" || parsed.command === "run"
       ? { command: parsed.command, sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false }
       : { command: parsed.command, sideEffect: "read-only", externalWrite: false, canonicalMutation: false };
   const suppliedOperation = options.governance?.operation;
@@ -405,6 +430,21 @@ export async function executeProjector(
       exitCode = coverageExitCode(parsed.coverageRequest, coverageReport);
       break;
     }
+    case "run": {
+      if (!policy.allowAutoMutation) {
+        report = { policy, dryRun: true, host: parsed.host!, argv: parsed.hostArgv };
+        break;
+      }
+      const allowedKeys = new Set(["CI", "LANG", "LC_ALL", "PATH", "TERM"]);
+      const sourceEnvironment = options.environment ?? process.env;
+      const environmentEntries: [string, string][] = [];
+      for (const [key, value] of Object.entries(sourceEnvironment)) if (allowedKeys.has(key) && value !== undefined) environmentEntries.push([key, value]);
+      const environment = Object.fromEntries(environmentEntries.sort(([left], [right]) => left.localeCompare(right)));
+      const runResult = await (options.runHost ?? defaultRunHostPort()).run({ host: parsed.host!, sessionSelector: parsed.sessionSelector!, repositoryRoot, argv: parsed.hostArgv, environment, signal: options.signal ?? new AbortController().signal });
+      report = { policy, host: parsed.host!, sessionSelector: parsed.sessionSelector!, argv: parsed.hostArgv, ...runResult };
+      exitCode = runResult.status === "completed" && runResult.reconciled ? 0 : runResult.status === "unavailable" ? 5 : 6;
+      break;
+    }
     case "explain": {
       if (parsed.target!.startsWith("decision:")) {
         if (options.architecture === undefined) return { exitCode: 3, output: "architecture decision provider is unavailable", report: { policy, blocked: true } };
@@ -432,6 +472,31 @@ export async function executeProjector(
     }
   }
   return { exitCode, output: outputFor(parsed.command, report, parsed.format), report };
+}
+
+function defaultRunHostPort(): RunHostCliPort {
+  const changedPaths = async (repositoryRoot: string): Promise<string[]> => {
+    try {
+      const { stdout } = await execFileAsync("git", ["-C", repositoryRoot, "status", "--porcelain=v1", "-z"], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+      return stdout.split("\0").filter(Boolean).map((entry) => entry.slice(3)).sort();
+    } catch { return []; }
+  };
+  return {
+    async run(request) {
+      const before = await changedPaths(request.repositoryRoot);
+      const outcome = await new Promise<{ code: number | null; signal?: string; unavailable: boolean }>((resolve) => {
+        let settled = false;
+        const finish = (value: { code: number | null; signal?: string; unavailable: boolean }) => { if (!settled) { settled = true; resolve(value); } };
+        const child = spawn(request.host, [...request.argv], { cwd: request.repositoryRoot, env: { ...request.environment }, shell: false, stdio: "inherit", signal: request.signal });
+        child.once("error", (caught) => finish({ code: null, unavailable: "code" in caught && caught.code === "ENOENT" }));
+        child.once("close", (code, signal) => finish({ code, ...(signal === null ? {} : { signal }), unavailable: false }));
+      });
+      const after = await changedPaths(request.repositoryRoot);
+      const paths = [...new Set([...before, ...after])].sort();
+      const status = outcome.unavailable ? "unavailable" as const : request.signal.aborted ? "cancelled" as const : outcome.code === 0 ? "completed" as const : "failed" as const;
+      return { status, exitCode: outcome.code, changedPaths: paths, reconciled: true, ...(outcome.signal === undefined ? {} : { signal: outcome.signal }) };
+    },
+  };
 }
 
 function defaultChangePort(repositoryRoot: string): ChangeCliPort {

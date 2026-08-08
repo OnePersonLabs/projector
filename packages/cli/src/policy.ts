@@ -1,6 +1,6 @@
 import type { ExecutionPolicy, RiskClass } from "@projector/core";
 
-export type SliceCommand = "init" | "audit" | "change" | "plan" | "apply" | "reconcile" | "explain" | "coverage" | "complete" | "cleanup";
+export type SliceCommand = "init" | "audit" | "change" | "plan" | "apply" | "reconcile" | "explain" | "coverage" | "complete" | "cleanup" | "run";
 
 export interface CliPolicyInput {
   readonly command: SliceCommand;
@@ -38,7 +38,7 @@ export function normalizeExecutionPolicy(input: CliPolicyInput): Readonly<Execut
     throw new Error("contradictory audit-only and mutation-capable mode flags");
   }
   const preset = input.auditOnly === true && input.mode === undefined ? "observe" : (input.mode ?? "guide");
-  const mutationCommand = input.command === "init" || input.command === "apply" || input.command === "reconcile" || input.command === "cleanup";
+  const mutationCommand = input.command === "init" || input.command === "apply" || input.command === "reconcile" || input.command === "cleanup" || input.command === "run";
   if (input.auditOnly === true && mutationCommand) {
     throw new Error("contradictory mutation and audit-only flags");
   }
