@@ -10,8 +10,8 @@
       "sourceDigest": "sha256:v1:b2dd9f8e12b42f1a37c11aeb7de487cfbb2be9bf894a9ffd2efa7f0a1ebd4927",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:ea582d90fd31660a5f1686731b1fdb3aa64dffe15bd29b72c36e36eacd7b2c5a"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:638cec4eefa387681c7a6bdfd107bdfdf0c33e275d57849e4595b76839eb55fc"
     },
     {
       "id": "scenario:02:copied-slop-majority-and-endogenous-evidence-defense",
@@ -58,8 +58,8 @@
       "sourceDigest": "sha256:v1:b2dd9f8e12b42f1a37c11aeb7de487cfbb2be9bf894a9ffd2efa7f0a1ebd4927",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:dde18c27012100d76305af5dbf4a6f572e24599c12ae5407400d7f94a78c6712"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:cc673b7437a0b508b607de7200ee94874bce95978d384491b11309f08422aa5c"
     },
     {
       "id": "scenario:06:scc-backdating",
@@ -430,8 +430,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:7394ab314d275fd4ab83d4f718620baf0c1bdc826a28d2b8928b39b0c81c3fca"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:e899d3ec785bc88a103eb2404eacb852d1c1508750ec5c1b063e38fa92658afc"
     },
     {
       "id": "scenario:37:bound-dependency-change-does-stale-local-work",
@@ -526,8 +526,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:58a4310155e5ff27608cc01d858a277b47b344171a3bb91c23e855661f46ed86"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:d4c92ad4023cc610d24dfdd9261a993f9c5b6dff874d48e680effec44ef28a75"
     },
     {
       "id": "scenario:45:semantic-storage-path-does-not-define-meaning",
@@ -538,8 +538,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:aa4fc1f7f1981afab4092235dec86f0fd9e93e30f8ea395d9261a5022f1cbb73"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:191d826bc1e5e9f2e8103531e46b2306ffa0288773b718f599ff9adff7a6b0d0"
     },
     {
       "id": "scenario:46:analysis-facets-compose-without-methodology-lock-in",
@@ -718,8 +718,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:a7ecf46caab0ae5733b5dd1619e6115723ad1b0bfa3a9e11ad12df63cf177fb7"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:9b205dcaa9f1de447ed9a358a911d7caab82515b99168a03fdf2a9a2448fad24"
     },
     {
       "id": "property:02:splitting-canonical-entities-into-independent-files-does-not-alter-semantic-project-root-identity",
@@ -970,8 +970,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:8909f9a0e13fec7c33f1b5924262e26772c4b685488d4cc23ee1a456f7301742"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:2038278e8ea211689d4e824f9f602815d7c7012c05883c979568d8989b8e6e3f"
     },
     {
       "id": "property:23:a-projector-caused-conforming-occurrence-never-becomes-independent-support-for-its-causal-lens-rule",
@@ -1042,8 +1042,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:204b8d01da0342b799b71dba01889a8673fee92f086524af6f15267f865126e1"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:8b9d14e8c376a4d86abd057841a9b5ee668b9d6f67ed133db00ed9b9bb12d447"
     },
     {
       "id": "adversary:02:semantic-signature-insufficiency",
@@ -1066,8 +1066,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:d78d0bb584c4f95a0181c6b9fba3f8d6b836b0748ea8eec744d73a4dbf2a7c1d"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:c4d5e18ba0c38f3874b552e698b4f4860f3dec2735f4a72ae2c2a060a5af5051"
     },
     {
       "id": "adversary:04:crash-at-every-semantic-transaction-phase",
@@ -1090,8 +1090,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository",
-      "testSourceDigest": "sha256:v1:c33b616446b63ff6a327c519cd1f3c879ed963a11c21873021bede0c68c4e757",
-      "mappingHash": "sha256:v1:c50280c25bc83adb13442685206892b95bae8885d32a81a66164dd823e1b03dd"
+      "testSourceDigest": "sha256:v1:41f7215353d4f93620dc52b4b17b95d791e2a758644beff9000ad9266baa614c",
+      "mappingHash": "sha256:v1:b92d1cd569620d9642b0e91589329ea7dc146d2279aee2fa5aaff58e00f814dc"
     },
     {
       "id": "adversary:06:projector-endogenous-authority-evidence",

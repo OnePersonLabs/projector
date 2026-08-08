@@ -228,6 +228,7 @@ describe("CanonicalFileRepository", () => {
     const root = await temporaryRepository(); const repository = new CanonicalFileRepository(root); await repository.write(concept("concept-a", "owned"));
     const journal = join(root, ".projector", "runtime", "journal", "operation.json"); const receipt = join(root, ".projector", "receipts", "content-addressed.json");
     await mkdir(join(journal, ".."), { recursive: true }); await mkdir(join(receipt, ".."), { recursive: true }); await writeFile(journal, JSON.stringify({ phase: "committed" })); await writeFile(receipt, JSON.stringify({ status: "success" }));
+    for (const namespace of ["task17-sessions", "task17-capabilities", "task18-upgrades"]) { const artifact = join(root, ".projector", namespace, "lifecycle.json"); await mkdir(join(artifact, ".."), { recursive: true }); await writeFile(artifact, JSON.stringify({ version: 1, status: "active" })); }
     expect((await repository.snapshot()).documents.map(({ id }) => id)).toEqual(["concept-a"]);
   });
 

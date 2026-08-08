@@ -9,7 +9,9 @@ export interface AcceptanceInventoryItem { readonly id: string; readonly stratum
 export interface AcceptanceSource { readonly path: string; readonly text: string }
 export interface TraceabilityEntry extends AcceptanceInventoryItem { readonly publicFacade: string; readonly testRef: string; readonly testSourceDigest: ContentHash; readonly mappingHash: ContentHash }
 export interface TraceabilityManifest { readonly version: 2; readonly entries: readonly TraceabilityEntry[]; readonly inventoryHash: ContentHash }
-export interface TraceabilityTestRun { readonly passedTestFiles: readonly string[]; readonly publicFacades: readonly string[]; readonly rawEvidenceHash: ContentHash }
+export interface TraceabilityAssertionResult { readonly identity: string; readonly status: "passed" | "failed" | "skipped" }
+export interface TraceabilityTestArtifact { readonly testRef: string; readonly status: "passed" | "failed"; readonly assertions: readonly TraceabilityAssertionResult[]; readonly outputHash: ContentHash; readonly contentHash: ContentHash }
+export interface TraceabilityTestRun { readonly artifacts: readonly TraceabilityTestArtifact[]; readonly publicFacades: readonly string[] }
 export interface VerifiedTraceability { readonly verified: true; readonly inventoryHash: ContentHash; readonly runEvidenceHash: ContentHash; readonly contentHash: ContentHash }
 
 const slug = (value: string) => value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
@@ -32,6 +34,7 @@ export function deriveAcceptanceInventory(input: { readonly scenarios: readonly 
 const inventoryBody = (entries: readonly Pick<AcceptanceInventoryItem, "id" | "stratum" | "ordinal" | "title" | "sourcePath" | "sourceDigest">[]) => entries.map(({ id, stratum, ordinal, title, sourcePath, sourceDigest }) => ({ id, stratum, ordinal, title, sourcePath, sourceDigest }));
 export function traceabilityInventoryHash(inventory: readonly AcceptanceInventoryItem[]): ContentHash { return hashFramedDomain("release-traceability-inventory", inventoryBody(inventory)); }
 export function traceabilityEntryHash(entry: Omit<TraceabilityEntry, "mappingHash">): ContentHash { return hashFramedDomain("release-traceability-entry", entry); }
+export function createTraceabilityTestArtifact(input: Pick<TraceabilityTestArtifact, "testRef" | "status" | "assertions">): TraceabilityTestArtifact { const assertions = [...input.assertions].map(({ identity, status }) => ({ identity, status })).sort((a, b) => a.identity.localeCompare(b.identity)); const outputHash = hashFramedDomain("traceability-test-output", assertions); const body = { testRef: input.testRef, status: input.status, assertions, outputHash }; return Object.freeze({ ...body, contentHash: hashFramedDomain("traceability-test-artifact", body) }); }
 
 function validateManifestStructure(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[]): void {
   if (manifest.version !== 2 || manifest.inventoryHash !== traceabilityInventoryHash(inventory)) throw new Error("traceability inventory hash is stale");
@@ -49,26 +52,28 @@ function validateManifestStructure(manifest: TraceabilityManifest, inventory: re
 
 export async function verifyTraceabilityManifest(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[], input: { readonly repositoryRoot: string; readonly run: TraceabilityTestRun }): Promise<VerifiedTraceability> {
   validateManifestStructure(manifest, inventory);
-  if (!input.run.rawEvidenceHash.startsWith("sha256:v1:") || input.run.passedTestFiles.length === 0) throw new Error("traceability requires raw passing test-run evidence");
-  const passed = new Set(input.run.passedTestFiles); const facades = new Set(input.run.publicFacades); const root = resolve(input.repositoryRoot);
+  if (input.run.artifacts.length === 0) throw new Error("traceability requires exact passing test artifacts");
+  const artifacts = new Map<string, TraceabilityTestArtifact>(); for (const artifact of input.run.artifacts) { const recomputed = createTraceabilityTestArtifact(artifact); if (artifact.contentHash !== recomputed.contentHash || artifact.outputHash !== recomputed.outputHash || artifact.status !== "passed" || artifact.assertions.length === 0 || artifact.assertions.some(({ status }) => status !== "passed") || artifacts.has(artifact.testRef)) throw new Error(`invalid passing test artifact ${artifact.testRef}`); artifacts.set(artifact.testRef, artifact); }
+  const facades = new Set(input.run.publicFacades); const root = resolve(input.repositoryRoot);
   const sourceCache = new Map<string, string>();
   for (const entry of manifest.entries) {
     const [relativePath, anchor] = entry.testRef.split("#", 2);
-    if (relativePath === undefined || anchor === undefined || anchor.trim() === "" || !passed.has(relativePath) || !facades.has(entry.publicFacade)) throw new Error(`traceability test or public facade was not observed: ${entry.testRef}`);
+    const artifact = artifacts.get(entry.testRef);
+    if (relativePath === undefined || anchor === undefined || anchor.trim() === "" || artifact === undefined || !artifact.assertions.some(({ identity }) => identity === anchor || identity.startsWith(`${anchor} `)) || !facades.has(entry.publicFacade)) throw new Error(`traceability test result or public facade was not observed: ${entry.testRef}`);
     const path = resolve(root, relativePath); if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error(`traceability test escapes repository: ${relativePath}`);
     let text = sourceCache.get(relativePath); if (text === undefined) { try { text = await readFile(path, "utf8"); } catch { throw new Error(`traceability test does not exist: ${relativePath}`); } sourceCache.set(relativePath, text); }
     if (hashFramedDomain("traceability-test-source", { path: relativePath, text }) !== entry.testSourceDigest || !text.includes(`describe("${anchor}"`)) throw new Error(`traceability test source or anchor is stale: ${entry.testRef}`);
   }
-  const body = { inventoryHash: manifest.inventoryHash, runEvidenceHash: input.run.rawEvidenceHash, entries: manifest.entries.map(({ mappingHash }) => mappingHash) };
-  return Object.freeze({ verified: true, inventoryHash: manifest.inventoryHash, runEvidenceHash: input.run.rawEvidenceHash, contentHash: hashFramedDomain("verified-traceability", body) });
+  const runEvidenceHash = hashFramedDomain("traceability-test-run", [...artifacts.values()].map(({ contentHash }) => contentHash).sort()); const body = { inventoryHash: manifest.inventoryHash, runEvidenceHash, entries: manifest.entries.map(({ mappingHash }) => mappingHash) };
+  return Object.freeze({ verified: true, inventoryHash: manifest.inventoryHash, runEvidenceHash, contentHash: hashFramedDomain("verified-traceability", body) });
 }
 
-export interface DerivedConformanceObservation { readonly derivedDigest: ContentHash; readonly entityIds: readonly string[] }
-export interface IndependentConformanceObservation { readonly clean: DerivedConformanceObservation; readonly incremental: DerivedConformanceObservation; readonly rawEntityIds: readonly string[]; readonly locality: { readonly changedEntityIds: readonly string[]; readonly recomputedEntityIds: readonly string[] }; readonly evidenceIds: readonly string[] }
+export interface DerivedConformanceObservation { readonly derivedDigest: ContentHash; readonly semanticDigest: ContentHash; readonly entityIds: readonly string[] }
+export interface IndependentConformanceObservation { readonly clean: DerivedConformanceObservation; readonly incremental: DerivedConformanceObservation; readonly rawDocuments: readonly { readonly path: string; readonly bytes: string }[]; readonly schemaId: "canonical-envelope-v2"; readonly runtimeLane: string; readonly locality: { readonly changedEntityIds: readonly string[]; readonly recomputedEntityIds: readonly string[] }; readonly evidenceIds: readonly string[] }
 const canonicalSet = (values: readonly string[]) => [...new Set(values)].sort();
 export function evaluateIndependentConformance(observation: IndependentConformanceObservation): { readonly passed: boolean; readonly reasons: readonly string[]; readonly contentHash: ContentHash } {
-  const cleanIds = canonicalSet(observation.clean.entityIds); const incrementalIds = canonicalSet(observation.incremental.entityIds); const rawIds = canonicalSet(observation.rawEntityIds); const changed = new Set(observation.locality.changedEntityIds);
-  const reasons = [...(observation.clean.derivedDigest === observation.incremental.derivedDigest ? [] : ["clean and incremental derived observations differ"]), ...(JSON.stringify(cleanIds) === JSON.stringify(rawIds) && JSON.stringify(incrementalIds) === JSON.stringify(rawIds) ? [] : ["derived observations contradict independent raw canonical identities"]), ...(observation.locality.recomputedEntityIds.every((id) => changed.has(id)) ? [] : ["incremental recomputation escaped the changed dependency scope"]), ...(observation.evidenceIds.length > 0 ? [] : ["independent raw evidence is missing"])];
+  const entities = observation.rawDocuments.map(({ bytes }) => { const value = JSON.parse(bytes) as { id?: unknown; kind?: unknown; semanticHash?: unknown; payload?: { semanticHash?: unknown } }; const semanticHash = value.semanticHash ?? value.payload?.semanticHash; if (typeof value.id !== "string" || typeof value.kind !== "string" || typeof semanticHash !== "string") throw new Error("independent raw fixture does not satisfy canonical semantic schema"); return { id: value.id, kind: value.kind, semanticHash }; }).sort((a, b) => a.id.localeCompare(b.id)); const rawIds = canonicalSet(entities.map(({ id }) => id)); const independentSemanticDigest = hashFramedDomain("independent-release-semantics", { schemaId: observation.schemaId, runtimeLane: observation.runtimeLane, entities }); const cleanIds = canonicalSet(observation.clean.entityIds); const incrementalIds = canonicalSet(observation.incremental.entityIds); const changed = new Set(observation.locality.changedEntityIds);
+  const reasons = [...(observation.clean.derivedDigest === observation.incremental.derivedDigest ? [] : ["clean and incremental derived observations differ"]), ...(observation.clean.semanticDigest === independentSemanticDigest && observation.incremental.semanticDigest === independentSemanticDigest ? [] : ["derived semantics contradict independent raw fixture interpretation"]), ...(JSON.stringify(cleanIds) === JSON.stringify(rawIds) && JSON.stringify(incrementalIds) === JSON.stringify(rawIds) ? [] : ["derived observations contradict independent raw canonical identities"]), ...(observation.locality.recomputedEntityIds.every((id) => changed.has(id)) ? [] : ["incremental recomputation escaped the changed dependency scope"]), ...(observation.evidenceIds.length > 0 && observation.rawDocuments.length > 0 ? [] : ["independent raw evidence is missing"] )];
   return { passed: reasons.length === 0, reasons, contentHash: hashFramedDomain("independent-release-conformance", observation) };
 }
 
