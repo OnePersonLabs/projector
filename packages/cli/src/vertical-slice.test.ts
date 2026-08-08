@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { access, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,10 +8,60 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { canonicalJson, hashFramedDomain, hashSemantic } from "@projector/core";
+
 import { executeProjector } from "./cli.js";
 
 const executeFile = promisify(execFile);
 const repositories: Array<{ root: string; dispose(): Promise<void> }> = [];
+
+interface MutableMandatoryJournal {
+  entry: { checkpointIds: string[]; externalOperationIds: string[] };
+  checkpoints: Array<{ id: string; phase: string; operationCount: number; createdAt: string }>;
+  compensations: unknown[];
+}
+
+async function mutateJournalAndRebindArtifacts(
+  repositoryRoot: string,
+  repaired: Awaited<ReturnType<typeof executeProjector>>,
+  mutate: (journal: MutableMandatoryJournal) => void,
+): Promise<void> {
+  const journalDirectory = join(repositoryRoot, ".projector/runtime/journal");
+  const journalName = (await readdir(journalDirectory))[0];
+  if (journalName === undefined) throw new Error("expected committed journal");
+  const journalPath = join(journalDirectory, journalName);
+  const journal = JSON.parse(await readFile(journalPath, "utf8")) as MutableMandatoryJournal;
+  const originalJournalRef = `journal:${createHash("sha256").update(await readFile(journalPath, "utf8"), "utf8").digest("hex")}`;
+  mutate(journal);
+  const journalBytes = `${JSON.stringify(journal)}\n`;
+  await writeFile(journalPath, journalBytes, "utf8");
+  const updatedJournalRef = `journal:${createHash("sha256").update(journalBytes, "utf8").digest("hex")}`;
+
+  const certificatePath = String(repaired.report.certificateRef);
+  const certificateArtifact = JSON.parse(await readFile(certificatePath, "utf8")) as {
+    certificate: { deterministicOperations: Array<{ evidenceIds: string[] }> };
+  };
+  for (const operation of certificateArtifact.certificate.deterministicOperations) {
+    operation.evidenceIds = operation.evidenceIds.map((evidenceId) => evidenceId === originalJournalRef ? updatedJournalRef : evidenceId);
+  }
+  const certificateHash = hashFramedDomain("change-certificate-artifact", certificateArtifact);
+  const certificatePathUpdated = join(repositoryRoot, ".projector/reports/certificates", `${certificateHash.slice("sha256:v1:".length)}.json`);
+  await writeFile(certificatePathUpdated, `${canonicalJson(certificateArtifact)}\n`, "utf8");
+  if (certificatePathUpdated !== certificatePath) await rm(certificatePath, { force: true });
+
+  const receiptPath = String(repaired.report.receiptRef);
+  const receipt = JSON.parse(await readFile(receiptPath, "utf8")) as Record<string, unknown> & { semanticHash?: string };
+  const { semanticHash: _previousSemanticHash, ...receiptWithoutHash } = receipt;
+  const reboundReceipt = {
+    ...receiptWithoutHash,
+    certificateHash,
+    semanticHash: hashSemantic("transaction-receipt", { ...receiptWithoutHash, certificateHash }),
+  };
+  const receiptHash = hashFramedDomain("transaction-receipt-artifact", reboundReceipt);
+  const receiptPathUpdated = join(repositoryRoot, ".projector/receipts", `${receiptHash.slice("sha256:v1:".length)}.json`);
+  await writeFile(receiptPathUpdated, `${canonicalJson(reboundReceipt)}\n`, "utf8");
+  if (receiptPathUpdated !== receiptPath) await rm(receiptPath, { force: true });
+}
 
 async function createTempGitRepository(): Promise<{ root: string; dispose(): Promise<void> }> {
   const root = await mkdtemp(join(tmpdir(), "projector-cli-fixture-"));
@@ -194,6 +245,45 @@ describe("mandatory misplaced repository-script vertical slice", () => {
     journal.entry.transactionId = "transaction:forged";
     journal.entry.touchedPaths[0] = "scripts/forged.mjs";
     await writeFile(journalPath, `${JSON.stringify(journal)}\n`, "utf8");
+    const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
+    const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
+    expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
+  });
+
+  it.each([
+    ["missing checkpoint", (journal: MutableMandatoryJournal) => {
+      journal.checkpoints.shift();
+      journal.entry.checkpointIds.shift();
+    }],
+    ["extra checkpoint", (journal: MutableMandatoryJournal) => {
+      journal.checkpoints.push({ id: "unexpected-checkpoint", phase: "prepared", operationCount: 5, createdAt: "2026-08-07T00:00:00.000Z" });
+      journal.entry.checkpointIds.push("unexpected-checkpoint");
+    }],
+    ["reordered checkpoints", (journal: MutableMandatoryJournal) => {
+      [journal.checkpoints[0], journal.checkpoints[1]] = [journal.checkpoints[1]!, journal.checkpoints[0]!];
+      [journal.entry.checkpointIds[0], journal.entry.checkpointIds[1]] = [journal.entry.checkpointIds[1]!, journal.entry.checkpointIds[0]!];
+    }],
+    ["mismatched checkpoint tuple", (journal: MutableMandatoryJournal) => {
+      journal.checkpoints[2]!.operationCount = 4;
+    }],
+    ["unexpected compensation", (journal: MutableMandatoryJournal) => {
+      journal.compensations.push({
+        externalOperationId: "external:unexpected",
+        kind: "manual",
+        compensationId: "compensation:unexpected",
+        instructions: "unexpected compensation",
+        status: "completed",
+        recordedAt: "2026-08-07T00:00:00.000Z",
+        completedAt: "2026-08-07T00:00:00.000Z",
+      });
+      journal.entry.externalOperationIds.push("external:unexpected");
+    }],
+  ] as const)("rejects durable journal integrity mismatch: %s", async (_name, mutate) => {
+    const repository = await createTempGitRepository();
+    repositories.push(repository);
+    const repaired = await executeProjector(["reconcile", "--format", "json"], { cwd: repository.root });
+    expect(repaired.exitCode, repaired.output).toBe(0);
+    await mutateJournalAndRebindArtifacts(repository.root, repaired, mutate);
     const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
     const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
     expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");

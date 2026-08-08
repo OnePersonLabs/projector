@@ -58,7 +58,7 @@ const proofContracts: ReadonlyArray<{
   { kind: "divergences", required: ["divergenceIds", "counterEvidenceIds", "artifactRefs"], nonEmpty: ["divergenceIds", "counterEvidenceIds", "artifactRefs"] },
   { kind: "preview", required: ["planId", "operationKinds", "touchedUnitIds", "artifactRefs"], nonEmpty: ["planId", "operationKinds", "touchedUnitIds", "artifactRefs"] },
   { kind: "binding", required: ["planDependencyDigest", "capsuleDependencyDigest", "approvalDependencyDigest", "artifactRefs"], nonEmpty: ["planDependencyDigest", "capsuleDependencyDigest", "approvalDependencyDigest", "artifactRefs"] },
-  { kind: "lease-journal", required: ["leaseId", "transactionId", "journalPhases", "touchedPaths", "artifactRefs"], nonEmpty: ["leaseId", "transactionId", "journalPhases", "touchedPaths", "artifactRefs"] },
+  { kind: "lease-journal", required: ["leaseId", "transactionId", "journalRef", "journalPhases", "touchedPaths", "artifactRefs"], nonEmpty: ["leaseId", "transactionId", "journalRef", "journalPhases", "touchedPaths", "artifactRefs"] },
   { kind: "operations", required: ["operationIds", "touchedUnitIds", "pathSummaries", "artifactRefs"], nonEmpty: ["operationIds", "touchedUnitIds", "pathSummaries", "artifactRefs"] },
   { kind: "validators", required: ["validatorIds", "validationStatuses", "validatorEvidenceIds", "artifactRefs"], nonEmpty: ["validatorIds", "validationStatuses", "validatorEvidenceIds", "artifactRefs"] },
   { kind: "fixed-point", required: ["iterationDigests", "materialChanged", "terminalIteration", "artifactRefs"], nonEmpty: ["iterationDigests", "artifactRefs"] },
@@ -171,9 +171,14 @@ export function assertMandatoryVerticalSliceEvidence(
       || observedRefs.some((ref) => !Object.hasOwn(context.artifacts, ref))) {
       throw new Error(`mandatory vertical slice step ${index + 1} is not linked to an observed execution artifact`);
     }
+    const proofKeys = Object.keys(item.details.proof).filter((key) => key !== "artifactRefs").sort();
+    const observedProofKeys = Object.keys(observedProof).filter((key) => key !== "artifactRefs").sort();
+    if (proofKeys.length !== observedProofKeys.length || proofKeys.some((key, keyIndex) => key !== observedProofKeys[keyIndex])) {
+      throw new Error(`mandatory vertical slice step ${index + 1} proof keys do not exactly match execution observations`);
+    }
     for (const [key, value] of Object.entries(item.details.proof)) {
       if (key === "artifactRefs") continue;
-      if (!Object.hasOwn(observedProof, key) || canonicalComparable(observedProof[key]) !== canonicalComparable(value)) {
+      if (canonicalComparable(observedProof[key]) !== canonicalComparable(value)) {
         throw new Error(`mandatory vertical slice step ${index + 1} proof field ${key} does not correspond to execution observations`);
       }
     }
@@ -241,7 +246,7 @@ function validateProofContract(kind: MandatoryVerticalSliceEvidenceKind | undefi
     case "binding":
       return isHash(proof.planDependencyDigest) && proof.planDependencyDigest === proof.capsuleDependencyDigest && proof.planDependencyDigest === proof.approvalDependencyDigest;
     case "lease-journal":
-      return typeof proof.leaseId === "string" && (proof.leaseId.startsWith("lease:") || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/u.test(proof.leaseId)) && typeof proof.transactionId === "string" && proof.transactionId.startsWith("transaction:") && isStringArray(proof.journalPhases) && proof.journalPhases.includes("committed") && isStringArray(proof.touchedPaths);
+      return typeof proof.leaseId === "string" && (proof.leaseId.startsWith("lease:") || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/u.test(proof.leaseId)) && typeof proof.transactionId === "string" && proof.transactionId.startsWith("transaction:") && typeof proof.journalRef === "string" && /^journal:[0-9a-f]{64}$/u.test(proof.journalRef) && isStringArray(proof.journalPhases) && proof.journalPhases.includes("committed") && isStringArray(proof.touchedPaths);
     case "operations":
       return isStringArray(proof.operationIds) && isStringArray(proof.touchedUnitIds) && isStringArray(proof.pathSummaries) && proof.pathSummaries.some((summary) => summary.startsWith("moved ")) && proof.pathSummaries.some((summary) => summary.includes("reference"));
     case "validators":
