@@ -7,6 +7,7 @@ import {
   StateBoundChangeExecutor,
   QueryDependencyRegistry,
   compileProjectionLenses,
+  compileAuthenticatedCoverageSnapshot,
   createExecutionCapsule,
   createStateBinding,
   evaluateSelector,
@@ -23,6 +24,7 @@ describe("engine public entrypoint", () => {
     expect(groupCausalEvidence).toBeTypeOf("function");
     expect(evaluateSelector).toBeTypeOf("function");
     expect(compileProjectionLenses).toBeTypeOf("function");
+    expect(compileAuthenticatedCoverageSnapshot).toBeTypeOf("function");
     expect(createExecutionCapsule).toBeTypeOf("function");
     expect(StateBoundChangeExecutor).toBeTypeOf("function");
     expect(reconcileToFixedPoint).toBeTypeOf("function");
