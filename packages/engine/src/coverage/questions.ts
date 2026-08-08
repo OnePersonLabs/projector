@@ -1,0 +1,166 @@
+import {
+  AuthorityRecordSchema,
+  canonicalJson,
+  hashFramedDomain,
+  type AdapterContext,
+  type AuthorityRecord,
+  type ContentHash,
+  type StateBinding,
+  type StateBindingValidator,
+  type StateDigest,
+} from "@projector/core";
+
+import { authorityRecordHashIsValid } from "../architecture/evaluation.js";
+import { createStateBinding } from "../state/index.js";
+
+const RANKING_VERSION = "1";
+const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
+
+export type CompletionQuestionKind = "blocking-architecture" | "identity-fragmentation" | "relevance-fragmentation" | "semantic" | "cleanup" | "cosmetic";
+
+export interface CompletionQuestionCandidate {
+  readonly uncertaintyKey: string;
+  readonly kind: CompletionQuestionKind;
+  readonly displayText: string;
+  readonly scopeIds: readonly string[];
+  readonly evidenceDependencyIds: readonly string[];
+  readonly expectedUncertaintyReduction: number;
+  readonly affectedUnitCount: number;
+  readonly futureChangeFrequency: number;
+  readonly divergenceLeverage: number;
+  readonly decisionReuse: number;
+  readonly architectureMateriality: number;
+  readonly userEffort: number;
+  readonly ambiguity: number;
+  readonly risk: number;
+}
+
+export interface RankedCompletionQuestion extends CompletionQuestionCandidate {
+  readonly id: string;
+  readonly contentHash: ContentHash;
+  readonly rankingVersion: string;
+  readonly utility: number;
+  readonly scopeIds: string[];
+  readonly evidenceDependencyIds: string[];
+}
+
+export type CompletionAnswerOutcome = "approve" | "alternative" | "correction" | "exception" | "defer" | "policy";
+
+export interface SettledQuestionAnswer {
+  readonly id: string;
+  readonly questionId: string;
+  readonly questionContentHash: ContentHash;
+  readonly boundEvidenceHash: ContentHash;
+  readonly outcome: CompletionAnswerOutcome;
+  readonly answer: string;
+  readonly authorityRecordId: string;
+  readonly authoritySemanticHash: ContentHash;
+  readonly bindingDependencyDigest: ContentHash;
+  readonly revision: number;
+  readonly contentHash: ContentHash;
+}
+
+function finite(value: number, label: string, allowZero = true): void {
+  if (!Number.isFinite(value) || value < 0 || (!allowZero && value === 0)) throw new Error(`${label} ${allowZero ? "must be finite and non-negative" : "cost must be finite and positive"}`);
+}
+
+function normalizeCandidate(candidate: CompletionQuestionCandidate): Omit<RankedCompletionQuestion, "id" | "contentHash" | "utility"> {
+  if (candidate.uncertaintyKey.trim() === "" || candidate.displayText.trim() === "") throw new Error("completion question uncertainty and display text must be nonblank");
+  for (const [label, value] of Object.entries({ expectedUncertaintyReduction: candidate.expectedUncertaintyReduction, affectedUnitCount: candidate.affectedUnitCount, futureChangeFrequency: candidate.futureChangeFrequency, divergenceLeverage: candidate.divergenceLeverage, decisionReuse: candidate.decisionReuse, architectureMateriality: candidate.architectureMateriality })) finite(value, label);
+  finite(candidate.userEffort, "user effort", false); finite(candidate.ambiguity, "ambiguity", false); finite(candidate.risk, "risk", false);
+  return {
+    uncertaintyKey: candidate.uncertaintyKey.trim(), kind: candidate.kind, displayText: candidate.displayText.trim(), scopeIds: unique(candidate.scopeIds), evidenceDependencyIds: unique(candidate.evidenceDependencyIds), rankingVersion: RANKING_VERSION,
+    expectedUncertaintyReduction: candidate.expectedUncertaintyReduction, affectedUnitCount: candidate.affectedUnitCount, futureChangeFrequency: candidate.futureChangeFrequency,
+    divergenceLeverage: candidate.divergenceLeverage, decisionReuse: candidate.decisionReuse, architectureMateriality: candidate.architectureMateriality,
+    userEffort: candidate.userEffort, ambiguity: candidate.ambiguity, risk: candidate.risk,
+  };
+}
+
+function identitySemantic(question: Pick<RankedCompletionQuestion, "uncertaintyKey" | "kind" | "scopeIds" | "evidenceDependencyIds" | "rankingVersion">): object {
+  return { uncertaintyKey: question.uncertaintyKey, kind: question.kind, scopeIds: question.scopeIds, evidenceDependencyIds: question.evidenceDependencyIds, rankingVersion: question.rankingVersion };
+}
+
+function materiality(kind: CompletionQuestionKind): number {
+  if (kind === "blocking-architecture") return 1_000;
+  if (kind === "identity-fragmentation" || kind === "relevance-fragmentation") return 100;
+  if (kind === "semantic") return 10;
+  if (kind === "cleanup") return 1;
+  return 0.01;
+}
+
+function rank(candidate: CompletionQuestionCandidate): RankedCompletionQuestion {
+  const normalized = normalizeCandidate(candidate);
+  const identity = identitySemantic(normalized);
+  const idHash = hashFramedDomain("completion-question-identity", identity);
+  const numerator = normalized.expectedUncertaintyReduction * Math.max(1, normalized.affectedUnitCount) * Math.max(1, normalized.futureChangeFrequency)
+    * Math.max(1, normalized.divergenceLeverage) * Math.max(1, normalized.decisionReuse) * Math.max(1, normalized.architectureMateriality) * materiality(normalized.kind);
+  const utility = numerator / (normalized.userEffort * normalized.ambiguity * normalized.risk);
+  if (!Number.isFinite(utility)) throw new Error("completion question utility must be finite");
+  const semantic = { ...normalized, displayText: undefined, utilityInputs: { expectedUncertaintyReduction: normalized.expectedUncertaintyReduction, affectedUnitCount: normalized.affectedUnitCount, futureChangeFrequency: normalized.futureChangeFrequency, divergenceLeverage: normalized.divergenceLeverage, decisionReuse: normalized.decisionReuse, architectureMateriality: normalized.architectureMateriality, userEffort: normalized.userEffort, ambiguity: normalized.ambiguity, risk: normalized.risk } };
+  return { ...normalized, id: `completion_question_${idHash.slice(-32)}`, contentHash: hashFramedDomain("completion-question", semantic), utility };
+}
+
+export function rankCompletionQuestions(candidates: readonly CompletionQuestionCandidate[], settled: readonly SettledQuestionAnswer[], currentBindingDependencyDigest?: ContentHash): RankedCompletionQuestion[] {
+  const questions = new Map<string, RankedCompletionQuestion>();
+  for (const candidate of candidates) {
+    const question = rank(candidate);
+    const existing = questions.get(question.id);
+    if (existing !== undefined && existing.contentHash !== question.contentHash) throw new Error(`conflicting completion question identity ${question.id}`);
+    questions.set(question.id, existing ?? question);
+  }
+  const settledByQuestion = new Map(settled.map((answer) => [answer.questionId, answer]));
+  return [...questions.values()].filter((question) => {
+    const answer = settledByQuestion.get(question.id);
+    return answer === undefined || answer.questionContentHash !== question.contentHash
+      || (currentBindingDependencyDigest !== undefined && answer.bindingDependencyDigest !== currentBindingDependencyDigest);
+  }).sort((left, right) => right.utility - left.utility || compare(left.id, right.id));
+}
+
+export interface SettledAnswerStore {
+  read(questionId: string): Promise<Readonly<SettledQuestionAnswer> | undefined>;
+  compareAndStore(expectedRevision: number | undefined, answer: Readonly<SettledQuestionAnswer>): Promise<{ readonly status: "stored" | "idempotent" | "conflict"; readonly answer?: Readonly<SettledQuestionAnswer> }>;
+}
+
+export class InMemorySettledAnswerStore implements SettledAnswerStore {
+  private readonly answers = new Map<string, Readonly<SettledQuestionAnswer>>();
+  async read(questionId: string): Promise<Readonly<SettledQuestionAnswer> | undefined> { const answer = this.answers.get(questionId); return answer === undefined ? undefined : structuredClone(answer); }
+  async compareAndStore(expectedRevision: number | undefined, answer: Readonly<SettledQuestionAnswer>): Promise<{ status: "stored" | "idempotent" | "conflict"; answer?: Readonly<SettledQuestionAnswer> }> {
+    const current = this.answers.get(answer.questionId);
+    if (current !== undefined && canonicalJson(current) === canonicalJson(answer)) return { status: "idempotent", answer: structuredClone(current) };
+    if ((current?.revision) !== expectedRevision) return { status: "conflict" };
+    this.answers.set(answer.questionId, structuredClone(answer));
+    return { status: "stored", answer: structuredClone(answer) };
+  }
+}
+
+export interface QuestionAuthorityPort { read(id: string): Promise<AuthorityRecord | undefined> }
+
+export async function settleCompletionQuestion(
+  input: { readonly question: RankedCompletionQuestion; readonly outcome: CompletionAnswerOutcome; readonly answer: string; readonly authorityRecordId: string; readonly boundState: StateBinding; readonly currentState: StateDigest; readonly context: AdapterContext },
+  ports: { readonly authority: QuestionAuthorityPort; readonly bindingValidator: StateBindingValidator; readonly store: SettledAnswerStore },
+): Promise<SettledQuestionAnswer> {
+  if (input.answer.trim() === "") throw new Error("settled answer must not be blank");
+  const reranked = rank(input.question);
+  if (reranked.id !== input.question.id || reranked.contentHash !== input.question.contentHash) throw new Error("question contract or semantic hash is invalid");
+  const normalizedBinding = createStateBinding(input.boundState);
+  if (normalizedBinding.dependencyDigest !== input.boundState.dependencyDigest) throw new Error("settled answer StateBinding is invalid");
+  const validation = await ports.bindingValidator.validate(normalizedBinding, input.currentState, input.context);
+  if (validation.status !== "current" && validation.status !== "rebound") throw new Error(`settled answer binding is ${validation.status}`);
+  const current = await ports.store.read(input.question.id);
+  const boundEvidenceHash = hashFramedDomain("completion-question-bound-evidence", { evidenceDependencyIds: input.question.evidenceDependencyIds, questionContentHash: input.question.contentHash, bindingDependencyDigest: normalizedBinding.dependencyDigest });
+  const revision = current === undefined ? 1 : current.revision + 1;
+  const authorityRaw = await ports.authority.read(input.authorityRecordId);
+  const parsed = AuthorityRecordSchema.safeParse(authorityRaw);
+  if (!parsed.success) throw new Error("settled answer authority record is unavailable or invalid");
+  const authority = parsed.data as AuthorityRecord;
+  if (!authorityRecordHashIsValid(authority) || authority.subjectId !== input.question.id || !["approved", "auto-approved"].includes(authority.status)) throw new Error("settled answer authority proof is not approved for this question");
+  const semantic = { questionId: input.question.id, questionContentHash: input.question.contentHash, boundEvidenceHash, outcome: input.outcome, answer: input.answer.trim(), authorityRecordId: authority.id, authoritySemanticHash: authority.semanticHash, bindingDependencyDigest: normalizedBinding.dependencyDigest, revision };
+  const contentHash = hashFramedDomain("settled-completion-answer", semantic);
+  const answer: SettledQuestionAnswer = { id: `settled_answer_${contentHash.slice(-32)}`, ...semantic, contentHash };
+  if (current !== undefined && current.questionContentHash === answer.questionContentHash && current.boundEvidenceHash === answer.boundEvidenceHash && current.outcome === answer.outcome && current.answer === answer.answer && current.authoritySemanticHash === answer.authoritySemanticHash) return current as SettledQuestionAnswer;
+  if (current !== undefined && input.outcome !== "correction") throw new Error("conflicting settled answer requires an explicit correction revision");
+  const stored = await ports.store.compareAndStore(current?.revision, answer);
+  if (stored.status === "conflict") throw new Error("settled answer compare-and-store race conflict");
+  return (stored.answer ?? answer) as SettledQuestionAnswer;
+}

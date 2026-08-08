@@ -35,6 +35,9 @@ Commands:
   plan                  Preview a state-bound deterministic repair
   apply                 Apply the approved R1 repair once
   reconcile             Apply and reconcile the repair to a fixed point
+  coverage              Report authenticated multi-dimensional coverage
+  complete              Rank the next authenticated completion work
+  cleanup               Resume a trusted cleanup continuation plan
   explain <target>      Explain findings for a path or finding identity
 
 Options:
@@ -59,6 +62,25 @@ export interface ProjectorCommandOptions {
     readonly operation?: OperationRiskInput;
   };
   readonly architecture?: ArchitectureCliPort;
+  readonly coverage?: CoverageCliPort;
+}
+
+export type CoverageStrictness = "proven" | "bounded" | "high-confidence" | "partial";
+export interface CoverageCliRequest { readonly scope: string; readonly strictness: CoverageStrictness; readonly budgetTokens?: number; readonly budgetCost?: number; readonly continuationSelector?: string }
+export interface CoverageCliReport {
+  readonly proofStatement: string;
+  readonly strictnessMet: boolean;
+  readonly requiredUnavailable: boolean;
+  readonly approvalRequired: boolean;
+  readonly budgetExhausted: boolean;
+  readonly continuationPersisted: boolean;
+  readonly boundary: readonly string[];
+  readonly [key: string]: unknown;
+}
+export interface CoverageCliPort {
+  readonly coverage: (request: CoverageCliRequest) => Promise<CoverageCliReport>;
+  readonly complete: (request: CoverageCliRequest) => Promise<CoverageCliReport>;
+  readonly cleanup: (request: CoverageCliRequest) => Promise<CoverageCliReport>;
 }
 
 export interface ArchitectureCliPort {
@@ -83,20 +105,36 @@ interface ParsedCommand {
   readonly format: "text" | "json";
   readonly policy: CliPolicyInput;
   readonly decisions: boolean;
+  readonly coverageRequest: CoverageCliRequest;
 }
 
 function optionValue(arguments_: readonly string[], name: string): string | undefined {
-  const index = arguments_.indexOf(name);
-  if (index < 0) return undefined;
+  const indexes = arguments_.flatMap((value, index) => value === name ? [index] : []);
+  if (indexes.length > 1) throw new Error(`duplicate ${name.replace(/^--/u, "")} option`);
+  const index = indexes[0];
+  if (index === undefined) return undefined;
   const value = arguments_[index + 1];
   if (value === undefined || value.startsWith("-")) throw new Error(`${name} requires a value`);
   return value;
 }
 
+function positiveNumber(raw: string | undefined, name: string, integer = false): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0 || (integer && !Number.isSafeInteger(value))) throw new Error(`${name} must be a positive finite${integer ? " integer" : ""} value`);
+  return value;
+}
+
+function normalizeScope(raw: string | undefined): string {
+  const scope = (raw ?? ".").trim().replace(/\\/gu, "/").replace(/^\.\//u, "").replace(/\/{2,}/gu, "/").replace(/\/$/u, "") || ".";
+  if (scope.startsWith("/") || scope.split("/").includes("..")) throw new Error("--scope must remain within the repository boundary");
+  return scope;
+}
+
 function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const command = arguments_[0];
   if (command !== "init" && command !== "audit" && command !== "plan" && command !== "apply"
-    && command !== "reconcile" && command !== "explain") {
+    && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
   const formatValue = optionValue(arguments_, "--format") ?? "text";
@@ -112,11 +150,30 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
   if (command === "explain" && target === undefined) throw new Error("explain requires a target");
   const decisions = arguments_.includes("--decisions");
   if (decisions && command !== "audit") throw new Error("--decisions is only valid with audit");
+  const coverageCommand = command === "coverage" || command === "complete" || command === "cleanup";
+  const explicitStrictness = optionValue(arguments_, "--strictness");
+  const rawScope = optionValue(arguments_, "--scope");
+  const rawBudgetTokens = optionValue(arguments_, "--budget-tokens");
+  const rawBudgetCost = optionValue(arguments_, "--budget-cost");
+  if (!coverageCommand && [explicitStrictness, rawScope, rawBudgetTokens, rawBudgetCost].some((value) => value !== undefined)) throw new Error("coverage scope, strictness, and budgets are only valid with coverage, complete, or cleanup");
+  const strictnessValue = explicitStrictness ?? "bounded";
+  if (strictnessValue !== "proven" && strictnessValue !== "bounded" && strictnessValue !== "high-confidence" && strictnessValue !== "partial") throw new Error(`unsupported coverage strictness: ${strictnessValue}`);
+  const continuationSelector = optionValue(arguments_, "--continuation");
+  if (continuationSelector !== undefined && command !== "cleanup") throw new Error("--continuation is only valid with cleanup");
+  const budgetTokens = positiveNumber(rawBudgetTokens, "--budget-tokens", true);
+  const budgetCost = positiveNumber(rawBudgetCost, "--budget-cost");
   return {
     command,
     ...(target === undefined ? {} : { target }),
     format: formatValue,
     decisions,
+    coverageRequest: {
+      scope: normalizeScope(rawScope),
+      strictness: strictnessValue,
+      ...(budgetTokens === undefined ? {} : { budgetTokens }),
+      ...(budgetCost === undefined ? {} : { budgetCost }),
+      ...(continuationSelector === undefined ? {} : { continuationSelector: continuationSelector.trim() }),
+    },
     policy: {
       command,
       ...(modeValue === undefined ? {} : { mode: modeValue }),
@@ -139,6 +196,7 @@ function outputFor(command: SliceCommand, report: unknown, format: "text" | "jso
   }
   if (command === "plan") return (report as { preview: { expectedDiff: string } }).preview.expectedDiff;
   if (command === "explain") return (report as { explanation: string }).explanation;
+  if (command === "coverage" || command === "complete" || command === "cleanup") return `${command}: ${(report as CoverageCliReport).proofStatement}`;
   return `${command} completed.`;
 }
 
@@ -249,6 +307,20 @@ export async function executeProjector(
         }
         throw error;
       }
+      break;
+    }
+    case "coverage":
+    case "complete":
+    case "cleanup": {
+      if (options.coverage === undefined) return { exitCode: 5, output: "coverage composition provider is unavailable", report: { policy, requiredUnavailable: true } };
+      const provider = parsed.command === "coverage" ? options.coverage.coverage : parsed.command === "complete" ? options.coverage.complete : options.coverage.cleanup;
+      const coverageReport = await provider(parsed.coverageRequest);
+      report = { policy, ...coverageReport };
+      exitCode = coverageReport.requiredUnavailable ? 5
+        : coverageReport.budgetExhausted && coverageReport.continuationPersisted ? 7
+          : coverageReport.budgetExhausted ? 1
+          : coverageReport.approvalRequired ? 3
+            : !coverageReport.strictnessMet ? 4 : 0;
       break;
     }
     case "explain": {

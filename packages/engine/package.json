@@ -11,6 +11,10 @@
     "./architecture": {
       "types": "./dist/architecture/index.d.ts",
       "default": "./dist/architecture/index.js"
+    },
+    "./coverage": {
+      "types": "./dist/coverage/index.d.ts",
+      "default": "./dist/coverage/index.js"
     }
   },
   "files": ["dist"],
