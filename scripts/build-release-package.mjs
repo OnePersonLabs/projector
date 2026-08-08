@@ -1,0 +1,24 @@
+import { execFile } from "node:child_process";
+import { chmod, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const execute = promisify(execFile);
+const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const internalPackages = ["core", "analyzers", "engine", "runtime", "integrations", "testkit"];
+const bundledNames = internalPackages.map((name) => `@projector/${name}`);
+const exportTargets = { ".": "cli", "./cli": "cli", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./testkit": "testkit" };
+
+export async function buildReleasePackage(stagingRoot, packDestination) {
+  if (!basename(stagingRoot).startsWith("projector-release-")) throw new Error("release staging root must be a dedicated projector-release-* directory"); await rm(stagingRoot, { recursive: true, force: true }); await mkdir(stagingRoot, { recursive: true }); await mkdir(packDestination, { recursive: true });
+  await cp(join(repositoryRoot, "packages/cli/dist"), join(stagingRoot, "dist"), { recursive: true }); await mkdir(join(stagingRoot, "exports"), { recursive: true }); await mkdir(join(stagingRoot, "node_modules/@projector"), { recursive: true });
+  for (const name of internalPackages) { const source = join(repositoryRoot, `packages/${name}`); const target = join(stagingRoot, `node_modules/@projector/${name}`); await mkdir(target, { recursive: true }); await cp(join(source, "dist"), join(target, "dist"), { recursive: true }); const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8")); manifest.private = false; for (const group of ["dependencies", "optionalDependencies", "peerDependencies"]) if (manifest[group] !== undefined) for (const [dependency, version] of Object.entries(manifest[group])) if (typeof version === "string" && version.startsWith("workspace:")) manifest[group][dependency] = "2.0.0"; await writeFile(join(target, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`); }
+  const zod = await realpath(join(repositoryRoot, "packages/core/node_modules/zod")); await cp(zod, join(stagingRoot, "node_modules/zod"), { recursive: true });
+  for (const [subpath, target] of Object.entries(exportTargets)) { const name = subpath === "." ? "index" : subpath.slice(2).replaceAll("/", "-"); const statement = target === "cli" ? `export * from "../dist/cli.js";\n` : `export * from "@projector/${target.split("/")[0]}${target.includes("/") ? `/${target.split("/").slice(1).join("/")}` : ""}";\n`; await writeFile(join(stagingRoot, `exports/${name}.js`), statement); }
+  await mkdir(join(stagingRoot, "bin")); const binPath = join(stagingRoot, "bin/projector.js"); await writeFile(binPath, "#!/usr/bin/env node\nimport { main } from \"../dist/cli.js\";\nprocess.exitCode = await main();\n"); await chmod(binPath, 0o755);
+  const packageJson = { name: "projector", version: "2.0.0", description: "Local semantic governance and change execution kernel", type: "module", engines: { node: ">=24 <25" }, bin: { projector: "./bin/projector.js" }, exports: Object.fromEntries(Object.keys(exportTargets).map((subpath) => [subpath, `./exports/${subpath === "." ? "index" : subpath.slice(2).replaceAll("/", "-")}.js`])), files: ["bin", "dist", "exports"], dependencies: Object.fromEntries([...bundledNames.map((name) => [name, "2.0.0"]), ["zod", "^4.0.15"]]), bundledDependencies: [...bundledNames, "zod"], publishConfig: { access: "public" } }; await writeFile(join(stagingRoot, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
+  const { stdout } = await execute("npm", ["pack", "--json", "--pack-destination", packDestination], { cwd: stagingRoot, encoding: "utf8", maxBuffer: 10_000_000 }); const packed = JSON.parse(stdout); const metadata = Array.isArray(packed) ? packed[0] : packed.projector; if (metadata?.filename === undefined) throw new Error("npm pack did not return a tarball"); return join(packDestination, metadata.filename);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) { const staging = process.argv[2]; const destination = process.argv[3] ?? (staging === undefined ? undefined : dirname(staging)); if (staging === undefined || destination === undefined) throw new Error("usage: build-release-package <projector-release-staging> [pack-destination]"); process.stdout.write(`${await buildReleasePackage(staging, destination)}\n`); }

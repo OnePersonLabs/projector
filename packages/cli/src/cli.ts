@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type ContentHash, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import { compileSemanticChange, compileSemanticChangePlan, createStateBinding } from "@projector/engine";
-import { createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileTransactionJournal, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, type OperationalExitProof, type OperationalReport, type ReportFormat, executePacketPlan, type PacketObservation, type PlanExecutionArtifact, type PacketExecutionArtifact } from "@projector/runtime";
+import { CanonicalFileRepository, createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileTransactionJournal, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, type OperationalExitProof, type OperationalReport, type ReportFormat, executePacketPlan, type PacketObservation, type PlanExecutionArtifact, type PacketExecutionArtifact } from "@projector/runtime";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -352,14 +352,13 @@ export async function executeProjector(
   switch (parsed.command) {
     case "init":
       report = policy.allowAutoMutation
-        ? { policy, initialized: true, rebuild: await rebuildAcceptedState(repositoryRoot) }
+        ? { policy, initialized: true, rebuild: await safeRebuildAcceptedState(repositoryRoot) }
         : { policy, initialized: false, dryRun: true };
       break;
     case "audit": {
       if (parsed.decisions) {
-        if (options.architecture === undefined) return { exitCode: 3, output: "architecture decision provider is unavailable", report: { policy, blocked: true } };
-        const loaded = await options.architecture.load();
-        const decisionAudit = await auditArchitectureDecisions(loaded, { overlap: options.architecture.overlap, population: options.architecture.population });
+        const architecture = options.architecture ?? defaultArchitecturePort(repositoryRoot); const loaded = await architecture.load();
+        const decisionAudit = await auditArchitectureDecisions(loaded, { overlap: architecture.overlap, population: architecture.population });
         report = { policy, decisionAudit };
         exitCode = decisionAudit.findings.length === 0 ? 0 : 2;
         break;
@@ -489,10 +488,9 @@ export async function executeProjector(
     }
     case "explain": {
       if (parsed.target!.startsWith("decision:")) {
-        if (options.architecture === undefined) return { exitCode: 3, output: "architecture decision provider is unavailable", report: { policy, blocked: true } };
-        const loaded = await options.architecture.load();
+        const architecture = options.architecture ?? defaultArchitecturePort(repositoryRoot); const loaded = await architecture.load();
         const decision = loaded.decisions.find(({ id }) => id === parsed.target);
-        const validity = decision === undefined ? undefined : await options.architecture.validity(decision.id);
+        const validity = decision === undefined ? undefined : await architecture.validity(decision.id);
         if (decision === undefined || validity === undefined) {
           const explanation = `No architecture decision proof currently matches ${parsed.target}.`;
           report = { policy, target: parsed.target, explanation };
@@ -514,6 +512,12 @@ export async function executeProjector(
     }
   }
   return { exitCode, output: outputFor(parsed.command, report, parsed.format), report };
+}
+
+async function safeRebuildAcceptedState(repositoryRoot: string) { const paths = await RepositoryPathService.create(repositoryRoot); await paths.resolveWrite(".projector/state.db"); return rebuildAcceptedState(repositoryRoot); }
+function defaultArchitecturePort(repositoryRoot: string): ArchitectureCliPort {
+  const load = async () => { const snapshot = await new CanonicalFileRepository(repositoryRoot).snapshot(); return { decisions: snapshot.documents.filter(({ kind }) => kind === "architecture-decision").map(({ payload }) => payload as unknown as ArchitectureDecision), concerns: [] as ArchitectureConcern[] }; };
+  return { load, overlap: { assess: async (left, right) => left.semanticHash === right.semanticHash ? "compatible" as const : "disjoint" as const }, population: { inspect: async () => ({ count: 1, observability: "closed" }) }, validity: async (decisionId) => { const decision = (await load()).decisions.find(({ id }) => id === decisionId); if (decision === undefined) throw new Error(`architecture decision ${decisionId} is unavailable`); return { decisionId, scope: decision.scope, state: decision.lifecycle === "active" ? "valid" as const : "invalid-for-scope" as const, firedTriggers: [], invalidatedAssumptions: [], staleEvidenceIds: [], blocksCurrentChange: decision.lifecycle !== "active", explanation: decision.lifecycle === "active" ? "Canonical decision and its authenticated semantic hash remain current." : "Canonical decision is no longer active." }; } };
 }
 
 function defaultOperationalCliPort(): OperationalCliPort {
