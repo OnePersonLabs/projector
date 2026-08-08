@@ -325,6 +325,14 @@ function idResults(ids: readonly string[], disposition?: string): QueryResult[] 
 }
 
 export const BUILT_IN_QUERY_PROGRAM_IDS = Object.freeze({
+  identityExactSearch: "identity.exact-search",
+  identityAliasSearch: "identity.alias-search",
+  identityLineage: "identity.lineage",
+  identityTombstone: "identity.tombstone",
+  identityRelations: "identity.relations",
+  identityTopology: "identity.topology",
+  eventTopologyRelevance: "projector.topology.event-relevance",
+  contractTopologyRelevance: "projector.topology.contract-relevance",
   exactReverseDerivation: "invalidation.exact-reverse-derivation",
   transitiveReverseDerivation: "invalidation.transitive-reverse-derivation",
   impactRuleSelectorMembership: "invalidation.impact-rule-selector-membership",
@@ -332,6 +340,44 @@ export const BUILT_IN_QUERY_PROGRAM_IDS = Object.freeze({
   impactRuleReverseTraversal: "invalidation.impact-rule-reverse-traversal",
   impactRuleEnumeration: "invalidation.impact-rule-enumeration",
 } as const);
+
+export interface TopologyRelevanceQueryStatePort {
+  inspect(subjectId: string, subjectKind: "event" | "contract", context: AdapterContext): QueryProgramResult | Promise<QueryProgramResult>;
+}
+
+export function createTopologyRelevanceQueryPrograms(port: TopologyRelevanceQueryStatePort): RegisteredQueryProgram[] {
+  const create = (subjectKind: "event" | "contract"): RegisteredQueryProgram => ({
+    id: subjectKind === "event" ? BUILT_IN_QUERY_PROGRAM_IDS.eventTopologyRelevance : BUILT_IN_QUERY_PROGRAM_IDS.contractTopologyRelevance,
+    version: "1",
+    kind: subjectKind === "event" ? "event-topology" : "contract-topology",
+    normalizeInput: (input) => ({ subjectId: requireString(input, "subjectId") }),
+    evaluate: ({ input, context }) => port.inspect(requireString(input, "subjectId"), subjectKind, context),
+  });
+  return [create("event"), create("contract")];
+}
+
+function identityBoundaryProgram(id: string, kind: StateQueryKind): RegisteredQueryProgram {
+  const normalize = (input: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+    const requestedMeaning = requireString(input, "requestedMeaning").normalize("NFKC").trim();
+    const requestedKind = requireString(input, "requestedKind");
+    if (!["concept", "requirement", "scenario", "unknown"].includes(requestedKind)) {
+      throw new InvalidQuerySpecError("identity requestedKind is invalid");
+    }
+    return { requestedMeaning, requestedKind };
+  };
+  return {
+    id, version: "1", kind, normalizeInput: normalize,
+    evaluate: ({ input, graph }) => {
+      const normalized = normalize(input);
+      const requestedKind = normalized.requestedKind as string;
+      const kinds = requestedKind === "unknown" ? undefined : [requestedKind as SemanticIdentityKind];
+      return {
+        results: graph.searchSemanticIdentities(normalized.requestedMeaning as string, kinds).map((resultId) => ({ id: resultId })),
+        observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: [`${id}:${requestedKind}`],
+      };
+    },
+  };
+}
 
 function impactTraversalProgram(
   id: typeof BUILT_IN_QUERY_PROGRAM_IDS.impactRuleReverseTraversal | typeof BUILT_IN_QUERY_PROGRAM_IDS.impactRuleEnumeration,
@@ -360,6 +406,12 @@ function impactTraversalProgram(
 
 function builtInPrograms(): RegisteredQueryProgram[] {
   return [
+    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityExactSearch, "semantic-identity-search"),
+    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityAliasSearch, "semantic-identity-search"),
+    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityLineage, "custom"),
+    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityTombstone, "custom"),
+    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityRelations, "relation-neighborhood"),
+    identityBoundaryProgram(BUILT_IN_QUERY_PROGRAM_IDS.identityTopology, "event-topology"),
     {
       id: "graph.semantic-identity-search",
       version: "1",
@@ -636,4 +688,22 @@ export class QueryDependencyRegistry implements StateQueryReader {
     const raw = await program.evaluate({ input: structuredClone(query.input), graph: this.graph, context });
     return normalizeProgramResult(program.id, expectedHash, raw);
   }
+}
+
+export function createTopologyQueryBindingPort(registry: QueryDependencyRegistry): {
+  bind(subjectId: string, subjectKind: "event" | "contract", context: AdapterContext): Promise<StateQueryDependency>;
+} {
+  return {
+    bind: async (subjectId, subjectKind, context) => {
+      const programId = subjectKind === "event"
+        ? BUILT_IN_QUERY_PROGRAM_IDS.eventTopologyRelevance
+        : BUILT_IN_QUERY_PROGRAM_IDS.contractTopologyRelevance;
+      const query = registry.createSpec({ id: `topology-consumers:${subjectId}`, programId, input: { subjectId } });
+      return {
+        query,
+        priorResult: await registry.evaluate(query, context),
+        role: `known ${subjectKind} consumers and negative space for ${subjectId}`,
+      };
+    },
+  };
 }

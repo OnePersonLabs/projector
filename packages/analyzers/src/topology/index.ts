@@ -89,8 +89,15 @@ export function compileEventContractTopology(
   observations: readonly TopologyObservation[],
   enumeration?: EnumerationContract,
 ): EventContractTopology {
+  if (enumeration !== undefined && (enumeration.observability === "closed" || enumeration.observability === "bounded")
+    && enumeration.method.trim().length === 0) {
+    throw new Error(`${enumeration.observability} topology enumeration requires an explicit proof method`);
+  }
   if (enumeration?.observability === "bounded" && enumeration.assumptions.length === 0) {
     throw new Error("bounded topology enumeration requires an explicit proof assumption");
+  }
+  if (enumeration?.observability === "closed" && (enumeration.blindSpots.length > 0 || enumeration.dynamicMechanisms.length > 0)) {
+    throw new Error("closed topology enumeration cannot retain blind spots or dynamic mechanisms outside its proof");
   }
   const unique = new Map<string, ReturnType<typeof normalize>>();
   const subjectSemantics = new Map<string, string>();
@@ -131,8 +138,8 @@ export function compileEventContractTopology(
       .map(({ participantId, role, assurance, confidence, evidenceIds, adapterVersion, artifactHash }) => ({
         participantId, role, assurance, confidence, evidenceIds: [...evidenceIds], adapterVersion, artifactHash,
       }));
-    const routeIdentity = { subjectId: head.subjectId, subjectKind: head.subjectKind, semanticKey: head.semanticKey };
-    const defaultObservability: ObservabilityClass = links.every(({ assurance }) => assurance === "exact") ? "closed" : "open";
+    const routeIdentity = { subjectId: head.subjectId, subjectKind: head.subjectKind };
+    const defaultObservability: ObservabilityClass = "open";
     const semantic = {
       subjectId: head.subjectId,
       subjectKind: head.subjectKind,
@@ -173,16 +180,62 @@ export interface TopologyRelevanceAdapter {
   discover(subjectId: string, depth: number, context: AdapterContext): Promise<TopologyRelevanceDiscoveryResult>;
 }
 
-/** Host-neutral structural adapter: engine consumers can inject it as a relevance discovery port without analyzer coupling. */
-export function createTopologyRelevanceAdapter(topology: EventContractTopology): TopologyRelevanceAdapter {
+export interface TopologyQueryBindingPort {
+  bind(subjectId: string, subjectKind: "event" | "contract", context: AdapterContext): Promise<StateQueryDependency>;
+}
+
+/** Host-neutral current-state projection consumed by the engine's registered topology query factory. */
+export function createTopologyRelevanceQueryStatePort(topology: EventContractTopology): {
+  inspect(subjectId: string, subjectKind: "event" | "contract"): {
+    results: Array<Record<string, unknown>>;
+    observability: ObservabilityClass;
+    assumptions: string[];
+    unavailableLanes: string[];
+    dependencyKeys: string[];
+  };
+} {
   const routes = new Map(topology.routes.map((route) => [route.subjectId, route]));
   return {
-    discover: async (subjectId) => {
+    inspect: (subjectId, subjectKind) => {
       const route = routes.get(subjectId);
-      const queryKind = route?.subjectKind === "event" ? "event-topology" as const
-        : route?.subjectKind === "contract" ? "contract-topology" as const : "custom" as const;
-      const queryBasis = { subjectId, subjectKind: route?.subjectKind ?? "unknown" };
-      const queryHash = hashFramedDomain("topology-relevance-query", { programId: "projector.topology.relevance", programVersion: "1", input: queryBasis });
+      if (route === undefined || route.subjectKind !== subjectKind) {
+        return { results: [], observability: "unavailable", assumptions: [], unavailableLanes: [`topology:${subjectId}`], dependencyKeys: [`topology:${subjectId}`] };
+      }
+      return {
+        results: route.links.filter(({ role }) => role === "consumer").map((link) => ({
+          id: `${link.role}:${link.participantId}`,
+          subjectId: route.subjectId,
+          subjectKind: route.subjectKind,
+          semanticKey: route.semanticKey,
+          observability: route.observability,
+          enumeration: route.enumeration ?? null,
+          participantId: link.participantId,
+          role: link.role,
+          assurance: link.assurance,
+          confidence: link.confidence,
+          evidenceIds: link.evidenceIds,
+          adapterVersion: link.adapterVersion,
+          artifactHash: link.artifactHash,
+          requiredForPlanning: link.assurance !== "heuristic",
+          reasonKind: route.subjectKind === "contract" ? "contract-producer-consumer" : "event-producer-consumer",
+          reasonExplanation: `${link.role} of ${route.semanticKey} observed with ${link.assurance} assurance`,
+        })),
+        observability: route.observability,
+        assumptions: route.enumeration?.assumptions ?? [],
+        unavailableLanes: [],
+        dependencyKeys: [`topology:${subjectId}`],
+      };
+    },
+  };
+}
+
+/** Host-neutral structural adapter: engine consumers can inject it as a relevance discovery port without analyzer coupling. */
+export function createTopologyRelevanceAdapter(topology: EventContractTopology, queryBinding: TopologyQueryBindingPort): TopologyRelevanceAdapter {
+  const routes = new Map(topology.routes.map((route) => [route.subjectId, route]));
+  return {
+    discover: async (subjectId, _depth, context) => {
+      const route = routes.get(subjectId);
+      if (route === undefined) throw new Error(`topology route ${subjectId} is unavailable for registered query binding`);
       const links = route?.links.filter(({ role }) => role === "consumer") ?? [];
       const edges = links.map((link): TopologyRelevanceEdge => ({
         entityId: link.participantId,
@@ -200,24 +253,29 @@ export function createTopologyRelevanceAdapter(topology: EventContractTopology):
         },
         cost: 1,
       })).sort((left, right) => compareStrings(left.entityId, right.entityId));
-      const resultProjection = links.map(({ participantId, role, assurance, confidence, artifactHash, adapterVersion }) => ({
-        participantId, role, assurance, confidence, artifactHash, adapterVersion,
-      }));
+      const dependency = await queryBinding.bind(subjectId, route.subjectKind, context);
+      const programId = `projector.topology.${route.subjectKind}-relevance`;
+      const kind = `${route.subjectKind}-topology` as "event-topology" | "contract-topology";
+      const input = { subjectId };
+      const queryHash = hashFramedDomain("state-query", { kind, programId, programVersion: "1", input });
+      const snapshot = createTopologyRelevanceQueryStatePort(topology).inspect(subjectId, route.subjectKind);
+      const expectedFingerprint = {
+        queryHash,
+        resultHash: hashFramedDomain("state-query-result", snapshot.results),
+        resultCount: snapshot.results.length,
+        observability: snapshot.observability,
+        assumptions: snapshot.assumptions,
+        unavailableLanes: snapshot.unavailableLanes,
+        dependencyKeys: snapshot.dependencyKeys,
+      };
+      if (dependency.query.kind !== kind || dependency.query.programId !== programId || dependency.query.programVersion !== "1"
+        || canonicalJson(dependency.query.input) !== canonicalJson(input) || dependency.query.semanticHash !== queryHash
+        || canonicalJson(dependency.priorResult) !== canonicalJson(expectedFingerprint)) {
+        throw new Error(`topology query binding for ${subjectId} is not the canonical registered query fingerprint`);
+      }
       return {
         edges,
-        dependency: {
-          query: { id: `topology-consumers:${subjectId}`, kind: queryKind, programId: "projector.topology.relevance", programVersion: "1", input: queryBasis, semanticHash: queryHash },
-          priorResult: {
-            queryHash,
-            resultHash: hashFramedDomain("topology-relevance-result", resultProjection),
-            resultCount: edges.length,
-            observability: route?.observability ?? "unavailable",
-            assumptions: route?.enumeration?.assumptions ?? [],
-            unavailableLanes: route === undefined ? [`topology:${subjectId}`] : [],
-            dependencyKeys: [`topology:${subjectId}`],
-          },
-          role: `known ${route?.subjectKind ?? "event/contract"} consumers and negative space for ${subjectId}`,
-        },
+        dependency,
       };
     },
   };

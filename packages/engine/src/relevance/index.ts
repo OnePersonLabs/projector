@@ -439,9 +439,13 @@ export function classifyPlanningSurprise(input: {
   }
   const classification = classify(unexpected);
   const impactClassifications = unexpected.map((item) => ({ entityId: item.entityId, classification: classify([item]) }));
+  const overreachIds = new Set(impactClassifications
+    .filter(({ classification: itemClassification }) => itemClassification === "agent-overreach")
+    .map(({ entityId }) => entityId));
   const proposals: RelationshipProposal[] = unexpected.flatMap(({ legitimacy, proposedRelation, evidence }) => {
       if (legitimacy !== "required") return [];
       if (proposedRelation === undefined || evidence.length === 0) return [];
+      if (overreachIds.has(proposedRelation.fromId) || overreachIds.has(proposedRelation.toId)) return [];
       const basis = { ...proposedRelation, evidence };
       const contentHash = hashFramedDomain("relationship-proposal", basis);
       return [{

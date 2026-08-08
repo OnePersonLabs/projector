@@ -13,6 +13,8 @@ import {
   InMemoryGraphReader,
   QueryDependencyRegistry,
   UnknownQueryProgramError,
+  createTopologyQueryBindingPort,
+  createTopologyRelevanceQueryPrograms,
 } from "./index.js";
 
 const hash = (value: string): ContentHash => `sha256:v1:${value.padEnd(64, "0")}`;
@@ -97,6 +99,30 @@ describe("in-memory graph reader", () => {
     });
 
     expect(graph.getDerivationInputs("unit")).toEqual([adapterA, adapterB, toolchain]);
+  });
+});
+
+describe("registered topology query contract", () => {
+  it("replays current topology and refreshes the fingerprint when closure evidence changes", async () => {
+    let evidenceIds = ["old-evidence"];
+    const registry = new QueryDependencyRegistry(new InMemoryGraphReader(), false);
+    for (const program of createTopologyRelevanceQueryPrograms({
+      inspect: (subjectId, subjectKind) => ({
+        results: [{
+          id: "consumer:mobile", participantId: "mobile", role: "consumer", assurance: "exact", confidence: 1,
+          artifactHash: hash("artifact"), adapterVersion: "1", evidenceIds, semanticKey: "MidiEvent@1",
+          observability: "closed",
+        }],
+        observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: [`topology:${subjectKind}:${subjectId}`],
+      }),
+    })) registry.register(program);
+    const binding = createTopologyQueryBindingPort(registry);
+    const dependency = await binding.bind("event-midi", "event", context);
+    evidenceIds = ["new-evidence"];
+    const replayed = await registry.evaluate(dependency.query, context);
+
+    expect(dependency.query.programId).toBe("projector.topology.event-relevance");
+    expect(replayed.resultHash).not.toBe(dependency.priorResult.resultHash);
   });
 });
 

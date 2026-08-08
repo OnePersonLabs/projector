@@ -409,6 +409,24 @@ describe("predicted versus observed Planning Surprises", () => {
     expect(classifyPlanningSurprise({ planId: "plan", predictedEntityIds: ["root"], observed: [] })).toBeUndefined();
   });
 
+  it("quarantines a relationship proposal when either endpoint is agent overreach", () => {
+    const result = classifyPlanningSurprise({
+      planId: "plan-overreach-endpoint",
+      predictedEntityIds: [],
+      observed: [
+        { entityId: "avatar", impact: "semantic", legitimacy: "unexplained", authorized: false, evidence: [] },
+        {
+          entityId: "needed", impact: "semantic", legitimacy: "required", authorized: true,
+          evidence: [{ evidenceId: "need-proof", stance: "supports" }],
+          proposedRelation: { fromId: "needed", toId: "avatar", type: "depends-on" },
+        },
+      ],
+    });
+
+    expect(result?.classification).toBe("agent-overreach");
+    expect(result?.proposals).toEqual([]);
+  });
+
   it("rejects malformed relationship proposal endpoints and evidence", () => {
     expect(() => classifyPlanningSurprise({
       planId: "plan", predictedEntityIds: ["root"], observed: [{
