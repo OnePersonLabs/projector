@@ -106,13 +106,13 @@ function parseToml(path: string, content: string): DocumentFact {
 function parseActions(entry: InventoryEntry): ActionsWorkflowFact {
   const lines = entry.content.split(/\r?\n/u);
   const triggers: string[] = []; const triggerLocations: ActionsWorkflowFact["triggerLocations"] = []; const pathFilters: ActionsWorkflowFact["pathFilters"] = []; const permissions: ActionsWorkflowFact["permissions"] = []; const workflowInputs: ActionsWorkflowFact["inputs"] = []; const workflowOutputs: ActionsWorkflowFact["outputs"] = []; const jobs: ActionsJobFact[] = []; const unknowns: string[] = [];
-  let section = ""; let trigger = ""; let activePathFilter: { trigger: string; include: string[]; exclude: string[]; line: number } | undefined; let job: ActionsJobFact | undefined; let inSteps = false; let jobSubsection = ""; let workflowCallSubsection = "";
+  let section = ""; let trigger = ""; let activePathFilter: { trigger: string; include: string[]; exclude: string[]; line: number } | undefined; let activePathFilterKind: "paths" | "paths-ignore" | undefined; let job: ActionsJobFact | undefined; let inSteps = false; let jobSubsection = ""; let workflowCallSubsection = "";
   lines.forEach((line, index) => {
     if (/\$\{\{/u.test(line)) unknowns.push(`expression at line ${index + 1}`);
     const indent = line.match(/^\s*/u)?.[0].length ?? 0; const trimmed = line.trim();
     const rootSection = indent === 0 ? trimmed.match(/^(on|permissions|jobs):\s*(.*)$/u) : null;
     if (rootSection !== null) {
-      section = rootSection[1]!; job = undefined; inSteps = false; activePathFilter = undefined;
+      section = rootSection[1]!; job = undefined; inSteps = false; activePathFilter = undefined; activePathFilterKind = undefined;
       const scalar = rootSection[2]!.trim();
       if (section === "permissions" && scalar !== "") {
         if (["read-all", "write-all", "{}"].includes(scalar)) permissions.push({ key: "*", value: scalar, line: index + 1 });
@@ -120,11 +120,11 @@ function parseActions(entry: InventoryEntry): ActionsWorkflowFact {
       } else if (scalar !== "") unknowns.push(`unsupported ${section} scalar shape at line ${index + 1}`);
       return;
     }
-    if (section === "on" && indent === 2) { const key = trimmed.match(/^([^:]+):/u)?.[1]; if (key) { trigger = key; triggers.push(key); triggerLocations.push({ key, line: index + 1 }); } workflowCallSubsection = ""; activePathFilter = undefined; return; }
+    if (section === "on" && indent === 2) { const key = trimmed.match(/^([^:]+):/u)?.[1]; if (key) { trigger = key; triggers.push(key); triggerLocations.push({ key, line: index + 1 }); } workflowCallSubsection = ""; activePathFilter = undefined; activePathFilterKind = undefined; return; }
     if (section === "on" && trigger === "workflow_call" && indent === 4 && /^(inputs|outputs):$/u.test(trimmed)) { workflowCallSubsection = trimmed.slice(0, -1); return; }
     if (section === "on" && trigger === "workflow_call" && indent === 6) { const key = trimmed.match(/^([^:]+):/u)?.[1]; if (key) (workflowCallSubsection === "outputs" ? workflowOutputs : workflowInputs).push({ key, value: trimmed.slice(trimmed.indexOf(":") + 1).trim(), line: index + 1 }); return; }
-    if (section === "on" && indent === 4 && /^(paths|paths-ignore):/u.test(trimmed)) { const pair = trimmed.match(/^(paths|paths-ignore):\s*(.*)$/u)!; const raw = pair[2]!.trim(); const values = raw === "" ? [] : raw.replace(/^\[|\]$/gu, "").split(",").map((value) => value.trim().replace(/^['"]|['"]$/gu, "")).filter(Boolean); const existing = pathFilters.find((filter) => filter.trigger === trigger) ?? { trigger, include: [], exclude: [], line: index + 1 }; if (!pathFilters.includes(existing)) pathFilters.push(existing); activePathFilter = existing; for (const value of values) { if (pair[1] === "paths" && value.startsWith("!")) existing.exclude.push(value.slice(1)); else (pair[1] === "paths" ? existing.include : existing.exclude).push(value); } return; }
-    if (section === "on" && indent === 6 && activePathFilter !== undefined && /^-\s+/u.test(trimmed)) { const value = trimmed.replace(/^-\s+/u, "").replace(/^['"]|['"]$/gu, ""); if (value.startsWith("!")) activePathFilter.exclude.push(value.slice(1)); else activePathFilter.include.push(value); return; }
+    if (section === "on" && indent === 4 && /^(paths|paths-ignore):/u.test(trimmed)) { const pair = trimmed.match(/^(paths|paths-ignore):\s*(.*)$/u)!; const raw = pair[2]!.trim(); const values = raw === "" ? [] : raw.replace(/^\[|\]$/gu, "").split(",").map((value) => value.trim().replace(/^['"]|['"]$/gu, "")).filter(Boolean); const existing = pathFilters.find((filter) => filter.trigger === trigger) ?? { trigger, include: [], exclude: [], line: index + 1 }; if (!pathFilters.includes(existing)) pathFilters.push(existing); activePathFilter = existing; activePathFilterKind = pair[1] as "paths" | "paths-ignore"; for (const value of values) { if (activePathFilterKind === "paths" && value.startsWith("!")) existing.exclude.push(value.slice(1)); else (activePathFilterKind === "paths" ? existing.include : existing.exclude).push(value); } return; }
+    if (section === "on" && indent === 6 && activePathFilter !== undefined && activePathFilterKind !== undefined && /^-\s+/u.test(trimmed)) { const value = trimmed.replace(/^-\s+/u, "").replace(/^['"]|['"]$/gu, ""); if (activePathFilterKind === "paths" && !value.startsWith("!")) activePathFilter.include.push(value); else activePathFilter.exclude.push(value.startsWith("!") ? value.slice(1) : value); return; }
     if (section === "permissions" && indent === 2) { const pair = trimmed.match(/^([^:]+):\s*(.+)$/u); if (pair) permissions.push({ key: pair[1]!, value: pair[2]!, line: index + 1 }); return; }
     if (section !== "jobs") return;
     const jobHeader = indent === 2 ? trimmed.match(/^([^:]+):$/u) : null;
