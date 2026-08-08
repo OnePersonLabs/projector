@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 
@@ -45,6 +45,7 @@ import {
   inferPatternFamilies,
   MANDATORY_VERTICAL_SLICE_STEPS,
   assertMandatoryVerticalSliceEvidence,
+  createMandatoryVerticalSliceExecutionContext,
   mandatoryVerticalSliceEvidenceDigest,
   reconcileToFixedPoint,
   selectorHash,
@@ -55,6 +56,8 @@ import {
   type CompletionAssessmentPort,
   type StateBoundChangeResult,
   type MandatoryVerticalSliceStepEvidence,
+  type MandatoryVerticalSliceExecutionContext,
+  type MandatoryVerticalSliceEvidenceKind,
 } from "@projector/engine";
 import {
   CanonicalFileRepository,
@@ -196,6 +199,19 @@ function patternCandidates(
   return inferPatternFamilies(observations);
 }
 
+interface PersistedPathSnapshot {
+  readonly kind: "missing" | "file";
+  readonly contentBase64?: string;
+  readonly mode?: number;
+}
+
+interface PersistedJournalOperation {
+  readonly id?: string;
+  readonly kind?: string;
+  readonly status?: string;
+  readonly changes?: Array<{ readonly path?: string; readonly before?: PersistedPathSnapshot; readonly after?: PersistedPathSnapshot }>;
+}
+
 interface PersistedJournalRecord {
   readonly version?: number;
   readonly entry?: {
@@ -210,13 +226,9 @@ interface PersistedJournalRecord {
     readonly updatedAt?: string;
   };
   readonly allowedWriteRoots?: string[];
-  readonly checkpoints?: Array<{ readonly id?: string; readonly phase?: string; readonly operationCount?: number }>;
-  readonly operations?: Array<{
-    readonly id?: string;
-    readonly kind?: string;
-    readonly status?: string;
-    readonly changes?: Array<{ readonly path?: string }>;
-  }>;
+  readonly checkpoints?: Array<{ readonly id?: string; readonly phase?: string; readonly operationCount?: number; readonly createdAt?: string }>;
+  readonly operations?: PersistedJournalOperation[];
+  readonly compensations?: unknown[];
 }
 
 async function parseCanonicalArtifact(path: string): Promise<unknown> {
@@ -252,6 +264,104 @@ function operationKind(summary: string): "move-file" | "write-file" | undefined 
   return summary.startsWith("moved ") ? "move-file" : summary.startsWith("updated registered reference ") || summary.startsWith("wrote canonical ") ? "write-file" : undefined;
 }
 
+function snapshotHashes(operation: PersistedJournalOperation, side: "before" | "after", summary: string): ContentHash[] {
+  const canonicalWrite = summary.startsWith("wrote canonical ");
+  return (operation.changes ?? []).flatMap((change) => {
+    if (change[side]?.kind === "missing") return canonicalWrite ? [zeroHash] : [];
+    if (change[side]?.kind !== "file" || typeof change[side].contentBase64 !== "string") return [];
+    const content = Buffer.from(change[side].contentBase64, "base64").toString("utf8");
+    return [canonicalWrite ? hashFramedDomain("canonical-write-content", content) : hashFramedDomain("transform-content", content)];
+  });
+}
+
+function journalContentReference(raw: string): string {
+  return `journal:${createHash("sha256").update(raw, "utf8").digest("hex")}`;
+}
+
+function strictJournalRecord(value: unknown): value is PersistedJournalRecord {
+  if (value === null || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  if (!sameKeys(record, ["version", "entry", "allowedWriteRoots", "operations", "checkpoints", "compensations"]) || record.version !== 1) return false;
+  if (record.entry === null || typeof record.entry !== "object" || !TransactionJournalEntrySchema.safeParse(record.entry).success) return false;
+  if (!Array.isArray(record.allowedWriteRoots) || record.allowedWriteRoots.length !== 1 || record.allowedWriteRoots[0] !== ".") return false;
+  if (!Array.isArray(record.operations) || !Array.isArray(record.checkpoints) || !Array.isArray(record.compensations)) return false;
+
+  const operations = record.operations as unknown[];
+  const operationIds: string[] = [];
+  const touchedPaths: string[] = [];
+  for (const operation of operations) {
+    if (operation === null || typeof operation !== "object") return false;
+    const candidate = operation as Record<string, unknown>;
+    if (!sameKeys(candidate, ["id", "kind", "status", "changes"])
+      || typeof candidate.id !== "string" || operationIds.includes(candidate.id)
+      || !["delete-file", "move-file", "write-file"].includes(String(candidate.kind))
+      || !["intended", "applied", "reverted"].includes(String(candidate.status)) || !Array.isArray(candidate.changes)) return false;
+    operationIds.push(candidate.id);
+    for (const change of candidate.changes) {
+      if (change === null || typeof change !== "object") return false;
+      const item = change as Record<string, unknown>;
+      if (!sameKeys(item, ["path", "before", "after"]) || typeof item.path !== "string" || !canonicalJournalPath(item.path)
+        || !strictJournalSnapshot(item.before) || !strictJournalSnapshot(item.after)) return false;
+      touchedPaths.push(item.path);
+    }
+  }
+
+  const checkpointIds: string[] = [];
+  for (const checkpoint of record.checkpoints) {
+    if (checkpoint === null || typeof checkpoint !== "object") return false;
+    const candidate = checkpoint as Record<string, unknown>;
+    if (!sameKeys(candidate, ["id", "phase", "operationCount", "createdAt"])
+      || typeof candidate.id !== "string" || checkpointIds.includes(candidate.id)
+      || typeof candidate.phase !== "string" || !Number.isSafeInteger(candidate.operationCount)
+      || (candidate.operationCount as number) < 0 || (candidate.operationCount as number) > operations.length
+      || typeof candidate.createdAt !== "string") return false;
+    checkpointIds.push(candidate.id);
+  }
+
+  const externalOperationIds: string[] = [];
+  for (const compensation of record.compensations) {
+    if (compensation === null || typeof compensation !== "object") return false;
+    const candidate = compensation as Record<string, unknown>;
+    const allowed = ["externalOperationId", "kind", "compensationId", "instructions", "status", "recordedAt", "completedAt"];
+    if (!sameKeys(candidate, allowed) || typeof candidate.externalOperationId !== "string" || externalOperationIds.includes(candidate.externalOperationId)
+      || !["registered", "manual"].includes(String(candidate.kind)) || !["pending", "completed"].includes(String(candidate.status))
+      || typeof candidate.recordedAt !== "string"
+      || (candidate.compensationId !== undefined && typeof candidate.compensationId !== "string")
+      || (candidate.instructions !== undefined && typeof candidate.instructions !== "string")
+      || (candidate.completedAt !== undefined && typeof candidate.completedAt !== "string")) return false;
+    externalOperationIds.push(candidate.externalOperationId);
+  }
+
+  const entry = record.entry as Record<string, unknown>;
+  const entryCheckpointIds = entry.checkpointIds as string[];
+  const entryExternalOperationIds = entry.externalOperationIds as string[];
+  const entryTouchedPaths = entry.touchedPaths as string[];
+  return sameOrdered(entryCheckpointIds, checkpointIds)
+    && sameOrdered(entryExternalOperationIds, externalOperationIds)
+    && sameOrdered(entryTouchedPaths, touchedPaths)
+    && entryTouchedPaths.every((path) => canonicalJournalPath(path));
+}
+
+function sameKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  return actual.length === expected.length && actual.every((key, index) => key === [...expected].sort()[index]);
+}
+
+function canonicalJournalPath(path: string): boolean {
+  return path.length > 0 && !path.includes("\\") && !path.includes("\0") && !path.startsWith("/") && !/^[A-Za-z]:/u.test(path)
+    && !path.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..");
+}
+
+function strictJournalSnapshot(value: unknown): value is PersistedPathSnapshot {
+  if (value === null || typeof value !== "object") return false;
+  const snapshot = value as Record<string, unknown>;
+  if (snapshot.kind === "missing") return sameKeys(snapshot, ["kind"]);
+  return snapshot.kind === "file" && sameKeys(snapshot, ["kind", "contentBase64", "mode"])
+    && typeof snapshot.contentBase64 === "string"
+    && Buffer.from(snapshot.contentBase64, "base64").toString("base64") === snapshot.contentBase64
+    && typeof snapshot.mode === "number" && Number.isSafeInteger(snapshot.mode) && snapshot.mode >= 0 && snapshot.mode <= 0o777;
+}
+
 async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Set<string>> {
   const repaired = new Set<string>();
   let receiptNames: string[];
@@ -261,9 +371,14 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
   let journalNames: string[] = [];
   try { journalNames = (await readdir(journalRoot)).filter((name) => name.endsWith(".json")); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  const journals: Array<PersistedJournalRecord & { readonly name: string }> = [];
+  const journals: Array<PersistedJournalRecord & { readonly name: string; readonly raw: string; readonly contentRef: string }> = [];
   for (const journalName of journalNames) {
-    try { journals.push({ ...(JSON.parse(await readFile(join(journalRoot, journalName), "utf8")) as PersistedJournalRecord), name: journalName }); }
+    try {
+      const raw = await readFile(join(journalRoot, journalName), "utf8");
+      const parsed: unknown = JSON.parse(raw);
+      if (!strictJournalRecord(parsed)) continue;
+      journals.push({ ...parsed, name: journalName, raw, contentRef: journalContentReference(raw) });
+    }
     catch { /* malformed journals cannot establish provenance */ }
   }
   for (const receiptName of receiptNames.filter((name) => name.endsWith(".json"))) {
@@ -289,7 +404,7 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
         outcome?: string; journalPhase?: string; lastCheckpointId?: string; certificate?: {
           id?: string; planId?: string; changedUnits?: string[];
           beforeState?: unknown; afterState?: unknown; validations?: ValidationResult[];
-          deterministicOperations?: Array<{ operationId?: string; unitIds?: string[]; summary?: string }>;
+          deterministicOperations?: Array<{ operationId?: string; unitIds?: string[]; summary?: string; beforeHashes?: ContentHash[]; afterHashes?: ContentHash[]; evidenceIds?: string[] }>;
         };
       };
       if (hashFramedDomain("change-certificate-artifact", artifact) !== receipt.certificateHash
@@ -308,11 +423,12 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
       if (receipt.changedCanonicalEntityIds.length !== 2
         || !sameStringSet(receipt.changedCanonicalEntityIds, [authorityId, activeLensId])) continue;
       const journal = journals.find(({ entry }) => entry !== undefined && entry.planId === receipt.planId && entry.phase === "committed"
-        && sameStringSet(entry.touchedPaths ?? [], operations.flatMap((operation) => operationPaths(operation.summary ?? ""))));
+        && sameOrdered(entry.touchedPaths ?? [], operations.flatMap((operation) => operationPaths(operation.summary ?? ""))));
       if (journal === undefined || journal.entry?.transactionId === undefined || !Array.isArray(journal.operations)
         || journal.entry.transactionId !== "transaction:mandatory-repository-script:1"
         || journal.name !== `${createHash("sha256").update(journal.entry.transactionId).digest("hex")}.json`
         || journal.version !== 1 || journal.entry.worktreePath !== repositoryRoot
+        || canonicalJson(journal.entry.beforeState) !== canonicalJson(receipt.beforeState)
         || !TransactionJournalEntrySchema.safeParse(journal.entry).success
         || !Array.isArray(journal.allowedWriteRoots) || !journal.allowedWriteRoots.includes(".")
         || journal.operations.length !== operations.length || journal.operations.some((operation) => operation.status !== "applied")) continue;
@@ -323,12 +439,17 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
         || !sameOrdered(journal.entry.checkpointIds ?? [], expectedCheckpointIds)
         || artifact.lastCheckpointId !== "after-validation") continue;
       const journalPaths = journal.operations.flatMap((operation) => operation.changes?.map(({ path }) => path).filter((path): path is string => path !== undefined) ?? []);
-      if (!sameStringSet(journalPaths, operations.flatMap((operation) => operationPaths(operation.summary ?? "")))) continue;
+      if (!sameOrdered(journalPaths, operations.flatMap((operation) => operationPaths(operation.summary ?? "")))) continue;
       if (journal.operations.some((operation, index) => {
-        const summary = operations[index]?.summary ?? "";
+        const certificateOperation = operations[index];
+        const summary = certificateOperation?.summary ?? "";
         const expectedKind = operationKind(summary);
         const actualPaths = operation.changes?.map(({ path }) => path).filter((path): path is string => path !== undefined) ?? [];
-        return expectedKind === undefined || operation.kind !== expectedKind || !sameStringSet(actualPaths, operationPaths(summary));
+        const evidenceRefPresent = certificateOperation?.evidenceIds?.includes(journal.contentRef) ?? false;
+        return expectedKind === undefined || operation.kind !== expectedKind || !sameOrdered(actualPaths, operationPaths(summary))
+          || !evidenceRefPresent
+          || !sameOrdered(snapshotHashes(operation, "before", summary), certificateOperation?.beforeHashes ?? [])
+          || !sameOrdered(snapshotHashes(operation, "after", summary), certificateOperation?.afterHashes ?? []);
       })) continue;
       const movedPaths = operations.flatMap((operation) => {
         const summary = operation.summary ?? "";
@@ -724,6 +845,10 @@ interface SliceExecutionEvidence {
   readonly transactionId: string;
   readonly journalPhases: readonly string[];
   readonly touchedPaths: readonly string[];
+  readonly journalPath: string;
+  readonly journalRecord: PersistedJournalRecord;
+  readonly journalBytes: string;
+  readonly journalRef: string;
 }
 
 const executionEvidence = new WeakMap<object, SliceExecutionEvidence>();
@@ -735,16 +860,58 @@ async function readCommittedJournalEvidence(repositoryRoot: string, transactionI
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
   for (const name of names.filter((item) => item.endsWith(".json"))) {
     try {
-      const record = JSON.parse(await readFile(join(journalRoot, name), "utf8")) as {
-        entry?: { transactionId?: string; phase?: string; touchedPaths?: string[] };
-        checkpoints?: Array<{ phase?: string }>;
-      };
-      if (record.entry?.transactionId !== transactionId || record.entry.phase !== "committed") continue;
+      const journalPath = join(journalRoot, name);
+      const journalBytes = await readFile(journalPath, "utf8");
+      const parsed: unknown = JSON.parse(journalBytes);
+      if (!strictJournalRecord(parsed)) continue;
+      const record = parsed as PersistedJournalRecord;
+      if (record.entry?.transactionId !== transactionId || record.entry.phase !== "committed"
+        || name !== `${createHash("sha256").update(transactionId).digest("hex")}.json`
+        || record.entry.worktreePath !== repositoryRoot) continue;
       const phases = [...new Set(["prepared", ...(record.checkpoints ?? []).map(({ phase }) => phase).filter((phase): phase is string => phase !== undefined), record.entry.phase])];
-      return { leaseId: "", transactionId, journalPhases: phases, touchedPaths: record.entry.touchedPaths ?? [] };
+      return { leaseId: "", transactionId, journalPhases: phases, touchedPaths: record.entry.touchedPaths ?? [], journalPath, journalRecord: record, journalBytes, journalRef: journalContentReference(journalBytes) };
     } catch { /* malformed journals are not execution evidence */ }
   }
   return undefined;
+}
+
+/**
+ * Bind each operation certificate to the exact durable journal bytes that
+ * authenticated the mutation.  The journal is persisted before the change
+ * artifacts are emitted, so this is intentionally a post-commit artifact
+ * rebinding step; stale pre-binding artifacts are removed.
+ */
+async function bindJournalReference(
+  result: StateBoundChangeResult,
+  journalEvidence: SliceExecutionEvidence,
+): Promise<StateBoundChangeResult> {
+  const journalRef = journalEvidence.journalRef;
+  if (result.outcome !== "success" || result.transformResult === undefined
+    || result.certificate.deterministicOperations.every(({ evidenceIds }) => evidenceIds.includes(journalRef))) return result;
+  const certificate = {
+    ...result.certificate,
+    deterministicOperations: result.certificate.deterministicOperations.map((operation) => ({
+      ...operation,
+      evidenceIds: [...new Set([...operation.evidenceIds, journalRef])],
+    })),
+  };
+  const originalArtifact = await parseCanonicalArtifact(result.certificateRef) as Record<string, unknown>;
+  const certificateArtifact = { ...originalArtifact, certificate };
+  const certificateHash = hashFramedDomain("change-certificate-artifact", certificateArtifact);
+  const certificateRef = join(dirname(result.certificateRef), `${certificateHash.slice("sha256:v1:".length)}.json`);
+  await writeFile(certificateRef, `${canonicalJson(certificateArtifact)}\n`, "utf8");
+  const { semanticHash: _semanticHash, ...receiptWithoutHash } = result.receipt;
+  const receipt = {
+    ...receiptWithoutHash,
+    certificateHash,
+    semanticHash: hashSemantic("transaction-receipt", { ...receiptWithoutHash, certificateHash }),
+  };
+  const receiptHash = hashFramedDomain("transaction-receipt-artifact", receipt);
+  const receiptRef = join(dirname(result.receiptRef), `${receiptHash.slice("sha256:v1:".length)}.json`);
+  await writeFile(receiptRef, `${canonicalJson(receipt)}\n`, "utf8");
+  if (certificateRef !== result.certificateRef) await rm(result.certificateRef, { force: true });
+  if (receiptRef !== result.receiptRef) await rm(result.receiptRef, { force: true });
+  return { ...result, certificate, certificateHash, certificateRef, receipt, receiptHash, receiptRef };
 }
 
 export async function applyMandatorySlice(repositoryRoot: string, prepared: SlicePreparation): Promise<StateBoundChangeResult> {
@@ -800,13 +967,20 @@ export async function applyMandatorySlice(repositoryRoot: string, prepared: Slic
       plan: prepared.plan, capsule: prepared.capsule, approval: prepared.approval, transformInput: prepared.transformInput,
     });
     const journalEvidence = await readCommittedJournalEvidence(repositoryRoot, "transaction:mandatory-repository-script:1");
-    executionEvidence.set(result, {
+    if (result.outcome !== "success") return result;
+    if (journalEvidence === undefined) throw new Error("successful mandatory repair has no committed durable journal evidence");
+    const boundResult = await bindJournalReference(result, journalEvidence);
+    executionEvidence.set(boundResult, {
       leaseId: leaseOwner.leaseId ?? "",
-      transactionId: journalEvidence?.transactionId ?? "transaction:mandatory-repository-script:1",
-      journalPhases: journalEvidence?.journalPhases ?? [],
-      touchedPaths: journalEvidence?.touchedPaths ?? [],
+      transactionId: journalEvidence.transactionId,
+      journalPhases: journalEvidence.journalPhases,
+      touchedPaths: journalEvidence.touchedPaths,
+      journalPath: journalEvidence.journalPath,
+      journalRecord: journalEvidence.journalRecord,
+      journalBytes: journalEvidence.journalBytes,
+      journalRef: journalEvidence.journalRef,
     });
-    return result;
+    return boundResult;
   } finally {
     await session.close();
   }
@@ -920,6 +1094,7 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
   const rebuild = await rebuildAcceptedState(repositoryRoot);
   const acceptedSemantics = await canonicalSemantics(repositoryRoot);
   const secondFixedPoint = second.fixedPoint;
+  const postRepairAnalysis = await analyzeMandatorySlice(repositoryRoot);
   const summaries = [
     "Static inventory classified stable projection units without executing repository code.",
     "Four descriptive pattern families were inferred from causal evidence.",
@@ -942,7 +1117,8 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
   const inventoryUnitIds = prepared.analysis.repository.projectionUnits.map(({ id }) => id);
   const classificationIds = Object.entries(prepared.analysis.classifications).map(([path, role]) => `classification:${path}:${role}`);
   const operationEvidence = successfulApplied.transformResult?.operations ?? [];
-  const journalEvidence = executionEvidence.get(successfulApplied) ?? { leaseId: "lease:missing", transactionId: "transaction:missing", journalPhases: [], touchedPaths: [] };
+  const journalEvidence = executionEvidence.get(successfulApplied);
+  if (journalEvidence === undefined) throw new Error("successful mandatory repair has no execution evidence");
   const validatorIds = successfulApplied.validations.map(({ validatorId }) => validatorId);
   const validatorEvidenceIds = successfulApplied.validations.flatMap(({ evidenceIds }) => evidenceIds);
   const outputs: Array<{
@@ -953,12 +1129,12 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
     { evidenceKind: "pattern-families", actual: prepared.analysis.patternCandidates.length, expected: 4, refs: prepared.analysis.patternCandidates.map(({ key }) => `pattern:${key}`), proof: { familyKeys: prepared.analysis.patternCandidates.map(({ key }) => key), familyCount: prepared.analysis.patternCandidates.length } },
     { evidenceKind: "causal-classification", actual: prepared.analysis.divergences.length, expected: 2, refs: prepared.analysis.divergences.flatMap(({ unitIds, evidence }) => [...unitIds.map((id) => `unit:${id}`), ...evidence.map(({ evidenceId }) => evidenceId)]), proof: { sourceUnitId: `unit:${prepared.analysis.repository.projectionUnits.find(({ key }) => key === ".codex/hooks/validate-repo.mjs")?.id ?? "missing"}`, testUnitId: `unit:${prepared.analysis.repository.projectionUnits.find(({ key }) => key === ".codex/hooks/validate-repo.test.mjs")?.id ?? "missing"}`, causalEvidenceIds: prepared.analysis.divergences.flatMap(({ evidence }) => evidence.map(({ evidenceId }) => evidenceId)) } },
     { evidenceKind: "authority-lens", actual: prepared.analysis.authority.id, expected: authorityId, refs: [`authority:${prepared.analysis.authority.id}`, `lens:${prepared.analysis.activeLens.id}`], proof: { authorityId: prepared.analysis.authority.id, activeLensId: prepared.analysis.activeLens.id, authorityStatus: prepared.analysis.authority.status } },
-    { evidenceKind: "generated-exclusion", actual: (await analyzeMandatorySlice(repositoryRoot)).patternCandidates.find(({ key }) => key === "repository-automation")?.independenceGroups.includes("authored:scripts/validate-repo.mjs") ?? false, expected: false, refs: [`receipt:${successfulApplied.receiptRef}`, "path:scripts/validate-repo.mjs"], proof: { repairedPaths: ["scripts/validate-repo.mjs", "scripts/validate-repo.test.mjs"], independenceGroups: (await analyzeMandatorySlice(repositoryRoot)).patternCandidates.find(({ key }) => key === "repository-automation")?.independenceGroups ?? [], provenanceRef: `receipt:${successfulApplied.receiptRef}` } },
+    { evidenceKind: "generated-exclusion", actual: postRepairAnalysis.patternCandidates.find(({ key }) => key === "repository-automation")?.independenceGroups.includes("authored:scripts/validate-repo.mjs") ?? false, expected: false, refs: [`receipt:${successfulApplied.receiptRef}`, "path:scripts/validate-repo.mjs"], proof: { repairedPaths: ["scripts/validate-repo.mjs", "scripts/validate-repo.test.mjs"], independenceGroups: postRepairAnalysis.patternCandidates.find(({ key }) => key === "repository-automation")?.independenceGroups ?? [], provenanceRef: `receipt:${successfulApplied.receiptRef}` } },
     { evidenceKind: "governance", actual: [prepared.analysis.activeLens.status, prepared.analysis.shadowLens.status], expected: ["active", "shadow"], refs: [`lens:${prepared.analysis.activeLens.id}`, `lens:${prepared.analysis.shadowLens.id}`], proof: { activeLensId: prepared.analysis.activeLens.id, shadowLensId: prepared.analysis.shadowLens.id, ruleIds: prepared.analysis.activeLens.rules.map(({ id }) => id) } },
     { evidenceKind: "divergences", actual: prepared.analysis.divergences.every(({ rationale, counterEvidence, coverageCaveat }) => rationale.length > 0 && counterEvidence.length > 0 && coverageCaveat.length > 0), expected: true, refs: prepared.analysis.divergences.map(({ id }) => id), proof: { divergenceIds: prepared.analysis.divergences.map(({ id }) => id), counterEvidenceIds: prepared.analysis.divergences.flatMap(({ counterEvidence }) => counterEvidence.map(({ evidenceId }) => evidenceId)) } },
     { evidenceKind: "preview", actual: prepared.preview.touchedUnitIds.length, expected: prepared.capsule.unitIds.length, refs: [`plan:${prepared.plan.id}`, `capsule:${prepared.capsule.id}`, ...prepared.preview.touchedUnitIds.map((id) => `unit:${id}`)], proof: { planId: prepared.plan.id, operationKinds: prepared.preview.operations.map(({ kind }) => kind), touchedUnitIds: prepared.preview.touchedUnitIds } },
     { evidenceKind: "binding", actual: [prepared.plan.boundState.dependencyDigest, prepared.capsule.boundState.dependencyDigest, prepared.approval.dependencyDigest], expected: Array(3).fill(prepared.binding.dependencyDigest), refs: [`plan:${prepared.plan.id}`, `capsule:${prepared.capsule.id}`, `approval:${prepared.approval.id}`], proof: { planDependencyDigest: prepared.plan.boundState.dependencyDigest, capsuleDependencyDigest: prepared.capsule.boundState.dependencyDigest, approvalDependencyDigest: prepared.approval.dependencyDigest } },
-    { evidenceKind: "lease-journal", actual: successfulApplied.outcome, expected: "success", refs: [`lease:${journalEvidence.leaseId}`, `transaction:${journalEvidence.transactionId}`, ...journalEvidence.journalPhases.map((phase) => `journal:${phase}`)], proof: { leaseId: journalEvidence.leaseId, transactionId: journalEvidence.transactionId, journalPhases: journalEvidence.journalPhases, touchedPaths: journalEvidence.touchedPaths } },
+    { evidenceKind: "lease-journal", actual: successfulApplied.outcome, expected: "success", refs: [`lease:${journalEvidence.leaseId}`, `transaction:${journalEvidence.transactionId}`, journalEvidence.journalRef, ...journalEvidence.journalPhases.map((phase) => `journal:${phase}`)], proof: { leaseId: journalEvidence.leaseId, transactionId: journalEvidence.transactionId, journalRef: journalEvidence.journalRef, journalPhases: journalEvidence.journalPhases, touchedPaths: journalEvidence.touchedPaths } },
     { evidenceKind: "operations", actual: prepared.canonicalWrites.every(({ entityId }) => successfulApplied.transformResult?.touchedUnitIds.includes(entityId)), expected: true, refs: operationEvidence.map(({ operationId }) => `operation:${operationId}`), proof: { operationIds: operationEvidence.map(({ operationId }) => operationId), touchedUnitIds: successfulApplied.transformResult?.touchedUnitIds ?? [], pathSummaries: operationEvidence.map(({ summary }) => summary) } },
     { evidenceKind: "validators", actual: successfulApplied.validations.every(({ status }) => status === "passed"), expected: true, refs: validatorEvidenceIds.map((id) => `evidence:${id}`), proof: { validatorIds, validationStatuses: successfulApplied.validations.map(({ status }) => status), validatorEvidenceIds } },
     { evidenceKind: "fixed-point", actual: first.fixedPoint.converged, expected: true, refs: [`fixed-point:${first.fixedPoint.reconciliationHash}`, ...first.fixedPoint.iterations.map(({ governedStateDigest }) => `iteration:${governedStateDigest}`)], proof: { iterationDigests: first.fixedPoint.iterations.map(({ governedStateDigest }) => governedStateDigest), materialChanged: first.fixedPoint.iterations.map(({ materialChanged }) => materialChanged), terminalIteration: first.fixedPoint.iterations.at(-1)?.fixedPointTerminal ?? false } },
@@ -967,6 +1143,96 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
     { evidenceKind: "receipt-certificate", actual: [successfulApplied.receipt.changedCanonicalEntityIds, successfulApplied.certificate.changedUnits.filter((id) => id === authorityId || id === activeLensId)], expected: [[authorityId, activeLensId], [authorityId, activeLensId]], refs: [`receipt:${successfulApplied.receiptRef}`, `certificate:${successfulApplied.certificateRef}`], proof: { receiptRef: successfulApplied.receiptRef, certificateRef: successfulApplied.certificateRef, receiptHash: successfulApplied.receiptHash, certificateHash: successfulApplied.certificateHash } },
     { evidenceKind: "rebuild", actual: rebuild.canonicalSemantics, expected: acceptedSemantics, refs: [`rebuild:${rebuild.rootDigest}`, `state:${acceptedSemantics.rootDigest}`], proof: { beforeDigest: acceptedSemantics.rootDigest, afterDigest: rebuild.rootDigest, semanticHashPairs: rebuild.canonicalSemantics } },
   ];
+  // Build the verification context from the observed run and durable artifacts,
+  // independently of the report proof objects assembled above.  The verifier
+  // therefore rejects a forged proof even if its output digest is recomputed.
+  const sourceUnit = prepared.analysis.repository.projectionUnits.find(({ key }) => key === ".codex/hooks/validate-repo.mjs");
+  const testUnit = prepared.analysis.repository.projectionUnits.find(({ key }) => key === ".codex/hooks/validate-repo.test.mjs");
+  if (sourceUnit === undefined || testUnit === undefined) throw new Error("mandatory repair context is missing source/test observations");
+  const observedInventoryUnitIds = prepared.analysis.repository.projectionUnits.map(({ id }) => id);
+  const observedClassificationIds = Object.entries(prepared.analysis.classifications).map(([path, role]) => `classification:${path}:${role}`);
+  const observedFamilyKeys = prepared.analysis.patternCandidates.map(({ key }) => key);
+  const observedCausalEvidenceIds = prepared.analysis.divergences.flatMap(({ evidence }) => evidence.map(({ evidenceId }) => evidenceId));
+  const observedRepairedPaths = successfulApplied.transformResult?.operations
+    .flatMap(({ summary }) => { const match = /^moved \S+ to (.+)$/u.exec(summary); return match?.[1] === undefined ? [] : [match[1]]; }) ?? [];
+  const observedIndependenceGroups = postRepairAnalysis.patternCandidates.find(({ key }) => key === "repository-automation")?.independenceGroups ?? [];
+  const observedRuleIds = prepared.analysis.activeLens.rules.map(({ id }) => id);
+  const observedDivergenceIds = prepared.analysis.divergences.map(({ id }) => id);
+  const observedCounterEvidenceIds = prepared.analysis.divergences.flatMap(({ counterEvidence }) => counterEvidence.map(({ evidenceId }) => evidenceId));
+  const observedOperationIds = operationEvidence.map(({ operationId }) => operationId);
+  const observedTouchedUnitIds = successfulApplied.transformResult?.touchedUnitIds ?? [];
+  const observedPathSummaries = operationEvidence.map(({ summary }) => summary);
+  const observedValidatorIds = successfulApplied.validations.map(({ validatorId }) => validatorId);
+  const observedValidationStatuses = successfulApplied.validations.map(({ status }) => status);
+  const observedValidatorEvidenceIds = successfulApplied.validations.flatMap(({ evidenceIds }) => evidenceIds);
+  const observedIterationDigests = first.fixedPoint.iterations.map(({ governedStateDigest }) => governedStateDigest);
+  const observedMaterialChanged = first.fixedPoint.iterations.map(({ materialChanged }) => materialChanged);
+  const observedUnresolvedDivergenceIds = second.analysis.divergences.map(({ id }) => id);
+  const observedSemanticPairs = rebuild.canonicalSemantics;
+  const observedRefs: Record<MandatoryVerticalSliceEvidenceKind, readonly string[]> = {
+    inventory: [`inventory:${observedInventoryUnitIds.length}`, ...observedInventoryUnitIds.slice(0, 3).map((id) => `unit:${id}`)],
+    "pattern-families": observedFamilyKeys.map((key) => `pattern:${key}`),
+    "causal-classification": prepared.analysis.divergences.flatMap(({ unitIds, evidence }) => [...unitIds.map((id) => `unit:${id}`), ...evidence.map(({ evidenceId }) => evidenceId)]),
+    "authority-lens": [`authority:${prepared.analysis.authority.id}`, `lens:${prepared.analysis.activeLens.id}`],
+    "generated-exclusion": [`receipt:${successfulApplied.receiptRef}`, "path:scripts/validate-repo.mjs"],
+    governance: [`lens:${prepared.analysis.activeLens.id}`, `lens:${prepared.analysis.shadowLens.id}`],
+    divergences: observedDivergenceIds,
+    preview: [`plan:${prepared.plan.id}`, `capsule:${prepared.capsule.id}`, ...prepared.preview.touchedUnitIds.map((id) => `unit:${id}`)],
+    binding: [`plan:${prepared.plan.id}`, `capsule:${prepared.capsule.id}`, `approval:${prepared.approval.id}`],
+    "lease-journal": [`lease:${journalEvidence.leaseId}`, `transaction:${journalEvidence.transactionId}`, journalEvidence.journalRef, ...journalEvidence.journalPhases.map((phase) => `journal:${phase}`)],
+    operations: observedOperationIds.map((operationId) => `operation:${operationId}`),
+    validators: observedValidatorEvidenceIds.map((id) => `evidence:${id}`),
+    "fixed-point": [`fixed-point:${first.fixedPoint.reconciliationHash}`, ...observedIterationDigests.map((digest) => `iteration:${digest}`)],
+    "second-run": [`second-run:before:${beforeSecond}`, `second-run:after:${afterSecond}`, `fixed-point:${secondFixedPoint.reconciliationHash}`],
+    cleanup: ["cleanup:mandatory-repository-script", `state:divergences:${second.analysis.divergences.length}`],
+    "receipt-certificate": [`receipt:${successfulApplied.receiptRef}`, `certificate:${successfulApplied.certificateRef}`],
+    rebuild: [`rebuild:${rebuild.rootDigest}`, `state:${acceptedSemantics.rootDigest}`],
+  };
+  const observedProof: Record<MandatoryVerticalSliceEvidenceKind, Record<string, unknown>> = {
+    inventory: { inventoryUnitIds: observedInventoryUnitIds, classificationIds: observedClassificationIds, executedRepositoryCode: prepared.analysis.executedRepositoryCode },
+    "pattern-families": { familyKeys: observedFamilyKeys, familyCount: observedFamilyKeys.length },
+    "causal-classification": { sourceUnitId: `unit:${sourceUnit.id}`, testUnitId: `unit:${testUnit.id}`, causalEvidenceIds: observedCausalEvidenceIds },
+    "authority-lens": { authorityId: prepared.analysis.authority.id, activeLensId: prepared.analysis.activeLens.id, authorityStatus: prepared.analysis.authority.status },
+    "generated-exclusion": { repairedPaths: observedRepairedPaths, independenceGroups: observedIndependenceGroups, provenanceRef: `receipt:${successfulApplied.receiptRef}` },
+    governance: { activeLensId: prepared.analysis.activeLens.id, shadowLensId: prepared.analysis.shadowLens.id, ruleIds: observedRuleIds },
+    divergences: { divergenceIds: observedDivergenceIds, counterEvidenceIds: observedCounterEvidenceIds },
+    preview: { planId: prepared.plan.id, operationKinds: prepared.preview.operations.map(({ kind }) => kind), touchedUnitIds: prepared.preview.touchedUnitIds },
+    binding: { planDependencyDigest: prepared.plan.boundState.dependencyDigest, capsuleDependencyDigest: prepared.capsule.boundState.dependencyDigest, approvalDependencyDigest: prepared.approval.dependencyDigest },
+    "lease-journal": { leaseId: journalEvidence.leaseId, transactionId: journalEvidence.transactionId, journalRef: journalEvidence.journalRef, journalPhases: journalEvidence.journalPhases, touchedPaths: journalEvidence.touchedPaths },
+    operations: { operationIds: observedOperationIds, touchedUnitIds: observedTouchedUnitIds, pathSummaries: observedPathSummaries },
+    validators: { validatorIds: observedValidatorIds, validationStatuses: observedValidationStatuses, validatorEvidenceIds: observedValidatorEvidenceIds },
+    "fixed-point": { iterationDigests: observedIterationDigests, materialChanged: observedMaterialChanged, terminalIteration: first.fixedPoint.iterations.at(-1)?.fixedPointTerminal ?? false },
+    "second-run": { invocation: 2, beforeDigest: beforeSecond, afterDigest: afterSecond, materialDelta: secondRunMaterialDelta },
+    cleanup: { unresolvedClusterWork: second.analysis.divergences.length, unresolvedDivergenceIds: observedUnresolvedDivergenceIds, computedFrom: `state:${afterSecond}` },
+    "receipt-certificate": { receiptRef: successfulApplied.receiptRef, certificateRef: successfulApplied.certificateRef, receiptHash: successfulApplied.receiptHash, certificateHash: successfulApplied.certificateHash },
+    rebuild: { beforeDigest: acceptedSemantics.rootDigest, afterDigest: rebuild.rootDigest, semanticHashPairs: observedSemanticPairs },
+  };
+  const observedArtifacts: Record<string, unknown> = {};
+  const recordArtifacts = (refs: readonly string[], value: unknown): void => {
+    for (const ref of refs) observedArtifacts[ref] = value;
+  };
+  recordArtifacts(observedRefs.inventory, prepared.analysis.repository.projectionUnits);
+  recordArtifacts(observedRefs["pattern-families"], prepared.analysis.patternCandidates);
+  recordArtifacts(observedRefs["causal-classification"], prepared.analysis.divergences);
+  recordArtifacts(observedRefs["authority-lens"], prepared.analysis.authority);
+  recordArtifacts(observedRefs["generated-exclusion"], { journal: journalEvidence.journalRecord, receipt: successfulApplied.receipt });
+  recordArtifacts(observedRefs.governance, { active: prepared.analysis.activeLens, shadow: prepared.analysis.shadowLens });
+  recordArtifacts(observedRefs.divergences, prepared.analysis.divergences);
+  recordArtifacts(observedRefs.preview, prepared.preview);
+  recordArtifacts(observedRefs.binding, prepared.binding);
+  recordArtifacts(observedRefs["lease-journal"], { bytes: journalEvidence.journalBytes, record: journalEvidence.journalRecord });
+  recordArtifacts(observedRefs.operations, operationEvidence);
+  recordArtifacts(observedRefs.validators, successfulApplied.validations);
+  recordArtifacts(observedRefs["fixed-point"], first.fixedPoint);
+  recordArtifacts(observedRefs["second-run"], secondFixedPoint);
+  recordArtifacts(observedRefs.cleanup, second.analysis);
+  recordArtifacts(observedRefs["receipt-certificate"], { receipt: successfulApplied.receipt, certificate: successfulApplied.certificate });
+  recordArtifacts(observedRefs.rebuild, { rebuild, acceptedSemantics });
+  const executionContext: MandatoryVerticalSliceExecutionContext = createMandatoryVerticalSliceExecutionContext({
+    observations: observedProof,
+    artifactRefs: observedRefs,
+    artifacts: observedArtifacts,
+  });
   const steps: MandatoryVerticalSliceStepEvidence[] = MANDATORY_VERTICAL_SLICE_STEPS.map((step, index) => {
     const summary = summaries[index]!;
     const output = outputs[index]!;
@@ -982,7 +1248,7 @@ export async function reconcileMandatorySlice(repositoryRoot: string, policy: Ex
       },
     };
   });
-  assertMandatoryVerticalSliceEvidence(steps);
+  assertMandatoryVerticalSliceEvidence(steps, executionContext);
   return {
     analysis: prepared.analysis,
     divergences: prepared.analysis.divergences,

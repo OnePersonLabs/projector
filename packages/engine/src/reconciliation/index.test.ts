@@ -6,6 +6,7 @@ import {
   MANDATORY_VERTICAL_SLICE_STEPS,
   MANDATORY_VERTICAL_SLICE_EVIDENCE_KINDS,
   mandatoryVerticalSliceEvidenceDigest,
+  createMandatoryVerticalSliceExecutionContext,
   NonconvergentReconciliationError,
   assertMandatoryVerticalSliceEvidence,
   reconcileToFixedPoint,
@@ -83,31 +84,37 @@ describe("mandatory vertical-slice evidence", () => {
     };
   });
 
+  const contextFor = (items: ReturnType<typeof evidence>) => createMandatoryVerticalSliceExecutionContext({
+    observations: Object.fromEntries(items.map(({ details }) => [details.evidenceKind, { ...details.proof, artifactRefs: undefined }])) as never,
+    artifactRefs: Object.fromEntries(items.map(({ details }) => [details.evidenceKind, details.artifactRefs])) as never,
+    artifacts: Object.fromEntries(items.flatMap(({ details }) => details.artifactRefs.map((ref) => [ref, { observed: ref }]))),
+  }) as ReturnType<typeof createMandatoryVerticalSliceExecutionContext>;
+
   it("requires all seventeen steps in normative order", () => {
     expect(MANDATORY_VERTICAL_SLICE_STEPS).toHaveLength(17);
-    expect(() => assertMandatoryVerticalSliceEvidence(evidence())).not.toThrow();
+    expect(() => assertMandatoryVerticalSliceEvidence(evidence(), contextFor(evidence()))).not.toThrow();
     expect(() => assertMandatoryVerticalSliceEvidence(
       MANDATORY_VERTICAL_SLICE_STEPS.slice(1).map((step, index) => ({
         step,
         sequence: index + 1,
         summary: `evidence for ${step}`,
-      })) as unknown as Parameters<typeof assertMandatoryVerticalSliceEvidence>[0],
+      })) as unknown as Parameters<typeof assertMandatoryVerticalSliceEvidence>[0], contextFor(evidence()),
     )).toThrow(/17 ordered steps/u);
   });
 
   it("rejects labels that are not substantiated by output-linked assertions", () => {
     const labelsOnly = evidence().map(({ details: _details, ...item }) => item);
-    expect(() => assertMandatoryVerticalSliceEvidence(labelsOnly as unknown as Parameters<typeof assertMandatoryVerticalSliceEvidence>[0])).toThrow(/structured details/u);
+    expect(() => assertMandatoryVerticalSliceEvidence(labelsOnly as unknown as Parameters<typeof assertMandatoryVerticalSliceEvidence>[0], contextFor(evidence()))).toThrow(/structured details/u);
     const falseClaim = evidence();
     falseClaim[13]!.details.assertions[0]!.passed = false;
-    expect(() => assertMandatoryVerticalSliceEvidence(falseClaim)).toThrow(/failed assertion/u);
+    expect(() => assertMandatoryVerticalSliceEvidence(falseClaim, contextFor(evidence()))).toThrow(/failed assertion/u);
   });
 
   it("rejects evidence with a deleted load-bearing proof family for every step", () => {
     for (const index of MANDATORY_VERTICAL_SLICE_STEPS.keys()) {
       const forged = evidence();
       forged[index]!.details.proof = {} as unknown as typeof forged[number]["details"]["proof"];
-      expect(() => assertMandatoryVerticalSliceEvidence(forged)).toThrow(/step/u);
+      expect(() => assertMandatoryVerticalSliceEvidence(forged, contextFor(evidence()))).toThrow(/step/u);
     }
   });
 
@@ -122,7 +129,7 @@ describe("mandatory vertical-slice evidence", () => {
       const proof = { ...forged[index]!.details.proof };
       delete proof[field];
       forged[index]!.details.proof = proof as typeof forged[number]["details"]["proof"];
-      expect(() => assertMandatoryVerticalSliceEvidence(forged)).toThrow(/proof field|typed predicate|output digest/u);
+      expect(() => assertMandatoryVerticalSliceEvidence(forged, contextFor(evidence()))).toThrow(/proof field|typed predicate|output digest|correspond/u);
     }
   });
 
@@ -130,6 +137,26 @@ describe("mandatory vertical-slice evidence", () => {
     const forged = evidence();
     forged[0]!.details.artifactRefs = ["artifact:inventory-and-classify-without-execution"];
     forged[0]!.details.proof = { step: "inventory-and-classify-without-execution" } as unknown as typeof forged[number]["details"]["proof"];
-    expect(() => assertMandatoryVerticalSliceEvidence(forged)).toThrow(/step/u);
+    expect(() => assertMandatoryVerticalSliceEvidence(forged, contextFor(evidence()))).toThrow(/step/u);
+  });
+
+  it("rejects an omnibus proof whose digest is recomputed against mismatched run observations", () => {
+    const actual = evidence();
+    const context = contextFor(actual);
+    for (const index of MANDATORY_VERTICAL_SLICE_STEPS.keys()) {
+      const forged = evidence();
+      const proof: Record<string, unknown> = { ...forged[index]!.details.proof, artifactRefs: forged[index]!.details.artifactRefs };
+      const firstKey = Object.keys(proof).find((key) => key !== "artifactRefs");
+      if (firstKey === undefined) throw new Error("expected a proof field");
+      proof[firstKey] = typeof proof[firstKey] === "string" ? `${proof[firstKey]}:forged` : "forged";
+      forged[index]!.details.proof = proof as typeof forged[number]["details"]["proof"];
+      forged[index]!.details.outputDigest = mandatoryVerticalSliceEvidenceDigest(
+        forged[index]!.step,
+        forged[index]!.details.evidenceKind,
+        forged[index]!.details.artifactRefs,
+        proof,
+      );
+      expect(() => assertMandatoryVerticalSliceEvidence(forged, context), `step ${index + 1}`).toThrow(/correspond|proof field|typed predicate/u);
+    }
   });
 });
