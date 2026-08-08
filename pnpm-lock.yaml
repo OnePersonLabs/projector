@@ -57,6 +57,15 @@ importers:
         specifier: ^4.0.15
         version: 4.4.3
 
+  packages/integrations:
+    dependencies:
+      '@projector/core':
+        specifier: workspace:*
+        version: link:../core
+      '@projector/engine':
+        specifier: workspace:*
+        version: link:../engine
+
   packages/runtime:
     dependencies:
       '@projector/core':

@@ -5,6 +5,7 @@
     { "path": "packages/analyzers" },
     { "path": "packages/runtime" },
     { "path": "packages/engine" },
+    { "path": "packages/integrations" },
     { "path": "packages/testkit" },
     { "path": "packages/cli" }
   ]
