@@ -1,4 +1,5 @@
 import type {
+  AdapterContext,
   ContentHash,
   DerivationRecord,
   ImpactRule,
@@ -12,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DerivationIndex,
+  type DerivationIndexSnapshot,
   ImpactRuleRegistry,
   InvalidationEngine,
   SemanticSignatureProfileRegistry,
@@ -21,6 +23,8 @@ import {
   type ImpactClosureArtifactStore,
   type ImpactRuleEvaluationPort,
 } from "./index.js";
+import { InMemoryGraphReader, QueryDependencyRegistry } from "../query/index.js";
+import { DependencyScopedStateBindingValidator, createStateBinding } from "../state/index.js";
 
 const hash = (value: string): ContentHash => `sha256:v1:${value.padEnd(64, "0").slice(0, 64)}`;
 const signature = (
@@ -509,6 +513,31 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     const kinds = result.impactClosure?.stateBinding.queryDependencies.map(({ query }) => query.kind) ?? [];
     expect(kinds).toEqual(expect.arrayContaining(["selector-membership", "impact-rule-applicability", "reverse-derivation", "surface-enumeration"]));
     expect(result.impactClosure?.stateBinding.queryDependencies.some(({ priorResult }) => priorResult.dependencyKeys.includes("membership:before"))).toBe(true);
+    const registry = new QueryDependencyRegistry(new InMemoryGraphReader());
+    result.impactClosure?.stateBinding.queryDependencies.forEach(({ query }) => expect(() => registry.assertCurrent(query)).not.toThrow());
+  });
+
+  it("emits query dependencies that the public registry can evaluate immediately", async () => {
+    const state = event("artifact").stateDigest;
+    const binding = createStateBinding({ compiledAgainst: state, valueDependencies: [], queryDependencies: [] });
+    const result = await new InvalidationEngine({ derivations: new DerivationIndex() }).invalidate(event("artifact"), {
+      stateBinding: binding,
+      revalidate: async () => [],
+    });
+    const context: AdapterContext = {
+      repositoryRoot: "/repo",
+      stateDigest: state,
+      config: {},
+      signal: new AbortController().signal,
+    };
+    const registry = new QueryDependencyRegistry(new InMemoryGraphReader());
+    const validator = new DependencyScopedStateBindingValidator({
+      values: { readVersionHash: async () => undefined },
+      queries: registry,
+    });
+    const validation = await validator.validate(result.impactClosure!.stateBinding, state, context);
+    expect(validation.status).toBe("current");
+    result.impactClosure!.stateBinding.queryDependencies.forEach(({ query }) => expect(() => registry.assertCurrent(query)).not.toThrow());
   });
 
   it("normalizes selector subject order before content-addressing the binding", async () => {
@@ -528,6 +557,34 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
       derivations: new DerivationIndex(), impactRules: new ImpactRuleRegistry([publicRule()]), impactPort: makePort(reverse),
     }).invalidate(event("selector:public", "membership-change"), {
       stateBinding: { compiledAgainst: event("selector:public").stateDigest, valueDependencies: [], queryDependencies: [], dependencyDigest: hash("binding") } as StateBinding,
+      revalidate: async () => [],
+    });
+    const [first, second] = await Promise.all([run(false), run(true)]);
+    expect(first.impactClosure?.contentHash).toBe(second.impactClosure?.contentHash);
+  });
+
+  it("normalizes every traversal disposition before content-addressing the binding", async () => {
+    const makePort = (reverse: boolean): ImpactRuleEvaluationPort => ({
+      subjects: async () => [{ id: "export", values: { tag: ["public"] }, dependencyKeys: ["membership:export"] }],
+      traverse: async () => {
+        const lanes = {
+          knownIds: ["known-b", "known-a"],
+          possibleIds: ["possible-b", "possible-a"],
+          unavailableIds: ["unavailable-b", "unavailable-a"],
+        };
+        return {
+          knownIds: reverse ? [...lanes.knownIds].reverse() : lanes.knownIds,
+          possibleIds: reverse ? [...lanes.possibleIds].reverse() : lanes.possibleIds,
+          unavailableIds: reverse ? [...lanes.unavailableIds].reverse() : lanes.unavailableIds,
+          observability: "bounded" as const,
+          reasons: {},
+        };
+      },
+    });
+    const run = async (reverse: boolean) => new InvalidationEngine({
+      derivations: new DerivationIndex(), impactRules: new ImpactRuleRegistry([publicRule()]), impactPort: makePort(reverse),
+    }).invalidate(event("selector:public", "membership-change"), {
+      stateBinding: createStateBinding({ compiledAgainst: event("selector:public").stateDigest, valueDependencies: [], queryDependencies: [] }),
       revalidate: async () => [],
     });
     const [first, second] = await Promise.all([run(false), run(true)]);
@@ -651,6 +708,30 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     expect(await closureStore.get(result.impactClosure!.contentHash)).toEqual(result.impactClosure);
   });
 
+  it("refreshes and persists derivation records after material revalidation", async () => {
+    const recordStore: DerivationIndexSnapshot[] = [];
+    const result = await new InvalidationEngine({
+      derivations: new DerivationIndex([
+        record("contract", [["artifact", "handler"]], "public-v1"),
+        record("client", [["unit", "contract"]]),
+      ]),
+      derivationStore: {
+        load: async () => undefined,
+        replace: async (snapshot) => { recordStore.push(snapshot); },
+      },
+    }).invalidate(event("handler"), {
+      revalidate: async () => [{ unitId: "contract", signature: signature("public-v2") }],
+    });
+    expect(result.revalidatedRecords).toEqual([expect.objectContaining({
+      unitId: "contract",
+      outputSemanticSignature: signature("public-v2"),
+    })]);
+    expect(result.invalidation.transitivelyAffected).toEqual(["client"]);
+    expect(recordStore).toHaveLength(1);
+    expect(recordStore[0]!.records.find(({ unitId }) => unitId === "contract")?.inputs.find(({ id }) => id === "handler")?.versionHash)
+      .toBe(hash("new"));
+  });
+
   it("records Impact Rule provenance separately from exact derivation provenance", async () => {
     const port: ImpactRuleEvaluationPort = {
       subjects: async () => [{ id: "export", values: { tag: ["public"] }, dependencyKeys: ["unit:export"] }],
@@ -736,5 +817,34 @@ describe("Impact Rules, selector membership, closure provenance, and oracles", (
     });
     expect(verdict.conformancePassed).toBe(false);
     expect(verdict.strongCompletion).toBe(false);
+  });
+
+  it("rejects same-packet authorship even when the evidence lane is otherwise independent", () => {
+    const verdict = compareCorrectnessOracles({
+      rebuild: { incrementalHash: hash("same"), cleanHash: hash("same") },
+      conformance: [validation({ evidenceLane: "test", independenceGroup: "packet", authorSource: "same-packet-agent" })],
+      historical: [],
+    });
+    expect(verdict.conformancePassed).toBe(false);
+    expect(verdict.strongCompletion).toBe(false);
+  });
+
+  it("retains exact provenance when an independent traversal lane is unavailable", async () => {
+    const port: ImpactRuleEvaluationPort = {
+      subjects: async () => [{ id: "export", values: { tag: ["public"] }, dependencyKeys: ["unit:export"] }],
+      traverse: async () => { throw new Error("reverse index unavailable"); },
+    };
+    const result = await new InvalidationEngine({
+      derivations: new DerivationIndex([record("export", [["artifact", "selector:public"]])]),
+      impactRules: new ImpactRuleRegistry([publicRule()]),
+      impactPort: port,
+    }).invalidate(event("selector:public", "membership-change"), {
+      stateBinding: createStateBinding({ compiledAgainst: event("selector:public").stateDigest, valueDependencies: [], queryDependencies: [] }),
+      revalidate: async () => [],
+    });
+    expect(result.impactClosure?.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ unitId: "export", disposition: "known", proofClass: "exact-derivation", observability: "closed" }),
+      expect.objectContaining({ unitId: "export", disposition: "unavailable", proofClass: "unavailable", observability: "unavailable" }),
+    ]));
   });
 });

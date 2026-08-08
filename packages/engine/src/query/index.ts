@@ -246,6 +246,36 @@ function requireString(input: Readonly<Record<string, unknown>>, key: string): s
   return value;
 }
 
+function requireStringArray(input: Readonly<Record<string, unknown>>, key: string): string[] {
+  const value = input[key];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.length === 0)) {
+    throw new InvalidQuerySpecError(`query input ${key} must be an array of non-empty strings`);
+  }
+  return sortedUniqueStrings(value as string[]);
+}
+
+function reverseClosure(graph: GraphReader, seedIds: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const pending = [...seedIds].sort(compareStrings);
+  while (pending.length > 0) {
+    const current = pending.shift()!;
+    for (const dependent of graph.reverseDerivationDependents(current).slice().sort(compareStrings)) {
+      if (seen.has(dependent)) continue;
+      seen.add(dependent);
+      pending.push(dependent);
+      pending.sort(compareStrings);
+    }
+  }
+  return sortedUniqueStrings([...seen]);
+}
+
+function idResults(ids: readonly string[], disposition?: string): QueryResult[] {
+  return sortedUniqueStrings(ids).map((id) => ({
+    id,
+    ...(disposition === undefined ? {} : { disposition }),
+  }));
+}
+
 function builtInPrograms(): RegisteredQueryProgram[] {
   return [
     {
@@ -333,6 +363,102 @@ function builtInPrograms(): RegisteredQueryProgram[] {
           assumptions: [],
           unavailableLanes: [],
           dependencyKeys: [`selector-membership:${selectorHash}`],
+        };
+      },
+    },
+    {
+      id: "invalidation.exact-reverse-derivation",
+      version: "1",
+      kind: "reverse-derivation",
+      normalizeInput: (input) => ({ ...structuredClone(input), subjectId: requireString(input, "subjectId") }),
+      evaluate: ({ input, graph }) => {
+        const subjectId = requireString(input, "subjectId");
+        return {
+          results: idResults(graph.reverseDerivationDependents(subjectId)),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: [`reverse-derivations:${subjectId}`],
+        };
+      },
+    },
+    {
+      id: "invalidation.transitive-reverse-derivation",
+      version: "1",
+      kind: "reverse-derivation",
+      normalizeInput: (input) => ({ ...structuredClone(input), seedIds: requireStringArray(input, "seedIds") }),
+      evaluate: ({ input, graph }) => {
+        const seedIds = requireStringArray(input, "seedIds");
+        return {
+          results: idResults(reverseClosure(graph, seedIds)),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: seedIds.map((id) => `reverse-derivations:${id}`),
+        };
+      },
+    },
+    {
+      id: "invalidation.impact-rule-selector-membership",
+      version: "1",
+      kind: "selector-membership",
+      normalizeInput: (input) => ({ ...structuredClone(input), selectorHash: requireString(input, "selectorHash") }),
+      evaluate: ({ input, graph }) => {
+        const selectorHash = requireString(input, "selectorHash") as ContentHash;
+        return {
+          results: idResults(graph.querySelectorDependencies(selectorHash)),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: [`selector-membership:${selectorHash}`],
+        };
+      },
+    },
+    {
+      id: "invalidation.impact-rule-applicability",
+      version: "1",
+      kind: "impact-rule-applicability",
+      normalizeInput: (input) => ({ ...structuredClone(input), selectorHash: requireString(input, "selectorHash") }),
+      evaluate: ({ input, graph }) => {
+        const selectorHash = requireString(input, "selectorHash") as ContentHash;
+        return {
+          results: idResults(graph.querySelectorDependencies(selectorHash)),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: [`selector-membership:${selectorHash}`],
+        };
+      },
+    },
+    {
+      id: "invalidation.impact-rule-reverse-traversal",
+      version: "1",
+      kind: "reverse-derivation",
+      normalizeInput: (input) => ({ ...structuredClone(input), seedIds: requireStringArray(input, "seedIds") }),
+      evaluate: ({ input, graph }) => {
+        const seedIds = requireStringArray(input, "seedIds");
+        return {
+          results: idResults(reverseClosure(graph, seedIds), "known"),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: seedIds.map((id) => `reverse-derivations:${id}`),
+        };
+      },
+    },
+    {
+      id: "invalidation.impact-rule-enumeration",
+      version: "1",
+      kind: "surface-enumeration",
+      normalizeInput: (input) => ({ ...structuredClone(input), seedIds: requireStringArray(input, "seedIds") }),
+      evaluate: ({ input, graph }) => {
+        const seedIds = requireStringArray(input, "seedIds");
+        return {
+          results: idResults(reverseClosure(graph, seedIds), "known"),
+          observability: "closed",
+          assumptions: [],
+          unavailableLanes: [],
+          dependencyKeys: seedIds.map((id) => `reverse-derivations:${id}`),
         };
       },
     },

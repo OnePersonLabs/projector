@@ -98,6 +98,17 @@ const validationAssuranceRank: Record<ValidationResult["assurance"], number> = {
   exact: 3,
 };
 
+/** Conservative independence guard: evidence with packet/correlation provenance cannot vote independently. */
+function hasCorrelatedProvenance(result: Pick<ValidationResult, "evidenceLane" | "independenceGroup" | "authorSource">): boolean {
+  const normalizedGroup = result.independenceGroup.trim().toLocaleLowerCase("en-US");
+  const normalizedAuthor = result.authorSource.trim().toLocaleLowerCase("en-US");
+  const correlated = /same[\s_-]*packet|correlat|causal|projector[\s_-]*generated/u;
+  return result.evidenceLane === "same-packet-agent"
+    || normalizedGroup === "packet"
+    || correlated.test(normalizedGroup)
+    || correlated.test(normalizedAuthor);
+}
+
 export interface RegisteredSemanticSignatureProfile {
   id: string;
   version: string;
@@ -267,6 +278,7 @@ export function assessBackdating(
     && validationAssuranceRank[result.assurance] >= validationAssuranceRank[policy.minimumValidatedAssurance]
     && !disallowed.has(result.evidenceLane)
     && (!policy.requireIndependent || result.independenceGroup.trim() !== "")
+    && (!policy.requireIndependent || !hasCorrelatedProvenance(result))
     && result.evidenceIds.some((evidenceId) => current.evidenceIds.includes(evidenceId)),
   );
   return qualifying.length > 0
@@ -535,7 +547,7 @@ interface SyntheticQueryInput {
   programVersion: string;
   input: Record<string, unknown>;
   role: string;
-  result: unknown;
+  result: readonly Record<string, unknown>[];
   resultCount: number;
   observability: ObservabilityClass;
   assumptions?: readonly string[];
@@ -572,6 +584,21 @@ function syntheticQueryDependency(input: SyntheticQueryInput): StateQueryDepende
   };
 }
 
+function queryIdResults(ids: readonly string[], disposition?: string): Array<Record<string, unknown>> {
+  return sortedUnique(ids).map((id) => ({
+    id,
+    ...(disposition === undefined ? {} : { disposition }),
+  }));
+}
+
+function queryTraversalResults(traversal: Pick<ImpactTraversalResult, "knownIds" | "possibleIds" | "unavailableIds">): Array<Record<string, unknown>> {
+  return [
+    ...queryIdResults(traversal.knownIds, "known"),
+    ...queryIdResults(traversal.possibleIds, "possible"),
+    ...queryIdResults(traversal.unavailableIds, "unavailable"),
+  ].sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
+}
+
 function mergeImpactStateBinding(binding: StateBinding, event: InvalidationEvent, generated: readonly StateQueryDependency[]): StateBinding {
   return createStateBinding({
     compiledAgainst: binding.compiledAgainst ?? event.stateDigest,
@@ -580,9 +607,13 @@ function mergeImpactStateBinding(binding: StateBinding, event: InvalidationEvent
   });
 }
 
-function normalizeSubjectResults(subjects: readonly SelectorSubject[]): Array<{ id: string; values: Partial<Record<string, unknown>> }> {
-  return subjects.map(({ id, values }) => ({ id, values: structuredClone(values) }))
+function normalizeSubjectResults(subjects: readonly SelectorSubject[]): Array<Record<string, unknown>> {
+  return subjects.map(({ id }) => ({ id }))
     .sort((left, right) => compareStrings(canonicalJson(left), canonicalJson(right)));
+}
+
+function selectorHash(rule: ImpactRule): ContentHash {
+  return hashFramedDomain("impact-rule-selector", rule.selector);
 }
 
 const triggerFor = (eventKind: string): ImpactRule["trigger"] | undefined => {
@@ -773,8 +804,13 @@ export class InvalidationEngine {
     const diagnostics = new Set<string>();
     const queryDependencies: StateQueryDependency[] = [];
     const reasons = new Map<string, Set<string>>();
+    const unavailableReasons = new Map<string, Set<string>>();
     const proofClasses = new Map<string, ImpactProofClass>();
     const observability = new Map<string, ObservabilityClass>();
+    const proofClassesByDisposition = new Map<string, Map<ImpactDisposition, ImpactProofClass>>();
+    const observabilityByDisposition = new Map<string, Map<ImpactDisposition, ObservabilityClass>>();
+    const proofClassRank: Record<ImpactProofClass, number> = { unavailable: 0, inferred: 1, "impact-rule": 2, "exact-derivation": 3 };
+    const observabilityRank: Record<ObservabilityClass, number> = { closed: 0, bounded: 1, sampled: 2, open: 3, unavailable: 4 };
     queryDependencies.push(syntheticQueryDependency({
       id: `invalidation:reverse-derivation:${event.subjectId}`,
       kind: "reverse-derivation",
@@ -782,7 +818,7 @@ export class InvalidationEngine {
       programVersion: "1",
       input: { eventKind: event.eventKind, subjectId: event.subjectId },
       role: "exact reverse derivation dependents",
-      result: sortedUnique([...directlyAffected]),
+      result: queryIdResults([...directlyAffected]),
       resultCount: directlyAffected.size,
       observability: "closed",
       dependencyKeys: [`reverse-derivations:${event.subjectId}`],
@@ -792,10 +828,36 @@ export class InvalidationEngine {
       values.add(reason);
       reasons.set(id, values);
     };
+    const addUnavailableReason = (id: string, reason: string): void => {
+      const values = unavailableReasons.get(id) ?? new Set<string>();
+      values.add(reason);
+      unavailableReasons.set(id, values);
+      addReason(id, reason);
+    };
+    const setProofClass = (id: string, proofClass: ImpactProofClass, disposition: ImpactDisposition = "known"): void => {
+      const existing = proofClasses.get(id);
+      if (existing === undefined || proofClassRank[proofClass] > proofClassRank[existing]) proofClasses.set(id, proofClass);
+      const byDisposition = proofClassesByDisposition.get(id) ?? new Map<ImpactDisposition, ImpactProofClass>();
+      const existingForDisposition = byDisposition.get(disposition);
+      if (existingForDisposition === undefined || proofClassRank[proofClass] > proofClassRank[existingForDisposition]) {
+        byDisposition.set(disposition, proofClass);
+      }
+      proofClassesByDisposition.set(id, byDisposition);
+    };
+    const setObservability = (id: string, value: ObservabilityClass, disposition: ImpactDisposition = "known"): void => {
+      const existing = observability.get(id);
+      if (existing === undefined || (value !== "unavailable" && observabilityRank[value] > observabilityRank[existing])) observability.set(id, value);
+      const byDisposition = observabilityByDisposition.get(id) ?? new Map<ImpactDisposition, ObservabilityClass>();
+      const existingForDisposition = byDisposition.get(disposition);
+      if (existingForDisposition === undefined || (value !== "unavailable" && observabilityRank[value] > observabilityRank[existingForDisposition])) {
+        byDisposition.set(disposition, value);
+      }
+      observabilityByDisposition.set(id, byDisposition);
+    };
     directlyAffected.forEach((id) => {
       addReason(id, `exact derivation input ${event.subjectId} changed`);
-      proofClasses.set(id, "exact-derivation");
-      observability.set(id, "closed");
+      setProofClass(id, "exact-derivation");
+      setObservability(id, "closed");
       const record = this.derivations.get(id);
       if (event.eventKind === "signature-profile-change" && record !== undefined
         && (record.outputSemanticSignature.profileId === event.subjectId || record.outputStructuralSignature.profileId === event.subjectId)) {
@@ -819,10 +881,10 @@ export class InvalidationEngine {
               kind: "selector-membership",
               programId: "invalidation.impact-rule-selector-membership",
               programVersion: "1",
-              input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, phase },
+              input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), phase },
               role: "Impact Rule selector membership",
               result: normalizeSubjectResults(subjects),
-              resultCount: subjects.length,
+              resultCount: new Set(subjects.map(({ id }) => id)).size,
               observability: "closed",
               dependencyKeys: subjects.flatMap(({ dependencyKeys }) => dependencyKeys),
             }));
@@ -834,7 +896,7 @@ export class InvalidationEngine {
               kind: "selector-membership",
               programId: "invalidation.impact-rule-selector-membership",
               programVersion: "1",
-              input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, phase },
+              input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), phase },
               role: "Impact Rule selector membership",
               result: [],
               resultCount: 0,
@@ -858,9 +920,9 @@ export class InvalidationEngine {
             kind: "impact-rule-applicability",
             programId: "invalidation.impact-rule-applicability",
             programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version },
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule) },
             role: "Impact Rule applicability",
-            result: seeds,
+            result: queryIdResults(seeds),
             resultCount: seeds.length,
             observability: "closed",
             dependencyKeys: [...before, ...after].flatMap(({ dependencyKeys }) => dependencyKeys),
@@ -871,7 +933,7 @@ export class InvalidationEngine {
             kind: "impact-rule-applicability",
             programId: "invalidation.impact-rule-applicability",
             programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version },
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule) },
             role: "Impact Rule applicability",
             result: [],
             resultCount: 0,
@@ -887,8 +949,8 @@ export class InvalidationEngine {
         seeds.forEach((id) => {
           directlyAffected.add(id);
           addReason(id, `Impact Rule ${rule.id}@${rule.version} applies to prior or current selector membership`);
-          if (!proofClasses.has(id)) proofClasses.set(id, "impact-rule");
-          if (!observability.has(id)) observability.set(id, "closed");
+          setProofClass(id, "impact-rule");
+          setObservability(id, "closed");
         });
         if (seeds.length === 0 || rule.effect === "advisory") continue;
         if (rule.effect === "block") {
@@ -901,15 +963,16 @@ export class InvalidationEngine {
           blocked.set(`${rule.id}\u0000${rule.version}`, block);
           block.unitIds.forEach((id) => {
             addReason(id, block.reason);
-            proofClasses.set(id, "impact-rule");
-            observability.set(id, "closed");
+            setProofClass(id, "impact-rule", "blocked");
+            setObservability(id, "closed", "blocked");
           });
           diagnostics.add(`impact-rule-block:${rule.id}@${rule.version}`);
           continue;
         }
         try {
           const traversal = await this.impactPort.traverse(seeds, rule, event);
-          const traversalIds = [...traversal.knownIds, ...traversal.possibleIds, ...traversal.unavailableIds];
+          const traversalResults = queryTraversalResults(traversal);
+          const traversalIds = traversalResults.map(({ id }) => String(id));
           const traversalDependencyKeys = [
             ...seeds.map((id) => `selector-member:${id}`),
             ...(traversal.dependencyKeys ?? []),
@@ -919,9 +982,9 @@ export class InvalidationEngine {
             kind: "reverse-derivation",
             programId: "invalidation.impact-rule-reverse-traversal",
             programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, seedIds: sortedUnique(seeds) },
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), seedIds: sortedUnique(seeds) },
             role: "Impact Rule reverse derivation traversal",
-            result: { knownIds: sortedUnique(traversal.knownIds), possibleIds: sortedUnique(traversal.possibleIds), unavailableIds: sortedUnique(traversal.unavailableIds) },
+            result: traversalResults,
             resultCount: traversalIds.length,
             observability: traversal.observability,
             ...(traversal.assumptions === undefined ? {} : { assumptions: traversal.assumptions }),
@@ -933,9 +996,9 @@ export class InvalidationEngine {
             kind: "surface-enumeration",
             programId: "invalidation.impact-rule-enumeration",
             programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, seedIds: sortedUnique(seeds) },
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), seedIds: sortedUnique(seeds) },
             role: "Impact Rule bounded consequence enumeration",
-            result: traversalIds,
+            result: traversalResults,
             resultCount: traversalIds.length,
             observability: traversal.observability,
             ...(traversal.assumptions === undefined ? {} : { assumptions: traversal.assumptions }),
@@ -945,21 +1008,22 @@ export class InvalidationEngine {
           traversal.knownIds.forEach((id) => {
             if (rule.effect === "widen-analysis") possibleFrontier.add(id);
             else transitivelyAffected.add(id);
-            proofClasses.set(id, rule.effect === "widen-analysis" ? "inferred" : "impact-rule");
-            observability.set(id, traversal.observability);
+            const disposition: ImpactDisposition = rule.effect === "widen-analysis" ? "possible" : "known";
+            setProofClass(id, rule.effect === "widen-analysis" ? "inferred" : "impact-rule", disposition);
+            setObservability(id, traversal.observability, disposition);
             addReason(id, `${rule.effect === "widen-analysis" ? "possible" : "proven"} Impact Rule ${rule.id}@${rule.version} consequence`);
           });
           traversal.possibleIds.forEach((id) => {
             possibleFrontier.add(id);
-            proofClasses.set(id, "inferred");
-            observability.set(id, traversal.observability);
+            setProofClass(id, "inferred", "possible");
+            setObservability(id, traversal.observability, "possible");
             addReason(id, `possible Impact Rule ${rule.id}@${rule.version} consequence`);
           });
           traversal.unavailableIds.forEach((id) => {
             unavailable.add(id);
-            proofClasses.set(id, "unavailable");
-            observability.set(id, "unavailable");
-            addReason(id, `Impact Rule ${rule.id}@${rule.version} traversal unavailable`);
+            setProofClass(id, "unavailable", "unavailable");
+            setObservability(id, "unavailable", "unavailable");
+            addUnavailableReason(id, `Impact Rule ${rule.id}@${rule.version} traversal unavailable`);
           });
           for (const [id, values] of Object.entries(traversal.reasons)) values.forEach((reason) => addReason(id, reason));
           if (traversal.observability === "open" || traversal.observability === "sampled") {
@@ -971,7 +1035,7 @@ export class InvalidationEngine {
             kind: "reverse-derivation",
             programId: "invalidation.impact-rule-reverse-traversal",
             programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, seedIds: sortedUnique(seeds) },
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), seedIds: sortedUnique(seeds) },
             role: "Impact Rule reverse derivation traversal",
             result: [],
             resultCount: 0,
@@ -984,7 +1048,7 @@ export class InvalidationEngine {
             kind: "surface-enumeration",
             programId: "invalidation.impact-rule-enumeration",
             programVersion: "1",
-            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, seedIds: sortedUnique(seeds) },
+            input: { eventKind: event.eventKind, subjectId: event.subjectId, ruleId: rule.id, ruleVersion: rule.version, selectorHash: selectorHash(rule), seedIds: sortedUnique(seeds) },
             role: "Impact Rule bounded consequence enumeration",
             result: [],
             resultCount: 0,
@@ -994,9 +1058,9 @@ export class InvalidationEngine {
           }));
           seeds.forEach((id) => {
             unavailable.add(id);
-            proofClasses.set(id, "unavailable");
-            observability.set(id, "unavailable");
-            addReason(id, `Impact Rule ${rule.id}@${rule.version} traversal unavailable: ${error instanceof Error ? error.message : "unknown failure"}`);
+            setProofClass(id, "unavailable", "unavailable");
+            setObservability(id, "unavailable", "unavailable");
+            addUnavailableReason(id, `Impact Rule ${rule.id}@${rule.version} traversal unavailable: ${error instanceof Error ? error.message : "unknown failure"}`);
           });
         }
       }
@@ -1047,13 +1111,18 @@ export class InvalidationEngine {
           assessment: output === undefined ? undefined : this.assessBackdating(prior, output, event, policy),
         };
       });
+      if (fixedPointReached) {
+        for (const prior of priorRecords) {
+          const output = byUnit.get(prior.unitId);
+          const assessment = assessments.find(({ unitId }) => unitId === prior.unitId)?.assessment;
+          if (output !== undefined && assessment !== undefined) {
+            refreshedRecords.set(prior.unitId, this.refreshDerivationRecord(prior, output, event));
+          }
+        }
+      }
       const groupEligible = assessments.length === memberIds.length && assessments.every(({ assessment }) => assessment?.eligible);
       if (groupEligible) {
         memberIds.forEach((id) => backdated.add(id));
-        for (const prior of priorRecords) {
-          const output = byUnit.get(prior.unitId);
-          if (output !== undefined) refreshedRecords.set(prior.unitId, this.refreshDerivationRecord(prior, output, event));
-        }
         continue;
       }
       const anyUnavailable = assessments.some(({ assessment }) => assessment === undefined);
@@ -1073,7 +1142,7 @@ export class InvalidationEngine {
         programVersion: "1",
         input: { eventKind: event.eventKind, subjectId: event.subjectId, seedIds: sortedUnique(memberIds) },
         role: "transitive reverse derivation dependents",
-        result: downstream,
+        result: queryIdResults(downstream),
         resultCount: downstream.length,
         observability: "closed",
         dependencyKeys: memberIds.map((id) => `reverse-derivations:${id}`),
@@ -1126,10 +1195,10 @@ export class InvalidationEngine {
     });
 
     const entries: ImpactClosureEntry[] = [
-      ...invalidation.directlyAffected.map((unitId) => ({ unitId, disposition: "known" as const, proofClass: proofClasses.get(unitId) ?? "exact-derivation", observability: observability.get(unitId) ?? "closed", frontier: false, reasons: invalidation.reasons[unitId] ?? [] })),
-      ...invalidation.transitivelyAffected.map((unitId) => ({ unitId, disposition: "known" as const, proofClass: proofClasses.get(unitId) ?? "exact-derivation", observability: observability.get(unitId) ?? "closed", frontier: false, reasons: invalidation.reasons[unitId] ?? [] })),
-      ...invalidation.possibleFrontier.map((unitId) => ({ unitId, disposition: "possible" as const, proofClass: proofClasses.get(unitId) ?? "inferred", observability: observability.get(unitId) ?? "open", frontier: true, reasons: invalidation.reasons[unitId] ?? [] })),
-      ...[...blocked.values()].flatMap((block) => block.unitIds.map((unitId) => ({ unitId, disposition: "blocked" as const, proofClass: "impact-rule" as const, observability: observability.get(unitId) ?? "closed", frontier: true, reasons: [...(invalidation.reasons[unitId] ?? []), block.reason] }))),
+      ...invalidation.directlyAffected.map((unitId) => ({ unitId, disposition: "known" as const, proofClass: proofClassesByDisposition.get(unitId)?.get("known") ?? proofClasses.get(unitId) ?? "exact-derivation", observability: observabilityByDisposition.get(unitId)?.get("known") ?? observability.get(unitId) ?? "closed", frontier: false, reasons: [...(invalidation.reasons[unitId] ?? [])].filter((reason) => !(unavailableReasons.get(unitId)?.has(reason) ?? false)) })),
+      ...invalidation.transitivelyAffected.map((unitId) => ({ unitId, disposition: "known" as const, proofClass: proofClassesByDisposition.get(unitId)?.get("known") ?? proofClasses.get(unitId) ?? "exact-derivation", observability: observabilityByDisposition.get(unitId)?.get("known") ?? observability.get(unitId) ?? "closed", frontier: false, reasons: [...(invalidation.reasons[unitId] ?? [])].filter((reason) => !(unavailableReasons.get(unitId)?.has(reason) ?? false)) })),
+      ...invalidation.possibleFrontier.map((unitId) => ({ unitId, disposition: "possible" as const, proofClass: proofClassesByDisposition.get(unitId)?.get("possible") ?? proofClasses.get(unitId) ?? "inferred", observability: observabilityByDisposition.get(unitId)?.get("possible") ?? observability.get(unitId) ?? "open", frontier: true, reasons: [...(invalidation.reasons[unitId] ?? [])].filter((reason) => !(unavailableReasons.get(unitId)?.has(reason) ?? false)) })),
+      ...[...blocked.values()].flatMap((block) => block.unitIds.map((unitId) => ({ unitId, disposition: "blocked" as const, proofClass: proofClassesByDisposition.get(unitId)?.get("blocked") ?? "impact-rule" as const, observability: observabilityByDisposition.get(unitId)?.get("blocked") ?? observability.get(unitId) ?? "closed", frontier: true, reasons: [...(invalidation.reasons[unitId] ?? []), block.reason].filter((reason) => !(unavailableReasons.get(unitId)?.has(reason) ?? false)) }))),
       ...invalidation.unavailable.map((unitId) => ({ unitId, disposition: "unavailable" as const, proofClass: "unavailable" as const, observability: "unavailable" as const, frontier: true, reasons: invalidation.reasons[unitId] ?? [] })),
     ];
     const normalizedBinding = options.stateBinding === undefined
@@ -1259,6 +1328,7 @@ export function compareCorrectnessOracles(input: CorrectnessOracleInput): Correc
     && !disallowedEvidenceLanes.has(result.evidenceLane)
     && result.independenceGroup.trim() !== ""
     && result.authorSource.trim() !== ""
+    && !hasCorrelatedProvenance(result)
     && result.evidenceIds.length > 0,
   );
   const independentGroups = new Set(qualifyingConformance.map(({ independenceGroup }) => independenceGroup.trim()));
