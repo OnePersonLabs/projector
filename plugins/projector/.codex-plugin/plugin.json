@@ -1,6 +1,6 @@
 {
   "name": "projector",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Projector-aware Codex workflows and policy-bound MCP tools.",
   "author": {
     "name": "Projector contributors"
