@@ -1,0 +1,27 @@
+{
+  "name": "projector",
+  "version": "2.0.0",
+  "description": "Projector-aware Codex workflows and policy-bound MCP tools.",
+  "author": {
+    "name": "Projector contributors"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Projector",
+    "shortDescription": "Use Projector safely from Codex.",
+    "longDescription": "Expose Projector repository analysis, planning, evidence, and state-bound mutation workflows to Codex.",
+    "developerName": "Projector contributors",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Repository analysis",
+      "State-bound planning",
+      "Controlled changes"
+    ],
+    "defaultPrompt": [
+      "Audit this repository with Projector.",
+      "Plan this change through Projector.",
+      "Review this change with Projector evidence."
+    ]
+  }
+}
