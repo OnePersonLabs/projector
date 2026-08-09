@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "projector": {
+      "command": "node",
+      "args": [
+        "${CODEX_PLUGIN_ROOT}/scripts/projector-mcp.mjs"
+      ]
+    }
+  }
+}
