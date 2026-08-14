@@ -1,4 +1,4 @@
-import { hashFramedDomain, type AdapterContext, type ContentHash, type ExecutionCapsule, type StateBinding, type StateBindingValidator, type StateDigest } from "@projector/core";
+import { canonicalJson, hashFramedDomain, type AdapterContext, type ContentHash, type ExecutionCapsule, type RepresentationProjectionRef, type StateBinding, type StateBindingValidator, type StateDigest } from "@projector/core";
 
 export type HostName = "codex" | "claude";
 export type HostFeature = "instruction-installation" | "lifecycle-hooks" | "programmatic-execution" | "subagents" | "isolated-worktrees" | "structured-result" | "tool-observation" | "filesystem-observation" | "cancellation" | "state-capability";
@@ -34,7 +34,7 @@ export interface HostRunRequest {
   readonly capsule: ExecutionCapsule;
   readonly binding: StateBinding;
   readonly currentState: StateDigest;
-  readonly instructions: { readonly text: string; readonly sourceHashes: readonly ContentHash[]; readonly representationId: string };
+  readonly instructions: { readonly text: string; readonly sourceHashes: readonly ContentHash[]; readonly representation: RepresentationProjectionRef };
   readonly signal: AbortSignal;
 }
 
@@ -85,6 +85,9 @@ export function createHostAdapter(host: HostName, executable: string, dependenci
       const effectiveBinding = validation.status === "rebound" ? validation.rebound : request.binding;
       if (effectiveBinding === undefined || !sameState(effectiveBinding.compiledAgainst, request.currentState) || effectiveBinding.dependencyDigest !== request.binding.dependencyDigest) throw new Error("host StateBinding rebound is unauthenticated");
       if (!request.instructions.sourceHashes.includes(request.capsule.normativeKernelHash)) throw new Error("host instructions omit the normative kernel source");
+      if (request.capsule.representation === undefined) throw new Error("host execution capsule omits its representation projection");
+      if (canonicalJson(request.instructions.representation) !== canonicalJson(request.capsule.representation)) throw new Error("host instructions do not match the capsule representation projection");
+      if (hashFramedDomain("representation-artifact", request.instructions.text) !== request.instructions.representation.contentHash) throw new Error("host representation artifact hash mismatch");
       if (!await ports.authority.verify({ sessionId: request.sessionId, capsule: request.capsule, binding: effectiveBinding, currentState: request.currentState })) throw new Error("host authority is absent or stale");
       const requestHash = hashFramedDomain("host-run-request", { sessionId: request.sessionId, repositoryRoot: request.repositoryRoot, argv: request.argv, environmentKeys: request.allowedEnvironmentKeys, capsuleHash: request.capsule.contextHash, bindingDigest: effectiveBinding.dependencyDigest, currentState: request.currentState, instructions: request.instructions });
       const capsuleHash = hashFramedDomain("host-execution-capsule", request.capsule);

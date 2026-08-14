@@ -1,4 +1,4 @@
-import { hashFramedDomain, type CompletionContract, type RiskAssessment, type SemanticChange, type StateDigest } from "@projector/core";
+import { hashFramedDomain, type CompletionContract, type RepresentationProjectionRef, type RiskAssessment, type SemanticChange, type StateDigest } from "@projector/core";
 import { describe, expect, it } from "vitest";
 
 import { createStateBinding } from "../state/index.js";
@@ -12,27 +12,37 @@ const completion: CompletionContract = { requiredUnitStates: [{ unitId: "unit:co
 const baseProposals: ChangePacketProposal[] = [{ key: "consumer", title: "update consumer", stage: "consumer", executionMode: "deterministic", transformId: "update-consumer", unitIds: ["unit:consumer"], semanticOwnerIds: ["concept:consumer"], writeSelectors: ["packages/client/**"], dependencies: [], validatorIds: ["test"] }, { key: "contract", title: "update contract", stage: "contract", executionMode: "deterministic", transformId: "update-contract", unitIds: ["unit:contract"], semanticOwnerIds: ["concept:contract"], writeSelectors: ["packages/api/**"], dependencies: [], validatorIds: ["test"] }];
 function proposalSet(proposals: readonly ChangePacketProposal[] = baseProposals): AuthenticatedPacketProposalSet { const value = { proposals, completionContract: completion }; return { value, contentHash: hashFramedDomain("authenticated-change-packet-proposals", value) }; }
 const changePort = { read: async () => { const value = { change, boundState: binding, compilerFactsHash: hashFramedDomain("facts", "contract") }; return { value, contentHash: hashFramedDomain("authenticated-change-planning-input", value) }; } };
+const representation: RepresentationProjectionRef = { projectionId: "representation:change", profileId: "profile:agent-compact", profileVersion: "1", contentHash: hashFramedDomain("representation-artifact", "instructions"), preservationHash: hashFramedDomain("semantic-preservation-fingerprint", "change") };
+const representationPort = { compile: async () => representation };
 
 describe("impact-aware semantic change plan compiler", () => {
   it("orders contracts before consumers deterministically and binds immutable packets/capsules", async () => {
-    const first = await compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet() } });
-    const reordered = await compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet([...baseProposals].reverse()) } });
+    const first = await compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet() }, representations: representationPort });
+    const reordered = await compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet([...baseProposals].reverse()) }, representations: representationPort });
     expect(first.executionOrder.map(({ key }) => key)).toEqual(["contract", "consumer"]);
     expect(first.plan).toEqual(reordered.plan); expect(first.packetHash).toBe(reordered.packetHash);
     expect(first.packets.every(({ packet, capsule }) => packet.capsuleId === capsule.id && packet.boundState.dependencyDigest === binding.dependencyDigest)).toBe(true);
+    expect(first.packets.every(({ capsule }) => capsule.representation?.contentHash === representation.contentHash && capsule.contextDependencyHash !== binding.dependencyDigest)).toBe(true);
   });
 
   it("rejects semantic/write overlap and undeclared or nonconvergent SCCs before execution", async () => {
     const overlap = [{ ...baseProposals[0]!, writeSelectors: ["packages/shared/**"] }, { ...baseProposals[1]!, writeSelectors: ["packages/shared/file.ts"] }];
-    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(overlap) } })).rejects.toThrow(/overlap|write/iu);
+    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(overlap) }, representations: representationPort })).rejects.toThrow(/overlap|write/iu);
     const cycle = [{ ...baseProposals[0]!, dependencies: ["contract"] }, { ...baseProposals[1]!, dependencies: ["consumer"] }];
-    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(cycle) } })).rejects.toThrow(/cycle|convergen/iu);
+    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(cycle) }, representations: representationPort })).rejects.toThrow(/cycle|convergen/iu);
     const nonconvergent = cycle.map((item) => ({ ...item, convergence: { group: "contract-cycle", maximumIterations: 0 } }));
-    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(nonconvergent) } })).rejects.toThrow(/convergen|iteration/iu);
+    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(nonconvergent) }, representations: representationPort })).rejects.toThrow(/convergen|iteration/iu);
     const outside = [{ ...baseProposals[0]!, writeSelectors: ["packages/other/**"] }];
-    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(outside) } })).rejects.toThrow(/boundary|scope/iu);
+    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(outside) }, representations: representationPort })).rejects.toThrow(/boundary|scope/iu);
     const convergent = cycle.map((item) => ({ ...item, convergence: { group: "contract-cycle", maximumIterations: 3 } }));
-    const compiled = await compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(convergent) } });
+    const compiled = await compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, { changes: changePort, packets: { compile: async () => proposalSet(convergent) }, representations: representationPort });
     expect(compiled.executionOrder.every(({ convergence }) => convergence?.group === "contract-cycle" && convergence.maximumIterations === 3)).toBe(true);
+  });
+
+  it("fails closed when the semantic-change representation cannot be compiled", async () => {
+    await expect(compileSemanticChangePlan({ changeId: change.id, revision: 1, sourceRunId: "run:1" }, {
+      changes: changePort, packets: { compile: async () => proposalSet() },
+      representations: { compile: async () => { throw new Error("representation fidelity unavailable"); } },
+    })).rejects.toThrow(/representation fidelity unavailable/u);
   });
 });

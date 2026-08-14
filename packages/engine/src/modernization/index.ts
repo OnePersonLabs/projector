@@ -10,6 +10,7 @@ import {
   type EntityId,
   type ExecutionPlan,
   type RiskClass,
+  type RepresentationProjectionRef,
   type StateBinding,
   type StateQueryDependency,
 } from "@projector/core";
@@ -290,6 +291,7 @@ export async function compileUpgradePlan(input: { readonly recommendationId: Ent
   readonly approvals: { authenticate(approval: UpgradeExecutionApproval): Promise<{ current: boolean; decisionCurrent: boolean; governanceBasisCurrent: boolean; recommendationHash: ContentHash; stateDependencyDigest: ContentHash }> };
   readonly changes: { read(changeId: string): Promise<AuthenticatedChangePlanningInput> };
   readonly migrationProof: { verify(input: { recommendationId: EntityId; semanticChangeId: EntityId }): Promise<CurrentMigrationClosureProof> };
+  readonly representations: { compile(input: AuthenticatedChangePlanningInput["value"]): Promise<RepresentationProjectionRef> };
 }): Promise<CompiledSemanticChangePlan> {
   if (input.approval.recommendationId !== input.recommendationId) throw new Error("upgrade approval is bound to another recommendation");
   const proof = await ports.approvals.authenticate(input.approval);
@@ -317,7 +319,7 @@ export async function compileUpgradePlan(input: { readonly recommendationId: Ent
       const completionContract = { requiredUnitStates: unique(input.phases.flatMap(({ unitIds }) => unitIds)).map((unitId) => ({ unitId, state: "valid" as const })), requiredValidators: unique(input.phases.flatMap(({ validatorIds }) => validatorIds)), requiredEvidenceLanes: ["test" as const], minimumValidationAssurance: "strong" as const, requireIndependentValidation: true, maximumNewDivergences: 0, maximumUnknowns: 0, allowUnavailableExternalActions: false, requiredArtifacts: ["residue-zero-certificate", "rollback-checkpoints"], cleanWorkingTree: true };
       const value = { proposals, completionContract };
       return { value, contentHash: hashFramedDomain("authenticated-change-packet-proposals", value) };
-    } },
+    } }, representations: ports.representations,
   });
   if (result.plan.boundState.dependencyDigest !== input.approval.stateDependencyDigest) throw new Error("compiled upgrade plan no longer matches approved state");
   return result;

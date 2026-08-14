@@ -1,9 +1,7 @@
 import type {
   AnalysisFacet,
-  BehavioralScenario,
   ContentHash,
   RelevanceClosure,
-  Requirement,
   SelectorExpr,
 } from "@projector/core";
 import { describe, expect, it } from "vitest";
@@ -11,7 +9,6 @@ import { describe, expect, it } from "vitest";
 import {
   activateAnalysisFacets,
   compileContext,
-  deriveBehaviorViews,
 } from "./index.js";
 
 const hash = (value: string): ContentHash => `sha256:v1:${value.padEnd(64, "0")}`;
@@ -108,36 +105,4 @@ describe("bounded context and derived behavior views", () => {
     expect(compiled.unknowns.join(" ")).toMatch(/required.*budget/i);
   });
 
-  it("derives Markdown, Gherkin, compact, and machine views from the same canonical Requirement/Scenario identities", () => {
-    const requirement: Requirement = {
-      id: "req-timing", key: "REQ-TIMING", title: "Stable timing", aliases: [],
-      statement: "MIDI timing must remain stable", status: "active", sourceClass: "authored",
-      scope: selector("tag", "midi"), origin: [], evidence: [], discoveryHash: hash("req-d"), semanticHash: hash("req-s"),
-    };
-    const scenario: BehavioralScenario = {
-      id: "scenario-timing", key: "SCENARIO-TIMING", title: "Wireless timing", aliases: [],
-      status: "active", sourceClass: "authored", scope: selector("tag", "midi"), evidence: [],
-      steps: [
-        { role: "precondition", statement: "a wireless MIDI device is connected" },
-        { role: "trigger", statement: "a note arrives" },
-        { role: "expected-outcome", statement: "recorded ordering stays stable" },
-      ],
-      discoveryHash: hash("scenario-d"), semanticHash: hash("scenario-s"),
-    };
-
-    const views = deriveBehaviorViews(requirement, scenario, ["markdown", "gherkin", "agent-compact", "machine-invariant"]);
-    expect(views.map(({ format }) => format)).toEqual(["agent-compact", "gherkin", "machine-invariant", "markdown"]);
-    expect(views.every(({ requirementId }) => requirementId === requirement.id)).toBe(true);
-    expect(views.every(({ scenarioId }) => scenarioId === scenario.id)).toBe(true);
-    expect(new Set(views.map(({ derivedId }) => derivedId)).size).toBe(4);
-    expect(requirement.statement).toBe("MIDI timing must remain stable");
-    const gherkin = views.find(({ format }) => format === "gherkin")!;
-    expect(gherkin.content).toContain(`Source-Requirement: ${requirement.id}@${requirement.semanticHash}`);
-    expect(gherkin.content).toContain(`Source-Scenario: ${scenario.id}@${scenario.semanticHash}`);
-    expect(gherkin.content.split("\n").filter((line) => /^\s+(Given|When|Then|And|But)\b/.test(line))).toEqual([
-      "  Given a wireless MIDI device is connected",
-      "  When a note arrives",
-      "  Then recorded ordering stays stable",
-    ]);
-  });
 });

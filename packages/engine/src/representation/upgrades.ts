@@ -34,6 +34,11 @@ export interface UpgradeDependencyRegistry {
   /** Complete reverse dependency enumeration for every registered dependency key. */
   readonly directDependentIdsByDependencyKey: Readonly<Record<string, readonly string[]>>;
 }
+export interface UpgradeInvalidationPlan {
+  readonly invalidatedIds: string[];
+  readonly preservedCanonicalEntityIds: string[];
+  readonly requiredAction: UpgradeDeclaration["requiredAction"];
+}
 
 export function planUpgradeInvalidation(declaration: UpgradeDeclaration, dependents: readonly UpgradeDependent[], registry: UpgradeDependencyRegistry): {
   readonly invalidatedIds: string[]; readonly preservedCanonicalEntityIds: string[]; readonly requiredAction: UpgradeDeclaration["requiredAction"];
@@ -103,6 +108,33 @@ export function planUpgradeInvalidation(declaration: UpgradeDeclaration, depende
     preservedCanonicalEntityIds: normalizedDependents.filter(({ kind }) => kind === "canonical-entity").map(({ id }) => id).sort(),
     requiredAction: declaration.requiredAction,
   };
+}
+
+export async function reconcileRepresentationProfileUpgrade(plan: UpgradeInvalidationPlan, ports: {
+  readonly invalidate: (ids: readonly string[]) => Promise<void>;
+  readonly refresh: (id: string) => Promise<string>;
+}): Promise<{
+  readonly status: "reconciled";
+  readonly invalidatedIds: readonly string[];
+  readonly refreshedIds: readonly string[];
+  readonly refreshed: Readonly<Record<string, string>>;
+  readonly preservedCanonicalEntityIds: readonly string[];
+  readonly receiptHash: string;
+}> {
+  const invalidatedIds = normalizeKeys(plan.invalidatedIds);
+  const preservedCanonicalEntityIds = normalizeKeys(plan.preservedCanonicalEntityIds);
+  if (invalidatedIds.length === 0) throw new TypeError("representation reconciliation requires nonempty invalidation");
+  if (invalidatedIds.some((id) => preservedCanonicalEntityIds.includes(id))) throw new TypeError("canonical authority cannot be invalidated during representation reconciliation");
+  await ports.invalidate(invalidatedIds);
+  const refreshedEntries: Array<readonly [string, string]> = [];
+  for (const id of invalidatedIds) {
+    const contentHash = await ports.refresh(id);
+    if (!/^sha256:v1:[a-f0-9]{64}$/u.test(contentHash)) throw new TypeError(`refreshed representation dependent ${id} is unauthenticated`);
+    refreshedEntries.push([id, contentHash]);
+  }
+  const refreshed = Object.fromEntries(refreshedEntries);
+  const body = { invalidatedIds, refreshed, preservedCanonicalEntityIds, requiredAction: plan.requiredAction };
+  return { status: "reconciled", ...body, refreshedIds: Object.keys(refreshed).sort(), receiptHash: hashFramedDomain("representation-upgrade-reconciliation", body) };
 }
 import { canonicalJson, hashFramedDomain } from "@projector/core";
 import { z } from "zod";

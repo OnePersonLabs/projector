@@ -8,6 +8,7 @@ import {
   type RepresentationProjection,
   type SemanticPreservationFingerprint,
   type SemanticRepresentationProfile,
+  type SemanticChange,
   type StateBinding,
   type ValidationResult,
 } from "@projector/core";
@@ -55,6 +56,19 @@ export interface TokenMeasurementPort {
   readonly profileId: string;
   measure(content: string): number;
 }
+
+export interface InstructionUtilityMeasurementPort {
+  readonly profileId: string;
+  measure(input: {
+    readonly source: CanonicalRepresentationSource;
+    readonly candidate: string;
+    readonly profileKey: BuiltInRepresentationProfileKey;
+    readonly profileOverheadTokens: number;
+  }): { readonly netInstructionEfficiency: number; readonly evidence: string };
+}
+export type RepresentationTelemetryObservation =
+  | { readonly event: "representation.compiled"; readonly projectionId: EntityId; readonly profileId: EntityId; readonly sourceSemanticHash: ContentHash; readonly protectedDimensionCount: number; readonly fidelityStatus: "valid"; readonly netInstructionEfficiency?: number }
+  | { readonly event: "representation.fallback"; readonly requestedProfileId: EntityId; readonly acceptedProjectionId: EntityId; readonly tier: RepresentationFallbackTier; readonly reason: "unsafe" | "instruction-inefficient" };
 
 const ALL_DIMENSIONS: PreservationDimension[] = [
   "normative-force", "negation", "scope", "quantifier-cardinality", "logical-connective",
@@ -642,11 +656,51 @@ export interface CompileRepresentationInput {
   binding: StateBinding;
   profileKey: BuiltInRepresentationProfileKey;
   profileOverheadTokens?: number;
+  /** Candidate supplied by a generator boundary. It is never trusted without the same fidelity checks as built-in output. */
+  candidate?: string;
+}
+
+function stringsIn(value: unknown): string[] {
+  if (typeof value === "string") return value.trim() === "" ? [] : [value];
+  if (Array.isArray(value)) return value.flatMap(stringsIn);
+  if (value !== null && typeof value === "object") return Object.values(value).flatMap(stringsIn);
+  return [];
+}
+
+/** The authenticated semantic change is the authority; callers cannot supply a parallel representation kernel. */
+export function canonicalRepresentationSourceFromSemanticChange(change: SemanticChange): CanonicalRepresentationSource {
+  const statementId = `change-directive:${change.id}`;
+  const changeKernelHash = hashFramedDomain("semantic-change-normative-kernel", change);
+  const scenarioOperations = change.operations.filter((operation): operation is Extract<SemanticChange["operations"][number], { subjectType: "scenario" }> => operation.subjectType === "scenario" && operation.proposedScenario !== undefined);
+  const scenarios = scenarioOperations.map((operation) => ({
+    id: operation.proposedScenario!.id,
+    title: operation.proposedScenario!.title,
+    steps: operation.proposedScenario!.steps,
+  }));
+  const operationIds = change.operations.flatMap((operation) => operation.subjectType === "requirement"
+    ? [operation.requirementId, operation.proposedRequirement?.id]
+    : operation.subjectType === "scenario" ? [operation.scenarioId, operation.proposedScenario?.id] : [operation.subjectId]).filter((id): id is string => id !== undefined);
+  const statement: CanonicalRepresentationStatement = {
+    id: statementId,
+    text: change.normalizedIntent,
+    normativeForce: "require",
+    negated: false,
+    scope: unique(change.boundary),
+    ...(change.operations.length > 1 ? { cardinality: "all" as const, connective: "and" as const } : {}),
+    exceptions: [],
+    dependencies: unique([...change.decisionIds, ...change.identityResolutionIds, ...change.assumptions.map((item) => `assumption:${item}`)]),
+    conceptIds: unique(operationIds),
+    protectedLiterals: unique([change.id, changeKernelHash, ...change.boundary, ...change.operations.flatMap(stringsIn), ...change.assumptions]),
+  };
+  const body = { sourceEntityIds: unique([statementId, ...scenarios.map(({ id }) => id)]), statements: [statement], scenarios };
+  return { ...body, sourceSemanticHash: hashFramedDomain("canonical-representation-source", body) };
 }
 
 export class RepresentationCompiler {
   constructor(private readonly ports: {
     readonly artifacts: RepresentationArtifactStore; readonly tokenizer?: TokenMeasurementPort;
+    readonly utility?: InstructionUtilityMeasurementPort;
+    readonly telemetry?: { record(observation: RepresentationTelemetryObservation): Promise<void> };
     readonly fallbackGate?: (tier: RepresentationFallbackTier) => boolean;
   }) {}
 
@@ -666,7 +720,7 @@ export class RepresentationCompiler {
   }
 
   async compile(input: CompileRepresentationInput): Promise<{ readonly projection: Readonly<RepresentationProjection> }> {
-    return this.compileRendered(input);
+    return this.compileRendered(input, input.candidate);
   }
 
   private async compileRendered(input: CompileRepresentationInput, contentOverride?: string, identityVariant = "canonical"): Promise<{ readonly projection: Readonly<RepresentationProjection> }> {
@@ -701,6 +755,11 @@ export class RepresentationCompiler {
       profileOverheadTokens: input.profileOverheadTokens ?? 0,
       estimatedNetTokens: this.ports.tokenizer.measure(sourceText) - this.ports.tokenizer.measure(content) - (input.profileOverheadTokens ?? 0),
       tokenizerProfileId: this.ports.tokenizer.profileId,
+      ...(this.ports.utility === undefined ? {} : (() => {
+        const measured = this.ports.utility.measure({ source, candidate: content, profileKey: input.profileKey, profileOverheadTokens: input.profileOverheadTokens ?? 0 });
+        if (!Number.isFinite(measured.netInstructionEfficiency) || measured.evidence.trim() === "") throw new TypeError("instruction utility measurement must be finite and evidenced");
+        return { estimatedNetInstructionEfficiency: measured.netInstructionEfficiency, utilityProfileId: this.ports.utility.profileId, utilityEvidence: measured.evidence };
+      })()),
     };
     const projectionBase = {
       id: `representation:${hashFramedDomain("representation-projection-id", { sourceHash: source.sourceSemanticHash, profileId: selected.id, profileVersion: selected.version, binding: boundState.dependencyDigest, identityVariant })}`,
@@ -711,6 +770,7 @@ export class RepresentationCompiler {
       status: "valid" as const, validatorResults: [validation("passed", "all protected dimensions preserved")],
     };
     const projection: RepresentationProjection = { ...projectionBase, semanticHash: hashFramedDomain("representation-projection", projectionBase) };
+    await this.ports.telemetry?.record({ event: "representation.compiled", projectionId: projection.id, profileId: projection.profileId, sourceSemanticHash: projection.sourceSemanticHash, protectedDimensionCount: projection.preservation.protectedDimensions.length, fidelityStatus: "valid", ...(projection.tokenAccounting?.estimatedNetInstructionEfficiency === undefined ? {} : { netInstructionEfficiency: projection.tokenAccounting.estimatedNetInstructionEfficiency }) });
     return { projection: deepFreeze(projection) };
   }
 
@@ -718,8 +778,16 @@ export class RepresentationCompiler {
     readonly projection: Readonly<RepresentationProjection>; readonly advisoryProjection?: Readonly<RepresentationProjection>;
     readonly fallback?: { readonly tier: RepresentationFallbackTier; readonly status: "fallback-used" };
   }> {
-    const requested = await this.compile({ ...input, profileKey: input.requestedProfileKey });
-    if (input.requestedProfileKey !== "agent-compact@1" || (requested.projection.tokenAccounting?.estimatedNetTokens ?? 0) > 0) return requested;
+    let requested: Awaited<ReturnType<RepresentationCompiler["compile"]>> | undefined;
+    try {
+      requested = await this.compile({ ...input, profileKey: input.requestedProfileKey });
+    } catch (error) {
+      if (input.requestedProfileKey !== "agent-compact@1" || !(error instanceof RepresentationFidelityError)) throw error;
+    }
+    const efficiency = requested?.projection.tokenAccounting?.estimatedNetInstructionEfficiency
+      ?? requested?.projection.tokenAccounting?.estimatedNetTokens ?? Number.NEGATIVE_INFINITY;
+    if (input.requestedProfileKey !== "agent-compact@1" && requested !== undefined) return requested;
+    if (requested !== undefined && efficiency > 0) return requested;
     const tiers: Array<{ tier: RepresentationFallbackTier; profileKey: BuiltInRepresentationProfileKey }> = [
       { tier: "exact-machine-plus-advisory-compact", profileKey: "machine-invariant@1" },
       { tier: "less-aggressive-compact", profileKey: "agent-compact@1" },
@@ -727,13 +795,15 @@ export class RepresentationCompiler {
     ];
     for (const { tier, profileKey } of tiers) {
       if (this.ports.fallbackGate?.(tier) === false) continue;
+      const { candidate: omittedCandidate, ...fallbackInput } = input; void omittedCandidate;
       const accepted = tier === "less-aggressive-compact"
         ? await this.compileRendered({ ...input, profileKey: "agent-compact@1" }, renderLessAggressiveCompact(normalizedSource(input.source)), "less-aggressive-compact")
-        : profileKey === input.requestedProfileKey ? requested : await this.compile({ ...input, profileKey });
+        : profileKey === input.requestedProfileKey && requested !== undefined ? requested : await this.compile({ ...fallbackInput, profileKey });
       const base = { ...accepted.projection, status: "fallback-used" as const };
       const projection = deepFreeze({ ...base, semanticHash: hashFramedDomain("representation-projection", { ...base, semanticHash: undefined }) });
+      await this.ports.telemetry?.record({ event: "representation.fallback", requestedProfileId: BUILT_IN_REPRESENTATION_PROFILES[input.requestedProfileKey].id, acceptedProjectionId: projection.id, tier, reason: requested === undefined ? "unsafe" : "instruction-inefficient" });
       return {
-        projection, ...(tier === "exact-machine-plus-advisory-compact" ? { advisoryProjection: requested.projection } : {}),
+        projection, ...(tier === "exact-machine-plus-advisory-compact" && requested !== undefined ? { advisoryProjection: requested.projection } : {}),
         fallback: { tier, status: "fallback-used" },
       };
     }

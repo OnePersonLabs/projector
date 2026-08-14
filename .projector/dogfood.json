@@ -35,6 +35,26 @@
       "status": "active"
     }
   ],
+  "representations": [
+    {
+      "id": "profile:human-technical",
+      "key": "human-technical@1",
+      "protectedDimensionCount": 11,
+      "status": "active"
+    },
+    {
+      "id": "profile:agent-compact",
+      "key": "agent-compact@1",
+      "protectedDimensionCount": 11,
+      "status": "active"
+    },
+    {
+      "id": "profile:machine-invariant",
+      "key": "machine-invariant@1",
+      "protectedDimensionCount": 11,
+      "status": "active"
+    }
+  ],
   "rules": [
     {
       "id": "rule:no-repository-code-during-inspection",

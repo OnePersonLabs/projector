@@ -160,6 +160,7 @@ export function createExecutionCapsule(input: CreateExecutionCapsuleInput): Read
     scenarioIds: normalizedInput.scenarioIds,
     decisionIds: normalizedInput.decisionIds,
     normativeKernelHash: normalizedInput.normativeKernelHash,
+    representation: normalizedInput.representation,
   });
   const capsule: ExecutionCapsule = {
     ...normalizedInput,

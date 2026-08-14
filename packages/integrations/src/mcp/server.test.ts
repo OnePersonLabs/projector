@@ -2,7 +2,7 @@ import { hashFramedDomain, type ContentHash, type StateBinding, type StateDigest
 import { describe, expect, it, vi } from "vitest";
 
 import { createMutationCapabilityService, type CapabilityRecord, type CapabilityStore } from "./capabilities.js";
-import { createProjectorMcpServer } from "./server.js";
+import { createBuiltProjectorMcpServer, createProjectorMcpServer } from "./server.js";
 
 class MemoryStore implements CapabilityStore {
   readonly rows = new Map<ContentHash, CapabilityRecord>();
@@ -51,5 +51,20 @@ describe("MCP transport and durable mutation capabilities", () => {
     expect(written).toMatchObject({ result: { content: [{ type: "text", text: "{\"ok\":true}" }], structuredContent: { ok: true }, isError: false } }); expect(mutate).toHaveBeenCalledOnce();
     const replay = await server.transport.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.write", arguments: { capabilityToken: issued.token } } });
     expect(replay).toHaveProperty("error"); expect(mutate).toHaveBeenCalledOnce();
+  });
+
+  it("routes representation preview and validation through dedicated handlers instead of the generic read fallback", async () => {
+    const genericRead = vi.fn(async () => ({ status: "generic" }));
+    const preview = vi.fn(async () => ({ status: "valid", projectionId: "representation:one" }));
+    const validate = vi.fn(async () => ({ status: "valid", protectedDimensions: 11 }));
+    const server = createBuiltProjectorMcpServer({
+      capability: createMutationCapabilityService({ store: new MemoryStore(), entropy: () => new Uint8Array(32).fill(4), clock: { now: () => 1_000 }, roots: { resolveRoot: async () => "/repo", resolveTarget: async (_root, path) => path }, authority: { verify: async () => true }, currentness: { verify: async () => true } }),
+      read: genericRead,
+      representations: { preview, validate },
+      controlled: { operation: "none", risk: "R1", targets: () => ({ semanticScopes: [], writePaths: [] }), run: async () => ({}) },
+    });
+    await server.registry.call("projector.preview_representation", { projectionId: "representation:one" });
+    await server.registry.call("projector.validate_representation", { projectionId: "representation:one" });
+    expect(preview).toHaveBeenCalledOnce(); expect(validate).toHaveBeenCalledOnce(); expect(genericRead).not.toHaveBeenCalled();
   });
 });

@@ -53,3 +53,9 @@ Expected:
 - exact technical literals, numbers, units, and protected semantic dimensions remain unchanged.
 - invented prose abbreviations are rejected unless measured token savings justify them and clarity remains acceptable.
 - the compiler uses a less compressed representation when compact output becomes ambiguous, semantically weaker, or net-negative after profile overhead.
+
+### Representation subsystem closure
+
+Run the public packed Projector artifact through the Representation closure contract. Compile an authenticated semantic change. Attach the selected projection to its Execution Capsule. Consume the exact artifact through a host and MCP representation handler. Change the profile and reconcile every dependent projection, context, and capsule. Observe dedicated fidelity, fallback, and instruction-efficiency telemetry.
+
+Expected: all seven stable `representation.*.v1` closure obligations have revision- and worktree-bound positive evidence. Each obligation also has a negative control that rejects a severed edge. The subsystem remains open if projection composition is missing or host instructions are free-form. A generic MCP reader, skipped refresh, document-parse coverage proxy, or default zero release metric also blocks release.

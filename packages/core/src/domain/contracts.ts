@@ -394,6 +394,9 @@ export interface RepresentationTokenAccounting {
   profileOverheadTokens?: number;
   estimatedNetTokens?: number;
   tokenizerProfileId?: string;
+  estimatedNetInstructionEfficiency?: number;
+  utilityProfileId?: string;
+  utilityEvidence?: string;
 }
 
 export interface RepresentationProjection {

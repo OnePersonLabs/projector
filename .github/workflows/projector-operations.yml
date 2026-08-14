@@ -18,6 +18,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: node scripts/task19-dogfood.mjs
       - run: pnpm verify
-      - run: pnpm build
+      - run: pnpm release:artifacts:check
+      - run: pnpm release:acceptance

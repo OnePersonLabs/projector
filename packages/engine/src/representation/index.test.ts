@@ -5,6 +5,7 @@ import { hashFramedDomain, type StateBinding } from "@projector/core";
 
 import {
   BUILT_IN_REPRESENTATION_PROFILES,
+  canonicalRepresentationSourceFromSemanticChange,
   RepresentationCompiler,
   type CanonicalRepresentationSource,
   type RepresentationArtifactStore,
@@ -200,6 +201,62 @@ describe("semantic representation compilation", () => {
     expect(negative.projection.tokenAccounting?.estimatedNetTokens).toBeLessThanOrEqual(0);
     expect(positive.projection.profileId).toBe(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].id);
     expect(positive.projection.tokenAccounting?.estimatedNetTokens).toBeGreaterThan(0);
+  });
+
+  it("selects compact by measured net instruction efficiency and falls back when compact fidelity is unsafe", async () => {
+    const artifacts = new MemoryArtifacts();
+    const utility = {
+      profileId: "instruction-utility@1",
+      measure: ({ profileKey }: { readonly profileKey: string }) => ({
+        netInstructionEfficiency: profileKey === "agent-compact@1" ? -3 : 4,
+        evidence: "held-out task completion cost",
+      }),
+    };
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured, utility });
+    const inefficient = await compiler.compileBest({ source, binding, requestedProfileKey: "agent-compact@1" });
+    expect(inefficient.fallback?.tier).toBe("exact-machine-plus-advisory-compact");
+    expect(inefficient.advisoryProjection?.tokenAccounting).toMatchObject({
+      estimatedNetInstructionEfficiency: -3,
+      utilityProfileId: "instruction-utility@1",
+    });
+
+    const exact = await new RepresentationCompiler({ artifacts, tokenizer: measured })
+      .compile({ source, binding, profileKey: "agent-compact@1" });
+    const unsafeCandidate = (await artifacts.get(exact.projection.contentHash))!.replace("FORBID NOT", "PERMIT NOT");
+    const unsafe = await compiler.compileBest({ source, binding, requestedProfileKey: "agent-compact@1", candidate: unsafeCandidate });
+    expect(unsafe.fallback?.tier).toBe("exact-machine-plus-advisory-compact");
+    expect(unsafe.advisoryProjection).toBeUndefined();
+    expect(unsafe.projection.status).toBe("fallback-used");
+  });
+
+  it("derives the projection source from the complete authenticated semantic change instead of caller-authored representation input", () => {
+    const semanticChange = {
+      id: "change:representation", request: "MUST preserve API_V2", normalizedIntent: "preserve API_V2",
+      intentAnalysisId: "intent:1", identityResolutionIds: ["identity:api"], relevanceClosureId: "closure:1",
+      analysisFacetKeys: ["contract"], operations: [{ subjectType: "other" as const, subjectKey: "API_V2", kind: "modify" as const, payload: { literal: "API_V2" } }],
+      decisionIds: ["decision:api"], assumptions: ["consumer remains compatible"], boundary: ["packages/api/**"], risk: {
+        class: "R1" as const, inherentOperationRisk: 1, affectedUnitCount: 1, affectedSurfaceCount: 1,
+        publicContractImpact: true, externalImpact: false, dataImpact: false, reversibility: "full" as const,
+        validationStrength: "strong" as const, closureConfidence: "bounded" as const, unresolvedIdentityCount: 0,
+        relevanceFrontierCount: 0, openWorldDependencies: false, unresolvedBlockingConcernCount: 0,
+        suspectDecisionCount: 0, compensationAvailable: true, reasons: [],
+      }, status: "analyzed" as const,
+    };
+    const first = canonicalRepresentationSourceFromSemanticChange(semanticChange);
+    const changed = canonicalRepresentationSourceFromSemanticChange({ ...semanticChange, assumptions: ["consumer migration required"] });
+    expect(first.sourceEntityIds).toContain("change-directive:change:representation");
+    expect(first.statements[0]).toMatchObject({ scope: ["packages/api/**"], dependencies: expect.arrayContaining(["decision:api", "identity:api"]), protectedLiterals: expect.arrayContaining(["API_V2", "packages/api/**"]) });
+    expect(changed.sourceSemanticHash).not.toBe(first.sourceSemanticHash);
+  });
+
+  it("emits dedicated representation telemetry for accepted projections and fallback decisions", async () => {
+    const artifacts = new MemoryArtifacts(); const observations: unknown[] = [];
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured, telemetry: { record: async (observation) => { observations.push(observation); } } });
+    await compiler.compileBest({ source, binding, requestedProfileKey: "agent-compact@1", profileOverheadTokens: 100 });
+    expect(observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event: "representation.compiled", profileId: "profile:agent-compact", protectedDimensionCount: 11, fidelityStatus: "valid" }),
+      expect.objectContaining({ event: "representation.fallback", requestedProfileId: "profile:agent-compact", tier: "exact-machine-plus-advisory-compact" }),
+    ]));
   });
 
   it("keeps style lint separate from semantic truth and reports blocking mechanics deterministically", () => {
