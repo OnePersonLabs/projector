@@ -2,11 +2,9 @@ import {
   canonicalJson,
   hashFramedDomain,
   type AnalysisFacet,
-  type BehavioralScenario,
   type ContentHash,
   type RelevanceBand,
   type RelevanceClosure,
-  type Requirement,
 } from "@projector/core";
 
 import { evaluateSelector, type SelectorSubject } from "../governance/selectors.js";
@@ -149,65 +147,4 @@ export async function compileContext(
     requiredExpansionIds: sortedUnique(requiredExpansionIds),
   };
   return { ...value, contentHash: hashFramedDomain("compiled-semantic-context", value) };
-}
-
-export type BehaviorViewFormat = "markdown" | "gherkin" | "agent-compact" | "machine-invariant";
-
-export interface DerivedBehaviorView {
-  derivedId: string;
-  format: BehaviorViewFormat;
-  requirementId: string;
-  requirementSemanticHash: ContentHash;
-  scenarioId: string;
-  scenarioSemanticHash: ContentHash;
-  content: string;
-  contentHash: ContentHash;
-}
-
-function renderBehaviorView(requirement: Requirement, scenario: BehavioralScenario, format: BehaviorViewFormat): string {
-  const steps = scenario.steps.map(({ role, statement }) => `${role}: ${statement}`);
-  if (format === "markdown") return `# ${requirement.title}\n\n${requirement.statement}\n\n## ${scenario.title}\n\n${steps.join("\n")}`;
-  if (format === "gherkin") {
-    let seenThen = false;
-    const rendered = scenario.steps.map(({ role, statement }) => {
-      if (role === "precondition") return `  Given ${statement}`;
-      if (role === "trigger") return `  When ${statement}`;
-      if (role === "expected-outcome") {
-        const keyword = seenThen ? "And" : "Then";
-        seenThen = true;
-        return `  ${keyword} ${statement}`;
-      }
-      const keyword = seenThen ? "But" : "Then";
-      seenThen = true;
-      return `  ${keyword} not (${statement})`;
-    });
-    return `# Source-Requirement: ${requirement.id}@${requirement.semanticHash}\n# Source-Scenario: ${scenario.id}@${scenario.semanticHash}\nFeature: ${requirement.title}\n\n  Scenario: ${scenario.title}\n${rendered.join("\n")}`;
-  }
-  if (format === "agent-compact") return `${requirement.id}: ${requirement.statement} | ${scenario.id}: ${steps.join("; ")}`;
-  return canonicalJson({ requirement: requirement.statement, scenario: scenario.steps });
-}
-
-/** Renderings are content-addressed derived views and cannot mutate or replace their source identities. */
-export function deriveBehaviorViews(
-  requirement: Requirement,
-  scenario: BehavioralScenario,
-  formats: readonly BehaviorViewFormat[],
-): DerivedBehaviorView[] {
-  return sortedUnique(formats).map((format) => {
-    const content = renderBehaviorView(requirement, scenario, format as BehaviorViewFormat);
-    const contentHash = hashFramedDomain("derived-behavior-view-content", { format, content });
-    const identity = {
-      format,
-      requirementId: requirement.id,
-      requirementSemanticHash: requirement.semanticHash,
-      scenarioId: scenario.id,
-      scenarioSemanticHash: scenario.semanticHash,
-    };
-    return {
-      derivedId: `behavior_view_${hashFramedDomain("derived-behavior-view", identity).slice(-32)}`,
-      ...identity,
-      content,
-      contentHash,
-    } as DerivedBehaviorView;
-  });
 }

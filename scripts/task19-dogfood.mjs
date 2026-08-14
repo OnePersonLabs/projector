@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 const path = new URL("../.projector/dogfood.json", import.meta.url);
 const document = JSON.parse(await readFile(path, "utf8"));
-const groups = ["acceptedDebt", "architectureDecisions", "authorities", "governanceBases", "lenses", "rules"];
+const groups = ["acceptedDebt", "architectureDecisions", "authorities", "governanceBases", "lenses", "representations", "rules"];
 const ids = groups.flatMap((group) => {
   if (!Array.isArray(document[group]) || document[group].length === 0) throw new Error(`dogfood ${group} must be non-empty`);
   return document[group].map(({ id, status }) => {
@@ -15,6 +15,9 @@ if (new Set(ids).size !== ids.length) throw new Error("contradictory duplicate d
 for (const authority of document.authorities) if (!/^sha256:v1:[a-f0-9]{64}$/u.test(authority.authorityHash ?? "")) throw new Error(`authority ${authority.id} lacks a bound hash`);
 for (const base of document.governanceBases) if (base.source !== "PROJECTOR_SPEC" || !/^sha256:v1:[a-f0-9]{64}$/u.test(base.sourceDigest ?? "")) throw new Error(`governance base ${base.id} lacks authoritative source binding`);
 for (const decision of document.architectureDecisions) if (/(?:repository|prose|instruction).*(?:grant|authorize|override).*(?:tool|policy)|(?:grant|authorize).*(?:tool)/iu.test(`${decision.summary ?? ""} ${decision.decision ?? ""}`)) throw new Error(`untrusted architecture decision ${decision.id} attempts to grant tools or override policy`);
+const expectedRepresentationKeys = ["agent-compact@1", "human-technical@1", "machine-invariant@1"];
+if (JSON.stringify(document.representations.map(({ key }) => key).sort()) !== JSON.stringify(expectedRepresentationKeys)
+  || document.representations.some(({ protectedDimensionCount }) => protectedDimensionCount !== 11)) throw new Error("dogfood representation profiles do not cover the protected semantic contract");
 const cliSpec = await readFile(new URL("../PROJECTOR_SPEC/10-operation/cli-modes-and-security.md", import.meta.url), "utf8");
 const benchmarkSpec = await readFile(new URL("../PROJECTOR_SPEC/11-validation/benchmarks-and-redesign-criteria.md", import.meta.url), "utf8");
 if (!cliSpec.includes("Repository docs/comments") || !cliSpec.includes("cannot grant tools")) throw new Error("independent security specification lint failed");

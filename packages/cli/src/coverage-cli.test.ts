@@ -52,7 +52,7 @@ describe("coverage/complete/cleanup CLI composition", () => {
       expect(new Set(first.report.lanes.map((lane: { key: string }) => lane.key))).toEqual(new Set(laneKeys));
       expect(first.report.localAnalysis).toMatchObject({ artifactCount: 2, projectionUnitCount: 2 });
       expect(first.report.localAnalysis.analyzerFailures).toContainEqual(expect.objectContaining({ capability: "document-parse", scope: "bad.json" }));
-      expect(first.report.lanes.find((lane: { key: string }) => lane.key === "representation-projection-fidelity")).toMatchObject({ numerator: 1, denominator: 2 });
+      expect(first.report.lanes.find((lane: { key: string }) => lane.key === "representation-projection-fidelity")).toMatchObject({ observability: "unavailable", numerator: 0, blindSpots: [expect.stringMatching(/projection evidence/iu)] });
       expect(first.report.boundState).toMatchObject({ dependencyDigest: expect.stringMatching(/^sha256:v1:/u) });
       expect(first.report.bindingValidation).toMatchObject({ status: "current", currentState: first.report.boundState.compiledAgainst });
       expect(first.report.bindingIdentity).toBe(first.report.boundState.dependencyDigest);
@@ -72,7 +72,7 @@ describe("coverage/complete/cleanup CLI composition", () => {
       await writeFile(join(repositoryRoot, "duplicate.yaml"), "name: first\nname: second\n");
       const result = await executeProjector(["coverage"], { cwd: repositoryRoot });
       expect(result.report.localAnalysis.analyzerFailures).toContainEqual(expect.objectContaining({ capability: "duplicate-key", scope: "duplicate.yaml" }));
-      expect(result.report.lanes.find((lane: { key: string }) => lane.key === "representation-projection-fidelity")).toMatchObject({ numerator: 1, denominator: 2 });
+      expect(result.report.lanes.find((lane: { key: string }) => lane.key === "representation-projection-fidelity")).toMatchObject({ observability: "unavailable", numerator: 0, blindSpots: [expect.stringMatching(/projection evidence/iu)] });
     } finally {
       await rm(repositoryRoot, { recursive: true, force: true });
     }

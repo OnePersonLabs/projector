@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { UpgradeDeclarationSchema, planUpgradeInvalidation, upgradeDeclarationHash } from "./upgrades.js";
+import { hashFramedDomain } from "@projector/core";
+import { UpgradeDeclarationSchema, planUpgradeInvalidation, reconcileRepresentationProfileUpgrade, upgradeDeclarationHash } from "./upgrades.js";
 
 describe("representation and semantic upgrade protocol", () => {
   it("invalidates only dependents of a changed representation profile", () => {
@@ -146,4 +147,19 @@ describe("representation and semantic upgrade protocol", () => {
       expect(result.preservedCanonicalEntityIds).toEqual(["entity:decoy", "entity:rule-a"]);
     },
   );
+
+  it("invalidates then refreshes every derived representation consumer and authenticates the reconciliation receipt", async () => {
+    const events: string[] = [];
+    const result = await reconcileRepresentationProfileUpgrade({
+      invalidatedIds: ["capsule:old", "projection:old", "context:old"],
+      preservedCanonicalEntityIds: ["requirement:authority"], requiredAction: "revalidate",
+    }, {
+      invalidate: async (ids) => { events.push(`invalidate:${ids.join(",")}`); },
+      refresh: async (id) => { events.push(`refresh:${id}`); return hashFramedDomain("refreshed-representation-dependent", id); },
+    });
+    expect(events[0]).toMatch(/^invalidate:/u);
+    expect(events.slice(1)).toEqual(["refresh:capsule:old", "refresh:context:old", "refresh:projection:old"]);
+    expect(result).toMatchObject({ status: "reconciled", refreshedIds: ["capsule:old", "context:old", "projection:old"], preservedCanonicalEntityIds: ["requirement:authority"] });
+    expect(result.receiptHash).toBe(hashFramedDomain("representation-upgrade-reconciliation", { invalidatedIds: result.invalidatedIds, refreshed: result.refreshed, preservedCanonicalEntityIds: result.preservedCanonicalEntityIds, requiredAction: "revalidate" }));
+  });
 });

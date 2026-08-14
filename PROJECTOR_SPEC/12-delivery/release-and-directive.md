@@ -54,6 +54,12 @@ Before public release, Projector MUST govern its own repository with active lens
 
 Projector’s own audit MUST be clean or contain explicit accepted debt.
 
+### Executable subsystem-closure gate
+
+No subsystem may be promoted to `integrated` from leaf implementation or source-only tests. Every promoted subsystem MUST carry a revision- and worktree-bound closure receipt. The receipt MUST use stable obligation IDs. Independent checks MUST observe positive and severed-edge evidence for authority, public composition, downstream consumption, invalidation/recovery, observability, dogfooding, and packed release. Missing, duplicate, self-asserted, stale, or non-severable evidence MUST leave the subsystem open.
+
+The Representation subsystem starts with seven obligations. They are `representation.authority.v1`, `representation.public-composition.v1`, `representation.downstream-consumer.v1`, `representation.invalidation-recovery.v1`, `representation.observability.v1`, `representation.dogfood.v1`, and `representation.packed-release.v1`. The packed release gate MUST run canonical semantic-change input through projection selection and capsule composition. It MUST also run host/MCP validation, profile invalidation/reconciliation, and dedicated representation telemetry. Each severed required edge MUST fail closed. Repository-local status labels, broad test-suite anchors, and generic document/analyzer metrics are not closure evidence.
+
 The authoritative Projector specification MUST pass the blocking `human-technical@1` mechanical style gate. Code blocks and exact technical literals are outside that prose gate. Passive voice and nominalization remain review signals when a deterministic checker cannot identify a better actor or verb safely.
 
 Before public release, represent the reference technology and package choices in [Reference Implementation Architecture](../02-semantic-kernel/reference-implementation.md) as Projector Architecture Decisions, Authority Records, and Governance Bases. Projector MUST explain its package, runtime, storage, test, and analyzer choices. It MUST show the rules and lenses they produce and the typed triggers that cause reconsideration.
@@ -116,6 +122,7 @@ Before claiming any slice or release complete, verify:
 - semantic model complexity is measured against use.
 - no unsupported `proven-within-boundary` claim is emitted.
 - changing only a representation profile invalidates dependent projections/contexts without mutating canonical intent.
+- every subsystem promoted to integrated has a current executable closure receipt. No hand-authored status substitutes for it.
 
 ---
 
@@ -167,4 +174,3 @@ The governing constraint is:
 > - It preserves the semantic dimensions that the target representation requires.
 > - It explains why the relevant subgraph is sufficient for the claim.
 > - It states the uncertainty boundary that remains.
-

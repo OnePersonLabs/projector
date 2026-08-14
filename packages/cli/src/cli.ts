@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type ContentHash, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
-import { compileSemanticChange, compileSemanticChangePlan, createStateBinding } from "@projector/engine";
+import { canonicalRepresentationSourceFromSemanticChange, compileSemanticChange, compileSemanticChangePlan, createStateBinding, RepresentationCompiler } from "@projector/engine";
 import { CanonicalFileRepository, SqliteDerivedStore, createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileTransactionJournal, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, type OperationalExitProof, type OperationalReport, type ReportFormat, executePacketPlan, type PacketObservation, type PlanExecutionArtifact, type PacketExecutionArtifact } from "@projector/runtime";
 import {
   auditArchitectureDecisions,
@@ -544,7 +544,7 @@ function defaultOperationalCliPort(): OperationalCliPort {
 async function inspectDogfood(paths: RepositoryPathService): Promise<{ readonly canonicalDigest: ContentHash; readonly findings: Array<{ code: string; title: string; path?: string; severity: "error"; evidenceIds: string[] }> }> {
   let text: string; try { text = await readFile((await paths.resolveRead(".projector/dogfood.json")).realTarget, "utf8"); } catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return { canonicalDigest: hashFramedDomain("operational-dogfood", null), findings: [] }; throw error; }
   const findings: Array<{ code: string; title: string; path?: string; severity: "error"; evidenceIds: string[] }> = []; let document: any; try { document = JSON.parse(text); } catch { return { canonicalDigest: hashFramedDomain("operational-dogfood", text), findings: [{ code: "dogfood-parse", title: "Canonical dogfood governance is malformed", path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }] }; }
-  const groups = ["acceptedDebt", "architectureDecisions", "authorities", "governanceBases", "lenses", "rules"] as const; const ids: string[] = []; for (const group of groups) { if (!Array.isArray(document[group]) || document[group].length === 0) findings.push({ code: "dogfood-incomplete", title: `Canonical dogfood ${group} is empty`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }); else for (const item of document[group]) { if (typeof item?.id !== "string" || (item.status !== "active" && item.status !== "accepted")) findings.push({ code: "dogfood-invalid", title: `Invalid canonical dogfood ${group} entry`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }); else ids.push(item.id); } } if (new Set(ids).size !== ids.length) findings.push({ code: "dogfood-duplicate", title: "Canonical dogfood identities conflict", path: ".projector/dogfood.json", severity: "error", evidenceIds: ids });
+  const groups = ["acceptedDebt", "architectureDecisions", "authorities", "governanceBases", "lenses", "representations", "rules"] as const; const ids: string[] = []; for (const group of groups) { if (!Array.isArray(document[group]) || document[group].length === 0) findings.push({ code: "dogfood-incomplete", title: `Canonical dogfood ${group} is empty`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }); else for (const item of document[group]) { if (typeof item?.id !== "string" || (item.status !== "active" && item.status !== "accepted")) findings.push({ code: "dogfood-invalid", title: `Invalid canonical dogfood ${group} entry`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }); else ids.push(item.id); } } if (new Set(ids).size !== ids.length) findings.push({ code: "dogfood-duplicate", title: "Canonical dogfood identities conflict", path: ".projector/dogfood.json", severity: "error", evidenceIds: ids });
   for (const decision of Array.isArray(document.architectureDecisions) ? document.architectureDecisions : []) if (/(?:repository|prose|instruction).*(?:grant|authorize|override).*(?:tool|policy)|(?:grant|authorize).*(?:tool)/iu.test(`${decision.summary ?? ""} ${decision.decision ?? ""}`)) findings.push({ code: "untrusted-tool-grant", title: `Architecture decision ${decision.id ?? "unknown"} attempts to grant tools or override policy`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [String(decision.id ?? "unknown")] });
   return { canonicalDigest: hashFramedDomain("operational-dogfood", document), findings };
 }
@@ -554,6 +554,25 @@ function defaultChangePort(repositoryRoot: string): ChangeCliPort {
   type ChangeRecord = { readonly kind: "semantic-change"; readonly intent: string; readonly boundState: Prepared["plan"]["boundState"]; readonly analysis: Prepared["analysis"]; readonly compiled: Awaited<ReturnType<typeof compileSemanticChange>> };
   type PlanRecord = { readonly kind: "semantic-plan"; readonly changeSelector: string; readonly prepared: Prepared; readonly compiled: Awaited<ReturnType<typeof compileSemanticChangePlan>>; readonly planHash: string };
   const recordRoot = join(repositoryRoot, ".projector", "task16-selections");
+  const representationRoot = join(repositoryRoot, ".projector", "generated", "representations");
+  const representationArtifacts = {
+    put: async (contentHash: ContentHash, content: string) => {
+      await mkdir(representationRoot, { recursive: true });
+      const path = join(representationRoot, `${contentHash.slice("sha256:v1:".length)}.txt`);
+      try { await writeFile(path, content, { encoding: "utf8", flag: "wx" }); }
+      catch (error) { if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || await readFile(path, "utf8") !== content) throw error; }
+    },
+    get: async (contentHash: ContentHash) => {
+      try { return await readFile(join(representationRoot, `${contentHash.slice("sha256:v1:".length)}.txt`), "utf8"); }
+      catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined; throw error; }
+    },
+  };
+  const compileRepresentation = async (value: { readonly change: Awaited<ReturnType<typeof compileSemanticChange>>["change"]; readonly boundState: Awaited<ReturnType<typeof compileSemanticChange>>["boundState"] }) => {
+    const tokenizer = { profileId: "projector.whitespace@1", measure: (text: string) => text.trim() === "" ? 0 : text.trim().split(/\s+/u).length };
+    const compiler = new RepresentationCompiler({ artifacts: representationArtifacts, tokenizer, utility: { profileId: "projector.instruction-cost@1", measure: ({ source, candidate, profileOverheadTokens }) => { const sourceCost = tokenizer.measure(source.statements.map(({ text }) => text).join("\n")); const candidateCost = tokenizer.measure(candidate) + profileOverheadTokens; return { netInstructionEfficiency: sourceCost - candidateCost, evidence: "deterministic total instruction payload cost including profile overhead" }; } } });
+    const { projection } = await compiler.compileBest({ source: canonicalRepresentationSourceFromSemanticChange(value.change), binding: value.boundState, requestedProfileKey: "agent-compact@1" });
+    return { projectionId: projection.id, profileId: projection.profileId, profileVersion: projection.profileVersion, contentHash: projection.contentHash, preservationHash: projection.preservation.semanticHash };
+  };
   const suffix = (selector: string, prefix: "change" | "plan"): string => {
     const match = new RegExp(`^${prefix}:semantic:([a-f0-9]{64})$`, "u").exec(selector);
     if (match?.[1] === undefined) throw new Error(`unsupported or unauthenticated ${prefix} selector: ${selector}`);
@@ -598,7 +617,7 @@ function defaultChangePort(repositoryRoot: string): ChangeCliPort {
       const { selector } = request;
       const change = await load<ChangeRecord>("change", selector); const prepared = await assertCurrent(change.boundState);
       const planningValue = { change: change.compiled.change, boundState: change.compiled.boundState, compilerFactsHash: change.compiled.compilerFactsHash };
-      const compiled = await compileSemanticChangePlan({ changeId: change.compiled.change.id, revision: 1, sourceRunId: "run:mandatory-repository-script" }, { changes: { read: async () => ({ value: planningValue, contentHash: hashFramedDomain("authenticated-change-planning-input", planningValue) }) }, packets: { compile: async () => { const value = { proposals: [{ key: "mandatory-repository-script", title: "Repair governed repository automation", stage: "cleanup" as const, executionMode: "deterministic" as const, transformId: "move-reference-update", unitIds: prepared.plan.knownAffectedUnitIds, semanticOwnerIds: ["mandatory-repository-script"], writeSelectors: prepared.plan.boundary, dependencies: [], validatorIds: prepared.plan.completionCriteria.requiredValidators }], completionContract: prepared.plan.completionCriteria }; return { value, contentHash: hashFramedDomain("authenticated-change-packet-proposals", value) }; } } });
+      const compiled = await compileSemanticChangePlan({ changeId: change.compiled.change.id, revision: 1, sourceRunId: "run:mandatory-repository-script" }, { changes: { read: async () => ({ value: planningValue, contentHash: hashFramedDomain("authenticated-change-planning-input", planningValue) }) }, packets: { compile: async () => { const value = { proposals: [{ key: "mandatory-repository-script", title: "Repair governed repository automation", stage: "cleanup" as const, executionMode: "deterministic" as const, transformId: "move-reference-update", unitIds: prepared.plan.knownAffectedUnitIds, semanticOwnerIds: ["mandatory-repository-script"], writeSelectors: prepared.plan.boundary, dependencies: [], validatorIds: prepared.plan.completionCriteria.requiredValidators }], completionContract: prepared.plan.completionCriteria }; return { value, contentHash: hashFramedDomain("authenticated-change-packet-proposals", value) }; } }, representations: { compile: compileRepresentation } });
       const planHash = hashFramedDomain("semantic-change-execution-plan", compiled.plan);
       const record: PlanRecord = { kind: "semantic-plan", changeSelector: selector, prepared, compiled, planHash };
       const planSelector = request.persist === false ? `plan:semantic:${hashFramedDomain("cli-immutable-plan-selection", record).slice("sha256:v1:".length)}` : await persist("plan", record);
@@ -656,11 +675,6 @@ async function compileRepositoryCoverage(repositoryRoot: string, request: Covera
   const units = analysis.projectionUnits.filter(({ key }) => inRequestedScope(key, request.scope));
   const files = analysis.files.filter(({ path }) => inRequestedScope(path, request.scope));
   const dependencies = analysis.dependencies.filter(({ importerPath }) => inRequestedScope(importerPath, request.scope));
-  const structuredArtifacts = artifacts.filter(({ mediaType }) => ["application/json", "application/yaml", "application/toml", "text/markdown"].includes(mediaType));
-  const observedRepresentationPaths = new Set([...analysis.documents, ...analysis.markdown].filter(({ path }) => inRequestedScope(path, request.scope)).map(({ path }) => path));
-  const failedRepresentationPaths = new Set(analysis.failures.filter(({ capability, scope, affectedClaimKinds }) => inRequestedScope(scope, request.scope) && (capability === "document-parse" || capability === "duplicate-key" || affectedClaimKinds.includes("structured-document"))).map(({ scope }) => scope));
-  const documentDenominator = structuredArtifacts.length;
-  const documentNumerator = structuredArtifacts.filter(({ locator }) => observedRepresentationPaths.has(locator) && !failedRepresentationPaths.has(locator)).length;
   const identities = analysis.gitIdentities.filter(({ path }) => inRequestedScope(path, request.scope));
   const unknownKeys = new Set<RequiredCoverageLaneKey>(["concept-mapping", "lens", "rule-enforceability", "derivation", "validation-evidence", "authority", "architecture-decision", "semantic-identity", "pre-change-relevance"]);
   const lanes = REQUIRED_COVERAGE_LANES.map((key): CoverageLaneEvidence => {
@@ -669,7 +683,7 @@ async function compileRepositoryCoverage(repositoryRoot: string, request: Covera
     if (key === "relationship") return knownLane(key, dependencies.length, dependencies.length, analysis);
     if (key === "surface") return knownLane(key, analysis.surface.access === "unavailable" ? 0 : 1, 1, analysis);
     if (key === "historical-metamorphic") return analysis.git.availability === "unavailable" ? unavailableLane(key, "Git identity/history is unavailable") : knownLane(key, identities.filter(({ availability }) => availability === "available").length, files.length, analysis);
-    if (key === "representation-projection-fidelity") return knownLane(key, documentNumerator, documentDenominator, analysis);
+    if (key === "representation-projection-fidelity") return unavailableLane(key, "authenticated representation projection evidence is not present in local repository analysis");
     if (key === "change-closure" || key === "planning-surprise") return { key, applicability: "not-applicable", boundaryExclusion: "no semantic change execution is requested by coverage observation", observability: "closed", numerator: 0, denominator: 0, confidence: 1, assumptions: [], provenAssumptions: [], blindSpots: [], staleObservationIds: [] };
     if (unknownKeys.has(key)) return unavailableLane(key, `local repository analysis does not prove ${key}`);
     return unavailableLane(key, `local repository composition has no proof adapter for ${key}`);

@@ -5,7 +5,7 @@ import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 
-import { canonicalJson, hashFramedDomain, type ExecutionCapsule, type ExecutionPlan, type StateBinding, type StateDigest } from "@projector/core";
+import { canonicalJson, hashFramedDomain, type ExecutionCapsule, type ExecutionPlan, type RepresentationProjectionRef, type StateBinding, type StateDigest } from "@projector/core";
 import { executionCapsuleHash, executionPlanHash, reconcileToFixedPoint, type ExecutionApproval } from "@projector/engine";
 import { createClaudeHostAdapter, createCodexHostAdapter, type HostObservation } from "@projector/integrations";
 import { analyzeLocalRepository } from "@projector/analyzers";
@@ -13,7 +13,7 @@ import { analyzeLocalRepository } from "@projector/analyzers";
 import type { RunHostCliPort } from "./cli.js";
 
 const exec = promisify(execFile);
-export interface StoredHostSession { readonly kind: "task17-host-session"; readonly host: "codex" | "claude"; readonly sessionId: string; readonly repositoryRootHash: string; readonly plan: ExecutionPlan; readonly capsule: ExecutionCapsule; readonly approval: ExecutionApproval; readonly instructions: { readonly text: string; readonly sourceHashes: readonly `sha256:v1:${string}`[]; readonly representationId: string }; readonly contentHash: `sha256:v1:${string}` }
+export interface StoredHostSession { readonly kind: "task17-host-session"; readonly host: "codex" | "claude"; readonly sessionId: string; readonly repositoryRootHash: string; readonly plan: ExecutionPlan; readonly capsule: ExecutionCapsule; readonly approval: ExecutionApproval; readonly instructions: { readonly text: string; readonly sourceHashes: readonly `sha256:v1:${string}`[]; readonly representation: RepresentationProjectionRef }; readonly contentHash: `sha256:v1:${string}` }
 const sessionBody = (record: Omit<StoredHostSession, "contentHash">) => record;
 
 export function createHostSessionRecord(input: Omit<StoredHostSession, "contentHash">): StoredHostSession {

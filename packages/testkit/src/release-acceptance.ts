@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 
 import { hashFramedDomain, type ContentHash } from "@projector/core";
 import type { BenchmarkGateResult } from "./benchmark.js";
+import type { SubsystemClosureReceipt } from "./subsystem-closure.js";
 
 export type AcceptanceStratum = "scenario" | "property" | "adversary";
 export interface AcceptanceInventoryItem { readonly id: string; readonly stratum: AcceptanceStratum; readonly ordinal: number; readonly title: string; readonly sourcePath: string; readonly sourceDigest: ContentHash }
@@ -81,7 +82,7 @@ export function evaluateIndependentConformance(observation: IndependentConforman
 
 export interface ReleaseDeviation { readonly id: string; readonly severity: "note" | "minor" | "major"; readonly impact: string; readonly evidenceIds: readonly string[]; readonly waivedGateIds: readonly string[] }
 export interface ReleaseArtifact { readonly id: string; readonly bytesHash: ContentHash }
-export interface ReleaseEvidenceInput { readonly sourceRevision: string; readonly worktreeDigest: ContentHash; readonly toolchainDigest: ContentHash; readonly buildDigest: ContentHash; readonly tarballDigest: ContentHash; readonly rawArtifacts: readonly ReleaseArtifact[]; readonly traceability: TraceabilityManifest; readonly traceabilityVerification: VerifiedTraceability; readonly inventory: readonly AcceptanceInventoryItem[]; readonly benchmark: Pick<BenchmarkGateResult, "metrics" | "failures" | "releaseAllowed"> | { readonly metrics: readonly unknown[]; readonly failures: readonly unknown[]; readonly releaseAllowed: boolean }; readonly rebuildDigest: ContentHash; readonly conformance: ReturnType<typeof evaluateIndependentConformance>; readonly deviations: readonly ReleaseDeviation[] }
+export interface ReleaseEvidenceInput { readonly sourceRevision: string; readonly worktreeDigest: ContentHash; readonly toolchainDigest: ContentHash; readonly buildDigest: ContentHash; readonly tarballDigest: ContentHash; readonly rawArtifacts: readonly ReleaseArtifact[]; readonly traceability: TraceabilityManifest; readonly traceabilityVerification: VerifiedTraceability; readonly inventory: readonly AcceptanceInventoryItem[]; readonly benchmark: Pick<BenchmarkGateResult, "metrics" | "failures" | "releaseAllowed"> | { readonly metrics: readonly unknown[]; readonly failures: readonly unknown[]; readonly releaseAllowed: boolean }; readonly rebuildDigest: ContentHash; readonly conformance: ReturnType<typeof evaluateIndependentConformance>; readonly deviations: readonly ReleaseDeviation[]; readonly subsystemClosureReceipts: readonly SubsystemClosureReceipt[] }
 export interface ReleaseEvidence extends Omit<ReleaseEvidenceInput, "inventory"> { readonly version: 2; readonly releaseAllowed: true; readonly contentHash: ContentHash }
 export function compileReleaseEvidence(input: ReleaseEvidenceInput): ReleaseEvidence {
   validateManifestStructure(input.traceability, input.inventory);
@@ -89,6 +90,8 @@ export function compileReleaseEvidence(input: ReleaseEvidenceInput): ReleaseEvid
   if (!input.traceabilityVerification.verified || input.traceabilityVerification.inventoryHash !== input.traceability.inventoryHash || input.traceabilityVerification.contentHash !== hashFramedDomain("verified-traceability", verificationBody)) throw new Error("release traceability was not verified by observed public tests");
   if (input.sourceRevision.length === 0 || input.rawArtifacts.length === 0 || new Set(input.rawArtifacts.map(({ id }) => id)).size !== input.rawArtifacts.length || input.rawArtifacts.some(({ bytesHash }) => !bytesHash.startsWith("sha256:v1:"))) throw new Error("release artifact evidence is incomplete");
   if (!input.benchmark.releaseAllowed || input.benchmark.metrics.length === 0 || input.benchmark.failures.length > 0 || !input.conformance.passed) throw new Error("release gates cannot be waived");
+  if (input.subsystemClosureReceipts.length === 0 || new Set(input.subsystemClosureReceipts.map(({ subsystemId }) => subsystemId)).size !== input.subsystemClosureReceipts.length) throw new Error("release subsystem closure receipts are missing or duplicated");
+  for (const receipt of input.subsystemClosureReceipts) if (receipt.revision !== input.sourceRevision || receipt.worktreeDigest !== input.worktreeDigest || receipt.receiptHash !== hashFramedDomain("subsystem-closure-receipt:v1", (({ receiptHash: omitted, ...body }) => { void omitted; return body; })(receipt))) throw new Error(`release subsystem closure receipt is stale or unauthenticated: ${receipt.subsystemId}`);
   if (input.deviations.some(({ impact, evidenceIds, waivedGateIds }) => impact.length === 0 || evidenceIds.length === 0 || waivedGateIds.length > 0)) throw new Error("release deviations cannot waive gates or omit evidence");
   const { inventory: omitted, ...body } = input; void omitted; const base = { version: 2 as const, releaseAllowed: true as const, ...body };
   return Object.freeze({ ...base, contentHash: hashFramedDomain("projector-release-evidence", base) });

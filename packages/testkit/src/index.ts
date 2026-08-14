@@ -7,3 +7,4 @@ export * from "./providers.js";
 export * from "./repository.js";
 export * from "./benchmark.js";
 export * from "./release-acceptance.js";
+export * from "./subsystem-closure.js";

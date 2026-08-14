@@ -406,8 +406,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:ecf379a0b6c1e71afa77ae585389d10fbc0b462eea7b9e18c0bc69bea9a1751b"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:02df8ba21ac7cee507132b251fedc3eb5e49a541f22d905ec9c496fd1e69e366"
     },
     {
       "id": "scenario:35:what-why-is-protected-without-where-blindness",
@@ -559,11 +559,11 @@
       "ordinal": 47,
       "title": "Representation semantic-fidelity rejection",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:55367c4ed3c6678a6731465068f713dd176c8749a92d1adeb8ea4bb9e41af63f",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:96f1d9d285059679e29046d1ef4fa2db604af7240ed61adb6a3b6bff26701047"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:2f4067fa1a1244730e711d09aa776a047ba9e133bb5c96d86676629cc14a38fa"
     },
     {
       "id": "scenario:48:cross-projection-consistency",
@@ -571,11 +571,11 @@
       "ordinal": 48,
       "title": "Cross-projection consistency",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:55367c4ed3c6678a6731465068f713dd176c8749a92d1adeb8ea4bb9e41af63f",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:3bec3e50510d4aff0706698514f4d2e77490084e18aa165737c0f93db7800045"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:4929ad14f323b18ce1aaa0ef856560b687baeb323efc93f0e475e002edb96988"
     },
     {
       "id": "scenario:49:net-negative-compact-context-fallback",
@@ -583,11 +583,11 @@
       "ordinal": 49,
       "title": "Net-negative compact-context fallback",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:55367c4ed3c6678a6731465068f713dd176c8749a92d1adeb8ea4bb9e41af63f",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:e2bca6ec1295da2f352d881fa5d1b655183aeac6be166f6c53b0b334abb02fc9"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:9226ff839e295c2a7777131743577dcf47647c436edffd1e38ec6a7af9a519b8"
     },
     {
       "id": "scenario:50:representation-profile-invalidation",
@@ -595,11 +595,11 @@
       "ordinal": 50,
       "title": "Representation-profile invalidation",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:55367c4ed3c6678a6731465068f713dd176c8749a92d1adeb8ea4bb9e41af63f",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:2d96fa52e844e2ddc95bcf7f3413e829c5f3e16938d6d3f721aa880a214648f3"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:d34f0f073fddac144de67c6fb749a106ab6d3027e0d2642bba76200051264160"
     },
     {
       "id": "scenario:51:authoritative-specification-human-technical-conformance",
@@ -607,11 +607,11 @@
       "ordinal": 51,
       "title": "Authoritative specification human-technical conformance",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:55367c4ed3c6678a6731465068f713dd176c8749a92d1adeb8ea4bb9e41af63f",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
       "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:f8b659eb1e92b567ce7e99eab877f694c7397bd4fd59269f01a52f635287ba30"
+      "mappingHash": "sha256:v1:31152548f3cc7f0efb9aa46d816dae0afda41c72ec1bdf7e622ef373644e3844"
     },
     {
       "id": "scenario:52:compact-context-preserves-critical-tokens-and-avoids-false-compression",
@@ -619,11 +619,11 @@
       "ordinal": 52,
       "title": "Compact context preserves critical tokens and avoids false compression",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:55367c4ed3c6678a6731465068f713dd176c8749a92d1adeb8ea4bb9e41af63f",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:9d21804840fda6672f13e8f76584df6d9eac5a16c549ae66d353bda85bdd233d"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:4515220250fc2a6fa1e616482a65bd2beefcc08a385ec914fa7efeff6a656da3"
     },
     {
       "id": "scenario:53:architecture-expansion-web-app-cross-platform-product",
@@ -778,8 +778,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:4720c71841dcf7ff80db272d05b0d8c68dd4fcf5c4e38deab40bdd1f0d134fc1"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:dd548b28bcadc5275189a97da6ed3309df8f652af04eebd019faff6bcc0ba3c6"
     },
     {
       "id": "property:07:an-empty-query-on-an-open-sampled-unavailable-lane-never-upgrades-a-negative-space-claim-to-proof",
@@ -994,8 +994,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:ccb4a99d421e226e05e20e3a273f4951d333b27cc21a1832d0c24301f6e4a3ab"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:a4c917b312903dbace688077cc9f05fe7a52af57178aca9b315b81b568b5ae8d"
     },
     {
       "id": "property:25:a-representation-projection-cannot-validate-when-any-required-protected-dimension-fingerprint-differs",
@@ -1006,8 +1006,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:7566ff0c0799186b2ae47443e7e19c88ba86aa9cb9b4f820ba46a77049cdb3c0"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:d72fc485578461aadacb9a48598385465c037cd61ef6ec19c63dff398bf3a22c"
     },
     {
       "id": "property:26:reducing-text-token-count-cannot-strengthen-a-fidelity-completion-claim",
@@ -1018,8 +1018,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:e6bb71342e0544d85795440aab04eeeba7906496a612a13ad84ab78ed057da88"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:a5f367f5f8176a08973fe3813fd92da2f7c09e8222ffbfbc339d4647d56fe053"
     },
     {
       "id": "property:27:profile-selection-is-deterministic-for-fixed-inputs-tokenizer-profile-policy-and-measured-cost-model",
@@ -1030,8 +1030,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:47d3dd448cf1a9ea64bfe104ecfaafa93b6e3eea3e3df7d641b4d244bd1d9a35"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:931c7444d48ecbe05451be79a811e73ecb009f720baca157ae44a4b7938a4ee7"
     },
     {
       "id": "adversary:01:canonical-rebuild-closure",
@@ -1378,8 +1378,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:756abcaa9af94f9bc0ab72511488be811066ead93e5a120799d7a12a234072eb"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:dd7eaf9b1ac43464903653f82932a1954a7be1e13af477b37d668dddf71d6c51"
     },
     {
       "id": "adversary:30:token-compression-that-passes-style-lint-while-changing-semantics",
@@ -1390,8 +1390,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:d80529f4a5e335a196b68b6dfca1718abdf7a7299bf1a4455998538755e7aead"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:fee56dc0a5d877f0a48d9ece9b4ef5b76df5b08a35eaa337dfd3a913660c49c7"
     },
     {
       "id": "adversary:31:net-negative-representation-overhead-and-fallback-selection",
@@ -1402,8 +1402,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:733dc5006fdd894aab43b4124467411470135013c377581433a3b8e762b4f8fe"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:2d576bb47fb380963236f46c63c4f82178ad003dbc4eb05e28125119306124c7"
     },
     {
       "id": "adversary:32:human-agent-machine-gherkin-projections-with-different-text-but-one-canonical-semantic-source",
@@ -1414,9 +1414,9 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation",
-      "testSourceDigest": "sha256:v1:c4c22db2c50536b7dcd5ef14f7fcc4ec79543f09871ee8cab44f1388968a4ef0",
-      "mappingHash": "sha256:v1:8299a462892dfe33dd81dd93da9755ad41ff2006bd7429fbe8105c6c1718bd24"
+      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
+      "mappingHash": "sha256:v1:13d2753640bb9437ad0d2bdfbd0513a776696cc6d5270060e25ade6d3775ec45"
     }
   ],
-  "inventoryHash": "sha256:v1:722eec2c0d45a935facb9992a5ba5be7a813be3a99ff056b2d80015e86af09ca"
+  "inventoryHash": "sha256:v1:50a4bc47fa3ac3723ba3530086fa7cddb71777cbfd93265330626e387b2a20b2"
 }
