@@ -67,10 +67,8 @@ import {
   RepositoryPathService,
   SqliteDerivedStore,
   WriterLeaseManager,
-  NativeProcessLauncher,
   StateBoundCommandExecutor,
-  type ProcessLauncher,
-  type ProcessLaunchRequest,
+  createSandboxLauncher,
   type FileTransaction,
   type MoveReferenceUpdateInput,
   type TransformMutationPort,
@@ -752,18 +750,6 @@ export async function prepareMandatorySlice(repositoryRoot: string): Promise<Sli
   return { analysis, state, binding, plan, capsule, approval, transformInput, preview: declaredPreview, risk: assessedRisk, canonicalDocuments: documents, canonicalWrites };
 }
 
-class BubblewrapReadOnlyLauncher implements ProcessLauncher {
-  readonly capabilities = { filesystemIsolation: true, networkIsolation: true, cpuLimits: false, memoryLimits: false, externalWrites: false };
-  private readonly native = new NativeProcessLauncher();
-  launch(request: ProcessLaunchRequest) {
-    const roots = [...new Set(request.readRoots)];
-    const args = ["--die-with-parent", "--new-session", "--unshare-net", "--clearenv", "--ro-bind", "/usr", "/usr", "--ro-bind", "/lib", "/lib", "--ro-bind", "/lib64", "/lib64", "--ro-bind", dirname(request.executable), dirname(request.executable)];
-    for (const root of roots) args.push("--ro-bind", root, root);
-    args.push("--chdir", request.cwd, "--setenv", "PATH", "/usr/bin:/bin", request.executable, ...request.args);
-    return this.native.launch({ ...request, executable: "/usr/bin/bwrap", args, env: {}, readRoots: [], writeRoots: [] });
-  }
-}
-
 async function independentValidators(repositoryRoot: string): Promise<ValidationResult[]> {
   const testFiles = (await readdir(join(repositoryRoot, "scripts")))
     .filter((name) => name.endsWith(".test.mjs")).sort().map((name) => `scripts/${name}`);
@@ -779,7 +765,7 @@ async function independentValidators(repositoryRoot: string): Promise<Validation
     values: { async readVersionHash() { return undefined; } },
     queries: { async evaluate() { throw new Error("validator binding has no queries"); } },
   });
-  const executor = new StateBoundCommandExecutor(paths, bindingValidator, new BubblewrapReadOnlyLauncher());
+  const executor = new StateBoundCommandExecutor(paths, bindingValidator, await createSandboxLauncher());
   for (const specification of specifications) {
     const startedAt = fixedTime;
     try {
