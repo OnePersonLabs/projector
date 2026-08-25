@@ -46,10 +46,11 @@ class ProvenFallbackLauncher implements ProcessLauncher {
 
 describe("createSandboxLauncher", () => {
   it("refuses installed bubblewrap when its required namespace probe exits nonzero", async () => {
-    const nativeLauncher = new RecordingLauncher([result(1, "namespace creation denied")]);
+    const nativeLauncher = new RecordingLauncher([result(1, "", "namespace creation denied")]);
 
     await expect(createSandboxLauncher({ platform: "linux", nativeLauncher })).rejects.toMatchObject({
       code: "unsupported-isolation",
+      message: expect.stringContaining("bubblewrap: probe exited with code 1: namespace creation denied"),
     });
 
     expect(nativeLauncher.requests).toHaveLength(1);
@@ -64,8 +65,23 @@ describe("createSandboxLauncher", () => {
       "--unshare-net",
       "--ro-bind",
       "/usr",
-      "/usr/bin/true",
+      process.execPath,
     ]));
+  });
+
+  it("refuses bubblewrap when its probe omits any required isolation evidence", async () => {
+    const nativeLauncher = new RecordingLauncher([result(0, JSON.stringify({
+      readRootReadable: true,
+      readRootReadOnly: true,
+      writeRootWritable: true,
+      undeclaredPathInvisible: true,
+      networkDenied: false,
+    }))]);
+
+    await expect(createSandboxLauncher({ platform: "linux", nativeLauncher })).rejects.toMatchObject({
+      code: "unsupported-isolation",
+      message: expect.stringContaining("bubblewrap: probe did not prove networkDenied"),
+    });
   });
 
   it("selects only a separately proven configured fallback", async () => {
@@ -96,7 +112,7 @@ describe("createSandboxLauncher", () => {
   });
 
   it("uses the capability-probed bubblewrap backend without dropping execution constraints", async () => {
-    const nativeLauncher = new RecordingLauncher([result(0), result(0, "validator output")]);
+    const nativeLauncher = new RecordingLauncher([provenProbe(), result(0, "validator output")]);
     const launcher = await createSandboxLauncher({ platform: "linux", nativeLauncher });
     const signal = new AbortController().signal;
 
@@ -157,6 +173,16 @@ describe("createSandboxLauncher", () => {
   });
 });
 
-function result(exitCode: number, stdout = ""): ProcessExecutionResult {
-  return { exitCode, signal: null, stdout, stderr: "", durationMs: 1 };
+function provenProbe(): ProcessExecutionResult {
+  return result(0, JSON.stringify({
+    readRootReadable: true,
+    readRootReadOnly: true,
+    writeRootWritable: true,
+    undeclaredPathInvisible: true,
+    networkDenied: true,
+  }));
+}
+
+function result(exitCode: number, stdout = "", stderr = ""): ProcessExecutionResult {
+  return { exitCode, signal: null, stdout, stderr, durationMs: 1 };
 }
