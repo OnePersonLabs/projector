@@ -198,7 +198,7 @@ describe("repository change lifecycle service", () => {
       const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
       const projectorRoot = fileURLToPath(new URL("../../../../", import.meta.url));
       const vitest = join(projectorRoot, "node_modules", "vitest", "vitest.mjs");
-      child = spawn(process.execPath, [vitest, "run", "packages/cli/src/change-lifecycle/interruption-worker.test.ts", "--pool=threads", "--maxWorkers=1"], {
+      child = spawn(process.execPath, [vitest, "run", "packages/control-plane/src/change-lifecycle/interruption-worker.test.ts", "--pool=threads", "--maxWorkers=1"], {
         cwd: projectorRoot,
         env: { ...process.env, PROJECTOR_INTERRUPTION_REPOSITORY: root, PROJECTOR_INTERRUPTION_APPROVAL: approval.id },
         stdio: "ignore",

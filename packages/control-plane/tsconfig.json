@@ -8,10 +8,8 @@
   },
   "references": [
     { "path": "../core" },
-    { "path": "../control-plane" },
     { "path": "../engine" },
     { "path": "../analyzers" },
-    { "path": "../integrations" },
     { "path": "../runtime" }
   ],
   "include": ["src/**/*.ts"]
