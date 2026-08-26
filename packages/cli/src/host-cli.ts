@@ -1,36 +1,18 @@
 import { spawn } from "node:child_process";
-import { access, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 
-import { canonicalJson, hashFramedDomain, type ExecutionCapsule, type ExecutionPlan, type RepresentationProjectionRef, type StateBinding, type StateDigest } from "@projector/core";
-import { executionCapsuleHash, executionPlanHash, reconcileToFixedPoint, type ExecutionApproval } from "@projector/engine";
-import { createClaudeHostAdapter, createCodexHostAdapter, type HostObservation } from "@projector/integrations";
+import { canonicalJson, hashFramedDomain, type ExecutionCapsule, type StateBinding, type StateDigest } from "@projector/core";
+import { executionCapsuleHash, reconcileToFixedPoint } from "@projector/engine";
+import { createClaudeHostAdapter, createCodexHostAdapter, loadAuthenticatedRepositorySession, type HostObservation } from "@projector/integrations";
 import { analyzeLocalRepository } from "@projector/analyzers";
 
 import type { RunHostCliPort } from "./cli.js";
 
 const exec = promisify(execFile);
-export interface StoredHostSession { readonly kind: "task17-host-session"; readonly host: "codex" | "claude"; readonly sessionId: string; readonly repositoryRootHash: string; readonly plan: ExecutionPlan; readonly capsule: ExecutionCapsule; readonly approval: ExecutionApproval; readonly instructions: { readonly text: string; readonly sourceHashes: readonly `sha256:v1:${string}`[]; readonly representation: RepresentationProjectionRef }; readonly contentHash: `sha256:v1:${string}` }
-const sessionBody = (record: Omit<StoredHostSession, "contentHash">) => record;
-
-export function createHostSessionRecord(input: Omit<StoredHostSession, "contentHash">): StoredHostSession {
-  return { ...input, contentHash: hashFramedDomain("task17-host-session", sessionBody(input)) };
-}
-export function hostSessionSelector(record: StoredHostSession): string { return `session:${record.contentHash.slice("sha256:v1:".length)}`; }
-
-export async function loadBuiltHostSession(request: { readonly host?: "codex" | "claude"; readonly sessionSelector: string; readonly repositoryRoot: string }): Promise<StoredHostSession> {
-  const match = /^session:([a-f0-9]{64})$/u.exec(request.sessionSelector); if (match?.[1] === undefined) throw new Error("built host run requires an immutable session selector");
-  const path = join(request.repositoryRoot, ".projector", "task17-sessions", `session-${match[1]}.json`);
-  const stored = JSON.parse(await readFile(path, "utf8")) as StoredHostSession; const { contentHash, ...body } = stored;
-  if (stored.kind !== "task17-host-session" || contentHash !== hashFramedDomain("task17-host-session", body) || contentHash.slice("sha256:v1:".length) !== match[1]) throw new Error("host session selector is unauthenticated");
-  if ((request.host !== undefined && stored.host !== request.host) || stored.repositoryRootHash !== hashFramedDomain("task17-host-repository-root", await realpath(request.repositoryRoot))) throw new Error("host session route/root mismatch");
-  if (stored.approval.planHash !== executionPlanHash(stored.plan) || stored.approval.capsuleHash !== executionCapsuleHash(stored.capsule) || stored.approval.planId !== stored.plan.id || stored.approval.capsuleId !== stored.capsule.id || stored.plan.boundState.dependencyDigest !== stored.capsule.boundState.dependencyDigest) throw new Error("host session approval is unauthenticated");
-  return stored;
-}
-
 async function git(root: string, args: readonly string[]): Promise<string> { return (await exec("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 })).stdout.trim(); }
 async function observation(root: string, phase: "before" | "after"): Promise<HostObservation & { readonly head: string }> {
   const [head, status] = await Promise.all([git(root, ["rev-parse", "HEAD"]), git(root, ["status", "--porcelain=v1"])]);
@@ -44,8 +26,8 @@ function pathAllowed(capsule: ExecutionCapsule, path: string): boolean {
 }
 
 export function createBuiltRunHostPort(): RunHostCliPort {
-  return { async resolve(request) { const stored = await loadBuiltHostSession(request); return { authenticated: true, host: stored.host }; }, async run(request) {
-    const stored = await loadBuiltHostSession(request);
+  return { async resolve(request) { const stored = (await loadAuthenticatedRepositorySession(request)).record; return { authenticated: true, host: stored.host }; }, async run(request) {
+    const stored = (await loadAuthenticatedRepositorySession(request)).record;
     const currentHead = await git(request.repositoryRoot, ["rev-parse", "HEAD"]);
     const currentState: StateDigest = { ...stored.plan.boundState.compiledAgainst, gitBase: currentHead };
     const executable = async () => { for (const root of (request.environment.PATH ?? "").split(delimiter).filter(Boolean)) { try { await access(join(root, request.host), constants.X_OK); return true; } catch { /* continue */ } } return false; };

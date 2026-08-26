@@ -33,13 +33,14 @@ describe("subsystem architecture closure", () => {
     const complete = {
       context: "semantic context only",
       planning: "ports.representations.compile authenticated representation, capsule representation,",
-      host: "capsule.representation instructions.representation hashFramedDomain(\"representation-artifact\", request.instructions.text)",
+      host: "authenticateRepresentationBinding",
+      session: "capsule.representation instructions.representation hashFramedDomain(\"representation-artifact\", input.instructions.text)",
       mcpServer: "createProjectorMcpServer",
       mcpComposition: 'read["projector.preview_representation"] read["projector.validate_representation"]',
       coverage: "authenticated representation projection evidence",
     };
     expect(validateSubsystemArchitecture(complete)).toEqual([]);
-    for (const key of ["planning", "host", "mcpServer", "mcpComposition", "coverage"] as const) expect(validateSubsystemArchitecture({ ...complete, [key]: "severed" }).join("\n")).toMatch(/planning|host|mcp|coverage/iu);
+    for (const key of ["planning", "host", "session", "mcpServer", "mcpComposition", "coverage"] as const) expect(validateSubsystemArchitecture({ ...complete, [key]: "severed" }).join("\n")).toMatch(/planning|host|session|mcp|coverage/iu);
     expect(validateSubsystemArchitecture({ ...complete, context: "deriveBehaviorViews agent-compact" }).join("\n")).toMatch(/parallel.*renderer|context/iu);
   });
 });

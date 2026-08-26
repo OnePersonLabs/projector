@@ -106,8 +106,8 @@
       "sourceDigest": "sha256:v1:36fee5ad155404f528013a1f392dce62c0e7747a52413527afa311b99980c2e9",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:e08903cbdf0d77d2d85485de434846da3550c712ca3fe5d2904140d61e14376c"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:3461de712fb3e967026dd5f692e5e8d8e4afef63e43bd05f42160ea6cac96b48"
     },
     {
       "id": "scenario:10:crash-recovery-matrix",
@@ -130,8 +130,8 @@
       "sourceDigest": "sha256:v1:36fee5ad155404f528013a1f392dce62c0e7747a52413527afa311b99980c2e9",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:14ff7035cc9834b78ee7778fed6338a20b15dbf424daecc42af936b094dc1b18"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:efa4bba70b70fe5f5dc1ee857a19250ed3eed7de558b7e7c3420879f317cd9a8"
     },
     {
       "id": "scenario:12:open-world-completeness-refusal",
@@ -166,8 +166,8 @@
       "sourceDigest": "sha256:v1:36fee5ad155404f528013a1f392dce62c0e7747a52413527afa311b99980c2e9",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:5e454a4ab2e8cff53e47d09f25da1e4ada53753df6f5a9725d69589d5cae1ab3"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:cbf31397e5ac8be8270b4157e98191d024a0f2c778cd5db37ce0389cb480e231"
     },
     {
       "id": "scenario:15:validator-independence",
@@ -178,8 +178,8 @@
       "sourceDigest": "sha256:v1:36fee5ad155404f528013a1f392dce62c0e7747a52413527afa311b99980c2e9",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:e281f12f9e4574e696dd2b75b8c04e09572835d2632d6082fed18e1c9caa562a"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:f52d760b1029eb2779112fcf24c54285b2795deccb6b07bbb92b8cbc8bc334ed"
     },
     {
       "id": "scenario:16:capability-proven-sandbox-isolation",
@@ -214,8 +214,8 @@
       "sourceDigest": "sha256:v1:36fee5ad155404f528013a1f392dce62c0e7747a52413527afa311b99980c2e9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/run-cli.test.ts#projector run host boundary",
-      "testSourceDigest": "sha256:v1:23f075cd3ce970798850d9c17641e4e80f9c54692427d0aa0a669469841e0d0f",
-      "mappingHash": "sha256:v1:95416f0f757f0d91ef94132ecbd5304551039b90c665012e2b04a6e39c3f00b0"
+      "testSourceDigest": "sha256:v1:f30e78610f5a197d5200e56dcf0594f35f784b150d51aa30f97c759532f510bc",
+      "mappingHash": "sha256:v1:987b2f607a83dd8ad4a64ec63e867465d310b12fe0c1cb6789839fdb9ee8faa5"
     },
     {
       "id": "scenario:19:generated-output-upstream-repair",
@@ -862,8 +862,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:17226aee51382302480150148e793bc2c6820ec9e3bab64fbf88603e2e996c3b"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:4628a23bca1d6ffb899d94e5e1fa51ed3eb5e9421074ff95f9d3094ff29b64b5"
     },
     {
       "id": "property:11:selector-lens-rule-applicability-is-deterministic-for-fixed-dependencies",
@@ -1018,8 +1018,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:d54fd3e73d7b4e0cb95f2506d575045607cafffb7a08f5630eff6559f5c4997e"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:675bb8ca01deaf09bbba625115610585ec5b9b3946c7e651c7a6dc95e8e2998b"
     },
     {
       "id": "property:24:changing-only-a-representation-profile-never-changes-canonical-semantic-hashes-of-its-source-entities",
@@ -1138,8 +1138,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:6d17ee81bed4af70f66cc6d28049d397febc48b3184adf91bad7d2d9794e2779"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:61d7162bb74391355829dace8150736c1c48005e610bfe0d20b8118c858c5139"
     },
     {
       "id": "adversary:07:governance-cycle-and-non-convergence",
@@ -1150,8 +1150,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:e246f238ee506b9b99b52dcb3a92788d803d2adfde750d7c9651f0e279e0befd"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:03625235c365327a1c33650e79de2a3406b0a1e7cd112fc8ab93cd7e9b96ecbc"
     },
     {
       "id": "adversary:08:open-world-completeness-refusal",
@@ -1198,8 +1198,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:1adbff190343860f5bca72fc34c518983416d29f90e434d7de5025458370b1be"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:8c93912080bdfcae96ef21f8791a81eaccf3f973ced4918791c2c77363f3b411"
     },
     {
       "id": "adversary:12:correlated-self-authored-validator-evidence",
@@ -1210,8 +1210,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/index.test.ts#integrations public entrypoint",
-      "testSourceDigest": "sha256:v1:e18124761937e97e770434a622d27d8e7c7a8e77dd796103d4423edf5235b11b",
-      "mappingHash": "sha256:v1:1716cc99b3742a07aa17205af87cfc61b1946008237f5b9ce2521008e5cbd00b"
+      "testSourceDigest": "sha256:v1:b34d9d7f3fb11c8a4867ddc4323b6d3a3d5d40f79ad925b0a5a9877ffe42bdc9",
+      "mappingHash": "sha256:v1:744eb0088bcc954fa321fa29c0e2487ea06f78ffa84e712242ee6c46181f7d6a"
     },
     {
       "id": "adversary:13:generated-output-upstream-repair",
