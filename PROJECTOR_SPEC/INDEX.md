@@ -49,13 +49,13 @@ This index routes readers and agents to authoritative modules without requiring 
 ### Change and execution
 
 - [Plans, Revisions, and Rebase](07-change/plans.md) — immutable plans, dependency-scoped bindings, partial completion/rebind/rebase.
-- [Semantic Change Compiler](07-change/semantic-change-compiler.md) — request → relevance → behavior delta → architecture → impact → plan.
-- [Work Packets, Transactions, and Certificates](07-change/transactions-and-certificates.md) — writer coordination, journal/recovery, receipts/certificates.
+- [Semantic Change Compiler](07-change/semantic-change-compiler.md) — request → strict proposal → identity/relevance → behavior delta → architecture → impact → plan.
+- [Work Packets, Transactions, and Certificates](07-change/transactions-and-certificates.md) — public change lifecycle, writer coordination, journal/recovery, receipts/certificates.
 
 ### Agents and hosts
 
 - [Agent Orchestration and Model Inference](08-agents/orchestration-and-models.md) — agent roles, model routing, validation independence, replayable inference.
-- [Host and MCP Integration](08-agents/hosts-and-mcp.md) — Codex/Claude capabilities, wrappers, generated instructions, state-bound tools.
+- [Host and MCP Integration](08-agents/hosts-and-mcp.md) — Codex/Claude capabilities, installed change workflow, wrappers, generated instructions, state-bound tools.
 
 ### Evolution and external surfaces
 

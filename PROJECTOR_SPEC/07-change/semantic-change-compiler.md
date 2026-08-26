@@ -131,6 +131,20 @@ Behavioral requirements SHOULD be demonstrable through Behavioral Scenarios wher
 
 ---
 
+## Authenticated repository change proposal
+
+The installed local lifecycle accepts a natural-language request plus a strict, versioned repository change proposal. The proposal is authenticated interpretation evidence. It is not canonical authority, an Architecture Decision, an approval, or permission to mutate.
+
+The proposal MUST identify the intended Requirement and Behavioral Scenario meanings before Projector derives their stable identities. It MUST declare exact UTF-8 before/after content for each requested file edit, the applicable Analysis Facets, and separate independent and supplemental Node validators. Projector MUST reject unknown fields, duplicate identity claims, non-canonical repository paths, no-op edits, reserved operational/canonical paths, and validator provenance overlap.
+
+An independent validator MUST exist unchanged in the Git base. Projector MUST capture its Git object identity, introduction evidence, exact bytes, and content hash before approval. A proposal MUST NOT edit that validator. A supplemental validator MAY be part of the proposed edit, but it MUST NOT satisfy an independence requirement.
+
+Projector MUST resolve every proposed Requirement and Scenario against current canonical keys and aliases before it creates a stable identity. It MUST compile relevance, architecture preflight, canonical semantic deltas, exact edits, validators, plan, and capsule from one authenticated observation. A proposal with a `blocking-now` concern cannot accept or invent an Architecture Decision. It may only reuse a current canonical decision or record a valid bounded deferral for a non-blocking concern.
+
+If exact before-content, Git-base validator identity, canonical identity negative space, architecture basis, or another bound compiler fact is stale or unavailable, compilation MUST fail closed. The compiler MUST NOT guess, weaken provenance, or fall back to a request-specific fixture transform.
+
+---
+
 ## Change contracts
 
 ```ts

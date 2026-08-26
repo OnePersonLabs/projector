@@ -28,7 +28,7 @@ export function deriveAcceptanceInventory(input: { readonly scenarios: readonly 
   const adversarySection = /## Anti-self-deception tests\s+Mandatory adversarial classes:\s+([\s\S]*?)\n## /u.exec(input.testing.text)?.[1];
   if (adversarySection === undefined) throw new Error("authoritative adversary inventory is missing");
   const adversaries = [...adversarySection.matchAll(/^\d+\. (.+)$/gmu)].map((match) => match[1]!).map((title, index) => inventoryItem("adversary", index + 1, title, input.testing));
-  if (scenarios.length !== 62 || properties.length !== 27 || adversaries.length !== 32) throw new Error(`authoritative acceptance inventory mismatch: ${scenarios.length}/62 scenarios, ${properties.length}/27 properties, ${adversaries.length}/32 adversaries`);
+  if (scenarios.length !== 63 || properties.length !== 27 || adversaries.length !== 33) throw new Error(`authoritative acceptance inventory mismatch: ${scenarios.length}/63 scenarios, ${properties.length}/27 properties, ${adversaries.length}/33 adversaries`);
   return Object.freeze([...scenarios, ...properties, ...adversaries]);
 }
 

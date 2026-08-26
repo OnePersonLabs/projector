@@ -135,6 +135,17 @@ Start the packed MCP server without a session, with an authenticated session tha
 Expected: both sessionless and representation-unbound compositions advertise exactly the three operational repository reads. The representation-bound composition advertises exactly those reads plus its two operational representation handlers. Status accounts for the complete canonical capability catalog and marks every handlerless declaration unavailable. The mutation call fails as unknown, no mutation capability is issued, and repository state is unchanged.
 
 
+## Installed held-out change lifecycle
+
+Install the exact production tarball and copy the Projector plugin into a disposable ordinary Git repository. Deny the installed processes all Projector source-checkout access. Request a non-fixture exact-text behavior change with an existing Git-base independent validator and one proposed supplemental validator.
+
+Expected: direct CLI and `$projector-change` produce the same semantic change and immutable plan identities. The agent workflow returns the preview and exact plan hash. It stops for human approval and rejects a substituted hash. After exact approval, apply reaches the authenticated `validating` journal phase with durable target mutation.
+
+A full-process-tree `SIGKILL` leaves an open invocation and stale writer lease. Recovery restores exact before-bytes. Resume uses the same approval in a new attempt. It emits authenticated observation, certificate, and receipt evidence.
+
+Predicted and observed paths match exactly. Independent validation uses immutable Git-base bytes. No Planning Surprise, unknown, or fixture fallback appears. A second resume returns the same certificate and receipt.
+
+
 ## Generated-output upstream repair
 
 A generated client contains a fixable defect whose generator/source schema is known.
