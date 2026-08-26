@@ -179,6 +179,7 @@ describe("repository change compiler", () => {
         expect.objectContaining({ kind: "scenario", outcome: "reuse-existing", targetId: "scenario:greet-supplied-name" }),
       ]));
       expect(compiled.canonicalWrites).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "scenario:greet-supplied-name" })]));
+      expect(compiled.compiledChange.change.operations).not.toEqual(expect.arrayContaining([expect.objectContaining({ subjectType: "scenario", scenarioId: "scenario:greet-supplied-name" })]));
       expect(compiled.exactPatchInput.edits.every(({ before, after }) => before !== after)).toBe(true);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
