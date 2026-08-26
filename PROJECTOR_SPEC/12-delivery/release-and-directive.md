@@ -66,6 +66,8 @@ The packed release gate MUST invoke the installed sandbox composition and record
 
 The packed release gate MUST also execute the installed repository change lifecycle against a held-out ordinary Git repository. It MUST sever the Projector source checkout, drive the same request through the direct CLI and installed agent wrapper, and bind their semantic/plan/approval/certificate identities. It MUST inject `SIGKILL` only after the authenticated journal reaches validation with durable mutation. It MUST prove stale-lease takeover, exact rollback, same-approval resume, immutable independent-validator execution, observed-impact closure, agent trace continuity, and idempotent certificate/receipt replay. Fixture-only transforms and source fallbacks are not release evidence.
 
+Each lifecycle traceability entry MUST name the packed lifecycle evidence and transcript artifacts that it requires. Release compilation MUST reject a run when either same-run artifact is absent. The final release evidence MUST authenticate both hashes.
+
 The repository GitHub Actions release workflow MUST remain manual-only with `workflow_dispatch` as its only trigger. It MUST provision and prove the sandbox before dogfooding, verification, artifact checks, and packed release acceptance. It MUST NOT disable the runner's global unprivileged-user-namespace restriction to make a probe pass.
 
 The authoritative Projector specification MUST pass the blocking `human-technical@1` mechanical style gate. Code blocks and exact technical literals are outside that prose gate. Passive voice and nominalization remain review signals when a deterministic checker cannot identify a better actor or verb safely.

@@ -31,7 +31,8 @@ for (const item of inventory) {
   const [publicFacade, testRef] = route(item.title); const [path, anchor] = testRef.split("#", 2);
   let text = sourceCache.get(path); if (text === undefined) { text = await readFile(`${root}/${path}`, "utf8"); sourceCache.set(path, text); }
   if (!text.includes(`describe("${anchor}"`)) throw new Error(`traceability route has no real test anchor: ${testRef}`);
-  const entry = { ...item, publicFacade, testRef, testSourceDigest: hashFramedDomain("traceability-test-source", { path, text }) };
+  const requiredArtifactIds = /installed .*lifecycle/iu.test(item.title) ? ["packed-held-out-lifecycle", "packed-held-out-lifecycle-transcript"] : undefined;
+  const entry = { ...item, publicFacade, testRef, testSourceDigest: hashFramedDomain("traceability-test-source", { path, text }), ...(requiredArtifactIds === undefined ? {} : { requiredArtifactIds }) };
   entries.push({ ...entry, mappingHash: traceabilityEntryHash(entry) });
 }
 const manifest = { version: 2, entries, inventoryHash: traceabilityInventoryHash(inventory) };
