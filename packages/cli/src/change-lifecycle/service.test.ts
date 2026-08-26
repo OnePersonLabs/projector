@@ -1,8 +1,9 @@
-import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 
 import { hashFramedDomain, withCanonicalHashes, type Requirement } from "@projector/core";
 import { CanonicalFileRepository, FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
@@ -154,6 +155,52 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("survives SIGKILL during sandbox validation, takes over the stale lease, and resumes", async () => {
+    const root = await repository();
+    let child: ReturnType<typeof spawn> | undefined;
+    try {
+      await writeFile(join(root, "test", "public-contract.test.mjs"), [
+        "import assert from 'node:assert/strict';",
+        "import { existsSync } from 'node:fs';",
+        "import { setTimeout as delay } from 'node:timers/promises';",
+        "import { greet } from '../src/index.mjs';",
+        "if (existsSync('.projector/runtime/interruption-hold')) await delay(20_000);",
+        "assert.equal(greet(), 'hello');",
+        "",
+      ].join("\n"));
+      await exec("git", ["add", "test/public-contract.test.mjs"], { cwd: root });
+      await exec("git", ["commit", "--amend", "--no-edit", "-q"], { cwd: root });
+      await mkdir(join(root, ".projector", "runtime"), { recursive: true });
+      await writeFile(join(root, ".projector", "runtime", "interruption-hold"), "hold\n");
+      const service = await RepositoryChangeLifecycleService.create(root, { leaseStaleAfterMs: 300 });
+      const captured = await service.capture({ request: "Change greeting across a real interruption.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const projectorRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+      const vitest = join(projectorRoot, "node_modules", "vitest", "vitest.mjs");
+      child = spawn(process.execPath, [vitest, "run", "packages/cli/src/change-lifecycle/interruption-worker.test.ts", "--pool=threads", "--maxWorkers=1"], {
+        cwd: projectorRoot,
+        env: { ...process.env, PROJECTOR_INTERRUPTION_REPOSITORY: root, PROJECTOR_INTERRUPTION_APPROVAL: approval.id },
+        stdio: "ignore",
+      });
+
+      const transactionId = await waitForValidatingTransaction(root);
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("hello ${name}");
+      child.kill("SIGKILL");
+      const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child!.once("exit", (code, signal) => resolve({ code, signal })));
+      expect(exit).toMatchObject({ signal: "SIGKILL" });
+      child = undefined;
+      await rm(join(root, ".projector", "runtime", "interruption-hold"), { force: true });
+      await new Promise((resolve) => setTimeout(resolve, 450));
+
+      expect(await service.recover(approval.id)).toEqual([expect.objectContaining({ transactionId, action: "rolled-back" })]);
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toBe("export const greet = () => 'hello';\n");
+      expect((await service.resume(approval.id)).outcome).toBe("success");
+    } finally {
+      child?.kill("SIGKILL");
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("finalizes a committed attempt from prepared success after publication is interrupted", async () => {
     const root = await repository();
     try {
@@ -189,3 +236,18 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
+
+async function waitForValidatingTransaction(root: string): Promise<string> {
+  const journalRoot = join(root, ".projector", "runtime", "journal");
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    let names: string[] = [];
+    try { names = await readdir(journalRoot); } catch { /* transaction has not begun */ }
+    for (const name of names.filter((candidate) => candidate.endsWith(".json"))) {
+      const record = JSON.parse(await readFile(join(journalRoot, name), "utf8")) as { entry?: { transactionId?: string; phase?: string } };
+      if (record.entry?.phase === "validating" && record.entry.transactionId !== undefined) return record.entry.transactionId;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("child lifecycle did not reach sandbox validation before interruption deadline");
+}
