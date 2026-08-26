@@ -92,10 +92,10 @@
 - Modify: `scripts/run-release-acceptance.mjs`
 - Modify: traceability generation and expected release evidence
 
-- [ ] Install the exact npm tarball plus plugin shell in a disposable repository with Projector source access severed.
-- [ ] Run the natural request directly through the CLI and through the source-severed installed `$projector-change` script; prove its approval pause, continuation consumption, invocation trace, and matching semantic/plan/approval/certificate identities.
-- [ ] Force `SIGKILL`, recover, resume, and prove exact predicted/observed impact plus fixed-point reconciliation.
-- [ ] Run all severance cases and prove no mandatory-fixture fallback.
+- [x] Install the exact npm tarball plus plugin shell in a disposable repository with Projector source access severed.
+- [x] Run the natural request directly through the CLI and through the source-severed installed `$projector-change` script; prove its approval pause, continuation consumption, invocation trace, and matching semantic/plan/approval/certificate identities.
+- [x] Force `SIGKILL`, recover, resume, and prove exact predicted/observed impact plus fixed-point reconciliation.
+- [x] Run all severance cases and prove no mandatory-fixture fallback.
 
 ### Task 7: Specify, document, cold-review, and land
 
