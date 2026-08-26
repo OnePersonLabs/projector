@@ -4,7 +4,28 @@ import { PROJECTOR_VERSION, executeProjector, main, renderCli } from "./cli.js";
 
 describe("minimal CLI entrypoint", () => {
   it("renders help without composing unfinished subsystems", () => {
-    expect(renderCli(["--help"])).toContain("Usage: projector");
+    const help = renderCli(["--help"]);
+    expect(help).toContain("Usage: projector");
+    const commandSection = help.split("Commands:\n")[1]?.split("\n\nOptions:")[0];
+    expect(commandSection?.match(/^  [a-z]+/gmu)?.map((line) => line.trim())).toEqual([
+      "init",
+      "audit",
+      "change",
+      "plan",
+      "apply",
+      "reconcile",
+      "coverage",
+      "complete",
+      "cleanup",
+      "run",
+      "mcp",
+      "watch",
+      "ci",
+      "recover",
+      "verify",
+      "upgrade",
+      "explain",
+    ]);
   });
 
   it("renders the package version", () => {
