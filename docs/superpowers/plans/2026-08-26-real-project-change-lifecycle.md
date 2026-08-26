@@ -37,7 +37,7 @@
 - [x] Add RED tests for arbitrary prose, strict proposal parsing, key/alias reuse, duplicate blocking, deterministic new IDs, engine-derived bounded non-authoritative deferral, blocking concern refusal, exact path preconditions, bounded relevance, negative-space binding, and unavailable analysis.
 - [ ] Reuse a current canonical decision for an exactly matched derived blocking concern; otherwise remain fail closed.
 - [x] Compile canonical Requirement/Scenario envelopes, semantic compiler facts, state binding, human representation, plan, packet, capsule, and immutable hashes using existing engine APIs.
-- [ ] Persist only authenticated operational links under `.projector/runtime/change-lifecycles/`.
+- [x] Persist only authenticated operational links under `.projector/runtime/change-lifecycles/`.
 - [x] Run focused CLI/engine tests and typechecks.
 
 ### Task 3: Add explicit approval and state-bound execution
@@ -49,13 +49,13 @@
 - Modify: `packages/cli/src/cli.ts`
 - Modify: `packages/cli/src/policy.ts`
 
-- [ ] Add RED tests for change/plan/approve/apply parsing and lifecycle results.
+- [x] Add RED tests for change/plan/approve/apply parsing and lifecycle results.
 - [ ] Add adversaries for proposal, representation, plan, capsule, approval, state, identity search, write scope, sandbox, and correlated/self-authored validator tampering.
-- [ ] Compose real lease, journal, exact patch transform, sandboxed Node tests, real observations, reconciliation, receipt, and certificate.
-- [ ] Require a Git-base-bound pre-existing validator outside all proposed edits as an independent evidence lane; treat proposal-authored tests as supplemental only.
-- [ ] Make canonical writes part of the same transaction and require explicit current R2 approval.
-- [ ] Make repeated committed apply idempotent.
-- [ ] Keep the legacy magic selector compatible while routing non-fixture selectors to the new service.
+- [x] Compose real lease, journal, exact patch transform, sandboxed Node tests, real observations, reconciliation, receipt, and certificate.
+- [x] Require a Git-base-bound pre-existing validator outside all proposed edits as an independent evidence lane; treat proposal-authored tests as supplemental only.
+- [x] Make canonical writes part of the same transaction and require explicit current R2 approval.
+- [x] Make repeated committed apply idempotent.
+- [x] Keep the legacy magic selector compatible while routing non-fixture selectors to the new service.
 
 ### Task 4: Prove interruption, recovery, and resume
 
@@ -64,8 +64,8 @@
 - Modify: `packages/cli/src/cli.ts`
 - Add focused crash/recovery integration tests
 
-- [ ] Make attempt and transaction IDs durable and unique.
-- [ ] Make `recover` acquire the writer lease before journal recovery.
+- [x] Make attempt and transaction IDs durable and unique.
+- [x] Make `recover` acquire the writer lease before journal recovery.
 - [ ] Force a real child-process interruption during sandbox validation, recover the journal, and resume the same approval with a new attempt.
 - [ ] Prove active lease, stale takeover, third-state content, corrupt journal, and unavailable sandbox boundaries.
 

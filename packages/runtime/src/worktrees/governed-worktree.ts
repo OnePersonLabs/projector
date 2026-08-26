@@ -52,6 +52,11 @@ export class GovernedWorktreeSession {
     return this.journal.recoverIncomplete();
   }
 
+  async heartbeat(): Promise<void> {
+    this.assertOpen();
+    await this.lease.heartbeat();
+  }
+
   async close(): Promise<void> {
     this.assertOpen();
     await this.lease.release();

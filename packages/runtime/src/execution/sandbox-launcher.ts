@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
@@ -249,6 +249,7 @@ class BubblewrapSandboxLauncher implements ProcessLauncher {
     cpuLimits: false,
     memoryLimits: false,
     externalWrites: false,
+    readOnlyFileOverlays: true,
   };
 
   constructor(private readonly nativeLauncher: ProcessLauncher) {}
@@ -267,6 +268,16 @@ class BubblewrapSandboxLauncher implements ProcessLauncher {
     appendExecutableRootBinding(args, request.executable, [...readRoots, ...writeRoots]);
     for (const root of readRoots) args.push("--ro-bind", root, root);
     for (const root of writeRoots) args.push("--bind", root, root);
+    for (const overlay of [...(request.readOnlyFileOverlays ?? [])].sort((left, right) => left.target.localeCompare(right.target))) {
+      const underReadRoot = readRoots.some((root) => {
+        const path = relative(root, overlay.target);
+        return path === "" || (!path.startsWith("..") && !isAbsolute(path));
+      });
+      if (!isAbsolute(overlay.source) || !isAbsolute(overlay.target) || !underReadRoot) {
+        throw new ExecutionRefusedError("invalid-command", `Read-only file overlay must use absolute source and remain under an allowed read root: ${overlay.target}`);
+      }
+      args.push("--ro-bind", overlay.source, overlay.target);
+    }
     args.push("--chdir", request.cwd);
     for (const [key, value] of Object.entries(request.env).sort(([left], [right]) => left.localeCompare(right))) {
       args.push("--setenv", key, value);

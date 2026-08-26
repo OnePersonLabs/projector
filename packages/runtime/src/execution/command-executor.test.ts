@@ -62,6 +62,7 @@ class EchoSandboxLauncher implements ProcessLauncher {
     cpuLimits: true,
     memoryLimits: true,
     externalWrites: true,
+    readOnlyFileOverlays: false,
   };
 
   async launch(request: ProcessLaunchRequest) {
@@ -86,6 +87,7 @@ class NoExternalWriteSandboxLauncher extends EchoSandboxLauncher {
     cpuLimits: true,
     memoryLimits: true,
     externalWrites: false,
+    readOnlyFileOverlays: false,
   };
 }
 

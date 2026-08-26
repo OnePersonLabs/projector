@@ -22,6 +22,13 @@ const beforeState: StateDigest = {
 };
 
 describe("FileTransactionJournal", () => {
+  it("can create a new file through an exact authorized path without widening to its parent", async () => {
+    const { root, journal } = await harness();
+    const transaction = await journal.begin({ ...beginInput("tx-exact-path"), allowedWriteRoots: ["nested/exact.txt"] });
+    await transaction.writeFile("nested/exact.txt", "exact");
+    expect(await readFile(join(root, "nested", "exact.txt"), "utf8")).toBe("exact");
+  });
+
   it("enforces the normative forward phase order", async () => {
     const { journal } = await harness();
     const transaction = await journal.begin(beginInput("tx-order"));

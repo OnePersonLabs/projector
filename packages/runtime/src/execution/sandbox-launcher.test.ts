@@ -19,6 +19,7 @@ class RecordingLauncher implements ProcessLauncher {
     cpuLimits: false,
     memoryLimits: false,
     externalWrites: false,
+    readOnlyFileOverlays: false,
   };
   readonly requests: ProcessLaunchRequest[] = [];
 
@@ -39,6 +40,7 @@ class ProvenFallbackLauncher implements ProcessLauncher {
     cpuLimits: false,
     memoryLimits: false,
     externalWrites: false,
+    readOnlyFileOverlays: true,
   };
 
   async launch(): Promise<ProcessExecutionResult> {
@@ -204,6 +206,7 @@ describe("createSandboxLauncher", () => {
       env: { DECLARED: "value" },
       readRoots: ["/workspace/repository"],
       writeRoots: ["/workspace/repository/output"],
+      readOnlyFileOverlays: [{ source: "/evidence/captured-check.mjs", target: "/workspace/repository/scripts/check.mjs" }],
       network: "deny",
       timeoutMs: 1_234,
       maxOutputBytes: 4_096,
@@ -242,6 +245,9 @@ describe("createSandboxLauncher", () => {
       "--bind",
       "/workspace/repository/output",
       "/workspace/repository/output",
+      "--ro-bind",
+      "/evidence/captured-check.mjs",
+      "/workspace/repository/scripts/check.mjs",
       "--chdir",
       "/workspace/repository",
       "--setenv",

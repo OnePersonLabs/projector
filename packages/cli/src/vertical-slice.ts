@@ -236,21 +236,25 @@ const MANDATORY_JOURNAL_CHECKPOINTS = [
   { id: "before-transform", phase: "prepared", operationCount: 0 },
   { id: "move-reference-update@1:before", phase: "prepared", operationCount: 0 },
   { id: "move-reference-update@1:after", phase: "workspace-mutating", operationCount: 3 },
-  { id: "after-validation", phase: "validating", operationCount: 5 },
 ] as const;
 
 function hasExactMandatoryJournalIntegrity(record: PersistedJournalRecord): boolean {
   const checkpoints = record.checkpoints ?? [];
   const checkpointIds = checkpoints.map(({ id }) => id).filter((id): id is string => id !== undefined);
-  return checkpoints.length === MANDATORY_JOURNAL_CHECKPOINTS.length
-    && checkpoints.every((checkpoint, index) => {
+  const preparedCheckpointId = checkpoints.at(-1)?.id;
+  const expectedCheckpointIds = [...MANDATORY_JOURNAL_CHECKPOINTS.map(({ id }) => id), ...(preparedCheckpointId === undefined ? [] : [preparedCheckpointId])];
+  return checkpoints.length === MANDATORY_JOURNAL_CHECKPOINTS.length + 1
+    && checkpoints.slice(0, MANDATORY_JOURNAL_CHECKPOINTS.length).every((checkpoint, index) => {
       const expected = MANDATORY_JOURNAL_CHECKPOINTS[index];
       return expected !== undefined && checkpoint.id === expected.id && checkpoint.phase === expected.phase
         && checkpoint.operationCount === expected.operationCount;
     })
-    && sameOrdered(checkpointIds, MANDATORY_JOURNAL_CHECKPOINTS.map(({ id }) => id))
-    && (record.entry?.checkpointIds?.length ?? 0) === MANDATORY_JOURNAL_CHECKPOINTS.length
-    && sameOrdered(record.entry?.checkpointIds ?? [], MANDATORY_JOURNAL_CHECKPOINTS.map(({ id }) => id))
+    && checkpoints.at(-1)?.id?.startsWith("prepared-success:prepared_success_") === true
+    && checkpoints.at(-1)?.phase === "validating"
+    && checkpoints.at(-1)?.operationCount === 5
+    && sameOrdered(checkpointIds, expectedCheckpointIds)
+    && (record.entry?.checkpointIds?.length ?? 0) === expectedCheckpointIds.length
+    && sameOrdered(record.entry?.checkpointIds ?? [], expectedCheckpointIds)
     && (record.compensations?.length ?? 0) === 0
     && (record.entry?.externalOperationIds?.length ?? 0) === 0;
 }
@@ -456,7 +460,7 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
         || !TransactionJournalEntrySchema.safeParse(journal.entry).success
         || !Array.isArray(journal.allowedWriteRoots) || !journal.allowedWriteRoots.includes(".")
         || journal.operations.length !== operations.length || journal.operations.some((operation) => operation.status !== "applied")) continue;
-      if (!hasExactMandatoryJournalIntegrity(journal) || artifact.lastCheckpointId !== "after-validation") continue;
+      if (!hasExactMandatoryJournalIntegrity(journal) || artifact.lastCheckpointId !== journal.checkpoints?.at(-1)?.id) continue;
       const journalPaths = journal.operations.flatMap((operation) => operation.changes?.map(({ path }) => path).filter((path): path is string => path !== undefined) ?? []);
       if (!sameOrdered(journalPaths, operations.flatMap((operation) => operationPaths(operation.summary ?? "")))) continue;
       if (journal.operations.some((operation, index) => {

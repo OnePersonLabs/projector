@@ -46,6 +46,12 @@ export interface ProcessLauncherCapabilities {
   cpuLimits: boolean;
   memoryLimits: boolean;
   externalWrites: boolean;
+  readOnlyFileOverlays: boolean;
+}
+
+export interface ReadOnlyFileOverlay {
+  readonly source: string;
+  readonly target: string;
 }
 
 export interface ProcessLaunchRequest {
@@ -55,6 +61,7 @@ export interface ProcessLaunchRequest {
   env: Record<string, string>;
   readRoots: string[];
   writeRoots: string[];
+  readOnlyFileOverlays?: ReadOnlyFileOverlay[];
   network: "deny" | "allow";
   timeoutMs: number;
   cpuBudgetMs?: number;
@@ -266,6 +273,7 @@ export class NativeProcessLauncher implements ProcessLauncher {
     cpuLimits: false,
     memoryLimits: false,
     externalWrites: false,
+    readOnlyFileOverlays: false,
   };
 
   launch(request: ProcessLaunchRequest): Promise<ProcessExecutionResult> {

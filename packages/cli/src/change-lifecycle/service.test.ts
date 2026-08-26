@@ -1,0 +1,191 @@
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+
+import { hashFramedDomain, withCanonicalHashes, type Requirement } from "@projector/core";
+import { CanonicalFileRepository, FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
+import { describe, expect, it } from "vitest";
+
+import { RepositoryChangeLifecycleService } from "./service.js";
+import { ChangeLifecycleStore } from "./store.js";
+
+const exec = promisify(execFile);
+const placeholder = hashFramedDomain("test", "placeholder");
+
+const proposal = () => ({
+  apiVersion: "projector.change-proposal/v1",
+  requirements: [{ key: "greeting-personalization", title: "Personalized greeting", statement: "The greeting includes the supplied name.", aliases: ["named-greeting"] }],
+  scenarios: [{ key: "greet-supplied-name", title: "Greet a supplied name", steps: [
+    { role: "precondition", statement: "A caller supplies a nonblank name." },
+    { role: "trigger", statement: "The caller requests a greeting." },
+    { role: "expected-outcome", statement: "The result includes that exact name." },
+  ] }],
+  architecture: null,
+  edits: [{ path: "src/greeting.mjs", before: "export const greet = () => 'hello';\n", after: "export const greet = (name = '') => name ? `hello ${name}` : 'hello';\n" }],
+  validation: { independentNodeTests: ["test/public-contract.test.mjs"], supplementalNodeTests: [] },
+  analysisFacets: ["behavior", "architecture"],
+});
+
+async function repository(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "projector-lifecycle-service-"));
+  await mkdir(join(root, "src"), { recursive: true });
+  await mkdir(join(root, "test"), { recursive: true });
+  await writeFile(join(root, "package.json"), "{\"type\":\"module\"}\n");
+  await writeFile(join(root, "src", "greeting.mjs"), "export const greet = () => 'hello';\n");
+  await writeFile(join(root, "src", "index.mjs"), "import { greet } from './greeting.mjs'; export { greet };\n");
+  await writeFile(join(root, "test", "public-contract.test.mjs"), "import assert from 'node:assert/strict'; import { greet } from '../src/index.mjs'; assert.equal(greet(), 'hello');\n");
+  const payload: Requirement = { id: "requirement:legacy-greeting", key: "legacy-greeting", title: "Legacy greeting", aliases: ["named-greeting"], statement: "A greeting may include a name.", status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, origin: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder };
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload } }));
+  await exec("git", ["init", "-q"], { cwd: root });
+  await exec("git", ["config", "user.email", "projector@example.invalid"], { cwd: root });
+  await exec("git", ["config", "user.name", "Projector Test"], { cwd: root });
+  await exec("git", ["add", "."], { cwd: root });
+  await exec("git", ["commit", "-qm", "initial"], { cwd: root });
+  return root;
+}
+
+describe("repository change lifecycle service", () => {
+  it("captures, replans, and approves only the exact human-presented plan hash", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const captured = await service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal() });
+      const inspected = await service.plan(captured.capture.semanticChangeId);
+      expect(inspected.capture).toEqual(captured.capture);
+      expect(inspected.compiled.planHash).toBe(captured.capture.planHash);
+      await expect(service.approve(captured.capture.semanticChangeId, hashFramedDomain("wrong", null))).rejects.toThrow(/plan hash/iu);
+      const approved = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      expect(approved.semanticChangeId).toBe(captured.capture.semanticChangeId);
+      expect(approved.approvals).toHaveLength(1);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("refuses approval after governed state drifts and leaves no stale approval", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const captured = await service.capture({ request: "Change greeting.", proposal: proposal() });
+      await writeFile(join(root, "src", "greeting.mjs"), "export const greet = () => 'changed elsewhere';\n");
+      await expect(service.approve(captured.capture.semanticChangeId, captured.capture.planHash)).rejects.toThrow(/stale|exact before|current/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("executes the approved exact packet through the lease, journal, sandbox, and durable result", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const captured = await service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const applied = await service.apply(approval.id);
+      expect(applied.outcome, applied.reasons.join("; ")).toBe("success");
+      expect(applied.validations.map(({ validatorId, status }) => ({ validatorId, status }))).toEqual(expect.arrayContaining([
+        { validatorId: "exact-text-patch.verify", status: "passed" },
+        { validatorId: "projector.repository-post-observation", status: "passed" },
+        { validatorId: "node-independent:test/public-contract.test.mjs", status: "passed" },
+      ]));
+      const independent = applied.validations.find(({ validatorId }) => validatorId.startsWith("node-independent:"));
+      expect(independent?.details).toMatchObject({
+        expectedContentHash: expect.stringMatching(/^sha256:v1:/u),
+        beforeContentHash: expect.stringMatching(/^sha256:v1:/u),
+        afterContentHash: expect.stringMatching(/^sha256:v1:/u),
+        executedContentHash: expect.stringMatching(/^sha256:v1:/u),
+        executionSource: "immutable-captured-overlay",
+      });
+      expect(independent?.details.expectedContentHash).toBe(independent?.details.afterContentHash);
+      expect(independent?.evidenceIds).toHaveLength(1);
+      expect(applied.receipt.changedRequirementIds).toHaveLength(1);
+      expect(applied.receipt.changedScenarioIds).toHaveLength(1);
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("hello ${name}");
+      expect((await service.apply(approval.id)).certificateHash).toBe(applied.certificateHash);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rolls back the journaled packet when the independent sandboxed validator fails", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const invalid = proposal();
+      invalid.edits[0]!.after = "export const greet = (name) => `hello ${name}`;\n";
+      const captured = await service.capture({ request: "Require a greeting name.", proposal: invalid });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const applied = await service.apply(approval.id);
+      expect(applied.outcome).toBe("partial");
+      expect(applied.reasons).toEqual(expect.arrayContaining([expect.stringMatching(/node-independent.*failed/iu)]));
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toBe("export const greet = () => 'hello';\n");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("refuses success when the applied change introduces a new analyzer failure", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const invalid = proposal();
+      invalid.edits.push({ path: "package.json", before: "{\"type\":\"module\"}\n", after: "{\n" });
+      const captured = await service.capture({ request: "Change greeting without hiding analyzer failures.", proposal: invalid });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const applied = await service.apply(approval.id);
+
+      expect(applied.outcome).toBe("partial");
+      expect(applied.validations).toEqual(expect.arrayContaining([
+        expect.objectContaining({ validatorId: "projector.repository-post-observation", status: "failed" }),
+      ]));
+      expect(applied.certificate.planningSurpriseIds).not.toHaveLength(0);
+      expect(await readFile(join(root, "package.json"), "utf8")).toBe("{\"type\":\"module\"}\n");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("recovers an interrupted durable transaction before a fresh approved attempt", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const captured = await service.capture({ request: "Change greeting.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const store = await ChangeLifecycleStore.create(root, { now: () => "2026-08-26T00:00:00.000Z", newId: () => "interrupted" });
+      const attempt = await store.beginAttempt(approval.id);
+      const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
+      const transaction = await journal.begin({ transactionId: attempt.transactionId, planId: captured.capture.planId, beforeState: captured.capture.stateBinding.compiledAgainst, allowedWriteRoots: ["src/greeting.mjs"] });
+      await transaction.writeFile("src/greeting.mjs", "export const greet = () => 'interrupted';\n");
+
+      expect((await service.recover(approval.id))[0]).toMatchObject({ attemptId: attempt.id, action: "rolled-back" });
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toBe("export const greet = () => 'hello';\n");
+      expect((await service.apply(approval.id)).outcome).toBe("success");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("finalizes a committed attempt from prepared success after publication is interrupted", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const captured = await service.capture({ request: "Change greeting durably.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const internal = service as unknown as { store: ChangeLifecycleStore };
+      const writeArtifact = internal.store.writeArtifact.bind(internal.store);
+      internal.store.writeArtifact = async () => { throw new Error("simulated process interruption after durable commit"); };
+
+      await expect(service.apply(approval.id)).rejects.toThrow(/simulated process interruption/iu);
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("hello ${name}");
+
+      internal.store.writeArtifact = writeArtifact;
+      const recovered = await service.recover(approval.id);
+      expect(recovered).toEqual([expect.objectContaining({ action: "finalized" })]);
+      const resumed = await service.resume(approval.id);
+      expect(resumed.outcome).toBe("success");
+      expect(resumed.certificateHash).toMatch(/^sha256:v1:/u);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("fails closed when idempotent success evidence has been modified", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const captured = await service.capture({ request: "Change greeting with authenticated evidence.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const applied = await service.apply(approval.id);
+      await writeFile(join(root, applied.certificateRef), "{}\n");
+
+      await expect(service.apply(approval.id)).rejects.toThrow(/artifact content authentication/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});

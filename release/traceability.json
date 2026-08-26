@@ -118,8 +118,8 @@
       "sourceDigest": "sha256:v1:36fee5ad155404f528013a1f392dce62c0e7747a52413527afa311b99980c2e9",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal",
-      "testSourceDigest": "sha256:v1:826703c882c10944d8126ee19e149c90f143c9ce9a97ed717fb923273bee7af1",
-      "mappingHash": "sha256:v1:cd453bfcdcd5e5246a96061ec011943b35fce167a9edd9d1b9b4c449edf8e1b4"
+      "testSourceDigest": "sha256:v1:9205ebb26d89c90fbddfcfc41e8bf951fb6f38572b55d61bb83f54494627c31b",
+      "mappingHash": "sha256:v1:cea47d4dbbf383e873214fb24ec92daa1c323bf1992ad7ae67034483f5ec9244"
     },
     {
       "id": "scenario:11:branch-governance-conflict",
@@ -190,8 +190,8 @@
       "sourceDigest": "sha256:v1:36fee5ad155404f528013a1f392dce62c0e7747a52413527afa311b99980c2e9",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/execution/sandbox-launcher.test.ts#createSandboxLauncher",
-      "testSourceDigest": "sha256:v1:1938c4573491f3a35e6179ffa5406eeda26c366df0b3b3a19e58dd6c0cfc2b46",
-      "mappingHash": "sha256:v1:f131b3afa59801e94e9595e7ed0ef6bcf11ee8edb0a2b297a4ee7505c65bc2ab"
+      "testSourceDigest": "sha256:v1:dc41110725fdc6be2a9eef4826bafdaf325f85a59fbdad8b38548824db220e09",
+      "mappingHash": "sha256:v1:a952ef24a87cfcb0fef727c4a133e2b06af7dd4d116676265a5e9a23107058e6"
     },
     {
       "id": "scenario:17:manual-only-sandbox-release-workflow",
@@ -994,8 +994,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal",
-      "testSourceDigest": "sha256:v1:826703c882c10944d8126ee19e149c90f143c9ce9a97ed717fb923273bee7af1",
-      "mappingHash": "sha256:v1:c07d3c06f217578b4d402cea13b8acf0c92ee88517785e6103c9d14e5dcb8ffa"
+      "testSourceDigest": "sha256:v1:9205ebb26d89c90fbddfcfc41e8bf951fb6f38572b55d61bb83f54494627c31b",
+      "mappingHash": "sha256:v1:581a6822228a26c69f6f63d073d69461626d26a6f31a3d84d7d3740670ca5715"
     },
     {
       "id": "property:22:rebuilding-sqlite-from-canonical-inputs-preserves-semantic-state",
@@ -1114,8 +1114,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal",
-      "testSourceDigest": "sha256:v1:826703c882c10944d8126ee19e149c90f143c9ce9a97ed717fb923273bee7af1",
-      "mappingHash": "sha256:v1:6007085a301b01dc57fdacbf717eaedc2f48c4584761703c3e7af07f32a3b565"
+      "testSourceDigest": "sha256:v1:9205ebb26d89c90fbddfcfc41e8bf951fb6f38572b55d61bb83f54494627c31b",
+      "mappingHash": "sha256:v1:59ae4b39926e7669d7c7b8cdc2790f4f3b45f18cd1ed30a633f303eb6ae7f202"
     },
     {
       "id": "adversary:05:branch-merge-canonical-governance-conflict",

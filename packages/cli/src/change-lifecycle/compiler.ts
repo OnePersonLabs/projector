@@ -28,6 +28,7 @@ import {
   compileSemanticChangePlan,
   createStateBinding,
   discoverArchitectureConcerns,
+  executionPlanHash,
   runArchitecturePreflight,
   type ArchitectureActivationFacet,
   type CompiledSemanticChange,
@@ -104,6 +105,7 @@ export interface CompiledRepositoryChange {
   readonly relevance: RepositoryRelevanceEvidence;
   readonly canonicalWrites: readonly CanonicalChangeWrite[];
   readonly independentValidators: readonly IndependentValidatorObservation[];
+  readonly baselineObservation: RepositoryBaselineObservation;
   readonly compiledChange: CompiledSemanticChange;
   readonly representation: {
     readonly projectionId: string;
@@ -115,6 +117,24 @@ export interface CompiledRepositoryChange {
   readonly compiledPlan: CompiledSemanticChangePlan;
   readonly planHash: ContentHash;
   readonly exactPatchInput: ExactTextPatchInput;
+}
+
+export interface RepositoryBaselineObservation {
+  readonly files: readonly { readonly path: string; readonly contentHash: ContentHash }[];
+  readonly canonicalEntries: readonly { readonly entityId: string; readonly canonicalDocumentHash: ContentHash }[];
+  readonly units: readonly { readonly id: string; readonly key: string; readonly membershipHash: ContentHash; readonly validity: string }[];
+  readonly analyzerFailures: readonly { readonly analyzerId: string; readonly capability: string; readonly scope: string; readonly message: string; readonly affectedClaimKinds: readonly string[] }[];
+  readonly contentHash: ContentHash;
+}
+
+function baselineObservation(observation: Awaited<ReturnType<typeof observeChangeRepository>>): RepositoryBaselineObservation {
+  const value = {
+    files: observation.analysis.files.map(({ path, contentHash }) => ({ path, contentHash })).sort((left, right) => compare(left.path, right.path)),
+    canonicalEntries: observation.canonical.entries.map(({ entityId, canonicalDocumentHash }) => ({ entityId, canonicalDocumentHash })).sort((left, right) => compare(left.entityId, right.entityId)),
+    units: observation.analysis.projectionUnits.map(({ id, key, membershipHash, validity }) => ({ id, key, membershipHash, validity })).sort((left, right) => compare(left.id, right.id)),
+    analyzerFailures: observation.analysis.failures.map(({ analyzerId, capability, scope, message, affectedClaimKinds }) => ({ analyzerId, capability, scope, message, affectedClaimKinds: [...affectedClaimKinds].sort(compare) })).sort((left, right) => compare(canonicalJson(left), canonicalJson(right))),
+  };
+  return { ...value, contentHash: hashFramedDomain("repository-change-baseline-observation", value) };
 }
 
 export interface CompileRepositoryChangeInput {
@@ -508,6 +528,7 @@ export async function compileRepositoryChange(
   const representation = await compileRepresentation(compiledChange, options.representationArtifacts ?? defaultRepresentationArtifacts());
   const validatorIds = [
     "exact-text-patch.verify",
+    "projector.repository-post-observation",
     ...independentValidators.map(({ path }) => `node-independent:${path}`),
     ...input.proposal.validation.supplementalNodeTests.map((path) => `node-supplemental:${path}`),
   ];
@@ -545,7 +566,7 @@ export async function compileRepositoryChange(
     packets: { compile: async () => ({ value: packetValue, contentHash: hashFramedDomain("authenticated-change-packet-proposals", packetValue) }) },
     representations: { compile: async () => representation },
   });
-  const planHash = hashFramedDomain("semantic-change-execution-plan", compiledPlan.plan);
+  const planHash = executionPlanHash(compiledPlan.plan);
   const exactPatchInput: ExactTextPatchInput = {
     edits: [
       ...input.proposal.edits.map((edit) => ({ unitId: observation.analysis.projectionUnits.find(({ key }) => key === edit.path)?.id ?? deriveEntityId("projector.proposed-unit", edit.path), ...edit })),
@@ -559,6 +580,7 @@ export async function compileRepositoryChange(
     relevance,
     canonicalWrites,
     independentValidators,
+    baselineObservation: baselineObservation(observation),
     compiledChange,
     representation,
     compiledPlan,
