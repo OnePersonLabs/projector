@@ -29,7 +29,7 @@
 - Consumes: `executeProjector(["mcp"])`, `createBuiltMcpCliPort().start()`, JSON-RPC `tools/list` and `tools/call`.
 - Produces: executable expectations for sessionless/session-bound lists, canonical availability, and unknown-tool refusal.
 
-- [ ] **Step 1: Change the sessionless CLI expectation to the literal operational read list**
+- [x] **Step 1: Change the sessionless CLI expectation to the literal operational read list**
 
 Expect exactly `projector.audit`, `projector.list_divergences`, and `projector.status`.
 
@@ -41,7 +41,7 @@ expect(result.report.tools).toEqual([
 ]);
 ```
 
-- [ ] **Step 2: Extend the authenticated-session test**
+- [x] **Step 2: Extend the authenticated-session test**
 
 Expect an authenticated lifecycle with a representation to add `projector.preview_representation` and `projector.validate_representation`. Call status and assert that all 21 names are accounted for while every controlled name is explicitly unavailable. Assert that no capability token is issued.
 
@@ -63,7 +63,7 @@ expect(status.result.structuredContent.toolAvailability).toContainEqual({
 });
 ```
 
-- [ ] **Step 3: Add an unadvertised-call refusal assertion**
+- [x] **Step 3: Add an unadvertised-call refusal assertion**
 
 Call `projector.apply_plan` and `projector.apply_transform` with a bogus token. Expect unknown-tool JSON-RPC errors and prove no target file was written.
 
@@ -75,7 +75,7 @@ const unavailable = await mcp.transport.handle({
 expect(unavailable).toMatchObject({ error: { message: expect.stringMatching(/unknown MCP tool/iu) } });
 ```
 
-- [ ] **Step 4: Run RED**
+- [x] **Step 4: Run RED**
 
 Run: `pnpm vitest run packages/cli/src/run-cli.test.ts packages/integrations/src/mcp/server.test.ts`
 
@@ -92,7 +92,7 @@ Expected: failure because the built composition still advertises all 21 tools an
 - Consumes: explicit `ProjectorMcpDependencies` handler maps and `MutationCapabilityService`.
 - Produces: `PROJECTOR_MCP_TOOL_CATALOG`, explicit operational maps, status availability records.
 
-- [ ] **Step 1: Export the canonical tool catalog**
+- [x] **Step 1: Export the canonical tool catalog**
 
 Represent every existing name once with its `read` or `controlled` class. Derive compatibility name arrays from the catalog.
 
@@ -110,11 +110,11 @@ export const PROJECTOR_MCP_TOOL_CATALOG: readonly ProjectorMcpCatalogEntry[] = O
 ]);
 ```
 
-- [ ] **Step 2: Delete `createBuiltProjectorMcpServer()`**
+- [x] **Step 2: Delete `createBuiltProjectorMcpServer()`**
 
 Move no behavior into a replacement wrapper. Keep `createProjectorMcpServer()` as the only registry/transport constructor.
 
-- [ ] **Step 3: Compose session-dependent handler maps in `mcp-cli.ts`**
+- [x] **Step 3: Compose session-dependent handler maps in `mcp-cli.ts`**
 
 Always register status, audit, and divergence reads. Register representation reads only when an authenticated session carries a representation. Register no controlled handlers and issue no capability in this slice.
 
@@ -131,7 +131,7 @@ const read: Record<string, Tool> = {
 const controlled: Record<string, ControlledTool> = {};
 ```
 
-- [ ] **Step 4: Return canonical availability from status**
+- [x] **Step 4: Return canonical availability from status**
 
 For every catalog entry, return `{ name, class, operational, reason? }`. Derive `operational` from the actual maps, not a second hard-coded list.
 
@@ -144,7 +144,7 @@ const toolAvailability = PROJECTOR_MCP_TOOL_CATALOG.map((entry) => ({
 }));
 ```
 
-- [ ] **Step 5: Run GREEN and typecheck**
+- [x] **Step 5: Run GREEN and typecheck**
 
 Run: `pnpm vitest run packages/cli/src/run-cli.test.ts packages/integrations/src/mcp/server.test.ts scripts/projector-plugin.test.ts`
 
@@ -161,19 +161,19 @@ Expected: all pass.
 - Consumes: exact diff from `3bc2394` and the design acceptance list.
 - Produces: independently reviewed operational registry commit.
 
-- [ ] **Step 1: Run the continuity review against the acceptance matrix**
+- [x] **Step 1: Run the continuity review against the acceptance matrix**
 
 Block only on a normative requirement with a public-path reproduction and material consequence.
 
-- [ ] **Step 2: Batch-fix accepted findings test-first**
+- [x] **Step 2: Batch-fix accepted findings test-first**
 
 Repeat RED/GREEN only for demonstrated gaps.
 
-- [ ] **Step 3: Run the frozen gate**
+- [x] **Step 3: Run the frozen gate**
 
 Run: `pnpm verify && pnpm build && pnpm release:artifacts:check && pnpm release:acceptance && git diff --check`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/integrations/src/mcp/server.ts packages/integrations/src/mcp/server.test.ts packages/cli/src/mcp-cli.ts packages/cli/src/run-cli.test.ts scripts/projector-plugin.test.ts scripts/run-release-acceptance.mjs docs/superpowers/specs/2026-08-26-operational-mcp-registry-design.md docs/superpowers/plans/2026-08-26-operational-mcp-registry.md

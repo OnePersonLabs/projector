@@ -128,6 +128,13 @@ Inspect the repository release workflow and run its sandbox lane on the pinned U
 Expected: `workflow_dispatch` is the only trigger. The workflow provisions the pinned sandbox without disabling Ubuntu's global user-namespace restriction. It proves filesystem and network isolation before dogfooding, verification, artifact checks, and packed release acceptance. The traceability manifest binds this scenario to an observed public test.
 
 
+## Operational MCP advertisement
+
+Start the packed MCP server without a session, with an authenticated session that has no representation binding, and with an authenticated representation-bound session. Inspect `tools/list`, status, and an attempted call to a declared but unadvertised mutation tool.
+
+Expected: both sessionless and representation-unbound compositions advertise exactly the three operational repository reads. The representation-bound composition advertises exactly those reads plus its two operational representation handlers. Status accounts for the complete canonical capability catalog and marks every handlerless declaration unavailable. The mutation call fails as unknown, no mutation capability is issued, and repository state is unchanged.
+
+
 ## Generated-output upstream repair
 
 A generated client contains a fixable defect whose generator/source schema is known.

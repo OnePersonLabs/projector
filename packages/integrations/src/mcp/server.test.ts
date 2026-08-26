@@ -2,7 +2,7 @@ import { hashFramedDomain, type ContentHash, type StateBinding, type StateDigest
 import { describe, expect, it, vi } from "vitest";
 
 import { createMutationCapabilityService, type CapabilityRecord, type CapabilityStore } from "./capabilities.js";
-import { createBuiltProjectorMcpServer, createProjectorMcpServer } from "./server.js";
+import { createProjectorMcpServer, PROJECTOR_MCP_TOOL_CATALOG } from "./server.js";
 
 class MemoryStore implements CapabilityStore {
   readonly rows = new Map<ContentHash, CapabilityRecord>();
@@ -53,18 +53,13 @@ describe("MCP transport and durable mutation capabilities", () => {
     expect(replay).toHaveProperty("error"); expect(mutate).toHaveBeenCalledOnce();
   });
 
-  it("routes representation preview and validation through dedicated handlers instead of the generic read fallback", async () => {
-    const genericRead = vi.fn(async () => ({ status: "generic" }));
-    const preview = vi.fn(async () => ({ status: "valid", projectionId: "representation:one" }));
-    const validate = vi.fn(async () => ({ status: "valid", protectedDimensions: 11 }));
-    const server = createBuiltProjectorMcpServer({
-      capability: createMutationCapabilityService({ store: new MemoryStore(), entropy: () => new Uint8Array(32).fill(4), clock: { now: () => 1_000 }, roots: { resolveRoot: async () => "/repo", resolveTarget: async (_root, path) => path }, authority: { verify: async () => true }, currentness: { verify: async () => true } }),
-      read: genericRead,
-      representations: { preview, validate },
-      controlled: { operation: "none", risk: "R1", targets: () => ({ semanticScopes: [], writePaths: [] }), run: async () => ({}) },
+  it("keeps declared tools inspectable without manufacturing callable handlers", () => {
+    const server = createProjectorMcpServer({
+      read: { "projector.status": async () => ({ status: "ok" }) },
+      controlled: {},
     });
-    await server.registry.call("projector.preview_representation", { projectionId: "representation:one" });
-    await server.registry.call("projector.validate_representation", { projectionId: "representation:one" });
-    expect(preview).toHaveBeenCalledOnce(); expect(validate).toHaveBeenCalledOnce(); expect(genericRead).not.toHaveBeenCalled();
+    expect(server.registry.list().map(({ name }) => name)).toEqual(["projector.status"]);
+    expect(PROJECTOR_MCP_TOOL_CATALOG).toHaveLength(21);
+    expect(PROJECTOR_MCP_TOOL_CATALOG).toContainEqual({ name: "projector.apply_plan", class: "controlled" });
   });
 });

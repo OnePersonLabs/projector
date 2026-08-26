@@ -42,27 +42,9 @@ describe("projector run host boundary", () => {
   it("composes the required built MCP registry through its real transport", async () => {
     const result = await executeProjector(["mcp", "--format", "json"]);
     expect(result.exitCode).toBe(0); expect(result.report.tools).toEqual([
-      "projector.accept_decision",
-      "projector.apply_plan",
-      "projector.apply_transform",
       "projector.audit",
-      "projector.context",
-      "projector.coverage",
-      "projector.create_exception",
-      "projector.execute_packet",
-      "projector.explain",
-      "projector.impact",
       "projector.list_divergences",
-      "projector.preview_plan",
-      "projector.preview_representation",
-      "projector.preview_transform",
-      "projector.relevance",
-      "projector.requirements",
-      "projector.resolve_identity",
-      "projector.scenarios",
       "projector.status",
-      "projector.validate",
-      "projector.validate_representation",
     ]);
     expect(JSON.parse(result.output)).toEqual(result.report);
   });
@@ -82,11 +64,31 @@ describe("projector run host boundary", () => {
       const bin = join(root, "bin"); await mkdir(bin); const fake = join(bin, "codex"); await writeFile(fake, "#!/usr/bin/env node\nconst fs=require('node:fs');const cp=require('node:child_process');const corrupt=process.argv.includes('--corrupt');const path=corrupt?'.projector/governance.json':'tracked.txt';fs.mkdirSync('.projector',{recursive:true});fs.writeFileSync(path,corrupt?'{invalid':'after\\n');cp.execFileSync('git',['add',path]);cp.execFileSync('git',['-c','user.name=Fixture','-c','user.email=fixture@example.test','commit','-qm','host']);\n"); await chmod(fake, 0o755);
       const dry = await executeProjector(["run", "codex", "--dry-run", "--session", selector, "--"], { cwd: root, environment: { PATH: bin } }); expect(dry.report).toMatchObject({ dryRun: true, sessionAuthenticated: true });
       const unavailable = await executeProjector(["run", "codex", "--session", selector, "--"], { cwd: root, environment: { PATH: join(root, "missing-bin") } }); expect(unavailable.exitCode).toBe(5);
-      const mcp = await createBuiltMcpCliPort().start({ repositoryRoot: root, sessionSelector: selector, signal: new AbortController().signal }); expect(mcp.capabilityToken).toBeTypeOf("string");
+      const mcp = await createBuiltMcpCliPort().start({ repositoryRoot: root, sessionSelector: selector, signal: new AbortController().signal });
+      expect(mcp).not.toHaveProperty("capabilityToken");
+      expect(mcp.tools).toEqual(["projector.audit", "projector.list_divergences", "projector.preview_representation", "projector.status", "projector.validate_representation"]);
       const lifecycleOutput: string[] = []; async function* requests() { yield JSON.stringify({ jsonrpc: "2.0", id: "list", method: "tools/list" }); yield JSON.stringify({ jsonrpc: "2.0", id: "status", method: "tools/call", params: { name: "projector.status", arguments: {} } }); }
       await serveMcpTransport(mcp.transport, requests(), (line) => lifecycleOutput.push(line)); expect(lifecycleOutput).toHaveLength(2); expect(JSON.parse(lifecycleOutput[1]!)).toMatchObject({ id: "status", result: { content: [{ type: "text", text: expect.any(String) }], structuredContent: { status: "ok" } } });
-      const status = await mcp.transport.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "projector.status", arguments: {} } }); expect(status).toMatchObject({ result: { content: [{ type: "text", text: expect.any(String) }], structuredContent: { status: "ok" } } });
-      const controlled = await mcp.transport.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.apply_transform", arguments: { capabilityToken: mcp.capabilityToken, semanticScope: "unit:fixture", path: "mcp-output.txt", content: "controlled\n" } } }); expect(controlled).toMatchObject({ result: { content: [{ type: "text", text: expect.any(String) }], structuredContent: { status: "applied", path: "mcp-output.txt" } } }); expect(await readFile(join(root, "mcp-output.txt"), "utf8")).toBe("controlled\n");
+      const status = await mcp.transport.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "projector.status", arguments: {} } });
+      expect(status).toMatchObject({ result: { content: [{ type: "text", text: expect.any(String) }], structuredContent: { status: "ok", toolAvailability: expect.arrayContaining([{ name: "projector.apply_plan", class: "controlled", operational: false, reason: "no production handler is registered" }]) } } });
+      expect((status as { result: { structuredContent: { toolAvailability: unknown[] } } }).result.structuredContent.toolAvailability).toHaveLength(21);
+      const unadvertised = await mcp.transport.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.apply_transform", arguments: { capabilityToken: "not-issued", path: "mcp-output.txt", content: "forbidden\n" } } });
+      expect(unadvertised).toMatchObject({ error: { message: expect.stringMatching(/unknown MCP tool/iu) } });
+      await expect(readFile(join(root, "mcp-output.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      const preview = await mcp.transport.handle({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "projector.preview_representation", arguments: {} } });
+      expect(preview).toMatchObject({ result: { structuredContent: { status: "valid", content: representationText } } });
+
+      const { representation: omittedRepresentation, ...capsuleWithoutRepresentation } = capsule; void omittedRepresentation;
+      const noRepresentationRecord = createHostSessionRecord({ kind: "task17-host-session", host: "codex", sessionId: "session:no-representation", repositoryRootHash: hashFramedDomain("task17-host-repository-root", await realpath(root)), plan, capsule: capsuleWithoutRepresentation as ExecutionCapsule, approval: createExecutionApproval(plan, capsuleWithoutRepresentation as ExecutionCapsule, "approval:no-representation"), instructions: { text: representationText, sourceHashes: [capsule.normativeKernelHash], representation } });
+      const noRepresentationSelector = hostSessionSelector(noRepresentationRecord); const noRepresentationId = noRepresentationSelector.slice("session:".length); await writeFile(join(root, ".projector", "task17-sessions", `session-${noRepresentationId}.json`), JSON.stringify(noRepresentationRecord));
+      const noRepresentationMcp = await createBuiltMcpCliPort().start({ repositoryRoot: root, sessionSelector: noRepresentationSelector, signal: new AbortController().signal });
+      expect(noRepresentationMcp.tools).toEqual(["projector.audit", "projector.list_divergences", "projector.status"]);
+
+      const invalidRepresentationRecord = createHostSessionRecord({ kind: "task17-host-session", host: "codex", sessionId: "session:invalid-representation", repositoryRootHash: hashFramedDomain("task17-host-repository-root", await realpath(root)), plan, capsule, approval: createExecutionApproval(plan, capsule, "approval:invalid-representation"), instructions: { text: `${representationText} tampered`, sourceHashes: [capsule.normativeKernelHash], representation } });
+      const invalidRepresentationSelector = hostSessionSelector(invalidRepresentationRecord); const invalidRepresentationId = invalidRepresentationSelector.slice("session:".length); await writeFile(join(root, ".projector", "task17-sessions", `session-${invalidRepresentationId}.json`), JSON.stringify(invalidRepresentationRecord));
+      const invalidRepresentationMcp = await createBuiltMcpCliPort().start({ repositoryRoot: root, sessionSelector: invalidRepresentationSelector, signal: new AbortController().signal });
+      expect(invalidRepresentationMcp.tools).toEqual(["projector.audit", "projector.list_divergences", "projector.status"]);
+      await expect(invalidRepresentationMcp.transport.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.preview_representation", arguments: {} } })).resolves.toMatchObject({ error: { message: expect.stringMatching(/unknown MCP tool/iu) } });
       const result = await executeProjector(["run", "codex", "--session", selector, "--"], { cwd: root, environment: { PATH: `${bin}:${process.env.PATH ?? ""}` } });
       expect(result).toMatchObject({ exitCode: 0, report: { status: "completed", reconciled: true } }); expect(result.report.changedPaths).toContain("tracked.txt"); expect(result.report.journalId).toBeUndefined();
       const invalid = await executeProjector(["run", "codex", "--session", selector, "--", "--corrupt"], { cwd: root, environment: { PATH: `${bin}:${process.env.PATH ?? ""}` } });
