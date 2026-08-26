@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const internalPackages = ["core", "analyzers", "engine", "runtime", "integrations", "testkit"];
+const internalPackages = ["core", "analyzers", "engine", "runtime", "integrations", "control-plane", "testkit"];
 const bundledNames = internalPackages.map((name) => `@projector/${name}`);
 const exportTargets = { ".": "cli", "./cli": "cli", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./integrations/models": "integrations/models", "./integrations/codex": "integrations/codex", "./testkit": "testkit" };
 

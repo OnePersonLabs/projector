@@ -32,6 +32,9 @@ importers:
       '@projector/analyzers':
         specifier: workspace:*
         version: link:../analyzers
+      '@projector/control-plane':
+        specifier: workspace:*
+        version: link:../control-plane
       '@projector/core':
         specifier: workspace:*
         version: link:../core
@@ -41,6 +44,21 @@ importers:
       '@projector/integrations':
         specifier: workspace:*
         version: link:../integrations
+      '@projector/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+
+  packages/control-plane:
+    dependencies:
+      '@projector/analyzers':
+        specifier: workspace:*
+        version: link:../analyzers
+      '@projector/core':
+        specifier: workspace:*
+        version: link:../core
+      '@projector/engine':
+        specifier: workspace:*
+        version: link:../engine
       '@projector/runtime':
         specifier: workspace:*
         version: link:../runtime

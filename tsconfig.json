@@ -7,6 +7,7 @@
     { "path": "packages/engine" },
     { "path": "packages/integrations" },
     { "path": "packages/testkit" },
+    { "path": "packages/control-plane" },
     { "path": "packages/cli" }
   ]
 }

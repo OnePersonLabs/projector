@@ -1,28 +1,23 @@
 {
-  "name": "@projector/cli",
+  "name": "@projector/control-plane",
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "projector": "./dist/cli.js"
-  },
   "exports": {
     ".": {
-      "types": "./dist/cli.d.ts",
-      "default": "./dist/cli.js"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run --root ../.. packages/cli/src",
+    "test": "vitest run --root ../.. packages/control-plane/src",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
     "@projector/analyzers": "workspace:*",
     "@projector/core": "workspace:*",
-    "@projector/control-plane": "workspace:*",
     "@projector/engine": "workspace:*",
-    "@projector/integrations": "workspace:*",
     "@projector/runtime": "workspace:*"
   }
 }

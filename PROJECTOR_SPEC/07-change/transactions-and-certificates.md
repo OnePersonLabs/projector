@@ -82,7 +82,7 @@ Merge/rebase conflicts in canonical governance state MUST block Govern/Autonomou
 
 ## Public repository change lifecycle
 
-`SemanticChange.id` is the only change identity for the installed local lifecycle. Projector MUST store authenticated captures, approvals, attempts, prepared-success records, results, and agent continuations under `.projector/runtime/change-lifecycles/`. These records are operational evidence and MUST remain outside canonical semantic snapshots.
+`SemanticChange.id` is the only change identity for the installed local lifecycle. Projector MUST store authenticated captures, approvals, attempts, prepared-success records, and results under `.projector/runtime/change-lifecycles/`. These records are operational evidence and MUST remain outside canonical semantic snapshots. Agent wrappers MUST NOT create a second continuation or transaction authority.
 
 The public lifecycle is `change` to `plan` to `approve` to `apply`. `change` captures the request and strict proposal. `plan` reauthenticates the capture and emits one immutable plan hash plus preview. `approve` requires the exact human-presented plan hash and persists a plan/capsule-bound approval. `apply` accepts only that approval identity. General permission, a change selector, or a similar hash MUST NOT substitute for exact approval.
 
@@ -96,7 +96,9 @@ Projector MUST run each independent validator from immutable Git-base bytes over
 
 Before commit, Projector MUST persist one authenticated prepared-success record that binds the after-state observation, validations, certificate, receipt, and journal checkpoint. It then checkpoints the journal, commits the transaction, and publishes artifacts. Recovery MAY finalize a committed journal only when that journal binds the authenticated prepared-success identity. A committed journal without that proof enters `recovery-required`.
 
-After an interruption, `recover` MUST take or safely replace the stale writer lease. It MUST restore exact snapshots in reverse order or report `recovery-required` when live content is a third state. `resume` MUST recover first and then create a new attempt under the same still-current approval. Repeating a successful approval MUST return the same authenticated certificate and receipt after it reauthenticates the prepared record, journal, and artifacts.
+After an interruption, `recover` MUST take or safely replace the stale writer lease. Recovery MUST be scoped by an authenticated approval-to-attempt-to-journal binding. It MUST NOT inspect, roll back, or finalize another approval's transaction. An incomplete governed transaction MUST block a new attempt until recovery resolves it. Recovery MUST restore exact snapshots in reverse order or report `recovery-required` when live content is a third state. `resume` MUST recover first and then create a new attempt under the same still-current approval.
+
+Repeating a successful approval MUST return the same authenticated certificate and receipt after it reauthenticates the prepared record, journal, and artifacts. A failure after journal commit MUST preserve a typed committed-but-unpublished attempt for idempotent publication. It MUST NOT rerun the committed mutation.
 
 ---
 

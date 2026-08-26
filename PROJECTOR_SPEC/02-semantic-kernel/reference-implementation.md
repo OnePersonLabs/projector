@@ -106,12 +106,13 @@ engine        -> core
 analyzers     -> core
 runtime       -> core
 integrations  -> core
-cli           -> core + engine + analyzers + runtime + integrations
+control-plane -> core + engine + analyzers + runtime + integrations
+cli           -> core + engine + analyzers + runtime + integrations + control-plane
 ```
 
 An integration wrapper MAY depend on the engine's narrow public facade when orchestration requires it, but MUST NOT import engine internals.
 
-Concrete implementations are assembled in `cli` or another application composition root. This prevents `engine <-> runtime` and `engine <-> analyzer` dependency cycles while still allowing the engine to invoke injected ports.
+The private `control-plane` package owns repository-change compilation, observation, durable operational records, execution, recovery orchestration, and the curated lifecycle facade. The CLI parses commands and renders results through that facade. It MUST NOT own a second repository-change compiler, store, executor, or recovery coordinator. Other concrete implementations are assembled in `cli` or another application composition root. This prevents `engine <-> runtime` and `engine <-> analyzer` dependency cycles while still allowing the engine to invoke injected ports.
 
 A package SHOULD be split only when a release, security, performance, or dependency-isolation boundary justifies it.
 
@@ -148,5 +149,3 @@ Do not require:
 - generic Tree-sitter support before the TypeScript/structured-data vertical slice works.
 
 ---
-
-
