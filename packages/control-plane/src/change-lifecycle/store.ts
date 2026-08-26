@@ -51,6 +51,8 @@ export interface LifecycleCaptureRecord {
   readonly planRevision: number;
   readonly planHash: ContentHash;
   readonly stateBinding: StateBinding;
+  readonly plan: ExecutionPlan;
+  readonly capsules: readonly ExecutionCapsule[];
   readonly capsuleBindings: readonly LifecycleCapsuleBinding[];
   readonly exactPatchInputHash: ContentHash;
   readonly capturedAt: string;
@@ -109,6 +111,18 @@ export interface LifecyclePreparedSuccessRecord {
   readonly contentHash: ContentHash;
 }
 
+export interface LifecycleAttemptStateRecord {
+  readonly apiVersion: typeof apiVersion;
+  readonly attemptId: string;
+  readonly approvalId: string;
+  readonly transactionId: string;
+  readonly status: "committed-unpublished";
+  readonly preparedSuccessHash: ContentHash;
+  readonly transactionRecordHash: ContentHash;
+  readonly recordedAt: string;
+  readonly contentHash: ContentHash;
+}
+
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 
 function selectorName(selector: string): string {
@@ -145,6 +159,10 @@ function parseCapture(source: string): LifecycleCaptureRecord {
     throw new Error("lifecycle capture failed schema authentication");
   }
   if (value.contentHash !== hashRecord("change-lifecycle-capture", value)) throw new Error("lifecycle capture content hash authentication failed");
+  if (executionPlanHash(value.plan) !== value.planHash || !sameStateBinding(value.plan.boundState, value.stateBinding)
+    || canonicalJson(capsuleBindings(value.capsules)) !== canonicalJson(value.capsuleBindings)) {
+    throw new Error("lifecycle capture immutable plan or capsules failed authentication");
+  }
   return value;
 }
 
@@ -190,6 +208,8 @@ export class ChangeLifecycleStore {
       planRevision: input.plan.revision,
       planHash: executionPlanHash(input.plan),
       stateBinding: structuredClone(input.plan.boundState),
+      plan: structuredClone(input.plan),
+      capsules: structuredClone(input.capsules),
       capsuleBindings: bindings,
       exactPatchInputHash: input.exactPatchInputHash,
     };
@@ -364,6 +384,58 @@ export class ChangeLifecycleStore {
     const record: LifecycleAttemptResultRecord<StateBoundChangeResult> = { ...stable, contentHash: hashFramedDomain("change-lifecycle-attempt-result", stable) };
     await this.writeNew(`results/${selectorName(attempt.id)}`, record);
     return this.readAttemptResult<StateBoundChangeResult>(attempt.id);
+  }
+
+  async markCommittedUnpublished(attemptSelector: string, transaction: DurableTransactionRecord): Promise<LifecycleAttemptStateRecord> {
+    const attempt = await this.readAttempt(attemptSelector);
+    const prepared = await this.readPreparedSuccess(attempt.id);
+    if (transaction.entry.transactionId !== attempt.transactionId || transaction.entry.phase !== "committed"
+      || !transaction.entry.checkpointIds.includes(prepared.prepared.checkpointId)) {
+      throw new Error("committed-unpublished state lacks an authenticated prepared journal commit");
+    }
+    const basis = {
+      apiVersion,
+      attemptId: attempt.id,
+      approvalId: attempt.approvalId,
+      transactionId: attempt.transactionId,
+      status: "committed-unpublished" as const,
+      preparedSuccessHash: prepared.contentHash,
+      transactionRecordHash: hashFramedDomain("durable-transaction-record", transaction),
+      recordedAt: this.now(),
+    };
+    const record: LifecycleAttemptStateRecord = { ...basis, contentHash: hashFramedDomain("change-lifecycle-attempt-state", basis) };
+    await this.writeNew(`states/${selectorName(attempt.id)}`, record);
+    return this.readAttemptState(attempt.id);
+  }
+
+  async readAttemptState(attemptSelector: string): Promise<LifecycleAttemptStateRecord> {
+    const value = JSON.parse(await this.read(`states/${selectorName(attemptSelector)}`)) as LifecycleAttemptStateRecord;
+    if (value.apiVersion !== apiVersion || value.attemptId !== attemptSelector || value.status !== "committed-unpublished"
+      || value.contentHash !== hashRecord("change-lifecycle-attempt-state", value)) {
+      throw new Error("lifecycle attempt state content hash authentication failed");
+    }
+    const attempt = await this.readAttempt(attemptSelector);
+    const prepared = await this.readPreparedSuccess(attemptSelector);
+    const transaction = await new FileTransactionJournal(this.paths).read(attempt.transactionId);
+    if (value.approvalId !== attempt.approvalId || value.transactionId !== attempt.transactionId
+      || value.preparedSuccessHash !== prepared.contentHash
+      || value.transactionRecordHash !== hashFramedDomain("durable-transaction-record", transaction)
+      || transaction.entry.phase !== "committed") {
+      throw new Error("lifecycle committed-unpublished state binding authentication failed");
+    }
+    return value;
+  }
+
+  async attemptStatesForApproval(approvalSelector: string): Promise<LifecycleAttemptStateRecord[]> {
+    const approval = await this.readApproval(approvalSelector);
+    const directory = await this.ensureDirectory("states");
+    const states: LifecycleAttemptStateRecord[] = [];
+    for (const name of (await readdir(directory)).filter((entry) => entry.endsWith(".json")).sort(compare)) {
+      const untrusted = JSON.parse(await readFile(join(directory, name), "utf8")) as Partial<LifecycleAttemptStateRecord>;
+      if (untrusted.approvalId !== approval.id || typeof untrusted.attemptId !== "string") continue;
+      states.push(await this.readAttemptState(untrusted.attemptId));
+    }
+    return states.sort((left, right) => compare(left.recordedAt, right.recordedAt) || compare(left.attemptId, right.attemptId));
   }
 
   async readAttemptResult<T = unknown>(attemptSelector: string): Promise<LifecycleAttemptResultRecord<T>> {

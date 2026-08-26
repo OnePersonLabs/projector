@@ -114,9 +114,9 @@ export interface RepositoryLifecycleCliPort {
   readonly capture: (request: { readonly repositoryRoot: string; readonly request: string; readonly proposalPath: string }) => Promise<Record<string, unknown>>;
   readonly plan: (request: { readonly repositoryRoot: string; readonly selector: string }) => Promise<Record<string, unknown>>;
   readonly approve: (request: { readonly repositoryRoot: string; readonly selector: string; readonly planHash: string }) => Promise<Record<string, unknown>>;
-  readonly apply: (request: { readonly repositoryRoot: string; readonly selector: string }) => Promise<Record<string, unknown>>;
+  readonly apply: (request: { readonly repositoryRoot: string; readonly selector: string; readonly signal: AbortSignal }) => Promise<Record<string, unknown>>;
   readonly recover: (request: { readonly repositoryRoot: string; readonly selector: string }) => Promise<Record<string, unknown>>;
-  readonly resume: (request: { readonly repositoryRoot: string; readonly selector: string }) => Promise<Record<string, unknown>>;
+  readonly resume: (request: { readonly repositoryRoot: string; readonly selector: string; readonly signal: AbortSignal }) => Promise<Record<string, unknown>>;
 }
 
 export type CoverageStrictness = "proven" | "bounded" | "high-confidence" | "partial";
@@ -447,7 +447,7 @@ export async function executeProjector(
       if (parsed.selector !== undefined) {
         if (options.lifecycle !== undefined || parsed.selector.startsWith("lifecycle_approval_")) {
           if (!policy.allowAutoMutation) { report = { policy, dryRun: true, selector: parsed.selector }; break; }
-          report = { policy, ...await (options.lifecycle ?? defaultRepositoryLifecyclePort()).apply({ repositoryRoot, selector: parsed.selector }) };
+          report = { policy, ...await (options.lifecycle ?? defaultRepositoryLifecyclePort()).apply({ repositoryRoot, selector: parsed.selector, signal: options.signal ?? new AbortController().signal }) };
           exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
           break;
         }
@@ -475,7 +475,7 @@ export async function executeProjector(
       const lifecycle = options.lifecycle ?? defaultRepositoryLifecyclePort();
       if (!policy.allowAutoMutation) { report = { policy, dryRun: true, selector: parsed.selector }; break; }
       try {
-        report = { policy, ...await lifecycle.resume({ repositoryRoot, selector: parsed.selector! }) };
+        report = { policy, ...await lifecycle.resume({ repositoryRoot, selector: parsed.selector!, signal: options.signal ?? new AbortController().signal }) };
         exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
       } catch (error) {
         const structured = error instanceof Error && "code" in error && error.code === "lifecycle-recovery-required" && "outcomes" in error && Array.isArray(error.outcomes);
@@ -609,9 +609,9 @@ function defaultRepositoryLifecyclePort(): RepositoryLifecycleCliPort {
       const approval = await (await service(repositoryRoot)).approve(selector, planHash as ContentHash);
       return { kind: "lifecycle-approval", selector: approval.id, changeSelector: approval.semanticChangeId, immutablePlanHash: approval.planHash };
     },
-    apply: async ({ repositoryRoot, selector }) => ({ kind: "lifecycle-apply", selector, ...await (await service(repositoryRoot)).apply(selector) }),
+    apply: async ({ repositoryRoot, selector, signal }) => ({ kind: "lifecycle-apply", selector, ...await (await service(repositoryRoot)).apply(selector, { signal }) }),
     recover: async ({ repositoryRoot, selector }) => ({ kind: "lifecycle-recovery", selector, outcomes: await (await service(repositoryRoot)).recover(selector) }),
-    resume: async ({ repositoryRoot, selector }) => ({ kind: "lifecycle-resume", selector, ...await (await service(repositoryRoot)).resume(selector) }),
+    resume: async ({ repositoryRoot, selector, signal }) => ({ kind: "lifecycle-resume", selector, ...await (await service(repositoryRoot)).resume(selector, { signal }) }),
   };
 }
 

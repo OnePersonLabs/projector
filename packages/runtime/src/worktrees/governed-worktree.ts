@@ -46,10 +46,10 @@ export class GovernedWorktreeSession {
     return this.journal.begin(input);
   }
 
-  async recover(): Promise<RecoveryResult[]> {
+  async recover(transactionIds: readonly string[]): Promise<RecoveryResult[]> {
     this.assertOpen();
     await this.lease.heartbeat();
-    return this.journal.recoverIncomplete();
+    return this.journal.recover(transactionIds);
   }
 
   async heartbeat(): Promise<void> {

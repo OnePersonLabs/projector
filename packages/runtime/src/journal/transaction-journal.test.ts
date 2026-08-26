@@ -22,6 +22,18 @@ const beforeState: StateDigest = {
 };
 
 describe("FileTransactionJournal", () => {
+  it("inspects and recovers only explicitly targeted transaction identities", async () => {
+    const { root, journal } = await harness();
+    const target = await journal.begin(beginInput("tx-target"));
+    await target.writeFile("target.txt", "target");
+    const other = await journal.begin(beginInput("tx-other"));
+    await other.writeFile("other.txt", "other");
+
+    expect((await journal.incomplete(["tx-target"])).map(({ entry }) => entry.transactionId)).toEqual(["tx-target"]);
+    expect(await journal.recover(["tx-target"])).toEqual([expect.objectContaining({ transactionId: "tx-target", action: "rolled-back" })]);
+    expect((await journal.read("tx-other")).entry.phase).toBe("workspace-mutating");
+    expect(await readFile(join(root, "other.txt"), "utf8")).toBe("other");
+  });
   it("can create a new file through an exact authorized path without widening to its parent", async () => {
     const { root, journal } = await harness();
     const transaction = await journal.begin({ ...beginInput("tx-exact-path"), allowedWriteRoots: ["nested/exact.txt"] });
