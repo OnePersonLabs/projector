@@ -22,7 +22,6 @@ This modular specification is the authoritative implementation contract.
 - `SPEC.md` defines product identity, specification-composition rules, the global causal loop, and progressive-disclosure routes.
 - The Markdown modules listed in `spec.manifest.json` contain authoritative subsystem requirements and contracts.
 - `INDEX.md` is a navigation/index projection. It MUST NOT introduce semantics absent from authoritative modules.
-- `PROJECTOR_SPEC.md` is a deterministically generated portable bundle. It has no independent authority. Its source is `SPEC.md` plus manifest-ordered modules.
 - No module may silently redefine a canonical contract owned by another module. Cross-module references use the canonical definition rather than copying it.
 - If a concise root summary appears less specific than a subsystem requirement, the subsystem requirement governs. A true contradiction is a specification defect and MUST be resolved rather than handled by undocumented precedence.
 

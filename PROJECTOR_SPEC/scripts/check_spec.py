@@ -8,6 +8,11 @@ paths = [manifest["entrypoint"], manifest["index"]] + [m["path"] for m in manife
 errors=[]
 warnings=[]
 
+if "bundle" in manifest:
+    errors.append("monolithic specification bundle is not permitted")
+if (root / "PROJECTOR_SPEC.md").exists():
+    errors.append("monolithic PROJECTOR_SPEC.md duplicates the manifest modules")
+
 for rel in paths:
     p=root/rel
     if not p.exists(): errors.append(f"missing manifest file: {rel}")
@@ -80,17 +85,6 @@ else:
             f"human-technical lint warning: {issue['path']}:{issue['line']} "
             f"[{issue['category']}] {issue['message']}"
         )
-
-# Ensure bundle is deterministic/current.
-subprocess.run([sys.executable, str(root/'scripts/bundle_spec.py')], cwd=root, check=True, stdout=subprocess.DEVNULL)
-bundle_path = root / manifest['bundle']
-bundle = bundle_path.read_bytes()
-subprocess.run([sys.executable, str(root/'scripts/bundle_spec.py')], cwd=root, check=True, stdout=subprocess.DEVNULL)
-if bundle_path.read_bytes() != bundle:
-    errors.append('bundle generation is nondeterministic')
-bundle_text = bundle.decode('utf-8')
-if not bundle_text.startswith('<!-- GENERATED FROM SPEC.md + spec.manifest.json.'):
-    errors.append('bundle header missing')
 
 if errors:
     print('SPEC CHECK FAILED')

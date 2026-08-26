@@ -165,7 +165,7 @@ Reviewed exact range `8cc2c354264dd853af7232c223652413def61b8a..639152bbe585dd65
 - `pnpm build`: PASS.
 - `pnpm check:boundaries`: PASS.
 - `git diff --check 8cc2c354264dd853af7232c223652413def61b8a..639152bbe585dd65fdf4b511b3ffb108ec2e8d4d`: PASS.
-- Authoritative `PROJECTOR_SPEC/scripts/check_spec.py`: PASS, 45 files, 147 exported declarations, 0 blocking human-technical errors, 121 review warnings. Its generated `PROJECTOR_SPEC/PROJECTOR_SPEC.md` bundle was removed afterward; final implementation worktree is clean.
+- Authoritative `PROJECTOR_SPEC/scripts/check_spec.py`: PASS, 45 files, 147 exported declarations, 0 blocking human-technical errors, 121 review warnings; final implementation worktree is clean.
 
 ## Review fix round 1 — 2026-08-08
 

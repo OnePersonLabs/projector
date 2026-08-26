@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "entrypoint": "SPEC.md",
   "index": "INDEX.md",
-  "bundle": "PROJECTOR_SPEC.md",
   "maxModuleBytes": 20000,
   "modules": [
     {
