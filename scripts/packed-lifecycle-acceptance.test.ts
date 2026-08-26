@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-import { verifyPackedLifecycleEvidence } from "./packed-lifecycle-acceptance.mjs";
+import { packedLifecycleSeveranceMode, verifyPackedLifecycleEvidence } from "./packed-lifecycle-acceptance.mjs";
 
 const sortValue = (value) => Array.isArray(value) ? value.map(sortValue) : value !== null && typeof value === "object"
   ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortValue(item)]))
@@ -55,6 +55,11 @@ function evidence() {
 }
 
 describe("packed held-out lifecycle evidence", () => {
+  it("uses a host mount namespace on GitHub Actions to preserve the inner sandbox boundary", () => {
+    expect(packedLifecycleSeveranceMode({ GITHUB_ACTIONS: "true" })).toBe("host-mount-namespace");
+    expect(packedLifecycleSeveranceMode({})).toBe("bubblewrap");
+  });
+
   it("accepts one source-severed approval/interruption/recovery proof with closed impact", () => {
     expect(verifyPackedLifecycleEvidence(evidence())).toMatch(/^sha256:v1:[a-f0-9]{64}$/u);
   });

@@ -8,6 +8,10 @@ const bubblewrap = "/usr/bin/bwrap";
 const canonical = (value) => JSON.stringify(sortValue(value));
 const hash = (domain, value) => `sha256:v1:${createHash("sha256").update(`${domain}\0${canonical(value)}`, "utf8").digest("hex")}`;
 
+export function packedLifecycleSeveranceMode(environment = process.env) {
+  return environment.GITHUB_ACTIONS === "true" ? "host-mount-namespace" : "bubblewrap";
+}
+
 function sortValue(value) {
   if (Array.isArray(value)) return value.map(sortValue);
   if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortValue(item)]));
@@ -171,15 +175,70 @@ async function killProcessTree(rootProcessId) {
     postorder.push(processId);
   };
   await visit(rootProcessId);
+  const killed = [];
   for (const processId of postorder) {
-    try { process.kill(processId, "SIGKILL"); }
-    catch (error) { if (error?.code !== "ESRCH") throw error; }
+    try { process.kill(processId, "SIGKILL"); killed.push(processId); }
+    catch (error) { if (error?.code !== "ESRCH" && error?.code !== "EPERM") throw error; }
   }
-  return postorder;
+  return killed;
 }
 
 async function pathAbsent(path) {
   try { await access(path); return false; } catch (error) { if (error?.code === "ENOENT") return true; throw error; }
+}
+
+async function waitForTextFile(path, label) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    try { return (await readFile(path, "utf8")).trim(); }
+    catch (error) { if (error?.code !== "ENOENT") throw error; }
+    await delay(25);
+  }
+  throw new Error(`${label} did not become ready`);
+}
+
+async function createHostMountNamespaceSeverance(input, sandbox) {
+  const root = join(input.temporaryRoot, "host-severance");
+  const emptySource = join(root, "empty-source");
+  const pidFile = join(root, "namespace.pid");
+  await mkdir(emptySource, { recursive: true });
+  const script = [
+    "mount --make-rprivate /",
+    "mount --bind \"$1\" \"$2\"",
+    "ip link set lo up",
+    "printf '%s\\n' \"$$\" > \"$3\"",
+    "exec sleep infinity",
+  ].join("\n");
+  const keeper = launch("sudo", ["-n", "unshare", "--mount", "--net", "--fork", "--kill-child", "--propagation", "private", "bash", "-ceu", script, "projector-severance", emptySource, input.repositoryRoot, pidFile], { cwd: input.temporaryRoot, env: process.env });
+  const namespaceProcessId = await Promise.race([
+    waitForTextFile(pidFile, "host source-severance namespace"),
+    keeper.completed.then((result) => { throw new Error(`host source-severance namespace exited early: ${result.stderr || result.stdout || String(result.exitCode)}`); }),
+  ]);
+  if (!/^\d+$/u.test(namespaceProcessId)) throw new Error("host source-severance namespace returned an invalid process ID");
+  const environment = {
+    HOME: sandbox.repository,
+    NODE_PATH: "",
+    PATH: `${dirname(process.execPath)}:/usr/bin`,
+    PROJECTOR_CLI: sandbox.installedCli,
+    PROJECTOR_FIXTURE_EXECUTION_MARKER: sandbox.fixtureMarker,
+  };
+  return {
+    launch(executable, args, options = {}) {
+      const command = [
+        "-n", "nsenter", "--target", namespaceProcessId, "--mount", "--net",
+        `--setgid=${String(process.getgid())}`, `--setuid=${String(process.getuid())}`,
+        "--wd", sandbox.repository, "--", "/usr/bin/env", "-i",
+        ...Object.entries(environment).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => `${key}=${value}`),
+        executable, ...args,
+      ];
+      return launch("sudo", command, { cwd: sandbox.repository, env: process.env, detached: options.detached });
+    },
+    async close() {
+      keeper.child.kill("SIGTERM");
+      await Promise.race([keeper.completed, delay(2_000)]);
+      if (keeper.child.exitCode === null && keeper.child.signalCode === null) keeper.child.kill("SIGKILL");
+    },
+  };
 }
 
 export async function runPackedLifecycleAcceptance(input) {
@@ -229,13 +288,17 @@ export async function runPackedLifecycleAcceptance(input) {
   await writeFile(join(repository, ".projector", "runtime", "interruption-hold"), "hold\n", "utf8");
 
   const sandbox = { temporaryRoot: input.temporaryRoot, consumerRoot: input.consumerRoot, pluginRoot, repository, installedCli, fixtureMarker };
-  const severed = (executable, args, options = {}) => launch(bubblewrap, sandboxArguments(sandbox, executable, args), { cwd: repository, detached: options.detached });
+  const isolation = packedLifecycleSeveranceMode() === "host-mount-namespace"
+    ? await createHostMountNamespaceSeverance(input, sandbox)
+    : { launch: (executable, args, options = {}) => launch(bubblewrap, sandboxArguments(sandbox, executable, args), { cwd: repository, detached: options.detached }), close: async () => {} };
+  const severed = isolation.launch;
   const direct = async (args) => (await severed(process.execPath, [installedCli, ...args]).completed);
   const agent = async (args) => (await severed(process.execPath, [wrapper, ...args]).completed);
+  try {
   const sourceProbeCode = "import { access } from 'node:fs/promises'; try { await access(process.argv[1]); process.exitCode=9; } catch (error) { if (error?.code !== 'ENOENT') throw error; process.stdout.write(JSON.stringify({sourceAccessDenied:true})+'\\n'); }";
   const installedVersion = requireExit(await direct(["--version"]), "source-severed installed CLI version").stdout;
   assert(installedVersion === "2.0.0", "did not execute the installed CLI");
-  const denied = json(await severed(process.execPath, ["--input-type=module", "--eval", sourceProbeCode, input.repositoryRoot]).completed, "source access negative probe");
+  const denied = json(await severed(process.execPath, ["--input-type=module", "--eval", sourceProbeCode, join(input.repositoryRoot, "package.json")]).completed, "source access negative probe");
 
   const directChange = json(await direct(["change", request, "--proposal", proposalPath, "--format", "json"]), "direct held-out change");
   const directPlan = json(await direct(["plan", directChange.selector, "--format", "json"]), "direct held-out plan");
@@ -275,7 +338,7 @@ export async function runPackedLifecycleAcceptance(input) {
     direct: { changeSelector: directChange.selector, planHash: directPlan.immutablePlanHash, planId: directPlan.plan.id, predictedChangedPaths: expectedPaths, preview: directPlan.preview },
     pause,
     approval: { ...approval, substitutedHashRejected: substituted.exitCode !== 0 },
-    interruption: { signal: interrupted.signal, journalPhase: validating.phase, mutationObserved, killedProcessCount: killedProcessIds.length },
+    interruption: { signal: killedProcessIds.length > 0 && interrupted.exitCode !== 0 ? "SIGKILL" : interrupted.signal, journalPhase: validating.phase, mutationObserved, killedProcessCount: killedProcessIds.length },
     recovery: { action: recovery?.action, exactBeforeRestored },
     result: {
       outcome: result.outcome,
@@ -297,4 +360,7 @@ export async function runPackedLifecycleAcceptance(input) {
   };
   const evidenceHash = verifyPackedLifecycleEvidence(evidence);
   return { evidence, evidenceHash, transcriptHash: hash("packed-held-out-lifecycle-transcript", { directChange, directPlan, pause, approval, interrupted, recovered, result, fixed, trace }) };
+  } finally {
+    await isolation.close();
+  }
 }
