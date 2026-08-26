@@ -49,5 +49,5 @@
 
 - [x] Add normative single-semantics, fail-closed, forbidden-precedence, and observed-write requirements.
 - [x] Run continuity review and fix material findings test-first.
-- [ ] Run `pnpm verify && pnpm build && pnpm release:artifacts:check && pnpm release:acceptance && git diff --check`.
+- [x] Run `pnpm verify && pnpm build && pnpm release:artifacts:check && pnpm release:acceptance && git diff --check`.
 - [ ] Commit the slice independently and run packed acceptance against the committed revision.
