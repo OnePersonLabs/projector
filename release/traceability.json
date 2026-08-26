@@ -226,12 +226,12 @@
       "sourceDigest": "sha256:v1:93f1339afd0486cd1988e2aba75b609998175dde0c672053d88960be22c3adf0",
       "publicFacade": "projector/cli",
       "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence",
-      "testSourceDigest": "sha256:v1:9805704026e6f56bb4329b8604514b50fad1fe503dc657b8067fbba08a77b59e",
+      "testSourceDigest": "sha256:v1:804c29dea42512eb325ea4ea7a6c2f84a6c1d9452ad1b7d1cf8bf7840cc0617d",
       "requiredArtifactIds": [
         "packed-held-out-lifecycle",
         "packed-held-out-lifecycle-transcript"
       ],
-      "mappingHash": "sha256:v1:a20482a44fb60bade89bd7beb401b79358b6ae1806c1fa31c6ebdfe1e842f035"
+      "mappingHash": "sha256:v1:99b287fc21964ef41ec6e698eba0276949a04ae49723367ec98290ec897e9963"
     },
     {
       "id": "scenario:20:generated-output-upstream-repair",
@@ -1478,12 +1478,12 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/cli",
       "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence",
-      "testSourceDigest": "sha256:v1:9805704026e6f56bb4329b8604514b50fad1fe503dc657b8067fbba08a77b59e",
+      "testSourceDigest": "sha256:v1:804c29dea42512eb325ea4ea7a6c2f84a6c1d9452ad1b7d1cf8bf7840cc0617d",
       "requiredArtifactIds": [
         "packed-held-out-lifecycle",
         "packed-held-out-lifecycle-transcript"
       ],
-      "mappingHash": "sha256:v1:196127b83baa06d60694ea5ad00f89c0dde06397f9b0447657ceaf77f7dfd5eb"
+      "mappingHash": "sha256:v1:90b258dbd6e285caacf899b59d83ead156c1c181fc1a6aecff2e3bc057685b11"
     }
   ],
   "inventoryHash": "sha256:v1:00a0aef2698d0ef5f6485eefa834f5f8127aebc200a40338f5ed8412bc0c9556"
