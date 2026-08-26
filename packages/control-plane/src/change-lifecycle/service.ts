@@ -1,11 +1,10 @@
-import { canonicalJson, hashFramedDomain, type ContentHash, type ExecutionCapsule } from "@projector/core";
+import { canonicalJson, hashFramedDomain, parseChangeProposal, type ChangeProposal, type ContentHash, type ExecutionCapsule } from "@projector/core";
 import { executionCapsuleHash } from "@projector/engine";
 import { publishPreparedStateBoundChangeSuccess, type StateBoundChangeResult } from "@projector/engine";
 import { FileTransactionJournal, GovernedWorktreeRuntime, RepositoryPathService, WriterLeaseManager } from "@projector/runtime";
 
 import { compileRepositoryChange, type CompiledRepositoryChange } from "./compiler.js";
 import { executeCompiledRepositoryChange } from "./executor.js";
-import { parseChangeProposal, type ChangeProposal } from "./proposal.js";
 import {
   ChangeLifecycleStore,
   type ChangeLifecycleStoreOptions,

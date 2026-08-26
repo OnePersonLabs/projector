@@ -18,7 +18,7 @@ const routes = {
   sandbox: ["projector/runtime", "packages/runtime/src/execution/sandbox-launcher.test.ts#createSandboxLauncher"],
   sandboxWorkflow: ["projector", "scripts/sandbox-release-workflow.test.ts#manual sandbox release workflow"],
   mcp: ["projector/cli", "packages/cli/src/run-cli.test.ts#projector run host boundary"],
-  workflow: ["projector/cli", "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice"],
+  workflow: ["projector/cli", "packages/cli/src/change-cli.test.ts#change/plan/apply CLI composition"],
   lifecycle: ["projector/cli", "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence"],
 };
 const route = (title) => /installed .*lifecycle/iu.test(title) ? routes.lifecycle : /operational mcp advertisement/iu.test(title) ? routes.mcp : /manual-only sandbox release workflow/iu.test(title) ? routes.sandboxWorkflow : /sandbox/iu.test(title) ? routes.sandbox : /architect|decision|preference|concern/iu.test(title) ? routes.architecture : /represent|projection|compact|token|fidelity/iu.test(title) ? routes.representation : /identity|alias|synonym|lineage|tombstone/iu.test(title) ? routes.identity : /relevance|query|open.world|event|contract|impact|surprise|cache|selector|facet/iu.test(title) ? routes.relevance : /transaction|crash|rollback|recovery/iu.test(title) ? routes.recovery : /canonical|rebuild|sqlite|storage|merge/iu.test(title) ? routes.canonical : /analyzer|signature|derivation|backdat|scc|invalidation/iu.test(title) ? routes.invalidation : /host|model|validator|authority|governance|rule|lens/iu.test(title) ? routes.integration : routes.workflow;

@@ -10,6 +10,7 @@ import {
 } from "./contracts.js";
 import * as generated from "./generated-contracts.js";
 import { getHashProfile } from "../hashing/projections.js";
+import { ChangeProposalSchema } from "./change-proposal.js";
 
 export interface ContractRegistration {
   readonly schema?: z.ZodType;
@@ -40,6 +41,7 @@ export const normativeContractNames = [
   "ChangeCertificate",
   "ChangeIntentAnalysis",
   "ChangeOperation",
+  "ChangeProposal",
   "CommandSpec",
   "CompletionContract",
   "Concept",
@@ -201,6 +203,7 @@ const schemaExports: Record<string, z.ZodType> = {
   ContentHashSchema,
   SourceClassSchema,
   ...generated,
+  ChangeProposalSchema,
 };
 
 export const contractRegistry: Readonly<Record<string, ContractRegistration>> =

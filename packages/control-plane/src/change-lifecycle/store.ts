@@ -4,13 +4,27 @@ import { link, mkdir, open, readFile, readdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
+  ChangeProposalSchema,
+  ChangeCertificateSchema,
+  ContentHashSchema,
+  ExecutionCapsuleSchema,
+  ExecutionPlanSchema,
+  StateBindingSchema,
+  StateDigestSchema,
+  TransactionPhaseSchema,
+  TransactionReceiptSchema,
+  TransformPreviewSchema,
+  TransformResultSchema,
+  ValidationResultSchema,
   canonicalJson,
   hashFramedDomain,
   type ContentHash,
+  type ChangeProposal,
   type ExecutionCapsule,
   type ExecutionPlan,
   type StateBinding,
 } from "@projector/core";
+import { z } from "zod";
 import {
   authenticatePreparedStateBoundChangeSuccess,
   createExecutionApproval,
@@ -27,7 +41,7 @@ const storeRoot = ".projector/runtime/change-lifecycles";
 
 export interface LifecycleCaptureInput {
   readonly request: string;
-  readonly proposal: unknown;
+  readonly proposal: ChangeProposal;
   readonly proposalHash: ContentHash;
   readonly semanticChangeId: string;
   readonly plan: ExecutionPlan;
@@ -45,7 +59,7 @@ export interface LifecycleCaptureRecord {
   readonly apiVersion: typeof apiVersion;
   readonly semanticChangeId: string;
   readonly request: string;
-  readonly proposal: unknown;
+  readonly proposal: ChangeProposal;
   readonly proposalHash: ContentHash;
   readonly planId: string;
   readonly planRevision: number;
@@ -123,6 +137,20 @@ export interface LifecycleAttemptStateRecord {
   readonly contentHash: ContentHash;
 }
 
+const capsuleBindingSchema = z.object({ packetId: z.string(), capsuleId: z.string(), capsuleHash: ContentHashSchema }).strict();
+const executionApprovalSchema = z.object({ id: z.string(), planId: z.string(), planRevision: z.number().int(), planHash: ContentHashSchema, dependencyDigest: ContentHashSchema, capsuleId: z.string(), capsuleHash: ContentHashSchema }).strict();
+const captureSchema = z.object({ apiVersion: z.literal(apiVersion), semanticChangeId: z.string(), request: z.string(), proposal: ChangeProposalSchema, proposalHash: ContentHashSchema, planId: z.string(), planRevision: z.number().int(), planHash: ContentHashSchema, stateBinding: StateBindingSchema, plan: ExecutionPlanSchema, capsules: z.array(ExecutionCapsuleSchema), capsuleBindings: z.array(capsuleBindingSchema), exactPatchInputHash: ContentHashSchema, capturedAt: z.string(), contentHash: ContentHashSchema }).strict();
+const approvalSchema = z.object({ apiVersion: z.literal(apiVersion), id: z.string(), semanticChangeId: z.string(), planHash: ContentHashSchema, approvals: z.array(executionApprovalSchema), approvedAt: z.string(), contentHash: ContentHashSchema }).strict();
+const attemptSchema = z.object({ apiVersion: z.literal(apiVersion), id: z.string(), approvalId: z.string(), semanticChangeId: z.string(), planHash: ContentHashSchema, transactionId: z.string(), startedAt: z.string(), contentHash: ContentHashSchema }).strict();
+const completionAssessmentSchema = z.object({ unitStates: z.array(z.object({ unitId: z.string(), state: z.enum(["valid", "removed", "exception"]) }).strict()), newDivergenceIds: z.array(z.string()), unknowns: z.array(z.string()), unavailableActions: z.array(z.string()), availableArtifacts: z.array(z.string()), cleanWorkingTree: z.boolean() }).strict();
+const certificateArtifactSchema = z.object({ version: z.literal(1), outcome: z.enum(["success", "failure", "partial"]), lastCheckpointId: z.string().optional(), journalPhase: z.union([TransactionPhaseSchema, z.literal("not-started")]), recoveryState: z.enum(["not-required", "rolled-back", "recovery-required"]), reasons: z.array(z.string()), completionAssessment: completionAssessmentSchema.optional(), certificate: ChangeCertificateSchema }).strict();
+const preparedSuccessSchema = z.object({ version: z.literal(1), preparationId: z.string(), checkpointId: z.string(), planId: z.string(), executionApprovalId: z.string(), beforeState: StateDigestSchema, afterState: StateDigestSchema, preview: TransformPreviewSchema.optional(), transformResult: TransformResultSchema, validations: z.array(ValidationResultSchema), completionAssessment: completionAssessmentSchema, certificateArtifact: certificateArtifactSchema, certificateHash: ContentHashSchema, receipt: TransactionReceiptSchema, receiptHash: ContentHashSchema, contentHash: ContentHashSchema }).strict();
+const preparedSchema = z.object({ apiVersion: z.literal(apiVersion), attemptId: z.string(), approvalId: z.string(), transactionId: z.string(), prepared: preparedSuccessSchema, preparedSuccessHash: ContentHashSchema, preparedAt: z.string(), contentHash: ContentHashSchema }).strict();
+const stateSchema = z.object({ apiVersion: z.literal(apiVersion), attemptId: z.string(), approvalId: z.string(), transactionId: z.string(), status: z.literal("committed-unpublished"), preparedSuccessHash: ContentHashSchema, transactionRecordHash: ContentHashSchema, recordedAt: z.string(), contentHash: ContentHashSchema }).strict();
+const stateBoundResultSchema = z.object({ outcome: z.enum(["success", "failure", "partial"]), reasons: z.array(z.string()), preview: TransformPreviewSchema.optional(), transformResult: TransformResultSchema.optional(), validations: z.array(ValidationResultSchema), certificate: ChangeCertificateSchema, certificateHash: ContentHashSchema, certificateRef: z.string(), receipt: TransactionReceiptSchema, receiptHash: ContentHashSchema, receiptRef: z.string() }).strict();
+const recoveryResultSchema = z.object({ kind: z.literal("recovery"), attemptId: z.string(), transactionId: z.string(), action: z.enum(["finalized", "rolled-back", "no-transaction", "recovery-required"]), reason: z.string().optional() }).strict();
+const resultSchema = z.object({ apiVersion: z.literal(apiVersion), attemptId: z.string(), approvalId: z.string(), outcome: z.enum(["success", "failure", "partial"]), result: z.union([stateBoundResultSchema, recoveryResultSchema]), resultHash: ContentHashSchema, completedAt: z.string(), contentHash: ContentHashSchema, preparedSuccessHash: ContentHashSchema.optional(), transactionRecordHash: ContentHashSchema.optional(), certificateHash: ContentHashSchema.optional(), receiptHash: ContentHashSchema.optional() }).strict();
+
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 
 function selectorName(selector: string): string {
@@ -154,10 +182,7 @@ function withoutCaptureTime(record: LifecycleCaptureRecord): Omit<LifecycleCaptu
 }
 
 function parseCapture(source: string): LifecycleCaptureRecord {
-  const value = JSON.parse(source) as LifecycleCaptureRecord;
-  if (value.apiVersion !== apiVersion || typeof value.semanticChangeId !== "string" || typeof value.contentHash !== "string") {
-    throw new Error("lifecycle capture failed schema authentication");
-  }
+  const value = captureSchema.parse(JSON.parse(source)) as LifecycleCaptureRecord;
   if (value.contentHash !== hashRecord("change-lifecycle-capture", value)) throw new Error("lifecycle capture content hash authentication failed");
   if (executionPlanHash(value.plan) !== value.planHash || !sameStateBinding(value.plan.boundState, value.stateBinding)
     || canonicalJson(capsuleBindings(value.capsules)) !== canonicalJson(value.capsuleBindings)) {
@@ -167,10 +192,7 @@ function parseCapture(source: string): LifecycleCaptureRecord {
 }
 
 function parseApproval(source: string): LifecycleApprovalRecord {
-  const value = JSON.parse(source) as LifecycleApprovalRecord;
-  if (value.apiVersion !== apiVersion || typeof value.id !== "string" || typeof value.contentHash !== "string") {
-    throw new Error("lifecycle approval failed schema authentication");
-  }
+  const value = approvalSchema.parse(JSON.parse(source)) as LifecycleApprovalRecord;
   if (value.contentHash !== hashRecord("change-lifecycle-approval", value)) throw new Error("lifecycle approval content hash authentication failed");
   return value;
 }
@@ -288,7 +310,7 @@ export class ChangeLifecycleStore {
   }
 
   async readAttempt(selector: string): Promise<LifecycleAttemptRecord> {
-    const value = JSON.parse(await this.read(`attempts/${selectorName(selector)}`)) as LifecycleAttemptRecord;
+    const value = attemptSchema.parse(JSON.parse(await this.read(`attempts/${selectorName(selector)}`))) as LifecycleAttemptRecord;
     if (value.apiVersion !== apiVersion || value.id !== selector || value.contentHash !== hashRecord("change-lifecycle-attempt", value)) {
       throw new Error("lifecycle attempt content hash authentication failed");
     }
@@ -334,7 +356,7 @@ export class ChangeLifecycleStore {
   }
 
   async readPreparedSuccess(attemptSelector: string): Promise<LifecyclePreparedSuccessRecord> {
-    const value = JSON.parse(await this.read(`prepared/${selectorName(attemptSelector)}`)) as LifecyclePreparedSuccessRecord;
+    const value = preparedSchema.parse(JSON.parse(await this.read(`prepared/${selectorName(attemptSelector)}`))) as LifecyclePreparedSuccessRecord;
     if (value.apiVersion !== apiVersion || value.attemptId !== attemptSelector
       || value.preparedSuccessHash !== value.prepared?.contentHash
       || value.contentHash !== hashRecord("change-lifecycle-prepared-success", value)) {
@@ -409,7 +431,7 @@ export class ChangeLifecycleStore {
   }
 
   async readAttemptState(attemptSelector: string): Promise<LifecycleAttemptStateRecord> {
-    const value = JSON.parse(await this.read(`states/${selectorName(attemptSelector)}`)) as LifecycleAttemptStateRecord;
+    const value = stateSchema.parse(JSON.parse(await this.read(`states/${selectorName(attemptSelector)}`))) as LifecycleAttemptStateRecord;
     if (value.apiVersion !== apiVersion || value.attemptId !== attemptSelector || value.status !== "committed-unpublished"
       || value.contentHash !== hashRecord("change-lifecycle-attempt-state", value)) {
       throw new Error("lifecycle attempt state content hash authentication failed");
@@ -439,7 +461,7 @@ export class ChangeLifecycleStore {
   }
 
   async readAttemptResult<T = unknown>(attemptSelector: string): Promise<LifecycleAttemptResultRecord<T>> {
-    const value = JSON.parse(await this.read(`results/${selectorName(attemptSelector)}`)) as LifecycleAttemptResultRecord<T>;
+    const value = resultSchema.parse(JSON.parse(await this.read(`results/${selectorName(attemptSelector)}`))) as LifecycleAttemptResultRecord<T>;
     if (value.apiVersion !== apiVersion || value.attemptId !== attemptSelector
       || value.resultHash !== hashFramedDomain("change-lifecycle-execution-result", value.result)
       || value.contentHash !== hashRecord("change-lifecycle-attempt-result", value)) {

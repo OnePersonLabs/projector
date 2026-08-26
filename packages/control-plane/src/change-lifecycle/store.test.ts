@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { ChangeLifecycleStore } from "./store.js";
 
 const hash = hashFramedDomain("test", "lifecycle-store");
-const proposal = { apiVersion: "projector.change-proposal/v1" };
+const proposal = { apiVersion: "projector.change-proposal/v1" as const, requirements: [{ key: "value", title: "Value", statement: "The value changes.", aliases: [] }], scenarios: [{ key: "change-value", title: "Change value", aliases: [], steps: [{ role: "trigger" as const, statement: "The value changes." }, { role: "expected-outcome" as const, statement: "The new value is visible." }] }], architecture: null, edits: [{ path: "src/value.mjs", before: "old", after: "new" }], validation: { independentNodeTests: ["test/value.test.mjs"], supplementalNodeTests: [] }, analysisFacets: ["architecture" as const, "behavior" as const] };
 const proposalHash = hashFramedDomain("repository-change-proposal", proposal);
 const binding: StateBinding = {
   compiledAgainst: { gitBase: "abc", worktreeDigest: hash, canonicalProjectorDigest: hash, toolchainDigest: hash },
@@ -83,6 +83,10 @@ describe("change lifecycle store", () => {
       raw.request = "tampered";
       await writeFile(path, `${JSON.stringify(raw)}\n`);
       await expect(store.readCapture("change:1")).rejects.toThrow(/authentication|content hash/iu);
+      raw.request = captured.request;
+      raw.unknownDurableAuthority = true;
+      await writeFile(path, `${JSON.stringify(raw)}\n`);
+      await expect(store.readCapture("change:1")).rejects.toThrow(/unrecognized|unknown|schema/iu);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

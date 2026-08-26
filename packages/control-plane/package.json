@@ -18,6 +18,7 @@
     "@projector/analyzers": "workspace:*",
     "@projector/core": "workspace:*",
     "@projector/engine": "workspace:*",
-    "@projector/runtime": "workspace:*"
+    "@projector/runtime": "workspace:*",
+    "zod": "^4.0.15"
   }
 }

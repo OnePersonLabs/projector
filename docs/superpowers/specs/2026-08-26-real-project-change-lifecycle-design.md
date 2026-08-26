@@ -92,7 +92,7 @@ Before and after observations hash actual repository paths, canonical entities, 
 
 The installed `$projector-change` skill is the single agent-facing mutation entry. It tells the agent to inspect the target repository, author the strict proposal, present only unresolved material questions, request human approval for the exact plan hash, and use recovery after interruption. It must not implement lifecycle semantics itself.
 
-The plugin ships an executable, deterministic `$projector-change` orchestration script. The script invokes only the installed public CLI and persists only CLI selectors/hashes. Its capture phase runs `change` and `plan`, emits an authenticated continuation, and stops with `approval-required`. Its execute phase requires the human-supplied exact plan hash, runs `approve` and `apply`, and returns CLI certificate hashes. Its resume phase runs `recover` and reapplies the same approval. This thin shell is the operational agent route used by the skill; it has no semantic compiler, mutation implementation, or hidden fallback.
+The plugin ships an executable, deterministic `$projector-change` orchestration script. The stateless script invokes only the installed public CLI and writes no repository trace or continuation. Its capture phase runs `change` and `plan`, returns the change identity and exact plan hash, and stops with `approval-required`. Its approval phase requires the human-supplied change identity and exact plan hash. Apply, recover, and resume pass the approval identity directly to the CLI and preserve its JSON and exit code. This thin shell has no semantic compiler, mutation implementation, or hidden fallback.
 
 MCP remains read-only/status-only. No lifecycle mutation tool is advertised until the production service has an authenticated MCP handler and a separately approved capability issuance path.
 
@@ -111,7 +111,7 @@ The plugin launcher must resolve the installed npm package, not a Projector sour
 9. A real `SIGKILL` during validation is recovered and resumed with a new attempt; committed work is not repeated.
 10. Predicted and observed impact come from real repository observations; reconciliation and certificate hashes authenticate the result.
 11. A held-out TypeScript repository completes the installed packed CLI path without fixture fallback or Projector-source access.
-12. A source-severed installed `$projector-change` script is actually invoked: it captures and plans, pauses at approval, consumes the exact approved hash, survives interruption, resumes, and produces the same semantic, plan, approval, and certificate hashes as direct CLI use. The acceptance trace authenticates every invocation and output.
+12. A source-severed installed `$projector-change` script is actually invoked: it captures and plans, pauses at approval, consumes the exact approved hash, survives interruption, resumes, and produces the same semantic, plan, approval, and certificate hashes as direct CLI use. The acceptance harness records the invocation transcript outside the target repository.
 13. MCP continues to advertise only operational handlers and issues no mutation capability.
 14. Approval, state, proposal, identity, worktree, write-scope, sandbox, independent-validation, journal, and representation severance tests fail closed with actionable errors.
 15. GitHub Actions remains manual-only.

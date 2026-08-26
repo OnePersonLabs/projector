@@ -15,12 +15,12 @@ describe("decision CLI composition", () => {
       closure: { id: "closure:cli", requestHash: hash("request"), seeds: [], entries: [], activatedFacetKeys: [], unknowns: [], unavailableLanes: [], boundState: { compiledAgainst: { gitBase: "base", worktreeDigest: hash("worktree"), canonicalProjectorDigest: hash("canonical"), toolchainDigest: hash("toolchain") }, valueDependencies: [], queryDependencies: [], dependencyDigest: hash("binding") }, contentHash: hash("closure") },
       concerns: [{ ...concern, status: "active", decisionIds: [] }], validity: [], overrideAuthorityRecordIds: [], mode: "guide", risk: "R0",
     });
-    const result = await executeProjector(["plan", "--mode", "govern"], {
+    const result = await executeProjector(["plan", "semantic_change_test", "--mode", "govern"], {
       governance: { detectCanonicalConflictPaths: vi.fn().mockResolvedValue([]), operation: { command: "plan", sideEffect: "canonical-write", externalWrite: false, canonicalMutation: true } },
       architecture: { load: vi.fn(), validity: vi.fn(), overlap: { assess: vi.fn() }, population: { inspect: vi.fn() }, preflight,
         preflightPorts: { authority: { read: vi.fn() }, validity: { verify: vi.fn() }, deferral: { assess: vi.fn() } } },
     });
-    expect(result).toMatchObject({ exitCode: 3, report: { architecturePreflight: { code: "unresolved-architecture-frontier" } } });
+    expect(result).toMatchObject({ exitCode: 2, report: { architecturePreflight: { code: "unresolved-architecture-frontier" } } });
     expect(result.report.architecturePreflight).toMatchObject({ mode: "govern", risk: "R2" });
   });
 

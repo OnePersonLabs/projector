@@ -4,12 +4,11 @@ import { createInterface } from "node:readline";
 import { execFile } from "node:child_process";
 import { watch as watchFileSystem } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { promisify } from "node:util";
 import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type ContentHash, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
-import { canonicalRepresentationSourceFromSemanticChange, compileSemanticChange, compileSemanticChangePlan, createStateBinding, RepresentationCompiler } from "@projector/engine";
-import { CanonicalFileRepository, SqliteDerivedStore, createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileTransactionJournal, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, type OperationalExitProof, type OperationalReport, type ReportFormat, executePacketPlan, type PacketObservation, type PlanExecutionArtifact, type PacketExecutionArtifact } from "@projector/runtime";
+import { createStateBinding } from "@projector/engine";
+import { CanonicalFileRepository, SqliteDerivedStore, createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, type OperationalExitProof, type OperationalReport, type ReportFormat } from "@projector/runtime";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -26,13 +25,6 @@ import { createBuiltRunHostPort } from "./host-cli.js";
 import { createBuiltMcpCliPort } from "./mcp-cli.js";
 import { RepositoryChangeLifecycleService } from "@projector/control-plane";
 export { createHostSessionRecord, hostSessionSelector } from "@projector/integrations";
-import {
-  analyzeMandatorySlice,
-  applyMandatorySlice,
-  canonicalSemantics,
-  prepareMandatorySlice,
-  reconcileMandatorySlice,
-} from "./vertical-slice.js";
 import { runDefaultUpgradeWorkflow } from "./upgrade.js";
 export * from "./upgrade.js";
 
@@ -45,12 +37,12 @@ Usage: projector <command> [options]
 Commands:
   init                  Initialize local Projector derived state
   audit                 Analyze governed state; add --decisions for architecture decisions
-  change <intent>       Compile a supported local semantic change
-  plan                  Preview a state-bound deterministic repair
-  approve <change>      Approve an exact immutable lifecycle plan hash
-  apply                 Apply the approved R1 repair once
-  resume <approval>     Recover and resume an approved lifecycle change
-  reconcile             Apply and reconcile the repair to a fixed point
+  change <request> --proposal <path>  Capture a repository change
+  plan <semantic-change-id>           Preview its immutable plan
+  approve <semantic-change-id> --plan-hash <hash>  Approve that exact plan
+  apply <approval-id>                 Apply an approval once
+  recover <approval-id>               Recover an interrupted approval
+  resume <approval-id>                Recover then resume an approval
   coverage              Report authenticated multi-dimensional coverage
   complete              Rank the next authenticated completion work
   cleanup               Resume a trusted cleanup continuation plan
@@ -58,7 +50,6 @@ Commands:
   mcp                   Start the built Projector MCP composition
   watch                 Scan repository changes without executing repository code
   ci                    Run authenticated CI proof and reporting
-  recover               Recover incomplete durable transactions
   verify [--clean]      Verify and optionally rebuild derived state
   upgrade               Compile the current authenticated modernization candidate
   explain <target>      Explain findings for a path or finding identity
@@ -86,7 +77,6 @@ export interface ProjectorCommandOptions {
   };
   readonly architecture?: ArchitectureCliPort;
   readonly coverage?: CoverageCliPort;
-  readonly change?: ChangeCliPort;
   readonly lifecycle?: RepositoryLifecycleCliPort;
   readonly runHost?: RunHostCliPort;
   readonly environment?: Readonly<Record<string, string | undefined>>;
@@ -100,15 +90,8 @@ export interface RunHostCliRequest { readonly host: "codex" | "claude"; readonly
 export interface RunHostCliResult { readonly status: "completed" | "failed" | "cancelled" | "unavailable"; readonly exitCode: number | null; readonly changedPaths: readonly string[]; readonly reconciled: boolean; readonly signal?: string }
 export interface RunHostCliPort { readonly resolve: (request: Omit<RunHostCliRequest, "argv" | "environment" | "signal">) => Promise<{ readonly authenticated: true; readonly host: "codex" | "claude" }>; readonly run: (request: RunHostCliRequest) => Promise<RunHostCliResult> }
 export interface McpCliPort { readonly start: (request: { readonly repositoryRoot: string; readonly signal: AbortSignal; readonly sessionSelector?: string }) => Promise<{ readonly status: "ready" | "unavailable"; readonly tools: readonly string[]; readonly capabilityToken?: string; readonly transport: { handle(request: { readonly jsonrpc: "2.0"; readonly id: string | number | null; readonly method: string; readonly params?: unknown }): Promise<unknown> } }> }
-export interface OperationalCliPort { readonly run: (request: { readonly command: "watch" | "ci" | "recover" | "verify"; readonly repositoryRoot: string; readonly clean: boolean; readonly policy: ReturnType<typeof normalizeExecutionPolicy>; readonly signal: AbortSignal; readonly allowPersistence: boolean; readonly maximumEvents?: number; readonly continuationSelector?: string }) => Promise<OperationalReport>; readonly authenticate: (report: OperationalReport) => Promise<boolean> }
+export interface OperationalCliPort { readonly run: (request: { readonly command: "watch" | "ci" | "verify"; readonly repositoryRoot: string; readonly clean: boolean; readonly policy: ReturnType<typeof normalizeExecutionPolicy>; readonly signal: AbortSignal; readonly allowPersistence: boolean; readonly maximumEvents?: number; readonly continuationSelector?: string }) => Promise<OperationalReport>; readonly authenticate: (report: OperationalReport) => Promise<boolean> }
 
-export interface ChangeCliRequest { readonly repositoryRoot: string; readonly selector: string; readonly persist?: boolean }
-export interface ChangeCliPort {
-  readonly change: (request: { readonly repositoryRoot: string; readonly intent: string; readonly persist: boolean }) => Promise<Record<string, unknown>>;
-  readonly plan: (request: ChangeCliRequest) => Promise<Record<string, unknown>>;
-  readonly resolvePlan: (request: ChangeCliRequest) => Promise<{ readonly risk: RiskClass; readonly planHash: string; readonly approvalHash: string; readonly capsuleHash: string }>;
-  readonly apply: (request: ChangeCliRequest) => Promise<Record<string, unknown>>;
-}
 
 export interface RepositoryLifecycleCliPort {
   readonly capture: (request: { readonly repositoryRoot: string; readonly request: string; readonly proposalPath: string }) => Promise<Record<string, unknown>>;
@@ -214,7 +197,7 @@ function validateArguments(arguments_: readonly string[], command: SliceCommand)
 function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const command = arguments_[0];
   if (command !== "init" && command !== "audit" && command !== "change" && command !== "plan" && command !== "apply"
-    && command !== "approve" && command !== "resume" && command !== "upgrade" && command !== "reconcile" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run" && command !== "mcp" && command !== "watch" && command !== "ci" && command !== "recover" && command !== "verify") {
+    && command !== "approve" && command !== "resume" && command !== "upgrade" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run" && command !== "mcp" && command !== "watch" && command !== "ci" && command !== "recover" && command !== "verify") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
   const separator = arguments_.indexOf("--");
@@ -235,15 +218,16 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     : undefined;
   if (command === "explain" && target === undefined) throw new Error("explain requires a target");
   const positional = (command === "change" || command === "plan" || command === "approve" || command === "apply" || command === "resume" || command === "recover") && arguments_[1] !== undefined && !arguments_[1].startsWith("-") ? arguments_[1] : undefined;
-  if (command === "change" && positional === undefined) throw new Error("change requires an intent selector");
+  if (command === "change" && positional === undefined) throw new Error("change requires a request");
   const proposalPath = optionValue(commandArguments, "--proposal");
   const planHash = optionValue(commandArguments, "--plan-hash");
   if (proposalPath !== undefined && command !== "change") throw new Error("--proposal is only valid with change");
+  if (command === "change" && proposalPath === undefined) throw new Error("change requires --proposal");
   if (command === "change" && proposalPath !== undefined && (positional!.trim() === "" || positional!.includes("\0"))) throw new Error("lifecycle change request must be safe nonblank text");
   if (positional !== undefined && !(command === "change" && proposalPath !== undefined) && !/^[a-z0-9][a-z0-9._:-]*$/iu.test(positional)) throw new Error("change lifecycle selector must be a safe repository-local identity");
   if (command === "approve" && (planHash === undefined || !planHash.startsWith("sha256:v1:"))) throw new Error("approve requires an authenticated plan hash via --plan-hash");
   if (command !== "approve" && planHash !== undefined) throw new Error("--plan-hash is only valid with approve");
-  if ((command === "approve" || command === "resume") && positional === undefined) throw new Error(`${command} requires a lifecycle selector`);
+  if ((command === "plan" || command === "approve" || command === "apply" || command === "recover" || command === "resume") && positional === undefined) throw new Error(`${command} requires a lifecycle selector`);
   const hostValue = command === "run" ? commandArguments[1] : undefined;
   if (command === "run" && hostValue !== "codex" && hostValue !== "claude") throw new Error(`unsupported host: ${hostValue ?? ""}`);
   const sessionSelector = optionValue(commandArguments, "--session");
@@ -349,12 +333,12 @@ export async function executeProjector(
   const defaultOperation: OperationRiskInput = parsed.command === "init"
     ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
     : parsed.command === "approve" ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
-    : parsed.command === "apply" || parsed.command === "resume" || parsed.command === "upgrade" || parsed.command === "reconcile" || parsed.command === "cleanup" || parsed.command === "run" || parsed.command === "recover" || (parsed.command === "verify" && parsed.clean)
+    : parsed.command === "apply" || parsed.command === "resume" || parsed.command === "upgrade" || parsed.command === "cleanup" || parsed.command === "run" || parsed.command === "recover" || (parsed.command === "verify" && parsed.clean)
       ? { command: parsed.command, sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false }
       : { command: parsed.command, sideEffect: "read-only", externalWrite: false, canonicalMutation: false };
   const suppliedOperation = options.governance?.operation;
   if (suppliedOperation !== undefined && suppliedOperation.command !== parsed.command) {
-    return { exitCode: 3, output: "operation risk descriptor does not match command", report: { policy, blocked: true } };
+    return { exitCode: 2, output: "operation risk descriptor does not match command", report: { policy, blocked: true } };
   }
   const candidateRisks = [deriveOperationRisk(defaultOperation)];
   if (suppliedOperation !== undefined) candidateRisks.push(deriveOperationRisk(suppliedOperation));
@@ -363,13 +347,13 @@ export async function executeProjector(
     try { assertOperationRiskAuthorized(policy, operationRisk); }
     catch (error) {
       const output = error instanceof Error ? error.message : String(error);
-      return { exitCode: 3, output, report: { policy, blocked: true, operationRisk } };
+      return { exitCode: 2, output, report: { policy, blocked: true, operationRisk } };
     }
     const governance = options.governance ?? { detectCanonicalConflictPaths: defaultCanonicalConflictPaths };
     const conflicts = await governance.detectCanonicalConflictPaths(repositoryRoot);
     if ((policy.preset === "govern" || policy.preset === "autonomous") && conflicts.length > 0) {
       const output = `canonical governance conflict blocks ${policy.preset}: ${[...conflicts].sort().join(", ")}`;
-      return { exitCode: 3, output, report: { policy, blocked: true, conflicts: [...conflicts].sort() } };
+      return { exitCode: 2, output, report: { policy, blocked: true, conflicts: [...conflicts].sort() } };
     }
   }
   let report: any;
@@ -388,54 +372,28 @@ export async function executeProjector(
         exitCode = decisionAudit.findings.length === 0 ? 0 : 2;
         break;
       }
-      const analysis = await analyzeMandatorySlice(repositoryRoot);
+      const analysis = await analyzeLocalRepository({ repositoryRoot });
       report = {
         policy,
         analysis,
         divergences: analysis.divergences,
-        canonicalSemantics: await canonicalSemantics(repositoryRoot, true),
       };
       exitCode = analysis.divergences.length === 0 ? 0 : 2;
       break;
     }
     case "change": {
-      if (parsed.proposalPath !== undefined || options.lifecycle !== undefined) {
-        if (parsed.proposalPath === undefined) throw new Error("lifecycle change capture requires --proposal");
-        const lifecycle = options.lifecycle ?? defaultRepositoryLifecyclePort();
-        report = { policy, ...await lifecycle.capture({ repositoryRoot, request: parsed.selector!, proposalPath: parsed.proposalPath }) };
-        break;
-      }
-      const port = options.change ?? defaultChangePort(repositoryRoot);
-      const persist = policy.preset !== "observe" && parsed.policy.dryRun !== true && parsed.policy.auditOnly !== true;
-      report = { policy, ...await port.change({ repositoryRoot, intent: parsed.selector!, persist }) };
+      const lifecycle = options.lifecycle ?? defaultRepositoryLifecyclePort();
+      report = { policy, ...await lifecycle.capture({ repositoryRoot, request: parsed.selector!, proposalPath: parsed.proposalPath! }) };
       break;
     }
     case "plan": {
       if (options.architecture?.preflight !== undefined) {
-        if (options.architecture.preflightPorts === undefined) return { exitCode: 3, output: "architecture preflight proof ports are unavailable", report: { policy, blocked: true } };
+        if (options.architecture.preflightPorts === undefined) return { exitCode: 5, output: "architecture preflight proof ports are unavailable", report: { policy, blocked: true } };
         const providerInput = await options.architecture.preflight();
         const architecturePreflight = await runArchitecturePreflight({ ...providerInput, mode: policy.preset, risk: operationRisk }, options.architecture.preflightPorts);
-        if (!architecturePreflight.planningAllowed) return { exitCode: 3, output: architecturePreflight.reasons.join("\n"), report: { policy, architecturePreflight, blocked: true } };
+        if (!architecturePreflight.planningAllowed) return { exitCode: 2, output: architecturePreflight.reasons.join("\n"), report: { policy, architecturePreflight, blocked: true } };
       }
-      if (parsed.selector !== undefined) {
-        if (options.lifecycle !== undefined || parsed.selector.startsWith("semantic_change_")) {
-          report = { policy, ...await (options.lifecycle ?? defaultRepositoryLifecyclePort()).plan({ repositoryRoot, selector: parsed.selector }) };
-          break;
-        }
-        const port = options.change ?? defaultChangePort(repositoryRoot);
-        report = { policy, ...await port.plan({ repositoryRoot, selector: parsed.selector, persist: policy.preset !== "observe" && parsed.policy.dryRun !== true }) };
-        break;
-      }
-      const prepared = await prepareMandatorySlice(repositoryRoot);
-      report = {
-        policy,
-        analysis: prepared.analysis,
-        plan: prepared.plan,
-        capsule: prepared.capsule,
-        approval: prepared.approval,
-        risk: prepared.risk,
-        preview: prepared.preview,
-      };
+      report = { policy, ...await (options.lifecycle ?? defaultRepositoryLifecyclePort()).plan({ repositoryRoot, selector: parsed.selector! }) };
       break;
     }
     case "approve": {
@@ -444,31 +402,9 @@ export async function executeProjector(
       break;
     }
     case "apply": {
-      if (parsed.selector !== undefined) {
-        if (options.lifecycle !== undefined || parsed.selector.startsWith("lifecycle_approval_")) {
-          if (!policy.allowAutoMutation) { report = { policy, dryRun: true, selector: parsed.selector }; break; }
-          report = { policy, ...await (options.lifecycle ?? defaultRepositoryLifecyclePort()).apply({ repositoryRoot, selector: parsed.selector, signal: options.signal ?? new AbortController().signal }) };
-          exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
-          break;
-        }
-        const port = options.change ?? defaultChangePort(repositoryRoot);
-        const resolved = await port.resolvePlan({ repositoryRoot, selector: parsed.selector });
-        if (!policy.allowAutoMutation) { report = { policy, dryRun: true, selector: parsed.selector, immutablePlanHash: resolved.planHash, approvalHash: resolved.approvalHash, capsuleHash: resolved.capsuleHash }; break; }
-        assertOperationRiskAuthorized(policy, resolved.risk);
-        report = { policy, ...await port.apply({ repositoryRoot, selector: parsed.selector }) };
-        const reportedRisk = typeof report.risk === "string" ? report.risk : report.risk?.class;
-        if (report.immutablePlanHash !== resolved.planHash || report.approvalHash !== resolved.approvalHash || report.capsuleHash !== resolved.capsuleHash || reportedRisk !== resolved.risk) throw new Error("applied result does not match the resolved immutable plan/approval/capsule/risk tuple");
-        exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
-        break;
-      }
-      if (!policy.allowAutoMutation || policy.maximumAutomaticRisk === "R0") {
-        return { exitCode: 3, output: "R1 approval required.", report: { policy, approvalRequired: true } };
-      }
-      const prepared = await prepareMandatorySlice(repositoryRoot);
-      assertOperationRiskAuthorized(policy, prepared.risk.class);
-      const result = await applyMandatorySlice(repositoryRoot, prepared);
-      report = { policy, plan: prepared.plan, capsule: prepared.capsule, risk: prepared.risk, preview: prepared.preview, ...result };
-      exitCode = result.outcome === "success" ? 0 : result.outcome === "partial" ? 6 : 3;
+      if (!policy.allowAutoMutation) { report = { policy, dryRun: true, selector: parsed.selector }; break; }
+      report = { policy, ...await (options.lifecycle ?? defaultRepositoryLifecyclePort()).apply({ repositoryRoot, selector: parsed.selector!, signal: options.signal ?? new AbortController().signal }) };
+      exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" || report.outcome === "recovery-required" ? 6 : 2;
       break;
     }
     case "resume": {
@@ -476,7 +412,7 @@ export async function executeProjector(
       if (!policy.allowAutoMutation) { report = { policy, dryRun: true, selector: parsed.selector }; break; }
       try {
         report = { policy, ...await lifecycle.resume({ repositoryRoot, selector: parsed.selector!, signal: options.signal ?? new AbortController().signal }) };
-        exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
+        exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" || report.outcome === "recovery-required" ? 6 : 2;
       } catch (error) {
         const structured = error instanceof Error && "code" in error && error.code === "lifecycle-recovery-required" && "outcomes" in error && Array.isArray(error.outcomes);
         if (!structured) throw error;
@@ -489,21 +425,6 @@ export async function executeProjector(
       if (!policy.allowAutoMutation) { report = { policy, kind: "upgrade-candidate", selector: "upgrade:pending", applied: false, persisted: false, dryRun: true }; break; }
       const upgrade = options.upgrade?.run ?? (async ({ repositoryRoot }: { repositoryRoot: string }) => runDefaultUpgradeWorkflow(repositoryRoot));
       report = { policy, ...await upgrade({ repositoryRoot }) };
-      break;
-    }
-    case "reconcile": {
-      if (!policy.allowAutoMutation || policy.maximumAutomaticRisk === "R0") {
-        return { exitCode: 3, output: "R1 approval required.", report: { policy, approvalRequired: true } };
-      }
-      try {
-        report = { policy, ...await reconcileMandatorySlice(repositoryRoot, policy) };
-      } catch (error) {
-        const code = error instanceof Error && "code" in error ? String(error.code) : "";
-        if (code === "nonconvergent-reconciliation" || (error instanceof Error && /material delta|recovery|required|nondetermin/u.test(error.message))) {
-          return { exitCode: 6, output: error instanceof Error ? error.message : String(error), report: { policy, converged: false, error: error instanceof Error ? error.message : String(error) } };
-        }
-        throw error;
-      }
       break;
     }
     case "coverage":
@@ -544,14 +465,10 @@ export async function executeProjector(
       report = { policy, status: mcpResult.status, tools: mcpResult.tools, transportActive: true, capabilityAvailable: mcpResult.capabilityToken !== undefined }; exitCode = mcpResult.status === "ready" ? 0 : 5; break;
     }
     case "recover": {
-      if (parsed.selector !== undefined || options.lifecycle !== undefined) {
-        if (parsed.selector === undefined) throw new Error("lifecycle recovery requires an approval selector");
-        const lifecycle = options.lifecycle ?? defaultRepositoryLifecyclePort();
-        report = { policy, ...await lifecycle.recover({ repositoryRoot, selector: parsed.selector }) };
-        exitCode = Array.isArray(report.outcomes) && report.outcomes.some((outcome: { action?: string }) => outcome.action === "recovery-required") ? 6 : 0;
-        break;
-      }
-      const operations = options.operations ?? defaultOperationalCliPort(); const maximumEvents = parsed.coverageRequest.budgetTokens ?? (parsed.coverageRequest.budgetCost === undefined ? undefined : Math.max(1, Math.floor(parsed.coverageRequest.budgetCost))); const operationalReport = await operations.run({ command: parsed.command, repositoryRoot, clean: parsed.clean, policy, signal: options.signal ?? new AbortController().signal, allowPersistence: parsed.policy.dryRun !== true && policy.preset !== "observe", ...(maximumEvents === undefined ? {} : { maximumEvents }), ...(parsed.coverageRequest.continuationSelector === undefined ? {} : { continuationSelector: parsed.coverageRequest.continuationSelector }) }); if (!await operations.authenticate(operationalReport) || !validateOperationalReport(operationalReport)) return { exitCode: 6, output: "operational proof authentication failed", report: { policy, blocked: true } }; report = { policy, operationalReport }; exitCode = operationalReport.exitCode; break;
+      const lifecycle = options.lifecycle ?? defaultRepositoryLifecyclePort();
+      report = { policy, ...await lifecycle.recover({ repositoryRoot, selector: parsed.selector! }) };
+      exitCode = Array.isArray(report.outcomes) && report.outcomes.some((outcome: { action?: string }) => outcome.action === "recovery-required") ? 6 : 0;
+      break;
     }
     case "watch": case "ci": case "verify": {
       const operations = options.operations ?? defaultOperationalCliPort(); const maximumEvents = parsed.coverageRequest.budgetTokens ?? (parsed.coverageRequest.budgetCost === undefined ? undefined : Math.max(1, Math.floor(parsed.coverageRequest.budgetCost))); const operationalReport = await operations.run({ command: parsed.command, repositoryRoot, clean: parsed.clean, policy, signal: options.signal ?? new AbortController().signal, allowPersistence: parsed.policy.dryRun !== true && policy.preset !== "observe", ...(maximumEvents === undefined ? {} : { maximumEvents }), ...(parsed.coverageRequest.continuationSelector === undefined ? {} : { continuationSelector: parsed.coverageRequest.continuationSelector }) }); if (!await operations.authenticate(operationalReport) || !validateOperationalReport(operationalReport)) return { exitCode: 6, output: "operational proof authentication failed", report: { policy, blocked: true } }; report = { policy, operationalReport }; exitCode = operationalReport.exitCode; break;
@@ -570,13 +487,12 @@ export async function executeProjector(
         report = { policy, target: parsed.target, decisionExplanation, explanation: decisionExplanation.explanation };
         break;
       }
-      const analysis = await analyzeMandatorySlice(repositoryRoot);
+      const analysis = await analyzeLocalRepository({ repositoryRoot });
       const target = parsed.target!;
-      const divergences = analysis.divergences.filter((item) => item.id === target || item.unitIds.includes(target)
-        || Object.values(item.observed).includes(target) || Object.values(item.expected).includes(target));
+      const divergences = analysis.divergences.filter((item) => item.id === target || item.path === target || item.subjectIds.includes(target));
       const explanation = divergences.length === 0
         ? `No governed divergence currently matches ${target}.`
-        : divergences.map((item) => `${item.title}: ${item.rationale} Caveat: ${item.coverageCaveat}`).join("\n");
+        : divergences.map((item) => `${item.code}: ${item.explanation} Caveat: ${item.coverageCaveat}`).join("\n");
       report = { policy, target, divergences, explanation };
       break;
     }
@@ -623,11 +539,7 @@ function defaultArchitecturePort(repositoryRoot: string): ArchitectureCliPort {
 function defaultOperationalCliPort(): OperationalCliPort {
   return { authenticate: async (report) => validateOperationalReport(report), run: async ({ command, repositoryRoot, clean, policy, signal, allowPersistence, maximumEvents }) => {
     const started = Date.now(); const paths = await RepositoryPathService.create(repositoryRoot); let findings: Array<{ code: string; title: string; path?: string; severity: "note" | "warning" | "error"; evidenceIds: string[] }> = []; const proof: { -readonly [Key in keyof OperationalExitProof]: OperationalExitProof[Key] } = { commandFailed: false, blockingInvalidity: false, approvalRequired: false, incompleteCoverage: false, requiredUnavailable: false, recoveryFailure: false, budgetExhausted: false, resumable: false }; let analysisRecords: string[] = []; let journalRecords: string[] = []; let canonicalDigest: ContentHash = hashFramedDomain("operational-canonical", []);
-    if (command === "recover") {
-      if (!policy.allowAutoMutation) { proof.approvalRequired = true; findings = [{ code: "recovery-approval-required", title: "Recovery dry-run made no changes", severity: "warning", evidenceIds: [] }]; }
-      else { const journal = new FileTransactionJournal(paths); try { const recovered = await journal.recoverIncomplete(); journalRecords = recovered.map(({ transactionId }) => transactionId); findings = recovered.map(({ transactionId, action, reason, lastCheckpointId }) => ({ code: action, title: action === "rolled-back" ? `Rolled back incomplete transaction ${transactionId}` : reason ?? `Recovery required for ${transactionId}`, severity: action === "rolled-back" ? "note" as const : "error" as const, evidenceIds: [transactionId, ...(lastCheckpointId === undefined ? [] : [lastCheckpointId])] })); proof.recoveryFailure = findings.some(({ severity }) => severity === "error"); }
-      catch (error) { findings = [{ code: "journal-corrupt", title: error instanceof Error ? error.message : String(error), severity: "error", evidenceIds: [] }]; proof.recoveryFailure = true; } }
-    } else {
+    {
       const dogfood = await inspectDogfood(paths); findings.push(...dogfood.findings); canonicalDigest = dogfood.canonicalDigest; proof.blockingInvalidity = dogfood.findings.length > 0;
       if (clean && allowPersistence && policy.allowAutoMutation) { const state = await paths.resolveWrite(".projector/state.db"); await rm(state.realTarget, { force: true }); }
       const analyze = async () => analyzeLocalRepository({ repositoryRoot });
@@ -636,7 +548,7 @@ function defaultOperationalCliPort(): OperationalCliPort {
       if (clean && allowPersistence && policy.allowAutoMutation && !proof.recoveryFailure) { const state = await paths.resolveWrite(".projector/state.db"); await mkdir((await paths.resolveWrite(".projector")).realTarget, { recursive: true }); await writeFile(state.realTarget, `${canonicalJson({ version: 1, canonicalDigest, analysisDigest: secondHash })}\n`, "utf8"); }
     }
     const stateDigest = hashFramedDomain("operational-run-state", { repositoryRoot, command, findings, canonicalDigest }); let gitHead: string | undefined; try { gitHead = (await execFileAsync("git", ["-C", repositoryRoot, "rev-parse", "HEAD"], { encoding: "utf8" })).stdout.trim(); } catch { gitHead = undefined; } const evidence = { ...unavailableOperationalEvidence("not exercised by local operational composition"), configDigest: canonicalDigest, toolchainDigest: hashFramedDomain("operational-toolchain", PROJECTOR_VERSION), ...(gitHead === undefined ? {} : { gitHead: hashFramedDomain("operational-git-head", gitHead) }), worktreeDigest: stateDigest, canonicalDigest, analyzerRecords: analysisRecords, journalRecords, errorRecords: findings.filter(({ severity }) => severity === "error").map(({ code }) => code), durationMs: Date.now() - started }; let operational = createOperationalReport({ runId: hashFramedDomain("operational-run-id", { command, stateDigest, started }), command, exitProof: proof, evidence, policy, stateDigest, unavailableFields: ["modelRecords", "snapshotRecords", "decisionRecords", "transformRecords", "validationRecords"], findings });
-    if (allowPersistence && command !== "watch" && !(command === "recover" && !policy.allowAutoMutation)) { try { const store = await JsonlTelemetryStore.create(paths, ".projector/telemetry/runs.jsonl"); await store.append(operational); } catch (error) { operational = createOperationalReport({ ...operational, exitProof: { ...operational.exitProof, recoveryFailure: true }, evidence: { ...operational.evidence, errorRecords: [...operational.evidence.errorRecords, "telemetry-persistence"] }, findings: [...operational.findings.map(({ id: omitted, ...finding }) => { void omitted; return finding; }), { code: "telemetry-persistence", title: error instanceof Error ? error.message : String(error), severity: "error", evidenceIds: [] }] }); } }
+    if (allowPersistence && command !== "watch") { try { const store = await JsonlTelemetryStore.create(paths, ".projector/telemetry/runs.jsonl"); await store.append(operational); } catch (error) { operational = createOperationalReport({ ...operational, exitProof: { ...operational.exitProof, recoveryFailure: true }, evidence: { ...operational.evidence, errorRecords: [...operational.evidence.errorRecords, "telemetry-persistence"] }, findings: [...operational.findings.map(({ id: omitted, ...finding }) => { void omitted; return finding; }), { code: "telemetry-persistence", title: error instanceof Error ? error.message : String(error), severity: "error", evidenceIds: [] }] }); } }
     return operational;
   } };
 }
@@ -647,97 +559,6 @@ async function inspectDogfood(paths: RepositoryPathService): Promise<{ readonly 
   const groups = ["acceptedDebt", "architectureDecisions", "authorities", "governanceBases", "lenses", "representations", "rules"] as const; const ids: string[] = []; for (const group of groups) { if (!Array.isArray(document[group]) || document[group].length === 0) findings.push({ code: "dogfood-incomplete", title: `Canonical dogfood ${group} is empty`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }); else for (const item of document[group]) { if (typeof item?.id !== "string" || (item.status !== "active" && item.status !== "accepted")) findings.push({ code: "dogfood-invalid", title: `Invalid canonical dogfood ${group} entry`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }); else ids.push(item.id); } } if (new Set(ids).size !== ids.length) findings.push({ code: "dogfood-duplicate", title: "Canonical dogfood identities conflict", path: ".projector/dogfood.json", severity: "error", evidenceIds: ids });
   for (const decision of Array.isArray(document.architectureDecisions) ? document.architectureDecisions : []) if (/(?:repository|prose|instruction).*(?:grant|authorize|override).*(?:tool|policy)|(?:grant|authorize).*(?:tool)/iu.test(`${decision.summary ?? ""} ${decision.decision ?? ""}`)) findings.push({ code: "untrusted-tool-grant", title: `Architecture decision ${decision.id ?? "unknown"} attempts to grant tools or override policy`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [String(decision.id ?? "unknown")] });
   return { canonicalDigest: hashFramedDomain("operational-dogfood", document), findings };
-}
-
-function defaultChangePort(repositoryRoot: string): ChangeCliPort {
-  type Prepared = Awaited<ReturnType<typeof prepareMandatorySlice>>;
-  type ChangeRecord = { readonly kind: "semantic-change"; readonly intent: string; readonly boundState: Prepared["plan"]["boundState"]; readonly analysis: Prepared["analysis"]; readonly compiled: Awaited<ReturnType<typeof compileSemanticChange>> };
-  type PlanRecord = { readonly kind: "semantic-plan"; readonly changeSelector: string; readonly prepared: Prepared; readonly compiled: Awaited<ReturnType<typeof compileSemanticChangePlan>>; readonly planHash: string };
-  const recordRoot = join(repositoryRoot, ".projector", "task16-selections");
-  const representationRoot = join(repositoryRoot, ".projector", "generated", "representations");
-  const representationArtifacts = {
-    put: async (contentHash: ContentHash, content: string) => {
-      await mkdir(representationRoot, { recursive: true });
-      const path = join(representationRoot, `${contentHash.slice("sha256:v1:".length)}.txt`);
-      try { await writeFile(path, content, { encoding: "utf8", flag: "wx" }); }
-      catch (error) { if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || await readFile(path, "utf8") !== content) throw error; }
-    },
-    get: async (contentHash: ContentHash) => {
-      try { return await readFile(join(representationRoot, `${contentHash.slice("sha256:v1:".length)}.txt`), "utf8"); }
-      catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined; throw error; }
-    },
-  };
-  const compileRepresentation = async (value: { readonly change: Awaited<ReturnType<typeof compileSemanticChange>>["change"]; readonly boundState: Awaited<ReturnType<typeof compileSemanticChange>>["boundState"] }) => {
-    const tokenizer = { profileId: "projector.whitespace@1", measure: (text: string) => text.trim() === "" ? 0 : text.trim().split(/\s+/u).length };
-    const compiler = new RepresentationCompiler({ artifacts: representationArtifacts, tokenizer, utility: { profileId: "projector.instruction-cost@1", measure: ({ source, candidate, profileOverheadTokens }) => { const sourceCost = tokenizer.measure(source.statements.map(({ text }) => text).join("\n")); const candidateCost = tokenizer.measure(candidate) + profileOverheadTokens; return { netInstructionEfficiency: sourceCost - candidateCost, evidence: "deterministic total instruction payload cost including profile overhead" }; } } });
-    const { projection } = await compiler.compileBest({ source: canonicalRepresentationSourceFromSemanticChange(value.change), binding: value.boundState, requestedProfileKey: "agent-compact@1" });
-    return { projectionId: projection.id, profileId: projection.profileId, profileVersion: projection.profileVersion, contentHash: projection.contentHash, preservationHash: projection.preservation.semanticHash };
-  };
-  const suffix = (selector: string, prefix: "change" | "plan"): string => {
-    const match = new RegExp(`^${prefix}:semantic:([a-f0-9]{64})$`, "u").exec(selector);
-    if (match?.[1] === undefined) throw new Error(`unsupported or unauthenticated ${prefix} selector: ${selector}`);
-    return match[1];
-  };
-  const persist = async (prefix: "change" | "plan", body: ChangeRecord | PlanRecord): Promise<string> => {
-    const hash = hashFramedDomain(`cli-immutable-${prefix}-selection`, body); const id = hash.slice("sha256:v1:".length);
-    await mkdir(recordRoot, { recursive: true });
-    const path = join(recordRoot, `${prefix}-${id}.json`); const bytes = `${canonicalJson(body)}\n`;
-    try { await writeFile(path, bytes, { encoding: "utf8", flag: "wx" }); }
-    catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || await readFile(path, "utf8") !== bytes) throw error;
-    }
-    return `${prefix}:semantic:${id}`;
-  };
-  const load = async <T extends ChangeRecord | PlanRecord>(prefix: "change" | "plan", selector: string): Promise<T> => {
-    const id = suffix(selector, prefix); const path = join(recordRoot, `${prefix}-${id}.json`);
-    let body: T;
-    try { body = JSON.parse(await readFile(path, "utf8")) as T; } catch { throw new Error(`immutable ${prefix} selector is unavailable: ${selector}`); }
-    if (hashFramedDomain(`cli-immutable-${prefix}-selection`, body).slice("sha256:v1:".length) !== id) throw new Error(`immutable ${prefix} selector content is corrupt`);
-    return body;
-  };
-  const assertCurrent = async (boundState: Prepared["plan"]["boundState"]): Promise<Prepared> => {
-    const current = await prepareMandatorySlice(repositoryRoot);
-    if (canonicalJson(current.plan.boundState) !== canonicalJson(boundState)) throw new Error("immutable selection is stale; explicit rebase is required");
-    return current;
-  };
-  return {
-    change: async ({ intent, persist: shouldPersist }) => {
-      if (intent !== "repair-governed-state") throw new Error(`unsupported deterministic local change intent: ${intent}`);
-      const prepared = await prepareMandatorySlice(repositoryRoot);
-      const intentBase = { id: "intent:mandatory-repository-script", request: intent, normalizedIntent: "repair governed repository automation placement", statements: [{ kind: "behavior" as const, statement: "repair governed repository automation placement", origin: [], confidence: 1 }], ambiguity: [], assumptions: [] };
-      const intentAnalysis = { ...intentBase, contentHash: hashFramedDomain("change-intent-analysis", intentBase) };
-      const factsValue = { intentAnalysis, identityResolutionIds: ["identity:mandatory-repository-script"], relevanceClosureId: prepared.capsule.relevanceClosureId, analysisFacetKeys: ["cleanup"], operations: [{ provenance: "authenticated" as const, operation: { subjectType: "other" as const, subjectKey: "mandatory-repository-script", kind: "modify" as const, payload: { transformId: "move-reference-update" } } }], relations: [], assumptions: [...prepared.plan.assumptions], boundary: [...prepared.plan.boundary], boundState: prepared.binding };
-      const factsHash = hashFramedDomain("authenticated-change-compiler-facts", factsValue);
-      const compiled = await compileSemanticChange({ request: intent, currentState: prepared.state, context: { repositoryRoot, stateDigest: prepared.state, config: {}, signal: new AbortController().signal } }, { facts: { load: async () => ({ value: factsValue, contentHash: factsHash }) }, bindingValidator: { validate: async () => ({ status: "current", currentState: prepared.state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) }, authority: { verify: async ({ subjectHash }) => subjectHash === factsHash }, architecture: { preflight: async () => { const value = { allowed: true, decisionIds: [] as string[] }; return { ...value, contentHash: hashFramedDomain("change-architecture-preflight", value) }; } }, impact: { compile: async () => { const value = { knownAffectedUnitIds: prepared.plan.knownAffectedUnitIds, possibleFrontierUnitIds: prepared.plan.possibleFrontierUnitIds, unavailableSurfaceIds: prepared.plan.unavailableSurfaceIds, reasons: prepared.plan.knownAffectedUnitIds.map((unitId) => ({ unitId, kind: "exact" as const, reason: "mandatory analyzer closure" })), queryDependencyIds: prepared.binding.queryDependencies.map(({ query }) => query.id) }; return { value, contentHash: hashFramedDomain("authenticated-impact-closure", value) }; } }, risk: { assess: async () => ({ value: prepared.risk, contentHash: hashFramedDomain("authenticated-change-risk", prepared.risk) }) } });
-      const record: ChangeRecord = { kind: "semantic-change", intent, boundState: prepared.plan.boundState, analysis: prepared.analysis, compiled };
-      const selector = shouldPersist ? await persist("change", record) : `change:semantic:${hashFramedDomain("cli-immutable-change-selection", record).slice("sha256:v1:".length)}`;
-      return { kind: "change", selector, intent, deterministic: true, pipeline: "semantic-compiler", persisted: shouldPersist, analysis: record.analysis, boundState: record.boundState, semanticChange: compiled.change, risk: "R1" };
-    },
-    plan: async (request) => {
-      const { selector } = request;
-      const change = await load<ChangeRecord>("change", selector); const prepared = await assertCurrent(change.boundState);
-      const planningValue = { change: change.compiled.change, boundState: change.compiled.boundState, compilerFactsHash: change.compiled.compilerFactsHash };
-      const compiled = await compileSemanticChangePlan({ changeId: change.compiled.change.id, revision: 1, sourceRunId: "run:mandatory-repository-script" }, { changes: { read: async () => ({ value: planningValue, contentHash: hashFramedDomain("authenticated-change-planning-input", planningValue) }) }, packets: { compile: async () => { const value = { proposals: [{ key: "mandatory-repository-script", title: "Repair governed repository automation", stage: "cleanup" as const, executionMode: "deterministic" as const, transformId: "move-reference-update", unitIds: prepared.plan.knownAffectedUnitIds, semanticOwnerIds: ["mandatory-repository-script"], writeSelectors: prepared.plan.boundary, dependencies: [], validatorIds: prepared.plan.completionCriteria.requiredValidators }], completionContract: prepared.plan.completionCriteria }; return { value, contentHash: hashFramedDomain("authenticated-change-packet-proposals", value) }; } }, representations: { compile: compileRepresentation } });
-      const planHash = hashFramedDomain("semantic-change-execution-plan", compiled.plan);
-      const record: PlanRecord = { kind: "semantic-plan", changeSelector: selector, prepared, compiled, planHash };
-      const planSelector = request.persist === false ? `plan:semantic:${hashFramedDomain("cli-immutable-plan-selection", record).slice("sha256:v1:".length)}` : await persist("plan", record);
-      return { kind: "plan", selector: planSelector, changeSelector: selector, immutablePlanHash: planHash, pipeline: "packet-planner", persisted: request.persist !== false, ...prepared, plan: compiled.plan, capsule: compiled.packets[0]!.capsule };
-    },
-    resolvePlan: async ({ selector }) => { const record = await load<PlanRecord>("plan", selector); await assertCurrent(record.compiled.plan.boundState); const capsule = record.compiled.packets[0]!.capsule; const approval = { planHash: record.planHash, approvedRiskClass: record.prepared.risk.class, authorityProofHash: hashFramedDomain("cli-task16-authority", record.planHash) }; return { risk: record.prepared.risk.class, planHash: record.planHash, approvalHash: hashFramedDomain("cli-selection-approval", approval), capsuleHash: hashFramedDomain("cli-selection-capsule", capsule) }; },
-    apply: async ({ selector }) => {
-      const record = await load<PlanRecord>("plan", selector);
-      await assertCurrent(record.compiled.plan.boundState);
-      if (record.planHash !== hashFramedDomain("semantic-change-execution-plan", record.compiled.plan)) throw new Error("immutable plan approval tuple is corrupt");
-      const capsule = record.compiled.packets[0]!.capsule; const approval = { planHash: record.planHash, approvedRiskClass: record.prepared.risk.class, authorityProofHash: hashFramedDomain("cli-task16-authority", record.planHash) };
-      const envelopeValue = { plan: record.compiled.plan, packets: record.compiled.packets, executionOrder: record.compiled.executionOrder.map(({ packet }) => packet.id), approval };
-      let applied: Awaited<ReturnType<typeof applyMandatorySlice>> | undefined;
-      const beforeState = record.compiled.plan.boundState.compiledAgainst; const afterState = { ...beforeState, worktreeDigest: hashFramedDomain("cli-task16-applied-state", record.planHash) };
-      const observed = (phase: "before" | "after" | "rollback"): PacketObservation => { const appliedPhase = phase === "after"; return { state: appliedPhase ? afterState : beforeState, pathContentHashes: appliedPhase ? { "scripts/validate-repo.mjs": hashFramedDomain("cli-path", "source"), "scripts/validate-repo.test.mjs": hashFramedDomain("cli-path", "test"), "package.json": hashFramedDomain("cli-path", "manifest-after") } : { ".codex/hooks/validate-repo.mjs": hashFramedDomain("cli-path", "source"), ".codex/hooks/validate-repo.test.mjs": hashFramedDomain("cli-path", "test"), "package.json": hashFramedDomain("cli-path", "manifest-before") }, renames: appliedPhase ? [{ from: ".codex/hooks/validate-repo.mjs", to: "scripts/validate-repo.mjs" }, { from: ".codex/hooks/validate-repo.test.mjs", to: "scripts/validate-repo.test.mjs" }] : [], deletedPaths: appliedPhase ? [".codex/hooks/validate-repo.mjs", ".codex/hooks/validate-repo.test.mjs"] : [], unitStates: Object.fromEntries(record.compiled.plan.knownAffectedUnitIds.map((id) => [id, "valid"])), canonicalEntityHashes: {}, externalStateHashes: {}, generatedArtifactHashes: {}, cleanWorkingTree: false, unknownCount: 0, divergenceCount: 0 }; };
-      const coordinator = await executePacketPlan({ value: envelopeValue, contentHash: hashFramedDomain("authenticated-packet-execution", envelopeValue) }, { lease: { acquire: async () => ({ assertOwned: async () => {}, release: async () => {} }) }, authority: { verify: async ({ subjectHash }) => subjectHash === record.planHash }, currentness: { validate: async () => ({ currentState: beforeState, valid: true, proofHash: hashFramedDomain("cli-task16-currentness", beforeState) }) }, transaction: { begin: async () => ({ apply: async () => {}, commit: async () => {}, rollback: async () => {} }) }, effect: { run: async ({ packet }) => { applied = await applyMandatorySlice(repositoryRoot, record.prepared); const authorValue = { source: "mandatory-transform", group: "mandatory-transform" }; return { claimedChangedPaths: [], outputHash: hashFramedDomain("cli-task16-effect", applied.certificateHash), author: { ...authorValue, contentHash: hashFramedDomain("authenticated-effect-author", { ...authorValue, packetId: packet.id }) } }; } }, observe: { capture: async ({ phase }) => { const value = observed(phase); return { value, contentHash: hashFramedDomain("authenticated-packet-observation", value) }; } }, validate: { run: async ({ packet, postState }) => packet.validatorIds.map((validatorId, index) => { const postStateHash = hashFramedDomain("packet-post-state", postState); const provenance = { validatorId, validatorVersion: "1", authorSource: "task16-validator-registry", independenceGroup: `validator:${validatorId}`, evidenceLane: index === 0 ? "runtime" : "test", assurance: "strong" as const }; const provenanceHash = hashFramedDomain("packet-validator-provenance", provenance); return { ...provenance, provenanceHash, postStateHash, invocationHash: hashFramedDomain("packet-validator-invocation", { packetId: packet.id, validatorId, validatorVersion: "1", postStateHash, provenanceHash }), status: "passed" as const }; }) }, validatorTrust: { verify: async ({ proof }) => ({ trusted: true, authorSource: proof.authorSource, independenceGroup: proof.independenceGroup }) }, reconciliation: { run: async ({ plan, observedImpact, finalState }) => { const value = { planId: plan.id, observedImpact, finalState, converged: true, iterations: 1 }; return { converged: true, iterations: 1, contentHash: hashFramedDomain("authenticated-plan-reconciliation", value) }; } }, artifacts: { put: async (artifact: PacketExecutionArtifact | PlanExecutionArtifact) => { const contentHash = hashFramedDomain("packet-execution-artifact", artifact); await mkdir(join(recordRoot, "artifacts"), { recursive: true }); const path = join(recordRoot, "artifacts", `${contentHash.slice("sha256:v1:".length)}.json`); const bytes = `${canonicalJson(artifact)}\n`; try { await writeFile(path, bytes, { encoding: "utf8", flag: "wx" }); } catch (error) { if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || await readFile(path, "utf8") !== bytes) throw error; } return { contentHash, replayed: false }; } } });
-      if (applied === undefined) throw new Error(`semantic packet coordinator did not invoke the mandatory transform: ${canonicalJson(coordinator)}`);
-      return { kind: "apply", selector, immutablePlanHash: record.planHash, approvalHash: hashFramedDomain("cli-selection-approval", approval), capsuleHash: hashFramedDomain("cli-selection-capsule", capsule), pipeline: "packet-coordinator", risk: record.prepared.risk, plan: record.compiled.plan, capsule, preview: record.prepared.preview, coordinator, ...applied };
-    },
-  };
 }
 
 function defaultCoveragePort(repositoryRoot: string): CoverageCliPort {
