@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,6 +62,33 @@ function evidence() {
 }
 
 describe("packed held-out lifecycle evidence", () => {
+  it("closes the actual namespace keeper instead of only its launcher", async () => {
+    const launcher = spawn("/bin/sh", ["-c", "sleep 120 & printf '%s\\n' \"$!\"; wait"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const [chunk] = await once(launcher.stdout, "data");
+    const namespaceProcessId = String(chunk).trim();
+    const completed = once(launcher, "exit");
+    try {
+      const closeNamespaceKeeper = Reflect.get(packedLifecycle, "closePackedLifecycleNamespaceKeeper");
+      expect(typeof closeNamespaceKeeper).toBe("function");
+      if (typeof closeNamespaceKeeper !== "function") return;
+
+      await closeNamespaceKeeper({
+        namespaceProcessId,
+        keeper: { child: launcher, completed },
+        signalProcess: async (processId, signal) => { process.kill(Number(processId), signal); },
+      });
+
+      expect(() => process.kill(Number(namespaceProcessId), 0)).toThrow();
+      expect(launcher.exitCode === null && launcher.signalCode === null).toBe(false);
+    } finally {
+      try { process.kill(Number(namespaceProcessId), "SIGKILL"); } catch { /* already closed */ }
+      if (launcher.exitCode === null && launcher.signalCode === null) launcher.kill("SIGKILL");
+      await completed;
+    }
+  });
+
   it("launches nsenter in the hosted repository working directory", () => {
     const repository = mkdtempSync(join(tmpdir(), "projector-nsenter-cwd-"));
     try {
