@@ -114,6 +114,20 @@ Have an implementation packet generate both code and tests that agree with the s
 Expected: same-packet tests cannot satisfy an R2+ independent-validation requirement. Completion blocks on the independent contradiction.
 
 
+## Capability-proven sandbox isolation
+
+Install a sandbox executable. First, deny its required namespace or network control. Then enable a backend that can prove the complete isolation challenge. Also configure a fallback that omits one required proof field.
+
+Expected: installation and advertised capabilities do not authorize execution. Projector rejects the denied primary backend and the incomplete fallback. It selects only a backend whose own live evidence proves readable and read-only input, writable declared output, invisible undeclared paths, and denied network access. If no backend proves all controls, Projector returns `unsupported-isolation` before it starts the sandbox-required validator command.
+
+
+## Manual-only sandbox release workflow
+
+Inspect the repository release workflow and run its sandbox lane on the pinned Ubuntu runner.
+
+Expected: `workflow_dispatch` is the only trigger. The workflow provisions the pinned sandbox without disabling Ubuntu's global user-namespace restriction. It proves filesystem and network isolation before dogfooding, verification, artifact checks, and packed release acceptance. The traceability manifest binds this scenario to an observed public test.
+
+
 ## Generated-output upstream repair
 
 A generated client contains a fixable defect whose generator/source schema is known.
@@ -177,5 +191,3 @@ Generate structurally varied repositories from pattern-preserving and pattern-br
 Expected: reported precision/recall and completeness behavior remain within release thresholds, showing generalization beyond golden fixture memorization.
 
 ---
-
-

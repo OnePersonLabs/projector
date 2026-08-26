@@ -136,6 +136,14 @@ Canonical repository paths are POSIX-style relative paths. All filesystem operat
 - side-effect class included in risk.
 - mutation normally requires Git unless `--unsafe-no-git` is explicitly provided.
 
+### Capability-proven isolation
+
+Projector MUST select a sandbox backend only after a live probe proves the required filesystem and network controls. Executable presence, successful installation, configuration, and self-reported capability flags are not proof.
+
+The probe MUST show that the backend can read a declared read root and keep that root read-only. It MUST also prove declared writes, hidden undeclared paths, and denied network access. Each fallback backend MUST return the same complete evidence from its own probe. Projector MUST reject false, missing, malformed, or failed evidence.
+
+If no backend proves all required controls, Projector MUST refuse the sandbox-required command before it starts. It MUST fail closed with `unsupported-isolation`. It MUST NOT fall back to an unisolated native process.
+
 ## External and host writes
 
 External writes require adapter capability plus plan-bound approval/capability. R3/R4 default to explicit approval. R4 is never autonomous in 1.x.
@@ -147,5 +155,3 @@ Failed validations do not auto-merge worktrees. Remote transform packages are di
 Approval, Execution Capsule, MCP capability, and Work Packet bindings expire when a dependency in their `StateBinding` changes. They also expire when Projector cannot prove a query dependency unchanged. A changed global `StateDigest` triggers binding validation, not automatic invalidation. A stale approval cannot be replayed against materially different relevant state.
 
 ---
-
-

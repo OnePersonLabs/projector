@@ -12,14 +12,28 @@ import {
 
 export interface SandboxBackendCandidate {
   readonly id: string;
-  probe(): Promise<boolean>;
+  probe(): Promise<SandboxProbeEvidence | false>;
   createLauncher(): ProcessLauncher;
+}
+
+export interface SandboxProbeEvidence {
+  readonly readRootReadable: boolean;
+  readonly readRootReadOnly: boolean;
+  readonly writeRootWritable: boolean;
+  readonly undeclaredPathInvisible: boolean;
+  readonly networkDenied: boolean;
 }
 
 export interface SandboxLauncherOptions {
   readonly platform?: NodeJS.Platform;
   readonly nativeLauncher?: ProcessLauncher;
   readonly fallbackBackends?: readonly SandboxBackendCandidate[];
+}
+
+export interface SandboxSelection {
+  readonly backendId: string;
+  readonly evidence: SandboxProbeEvidence;
+  readonly launcher: ProcessLauncher;
 }
 
 const bubblewrapExecutable = "/usr/bin/bwrap";
@@ -33,9 +47,11 @@ const requiredProbeEvidence = [
   "networkDenied",
 ] as const;
 
-type ProbeEvidence = Record<(typeof requiredProbeEvidence)[number], boolean>;
-
 export async function createSandboxLauncher(options: SandboxLauncherOptions = {}): Promise<ProcessLauncher> {
+  return (await selectSandboxLauncher(options)).launcher;
+}
+
+export async function selectSandboxLauncher(options: SandboxLauncherOptions = {}): Promise<SandboxSelection> {
   const platform = options.platform ?? process.platform;
   const nativeLauncher = options.nativeLauncher ?? new NativeProcessLauncher();
   const candidates: SandboxBackendCandidate[] = [];
@@ -44,21 +60,22 @@ export async function createSandboxLauncher(options: SandboxLauncherOptions = {}
   candidates.push(...(options.fallbackBackends ?? []));
 
   for (const candidate of candidates) {
-    let proven = false;
+    let evidence: SandboxProbeEvidence | false;
     try {
-      proven = await candidate.probe();
+      evidence = await candidate.probe();
+      if (evidence !== false) requireProbeEvidence(evidence);
     } catch (error) {
       failures.push(`${candidate.id}: ${errorMessage(error)}`);
       continue;
     }
-    if (!proven) {
+    if (evidence === false) {
       failures.push(`${candidate.id}: probe reported unsupported`);
       continue;
     }
 
     const launcher = candidate.createLauncher();
     if (launcher.capabilities.filesystemIsolation && launcher.capabilities.networkIsolation) {
-      return launcher;
+      return { backendId: candidate.id, evidence, launcher };
     }
     failures.push(`${candidate.id}: launcher did not advertise filesystem and network isolation`);
   }
@@ -118,9 +135,8 @@ function createBubblewrapCandidate(nativeLauncher: ProcessLauncher): SandboxBack
           throw new Error(`probe exited with code ${result.exitCode ?? `signal ${result.signal ?? "unknown"}`}: ${cause}`);
         }
         const evidence = parseProbeEvidence(result.stdout);
-        const missing = requiredProbeEvidence.find((property) => evidence[property] !== true);
-        if (missing !== undefined) throw new Error(`probe did not prove ${missing}`);
-        return true;
+        requireProbeEvidence(evidence);
+        return evidence;
       } finally {
         try {
           await close(server);
@@ -181,7 +197,7 @@ process.stdout.write(JSON.stringify({
 }));
 `;
 
-function parseProbeEvidence(stdout: string): ProbeEvidence {
+function parseProbeEvidence(stdout: string): SandboxProbeEvidence {
   let value: unknown;
   try {
     value = JSON.parse(stdout);
@@ -191,7 +207,16 @@ function parseProbeEvidence(stdout: string): ProbeEvidence {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("probe returned non-object evidence");
   }
-  return value as ProbeEvidence;
+  return value as SandboxProbeEvidence;
+}
+
+function requireProbeEvidence(evidence: unknown): asserts evidence is SandboxProbeEvidence {
+  if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence)) {
+    throw new Error("probe returned non-object evidence");
+  }
+  const record = evidence as Record<string, unknown>;
+  const missing = requiredProbeEvidence.find((property) => record[property] !== true);
+  if (missing !== undefined) throw new Error(`probe did not prove ${missing}`);
 }
 
 async function listen(server: Server): Promise<number> {
