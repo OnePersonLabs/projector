@@ -29,6 +29,7 @@ A public release is credible when a new user can:
 23. Rebuild `state.db` from canonical state with equivalent semantics.
 24. Compile one canonical semantic scope into human-technical, Gherkin/human behavioral, agent-compact, and machine-invariant representations where applicable, rejecting seeded protected-semantic drift.
 25. Show that compact context selection uses measured net utility/cost rather than token count alone. Include a net-negative fallback case.
+26. Run installed validators only through a sandbox backend whose live evidence proves the required filesystem and network isolation. Refuse release acceptance when that surface is unavailable.
 
 A release that primarily writes Markdown, prompts, static graphs, or advice does not satisfy Projector.
 
@@ -59,6 +60,10 @@ Projector’s own audit MUST be clean or contain explicit accepted debt.
 No subsystem may be promoted to `integrated` from leaf implementation or source-only tests. Every promoted subsystem MUST carry a revision- and worktree-bound closure receipt. The receipt MUST use stable obligation IDs. Independent checks MUST observe positive and severed-edge evidence for authority, public composition, downstream consumption, invalidation/recovery, observability, dogfooding, and packed release. Missing, duplicate, self-asserted, stale, or non-severable evidence MUST leave the subsystem open.
 
 The Representation subsystem starts with seven obligations. They are `representation.authority.v1`, `representation.public-composition.v1`, `representation.downstream-consumer.v1`, `representation.invalidation-recovery.v1`, `representation.observability.v1`, `representation.dogfood.v1`, and `representation.packed-release.v1`. The packed release gate MUST run canonical semantic-change input through projection selection and capsule composition. It MUST also run host/MCP validation, profile invalidation/reconciliation, and dedicated representation telemetry. Each severed required edge MUST fail closed. Repository-local status labels, broad test-suite anchors, and generic document/analyzer metrics are not closure evidence.
+
+The packed release gate MUST invoke the installed sandbox composition and record its capability evidence. Authenticated traceability MUST map sandbox selection, fail-closed unavailability, and release-workflow ordering to observed public tests. A source-only import or self-reported capability flag is not release evidence.
+
+The repository GitHub Actions release workflow MUST remain manual-only with `workflow_dispatch` as its only trigger. It MUST provision and prove the sandbox before dogfooding, verification, artifact checks, and packed release acceptance. It MUST NOT disable the runner's global unprivileged-user-namespace restriction to make a probe pass.
 
 The authoritative Projector specification MUST pass the blocking `human-technical@1` mechanical style gate. Code blocks and exact technical literals are outside that prose gate. Passive voice and nominalization remain review signals when a deterministic checker cannot identify a better actor or verb safely.
 
@@ -117,6 +122,8 @@ Before claiming any slice or release complete, verify:
 - engine/schema/signature upgrades invalidate old proofs when required.
 - sensitive data is removed before model-context construction.
 - path/symlink boundaries prevent out-of-root mutation.
+- each sandbox-required validator command uses a capability-proven backend, and unavailable isolation fails before that command starts.
+- release traceability observes the installed sandbox path and the manual-only release workflow.
 - second identical reconciliation has no material semantic delta.
 - held-out/mutation-generated evaluation accompanies golden fixtures.
 - semantic model complexity is measured against use.

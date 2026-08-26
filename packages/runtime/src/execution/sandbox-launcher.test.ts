@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   createSandboxLauncher,
+  selectSandboxLauncher,
   type SandboxBackendCandidate,
+  type SandboxProbeEvidence,
 } from "./sandbox-launcher.js";
 import type {
   ProcessExecutionResult,
@@ -94,7 +96,7 @@ describe("createSandboxLauncher", () => {
     };
     const provenFallback: SandboxBackendCandidate = {
       id: "proven-container",
-      async probe() { return true; },
+      async probe() { return provenEvidence(); },
       createLauncher() { return fallbackLauncher; },
     };
 
@@ -109,6 +111,85 @@ describe("createSandboxLauncher", () => {
       nativeLauncher: new RecordingLauncher([result(1)]),
       fallbackBackends: [unavailableFallback, provenFallback],
     })).resolves.toBe(fallbackLauncher);
+  });
+
+  it("returns the selected backend's complete live evidence for release observation", async () => {
+    const fallbackLauncher = new ProvenFallbackLauncher();
+    const provenFallback: SandboxBackendCandidate = {
+      id: "proven-container",
+      async probe() { return provenEvidence(); },
+      createLauncher() { return fallbackLauncher; },
+    };
+
+    await expect(selectSandboxLauncher({
+      platform: "darwin",
+      fallbackBackends: [provenFallback],
+    })).resolves.toEqual({
+      backendId: "proven-container",
+      evidence: provenEvidence(),
+      launcher: fallbackLauncher,
+    });
+  });
+
+  it("rejects a fallback whose proof omits a required isolation capability", async () => {
+    const fallbackLauncher = new ProvenFallbackLauncher();
+    const dishonestFallback: SandboxBackendCandidate = {
+      id: "dishonest-container",
+      async probe() {
+        return {
+          readRootReadable: true,
+          readRootReadOnly: true,
+          writeRootWritable: true,
+          undeclaredPathInvisible: true,
+          networkDenied: false,
+        };
+      },
+      createLauncher() { return fallbackLauncher; },
+    };
+
+    await expect(createSandboxLauncher({
+      platform: "linux",
+      nativeLauncher: new RecordingLauncher([result(1)]),
+      fallbackBackends: [dishonestFallback],
+    })).rejects.toMatchObject({
+      code: "unsupported-isolation",
+      message: expect.stringContaining("dishonest-container: probe did not prove networkDenied"),
+    });
+  });
+
+  it.each([
+    ["missing evidence", { readRootReadable: true, readRootReadOnly: true, writeRootWritable: true, undeclaredPathInvisible: true } as unknown as SandboxProbeEvidence, "probe did not prove networkDenied"],
+    ["malformed evidence", null as unknown as SandboxProbeEvidence, "probe returned non-object evidence"],
+  ])("rejects fallback %s", async (_case, evidence, diagnostic) => {
+    const fallback: SandboxBackendCandidate = {
+      id: "hostile-container",
+      async probe() { return evidence; },
+      createLauncher() { throw new Error("unproven fallback must not be created"); },
+    };
+
+    await expect(createSandboxLauncher({
+      platform: "darwin",
+      fallbackBackends: [fallback],
+    })).rejects.toMatchObject({
+      code: "unsupported-isolation",
+      message: expect.stringContaining(diagnostic),
+    });
+  });
+
+  it("rejects a fallback whose live probe fails", async () => {
+    const fallback: SandboxBackendCandidate = {
+      id: "broken-container",
+      async probe() { throw new Error("probe failed"); },
+      createLauncher() { throw new Error("failed fallback must not be created"); },
+    };
+
+    await expect(createSandboxLauncher({
+      platform: "darwin",
+      fallbackBackends: [fallback],
+    })).rejects.toMatchObject({
+      code: "unsupported-isolation",
+      message: expect.stringContaining("broken-container: probe failed"),
+    });
   });
 
   it("uses the capability-probed bubblewrap backend without dropping execution constraints", async () => {
@@ -174,13 +255,17 @@ describe("createSandboxLauncher", () => {
 });
 
 function provenProbe(): ProcessExecutionResult {
-  return result(0, JSON.stringify({
+  return result(0, JSON.stringify(provenEvidence()));
+}
+
+function provenEvidence() {
+  return {
     readRootReadable: true,
     readRootReadOnly: true,
     writeRootWritable: true,
     undeclaredPathInvisible: true,
     networkDenied: true,
-  }));
+  };
 }
 
 function result(exitCode: number, stdout = "", stderr = ""): ProcessExecutionResult {
