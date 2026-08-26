@@ -72,6 +72,10 @@ Before integrating a packet:
 6. Reconcile the combined diff.
 7. Checkpoint before any nontrivial next stage.
 
+Allowed-write verification MUST use the capsule's operation-aware, fail-closed authorization contract. The coordinator MUST reject an unenforceable or ungranted operation before it invokes an effect. It MUST retain the authenticated plan boundary and compiled capsule authorization from one immutable preflight snapshot. It MUST NOT read or compile authority again from caller-owned objects after a port or effect can run.
+
+After the effect, it MUST authorize the authoritative observed path set with that same snapshot. A scope violation MUST prevent commit and enter rollback or recovery-required handling. The effect's claimed path list is not authority evidence.
+
 Merge/rebase conflicts in canonical governance state MUST block Govern/Autonomous execution. No automatic semantic merge is required for 1.x.
 
 ---
@@ -142,5 +146,3 @@ export interface ChangeCertificate {
 Every applied plan MUST produce a certificate, including a failed/partially applied plan. Failure produces a failure certificate with last durable checkpoint and recovery state. Certificates are ignored by default but MUST remain exportable, content-addressable, and linkable from receipts and Git commits.
 
 ---
-
-

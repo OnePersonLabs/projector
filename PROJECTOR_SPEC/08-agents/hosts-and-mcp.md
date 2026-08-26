@@ -108,7 +108,7 @@ projector.apply_plan
 
 The tool names above are the canonical capability catalog, not a claim that every capability is operational in every server composition. `tools/list` MUST advertise only tools backed by production handlers in the current authenticated session. A conditional handler, such as a representation tool, MUST remain unadvertised when its required session binding is absent. Projector status output MUST account for every catalog entry and identify declarations that are not operational.
 
-An unadvertised tool call MUST fail as unknown and MUST NOT issue or consume authority, invoke a placeholder, or mutate repository state. A controlled tool MUST remain unadvertised until its production handler proves all required authority and scope restrictions and routes mutation through the coordinated transaction, observation, and recovery boundary. Projector MUST NOT issue mutation capabilities solely because a controlled tool name exists in the catalog.
+An unadvertised tool call MUST fail as unknown. It MUST NOT issue or consume authority, invoke a placeholder, or mutate repository state. A controlled tool MUST remain unadvertised until its production handler proves all required authority and scope restrictions. The handler MUST route mutation through the coordinated transaction, observation, and recovery boundary. Projector MUST NOT issue mutation capabilities solely because a controlled tool name exists in the catalog.
 
 Mutation tools MUST require an unforgeable session capability bound to:
 
@@ -125,4 +125,3 @@ A capability compiled for one worktree/state binding MUST NOT authorize mutation
 Read-only tools do not require mutation capabilities but still respect secret/context policy.
 
 ---
-

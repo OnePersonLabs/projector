@@ -495,7 +495,7 @@ describe("state-bound deterministic change execution", () => {
     });
 
     expect(result.outcome).toBe("failure");
-    expect(result.reasons).toContain("capsule write selector cannot be enforced deterministically");
+    expect(result.reasons).toContain("allowed write selector cannot be enforced deterministically");
     expect(transform.applies).toBe(0);
   });
 
@@ -522,8 +522,12 @@ describe("state-bound deterministic change execution", () => {
     });
 
     expect(result.outcome).toBe("success");
-    expect((transform.contexts[0] as TransformContext & { allowedPathScopes?: string[][] }).allowedPathScopes)
-      .toEqual([["scripts/**", "scripts/public/**"]]);
+    expect((transform.contexts[0] as TransformContext & {
+      writeAuthorization?: { allowedPathScopes: Array<Array<{ matcher: string; value: string }>> };
+    }).writeAuthorization?.allowedPathScopes).toEqual([[
+      { matcher: "glob", value: "scripts/**" },
+      { matcher: "glob", value: "scripts/public/**" },
+    ]]);
   });
 
   it.each([
@@ -574,8 +578,11 @@ describe("state-bound deterministic change execution", () => {
       "package.json",
       "scripts/**",
     ]);
-    expect((transform.contexts[0] as TransformContext & { forbiddenBoundary?: string[] }).forbiddenBoundary)
-      .toEqual(["scripts/private/**"]);
+    expect((transform.contexts[0] as TransformContext & {
+      writeAuthorization?: { forbiddenPathScopes: Array<Array<{ matcher: string; value: string }>> };
+    }).writeAuthorization?.forbiddenPathScopes).toEqual([[
+      { matcher: "glob", value: "scripts/private/**" },
+    ]]);
   });
 
   it("derives receipt risk from the approved capsule rather than caller input", async () => {

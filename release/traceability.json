@@ -214,8 +214,8 @@
       "sourceDigest": "sha256:v1:36fee5ad155404f528013a1f392dce62c0e7747a52413527afa311b99980c2e9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/run-cli.test.ts#projector run host boundary",
-      "testSourceDigest": "sha256:v1:f30e78610f5a197d5200e56dcf0594f35f784b150d51aa30f97c759532f510bc",
-      "mappingHash": "sha256:v1:987b2f607a83dd8ad4a64ec63e867465d310b12fe0c1cb6789839fdb9ee8faa5"
+      "testSourceDigest": "sha256:v1:ebf0cae6809e11f7c58889706b0ae2645d8340af95694ce20d2c4c5758219926",
+      "mappingHash": "sha256:v1:ddec85497b1763e16f399d7fa5d75529ca048ed53eb4532dd18b346af60aa0d8"
     },
     {
       "id": "scenario:19:generated-output-upstream-repair",

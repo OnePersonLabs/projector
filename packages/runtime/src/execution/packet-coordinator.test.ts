@@ -47,6 +47,76 @@ describe("packet execution coordinator", () => {
     await expect(executePacketPlan(continuation, { ...ports, continuation: { read: async () => undefined } })).rejects.toThrow(/continuation/iu);
   });
 
+  it("retains authenticated write authority when an effect tries to widen its capsule", async () => {
+    const input = envelope([packet("contract")]);
+    let commits = 0; let rollbacks = 0;
+    const result = await executePacketPlan(input, {
+      lease: { acquire: async () => ({ assertOwned: async () => {}, release: async () => {} }) },
+      authority: { verify: async () => true },
+      validatorTrust,
+      reconciliation,
+      currentness: { validate: async () => ({ currentState: state("before:contract"), valid: true, proofHash: digest("current") }) },
+      transaction: { begin: async () => ({ apply: async () => {}, commit: async () => { commits += 1; }, rollback: async () => { rollbacks += 1; } }) },
+      effect: { run: async ({ packet, capsule: effectCapsule }) => {
+        (effectCapsule as { allowedWrites: ExecutionCapsule["allowedWrites"] }).allowedWrites = [{
+          selector: { op: "atom", field: "path", matcher: "glob", value: "src/**" },
+          operations: ["replace"],
+          reason: "malicious widening",
+        }];
+        const author = { source: "transform", group: "transform" };
+        return { claimedChangedPaths: ["src/escape.ts"], outputHash: digest("out"), author: { ...author, contentHash: hashFramedDomain("authenticated-effect-author", { ...author, packetId: packet.id }) } };
+      } },
+      observe: { capture: async ({ phase }) => observation("contract", phase, "src/escape.ts") },
+      validate: { run: async ({ packet: subject, postState }) => [validation(subject.id, postState)] },
+      artifacts: { put: async (artifact) => ({ contentHash: hashFramedDomain("packet-execution-artifact", artifact), replayed: false }) },
+    });
+
+    expect(result).toMatchObject({ status: "partial", recovery: "rolled-back" });
+    expect(commits).toBe(0);
+    expect(rollbacks).toBe(1);
+  });
+
+  it("retains the authenticated plan boundary when a port mutates the caller envelope", async () => {
+    const initial = envelope([packet("contract")]);
+    const initialItem = initial.value.packets[0]!;
+    const broadCapsule = {
+      ...initialItem.capsule,
+      allowedWrites: [{
+        selector: { op: "atom" as const, field: "path" as const, matcher: "glob" as const, value: "src/**" },
+        operations: ["replace"],
+        reason: "broad capsule inside a narrow plan",
+      }],
+    };
+    const narrowPlan = { ...initial.value.plan, boundary: ["src/contract.ts"] };
+    const value = {
+      ...initial.value,
+      plan: narrowPlan,
+      packets: [{ ...initialItem, capsule: broadCapsule, capsuleHash: hashFramedDomain("semantic-change-execution-capsule", broadCapsule) }],
+      approval: { ...initial.value.approval, planHash: hashFramedDomain("semantic-change-execution-plan", narrowPlan) },
+    };
+    const input: AuthenticatedPacketExecution = { value, contentHash: hashFramedDomain("authenticated-packet-execution", value) };
+    let commits = 0; let rollbacks = 0;
+    const result = await executePacketPlan(input, {
+      lease: { acquire: async () => ({ assertOwned: async () => {}, release: async () => {} }) },
+      authority: { verify: async () => true },
+      validatorTrust,
+      reconciliation,
+      currentness: { validate: async () => ({ currentState: state("before:contract"), valid: true, proofHash: digest("current") }) },
+      transaction: { begin: async () => {
+        (input.value.plan as { boundary: string[] }).boundary = ["src/**"];
+        return { apply: async () => {}, commit: async () => { commits += 1; }, rollback: async () => { rollbacks += 1; } };
+      } },
+      effect: { run: async ({ packet: subject }) => { const author = { source: "transform", group: "transform" }; return { claimedChangedPaths: ["src/escape.ts"], outputHash: digest("out"), author: { ...author, contentHash: hashFramedDomain("authenticated-effect-author", { ...author, packetId: subject.id }) } }; } },
+      observe: { capture: async ({ phase }) => observation("contract", phase, "src/escape.ts") },
+      validate: { run: async ({ packet: subject, postState }) => [validation(subject.id, postState)] },
+      artifacts: { put: async (artifact) => ({ contentHash: hashFramedDomain("packet-execution-artifact", artifact), replayed: false }) },
+    });
+
+    expect(result).toMatchObject({ status: "partial", recovery: "rolled-back" });
+    expect(commits).toBe(0);
+    expect(rollbacks).toBe(1);
+  });
+
   it("detects same-path content mutation, rejects forged approval/independence, and replaces commit intent with failure truth", async () => {
     const input = envelope([packet("contract")]); const artifacts: Array<{ status: string }> = [];
     const common = { lease: { acquire: async () => ({ assertOwned: async () => {}, release: async () => {} }) }, authority: { verify: async () => true }, validatorTrust, reconciliation, currentness: { validate: async () => ({ currentState: state("before:contract"), valid: true, proofHash: digest("current") }) }, transaction: { begin: async () => ({ apply: async () => {}, commit: async () => { throw new Error("commit crashed"); }, rollback: async () => {} }) }, effect: { run: async ({ packet }: { packet: WorkPacket }) => { const value = { source: "transform", group: "transform" }; return { claimedChangedPaths: [], outputHash: digest("out"), author: { ...value, contentHash: hashFramedDomain("authenticated-effect-author", { ...value, packetId: packet.id }) } }; } }, observe: { capture: async ({ packet, phase }: { packet: WorkPacket; phase: "before" | "after" | "rollback" }) => observation(packet.id, phase) }, validate: { run: async ({ packet, postState }: { packet: WorkPacket; postState: StateDigest }) => [validation(packet.id, postState)] }, artifacts: { put: async (artifact: { status?: string; kind?: string }) => { artifacts.push({ status: artifact.status ?? artifact.kind ?? "plan" }); return { contentHash: hashFramedDomain("packet-execution-artifact", artifact), replayed: false }; } } };

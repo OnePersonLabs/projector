@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import {
   canonicalJson,
+  compileWriteAuthorization,
   parseCanonicalJson,
   hashFramedDomain,
   hashRootManifest,
@@ -19,6 +20,7 @@ import {
   type CanonicalDocumentEnvelope,
   type ContentHash,
   type Divergence,
+  type ExecutionCapsule,
   type ExecutionPolicy,
   type PatternCandidate,
   type ProjectionLens,
@@ -622,12 +624,11 @@ function dependencyScopedBindingValidator(repositoryRoot: string): StateBindingV
   });
 }
 
-function transformContext(repositoryRoot: string, binding: StateBinding, unitIds: readonly string[]): ApprovedTransformContext {
+function transformContext(repositoryRoot: string, binding: StateBinding, capsule: ExecutionCapsule): ApprovedTransformContext {
   return {
-    repositoryRoot, stateBinding: binding, allowedUnits: [...unitIds], dryRun: true,
+    repositoryRoot, stateBinding: binding, allowedUnits: [...capsule.unitIds], dryRun: true,
     signal: new AbortController().signal, approvedBoundary: [".codex/**", "scripts/**", "package.json", ".projector/**"],
-    allowedPathScopes: [["**"]], forbiddenBoundary: [], forbiddenPathScopes: [],
-    approvedOperations: ["move-reference-update"], capsuleId: "capsule:mandatory-repository-script",
+    writeAuthorization: compileWriteAuthorization(capsule), capsuleId: "capsule:mandatory-repository-script",
     capsuleHash: zeroHash,
   };
 }
@@ -736,7 +737,7 @@ export async function prepareMandatorySlice(repositoryRoot: string): Promise<Sli
   };
   const paths = await RepositoryPathService.create(repositoryRoot);
   const preview = await new MoveReferenceTransform(new DirectMutationPort(paths), { now: () => fixedTime })
-    .preview(transformInput, transformContext(repositoryRoot, binding, capsule.unitIds));
+    .preview(transformInput, transformContext(repositoryRoot, binding, capsule));
   const canonicalDiff = canonicalWrites.map((write) => `write canonical ${write.entityId} -> ${write.path}`).join("\n");
   const declaredPreview = {
     ...preview,

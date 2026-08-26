@@ -35,7 +35,7 @@ Compilation returns data, not callbacks, so the same object can cross engine/run
 4. one allowed scope matches; and
 5. no forbidden scope matches.
 
-The engine compiles once during preflight and passes the result in its approved transform context. The deterministic transform evaluates that object instead of reconstructing path rules. The packet coordinator and host use the same core compiler and evaluator for authoritative observed paths. Existing plan-boundary checks and runtime real-path containment remain additional independent restrictions.
+The engine compiles once during preflight and passes the result in its approved transform context. The deterministic transform evaluates that object instead of reconstructing path rules. The packet coordinator snapshots and freezes the authenticated plan, approval, execution order, packets, and capsules. It retains each packet's preflight-compiled authorization for the post-effect observation check. Ports therefore cannot widen either capsule or plan authority through caller-owned mutable objects. The host uses the same core compiler and evaluator for authoritative observed paths. Existing plan-boundary checks and runtime real-path containment remain additional independent restrictions.
 
 The governance selector evaluator delegates glob matching to the same core primitive. This prevents a path glob from meaning one thing while Projector reasons about scope and another while it authorizes mutation.
 
@@ -52,10 +52,11 @@ The governance selector evaluator delegates glob matching to the same core primi
 1. Core tests prove exact, glob, conjunction, operation, forbidden-precedence, global-forbid, malformed-path, and unsupported-selector behavior.
 2. The engine, deterministic transform, packet coordinator, and host delete their local write-authorization interpretations and use the core primitive.
 3. Existing supported capsule behavior remains compatible, including `**`, directory globs, and multi-pattern conjunction.
-4. A host session with the wrong operation or a matching forbidden grant fails and restores the fixture.
+4. A host session with the wrong operation fails before launch; a matching forbidden observed write cannot be reported as successful.
 5. A packet whose authoritative observation widens capsule scope rolls back and records failure evidence.
-6. Governance and authorization use the same deterministic glob semantics.
-7. Full verification, package boundaries, packed release acceptance, and manual-only Actions remain green.
+6. Mutation attempts against the authenticated capsule or caller-owned plan cannot widen post-effect authority.
+7. Governance and authorization use the same deterministic glob semantics.
+8. Full verification, package boundaries, packed release acceptance, and manual-only Actions remain green.
 
 ## Authority
 
