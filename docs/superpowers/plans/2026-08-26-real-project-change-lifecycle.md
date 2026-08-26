@@ -34,10 +34,11 @@
 - Add: `packages/cli/src/change-lifecycle/compiler.ts`
 - Add focused tests under `packages/cli/src/change-lifecycle/`
 
-- [ ] Add RED tests for arbitrary prose, strict proposal parsing, key/alias reuse, duplicate blocking, deterministic new IDs, canonical-decision reuse, bounded non-authoritative deferral, blocking concern refusal, exact path preconditions, bounded relevance, negative-space binding, and unavailable analysis.
-- [ ] Compile canonical Requirement/Scenario envelopes, semantic compiler facts, state binding, human representation, plan, packet, capsule, and immutable hashes using existing engine APIs.
+- [x] Add RED tests for arbitrary prose, strict proposal parsing, key/alias reuse, duplicate blocking, deterministic new IDs, engine-derived bounded non-authoritative deferral, blocking concern refusal, exact path preconditions, bounded relevance, negative-space binding, and unavailable analysis.
+- [ ] Reuse a current canonical decision for an exactly matched derived blocking concern; otherwise remain fail closed.
+- [x] Compile canonical Requirement/Scenario envelopes, semantic compiler facts, state binding, human representation, plan, packet, capsule, and immutable hashes using existing engine APIs.
 - [ ] Persist only authenticated operational links under `.projector/runtime/change-lifecycles/`.
-- [ ] Run focused CLI/engine tests and typechecks.
+- [x] Run focused CLI/engine tests and typechecks.
 
 ### Task 3: Add explicit approval and state-bound execution
 
