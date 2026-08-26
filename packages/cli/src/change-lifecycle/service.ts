@@ -36,6 +36,15 @@ export interface LifecycleRecoveryOutcome {
   readonly reason?: string;
 }
 
+export class LifecycleRecoveryRequiredError extends Error {
+  readonly code = "lifecycle-recovery-required";
+
+  constructor(readonly outcomes: readonly LifecycleRecoveryOutcome[]) {
+    super(`lifecycle recovery requires manual action: ${outcomes.map(({ transactionId, reason }) => `${transactionId}: ${reason ?? "unknown"}`).join("; ")}`);
+    this.name = "LifecycleRecoveryRequiredError";
+  }
+}
+
 function capsules(compiled: CompiledRepositoryChange): ExecutionCapsule[] {
   return compiled.compiledPlan.packets.map(({ capsule }) => capsule);
 }
@@ -204,7 +213,7 @@ export class RepositoryChangeLifecycleService {
   async resume(approvalSelector: string): Promise<StateBoundChangeResult> {
     const outcomes = await this.recover(approvalSelector);
     const blocked = outcomes.filter(({ action }) => action === "recovery-required");
-    if (blocked.length > 0) throw new Error(`lifecycle recovery requires manual action: ${blocked.map(({ transactionId, reason }) => `${transactionId}: ${reason ?? "unknown"}`).join("; ")}`);
+    if (blocked.length > 0) throw new LifecycleRecoveryRequiredError(blocked);
     return this.apply(approvalSelector);
   }
 

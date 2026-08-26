@@ -155,6 +155,27 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("returns authenticated recovery-required detail when interrupted content is a third state", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const captured = await service.capture({ request: "Change greeting without overwriting third-state recovery edits.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const store = await ChangeLifecycleStore.create(root, { now: () => "2026-08-26T00:00:00.000Z", newId: () => "third-state" });
+      const attempt = await store.beginAttempt(approval.id);
+      const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
+      const transaction = await journal.begin({ transactionId: attempt.transactionId, planId: captured.capture.planId, beforeState: captured.capture.stateBinding.compiledAgainst, allowedWriteRoots: ["src/greeting.mjs"] });
+      await transaction.writeFile("src/greeting.mjs", "export const greet = () => 'interrupted';\n");
+      await writeFile(join(root, "src", "greeting.mjs"), "export const greet = () => 'third state';\n");
+
+      await expect(service.resume(approval.id)).rejects.toMatchObject({
+        code: "lifecycle-recovery-required",
+        outcomes: [expect.objectContaining({ attemptId: attempt.id, transactionId: attempt.transactionId, action: "recovery-required" })],
+      });
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("third state");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("survives SIGKILL during sandbox validation, takes over the stale lease, and resumes", async () => {
     const root = await repository();
     let child: ReturnType<typeof spawn> | undefined;

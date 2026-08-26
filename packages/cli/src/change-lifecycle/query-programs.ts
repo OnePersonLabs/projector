@@ -70,7 +70,7 @@ export function calculateRepositoryRelevance(
   const knownUnitIds = paths.map((path) => unitByPath.get(path) ?? deriveEntityId("projector.proposed-unit", path));
   const relevantFailures = observation.analysis.failures.filter(({ scope }) => scope === "." || paths.includes(scope));
   const unavailableSurfaceIds = unique([
-    ...(observation.analysis.surface.enumeration.observability === "closed" ? [] : [observation.analysis.surface.id]),
+    ...(observation.analysis.surface.enumeration.observability === "unavailable" ? [observation.analysis.surface.id] : []),
     ...relevantFailures.map(({ analyzerId, capability, scope }) => `unavailable:${hashFramedDomain("repository-change-analyzer-unavailable", { analyzerId, capability, scope }).slice(-24)}`),
   ]);
   const dynamicMechanisms = unique([

@@ -9,7 +9,7 @@ import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
 import { observeChangeRepository } from "./repository-observer.js";
-import { CHANGE_QUERY_PROGRAM_IDS, createChangeQueryRegistry } from "./query-programs.js";
+import { calculateRepositoryRelevance, CHANGE_QUERY_PROGRAM_IDS, createChangeQueryRegistry } from "./query-programs.js";
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "placeholder");
@@ -62,6 +62,22 @@ describe("change query programs", () => {
       expect((await before.evaluate(query, { repositoryRoot: root, stateDigest: observation.state, config: {}, signal: new AbortController().signal })).resultCount).toBe(1);
       const expired = createChangeQueryRegistry({ observation, now: "2026-10-01T00:00:00.000Z" });
       expect((await expired.evaluate(query, { repositoryRoot: root, stateDigest: observation.state, config: {}, signal: new AbortController().signal })).resultCount).toBe(0);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("distinguishes an authenticated open frontier from an unavailable analyzer fact", async () => {
+    const root = await repository();
+    try {
+      const observation = await observeChangeRepository(root);
+      expect(calculateRepositoryRelevance(observation, ["src/value.mjs"]).unavailableSurfaceIds).toEqual([]);
+      const unavailable = calculateRepositoryRelevance({
+        ...observation,
+        analysis: {
+          ...observation.analysis,
+          failures: [...observation.analysis.failures, { analyzerId: "fixture", capability: "parse", scope: "src/value.mjs", message: "unavailable", recoverable: true, affectedClaimKinds: ["dependency"] }],
+        },
+      }, ["src/value.mjs"]);
+      expect(unavailable.unavailableSurfaceIds).toHaveLength(1);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
