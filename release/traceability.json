@@ -118,8 +118,8 @@
       "sourceDigest": "sha256:v1:93f1339afd0486cd1988e2aba75b609998175dde0c672053d88960be22c3adf0",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal",
-      "testSourceDigest": "sha256:v1:9205ebb26d89c90fbddfcfc41e8bf951fb6f38572b55d61bb83f54494627c31b",
-      "mappingHash": "sha256:v1:9408839fca8efc23834ee785d7edbbb88dd9c3475232d9e794e3b4099547079c"
+      "testSourceDigest": "sha256:v1:ac3e12a269c7df29685299a3d291fe3ad8e21ed619226d1fe5025fdc928e0487",
+      "mappingHash": "sha256:v1:cb08dabc2e8cd0dbf32b2a50ee1ef910d1b9637d156b3f4f84d09716d4ffc1d7"
     },
     {
       "id": "scenario:11:branch-governance-conflict",
@@ -1010,8 +1010,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal",
-      "testSourceDigest": "sha256:v1:9205ebb26d89c90fbddfcfc41e8bf951fb6f38572b55d61bb83f54494627c31b",
-      "mappingHash": "sha256:v1:3e8c692a4d37fdaf1265547f7f837fb722c7d1dd27df0377a36b76e1194e7111"
+      "testSourceDigest": "sha256:v1:ac3e12a269c7df29685299a3d291fe3ad8e21ed619226d1fe5025fdc928e0487",
+      "mappingHash": "sha256:v1:0fc4a01c6f406d87db00ed2e0a9dc917fcc954deb83a5bcdc48dc8a6ae8250f5"
     },
     {
       "id": "property:22:rebuilding-sqlite-from-canonical-inputs-preserves-semantic-state",
@@ -1130,8 +1130,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal",
-      "testSourceDigest": "sha256:v1:9205ebb26d89c90fbddfcfc41e8bf951fb6f38572b55d61bb83f54494627c31b",
-      "mappingHash": "sha256:v1:ddcf464519ecf1a5a04600f58373e5e3f2e4173061f29760b173946dc6c5a1ea"
+      "testSourceDigest": "sha256:v1:ac3e12a269c7df29685299a3d291fe3ad8e21ed619226d1fe5025fdc928e0487",
+      "mappingHash": "sha256:v1:caba0d5b4ec1130bb7f58312142fbd96105c132f146c5cb5396cb2c37fe815c1"
     },
     {
       "id": "adversary:05:branch-merge-canonical-governance-conflict",

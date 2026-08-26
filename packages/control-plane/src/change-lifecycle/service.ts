@@ -36,6 +36,10 @@ export interface LifecycleRecoveryOutcome {
   readonly reason?: string;
 }
 
+export interface LifecycleApplyOptions {
+  readonly signal?: AbortSignal;
+}
+
 export class LifecycleRecoveryRequiredError extends Error {
   readonly code = "lifecycle-recovery-required";
 
@@ -51,6 +55,30 @@ function capsules(compiled: CompiledRepositoryChange): ExecutionCapsule[] {
 
 function exactPatchInputHash(compiled: CompiledRepositoryChange): ContentHash {
   return hashFramedDomain("exact-text-patch-input", compiled.exactPatchInput);
+}
+
+function approvedCompilation(compiled: CompiledRepositoryChange, capture: LifecycleCaptureRecord): CompiledRepositoryChange {
+  if (compiled.proposalHash !== capture.proposalHash || exactPatchInputHash(compiled) !== capture.exactPatchInputHash) {
+    throw new Error("lifecycle approval dependencies are stale for the current repository observation");
+  }
+  if (compiled.compiledPlan.packets.length !== capture.capsules.length) throw new Error("lifecycle approved packet composition changed");
+  const packets = compiled.compiledPlan.packets.map((current, index) => {
+    const capsule = capture.capsules[index]!;
+    const packetId = capture.plan.packetIds[index];
+    if (packetId === undefined || capsule.taskId !== packetId) throw new Error("lifecycle captured plan and capsule identities do not compose");
+    const packet = { ...current.packet, id: packetId, planId: capture.plan.id, capsuleId: capsule.id, boundState: capture.stateBinding };
+    return { ...current, packet, capsule, packetHash: hashFramedDomain("semantic-change-work-packet", packet), capsuleHash: executionCapsuleHash(capsule) };
+  });
+  return {
+    ...compiled,
+    compiledPlan: {
+      plan: capture.plan,
+      packets,
+      executionOrder: packets,
+      packetHash: hashFramedDomain("semantic-change-packet-set", packets.map(({ packetHash, capsuleHash }) => ({ packetHash, capsuleHash }))),
+    },
+    planHash: capture.planHash,
+  };
 }
 
 export class RepositoryChangeLifecycleService {
@@ -119,26 +147,43 @@ export class RepositoryChangeLifecycleService {
     return this.store.readApproval(selector);
   }
 
-  async apply(approvalSelector: string): Promise<StateBoundChangeResult> {
+  async apply(approvalSelector: string, options: LifecycleApplyOptions = {}): Promise<StateBoundChangeResult> {
     const prior = await this.store.successfulResultForApproval<StateBoundChangeResult>(approvalSelector);
     if (prior !== undefined) return prior.result;
     const approvalRecord = await this.store.readApproval(approvalSelector);
-    const planned = await this.plan(approvalRecord.semanticChangeId);
-    if (approvalRecord.planHash !== planned.capture.planHash) throw new Error("lifecycle approval is stale for the current authenticated plan");
+    const capture = await this.store.readCapture(approvalRecord.semanticChangeId);
+    if (approvalRecord.planHash !== capture.planHash) throw new Error("lifecycle approval is stale for the current authenticated plan");
     if (approvalRecord.approvals.length !== 1) throw new Error("initial repository lifecycle requires exactly one packet approval");
+    const paths = await RepositoryPathService.create(this.repositoryRoot);
+    const journal = new FileTransactionJournal(paths);
+    const incomplete = await journal.incomplete();
+    if (incomplete.length > 0) throw new Error(`incomplete governed transaction requires recovery before apply: ${incomplete.map(({ entry }) => entry.transactionId).join(", ")}`);
+    const proposal = parseChangeProposal(capture.proposal);
+    const compiled = approvedCompilation(await this.compile(capture.request, proposal), capture);
     const attempt = await this.store.beginAttempt(approvalRecord.id);
-    const result = await executeCompiledRepositoryChange({
-      repositoryRoot: this.repositoryRoot,
-      compiled: planned.compiled,
-      approval: approvalRecord.approvals[0]!,
-      attempt,
-      store: this.store,
-      now: this.now,
-      leaseStaleAfterMs: this.leaseStaleAfterMs,
-    });
+    let result: StateBoundChangeResult;
+    try {
+      result = await executeCompiledRepositoryChange({
+        repositoryRoot: this.repositoryRoot,
+        compiled,
+        approval: approvalRecord.approvals[0]!,
+        attempt,
+        store: this.store,
+        now: this.now,
+        leaseStaleAfterMs: this.leaseStaleAfterMs,
+        signal: options.signal ?? new AbortController().signal,
+      });
+    } catch (error) {
+      try {
+        const transaction = await journal.read(attempt.transactionId);
+        if (transaction.entry.phase === "committed") await this.store.markCommittedUnpublished(attempt.id, transaction);
+      } catch (inspectionError) {
+        if (!(inspectionError instanceof Error && "code" in inspectionError && inspectionError.code === "ENOENT")) throw inspectionError;
+      }
+      throw error;
+    }
     if (result.outcome === "success") {
-      const paths = await RepositoryPathService.create(this.repositoryRoot);
-      const transaction = await new FileTransactionJournal(paths).read(attempt.transactionId);
+      const transaction = await journal.read(attempt.transactionId);
       await this.store.completeSuccessfulAttempt(attempt.id, result, transaction);
     } else {
       await this.store.completeAttempt(attempt.id, result.outcome, result);
@@ -161,7 +206,7 @@ export class RepositoryChangeLifecycleService {
     });
     let recovered;
     try {
-      recovered = await session.recover();
+      recovered = await session.recover(attempts.map(({ transactionId }) => transactionId));
       const byTransaction = new Map(recovered.map((result) => [result.transactionId, result]));
       const outcomes: LifecycleRecoveryOutcome[] = [];
       for (const attempt of attempts) {
@@ -210,11 +255,11 @@ export class RepositoryChangeLifecycleService {
     }
   }
 
-  async resume(approvalSelector: string): Promise<StateBoundChangeResult> {
+  async resume(approvalSelector: string, options: LifecycleApplyOptions = {}): Promise<StateBoundChangeResult> {
     const outcomes = await this.recover(approvalSelector);
     const blocked = outcomes.filter(({ action }) => action === "recovery-required");
     if (blocked.length > 0) throw new LifecycleRecoveryRequiredError(blocked);
-    return this.apply(approvalSelector);
+    return this.apply(approvalSelector, options);
   }
 
   private compile(request: string, proposal: ChangeProposal): Promise<CompiledRepositoryChange> {

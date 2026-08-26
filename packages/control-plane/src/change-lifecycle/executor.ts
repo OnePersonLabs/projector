@@ -3,17 +3,15 @@ import { readFile } from "node:fs/promises";
 import {
   canonicalJson,
   hashFramedDomain,
-  type AdapterContext,
   type ExecutionCapsule,
   type StateBinding,
-  type StateBindingValidation,
-  type StateBindingValidator,
   type StateDigest,
   type TransformContext,
   type TransformResult,
   type ValidationResult,
 } from "@projector/core";
 import {
+  DependencyScopedStateBindingValidator,
   StateBoundChangeExecutor,
   type ChangeTransaction,
   type ChangeTransactionPort,
@@ -36,6 +34,7 @@ import {
 
 import type { CompiledRepositoryChange } from "./compiler.js";
 import { observeChangeRepository, type ChangeRepositoryObservation } from "./repository-observer.js";
+import { createChangeQueryRegistry } from "./query-programs.js";
 import type { ChangeLifecycleStore, LifecycleAttemptRecord } from "./store.js";
 
 export interface ExecuteCompiledRepositoryChangeInput {
@@ -46,19 +45,7 @@ export interface ExecuteCompiledRepositoryChangeInput {
   readonly store: ChangeLifecycleStore;
   readonly now?: () => string;
   readonly leaseStaleAfterMs?: number;
-}
-
-class ExactStateBindingValidator implements StateBindingValidator {
-  async validate(binding: StateBinding, currentState: StateDigest, _context: AdapterContext): Promise<StateBindingValidation> {
-    const current = canonicalJson(binding.compiledAgainst) === canonicalJson(currentState);
-    return {
-      status: current ? "current" : "stale",
-      currentState,
-      changedValueDependencyIds: current ? [] : binding.valueDependencies.map(({ id }) => id),
-      changedQueryDependencyIds: current ? [] : binding.queryDependencies.map(({ query }) => query.id),
-      reasons: current ? [] : ["governed repository state no longer matches the approved plan"],
-    };
-  }
+  readonly signal: AbortSignal;
 }
 
 class JournalExecutionAdapter implements TransformMutationPort, ChangeTransactionPort {
@@ -80,7 +67,8 @@ class JournalExecutionAdapter implements TransformMutationPort, ChangeTransactio
 
   async begin(input: Parameters<ChangeTransactionPort["begin"]>[0]): Promise<ChangeTransaction> {
     if (this.transaction !== undefined || this.session !== undefined) throw new Error("lifecycle attempt already owns a transaction");
-    const session = await this.worktree.open({ sessionId: this.attempt.id, processId: process.pid, stateBinding: this.binding });
+    const leaseBinding = { ...this.binding, compiledAgainst: input.beforeState };
+    const session = await this.worktree.open({ sessionId: this.attempt.id, processId: process.pid, stateBinding: leaseBinding });
     this.session = session;
     this.startHeartbeatKeeper(this.heartbeatIntervalMs);
     try {
@@ -468,6 +456,38 @@ export async function executeCompiledRepositoryChange(
   const transaction = new JournalExecutionAdapter(paths, worktree, plan.boundary, input.attempt, plan.boundState, Math.max(10, Math.min(5_000, Math.floor(leaseStaleAfterMs / 3))));
   const exact = new ExactTextPatchTransform(transaction, { ...(input.now === undefined ? {} : { now: input.now }) });
   const now = input.now ?? (() => new Date().toISOString());
+  const liveObservation = async (): Promise<ChangeRepositoryObservation> => observeChangeRepository(input.repositoryRoot);
+  const dependencyScopedValidator = new DependencyScopedStateBindingValidator({
+    values: {
+      readVersionHash: async (dependency) => {
+        const observation = await liveObservation();
+        if (dependency.id.startsWith("path:")) {
+          const path = dependency.id.slice("path:".length);
+          let content: string | null;
+          try { content = await readFile((await paths.resolveRead(path)).realTarget, "utf8"); }
+          catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") content = null; else throw error; }
+          return hashFramedDomain("transform-content", content);
+        }
+        if (dependency.id.startsWith("independent-validator:")) return (await observation.independentValidator(dependency.id.slice("independent-validator:".length))).contentHash;
+        if (dependency.id === "canonical-root") return observation.canonical.rootDigest;
+        if (dependency.id === "projector.local-repository") return observation.state.toolchainDigest;
+        if (dependency.id.startsWith("proposal:")) return input.compiled.proposalHash;
+        if (dependency.id === "architecture-discovery") return dependency.versionHash;
+        return undefined;
+      },
+    },
+    queries: {
+      evaluate: async (query, context) => createChangeQueryRegistry({ observation: await liveObservation(), now: now() }).evaluate(query, context),
+    },
+  });
+  const bindingValidator = {
+    validate: async (...arguments_: Parameters<typeof dependencyScopedValidator.validate>) => {
+      const validation = await dependencyScopedValidator.validate(...arguments_);
+      return validation.status === "rebound"
+        ? { ...validation, status: "current" as const, reasons: ["all approval-scoped value and query dependencies remain current"] }
+        : validation;
+    },
+  };
   let postObservation: RepositoryPostObservation | undefined;
   const transform = {
     preview: (transformInput: ExactTextPatchInput, context: TransformContext) => exact.preview(transformInput, context),
@@ -494,7 +514,7 @@ export async function executeCompiledRepositoryChange(
   };
   const executor = new StateBoundChangeExecutor<ExactTextPatchInput>({
     state: { current: async () => (await observeChangeRepository(input.repositoryRoot)).state },
-    bindingValidator: new ExactStateBindingValidator(),
+    bindingValidator,
     transform,
     transactions: transaction,
     artifacts: { write: (kind, hash, content) => input.store.writeArtifact(kind, hash, content) },
@@ -521,7 +541,7 @@ export async function executeCompiledRepositoryChange(
     changedRequirementIds: () => postObservation?.changedRequirementIds ?? [],
     changedScenarioIds: () => postObservation?.changedScenarioIds ?? [],
     planningSurpriseIds: () => postObservation?.planningSurpriseIds ?? [],
-    environment: { repositoryRoot: input.repositoryRoot, signal: new AbortController().signal },
+    environment: { repositoryRoot: input.repositoryRoot, signal: input.signal },
     ...(input.now === undefined ? {} : { now: input.now }),
   });
   return executor.execute({ plan, capsule, approval: input.approval, transformInput: input.compiled.exactPatchInput });

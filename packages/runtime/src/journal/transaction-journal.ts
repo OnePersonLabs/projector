@@ -303,10 +303,33 @@ export class FileTransactionJournal {
   }
 
   async recoverIncomplete(): Promise<RecoveryResult[]> {
+    return this.recoverRecords(await this.discover());
+  }
+
+  async incomplete(transactionIds?: readonly string[]): Promise<DurableTransactionRecord[]> {
+    const records = transactionIds === undefined ? await this.discover() : await this.discover(transactionIds);
+    return records.filter(({ entry }) => entry.phase !== "committed" && entry.phase !== "rolled-back");
+  }
+
+  async recover(transactionIds: readonly string[]): Promise<RecoveryResult[]> {
+    if (transactionIds.length === 0) return [];
+    return this.recoverRecords(await this.discover(transactionIds));
+  }
+
+  private async discover(transactionIds?: readonly string[]): Promise<DurableTransactionRecord[]> {
+    if (transactionIds !== undefined) {
+      if (new Set(transactionIds).size !== transactionIds.length) throw new Error("targeted recovery transaction identities must be unique");
+      const records: DurableTransactionRecord[] = [];
+      for (const transactionId of [...transactionIds].sort()) {
+        try { records.push(await this.read(transactionId)); }
+        catch (error) { if (!isCode(error, "ENOENT")) throw error; }
+      }
+      return records;
+    }
     const directory = await this.ensureJournalRoot();
     const names = (await readdir(directory)).filter((name) => name.endsWith(".json")).sort();
     const discovered: DurableTransactionRecord[] = [];
-    const transactionIds = new Set<string>();
+    const discoveredIds = new Set<string>();
     for (const name of names) {
       const record = parseRecord(await readFile(join(directory, name), "utf8"));
       if (name !== recordFileName(record.entry.transactionId)) {
@@ -314,16 +337,20 @@ export class FileTransactionJournal {
           `Journal filename ${name} does not match transaction ${record.entry.transactionId}`,
         );
       }
-      if (transactionIds.has(record.entry.transactionId)) {
+      if (discoveredIds.has(record.entry.transactionId)) {
         throw new JournalRecoveryRequiredError(`Duplicate journal identity ${record.entry.transactionId}`);
       }
-      transactionIds.add(record.entry.transactionId);
+      discoveredIds.add(record.entry.transactionId);
       if (record.entry.worktreePath !== this.paths.root) {
         throw new JournalRecoveryRequiredError(`Journal ${name} belongs to a different worktree`);
       }
       discovered.push(record);
     }
 
+    return discovered;
+  }
+
+  private async recoverRecords(discovered: readonly DurableTransactionRecord[]): Promise<RecoveryResult[]> {
     const results: RecoveryResult[] = [];
     for (const record of discovered) {
       if (record.entry.phase === "committed" || record.entry.phase === "rolled-back") continue;

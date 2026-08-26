@@ -118,6 +118,39 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("keeps an approval current across an unrelated repository digest change", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Change greeting without binding unrelated files.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      await writeFile(join(root, "UNRELATED.md"), "unrelated worktree change\n");
+      const applied = await service.apply(approval.id);
+      expect(applied.outcome, applied.reasons.join("; ")).toBe("success");
+      expect(await readFile(join(root, "UNRELATED.md"), "utf8")).toBe("unrelated worktree change\n");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("stales an approval when an exact path or relevant query result changes before mutation", async () => {
+    for (const drift of [["src/greeting.mjs", "export const greet = () => 'drifted';\n"], ["src/index.mjs", "export const unrelated = true;\n"]] as const) {
+      const root = await repository();
+      try {
+        const service = await RepositoryChangeLifecycleService.create(root);
+        const captured = await service.capture({ request: "Change greeting only while dependencies remain current.", proposal: proposal() });
+        const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+        await writeFile(join(root, drift[0]), drift[1]);
+        try {
+          const applied = await service.apply(approval.id);
+          expect(applied).toMatchObject({ outcome: "failure", reasons: expect.arrayContaining([expect.stringMatching(/stale|dependenc|current|exact before/iu)]) });
+        } catch (error) {
+          expect(error).toBeInstanceOf(Error);
+          expect((error as Error).message).toMatch(/stale|dependenc|current|exact before/iu);
+        }
+        expect(await readdir(join(root, ".projector", "runtime", "journal")).catch(() => [])).toHaveLength(0);
+      } finally { await rm(root, { recursive: true, force: true }); }
+    }
+  });
+
   it("refuses success when the applied change introduces a new analyzer failure", async () => {
     const root = await repository();
     try {
@@ -173,6 +206,41 @@ describe("repository change lifecycle service", () => {
         outcomes: [expect.objectContaining({ attemptId: attempt.id, transactionId: attempt.transactionId, action: "recovery-required" })],
       });
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("third state");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("recovers only authenticated transactions belonging to the selected approval", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Recover only this greeting approval.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const capturedB = await service.capture({ request: "A distinct approval must remain isolated from greeting recovery.", proposal: proposal() });
+      const approvalB = await service.approve(capturedB.capture.semanticChangeId, capturedB.capture.planHash);
+      const store = await ChangeLifecycleStore.create(root, { newId: () => "selected" });
+      const selected = await store.beginAttempt(approval.id);
+      const foreignStore = await ChangeLifecycleStore.create(root, { newId: () => "foreign" });
+      const foreignAttempt = await foreignStore.beginAttempt(approvalB.id);
+      const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
+      await journal.begin({ transactionId: selected.transactionId, planId: captured.capture.planId, beforeState: captured.capture.stateBinding.compiledAgainst, allowedWriteRoots: ["src/greeting.mjs"] });
+      const foreign = await journal.begin({ transactionId: foreignAttempt.transactionId, planId: capturedB.capture.planId, beforeState: capturedB.capture.stateBinding.compiledAgainst, allowedWriteRoots: ["src/index.mjs"] });
+      await foreign.writeFile("src/index.mjs", "export const foreign = true;\n");
+      expect(await service.recover(approval.id)).toEqual([expect.objectContaining({ transactionId: selected.transactionId })]);
+      expect((await journal.read(foreignAttempt.transactionId)).entry.phase).toBe("workspace-mutating");
+      expect(await readFile(join(root, "src", "index.mjs"), "utf8")).toBe("export const foreign = true;\n");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("blocks a new apply while any governed transaction is incomplete", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Do not overlap an incomplete transaction.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
+      await journal.begin({ transactionId: "transaction_existing", planId: "plan:existing", beforeState: captured.capture.stateBinding.compiledAgainst, allowedWriteRoots: ["src/index.mjs"] });
+      await expect(service.apply(approval.id)).rejects.toThrow(/incomplete.*transaction|recover/iu);
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toBe("export const greet = () => 'hello';\n");
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
@@ -256,6 +324,48 @@ describe("repository change lifecycle service", () => {
       await expect(service.apply(approval.id)).rejects.toThrow(/artifact content authentication/iu);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+
+  it("records committed-unpublished after certificate publication and finalizes the receipt idempotently", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Publish committed success safely.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const internal = service as unknown as { store: ChangeLifecycleStore };
+      const writeArtifact = internal.store.writeArtifact.bind(internal.store);
+      internal.store.writeArtifact = async (kind, hash, content) => kind === "receipt" ? Promise.reject(new Error("receipt publication interrupted")) : writeArtifact(kind, hash, content);
+      await expect(service.apply(approval.id)).rejects.toThrow(/receipt publication interrupted/iu);
+      const states = await (internal.store as unknown as { attemptStatesForApproval(id: string): Promise<Array<{ status: string }>> }).attemptStatesForApproval(approval.id);
+      expect(states).toEqual([expect.objectContaining({ status: "committed-unpublished" })]);
+      internal.store.writeArtifact = writeArtifact;
+      expect(await service.recover(approval.id)).toEqual([expect.objectContaining({ action: "finalized" })]);
+      expect(await service.recover(approval.id)).toEqual([]);
+      expect((await service.apply(approval.id)).outcome).toBe("success");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("propagates cancellation into sandbox validation and rolls back exactly", async () => {
+    const root = await repository();
+    try {
+      await writeFile(join(root, "test", "public-contract.test.mjs"), ["import { existsSync } from 'node:fs';", "import { setTimeout as delay } from 'node:timers/promises';", "if (existsSync('.projector/runtime/cancellation-hold')) await delay(20_000);", ""].join("\n"));
+      await exec("git", ["add", "test/public-contract.test.mjs"], { cwd: root });
+      await exec("git", ["commit", "--amend", "--no-edit", "-q"], { cwd: root });
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Cancel during validation safely.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      await mkdir(join(root, ".projector", "runtime"), { recursive: true });
+      await writeFile(join(root, ".projector", "runtime", "cancellation-hold"), "hold\n");
+      const controller = new AbortController();
+      const applying = service.apply(approval.id, { signal: controller.signal });
+      await waitForValidatingTransaction(root);
+      controller.abort();
+      const result = await applying;
+      expect(result.outcome).toBe("partial");
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toBe("export const greet = () => 'hello';\n");
+      const records = await (new FileTransactionJournal(await RepositoryPathService.create(root)) as unknown as { incomplete(): Promise<unknown[]> }).incomplete();
+      expect(records).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }, 10_000);
 });
 
 async function waitForValidatingTransaction(root: string): Promise<string> {
