@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { packedLifecycleSeveranceMode, verifyPackedLifecycleEvidence } from "./packed-lifecycle-acceptance.mjs";
+import * as packedLifecycle from "./packed-lifecycle-acceptance.mjs";
+
+const { packedLifecycleSeveranceMode, verifyPackedLifecycleEvidence } = packedLifecycle;
 
 const sortValue = (value) => Array.isArray(value) ? value.map(sortValue) : value !== null && typeof value === "object"
   ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortValue(item)]))
@@ -55,6 +61,24 @@ function evidence() {
 }
 
 describe("packed held-out lifecycle evidence", () => {
+  it("launches nsenter in the hosted repository working directory", () => {
+    const repository = mkdtempSync(join(tmpdir(), "projector-nsenter-cwd-"));
+    try {
+      const buildWorkingDirectoryArguments = Reflect.get(packedLifecycle, "packedLifecycleNsenterWorkingDirectoryArguments");
+      const workingDirectoryArguments = typeof buildWorkingDirectoryArguments === "function"
+        ? buildWorkingDirectoryArguments(repository)
+        : [];
+      const result = spawnSync("/usr/bin/nsenter", [
+        "--target", String(process.pid), ...workingDirectoryArguments, "--", "/usr/bin/pwd",
+      ], { cwd: process.cwd(), encoding: "utf8" });
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout.trim()).toBe(repository);
+    } finally {
+      rmSync(repository, { recursive: true, force: true });
+    }
+  });
+
   it("uses a host mount namespace on GitHub Actions to preserve the inner sandbox boundary", () => {
     expect(packedLifecycleSeveranceMode({ GITHUB_ACTIONS: "true" })).toBe("host-mount-namespace");
     expect(packedLifecycleSeveranceMode({})).toBe("bubblewrap");

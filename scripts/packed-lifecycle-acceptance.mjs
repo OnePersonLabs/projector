@@ -12,6 +12,10 @@ export function packedLifecycleSeveranceMode(environment = process.env) {
   return environment.GITHUB_ACTIONS === "true" ? "host-mount-namespace" : "bubblewrap";
 }
 
+export function packedLifecycleNsenterWorkingDirectoryArguments(repository) {
+  return [`--wd=${repository}`];
+}
+
 function sortValue(value) {
   if (Array.isArray(value)) return value.map(sortValue);
   if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortValue(item)]));
@@ -227,7 +231,7 @@ async function createHostMountNamespaceSeverance(input, sandbox) {
       const command = [
         "-n", "nsenter", "--target", namespaceProcessId, "--mount", "--net",
         `--setgid=${String(process.getgid())}`, `--setuid=${String(process.getuid())}`,
-        "--wd", sandbox.repository, "--", "/usr/bin/env", "-i",
+        ...packedLifecycleNsenterWorkingDirectoryArguments(sandbox.repository), "--", "/usr/bin/env", "-i",
         ...Object.entries(environment).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => `${key}=${value}`),
         executable, ...args,
       ];
