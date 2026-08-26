@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access } from "node:fs/promises";
+import { access, readlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const pluginRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const configuredRoot = process.env.PROJECTOR_ROOT?.trim();
-let repositoryRoot = configuredRoot || process.cwd();
+const inheritedWorkingDirectory = process.env.PWD?.trim();
+let parentWorkingDirectory;
+try {
+  parentWorkingDirectory = await readlink(`/proc/${process.ppid}/cwd`);
+} catch {
+  // Linux and WSL expose the host repository here when the plugin has its own cwd.
+}
+let repositoryRoot = configuredRoot || inheritedWorkingDirectory || parentWorkingDirectory || process.cwd();
 
 if (!configuredRoot) {
   try {
@@ -85,7 +92,7 @@ input.on("line", (line) => {
       result: {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "projector", version: "2.0.0" },
+        serverInfo: { name: "projector", version: "2.0.2" },
         instructions: "Projector tools are state-bound; inspect evidence before mutation.",
       },
     });
