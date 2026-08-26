@@ -14,7 +14,7 @@
 
 - Preserve all 21 canonical MCP names and existing schema shapes.
 - Advertise only handlers that can perform their declared behavior in the current session.
-- Mutation remains single-use, state-bound, scope-bound, risk-bound, and fail-closed.
+- No mutation tool is advertised or capability issued until a transaction-coordinated handler exists and approved capsule operations authorize it.
 - GitHub Actions remains `workflow_dispatch` only.
 
 ---
@@ -43,17 +43,17 @@ expect(result.report.tools).toEqual([
 
 - [ ] **Step 2: Extend the authenticated-session test**
 
-Expect the authenticated lifecycle list to add `projector.apply_transform`, `projector.preview_representation`, and `projector.validate_representation`. Call status and assert that all 21 names are accounted for while `projector.apply_plan` is explicitly unavailable.
+Expect an authenticated lifecycle with a representation to add `projector.preview_representation` and `projector.validate_representation`. Call status and assert that all 21 names are accounted for while every controlled name is explicitly unavailable. Assert that no capability token is issued.
 
 ```ts
 expect(mcp.tools).toEqual([
-  "projector.apply_transform",
   "projector.audit",
   "projector.list_divergences",
   "projector.preview_representation",
   "projector.status",
   "projector.validate_representation",
 ]);
+expect(mcp.capabilityToken).toBeUndefined();
 expect(status.result.structuredContent.toolAvailability).toHaveLength(21);
 expect(status.result.structuredContent.toolAvailability).toContainEqual({
   name: "projector.apply_plan",
@@ -65,12 +65,12 @@ expect(status.result.structuredContent.toolAvailability).toContainEqual({
 
 - [ ] **Step 3: Add an unadvertised-call refusal assertion**
 
-Call `projector.apply_plan` with the issued token. Expect an unknown-tool JSON-RPC error, then prove the same token still authorizes one valid `projector.apply_transform` call.
+Call `projector.apply_plan` and `projector.apply_transform` with a bogus token. Expect unknown-tool JSON-RPC errors and prove no target file was written.
 
 ```ts
 const unavailable = await mcp.transport.handle({
   jsonrpc: "2.0", id: 2, method: "tools/call",
-  params: { name: "projector.apply_plan", arguments: { capabilityToken: mcp.capabilityToken } },
+  params: { name: "projector.apply_plan", arguments: { capabilityToken: "not-issued" } },
 });
 expect(unavailable).toMatchObject({ error: { message: expect.stringMatching(/unknown MCP tool/iu) } });
 ```
@@ -116,21 +116,19 @@ Move no behavior into a replacement wrapper. Keep `createProjectorMcpServer()` a
 
 - [ ] **Step 3: Compose session-dependent handler maps in `mcp-cli.ts`**
 
-Always register status, audit, and divergence reads. Register representation reads and `apply_transform` only for an authenticated session. Issue capabilities only for registered controlled names.
+Always register status, audit, and divergence reads. Register representation reads only when an authenticated session carries a representation. Register no controlled handlers and issue no capability in this slice.
 
 ```ts
 const read: Record<string, Tool> = {
   "projector.status": status,
   "projector.audit": audit,
   "projector.list_divergences": audit,
-  ...(session === undefined ? {} : {
+  ...(session?.capsule.representation === undefined ? {} : {
     "projector.preview_representation": (input) => representation(input, true),
     "projector.validate_representation": (input) => representation(input, false),
   }),
 };
-const controlled = session === undefined ? {} : {
-  "projector.apply_transform": applyTransform,
-};
+const controlled: Record<string, ControlledTool> = {};
 ```
 
 - [ ] **Step 4: Return canonical availability from status**
@@ -173,11 +171,11 @@ Repeat RED/GREEN only for demonstrated gaps.
 
 - [ ] **Step 3: Run the frozen gate**
 
-Run: `pnpm verify && pnpm build && pnpm release:artifacts:check && git diff --check`
+Run: `pnpm verify && pnpm build && pnpm release:artifacts:check && pnpm release:acceptance && git diff --check`
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add packages/integrations/src/mcp/server.ts packages/integrations/src/mcp/server.test.ts packages/cli/src/mcp-cli.ts packages/cli/src/run-cli.test.ts docs/superpowers/specs/2026-08-26-operational-mcp-registry-design.md docs/superpowers/plans/2026-08-26-operational-mcp-registry.md
+git add packages/integrations/src/mcp/server.ts packages/integrations/src/mcp/server.test.ts packages/cli/src/mcp-cli.ts packages/cli/src/run-cli.test.ts scripts/projector-plugin.test.ts scripts/run-release-acceptance.mjs docs/superpowers/specs/2026-08-26-operational-mcp-registry-design.md docs/superpowers/plans/2026-08-26-operational-mcp-registry.md
 git commit -m "refactor: advertise only operational MCP tools"
 ```
