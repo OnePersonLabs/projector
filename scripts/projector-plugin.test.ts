@@ -100,6 +100,25 @@ describe("Projector Codex plugin MCP launch", () => {
         expect.objectContaining({ name: "projector.status" }),
       ]);
   });
+
+  test("session hook recognizes an installed CLI in an ordinary repository without a source fallback", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-plugin-hook-"));
+    const installedPluginRoot = join(root, "installed-plugin");
+    const repository = join(root, "repository");
+    try {
+      await cp(pluginRoot, installedPluginRoot, { recursive: true });
+      await mkdir(repository);
+      expect((await runExecutable("git", ["init", "-q"], repository, process.env)).status).toBe(0);
+      const hook = join(installedPluginRoot, "hooks", "projector-session.sh");
+      const environment = { ...process.env, PLUGIN_ROOT: installedPluginRoot, PROJECTOR_CLI: resolve(repositoryRoot, "packages", "cli", "dist", "cli.js") };
+      delete environment.PROJECTOR_ROOT;
+      const result = await runExecutable("bash", [hook], repository, environment);
+      expect(result.status).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({ hookSpecificOutput: { hookEventName: "SessionStart" } });
+      const unavailable = await runExecutable("bash", [hook], repository, { PLUGIN_ROOT: installedPluginRoot, PATH: "/usr/bin:/bin" });
+      expect(unavailable).toMatchObject({ status: 0, stdout: "" });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
 });
 
 describe("Projector installed change workflow", () => {
@@ -168,7 +187,16 @@ async function runPluginChange(
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): Promise<{ status: number | null; stdout: string; stderr: string }> {
-  const child = spawn(process.execPath, [script, ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+  return runExecutable(process.execPath, [script, ...args], cwd, env);
+}
+
+async function runExecutable(
+  executable: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  const child = spawn(executable, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = ""; let stderr = "";
   child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => { stdout += chunk; });
