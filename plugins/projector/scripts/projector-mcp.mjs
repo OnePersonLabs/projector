@@ -1,12 +1,8 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access, readlink } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readlink } from "node:fs/promises";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
-
-const pluginRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const configuredRoot = process.env.PROJECTOR_ROOT?.trim();
 const inheritedWorkingDirectory = process.env.PWD?.trim();
 let parentWorkingDirectory;
@@ -24,32 +20,19 @@ if (!configuredRoot) {
       ["-C", repositoryRoot, "rev-parse", "--show-toplevel"],
       { encoding: "utf8" },
     ).trim();
-  } catch {
-    const sourceRepository = resolve(pluginRoot, "..", "..");
-    try {
-      await access(join(sourceRepository, "packages", "cli", "dist", "cli.js"), constants.R_OK);
-      repositoryRoot = sourceRepository;
-    } catch {
-      // The diagnostic below reports the final candidate and remediation.
-    }
-  }
+  } catch { /* Use the final candidate; the CLI reports repository availability. */ }
 }
 
-const cli = join(repositoryRoot, "packages", "cli", "dist", "cli.js");
-try {
-  await access(cli, constants.R_OK);
-} catch {
-  process.stderr.write(
-    `Projector CLI is unavailable at ${cli}. Build the repository or set PROJECTOR_ROOT before enabling the MCP server.\n`,
-  );
-  process.exit(5);
-}
+const configuredCli = process.env.PROJECTOR_CLI?.trim();
+const cli = configuredCli === undefined || configuredCli === "" ? "projector" : configuredCli;
+const nodeScript = /\.(?:c|m)?js$/u.test(cli);
 
-const child = spawn(process.execPath, [cli, "mcp"], {
+const child = spawn(nodeScript ? process.execPath : cli, [...(nodeScript ? [cli] : []), "mcp"], {
   cwd: repositoryRoot,
   env: {
     HOME: process.env.HOME ?? "",
     PATH: process.env.PATH ?? "",
+    ...(configuredCli === undefined ? {} : { PROJECTOR_CLI: configuredCli }),
     PROJECTOR_ROOT: repositoryRoot,
   },
   stdio: ["pipe", "pipe", "inherit"],
@@ -92,7 +75,7 @@ input.on("line", (line) => {
       result: {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "projector", version: "2.0.2" },
+        serverInfo: { name: "projector", version: "2.0.3" },
         instructions: "Projector tools are state-bound; inspect evidence before mutation.",
       },
     });

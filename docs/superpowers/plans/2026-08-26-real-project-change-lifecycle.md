@@ -79,11 +79,11 @@
 - Modify: `scripts/projector-plugin.test.ts`
 - Modify: `scripts/build-release-package.mjs`
 
-- [ ] Teach `$projector-change` the one public lifecycle and material-question/approval boundaries.
-- [ ] Implement a thin deterministic capture/approval/resume script that shells only to the installed CLI, pauses at approval, and emits authenticated invocation/output trace entries.
-- [ ] Resolve the installed package without source-checkout fallback.
+- [x] Teach `$projector-change` the one public lifecycle and material-question/approval boundaries.
+- [x] Implement a thin deterministic capture/approval/resume script that shells only to the installed CLI, pauses at approval, and emits authenticated invocation/output trace entries.
+- [x] Resolve the installed package without source-checkout fallback.
 - [ ] Bump the plugin version and prove the global Codex cache contains the new version and bytes.
-- [ ] Keep MCP operational tool advertisement and capability issuance unchanged.
+- [x] Keep MCP operational tool advertisement and capability issuance unchanged.
 
 ### Task 6: Replace fixture acceptance with held-out packed proof
 
