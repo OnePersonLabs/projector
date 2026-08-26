@@ -1,5 +1,7 @@
 import {
+  authorizeRepositoryPath,
   hashFramedDomain,
+  type CompiledWriteAuthorization,
   type ContentHash,
   type EntityId,
   type OperationEvidence,
@@ -279,17 +281,15 @@ export class MoveReferenceTransform implements Transform<MoveReferenceUpdateInpu
     if (approvedBoundary === undefined || approvedBoundary.length === 0) {
       throw new TransformScopeError("transform context has no approved path boundary");
     }
-    const allowedPathScopes = (context as TransformContext & {
-      allowedPathScopes?: ReadonlyArray<readonly string[]>;
-    }).allowedPathScopes ?? [[]];
-    const forbiddenBoundary = (context as TransformContext & { forbiddenBoundary?: readonly string[] }).forbiddenBoundary ?? [];
-    const forbiddenPathScopes = (context as TransformContext & {
-      forbiddenPathScopes?: ReadonlyArray<readonly string[]>;
-    }).forbiddenPathScopes ?? forbiddenBoundary.map((pattern) => [pattern]);
+    const writeAuthorization = (context as TransformContext & {
+      writeAuthorization?: CompiledWriteAuthorization;
+    }).writeAuthorization;
+    if (writeAuthorization === undefined) {
+      throw new TransformScopeError("transform context has no compiled write authorization");
+    }
     const pathIsApproved = (path: string): boolean =>
       pathMatchesBoundary(path, approvedBoundary)
-      && allowedPathScopes.some((scope) => scope.every((pattern) => pathMatchesBoundary(path, [pattern])))
-      && !forbiddenPathScopes.some((scope) => scope.every((pattern) => pathMatchesBoundary(path, [pattern])));
+      && authorizeRepositoryPath(writeAuthorization, path).authorized;
     const operations: PreparedOperation[] = [];
     const destinations = new Set<string>();
     const movePaths = new Set<string>();

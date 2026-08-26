@@ -79,8 +79,12 @@ The Context Compiler SHOULD select the least-cost Representation Profile that me
 
 Before a packet is integrated, the coordinator MUST confirm that the capsule's `StateBinding` still covers the relevant state dependencies. If the snapshot root changed, re-evaluate the binding before recompiling.
 
+Every mutation boundary MUST use one deterministic authorization semantics for the capsule's `operation`, `allowedWrites`, and `forbiddenWrites`. An applicable write grant MUST match both the capsule operation and the complete selector expression. Grants are disjunctive. Predicates inside an `all` selector are conjunctive. A matching forbidden grant overrides every allowed grant.
+
+If any applicable selector or path pattern cannot be enforced deterministically, the operation MUST fail closed before mutation. A host, transform, or coordinator MUST NOT substitute path-prefix heuristics, omit operation matching, or ignore forbidden grants.
+
+Observed repository writes MUST use that same authorization semantics before the packet or host run reports success. Invalid, absolute, traversal-bearing, or non-canonical repository paths MUST be denied. This semantic check does not replace canonical repository identity, real-path containment, symlink defense, or transaction recovery. Those controls remain independently required at the runtime boundary.
+
 A root snapshot change with an unchanged dependency set MAY be rebound without regenerating model context. A change can alter relevance membership without changing loaded entity bodies. Examples include a new invariant, relation, export, event consumer, or selector result. Such a change MUST invalidate or re-evaluate the affected closure/binding.
 
 ---
-
-

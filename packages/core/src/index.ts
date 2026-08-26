@@ -1,4 +1,5 @@
 export * from "./domain/contracts.js";
+export * from "./authorization/write-scope.js";
 export * from "./hashing/canonical-json.js";
 export * from "./hashing/builtin-profiles.js";
 export * from "./hashing/canonical-envelope.js";

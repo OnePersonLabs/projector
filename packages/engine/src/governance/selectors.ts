@@ -1,6 +1,8 @@
 import {
   canonicalJson,
   hashFramedDomain,
+  matchesCanonicalGlob as matchesCoreCanonicalGlob,
+  validateCanonicalGlob,
   type ContentHash,
   type ObservabilityClass,
   type ProjectionUnit,
@@ -102,7 +104,13 @@ function normalizeAtom(atom: Extract<SelectorExpr, { op: "atom" }>): SelectorExp
     throw new SelectorEvaluationError(`selector ${atom.field} exists matcher requires a boolean`);
   }
   canonicalJson(value);
-  if (atom.matcher === "glob") globRegex(value as string);
+  if (atom.matcher === "glob") {
+    try {
+      validateCanonicalGlob(value as string);
+    } catch (error) {
+      throw new SelectorEvaluationError(error instanceof Error ? error.message : "invalid glob selector");
+    }
+  }
   if (atom.matcher === "regex") deterministicRegexTokens(value as string);
   return { ...atom, value };
 }
@@ -132,34 +140,9 @@ function scalarValues(value: unknown): unknown[] {
   return Array.isArray(value) ? value : value === undefined ? [] : [value];
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
-}
-
-function globRegex(glob: string): RegExp {
-  if (glob.length > 512 || glob.includes("\u0000")) throw new SelectorEvaluationError("invalid or oversized glob selector");
-  let result = "^";
-  for (let index = 0; index < glob.length; index += 1) {
-    const character = glob[index]!;
-    if (character === "*") {
-      if (glob[index + 1] === "*") {
-        index += 1;
-        if (glob[index + 1] === "/") {
-          index += 1;
-          result += "(?:[^/]+/)*";
-        } else {
-          result += ".*";
-        }
-      } else result += "[^/]*";
-    } else if (character === "?") result += "[^/]";
-    else result += escapeRegex(character);
-  }
-  return new RegExp(`${result}$`, "u");
-}
-
 /** Canonical governance glob semantics, shared by evaluation and proven exact-to-glob containment. */
 export function matchesCanonicalGlob(glob: string, candidate: string): boolean {
-  return candidate.length <= 4096 && globRegex(glob).test(candidate.replaceAll("\\", "/"));
+  return matchesCoreCanonicalGlob(glob, candidate);
 }
 
 interface DeterministicRegexToken {

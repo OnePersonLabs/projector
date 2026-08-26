@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  compileWriteAuthorization,
   hashFramedDomain,
   type StateBinding,
   type Transform,
@@ -39,15 +40,28 @@ const context = (
   approvedBoundary: string[] = ["**"],
   forbiddenBoundary: string[] = [],
   allowedPathScopes?: string[][],
-): TransformContext & { approvedBoundary: string[]; forbiddenBoundary: string[]; allowedPathScopes?: string[][] } => ({
+): TransformContext & { approvedBoundary: string[]; writeAuthorization: ReturnType<typeof compileWriteAuthorization> } => ({
   repositoryRoot: "/repo",
   stateBinding: binding,
   allowedUnits,
   dryRun: false,
   signal: new AbortController().signal,
   approvedBoundary,
-  forbiddenBoundary,
-  ...(allowedPathScopes === undefined ? {} : { allowedPathScopes }),
+  writeAuthorization: compileWriteAuthorization({
+    operation: "move-reference-update",
+    allowedWrites: (allowedPathScopes ?? [["**"]]).map((scope) => ({
+      selector: scope.length === 1
+        ? { op: "atom" as const, field: "path" as const, matcher: "glob" as const, value: scope[0]! }
+        : { op: "all" as const, items: scope.map((value) => ({ op: "atom" as const, field: "path" as const, matcher: "glob" as const, value })) },
+      operations: ["move-reference-update"],
+      reason: "test allowed scope",
+    })),
+    forbiddenWrites: forbiddenBoundary.map((value) => ({
+      selector: { op: "atom" as const, field: "path" as const, matcher: "glob" as const, value },
+      operations: ["move-reference-update"],
+      reason: "test forbidden scope",
+    })),
+  }),
 });
 
 class MemoryMutationPort implements TransformMutationPort {

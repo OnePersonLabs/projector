@@ -1,4 +1,4 @@
-import { canonicalJson, hashFramedDomain, type ContentHash, type ExecutionCapsule, type ExecutionPlan, type RiskClass, type StateDigest, type WorkPacket } from "@projector/core";
+import { authorizeRepositoryPath, canonicalJson, compileWriteAuthorization, hashFramedDomain, type ContentHash, type ExecutionCapsule, type ExecutionPlan, type RiskClass, type StateDigest, type WorkPacket } from "@projector/core";
 
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
@@ -38,11 +38,15 @@ export interface PacketExecutionPorts {
 export interface PacketExecutionResult { readonly status: "completed" | "partial"; readonly packetResults: readonly { readonly packetId: string; readonly changedPaths: readonly string[]; readonly observedImpact: ObservedImpact; readonly outputHash: ContentHash; readonly artifactHash: ContentHash }[]; readonly certificateHash: ContentHash; readonly receiptHash?: ContentHash; readonly reconciliation: { readonly converged: boolean; readonly iterations: number }; readonly observedImpact: ObservedImpact; readonly attemptedImpact: ObservedImpact; readonly surprises: readonly string[]; readonly lastCheckpoint?: string; readonly recovery: "not-required" | "rolled-back" | "required" }
 
 const selectorRoot = (value: string): string => value.replace(/\\/gu, "/").replace(/^\.\//u, "").replace(/\/\*\*.*$/u, "").replace(/\*.*$/u, "").replace(/\/+$/u, "");
-const selectorAllows = (selector: ExecutionCapsule["allowedWrites"][number]["selector"], path: string): boolean => {
-  if (selector.op !== "atom" || selector.field !== "path" || typeof selector.value !== "string") return false;
-  const normalized = path.replace(/\\/gu, "/").replace(/^\.\//u, "");
-  return selector.matcher === "equals" ? normalized === selector.value : normalized === selectorRoot(selector.value) || normalized.startsWith(`${selectorRoot(selector.value)}/`);
-};
+type PacketItem = AuthenticatedPacketExecution["value"]["packets"][number];
+type AuthenticatedPacketItem = PacketItem & { readonly writeAuthorization: ReturnType<typeof compileWriteAuthorization> };
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
 function authenticateObservation(observed: AuthenticatedPacketObservation): PacketObservation {
   if (observed.contentHash !== hashFramedDomain("authenticated-packet-observation", observed.value)) throw new Error("packet observation is unauthenticated");
   return observed.value;
@@ -52,19 +56,27 @@ const changedKeys = (left: Readonly<Record<string, unknown>>, right: Readonly<Re
 const impactBetween = (before: PacketObservation, after: PacketObservation): ObservedImpact => ({ changedPaths: changedPaths(before, after), changedUnitIds: changedKeys(before.unitStates, after.unitStates), changedCanonicalIds: changedKeys(before.canonicalEntityHashes, after.canonicalEntityHashes), externalOperationIds: changedKeys(before.externalStateHashes, after.externalStateHashes), generatedOutputIds: changedKeys(before.generatedArtifactHashes, after.generatedArtifactHashes) });
 const emptyImpact = (): ObservedImpact => ({ changedPaths: [], changedUnitIds: [], changedCanonicalIds: [], externalOperationIds: [], generatedOutputIds: [] });
 
-function authenticate(input: AuthenticatedPacketExecution): Map<string, AuthenticatedPacketExecution["value"]["packets"][number]> {
+function authenticate(input: AuthenticatedPacketExecution): {
+  readonly value: AuthenticatedPacketExecution["value"];
+  readonly byId: Map<string, AuthenticatedPacketItem>;
+} {
   if (input.contentHash !== hashFramedDomain("authenticated-packet-execution", input.value)) throw new Error("packet execution envelope is unauthenticated");
-  if (input.value.approval.planHash !== hashFramedDomain("semantic-change-execution-plan", input.value.plan)) throw new Error("plan approval does not bind this plan");
-  if (input.value.approval.approvedRiskClass !== input.value.packets.reduce<RiskClass>((risk, item) => risk > item.packet.risk.class ? risk : item.packet.risk.class, "R0")) throw new Error("approved risk does not match packet risk");
-  const byId = new Map<string, AuthenticatedPacketExecution["value"]["packets"][number]>();
-  for (const item of input.value.packets) {
+  const value = deepFreeze(structuredClone(input.value));
+  if (value.approval.planHash !== hashFramedDomain("semantic-change-execution-plan", value.plan)) throw new Error("plan approval does not bind this plan");
+  if (value.approval.approvedRiskClass !== value.packets.reduce<RiskClass>((risk, item) => risk > item.packet.risk.class ? risk : item.packet.risk.class, "R0")) throw new Error("approved risk does not match packet risk");
+  const byId = new Map<string, AuthenticatedPacketItem>();
+  for (const item of value.packets) {
     if (item.packetHash !== hashFramedDomain("semantic-change-work-packet", item.packet) || item.capsuleHash !== hashFramedDomain("semantic-change-execution-capsule", item.capsule)) throw new Error("packet or capsule hash mismatch");
-    if (item.packet.planId !== input.value.plan.id || item.packet.capsuleId !== item.capsule.id || item.capsule.taskId !== item.packet.id || item.packet.boundState.dependencyDigest !== input.value.plan.boundState.dependencyDigest) throw new Error("packet relation or binding mismatch");
+    if (item.packet.planId !== value.plan.id || item.packet.capsuleId !== item.capsule.id || item.capsule.taskId !== item.packet.id || item.packet.boundState.dependencyDigest !== value.plan.boundState.dependencyDigest) throw new Error("packet relation or binding mismatch");
     if (byId.has(item.packet.id)) throw new Error(`duplicate packet ${item.packet.id}`);
-    byId.set(item.packet.id, item);
+    const writeAuthorization = compileWriteAuthorization(item.capsule);
+    if (!writeAuthorization.enforceable || !writeAuthorization.operationGranted) {
+      throw new Error(`packet ${item.packet.id} has no enforceable write authorization: ${writeAuthorization.reasons.join("; ")}`);
+    }
+    byId.set(item.packet.id, Object.freeze({ ...item, writeAuthorization }));
   }
-  if (unique(input.value.executionOrder).length !== input.value.executionOrder.length || canonicalJson(unique(input.value.executionOrder)) !== canonicalJson(unique(input.value.plan.packetIds))) throw new Error("execution order does not cover the plan exactly");
-  for (const id of input.value.executionOrder) for (const dependency of byId.get(id)?.packet.dependencies ?? []) if (input.value.executionOrder.indexOf(dependency) >= input.value.executionOrder.indexOf(id)) {
+  if (unique(value.executionOrder).length !== value.executionOrder.length || canonicalJson(unique(value.executionOrder)) !== canonicalJson(unique(value.plan.packetIds))) throw new Error("execution order does not cover the plan exactly");
+  for (const id of value.executionOrder) for (const dependency of byId.get(id)?.packet.dependencies ?? []) if (value.executionOrder.indexOf(dependency) >= value.executionOrder.indexOf(id)) {
     const current = byId.get(id)?.convergence; const prior = byId.get(dependency)?.convergence;
     if (current === undefined || prior === undefined || current.group !== prior.group || current.maximumIterations !== prior.maximumIterations || current.maximumIterations < 1) throw new Error("packet dependency SCC or order is unsafe");
   }
@@ -76,12 +88,12 @@ function authenticate(input: AuthenticatedPacketExecution): Map<string, Authenti
     const leftRoots = roots(a); const rightRoots = roots(b);
     if (leftRoots.some((root) => rightRoots.includes(root))) throw new Error("packet write selectors overlap");
   }
-  return byId;
+  return Object.freeze({ value, byId });
 }
 
 export async function executePacketPlan(input: AuthenticatedPacketExecution, ports: PacketExecutionPorts): Promise<PacketExecutionResult> {
-  const byId = authenticate(input);
-  const lease = await ports.lease.acquire(input.value.plan.id);
+  const { value: execution, byId } = authenticate(input);
+  const lease = await ports.lease.acquire(execution.plan.id);
   const outputs = new Map<string, ContentHash>();
   const results: Array<PacketExecutionResult["packetResults"][number]> = [];
   let totalIterations = 0;
@@ -94,17 +106,17 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
     const combinedObserved = combine(results.map(({ observedImpact }) => observedImpact));
     const observedImpact = { ...combinedObserved, changedUnitIds: unique([...combinedObserved.changedUnitIds, ...results.flatMap(({ packetId }) => byId.get(packetId)?.packet.unitIds ?? [])]) }; const attemptedImpact = combine(attemptedImpacts);
     const changedUnitIds = observedImpact.changedUnitIds;
-    const predicted = new Set([...input.value.plan.knownAffectedUnitIds, ...input.value.plan.possibleFrontierUnitIds, ...input.value.plan.unavailableSurfaceIds]); const observedIds = unique([...changedUnitIds, ...observedImpact.changedCanonicalIds, ...observedImpact.externalOperationIds, ...observedImpact.generatedOutputIds]); const observed = new Set(observedIds);
-    const surprises = unique([...failureSurprises, ...observedIds.filter((id) => !predicted.has(id)).map((id) => `unexpected-observed-subject:${id}`), ...input.value.plan.knownAffectedUnitIds.filter((id) => !observed.has(id)).map((id) => `predicted-unit-not-observed:${id}`)]);
-    const finalState = finalObservation?.state ?? input.value.plan.boundState.compiledAgainst;
-    const reconciled = await ports.reconciliation.run({ plan: input.value.plan, observedImpact, finalState });
-    if (reconciled.contentHash !== hashFramedDomain("authenticated-plan-reconciliation", { planId: input.value.plan.id, observedImpact, finalState, converged: reconciled.converged, iterations: reconciled.iterations })) throw new Error("plan reconciliation proof is unauthenticated");
+    const predicted = new Set([...execution.plan.knownAffectedUnitIds, ...execution.plan.possibleFrontierUnitIds, ...execution.plan.unavailableSurfaceIds]); const observedIds = unique([...changedUnitIds, ...observedImpact.changedCanonicalIds, ...observedImpact.externalOperationIds, ...observedImpact.generatedOutputIds]); const observed = new Set(observedIds);
+    const surprises = unique([...failureSurprises, ...observedIds.filter((id) => !predicted.has(id)).map((id) => `unexpected-observed-subject:${id}`), ...execution.plan.knownAffectedUnitIds.filter((id) => !observed.has(id)).map((id) => `predicted-unit-not-observed:${id}`)]);
+    const finalState = finalObservation?.state ?? execution.plan.boundState.compiledAgainst;
+    const reconciled = await ports.reconciliation.run({ plan: execution.plan, observedImpact, finalState });
+    if (reconciled.contentHash !== hashFramedDomain("authenticated-plan-reconciliation", { planId: execution.plan.id, observedImpact, finalState, converged: reconciled.converged, iterations: reconciled.iterations })) throw new Error("plan reconciliation proof is unauthenticated");
     if (status === "completed" && !reconciled.converged) status = "partial";
-    const certificate: PlanExecutionArtifact = { kind: "certificate", planId: input.value.plan.id, planHash: input.value.approval.planHash, status, packetArtifactHashes: results.map(({ artifactHash }) => artifactHash), observedImpact, attemptedImpact, surprises, reconciliationProofHash: reconciled.contentHash, recovery };
+    const certificate: PlanExecutionArtifact = { kind: "certificate", planId: execution.plan.id, planHash: execution.approval.planHash, status, packetArtifactHashes: results.map(({ artifactHash }) => artifactHash), observedImpact, attemptedImpact, surprises, reconciliationProofHash: reconciled.contentHash, recovery };
     const storedCertificate = await ports.artifacts.put(certificate); const expectedCertificateHash = hashFramedDomain("packet-execution-artifact", certificate);
     if (storedCertificate.contentHash !== expectedCertificateHash) throw new Error("stored plan certificate bytes do not match returned hash");
     const certificateHash = storedCertificate.contentHash;
-    const receiptRequired = input.value.plan.completionCriteria.requiredArtifacts.includes("receipt");
+    const receiptRequired = execution.plan.completionCriteria.requiredArtifacts.includes("receipt");
     let receiptHash: ContentHash | undefined;
     if (receiptRequired) { const receipt: PlanExecutionArtifact = { ...certificate, kind: "receipt", certificateHash }; const storedReceipt = await ports.artifacts.put(receipt); if (storedReceipt.contentHash !== hashFramedDomain("packet-execution-artifact", receipt)) throw new Error("stored plan receipt bytes do not match returned hash"); receiptHash = storedReceipt.contentHash; }
     return { status, packetResults: Object.freeze([...results]), certificateHash, ...(receiptHash === undefined ? {} : { receiptHash }), reconciliation: { converged: reconciled.converged, iterations: reconciled.iterations }, observedImpact, attemptedImpact, surprises: Object.freeze([...surprises]), ...(results.length === 0 ? {} : { lastCheckpoint: `checkpoint:${results.at(-1)!.packetId}` }), recovery };
@@ -121,10 +133,10 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
     if (missing.some((id) => byId.get(id)?.convergence?.group !== item.convergence?.group)) throw new Error(`missing predecessor output for ${packetId}`);
     const currentness = await ports.currentness.validate({ packet: item.packet, capsule: item.capsule, predecessorOutputHashes });
     if (!currentness.valid) throw new Error(`packet ${packetId} is stale`);
-    if (!(await ports.authority.verify({ approval: input.value.approval, subjectHash: input.value.approval.planHash, currentState: currentness.currentState, risk: item.packet.risk.class }))) throw new Error("plan approval lacks current authority");
+    if (!(await ports.authority.verify({ approval: execution.approval, subjectHash: execution.approval.planHash, currentState: currentness.currentState, risk: item.packet.risk.class }))) throw new Error("plan approval lacks current authority");
     const before = authenticateObservation(await ports.observe.capture({ packet: item.packet, phase: "before" }));
     if (canonicalJson(before.state) !== canonicalJson(currentness.currentState)) throw new Error("authoritative before observation does not match approved current state");
-    const transaction = await ports.transaction.begin({ plan: input.value.plan, packet: item.packet, currentState: currentness.currentState });
+    const transaction = await ports.transaction.begin({ plan: execution.plan, packet: item.packet, currentState: currentness.currentState });
     let intent: PacketExecutionArtifact | undefined;
     let attemptedAfter: PacketObservation | undefined; let attemptedImpact = emptyImpact();
     try {
@@ -137,8 +149,8 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
       if (attemptedImpact.changedPaths.length > 0 || canonicalJson(before.state) !== canonicalJson(after.state)) attemptedImpact = { ...attemptedImpact, changedUnitIds: unique([...attemptedImpact.changedUnitIds, ...item.packet.unitIds]) };
       attemptedImpacts.push(attemptedImpact);
       const authoritativePaths = attemptedImpact.changedPaths;
-      const inPlanBoundary = (path: string): boolean => input.value.plan.boundary.some((boundary) => selectorRoot(path) === selectorRoot(boundary) || selectorRoot(path).startsWith(`${selectorRoot(boundary)}/`));
-      if (authoritativePaths.some((path) => !inPlanBoundary(path) || !item.capsule.allowedWrites.some(({ selector }) => selectorAllows(selector, path)) || item.capsule.forbiddenWrites.some(({ selector }) => selectorAllows(selector, path)))) throw new Error(`packet ${packetId} widened plan/capsule scope`);
+      const inPlanBoundary = (path: string): boolean => execution.plan.boundary.some((boundary) => selectorRoot(path) === selectorRoot(boundary) || selectorRoot(path).startsWith(`${selectorRoot(boundary)}/`));
+      if (authoritativePaths.some((path) => !inPlanBoundary(path) || !authorizeRepositoryPath(item.writeAuthorization, path).authorized)) throw new Error(`packet ${packetId} widened plan/capsule scope`);
       const changedUnits = changedKeys(before.unitStates, after.unitStates);
       if (changedUnits.some((id) => !item.packet.unitIds.includes(id))) throw new Error(`packet ${packetId} changed an undeclared unit`);
       for (const [kind, left, right] of [["canonical", before.canonicalEntityHashes, after.canonicalEntityHashes], ["external", before.externalStateHashes, after.externalStateHashes], ["generated", before.generatedArtifactHashes, after.generatedArtifactHashes]] as const) if (changedKeys(left, right).some((id) => !item.packet.unitIds.includes(id))) throw new Error(`packet ${packetId} changed undeclared ${kind} state`);
@@ -159,7 +171,7 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
       if (item.packet.validatorIds.some((id) => !validationProofs.some((proof) => proof.validatorId === id)) || item.packet.unitIds.some((id) => after.unitStates[id] === "invalid")) throw new Error("packet-local postcondition is not satisfied");
       if (item.capsule.completionContract.requireIndependentValidation && !packetTrusted.some((proof) => proof.readonlySource !== proof.effectSource && proof.readonlyGroup !== proof.effectGroup)) throw new Error("packet-local independent validation is missing");
       Object.assign(combinedUnitStates, after.unitStates); finalObservation = after;
-      intent = { status: "intent", planId: input.value.plan.id, packetId, packetHash: item.packetHash, capsuleHash: item.capsuleHash, before, after, observedImpact: attemptedImpact, attemptedImpact, changedPaths: authoritativePaths, outputHash: effect.outputHash, validationProofs, currentnessProofHash: currentness.proofHash, recovery: "required" };
+      intent = { status: "intent", planId: execution.plan.id, packetId, packetHash: item.packetHash, capsuleHash: item.capsuleHash, before, after, observedImpact: attemptedImpact, attemptedImpact, changedPaths: authoritativePaths, outputHash: effect.outputHash, validationProofs, currentnessProofHash: currentness.proofHash, recovery: "required" };
       await lease.assertOwned();
       const storedIntent = await ports.artifacts.put(intent);
       if (storedIntent.contentHash !== hashFramedDomain("packet-execution-artifact", intent)) throw new Error("artifact intent was not durably bound");
@@ -178,7 +190,7 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
       let rolledBack: PacketObservation | undefined;
       try { rolledBack = authenticateObservation(await ports.observe.capture({ packet: item.packet, phase: "rollback" })); finalObservation = rolledBack; } catch { recovery = "required"; }
       const durableImpact = rolledBack === undefined ? emptyImpact() : impactBetween(before, rolledBack);
-      const failure: PacketExecutionArtifact = { ...(intent ?? { status: "failure", planId: input.value.plan.id, packetId, packetHash: item.packetHash, capsuleHash: item.capsuleHash, before, changedPaths: [], validationProofs: [], currentnessProofHash: currentness.proofHash }), status: "failure", ...(rolledBack === undefined ? {} : { after: rolledBack }), ...(attemptedAfter === undefined ? {} : { attemptedAfter }), observedImpact: durableImpact, attemptedImpact, changedPaths: durableImpact.changedPaths, recovery, reason: error instanceof Error ? error.message : String(error), ...(results.length === 0 ? {} : { lastCheckpoint: `checkpoint:${results.at(-1)!.packetId}` }) };
+      const failure: PacketExecutionArtifact = { ...(intent ?? { status: "failure", planId: execution.plan.id, packetId, packetHash: item.packetHash, capsuleHash: item.capsuleHash, before, changedPaths: [], validationProofs: [], currentnessProofHash: currentness.proofHash }), status: "failure", ...(rolledBack === undefined ? {} : { after: rolledBack }), ...(attemptedAfter === undefined ? {} : { attemptedAfter }), observedImpact: durableImpact, attemptedImpact, changedPaths: durableImpact.changedPaths, recovery, reason: error instanceof Error ? error.message : String(error), ...(results.length === 0 ? {} : { lastCheckpoint: `checkpoint:${results.at(-1)!.packetId}` }) };
       const storedFailure = await ports.artifacts.put(failure);
       if (storedFailure.contentHash !== hashFramedDomain("packet-execution-artifact", failure)) recovery = "required";
       throw Object.assign(error instanceof Error ? error : new Error(String(error)), { packetFailure: true, recovery });
@@ -186,12 +198,12 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
   };
   try {
     const handledGroups = new Set<string>();
-    for (const packetId of input.value.executionOrder) {
+    for (const packetId of execution.executionOrder) {
       const convergence = byId.get(packetId)?.convergence;
       if (convergence === undefined) { totalIterations += 1; await executeOne(packetId); continue; }
       if (handledGroups.has(convergence.group)) continue;
       handledGroups.add(convergence.group);
-      const members = input.value.executionOrder.filter((id) => byId.get(id)?.convergence?.group === convergence.group);
+      const members = execution.executionOrder.filter((id) => byId.get(id)?.convergence?.group === convergence.group);
       let prior: string | undefined; let converged = false;
       for (let iteration = 1; iteration <= convergence.maximumIterations; iteration += 1) {
         totalIterations += 1;
@@ -202,7 +214,7 @@ export async function executePacketPlan(input: AuthenticatedPacketExecution, por
       }
       if (!converged) throw new Error(`convergence group ${convergence.group} did not converge within its bound`);
     }
-    const contract = input.value.plan.completionCriteria; const assuranceRank = ["weak", "supporting", "strong", "exact"];
+    const contract = execution.plan.completionCriteria; const assuranceRank = ["weak", "supporting", "strong", "exact"];
     if (contract.requiredUnitStates.some(({ unitId, state }) => combinedUnitStates[unitId] !== state) || contract.requiredValidators.some((id) => !trustedValidations.some((proof) => proof.validatorId === id)) || contract.requiredEvidenceLanes.some((lane) => !trustedValidations.some((proof) => proof.evidenceLane === lane)) || trustedValidations.every((proof) => assuranceRank.indexOf(proof.assurance) < assuranceRank.indexOf(contract.minimumValidationAssurance)) || (contract.requireIndependentValidation && !trustedValidations.some((proof) => proof.readonlySource !== proof.effectSource && proof.readonlyGroup !== proof.effectGroup)) || (finalObservation !== undefined && (finalObservation.unknownCount > contract.maximumUnknowns || finalObservation.divergenceCount > contract.maximumNewDivergences || (contract.cleanWorkingTree && !finalObservation.cleanWorkingTree)))) throw new Error("combined final plan state does not satisfy CompletionContract");
     return await resultFor("completed", "not-required");
   } catch (error) {

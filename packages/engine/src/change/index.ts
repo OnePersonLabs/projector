@@ -1,9 +1,11 @@
 import {
   canonicalJson,
+  compileWriteAuthorization,
   hashFramedDomain,
   hashSemantic,
   type AdapterContext,
   type ChangeCertificate,
+  type CompiledWriteAuthorization,
   type ContentHash,
   type EntityId,
   type ExecutionCapsule,
@@ -71,11 +73,7 @@ export interface DeterministicTransformPort<TInput> {
 
 export interface ApprovedTransformContext extends TransformContext {
   readonly approvedBoundary: readonly string[];
-  /** Outer array is grant disjunction; every pattern within one grant is conjunctive. */
-  readonly allowedPathScopes: ReadonlyArray<readonly string[]>;
-  readonly forbiddenBoundary: readonly string[];
-  readonly forbiddenPathScopes: ReadonlyArray<readonly string[]>;
-  readonly approvedOperations: readonly string[];
+  readonly writeAuthorization: CompiledWriteAuthorization;
   readonly capsuleId: EntityId;
   readonly capsuleHash: ContentHash;
 }
@@ -197,41 +195,6 @@ function isApprovalCurrent(plan: ExecutionPlan, capsule: ExecutionCapsule, appro
 
 function outsideApprovedUnits(unitIds: readonly EntityId[], approvedUnits: ReadonlySet<EntityId>): EntityId[] {
   return sortedUnique(unitIds.filter((unitId) => !approvedUnits.has(unitId)));
-}
-
-interface CompiledSelectorPathScope {
-  readonly supported: boolean;
-  readonly satisfiable: boolean;
-  readonly patterns: string[];
-}
-
-function compileSelectorPathScope(
-  selector: import("@projector/core").SelectorExpr,
-  operation: string,
-): CompiledSelectorPathScope {
-  if (selector.op === "atom") {
-    if (
-      selector.field === "path"
-      && (selector.matcher === "equals" || selector.matcher === "glob")
-      && typeof selector.value === "string"
-    ) {
-      return { supported: true, satisfiable: true, patterns: [selector.value] };
-    }
-    if (selector.field === "operation" && selector.matcher === "equals" && typeof selector.value === "string") {
-      return { supported: true, satisfiable: selector.value === operation, patterns: [] };
-    }
-    return { supported: false, satisfiable: false, patterns: [] };
-  }
-  if (selector.op !== "all") return { supported: false, satisfiable: false, patterns: [] };
-  const children = selector.items.map((item) => compileSelectorPathScope(item, operation));
-  if (children.some((child) => !child.supported)) {
-    return { supported: false, satisfiable: false, patterns: [] };
-  }
-  return {
-    supported: true,
-    satisfiable: children.every((child) => child.satisfiable),
-    patterns: sortedUnique(children.flatMap((child) => child.patterns)),
-  };
 }
 
 function normalizeValidations(validations: readonly ValidationResult[]): ValidationResult[] {
@@ -391,28 +354,8 @@ export class StateBoundChangeExecutor<TInput> {
     if (capsuleUnitsOutsidePlan.length > 0) {
       preflightReasons.push(`capsule units are outside the immutable plan: ${capsuleUnitsOutsidePlan.join(", ")}`);
     }
-    const operationGrants = input.capsule.allowedWrites.filter((grant) => grant.operations.includes(input.capsule.operation));
-    const compiledAllowedScopes = operationGrants.map((grant) =>
-      compileSelectorPathScope(grant.selector, input.capsule.operation));
-    const allowedPathScopes = compiledAllowedScopes
-      .filter((scope) => scope.satisfiable)
-      .map((scope) => scope.patterns);
-    const allowedOperations = allowedPathScopes.length === 0 ? [] : [input.capsule.operation];
-    const forbiddenOperationGrants = input.capsule.forbiddenWrites
-      .filter((grant) => grant.operations.includes(input.capsule.operation));
-    const compiledForbiddenScopes = forbiddenOperationGrants.map((grant) =>
-      compileSelectorPathScope(grant.selector, input.capsule.operation));
-    if ([...compiledAllowedScopes, ...compiledForbiddenScopes].some((scope) => !scope.supported)) {
-      preflightReasons.push("capsule write selector cannot be enforced deterministically");
-    }
-    const forbiddenPathScopes = compiledForbiddenScopes
-      .filter((scope) => scope.satisfiable)
-      .map((scope) => scope.patterns);
-    const forbiddenBoundary = sortedUnique(forbiddenPathScopes.flat());
-    const operationForbiddenGlobally = forbiddenPathScopes.some((patterns) => patterns.length === 0);
-    if (!allowedOperations.includes(input.capsule.operation) || operationForbiddenGlobally) {
-      preflightReasons.push(`capsule operation is not granted for mutation: ${input.capsule.operation}`);
-    }
+    const writeAuthorization = compileWriteAuthorization(input.capsule);
+    preflightReasons.push(...writeAuthorization.reasons);
 
     const adapterContext: AdapterContext = {
       repositoryRoot: this.environment.repositoryRoot,
@@ -447,10 +390,7 @@ export class StateBoundChangeExecutor<TInput> {
       dryRun: false,
       signal: adapterContext.signal,
       approvedBoundary: sortedUnique(input.plan.boundary),
-      allowedPathScopes,
-      forbiddenBoundary,
-      forbiddenPathScopes,
-      approvedOperations: allowedOperations,
+      writeAuthorization,
       capsuleId: input.capsule.id,
       capsuleHash: input.approval.capsuleHash,
     };

@@ -20,9 +20,9 @@
 - Add: `packages/core/src/authorization/write-scope.ts`
 - Modify: `packages/core/src/index.ts`
 
-- [ ] Add RED tests for exact/glob matches, conjunction, operation mismatch, forbidden precedence, global forbid, malformed paths, and unsupported selectors.
-- [ ] Implement deterministic path/pattern normalization, canonical glob matching, compilation, and authorization.
-- [ ] Run focused core tests and typecheck.
+- [x] Add RED tests for exact/glob matches, conjunction, operation mismatch, forbidden precedence, global forbid, malformed paths, and unsupported selectors.
+- [x] Implement deterministic path/pattern normalization, canonical glob matching, compilation, and authorization.
+- [x] Run focused core tests and typecheck.
 
 ### Task 2: Replace local interpretations
 
@@ -34,11 +34,11 @@
 - Modify: `packages/cli/src/host-cli.ts`
 - Modify: focused tests in those packages
 
-- [ ] Make governance delegate canonical glob matching to core.
-- [ ] Make change preflight compile and pass the core authorization object.
-- [ ] Make deterministic transforms, packet observation checks, and host observation checks authorize with the core object.
-- [ ] Add wrong-operation, forbidden-write, unsupported-selector, and rollback regressions.
-- [ ] Run focused tests, typecheck, and package-boundary checks.
+- [x] Make governance delegate canonical glob matching to core.
+- [x] Make change preflight compile and pass the core authorization object.
+- [x] Make deterministic transforms, packet observation checks, and host observation checks authorize with the core object.
+- [x] Add wrong-operation, forbidden-write, unsupported-selector, and rollback regressions.
+- [x] Run focused tests, typecheck, and package-boundary checks.
 
 ### Task 3: Specify, verify, and land
 
@@ -47,7 +47,7 @@
 - Modify: `PROJECTOR_SPEC/07-change/transactions-and-certificates.md`
 - Modify: affected traceability/evidence fixtures if required
 
-- [ ] Add normative single-semantics, fail-closed, forbidden-precedence, and observed-write requirements.
-- [ ] Run continuity review and fix material findings test-first.
+- [x] Add normative single-semantics, fail-closed, forbidden-precedence, and observed-write requirements.
+- [x] Run continuity review and fix material findings test-first.
 - [ ] Run `pnpm verify && pnpm build && pnpm release:artifacts:check && pnpm release:acceptance && git diff --check`.
 - [ ] Commit the slice independently and run packed acceptance against the committed revision.
