@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Authority: `PROJECTOR_SPEC/SPEC.md` plus the 43 manifest modules; `INDEX.md` is navigation and generated bundles have no authority.
+- Authority: `PROJECTOR_SPEC/SPEC.md` plus the manifest modules; `INDEX.md` is navigation only.
 - Package dependencies: `core -> none`; `engine|analyzers|runtime|integrations -> core`; `cli -> core + engine + analyzers + runtime + integrations`. Integrations may consume only a narrow engine facade.
 - Core contracts cannot require a host brand, SQLite, model vendor, process runner, or concrete filesystem.
 - Canonical authored/governance state is fine-grained under `.projector/`; `state.db`, caches, generated views, reports, unfinished plans, and verbose certificates are derived/ignored by default.
