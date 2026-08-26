@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { deriveEntityId, hashFramedDomain, withCanonicalHashes, type Requirement } from "@projector/core";
+import { executionPlanHash } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
@@ -108,6 +109,7 @@ describe("repository change compiler", () => {
       expect(first.compiledChange.boundState.queryDependencies.map(({ query }) => query.id)).not.toEqual(expect.arrayContaining([expect.stringMatching(/^architecture-deferral:/u)]));
       expect(first.representation).toMatchObject({ profileId: expect.any(String), preservationHash: expect.stringMatching(/^sha256:v1:/u) });
       expect(first.compiledPlan.plan.semanticChangeId).toBe(first.compiledChange.change.id);
+      expect(first.planHash).toBe(executionPlanHash(first.compiledPlan.plan));
       expect(first.compiledPlan.packets).toHaveLength(1);
       expect(first.compiledPlan.packets[0]?.packet.transformId).toBe("exact-text-patch");
       expect(first.compiledPlan.packets[0]?.capsule.decisionIds).toEqual([]);

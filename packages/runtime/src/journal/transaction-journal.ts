@@ -552,10 +552,9 @@ export class FileTransactionJournal {
   }
 
   private async ensureParent(path: string, scopes: readonly string[]): Promise<void> {
-    const parent = posix.dirname(path);
-    const initial = await this.paths.resolveScopedWrite(parent, scopes);
-    await mkdir(initial.realTarget, { recursive: true });
-    await this.paths.resolveScopedWrite(parent, scopes);
+    const authorizedTarget = await this.paths.resolveScopedWrite(path, scopes);
+    await mkdir(dirname(authorizedTarget.realTarget), { recursive: true });
+    await this.paths.resolveScopedWrite(path, scopes);
   }
 }
 

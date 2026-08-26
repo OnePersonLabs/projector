@@ -1,0 +1,209 @@
+import { canonicalJson, hashFramedDomain, type ContentHash, type ExecutionCapsule } from "@projector/core";
+import { executionCapsuleHash } from "@projector/engine";
+import { publishPreparedStateBoundChangeSuccess, type StateBoundChangeResult } from "@projector/engine";
+import { FileTransactionJournal, GovernedWorktreeRuntime, RepositoryPathService, WriterLeaseManager } from "@projector/runtime";
+
+import { compileRepositoryChange, type CompiledRepositoryChange } from "./compiler.js";
+import { executeCompiledRepositoryChange } from "./executor.js";
+import { parseChangeProposal, type ChangeProposal } from "./proposal.js";
+import {
+  ChangeLifecycleStore,
+  type ChangeLifecycleStoreOptions,
+  type LifecycleApprovalRecord,
+  type LifecycleCaptureRecord,
+} from "./store.js";
+
+export interface CaptureRepositoryChangeInput {
+  readonly request: string;
+  readonly proposal: unknown;
+}
+
+export interface PlannedRepositoryChange {
+  readonly capture: LifecycleCaptureRecord;
+  readonly compiled: CompiledRepositoryChange;
+}
+
+export interface CapturedRepositoryChange extends PlannedRepositoryChange {}
+
+export interface RepositoryChangeLifecycleServiceOptions extends ChangeLifecycleStoreOptions {}
+
+export interface LifecycleRecoveryOutcome {
+  readonly attemptId: string;
+  readonly transactionId: string;
+  readonly action: "finalized" | "rolled-back" | "no-transaction" | "recovery-required";
+  readonly reason?: string;
+}
+
+function capsules(compiled: CompiledRepositoryChange): ExecutionCapsule[] {
+  return compiled.compiledPlan.packets.map(({ capsule }) => capsule);
+}
+
+function exactPatchInputHash(compiled: CompiledRepositoryChange): ContentHash {
+  return hashFramedDomain("exact-text-patch-input", compiled.exactPatchInput);
+}
+
+export class RepositoryChangeLifecycleService {
+  private readonly now: () => string;
+
+  private constructor(
+    private readonly repositoryRoot: string,
+    private readonly store: ChangeLifecycleStore,
+    options: RepositoryChangeLifecycleServiceOptions,
+  ) {
+    this.now = options.now ?? (() => new Date().toISOString());
+  }
+
+  static async create(
+    repositoryRoot: string,
+    options: RepositoryChangeLifecycleServiceOptions = {},
+  ): Promise<RepositoryChangeLifecycleService> {
+    const store = await ChangeLifecycleStore.create(repositoryRoot, options);
+    return new RepositoryChangeLifecycleService(repositoryRoot, store, options);
+  }
+
+  async capture(input: CaptureRepositoryChangeInput): Promise<CapturedRepositoryChange> {
+    const proposal = parseChangeProposal(input.proposal);
+    const compiled = await this.compile(input.request, proposal);
+    const capture = await this.store.capture({
+      request: input.request.normalize("NFKC").trim(),
+      proposal,
+      proposalHash: compiled.proposalHash,
+      semanticChangeId: compiled.compiledChange.change.id,
+      plan: compiled.compiledPlan.plan,
+      capsules: capsules(compiled),
+      exactPatchInputHash: exactPatchInputHash(compiled),
+    });
+    return { capture, compiled };
+  }
+
+  async plan(selector: string): Promise<PlannedRepositoryChange> {
+    const capture = await this.store.readCapture(selector);
+    const proposal = parseChangeProposal(capture.proposal);
+    const compiled = await this.compile(capture.request, proposal);
+    const mismatches: string[] = [];
+    if (compiled.compiledChange.change.id !== capture.semanticChangeId) mismatches.push("semantic change identity");
+    if (compiled.proposalHash !== capture.proposalHash) mismatches.push("proposal hash");
+    if (compiled.compiledPlan.plan.id !== capture.planId || compiled.compiledPlan.plan.revision !== capture.planRevision) mismatches.push("plan identity or revision");
+    if (compiled.planHash !== capture.planHash) mismatches.push("plan hash");
+    if (exactPatchInputHash(compiled) !== capture.exactPatchInputHash) mismatches.push("exact patch input hash");
+    const currentCapsules = capsules(compiled).map((capsule) => ({ packetId: capsule.taskId, capsuleId: capsule.id, capsuleHash: executionCapsuleHash(capsule) }));
+    if (canonicalJson(currentCapsules) !== canonicalJson(capture.capsuleBindings)) mismatches.push("capsule bindings");
+    if (mismatches.length > 0) throw new Error(`lifecycle plan is stale or unauthenticated: ${mismatches.join(", ")}`);
+    return { capture, compiled };
+  }
+
+  async approve(selector: string, presentedPlanHash: ContentHash): Promise<LifecycleApprovalRecord> {
+    const planned = await this.plan(selector);
+    return this.store.approve(
+      selector,
+      presentedPlanHash,
+      planned.compiled.compiledPlan.plan,
+      capsules(planned.compiled),
+    );
+  }
+
+  async readApproval(selector: string): Promise<LifecycleApprovalRecord> {
+    return this.store.readApproval(selector);
+  }
+
+  async apply(approvalSelector: string): Promise<StateBoundChangeResult> {
+    const prior = await this.store.successfulResultForApproval<StateBoundChangeResult>(approvalSelector);
+    if (prior !== undefined) return prior.result;
+    const approvalRecord = await this.store.readApproval(approvalSelector);
+    const planned = await this.plan(approvalRecord.semanticChangeId);
+    if (approvalRecord.planHash !== planned.capture.planHash) throw new Error("lifecycle approval is stale for the current authenticated plan");
+    if (approvalRecord.approvals.length !== 1) throw new Error("initial repository lifecycle requires exactly one packet approval");
+    const attempt = await this.store.beginAttempt(approvalRecord.id);
+    const result = await executeCompiledRepositoryChange({
+      repositoryRoot: this.repositoryRoot,
+      compiled: planned.compiled,
+      approval: approvalRecord.approvals[0]!,
+      attempt,
+      store: this.store,
+      now: this.now,
+    });
+    if (result.outcome === "success") {
+      const paths = await RepositoryPathService.create(this.repositoryRoot);
+      const transaction = await new FileTransactionJournal(paths).read(attempt.transactionId);
+      await this.store.completeSuccessfulAttempt(attempt.id, result, transaction);
+    } else {
+      await this.store.completeAttempt(attempt.id, result.outcome, result);
+    }
+    return result;
+  }
+
+  async recover(approvalSelector: string): Promise<LifecycleRecoveryOutcome[]> {
+    const approval = await this.store.readApproval(approvalSelector);
+    const capture = await this.store.readCapture(approval.semanticChangeId);
+    const attempts = await this.store.incompleteAttemptsForApproval(approval.id);
+    if (attempts.length === 0) return [];
+    const paths = await RepositoryPathService.create(this.repositoryRoot);
+    const journal = new FileTransactionJournal(paths);
+    const worktree = new GovernedWorktreeRuntime(new WriterLeaseManager(paths, { staleAfterMs: 30_000 }), journal);
+    const session = await worktree.open({
+      sessionId: `recovery_${hashFramedDomain("change-lifecycle-recovery-session", attempts.map(({ id }) => id)).slice(-32)}`,
+      processId: process.pid,
+      stateBinding: capture.stateBinding,
+    });
+    let recovered;
+    try {
+      recovered = await session.recover();
+      const byTransaction = new Map(recovered.map((result) => [result.transactionId, result]));
+      const outcomes: LifecycleRecoveryOutcome[] = [];
+      for (const attempt of attempts) {
+        let record;
+        try {
+          record = await journal.read(attempt.transactionId);
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+        }
+        const recovery = byTransaction.get(attempt.transactionId);
+        if (record?.entry.phase === "committed") {
+          let prepared;
+          try {
+            prepared = await this.store.readPreparedSuccess(attempt.id);
+          } catch (error) {
+            if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+              outcomes.push({ attemptId: attempt.id, transactionId: attempt.transactionId, action: "recovery-required", reason: "committed transaction has no authenticated prepared-success checkpoint" });
+              continue;
+            }
+            throw error;
+          }
+          if (!record.entry.checkpointIds.includes(prepared.prepared.checkpointId)) {
+            outcomes.push({ attemptId: attempt.id, transactionId: attempt.transactionId, action: "recovery-required", reason: "committed journal does not bind the authenticated prepared-success identity" });
+            continue;
+          }
+          const result = await publishPreparedStateBoundChangeSuccess(prepared.prepared, {
+            write: (kind, hash, content) => this.store.writeArtifact(kind, hash, content),
+          });
+          await this.store.completeSuccessfulAttempt(attempt.id, result, record);
+          outcomes.push({ attemptId: attempt.id, transactionId: attempt.transactionId, action: "finalized" });
+          continue;
+        }
+        if (record?.entry.phase === "recovery-required" || recovery?.action === "recovery-required") {
+          outcomes.push({ attemptId: attempt.id, transactionId: attempt.transactionId, action: "recovery-required", reason: recovery?.reason ?? "journal requires manual recovery" });
+          continue;
+        }
+        const outcome: LifecycleRecoveryOutcome = record === undefined
+          ? { attemptId: attempt.id, transactionId: attempt.transactionId, action: "no-transaction", reason: "attempt stopped before a governed transaction began" }
+          : { attemptId: attempt.id, transactionId: attempt.transactionId, action: "rolled-back" };
+        await this.store.completeAttempt(attempt.id, "failure", { kind: "recovery", ...outcome });
+        outcomes.push(outcome);
+      }
+      return outcomes;
+    } finally {
+      await session.close();
+    }
+  }
+
+  async resume(approvalSelector: string): Promise<StateBoundChangeResult> {
+    const outcomes = await this.recover(approvalSelector);
+    const blocked = outcomes.filter(({ action }) => action === "recovery-required");
+    if (blocked.length > 0) throw new Error(`lifecycle recovery requires manual action: ${blocked.map(({ transactionId, reason }) => `${transactionId}: ${reason ?? "unknown"}`).join("; ")}`);
+    return this.apply(approvalSelector);
+  }
+
+  private compile(request: string, proposal: ChangeProposal): Promise<CompiledRepositoryChange> {
+    return compileRepositoryChange({ repositoryRoot: this.repositoryRoot, request, proposal, now: this.now() });
+  }
+}

@@ -25,6 +25,21 @@ const binding: StateBinding = {
 };
 
 describe("GovernedWorktreeRuntime", () => {
+  it("exposes an ownership heartbeat for the full governed session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-governed-"));
+    let now = new Date("2026-08-26T00:00:00.000Z");
+    const paths = await RepositoryPathService.create(root);
+    const leases = new WriterLeaseManager(paths, { staleAfterMs: 1_000, now: () => now });
+    const runtime = new GovernedWorktreeRuntime(leases, new FileTransactionJournal(paths));
+    const session = await runtime.open({ sessionId: "session-a", processId: 42, stateBinding: binding });
+
+    now = new Date("2026-08-26T00:00:00.750Z");
+    await session.heartbeat();
+    now = new Date("2026-08-26T00:00:01.500Z");
+    await expect(leases.acquire({ sessionId: "session-b", processId: 43, stateBinding: binding })).rejects.toMatchObject({ code: "lease-held" });
+    await session.close();
+  });
+
   it("requires the transaction state to match the snapshot held by its writer lease", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-governed-"));
     const paths = await RepositoryPathService.create(root);

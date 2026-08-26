@@ -149,6 +149,29 @@ export interface StateBoundChangeResult {
   readonly receiptRef: string;
 }
 
+export interface PreparedStateBoundChangeSuccess {
+  readonly version: 1;
+  readonly preparationId: string;
+  readonly checkpointId: string;
+  readonly planId: EntityId;
+  readonly executionApprovalId: EntityId;
+  readonly beforeState: StateDigest;
+  readonly afterState: StateDigest;
+  readonly preview?: TransformPreview;
+  readonly transformResult: TransformResult;
+  readonly validations: readonly ValidationResult[];
+  readonly completionAssessment: CompletionAssessment;
+  readonly certificateArtifact: ChangeCertificateArtifact;
+  readonly certificateHash: ContentHash;
+  readonly receipt: TransactionReceipt;
+  readonly receiptHash: ContentHash;
+  readonly contentHash: ContentHash;
+}
+
+export interface StateBoundSuccessDurabilityPort {
+  prepare(success: PreparedStateBoundChangeSuccess): Promise<void>;
+}
+
 export interface ExecuteStateBoundChangeInput<TInput> {
   readonly plan: ExecutionPlan;
   readonly capsule: ExecutionCapsule;
@@ -163,8 +186,12 @@ export interface StateBoundChangeExecutorOptions<TInput> {
   transactions: ChangeTransactionPort;
   artifacts: ChangeArtifactStore;
   completion: CompletionAssessmentPort;
+  successDurability?: StateBoundSuccessDurabilityPort;
   /** Resolves canonical entity IDs from the approved transform result for receipt provenance. */
   changedCanonicalEntityIds?: (result: TransformResult) => readonly string[];
+  changedRequirementIds?: (result: TransformResult) => readonly string[];
+  changedScenarioIds?: (result: TransformResult) => readonly string[];
+  planningSurpriseIds?: (result: TransformResult) => readonly string[];
   environment: {
     readonly repositoryRoot: string;
     readonly signal: AbortSignal;
@@ -309,7 +336,11 @@ export class StateBoundChangeExecutor<TInput> {
   private readonly transactions: ChangeTransactionPort;
   private readonly artifacts: ChangeArtifactStore;
   private readonly completion: CompletionAssessmentPort;
+  private readonly successDurability: StateBoundSuccessDurabilityPort | undefined;
   private readonly changedCanonicalEntityIds: (result: TransformResult) => readonly string[];
+  private readonly changedRequirementIds: (result: TransformResult) => readonly string[];
+  private readonly changedScenarioIds: (result: TransformResult) => readonly string[];
+  private readonly planningSurpriseIds: (result: TransformResult) => readonly string[];
   private readonly environment: Readonly<{ repositoryRoot: string; signal: AbortSignal }>;
   private readonly now: () => string;
 
@@ -320,7 +351,11 @@ export class StateBoundChangeExecutor<TInput> {
     this.transactions = options.transactions;
     this.artifacts = options.artifacts;
     this.completion = options.completion;
+    this.successDurability = options.successDurability;
     this.changedCanonicalEntityIds = options.changedCanonicalEntityIds ?? (() => []);
+    this.changedRequirementIds = options.changedRequirementIds ?? (() => []);
+    this.changedScenarioIds = options.changedScenarioIds ?? (() => []);
+    this.planningSurpriseIds = options.planningSurpriseIds ?? (() => []);
     if (options.environment.repositoryRoot.length === 0) throw new TypeError("execution repository root cannot be blank");
     this.environment = Object.freeze({
       repositoryRoot: options.environment.repositoryRoot,
@@ -452,12 +487,29 @@ export class StateBoundChangeExecutor<TInput> {
         const outcome: ChangeOutcome = attempt.result.changed ? "partial" : "failure";
         return this.finalize(input, beforeState, await this.state.current(), outcome, failedValidations, attempt);
       }
-      await attempt.transaction.checkpoint("after-validation");
+      const afterState = await this.state.current();
+      const preparedSuccess = createPreparedStateBoundChangeSuccess({
+        plan: input.plan,
+        capsule: input.capsule,
+        approval: input.approval,
+        beforeState,
+        afterState,
+        ...(attempt.preview === undefined ? {} : { preview: attempt.preview }),
+        transformResult: attempt.result,
+        validations: attempt.validations,
+        completionAssessment: attempt.completionAssessment,
+        changedCanonicalEntityIds: this.changedCanonicalEntityIds(attempt.result),
+        changedRequirementIds: this.changedRequirementIds(attempt.result),
+        changedScenarioIds: this.changedScenarioIds(attempt.result),
+        planningSurpriseIds: this.planningSurpriseIds(attempt.result),
+        createdAt: this.now(),
+      });
+      await this.successDurability?.prepare(preparedSuccess);
+      await attempt.transaction.checkpoint(preparedSuccess.checkpointId);
       await attempt.transaction.transition("canonical-staging");
       await attempt.transaction.transition("committing");
       await attempt.transaction.commit();
-      const afterState = await this.state.current();
-      return this.finalize(input, beforeState, afterState, "success", [], attempt);
+      return publishPreparedStateBoundChangeSuccess(preparedSuccess, this.artifacts);
     } catch (caught) {
       const error = caught as PartialTransformError;
       if (error.partialResult !== undefined) attempt.result = error.partialResult;
@@ -502,11 +554,11 @@ export class StateBoundChangeExecutor<TInput> {
       beforeState: structuredClone(beforeState),
       afterState: structuredClone(afterState),
       changedConcepts: [],
-      changedRequirements: [],
-      changedScenarios: [],
+      changedRequirements: attempt.result === undefined ? [] : sortedUnique(this.changedRequirementIds(attempt.result)),
+      changedScenarios: attempt.result === undefined ? [] : sortedUnique(this.changedScenarioIds(attempt.result)),
       changedRelations: [],
       changedUnits,
-      planningSurpriseIds: [],
+      planningSurpriseIds: attempt.result === undefined ? [] : sortedUnique(this.planningSurpriseIds(attempt.result)),
       deterministicOperations: structuredClone(operations),
       agentOperations: [],
       validations: normalizeValidations(attempt.validations),
@@ -545,6 +597,12 @@ export class StateBoundChangeExecutor<TInput> {
     const changedCanonicalEntityIds = attempt.result === undefined ? [] : sortedUnique(
       this.changedCanonicalEntityIds(attempt.result).filter((id) => changedUnits.includes(id)),
     );
+    const changedRequirementIds = attempt.result === undefined ? [] : sortedUnique(
+      this.changedRequirementIds(attempt.result).filter((id) => changedUnits.includes(id)),
+    );
+    const changedScenarioIds = attempt.result === undefined ? [] : sortedUnique(
+      this.changedScenarioIds(attempt.result).filter((id) => changedUnits.includes(id)),
+    );
     const receiptWithoutHash: Omit<TransactionReceipt, "semanticHash"> = {
       id: `receipt:${input.plan.id}:${input.approval.id}`,
       planId: input.plan.id,
@@ -552,8 +610,8 @@ export class StateBoundChangeExecutor<TInput> {
       beforeState: structuredClone(beforeState),
       afterState: structuredClone(afterState),
       changedCanonicalEntityIds,
-      changedRequirementIds: [],
-      changedScenarioIds: [],
+      changedRequirementIds,
+      changedScenarioIds,
       changedUnitIds: changedUnits,
       validationSummaryHash,
       certificateHash,
@@ -579,4 +637,201 @@ export class StateBoundChangeExecutor<TInput> {
       receiptRef,
     };
   }
+}
+
+export interface CreatePreparedStateBoundChangeSuccessInput {
+  readonly plan: ExecutionPlan;
+  readonly capsule: ExecutionCapsule;
+  readonly approval: ExecutionApproval;
+  readonly beforeState: StateDigest;
+  readonly afterState: StateDigest;
+  readonly preview?: TransformPreview;
+  readonly transformResult: TransformResult;
+  readonly validations: readonly ValidationResult[];
+  readonly completionAssessment: CompletionAssessment;
+  readonly changedCanonicalEntityIds: readonly string[];
+  readonly changedRequirementIds: readonly string[];
+  readonly changedScenarioIds: readonly string[];
+  readonly planningSurpriseIds: readonly string[];
+  readonly createdAt: string;
+}
+
+function preparedSuccessContentHash(success: Omit<PreparedStateBoundChangeSuccess, "contentHash">): ContentHash {
+  return hashFramedDomain("prepared-state-bound-change-success", success);
+}
+
+function preparedSuccessIdentityHash(input: {
+  readonly planId: EntityId;
+  readonly executionApprovalId: EntityId;
+  readonly beforeState: StateDigest;
+  readonly afterState: StateDigest;
+  readonly preview?: TransformPreview;
+  readonly transformResult: TransformResult;
+  readonly validations: readonly ValidationResult[];
+  readonly completionAssessment: CompletionAssessment;
+  readonly changedCanonicalEntityIds: readonly string[];
+  readonly changedRequirementIds: readonly string[];
+  readonly changedScenarioIds: readonly string[];
+  readonly planningSurpriseIds: readonly string[];
+}): ContentHash {
+  return hashFramedDomain("state-bound-success-preparation-identity", input);
+}
+
+export function createPreparedStateBoundChangeSuccess(
+  input: CreatePreparedStateBoundChangeSuccessInput,
+): PreparedStateBoundChangeSuccess {
+  const changedUnits = sortedUnique(input.transformResult.touchedUnitIds);
+  const changedCanonicalEntityIds = sortedUnique(input.changedCanonicalEntityIds.filter((id) => changedUnits.includes(id)));
+  const changedRequirementIds = sortedUnique(input.changedRequirementIds.filter((id) => changedUnits.includes(id)));
+  const changedScenarioIds = sortedUnique(input.changedScenarioIds.filter((id) => changedUnits.includes(id)));
+  const validations = normalizeValidations(input.validations);
+  const completionAssessment = normalizeCompletionAssessment(input.completionAssessment);
+  const preparationIdentityHash = preparedSuccessIdentityHash({
+    planId: input.plan.id,
+    executionApprovalId: input.approval.id,
+    beforeState: input.beforeState,
+    afterState: input.afterState,
+    ...(input.preview === undefined ? {} : { preview: input.preview }),
+    transformResult: input.transformResult,
+    validations,
+    completionAssessment,
+    changedCanonicalEntityIds,
+    changedRequirementIds,
+    changedScenarioIds,
+    planningSurpriseIds: sortedUnique(input.planningSurpriseIds),
+  });
+  const preparationId = `prepared_success_${preparationIdentityHash.slice(-32)}`;
+  const checkpointId = `prepared-success:${preparationId}`;
+  const certificate: ChangeCertificate = {
+    id: `certificate:${input.plan.id}:${input.approval.id}`,
+    planId: input.plan.id,
+    beforeState: structuredClone(input.beforeState),
+    afterState: structuredClone(input.afterState),
+    changedConcepts: [],
+    changedRequirements: changedRequirementIds,
+    changedScenarios: changedScenarioIds,
+    changedRelations: [],
+    changedUnits,
+    planningSurpriseIds: sortedUnique(input.planningSurpriseIds),
+    deterministicOperations: structuredClone(input.transformResult.operations),
+    agentOperations: [],
+    validations,
+    divergencesResolved: [],
+    divergencesIntroduced: sortedUnique(completionAssessment.newDivergenceIds),
+    modeledBoundary: sortedUnique(input.plan.boundary),
+    completeness: "bounded",
+    unknowns: sortedUnique(completionAssessment.unknowns),
+    unavailableActions: sortedUnique(completionAssessment.unavailableActions),
+    rollback: [],
+    createdAt: input.createdAt,
+  };
+  const certificateArtifact: ChangeCertificateArtifact = {
+    version: 1,
+    outcome: "success",
+    lastCheckpointId: checkpointId,
+    journalPhase: "committed",
+    recoveryState: "not-required",
+    reasons: [],
+    completionAssessment,
+    certificate,
+  };
+  const certificateHash = hashFramedDomain("change-certificate-artifact", certificateArtifact);
+  const receiptWithoutHash: Omit<TransactionReceipt, "semanticHash"> = {
+    id: `receipt:${input.plan.id}:${input.approval.id}`,
+    planId: input.plan.id,
+    riskClass: input.capsule.risk.class,
+    beforeState: structuredClone(input.beforeState),
+    afterState: structuredClone(input.afterState),
+    changedCanonicalEntityIds,
+    changedRequirementIds,
+    changedScenarioIds,
+    changedUnitIds: changedUnits,
+    validationSummaryHash: hashFramedDomain("validation-summary", validations),
+    certificateHash,
+    createdAt: input.createdAt,
+  };
+  const receipt: TransactionReceipt = { ...receiptWithoutHash, semanticHash: hashSemantic("transaction-receipt", receiptWithoutHash) };
+  const receiptHash = hashFramedDomain("transaction-receipt-artifact", receipt);
+  const basis = {
+    version: 1 as const,
+    preparationId,
+    checkpointId,
+    planId: input.plan.id,
+    executionApprovalId: input.approval.id,
+    beforeState: structuredClone(input.beforeState),
+    afterState: structuredClone(input.afterState),
+    ...(input.preview === undefined ? {} : { preview: structuredClone(input.preview) }),
+    transformResult: structuredClone(input.transformResult),
+    validations,
+    completionAssessment,
+    certificateArtifact,
+    certificateHash,
+    receipt,
+    receiptHash,
+  };
+  return { ...basis, contentHash: preparedSuccessContentHash(basis) };
+}
+
+export function authenticatePreparedStateBoundChangeSuccess(
+  success: PreparedStateBoundChangeSuccess,
+): PreparedStateBoundChangeSuccess {
+  const { contentHash, ...basis } = success;
+  const expectedPreparationId = `prepared_success_${preparedSuccessIdentityHash({
+    planId: success.planId,
+    executionApprovalId: success.executionApprovalId,
+    beforeState: success.beforeState,
+    afterState: success.afterState,
+    ...(success.preview === undefined ? {} : { preview: success.preview }),
+    transformResult: success.transformResult,
+    validations: success.validations,
+    completionAssessment: success.completionAssessment,
+    changedCanonicalEntityIds: success.receipt.changedCanonicalEntityIds,
+    changedRequirementIds: success.receipt.changedRequirementIds,
+    changedScenarioIds: success.receipt.changedScenarioIds,
+    planningSurpriseIds: success.certificateArtifact.certificate.planningSurpriseIds,
+  }).slice(-32)}`;
+  if (success.version !== 1
+    || success.preparationId !== expectedPreparationId
+    || success.checkpointId !== `prepared-success:${success.preparationId}`
+    || contentHash !== preparedSuccessContentHash(basis)
+    || success.certificateHash !== hashFramedDomain("change-certificate-artifact", success.certificateArtifact)
+    || success.receiptHash !== hashFramedDomain("transaction-receipt-artifact", success.receipt)
+    || success.receipt.certificateHash !== success.certificateHash
+    || success.receipt.semanticHash !== hashSemantic("transaction-receipt", success.receipt)
+    || success.certificateArtifact.outcome !== "success"
+    || success.certificateArtifact.journalPhase !== "committed"
+    || success.certificateArtifact.lastCheckpointId !== success.checkpointId
+    || success.certificateArtifact.certificate.planId !== success.planId
+    || success.receipt.planId !== success.planId
+    || success.certificateArtifact.certificate.id !== `certificate:${success.planId}:${success.executionApprovalId}`
+    || success.receipt.id !== `receipt:${success.planId}:${success.executionApprovalId}`
+    || canonicalJson(success.certificateArtifact.certificate.beforeState) !== canonicalJson(success.beforeState)
+    || canonicalJson(success.certificateArtifact.certificate.afterState) !== canonicalJson(success.afterState)
+    || canonicalJson(success.receipt.beforeState) !== canonicalJson(success.beforeState)
+    || canonicalJson(success.receipt.afterState) !== canonicalJson(success.afterState)) {
+    throw new Error("prepared state-bound success failed content authentication");
+  }
+  return success;
+}
+
+export async function publishPreparedStateBoundChangeSuccess(
+  untrusted: PreparedStateBoundChangeSuccess,
+  artifacts: ChangeArtifactStore,
+): Promise<StateBoundChangeResult> {
+  const success = authenticatePreparedStateBoundChangeSuccess(untrusted);
+  const certificateRef = await artifacts.write("certificate", success.certificateHash, canonicalJson(success.certificateArtifact));
+  const receiptRef = await artifacts.write("receipt", success.receiptHash, canonicalJson(success.receipt));
+  return {
+    outcome: "success",
+    reasons: [],
+    ...(success.preview === undefined ? {} : { preview: structuredClone(success.preview) }),
+    transformResult: structuredClone(success.transformResult),
+    validations: structuredClone(success.validations),
+    certificate: structuredClone(success.certificateArtifact.certificate),
+    certificateHash: success.certificateHash,
+    certificateRef,
+    receipt: structuredClone(success.receipt),
+    receiptHash: success.receiptHash,
+    receiptRef,
+  };
 }
