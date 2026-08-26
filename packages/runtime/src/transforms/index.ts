@@ -12,6 +12,11 @@ import {
   type ValidationResult,
 } from "@projector/core";
 
+import { TransformPreconditionError, TransformScopeError, type TransformMutationPort } from "./contracts.js";
+
+export * from "./contracts.js";
+export * from "./exact-text-patch.js";
+
 const compareStrings = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort(compareStrings);
 
@@ -37,29 +42,6 @@ export interface ReferenceUpdateInput {
 export interface MoveReferenceUpdateInput {
   moves: readonly MoveOperationInput[];
   references: readonly ReferenceUpdateInput[];
-}
-
-/** The composition root adapts a durable journal transaction to this narrow facade. */
-export interface TransformMutationPort {
-  readFile(path: string): Promise<string | undefined>;
-  assertWritable(path: string): Promise<void>;
-  moveFile(from: string, to: string): Promise<void>;
-  writeFile(path: string, content: string): Promise<void>;
-  checkpoint(id: string): Promise<void>;
-}
-
-export class TransformScopeError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TransformScopeError";
-  }
-}
-
-export class TransformPreconditionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TransformPreconditionError";
-  }
 }
 
 interface PreparedMove {

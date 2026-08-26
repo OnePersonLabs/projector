@@ -92,6 +92,11 @@ class MemoryMutationPort implements TransformMutationPort {
     this.files.set(path, content);
   }
 
+  async deleteFile(path: string): Promise<void> {
+    this.events.push(`delete:${path}`);
+    this.files.delete(path);
+  }
+
   async checkpoint(id: string): Promise<void> {
     this.events.push(`checkpoint:${id}`);
   }
