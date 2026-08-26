@@ -315,8 +315,10 @@ export async function compileRepositoryChange(
     identityResolutions.push(resolution); identityQueries.push({ query, priorResult, role: "exact requirement key and alias negative-space search" });
     const payload = proposedRequirementPayload(proposed, existing, targetId, proposalHash, editedPaths);
     const write = await canonicalWrite(input.repositoryRoot, canonical, "requirement", targetId, payload.key, payload);
-    if (write.before !== write.after) canonicalWrites.push(write);
-    operations.push({ subjectType: "requirement", kind: existing === undefined ? "add" : "modify", requirementId: targetId, proposedRequirement: payload, rationale: `authenticated proposal ${proposalHash}` });
+    if (write.before !== write.after) {
+      canonicalWrites.push(write);
+      operations.push({ subjectType: "requirement", kind: existing === undefined ? "add" : "modify", requirementId: targetId, proposedRequirement: payload, rationale: `authenticated proposal ${proposalHash}` });
+    }
   }
   for (const proposed of input.proposal.scenarios) {
     const claims = [proposed.key, ...proposed.aliases];
@@ -333,8 +335,10 @@ export async function compileRepositoryChange(
     identityResolutions.push(resolution); identityQueries.push({ query, priorResult, role: "exact scenario key and alias negative-space search" });
     const payload = proposedScenarioPayload(proposed, existing, targetId, editedPaths);
     const write = await canonicalWrite(input.repositoryRoot, canonical, "behavioral-scenario", targetId, payload.key, payload);
-    if (write.before !== write.after) canonicalWrites.push(write);
-    operations.push({ subjectType: "scenario", kind: existing === undefined ? "add" : "modify", scenarioId: targetId, proposedScenario: payload, rationale: `authenticated proposal ${proposalHash}` });
+    if (write.before !== write.after) {
+      canonicalWrites.push(write);
+      operations.push({ subjectType: "scenario", kind: existing === undefined ? "add" : "modify", scenarioId: targetId, proposedScenario: payload, rationale: `authenticated proposal ${proposalHash}` });
+    }
   }
   canonicalWrites.sort((left, right) => compare(left.path, right.path));
   const boundary = unique([...editedPaths, ...canonicalWrites.map(({ path }) => path)]);
