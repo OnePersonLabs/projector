@@ -16,6 +16,22 @@ export function packedLifecycleNsenterWorkingDirectoryArguments(repository) {
   return [`--wd=${repository}`];
 }
 
+export async function closePackedLifecycleNamespaceKeeper({ namespaceProcessId, keeper, signalProcess }) {
+  const signal = async (name) => {
+    try { await signalProcess(namespaceProcessId, name); }
+    catch (error) { if (error?.code !== "ESRCH") throw error; }
+  };
+  await signal("SIGTERM");
+  if (!(await waitForProcessExit(namespaceProcessId, 2_000))) {
+    await signal("SIGKILL");
+    if (!(await waitForProcessExit(namespaceProcessId, 2_000))) throw new Error("host source-severance namespace did not terminate");
+  }
+  if (!(await completesWithin(keeper.completed, 2_000))) {
+    try { keeper.child.kill("SIGTERM"); } catch (error) { if (error?.code !== "ESRCH") throw error; }
+    if (!(await completesWithin(keeper.completed, 2_000))) throw new Error("host source-severance launcher did not terminate");
+  }
+}
+
 function sortValue(value) {
   if (Array.isArray(value)) return value.map(sortValue);
   if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortValue(item)]));
@@ -191,6 +207,30 @@ async function pathAbsent(path) {
   try { await access(path); return false; } catch (error) { if (error?.code === "ENOENT") return true; throw error; }
 }
 
+async function waitForProcessExit(processId, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await pathAbsent(`/proc/${String(processId)}`)) return true;
+    await delay(25);
+  }
+  return pathAbsent(`/proc/${String(processId)}`);
+}
+
+function completesWithin(completed, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(false), timeoutMs);
+    timer.unref();
+    completed.then(() => { clearTimeout(timer); resolve(true); }, (error) => { clearTimeout(timer); reject(error); });
+  });
+}
+
+async function signalPrivilegedProcess(processId, signal) {
+  const result = await run("sudo", ["-n", "kill", `-${signal}`, String(processId)], { env: process.env });
+  if (result.exitCode !== 0 && !/No such process/iu.test(result.stderr)) {
+    throw new Error(`host source-severance namespace ${signal} failed: ${result.stderr || result.stdout || String(result.exitCode)}`);
+  }
+}
+
 async function waitForTextFile(path, label) {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -238,9 +278,7 @@ async function createHostMountNamespaceSeverance(input, sandbox) {
       return launch("sudo", command, { cwd: sandbox.repository, env: process.env, detached: options.detached });
     },
     async close() {
-      keeper.child.kill("SIGTERM");
-      await Promise.race([keeper.completed, delay(2_000)]);
-      if (keeper.child.exitCode === null && keeper.child.signalCode === null) keeper.child.kill("SIGKILL");
+      await closePackedLifecycleNamespaceKeeper({ namespaceProcessId, keeper, signalProcess: signalPrivilegedProcess });
     },
   };
 }
