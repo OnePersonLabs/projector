@@ -314,7 +314,8 @@ export async function compileRepositoryChange(
     if (priorResult.resultCount !== candidates.length) throw new Error(`authenticated requirement identity query disagrees with resolved candidates: ${proposed.key}`);
     identityResolutions.push(resolution); identityQueries.push({ query, priorResult, role: "exact requirement key and alias negative-space search" });
     const payload = proposedRequirementPayload(proposed, existing, targetId, proposalHash, editedPaths);
-    canonicalWrites.push(await canonicalWrite(input.repositoryRoot, canonical, "requirement", targetId, payload.key, payload));
+    const write = await canonicalWrite(input.repositoryRoot, canonical, "requirement", targetId, payload.key, payload);
+    if (write.before !== write.after) canonicalWrites.push(write);
     operations.push({ subjectType: "requirement", kind: existing === undefined ? "add" : "modify", requirementId: targetId, proposedRequirement: payload, rationale: `authenticated proposal ${proposalHash}` });
   }
   for (const proposed of input.proposal.scenarios) {
@@ -331,12 +332,16 @@ export async function compileRepositoryChange(
     if (priorResult.resultCount !== candidates.length) throw new Error(`authenticated scenario identity query disagrees with resolved candidates: ${proposed.key}`);
     identityResolutions.push(resolution); identityQueries.push({ query, priorResult, role: "exact scenario key and alias negative-space search" });
     const payload = proposedScenarioPayload(proposed, existing, targetId, editedPaths);
-    canonicalWrites.push(await canonicalWrite(input.repositoryRoot, canonical, "behavioral-scenario", targetId, payload.key, payload));
+    const write = await canonicalWrite(input.repositoryRoot, canonical, "behavioral-scenario", targetId, payload.key, payload);
+    if (write.before !== write.after) canonicalWrites.push(write);
     operations.push({ subjectType: "scenario", kind: existing === undefined ? "add" : "modify", scenarioId: targetId, proposedScenario: payload, rationale: `authenticated proposal ${proposalHash}` });
   }
   canonicalWrites.sort((left, right) => compare(left.path, right.path));
   const boundary = unique([...editedPaths, ...canonicalWrites.map(({ path }) => path)]);
   const calculatedRelevance = calculateRepositoryRelevance(observation, editedPaths);
+  if (calculatedRelevance.unavailableSurfaceIds.length > 0) {
+    throw new Error(`repository change compilation requires unavailable analyzer evidence: ${calculatedRelevance.unavailableSurfaceIds.join(", ")}`);
+  }
   const relevanceSpec = queryRegistry.createSpec({ id: `relevance:${hashFramedDomain("repository-change-relevance-query-id", editedPaths).slice(-16)}`, programId: CHANGE_QUERY_PROGRAM_IDS.reverseImporters, input: { editedPaths } });
   const relevancePrior = await queryRegistry.evaluate(relevanceSpec, context);
   const relevanceValue = {

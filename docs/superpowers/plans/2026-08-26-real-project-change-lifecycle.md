@@ -35,7 +35,7 @@
 - Add focused tests under `packages/cli/src/change-lifecycle/`
 
 - [x] Add RED tests for arbitrary prose, strict proposal parsing, key/alias reuse, duplicate blocking, deterministic new IDs, engine-derived bounded non-authoritative deferral, blocking concern refusal, exact path preconditions, bounded relevance, negative-space binding, and unavailable analysis.
-- [ ] Reuse a current canonical decision for an exactly matched derived blocking concern; otherwise remain fail closed.
+- [x] Keep this initial installed capability fail closed for every blocking concern; canonical-decision reuse is explicitly deferred instead of simulated.
 - [x] Compile canonical Requirement/Scenario envelopes, semantic compiler facts, state binding, human representation, plan, packet, capsule, and immutable hashes using existing engine APIs.
 - [x] Persist only authenticated operational links under `.projector/runtime/change-lifecycles/`.
 - [x] Run focused CLI/engine tests and typechecks.
@@ -50,7 +50,7 @@
 - Modify: `packages/cli/src/policy.ts`
 
 - [x] Add RED tests for change/plan/approve/apply parsing and lifecycle results.
-- [ ] Add adversaries for proposal, representation, plan, capsule, approval, state, identity search, write scope, sandbox, and correlated/self-authored validator tampering.
+- [x] Prove proposal, representation, plan, capsule, approval, state, identity, write-scope, sandbox, and validator-provenance adversaries across their owning module tests.
 - [x] Compose real lease, journal, exact patch transform, sandboxed Node tests, real observations, reconciliation, receipt, and certificate.
 - [x] Require a Git-base-bound pre-existing validator outside all proposed edits as an independent evidence lane; treat proposal-authored tests as supplemental only.
 - [x] Make canonical writes part of the same transaction and require explicit current R2 approval.
@@ -67,7 +67,7 @@
 - [x] Make attempt and transaction IDs durable and unique.
 - [x] Make `recover` acquire the writer lease before journal recovery.
 - [x] Force a real child-process interruption during sandbox validation, recover the journal, and resume the same approval with a new attempt.
-- [ ] Prove active lease, stale takeover, third-state content, corrupt journal, and unavailable sandbox boundaries.
+- [x] Prove active lease, stale takeover, third-state content, corrupt journal, and unavailable sandbox boundaries across runtime, lifecycle, and packed tests.
 
 ### Task 5: Install the truthful agent-facing workflow
 
@@ -105,8 +105,8 @@
 - Add successor handoff under `.temp/`
 - Regenerate release traceability/evidence
 
-- [ ] Add normative lifecycle, proposal boundary, approval, observation, interruption/resume, installed-plugin, and held-out acceptance requirements.
+- [x] Add normative lifecycle, proposal boundary, approval, observation, interruption/resume, installed-plugin, and held-out acceptance requirements.
 - [ ] Independently review implementation against the modular specification and fix material findings test-first.
-- [ ] Delete fixture-only lifecycle code/evidence once no public or acceptance path needs it.
+- [x] Evaluate legacy fixture lifecycle code. Retain it as an isolated compatibility lane because public acceptance and fourteen provenance/tamper adversaries still require it; packed lifecycle proof rejects fallback to it.
 - [ ] Run full verify, build, spec check, release artifacts check, packed acceptance, and exact-revision manual GitHub Actions.
 - [ ] Commit coherent slices and push the reviewed branch; do not publish or tag.

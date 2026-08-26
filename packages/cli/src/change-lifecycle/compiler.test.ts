@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { deriveEntityId, hashFramedDomain, withCanonicalHashes, type Requirement } from "@projector/core";
+import { deriveEntityId, hashFramedDomain, withCanonicalHashes, type BehavioralScenario, type Requirement } from "@projector/core";
 import { executionPlanHash } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
@@ -68,6 +68,15 @@ async function existingRequirement(root: string, id: string, key: string, aliase
   await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id, key, lifecycle: "active", payload: { ...payload } }));
 }
 
+async function existingScenario(root: string): Promise<void> {
+  const payload: BehavioralScenario = {
+    id: "scenario:greet-supplied-name", key: "greet-supplied-name", title: "Greet a supplied name", aliases: [], status: "active",
+    sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" },
+    steps: proposal().scenarios[0]!.steps.map((step) => ({ ...step })), evidence: [], discoveryHash: placeholder, semanticHash: placeholder,
+  };
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload } }));
+}
+
 async function repository(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "projector-change-compiler-"));
   await mkdir(join(root, "src"), { recursive: true });
@@ -115,7 +124,7 @@ describe("repository change compiler", () => {
       expect(first.compiledPlan.packets[0]?.capsule.decisionIds).toEqual([]);
       expect(first.architectureDeferral).toBeUndefined();
       expect(first.relevance.possibleFrontierUnitIds.length).toBeGreaterThan(0);
-      expect(first.relevance.unavailableSurfaceIds.length).toBeGreaterThan(0);
+      expect(first.relevance.unavailableSurfaceIds).toEqual([]);
       expect(first.independentValidators[0]).toMatchObject({ path: "test/public-contract.test.mjs", tracked: true });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
@@ -158,6 +167,19 @@ describe("repository change compiler", () => {
       await existingRequirement(root, occupied, "unrelated", []);
       const changed = parseChangeProposal({ ...proposal(), requirements: [{ key: "new-requirement", title: "New", statement: "New behavior." }] });
       await expect(compileRepositoryChange({ repositoryRoot: root, request: "New behavior", proposal: changed, now: "2026-08-26T00:00:00.000Z" })).rejects.toThrow(/stable ID.*occupied|identity.*collision/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("reuses an unchanged scenario without compiling a no-op canonical edit", async () => {
+    const root = await repository();
+    try {
+      await existingScenario(root);
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Change greeting without rewriting its existing scenario.", proposal: proposal(), now: "2026-08-26T00:00:00.000Z" });
+      expect(compiled.identityResolutions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "scenario", outcome: "reuse-existing", targetId: "scenario:greet-supplied-name" }),
+      ]));
+      expect(compiled.canonicalWrites).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "scenario:greet-supplied-name" })]));
+      expect(compiled.exactPatchInput.edits.every(({ before, after }) => before !== after)).toBe(true);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

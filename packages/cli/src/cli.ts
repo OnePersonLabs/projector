@@ -474,8 +474,15 @@ export async function executeProjector(
     case "resume": {
       const lifecycle = options.lifecycle ?? defaultRepositoryLifecyclePort();
       if (!policy.allowAutoMutation) { report = { policy, dryRun: true, selector: parsed.selector }; break; }
-      report = { policy, ...await lifecycle.resume({ repositoryRoot, selector: parsed.selector! }) };
-      exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
+      try {
+        report = { policy, ...await lifecycle.resume({ repositoryRoot, selector: parsed.selector! }) };
+        exitCode = report.outcome === "success" ? 0 : report.outcome === "partial" ? 6 : 3;
+      } catch (error) {
+        const structured = error instanceof Error && "code" in error && error.code === "lifecycle-recovery-required" && "outcomes" in error && Array.isArray(error.outcomes);
+        if (!structured) throw error;
+        report = { policy, kind: "lifecycle-resume", selector: parsed.selector, outcome: "recovery-required", outcomes: error.outcomes, error: error.message };
+        exitCode = 6;
+      }
       break;
     }
     case "upgrade": {

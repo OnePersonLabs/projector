@@ -26,6 +26,10 @@ describe("change/plan/apply CLI composition", () => {
     expect((await executeProjector(["apply", "lifecycle_approval_abc"], { lifecycle })).exitCode).toBe(0);
     expect((await executeProjector(["recover", "lifecycle_approval_abc"], { lifecycle })).exitCode).toBe(0);
     expect((await executeProjector(["resume", "lifecycle_approval_abc"], { lifecycle })).exitCode).toBe(0);
+    lifecycle.resume.mockRejectedValueOnce(Object.assign(new Error("manual recovery required"), { code: "lifecycle-recovery-required", outcomes: [{ attemptId: "attempt:1", transactionId: "transaction:1", action: "recovery-required", reason: "third state" }] }));
+    const blocked = await executeProjector(["resume", "lifecycle_approval_abc", "--format", "json"], { lifecycle });
+    expect(blocked).toMatchObject({ exitCode: 6, report: { kind: "lifecycle-resume", outcome: "recovery-required", outcomes: [expect.objectContaining({ reason: "third state" })] } });
+    expect(JSON.parse(blocked.output)).toMatchObject({ outcome: "recovery-required", selector: "lifecycle_approval_abc" });
     expect(lifecycle.capture).toHaveBeenCalledWith(expect.objectContaining({ request: "Make the value useful for real callers", proposalPath: "proposal.json" }));
     await expect(executeProjector(["approve", "semantic_change_abc", "--plan-hash", "wrong"], { lifecycle })).rejects.toThrow(/plan hash/iu);
   });
