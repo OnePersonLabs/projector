@@ -138,6 +138,7 @@ Mandatory adversarial classes:
 30. Token compression that passes style lint while changing semantics.
 31. Net-negative representation overhead and fallback selection.
 32. Human/agent/machine/Gherkin projections with different text but one canonical semantic source.
+33. Installed source-severed lifecycle interruption, recovery, and identity continuity.
 
 ## Host tests
 
@@ -145,10 +146,16 @@ Use fake host processes and golden capability/packet/context outputs. Default te
 
 Test stale dependency-bound capability rejection, safe rebinding after unrelated root changes, out-of-scope write detection, interrupted session recovery, and direct host writes observed outside Projector tools.
 
+The packed release test MUST install the exact production tarball. It MUST copy the installed plugin shell into a disposable ordinary Git repository. The test MUST deny access to the Projector source checkout and clear source module resolution. It MUST reject installed-package symlinks, deny network access, and prove the plugin contains no absolute source reference.
+
+The test MUST use a held-out natural request and strict proposal that do not invoke the mandatory fixture intent. It MUST compare direct CLI capture/plan identity with `$projector-change` capture/plan identity, reject a substituted plan hash, and consume the exact approved hash.
+
+During sandbox validation, the test MUST observe the authenticated journal in `validating` after durable target mutation. It then sends `SIGKILL` to the complete apply process tree. The test MUST wait for the production writer lease to become stale. It MUST recover exact before-bytes and resume the same approval. The final certificate and receipt MUST reach a fixed point.
+
+The packed evidence MUST authenticate the open interrupted invocation, recovery and resume trace, and semantic, plan, and approval identities. It MUST authenticate immutable independent-validator execution and predicted and observed path equality. It MUST also prove that no Planning Surprise, unknown, or fixture execution occurred.
+
 ## Live evaluation
 
 Live-model/provider evaluation is opt-in, budgeted, reproducible at the input/program/schema level, and graded structurally. It MUST NOT be the only test for semantic behavior.
 
 ---
-
-

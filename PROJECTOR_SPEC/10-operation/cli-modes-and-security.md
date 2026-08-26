@@ -20,11 +20,13 @@ projector complete
 projector reconcile
 projector verify
 projector verify --clean
-projector change <intent>
+projector change <request> --proposal <proposal.json>
 projector plan <change>
+projector approve <change> --plan-hash <sha256:v1:...>
 projector plan rebase <plan>
-projector apply <plan>
-projector recover
+projector apply <plan-or-approval>
+projector recover [<approval>]
+projector resume <approval>
 projector upgrade
 projector exception ...
 projector lens ...
@@ -59,6 +61,8 @@ Friendly flags MAY include:
 ```
 
 Commands and flags are normalized to one internal `ExecutionPolicy` before work starts. Aliases such as `--audit-only` map to equivalent policy fields. Contradictory flags are rejected.
+
+For the installed repository change lifecycle, `change` and `plan` are read/compile operations. `approve` records only the exact immutable plan-hash decision. `apply`, lifecycle `recover`, and `resume` are mutation-capable operations. The CLI MUST preserve structured lifecycle reports for nonzero outcomes so an operator can distinguish partial, unavailable, and recovery-required states.
 
 Exit codes:
 

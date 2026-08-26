@@ -72,6 +72,22 @@ Instruction prose is not itself an enforcement guarantee. A passing clarity/toke
 
 ---
 
+## Installed agent change workflow
+
+The installed `$projector-change` workflow is a level-1 host integration over the public repository change lifecycle. Its skill tells the agent to inspect repository authority, author the strict proposal, and ask only about unresolved material ambiguity. The skill and its wrapper MUST NOT compile semantics, edit target files, issue approval, or implement recovery themselves.
+
+The installed wrapper MUST invoke only the installed Projector CLI, or one exact configured CLI path. It MUST NOT search for a Projector source checkout or use a fixture fallback. If the CLI is unavailable, it fails closed.
+
+`start` MUST call public `change` and `plan`, persist a content-authenticated continuation, return the preview/change selector/exact plan hash, and stop with `approval-required`. The agent MUST show that exact tuple to the human. It MUST NOT infer approval from broad authorization or prior consent.
+
+After the human supplies the exact hash, `approve` consumes the authenticated continuation and calls the public approval command. `apply`, `recover`, and `resume` use the returned approval selector. A structured nonzero CLI result, including `recovery-required`, MUST remain machine-readable and keep its original nonzero exit status.
+
+The wrapper MUST append a hash-chained trace entry before each CLI invocation and another entry after each completed invocation. A process interruption therefore leaves an authenticated open invocation. Recovery and resume append to that same chain. The trace authenticates transport continuity. It does not create semantic authority.
+
+The installed session hook MAY announce Projector only when it resolves the current repository and the installed CLI boundary. The hook MUST remain silent when either is unavailable. Source-checkout layout is not availability evidence.
+
+---
+
 
 ## MCP interface and mutation capabilities
 

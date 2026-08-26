@@ -24,5 +24,6 @@ Apply the deletion test: if removing a module, concept, document, or seam does n
 - [Normative principles and non-goals](PROJECTOR_SPEC/01-product/principles-and-non-goals.md)
 - [Release definition and readiness gates](PROJECTOR_SPEC/12-delivery/release-and-directive.md)
 - [CLI modes and security](PROJECTOR_SPEC/10-operation/cli-modes-and-security.md)
+- [Installed change lifecycle operator guide](docs/operations/change-lifecycle.md)
 
 Real-project ready means one installed, held-out project can complete the governed lifecycle through both a documented command path and an operational agent-facing path. It does not mean Projector supports every platform, language, host, or arbitrary code transformation.

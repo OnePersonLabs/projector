@@ -80,6 +80,26 @@ Merge/rebase conflicts in canonical governance state MUST block Govern/Autonomou
 
 ---
 
+## Public repository change lifecycle
+
+`SemanticChange.id` is the only change identity for the installed local lifecycle. Projector MUST store authenticated captures, approvals, attempts, prepared-success records, results, and agent continuations under `.projector/runtime/change-lifecycles/`. These records are operational evidence and MUST remain outside canonical semantic snapshots.
+
+The public lifecycle is `change` to `plan` to `approve` to `apply`. `change` captures the request and strict proposal. `plan` reauthenticates the capture and emits one immutable plan hash plus preview. `approve` requires the exact human-presented plan hash and persists a plan/capsule-bound approval. `apply` accepts only that approval identity. General permission, a change selector, or a similar hash MUST NOT substitute for exact approval.
+
+Before a mutation, Projector MUST select a capability-proven sandbox and capture immutable validator projections. If isolation or immutable overlays are unavailable, Projector MUST stop before it takes the writer lease or starts the journal. It MUST NOT run a validator natively.
+
+Each apply attempt MUST have a durable unique identity and transaction identity. The writer lease heartbeat MUST remain active from transaction start through every mutation, validation, checkpoint, commit, or rollback. The coordinator MUST reassert lease ownership at each authoritative transition.
+
+After mutation, Projector MUST authenticate a new repository observation. It MUST compare predicted and observed paths, canonical entities, unit states, and analyzer failures. Unexpected paths, canonical identities, or failures become Planning Surprises or unknowns and MUST block success. Claimed transform output is not observed-impact evidence.
+
+Projector MUST run each independent validator from immutable Git-base bytes overlaid at its original repository path. The validator runs against the proposed repository state with read-only source identity. Projector MUST record expected, before, after, and executed content hashes plus the selected sandbox evidence.
+
+Before commit, Projector MUST persist one authenticated prepared-success record that binds the after-state observation, validations, certificate, receipt, and journal checkpoint. It then checkpoints the journal, commits the transaction, and publishes artifacts. Recovery MAY finalize a committed journal only when that journal binds the authenticated prepared-success identity. A committed journal without that proof enters `recovery-required`.
+
+After an interruption, `recover` MUST take or safely replace the stale writer lease. It MUST restore exact snapshots in reverse order or report `recovery-required` when live content is a third state. `resume` MUST recover first and then create a new attempt under the same still-current approval. Repeating a successful approval MUST return the same authenticated certificate and receipt after it reauthenticates the prepared record, journal, and artifacts.
+
+---
+
 
 ## Transaction receipts and change certificates
 
