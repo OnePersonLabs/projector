@@ -24,7 +24,7 @@ import { compileAuthenticatedCoverageSnapshot, REQUIRED_COVERAGE_LANES, type Cov
 import { assertOperationRiskAuthorized, deriveOperationRisk, normalizeExecutionPolicy, type CliPolicyInput, type OperationRiskInput, type SliceCommand } from "./policy.js";
 import { createBuiltRunHostPort } from "./host-cli.js";
 import { createBuiltMcpCliPort } from "./mcp-cli.js";
-export { createHostSessionRecord, hostSessionSelector } from "./host-cli.js";
+export { createHostSessionRecord, hostSessionSelector } from "@projector/integrations";
 import {
   analyzeMandatorySlice,
   applyMandatorySlice,

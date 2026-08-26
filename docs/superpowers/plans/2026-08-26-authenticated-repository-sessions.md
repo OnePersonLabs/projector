@@ -20,10 +20,10 @@
 - Modify: `packages/cli/src/run-cli.test.ts`
 - Modify: `packages/cli/src/cli.test.ts`
 
-- [ ] Add valid, absent, invalid, tampered, wrong-root, wrong-host, and approval-mismatch session cases.
-- [ ] Assert the exact legacy selector/hash and public CLI exports.
-- [ ] Assert MCP status gives the invalid representation reason while leaving both representation tools unknown.
-- [ ] Run RED before adding the shared implementation.
+- [x] Add valid, absent, invalid, tampered, wrong-root, wrong-host, and approval-mismatch session cases.
+- [x] Assert the exact legacy selector/hash and public CLI exports.
+- [x] Assert MCP status gives the invalid representation reason while leaving both representation tools unknown.
+- [x] Run RED before adding the shared implementation.
 
 ### Task 2: Implement the deep session module
 
@@ -35,16 +35,15 @@
 - Modify: `packages/cli/src/mcp-cli.ts`
 - Modify: `packages/cli/src/cli.ts`
 
-- [ ] Move the exact record contract, creation, selector, and authenticated loader to integrations.
-- [ ] Add pure valid/absent/invalid representation classification.
-- [ ] Delete local session authentication from `host-cli.ts`.
-- [ ] Compose both host and MCP from the shared authority and retain the public CLI aliases.
-- [ ] Run focused GREEN, typecheck, and package-boundary checks.
+- [x] Move the exact record contract, creation, selector, and authenticated loader to integrations.
+- [x] Add pure valid/absent/invalid representation classification.
+- [x] Delete local session authentication from `host-cli.ts`.
+- [x] Compose both host and MCP from the shared authority and retain the public CLI aliases.
+- [x] Run focused GREEN, typecheck, and package-boundary checks.
 
 ### Task 3: Verify and land
 
-- [ ] Run continuity review against the design acceptance list.
-- [ ] Fix accepted material findings test-first.
-- [ ] Run `pnpm verify && pnpm build && pnpm release:artifacts:check && pnpm release:acceptance && git diff --check`.
-- [ ] Commit the slice independently.
-
+- [x] Run continuity review against the design acceptance list.
+- [x] Fix accepted material findings test-first.
+- [x] Run `pnpm verify && pnpm build && pnpm release:artifacts:check && pnpm release:acceptance && git diff --check`.
+- [x] Commit the slice independently.

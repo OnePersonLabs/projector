@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { PROJECTOR_VERSION, executeProjector, main, renderCli } from "./cli.js";
+import { PROJECTOR_VERSION, createHostSessionRecord, executeProjector, hostSessionSelector, main, renderCli } from "./cli.js";
 
 describe("minimal CLI entrypoint", () => {
+  it("preserves the public stored-session compatibility helpers", () => {
+    expect(createHostSessionRecord).toBeTypeOf("function");
+    expect(hostSessionSelector).toBeTypeOf("function");
+  });
+
   it("renders help without composing unfinished subsystems", () => {
     const help = renderCli(["--help"]);
     expect(help).toContain("Usage: projector");

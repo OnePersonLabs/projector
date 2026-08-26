@@ -36,7 +36,7 @@ export function validateSubsystemArchitecture(files) {
   const errors = [];
   if (/deriveBehaviorViews|agent-compact|machine-invariant/u.test(files.context)) errors.push("context contains a forbidden parallel representation renderer");
   if (!files.planning.includes("ports.representations.compile") || !/representation[,}]/u.test(files.planning)) errors.push("planning does not compose representation into semantic-change capsules");
-  if (!files.host.includes("capsule.representation") || !files.host.includes("instructions.representation") || !files.host.includes('hashFramedDomain("representation-artifact", request.instructions.text)')) errors.push("host does not authenticate the exact capsule representation artifact");
+  if (!files.host.includes("authenticateRepresentationBinding") || !files.session.includes("capsule.representation") || !files.session.includes("instructions.representation") || !files.session.includes('hashFramedDomain("representation-artifact", input.instructions.text)')) errors.push("host does not authenticate the exact capsule representation artifact through shared session authority");
   if (!files.mcpServer.includes("createProjectorMcpServer") || !files.mcpComposition.includes('read["projector.preview_representation"]') || !files.mcpComposition.includes('read["projector.validate_representation"]')) errors.push("MCP composition does not register dedicated representation handlers explicitly");
   if (!files.coverage.includes("authenticated representation projection evidence") || /documentNumerator|structuredArtifacts.*representation/iu.test(files.coverage)) errors.push("coverage substitutes a generic document proxy for representation projection evidence");
   return errors.sort();
@@ -60,7 +60,7 @@ async function readWorkspaceGraph(root) {
 
 async function main() {
   const root = process.cwd();
-  const subsystemFiles = Object.fromEntries(await Promise.all(Object.entries({ context: "packages/engine/src/context/index.ts", planning: "packages/engine/src/planning/change-plan.ts", host: "packages/integrations/src/codex/adapter.ts", mcpServer: "packages/integrations/src/mcp/server.ts", mcpComposition: "packages/cli/src/mcp-cli.ts", coverage: "packages/cli/src/cli.ts" }).map(async ([key, file]) => [key, await readFile(path.join(root, file), "utf8")])));
+  const subsystemFiles = Object.fromEntries(await Promise.all(Object.entries({ context: "packages/engine/src/context/index.ts", planning: "packages/engine/src/planning/change-plan.ts", host: "packages/integrations/src/codex/adapter.ts", session: "packages/integrations/src/sessions/index.ts", mcpServer: "packages/integrations/src/mcp/server.ts", mcpComposition: "packages/cli/src/mcp-cli.ts", coverage: "packages/cli/src/cli.ts" }).map(async ([key, file]) => [key, await readFile(path.join(root, file), "utf8")])));
   const errors = [...validatePackageDependencies(await readWorkspaceGraph(root)), ...validateSubsystemArchitecture(subsystemFiles)];
   if (errors.length > 0) {
     console.error(errors.join("\n"));

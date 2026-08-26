@@ -7,8 +7,7 @@ import { promisify } from "node:util";
 import { hashFramedDomain, type ExecutionCapsule, type ExecutionPlan, type StateBinding, type StateDigest } from "@projector/core";
 import { createExecutionApproval } from "@projector/engine";
 
-import { executeProjector, serveMcpTransport, type RunHostCliPort } from "./cli.js";
-import { createHostSessionRecord, hostSessionSelector } from "./host-cli.js";
+import { createHostSessionRecord, executeProjector, hostSessionSelector, serveMcpTransport, type RunHostCliPort } from "./cli.js";
 import { createBuiltMcpCliPort } from "./mcp-cli.js";
 
 const exec = promisify(execFile);
@@ -88,6 +87,8 @@ describe("projector run host boundary", () => {
       const invalidRepresentationSelector = hostSessionSelector(invalidRepresentationRecord); const invalidRepresentationId = invalidRepresentationSelector.slice("session:".length); await writeFile(join(root, ".projector", "task17-sessions", `session-${invalidRepresentationId}.json`), JSON.stringify(invalidRepresentationRecord));
       const invalidRepresentationMcp = await createBuiltMcpCliPort().start({ repositoryRoot: root, sessionSelector: invalidRepresentationSelector, signal: new AbortController().signal });
       expect(invalidRepresentationMcp.tools).toEqual(["projector.audit", "projector.list_divergences", "projector.status"]);
+      const invalidRepresentationStatus = await invalidRepresentationMcp.transport.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.status", arguments: {} } });
+      expect(invalidRepresentationStatus).toMatchObject({ result: { structuredContent: { toolAvailability: expect.arrayContaining([{ name: "projector.preview_representation", class: "read", operational: false, reason: expect.stringMatching(/artifact hash/iu) }]) } } });
       await expect(invalidRepresentationMcp.transport.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.preview_representation", arguments: {} } })).resolves.toMatchObject({ error: { message: expect.stringMatching(/unknown MCP tool/iu) } });
       const result = await executeProjector(["run", "codex", "--session", selector, "--"], { cwd: root, environment: { PATH: `${bin}:${process.env.PATH ?? ""}` } });
       expect(result).toMatchObject({ exitCode: 0, report: { status: "completed", reconciled: true } }); expect(result.report.changedPaths).toContain("tracked.txt"); expect(result.report.journalId).toBeUndefined();
