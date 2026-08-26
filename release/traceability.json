@@ -227,7 +227,11 @@
       "publicFacade": "projector/cli",
       "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence",
       "testSourceDigest": "sha256:v1:8cebee52556c6ab59d8a65bd1ad12cc4b4a6aa4d66d2a0720078c7cd10624bac",
-      "mappingHash": "sha256:v1:16c74091cf43d1dd99892891a978d6546a1bd152dfd87b4c0d7675112058810f"
+      "requiredArtifactIds": [
+        "packed-held-out-lifecycle",
+        "packed-held-out-lifecycle-transcript"
+      ],
+      "mappingHash": "sha256:v1:8a2a450a4cd86b86a631c3ee08f10a3ce9aafaaab7c92577430f2d7dad994f5d"
     },
     {
       "id": "scenario:20:generated-output-upstream-repair",
@@ -1475,7 +1479,11 @@
       "publicFacade": "projector/cli",
       "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence",
       "testSourceDigest": "sha256:v1:8cebee52556c6ab59d8a65bd1ad12cc4b4a6aa4d66d2a0720078c7cd10624bac",
-      "mappingHash": "sha256:v1:51041ae13111409da198ab67ac4a1722e443570d8cd53b468b6a5074d5c97edd"
+      "requiredArtifactIds": [
+        "packed-held-out-lifecycle",
+        "packed-held-out-lifecycle-transcript"
+      ],
+      "mappingHash": "sha256:v1:8360304d4db19d95cb2541dec0354779d573e80ee05bcaadc4ba2ca46719464c"
     }
   ],
   "inventoryHash": "sha256:v1:00a0aef2698d0ef5f6485eefa834f5f8127aebc200a40338f5ed8412bc0c9556"

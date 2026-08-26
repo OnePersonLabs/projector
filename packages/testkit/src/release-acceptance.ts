@@ -10,7 +10,7 @@ import type { SubsystemClosureReceipt } from "./subsystem-closure.js";
 export type AcceptanceStratum = "scenario" | "property" | "adversary";
 export interface AcceptanceInventoryItem { readonly id: string; readonly stratum: AcceptanceStratum; readonly ordinal: number; readonly title: string; readonly sourcePath: string; readonly sourceDigest: ContentHash }
 export interface AcceptanceSource { readonly path: string; readonly text: string }
-export interface TraceabilityEntry extends AcceptanceInventoryItem { readonly publicFacade: string; readonly testRef: string; readonly testSourceDigest: ContentHash; readonly mappingHash: ContentHash }
+export interface TraceabilityEntry extends AcceptanceInventoryItem { readonly publicFacade: string; readonly testRef: string; readonly testSourceDigest: ContentHash; readonly requiredArtifactIds?: readonly string[]; readonly mappingHash: ContentHash }
 export interface TraceabilityManifest { readonly version: 2; readonly entries: readonly TraceabilityEntry[]; readonly inventoryHash: ContentHash }
 export interface VerifiedTraceability { readonly verified: true; readonly inventoryHash: ContentHash; readonly runEvidenceHash: ContentHash; readonly rawOutput?: string; readonly contentHash: ContentHash }
 const execute = promisify(execFile);
@@ -46,7 +46,8 @@ function validateManifestStructure(manifest: TraceabilityManifest, inventory: re
     seen.add(entry.id);
     if (entry.stratum !== item.stratum || entry.ordinal !== item.ordinal || entry.title !== item.title || entry.sourcePath !== item.sourcePath || entry.sourceDigest !== item.sourceDigest) throw new Error(`stale or relabeled traceability mapping ${entry.id}`);
     const { mappingHash, ...body } = entry;
-    if (entry.publicFacade.length === 0 || !entry.testRef.includes("#") || entry.testSourceDigest.length === 0 || mappingHash !== traceabilityEntryHash(body)) throw new Error(`unauthenticated traceability mapping ${entry.id}`);
+    const requiredArtifactIds = entry.requiredArtifactIds ?? [];
+    if (entry.publicFacade.length === 0 || !entry.testRef.includes("#") || entry.testSourceDigest.length === 0 || requiredArtifactIds.some((id) => id.length === 0) || new Set(requiredArtifactIds).size !== requiredArtifactIds.length || mappingHash !== traceabilityEntryHash(body)) throw new Error(`unauthenticated traceability mapping ${entry.id}`);
   }
 }
 
@@ -89,6 +90,9 @@ export function compileReleaseEvidence(input: ReleaseEvidenceInput): ReleaseEvid
   const verificationBody = { inventoryHash: input.traceability.inventoryHash, runEvidenceHash: input.traceabilityVerification.runEvidenceHash, entries: input.traceability.entries.map(({ mappingHash }) => mappingHash) };
   if (!input.traceabilityVerification.verified || input.traceabilityVerification.inventoryHash !== input.traceability.inventoryHash || input.traceabilityVerification.contentHash !== hashFramedDomain("verified-traceability", verificationBody)) throw new Error("release traceability was not verified by observed public tests");
   if (input.sourceRevision.length === 0 || input.rawArtifacts.length === 0 || new Set(input.rawArtifacts.map(({ id }) => id)).size !== input.rawArtifacts.length || input.rawArtifacts.some(({ bytesHash }) => !bytesHash.startsWith("sha256:v1:"))) throw new Error("release artifact evidence is incomplete");
+  const observedArtifactIds = new Set(input.rawArtifacts.map(({ id }) => id));
+  const missingTraceabilityArtifacts = [...new Set(input.traceability.entries.flatMap(({ requiredArtifactIds }) => requiredArtifactIds ?? []))].filter((id) => !observedArtifactIds.has(id));
+  if (missingTraceabilityArtifacts.length > 0) throw new Error(`release traceability is missing required packed lifecycle artifacts: ${missingTraceabilityArtifacts.join(", ")}`);
   if (!input.benchmark.releaseAllowed || input.benchmark.metrics.length === 0 || input.benchmark.failures.length > 0 || !input.conformance.passed) throw new Error("release gates cannot be waived");
   if (input.subsystemClosureReceipts.length === 0 || new Set(input.subsystemClosureReceipts.map(({ subsystemId }) => subsystemId)).size !== input.subsystemClosureReceipts.length) throw new Error("release subsystem closure receipts are missing or duplicated");
   for (const receipt of input.subsystemClosureReceipts) if (receipt.revision !== input.sourceRevision || receipt.worktreeDigest !== input.worktreeDigest || receipt.receiptHash !== hashFramedDomain("subsystem-closure-receipt:v1", (({ receiptHash: omitted, ...body }) => { void omitted; return body; })(receipt))) throw new Error(`release subsystem closure receipt is stale or unauthenticated: ${receipt.subsystemId}`);
