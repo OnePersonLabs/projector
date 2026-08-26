@@ -643,6 +643,7 @@ class DirectMutationPort implements TransformMutationPort {
   async assertWritable(path: string): Promise<void> { await this.paths.resolveWrite(path); }
   async moveFile(from: string, to: string): Promise<void> { await this.requireTransaction().moveFile(from, to); }
   async writeFile(path: string, content: string): Promise<void> { await this.requireTransaction().writeFile(path, content); }
+  async deleteFile(path: string): Promise<void> { await this.requireTransaction().deleteFile(path); }
   async checkpoint(id: string): Promise<void> { await this.requireTransaction().checkpoint(id); }
   private requireTransaction(): FileTransaction {
     if (this.transaction === undefined) throw new Error("mutation requires an active durable transaction");

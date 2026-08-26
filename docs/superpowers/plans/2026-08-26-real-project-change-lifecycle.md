@@ -22,9 +22,9 @@
 - Modify: `packages/runtime/src/transforms/index.ts`
 - Modify: `packages/runtime/src/index.ts`
 
-- [ ] Add RED tests for create/replace/delete, exact-before mismatch, scope denial, forbidden path, and out-of-transaction refusal.
-- [ ] Implement preview/apply through `TransformMutationPort` with compiled write authorization.
-- [ ] Run focused runtime tests, typecheck, and package-boundary checks.
+- [x] Add RED tests for create/replace/delete, exact-before mismatch, scope denial, forbidden path, and out-of-transaction refusal.
+- [x] Implement preview/apply through `TransformMutationPort` with compiled write authorization.
+- [x] Run focused runtime tests, typecheck, and package-boundary checks.
 
 ### Task 2: Compile a real repository change
 
