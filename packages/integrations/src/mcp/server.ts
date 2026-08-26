@@ -2,8 +2,9 @@ import type { CapabilityRisk, MutationCapabilityService } from "./capabilities.j
 
 type Tool = (input: Readonly<Record<string, unknown>>) => Promise<unknown>;
 export interface ControlledTool { readonly operation: string; readonly risk: CapabilityRisk; readonly targets: (input: Readonly<Record<string, unknown>>) => { readonly semanticScopes: readonly string[]; readonly writePaths: readonly string[] }; readonly run: Tool }
-export interface ProjectorMcpDependencies { readonly capability: MutationCapabilityService; readonly read: Readonly<Record<string, Tool>>; readonly controlled: Readonly<Record<string, ControlledTool>> }
+export interface ProjectorMcpDependencies { readonly capability?: MutationCapabilityService; readonly read: Readonly<Record<string, Tool>>; readonly controlled: Readonly<Record<string, ControlledTool>> }
 export interface JsonRpcRequest { readonly jsonrpc: "2.0"; readonly id: string | number | null; readonly method: string; readonly params?: unknown }
+export interface ProjectorMcpCatalogEntry { readonly name: string; readonly class: "read" | "controlled" }
 
 interface McpToolDefinition {
   readonly name: string;
@@ -47,6 +48,7 @@ function toolResult(value: unknown) {
 
 export function createProjectorMcpServer(dependencies: ProjectorMcpDependencies) {
   const names = [...Object.keys(dependencies.read), ...Object.keys(dependencies.controlled)].sort();
+  if (Object.keys(dependencies.controlled).length > 0 && dependencies.capability === undefined) throw new Error("controlled MCP handlers require a mutation capability service");
   const registry = {
     list: () => names.map((name) => toolDefinition(name, dependencies.controlled[name] !== undefined)),
     async call(name: string, input: Readonly<Record<string, unknown>>) {
@@ -55,6 +57,7 @@ export function createProjectorMcpServer(dependencies: ProjectorMcpDependencies)
       const capabilityToken = input.capabilityToken; if (typeof capabilityToken !== "string") throw new Error("controlled MCP tool requires a mutation capability token");
       const { capabilityToken: omitted, ...boundedInput } = input; void omitted;
       const targets = controlled.targets(boundedInput);
+      if (dependencies.capability === undefined) throw new Error("controlled MCP handler has no mutation capability service");
       await dependencies.capability.consume({ token: capabilityToken, toolName: name, operation: controlled.operation, semanticScopes: targets.semanticScopes, writePaths: targets.writePaths, risk: controlled.risk });
       return sanitize(await controlled.run(boundedInput));
     },
@@ -71,17 +74,12 @@ export function createProjectorMcpServer(dependencies: ProjectorMcpDependencies)
   } } };
 }
 
-export const REQUIRED_PROJECTOR_READ_TOOLS = Object.freeze(["status", "audit", "explain", "context", "coverage", "list_divergences", "preview_plan", "preview_transform", "preview_representation", "validate_representation", "validate", "resolve_identity", "relevance", "requirements", "scenarios", "impact"].map((name) => `projector.${name}`));
-export const REQUIRED_PROJECTOR_CONTROLLED_TOOLS = Object.freeze(["apply_transform", "execute_packet", "accept_decision", "create_exception", "apply_plan"].map((name) => `projector.${name}`));
+const projectorReadToolNames = ["status", "audit", "explain", "context", "coverage", "list_divergences", "preview_plan", "preview_transform", "preview_representation", "validate_representation", "validate", "resolve_identity", "relevance", "requirements", "scenarios", "impact"].map((name) => `projector.${name}`);
+const projectorControlledToolNames = ["apply_transform", "execute_packet", "accept_decision", "create_exception", "apply_plan"].map((name) => `projector.${name}`);
 
-export function createBuiltProjectorMcpServer(dependencies: { readonly capability: MutationCapabilityService; readonly read: Tool; readonly representations: { readonly preview: Tool; readonly validate: Tool }; readonly controlled: ControlledTool | ((name: string) => ControlledTool) }) {
-  const dedicatedRepresentationReads: Readonly<Record<string, Tool>> = {
-    "projector.preview_representation": dependencies.representations.preview,
-    "projector.validate_representation": dependencies.representations.validate,
-  };
-  return createProjectorMcpServer({
-    capability: dependencies.capability,
-    read: Object.fromEntries(REQUIRED_PROJECTOR_READ_TOOLS.map((name) => [name, dedicatedRepresentationReads[name] ?? ((input: Readonly<Record<string, unknown>>) => dependencies.read({ ...input, toolName: name }))])),
-    controlled: Object.fromEntries(REQUIRED_PROJECTOR_CONTROLLED_TOOLS.map((name) => { const tool = typeof dependencies.controlled === "function" ? dependencies.controlled(name) : dependencies.controlled; return [name, { ...tool, run: (input: Readonly<Record<string, unknown>>) => tool.run({ ...input, toolName: name }) }]; })),
-  });
-}
+export const PROJECTOR_MCP_TOOL_CATALOG: readonly ProjectorMcpCatalogEntry[] = Object.freeze([
+  ...projectorReadToolNames.map((name) => Object.freeze({ name, class: "read" as const })),
+  ...projectorControlledToolNames.map((name) => Object.freeze({ name, class: "controlled" as const })),
+]);
+export const REQUIRED_PROJECTOR_READ_TOOLS = Object.freeze(PROJECTOR_MCP_TOOL_CATALOG.filter(({ class: toolClass }) => toolClass === "read").map(({ name }) => name));
+export const REQUIRED_PROJECTOR_CONTROLLED_TOOLS = Object.freeze(PROJECTOR_MCP_TOOL_CATALOG.filter(({ class: toolClass }) => toolClass === "controlled").map(({ name }) => name));

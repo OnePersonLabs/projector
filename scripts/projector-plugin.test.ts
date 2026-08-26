@@ -93,6 +93,10 @@ describe("Projector Codex plugin MCP launch", () => {
     expect(messages.find((message) => message.id === 1)?.result?.serverInfo?.name).toBe("projector");
     expect(messages.find((message) => message.id === 1)?.result?.serverInfo?.version).toBe(manifest.version);
     expect(messages.find((message) => message.id === 2)?.result?.tools)
-      .toEqual(expect.arrayContaining([expect.objectContaining({ name: "projector.status" })]));
+      .toEqual([
+        expect.objectContaining({ name: "projector.audit" }),
+        expect.objectContaining({ name: "projector.list_divergences" }),
+        expect.objectContaining({ name: "projector.status" }),
+      ]);
   });
 });
