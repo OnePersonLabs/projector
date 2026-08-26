@@ -93,7 +93,7 @@
 - Modify: traceability generation and expected release evidence
 
 - [x] Install the exact npm tarball plus plugin shell in a disposable repository with Projector source access severed.
-- [x] Run the natural request directly through the CLI and through the source-severed installed `$projector-change` script; prove its approval pause, continuation consumption, invocation trace, and matching semantic/plan/approval/certificate identities.
+- [x] Run the natural request directly through the CLI and through the source-severed installed `$projector-change` script; prove its approval pause, exact change/hash consumption, externally captured invocation transcript, and matching semantic/plan/approval/certificate identities.
 - [x] Force `SIGKILL`, recover, resume, and prove exact predicted/observed impact plus fixed-point reconciliation.
 - [x] Run all severance cases and prove no mandatory-fixture fallback.
 

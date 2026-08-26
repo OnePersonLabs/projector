@@ -51,16 +51,16 @@ Resolve `scripts/projector-change.mjs` inside the installed plugin. Run:
 node <projector-change.mjs> start --request "<natural request>" --proposal change-proposal.json
 ```
 
-The command returns `approval-required`, a preview, the change selector, the exact plan hash, and an authenticated continuation. Present that tuple and stop.
+The command exits `3` and returns structured JSON with `outcome: "approval-required"`, a preview, the change selector, and the exact plan hash. Present those values and stop. The wrapper writes no repository state.
 
 After exact human approval:
 
 ```sh
-node <projector-change.mjs> approve --continuation <continuation> --plan-hash <exact-plan-hash>
+node <projector-change.mjs> approve --change <changeSelector> --plan-hash <exact-plan-hash>
 node <projector-change.mjs> apply --approval <approvalSelector>
 ```
 
-The agent wrapper only transports lifecycle inputs to the installed CLI. It does not implement semantics or mutation.
+The agent wrapper only transports lifecycle inputs to the installed CLI. It does not implement semantics, mutation, continuation storage, or tracing. Apply, recover, and resume preserve the installed CLI's structured output and exit code.
 
 ## Interruption and recovery
 
@@ -85,4 +85,4 @@ Accept completion only when all of these facts agree:
 - no unexpected path, canonical identity, analyzer failure, Planning Surprise, or unknown remains;
 - a repeated resume returns the same authenticated certificate and receipt.
 
-The agent transport trace is `.projector/runtime/change-lifecycles/agent-trace.jsonl`. Each invocation is recorded before execution and each completed result follows it in one hash chain. An interrupted invocation remains open and recovery continues the chain.
+Durable lifecycle evidence under `.projector/runtime/change-lifecycles/` is written and authenticated by the control plane, not by the wrapper. Release acceptance records the wrapper invocation transcript outside the target repository.
