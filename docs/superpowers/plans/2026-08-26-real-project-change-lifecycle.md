@@ -66,7 +66,7 @@
 
 - [x] Make attempt and transaction IDs durable and unique.
 - [x] Make `recover` acquire the writer lease before journal recovery.
-- [ ] Force a real child-process interruption during sandbox validation, recover the journal, and resume the same approval with a new attempt.
+- [x] Force a real child-process interruption during sandbox validation, recover the journal, and resume the same approval with a new attempt.
 - [ ] Prove active lease, stale takeover, third-state content, corrupt journal, and unavailable sandbox boundaries.
 
 ### Task 5: Install the truthful agent-facing workflow

@@ -25,7 +25,9 @@ export interface PlannedRepositoryChange {
 
 export interface CapturedRepositoryChange extends PlannedRepositoryChange {}
 
-export interface RepositoryChangeLifecycleServiceOptions extends ChangeLifecycleStoreOptions {}
+export interface RepositoryChangeLifecycleServiceOptions extends ChangeLifecycleStoreOptions {
+  readonly leaseStaleAfterMs?: number;
+}
 
 export interface LifecycleRecoveryOutcome {
   readonly attemptId: string;
@@ -44,6 +46,7 @@ function exactPatchInputHash(compiled: CompiledRepositoryChange): ContentHash {
 
 export class RepositoryChangeLifecycleService {
   private readonly now: () => string;
+  private readonly leaseStaleAfterMs: number;
 
   private constructor(
     private readonly repositoryRoot: string,
@@ -51,6 +54,7 @@ export class RepositoryChangeLifecycleService {
     options: RepositoryChangeLifecycleServiceOptions,
   ) {
     this.now = options.now ?? (() => new Date().toISOString());
+    this.leaseStaleAfterMs = options.leaseStaleAfterMs ?? 30_000;
   }
 
   static async create(
@@ -121,6 +125,7 @@ export class RepositoryChangeLifecycleService {
       attempt,
       store: this.store,
       now: this.now,
+      leaseStaleAfterMs: this.leaseStaleAfterMs,
     });
     if (result.outcome === "success") {
       const paths = await RepositoryPathService.create(this.repositoryRoot);
@@ -139,7 +144,7 @@ export class RepositoryChangeLifecycleService {
     if (attempts.length === 0) return [];
     const paths = await RepositoryPathService.create(this.repositoryRoot);
     const journal = new FileTransactionJournal(paths);
-    const worktree = new GovernedWorktreeRuntime(new WriterLeaseManager(paths, { staleAfterMs: 30_000 }), journal);
+    const worktree = new GovernedWorktreeRuntime(new WriterLeaseManager(paths, { staleAfterMs: this.leaseStaleAfterMs }), journal);
     const session = await worktree.open({
       sessionId: `recovery_${hashFramedDomain("change-lifecycle-recovery-session", attempts.map(({ id }) => id)).slice(-32)}`,
       processId: process.pid,

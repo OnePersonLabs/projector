@@ -45,6 +45,7 @@ export interface ExecuteCompiledRepositoryChangeInput {
   readonly attempt: LifecycleAttemptRecord;
   readonly store: ChangeLifecycleStore;
   readonly now?: () => string;
+  readonly leaseStaleAfterMs?: number;
 }
 
 class ExactStateBindingValidator implements StateBindingValidator {
@@ -74,13 +75,14 @@ class JournalExecutionAdapter implements TransformMutationPort, ChangeTransactio
     private readonly boundary: readonly string[],
     private readonly attempt: LifecycleAttemptRecord,
     private readonly binding: StateBinding,
+    private readonly heartbeatIntervalMs: number,
   ) {}
 
   async begin(input: Parameters<ChangeTransactionPort["begin"]>[0]): Promise<ChangeTransaction> {
     if (this.transaction !== undefined || this.session !== undefined) throw new Error("lifecycle attempt already owns a transaction");
     const session = await this.worktree.open({ sessionId: this.attempt.id, processId: process.pid, stateBinding: this.binding });
     this.session = session;
-    this.startHeartbeatKeeper();
+    this.startHeartbeatKeeper(this.heartbeatIntervalMs);
     try {
       const transaction = await session.begin({
         transactionId: this.attempt.transactionId,
@@ -461,8 +463,9 @@ export async function executeCompiledRepositoryChange(
     independentValidatorProjections.set(validator.path, (await paths.resolveRead(reference)).realTarget);
   }
   const journal = new FileTransactionJournal(paths);
-  const worktree = new GovernedWorktreeRuntime(new WriterLeaseManager(paths, { staleAfterMs: 30_000 }), journal);
-  const transaction = new JournalExecutionAdapter(paths, worktree, plan.boundary, input.attempt, plan.boundState);
+  const leaseStaleAfterMs = input.leaseStaleAfterMs ?? 30_000;
+  const worktree = new GovernedWorktreeRuntime(new WriterLeaseManager(paths, { staleAfterMs: leaseStaleAfterMs }), journal);
+  const transaction = new JournalExecutionAdapter(paths, worktree, plan.boundary, input.attempt, plan.boundState, Math.max(10, Math.min(5_000, Math.floor(leaseStaleAfterMs / 3))));
   const exact = new ExactTextPatchTransform(transaction, { ...(input.now === undefined ? {} : { now: input.now }) });
   const now = input.now ?? (() => new Date().toISOString());
   let postObservation: RepositoryPostObservation | undefined;
