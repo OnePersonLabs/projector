@@ -41,7 +41,29 @@ describe("projector run host boundary", () => {
 
   it("composes the required built MCP registry through its real transport", async () => {
     const result = await executeProjector(["mcp", "--format", "json"]);
-    expect(result.exitCode).toBe(0); expect(result.report.tools).toContain("projector.status"); expect(result.report.tools).toContain("projector.apply_plan"); expect(result.report.tools).toHaveLength(21);
+    expect(result.exitCode).toBe(0); expect(result.report.tools).toEqual([
+      "projector.accept_decision",
+      "projector.apply_plan",
+      "projector.apply_transform",
+      "projector.audit",
+      "projector.context",
+      "projector.coverage",
+      "projector.create_exception",
+      "projector.execute_packet",
+      "projector.explain",
+      "projector.impact",
+      "projector.list_divergences",
+      "projector.preview_plan",
+      "projector.preview_representation",
+      "projector.preview_transform",
+      "projector.relevance",
+      "projector.requirements",
+      "projector.resolve_identity",
+      "projector.scenarios",
+      "projector.status",
+      "projector.validate",
+      "projector.validate_representation",
+    ]);
     expect(JSON.parse(result.output)).toEqual(result.report);
   });
 
