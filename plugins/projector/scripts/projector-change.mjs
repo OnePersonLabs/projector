@@ -38,7 +38,7 @@ function safeRepositoryPath(value, name) {
   return value;
 }
 
-async function appendTrace(command, args, exitCode, output, diagnostic) {
+async function appendTrace(phase, command, args, exitCode, output, diagnostic) {
   await mkdir(lifecycleRoot, { recursive: true });
   let previousHash = null;
   try {
@@ -47,12 +47,13 @@ async function appendTrace(command, args, exitCode, output, diagnostic) {
   } catch (error) { if (error?.code !== "ENOENT") throw error; }
   const body = {
     version: 1,
+    phase,
     command,
     args,
     exitCode,
     invocationHash: hash("projector-agent-cli-invocation", { command, args }),
-    outputHash: hash("projector-agent-cli-output", { exitCode, output }),
-    diagnosticHash: hash("projector-agent-cli-diagnostic", diagnostic),
+    outputHash: output === null ? null : hash("projector-agent-cli-output", { exitCode, output }),
+    diagnosticHash: diagnostic === null ? null : hash("projector-agent-cli-diagnostic", diagnostic),
     previousHash,
     recordedAt: new Date().toISOString(),
   };
@@ -61,6 +62,7 @@ async function appendTrace(command, args, exitCode, output, diagnostic) {
 }
 
 async function runCli(command, args) {
+  await appendTrace("invoked", command, args, null, null, null);
   const configured = process.env.PROJECTOR_CLI?.trim();
   const executable = configured === undefined || configured === "" ? "projector" : configured;
   const nodeScript = /\.(?:c|m)?js$/u.test(executable);
@@ -73,11 +75,21 @@ async function runCli(command, args) {
   child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { stdout += chunk; });
   child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const childExitCode = await new Promise((accept, reject) => { child.once("error", reject); child.once("exit", accept); });
+  let childExitCode;
+  try { childExitCode = await new Promise((accept, reject) => { child.once("error", reject); child.once("exit", accept); }); }
+  catch (error) {
+    await appendTrace("completed", command, args, 1, null, error instanceof Error ? error.message : String(error));
+    throw error;
+  }
   const exitCode = typeof childExitCode === "number" ? childExitCode : 1;
   let output;
-  try { output = JSON.parse(stdout); } catch { throw new Error(`projector ${command} returned non-JSON output (${String(exitCode)}): ${stderr.trim() || stdout.trim() || "no diagnostic"}`); }
-  await appendTrace(command, args, exitCode, output, stderr.trim());
+  try { output = JSON.parse(stdout); }
+  catch {
+    const diagnostic = stderr.trim() || stdout.trim() || "no diagnostic";
+    await appendTrace("completed", command, args, exitCode, null, diagnostic);
+    throw new Error(`projector ${command} returned non-JSON output (${String(exitCode)}): ${diagnostic}`);
+  }
+  await appendTrace("completed", command, args, exitCode, output, stderr.trim());
   return { exitCode, output };
 }
 

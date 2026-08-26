@@ -150,10 +150,12 @@ describe("Projector installed change workflow", () => {
       const resumed = await runPluginChange(script, ["resume", "--approval", "lifecycle_approval_abc"], repository, environment);
       expect(JSON.parse(resumed.stdout)).toMatchObject({ status: "success", certificateHash: "sha256:v1:certificate" });
 
-      const trace = (await readFile(join(repository, ".projector", "runtime", "change-lifecycles", "agent-trace.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { command: string; exitCode: number; previousHash: string | null; entryHash: string });
-      expect(trace.length).toBe(6);
+      const trace = (await readFile(join(repository, ".projector", "runtime", "change-lifecycles", "agent-trace.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { phase: string; command: string; exitCode: number | null; previousHash: string | null; entryHash: string });
+      expect(trace.length).toBe(12);
       expect(trace[0]?.previousHash).toBeNull();
-      expect(trace[3]).toMatchObject({ command: "apply", exitCode: 3 });
+      expect(trace.map(({ phase }) => phase)).toEqual(["invoked", "completed", "invoked", "completed", "invoked", "completed", "invoked", "completed", "invoked", "completed", "invoked", "completed"]);
+      expect(trace[6]).toMatchObject({ phase: "invoked", command: "apply", exitCode: null });
+      expect(trace[7]).toMatchObject({ phase: "completed", command: "apply", exitCode: 3 });
       for (let index = 1; index < trace.length; index += 1) expect(trace[index]?.previousHash).toBe(trace[index - 1]?.entryHash);
       expect(trace.every(({ entryHash }) => /^sha256:v1:[a-f0-9]{64}$/u.test(entryHash))).toBe(true);
     } finally { await rm(root, { recursive: true, force: true }); }
