@@ -4,13 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { deriveEntityId, hashFramedDomain, withCanonicalHashes, type BehavioralScenario, type Requirement } from "@projector/core";
+import { deriveEntityId, hashFramedDomain, parseChangeProposal, withCanonicalHashes, type BehavioralScenario, type ChangeProposal, type Requirement } from "@projector/core";
 import { executionPlanHash } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
 import { compileRepositoryChange } from "./compiler.js";
-import { parseChangeProposal, type ChangeProposal } from "./proposal.js";
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "placeholder");

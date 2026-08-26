@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PROJECTOR_VERSION, createHostSessionRecord, executeProjector, hostSessionSelector, main, renderCli } from "./cli.js";
+import { PROJECTOR_VERSION, createHostSessionRecord, executeProjector, hostSessionSelector, renderCli } from "./cli.js";
 
 describe("minimal CLI entrypoint", () => {
   it("preserves the public stored-session compatibility helpers", () => {
@@ -19,8 +19,8 @@ describe("minimal CLI entrypoint", () => {
       "plan",
       "approve",
       "apply",
+      "recover",
       "resume",
-      "reconcile",
       "coverage",
       "complete",
       "cleanup",
@@ -28,7 +28,6 @@ describe("minimal CLI entrypoint", () => {
       "mcp",
       "watch",
       "ci",
-      "recover",
       "verify",
       "upgrade",
       "explain",
@@ -39,30 +38,24 @@ describe("minimal CLI entrypoint", () => {
     expect(renderCli(["--version"])).toBe(PROJECTOR_VERSION);
   });
 
-  it("maps policy refusal and nonconvergence to stable programmatic exit codes", async () => {
-    const refused = await executeProjector(["reconcile", "--dry-run"], { cwd: process.cwd() });
-    expect(refused.exitCode).toBe(3);
-    expect(await main(["reconcile", "--dry-run"])).toBe(3);
-  });
-
   it("blocks canonical governance conflicts before public mutation work begins", async () => {
-    const result = await executeProjector(["apply", "--mode", "govern"], {
+    const result = await executeProjector(["apply", "lifecycle_approval_test", "--mode", "govern"], {
       cwd: "/definitely/not/a/repository",
       governance: { detectCanonicalConflictPaths: async () => [".projector/rules/conflicted.json"], assessOperationRisk: async () => "R1" },
     });
-    expect(result.exitCode).toBe(3);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toMatch(/canonical governance conflict/u);
   });
 
   it("enforces actual operation risk before public mutation work begins", async () => {
-    const result = await executeProjector(["apply", "--mode", "autonomous"], {
+    const result = await executeProjector(["apply", "lifecycle_approval_test", "--mode", "autonomous"], {
       cwd: "/definitely/not/a/repository",
       governance: {
         detectCanonicalConflictPaths: async () => [],
         operation: { command: "apply", sideEffect: "canonical-write", externalWrite: false, canonicalMutation: true },
       },
     });
-    expect(result.exitCode).toBe(3);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toMatch(/risk R2 exceeds/u);
   });
 
@@ -76,7 +69,7 @@ describe("minimal CLI entrypoint", () => {
         operation: { command: "init", sideEffect: "canonical-write", externalWrite: false, canonicalMutation: true },
       },
     });
-    expect(result.exitCode).toBe(3);
+    expect(result.exitCode).toBe(2);
     expect(result.report.operationRisk).toBe("R2");
     expect(repositoryAccessed).toBe(false);
   });

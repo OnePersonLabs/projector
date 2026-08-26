@@ -20,7 +20,7 @@ Use the public sequence:
 1. Run `projector.preview_plan` or `projector.plan` for a state-bound plan.
 2. Review the returned risk, boundary, affected units, validators, and unresolved fields.
 3. Obtain the required approval through Projector's approval path.
-4. Use the capability-bound controlled MCP tool or `projector apply`/`projector reconcile`.
+4. Use the capability-bound controlled MCP tool or the approval-bound `projector apply <approval-id>` lifecycle.
 5. Verify the durable receipt, journal, observed diff, and fixed-point result.
 
 Do not call a controlled tool without its issued capability token. Do not broaden path or semantic scope to make a plan pass. If currentness, authority, evidence, or observability is unavailable, stop and report that state.

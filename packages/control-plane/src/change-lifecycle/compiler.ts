@@ -10,6 +10,7 @@ import {
   hashFramedDomain,
   withCanonicalHashes,
   type BehavioralScenario,
+  type ChangeProposal,
   type ArchitectureConcern,
   type CanonicalDocumentEnvelope,
   type ChangeOperation,
@@ -17,6 +18,8 @@ import {
   type DecisionDeferral,
   type RelevanceClosure,
   type Requirement,
+  type ProposedRequirement,
+  type ProposedScenario,
   type SelectorExpr,
   type StateQueryDependency,
 } from "@projector/core";
@@ -37,7 +40,6 @@ import {
 import { CanonicalFileRepository, RepositoryPathService, type ExactTextPatchInput } from "@projector/runtime";
 
 import { observeChangeRepository, type IndependentValidatorObservation } from "./repository-observer.js";
-import type { ChangeProposal, ProposedRequirement, ProposedScenario } from "./proposal.js";
 import { CHANGE_QUERY_PROGRAM_IDS, calculateRepositoryRelevance, createChangeQueryRegistry, exactIdentityCandidates } from "./query-programs.js";
 
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;

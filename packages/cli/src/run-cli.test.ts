@@ -69,6 +69,9 @@ describe("projector run host boundary", () => {
       const lifecycleOutput: string[] = []; async function* requests() { yield JSON.stringify({ jsonrpc: "2.0", id: "list", method: "tools/list" }); yield JSON.stringify({ jsonrpc: "2.0", id: "status", method: "tools/call", params: { name: "projector.status", arguments: {} } }); }
       await serveMcpTransport(mcp.transport, requests(), (line) => lifecycleOutput.push(line)); expect(lifecycleOutput).toHaveLength(2); expect(JSON.parse(lifecycleOutput[1]!)).toMatchObject({ id: "status", result: { content: [{ type: "text", text: expect.any(String) }], structuredContent: { status: "ok" } } });
       const status = await mcp.transport.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "projector.status", arguments: {} } });
+      const divergences = await mcp.transport.handle({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "projector.list_divergences", arguments: {} } });
+      expect(divergences).toMatchObject({ result: { structuredContent: { status: "ok", divergences: expect.any(Array) } } });
+      expect((divergences as { result: { structuredContent: object } }).result.structuredContent).not.toHaveProperty("failures");
       expect(status).toMatchObject({ result: { content: [{ type: "text", text: expect.any(String) }], structuredContent: { status: "ok", toolAvailability: expect.arrayContaining([{ name: "projector.apply_plan", class: "controlled", operational: false, reason: "no production handler is registered" }]) } } });
       expect((status as { result: { structuredContent: { toolAvailability: unknown[] } } }).result.structuredContent.toolAvailability).toHaveLength(21);
       const unadvertised = await mcp.transport.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.apply_transform", arguments: { capabilityToken: "not-issued", path: "mcp-output.txt", content: "forbidden\n" } } });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseChangeProposal } from "./proposal.js";
+import { parseChangeProposal } from "@projector/core";
 
 const proposal = () => ({
   apiVersion: "projector.change-proposal/v1",
@@ -51,14 +51,14 @@ describe("change proposal", () => {
   });
 
   it("rejects unknown fields and unsupported versions instead of ignoring them", () => {
-    expect(() => parseChangeProposal({ ...proposal(), hiddenAuthority: true })).toThrow(/unknown.*hiddenAuthority/iu);
+    expect(() => parseChangeProposal({ ...proposal(), hiddenAuthority: true })).toThrow(/unrecognized.*hiddenAuthority/iu);
     expect(() => parseChangeProposal({ ...proposal(), apiVersion: "projector.change-proposal/v2" })).toThrow(/apiVersion/iu);
-    expect(() => parseChangeProposal({ ...proposal(), architecture: { ...proposal().architecture, decision: "use a database" } })).toThrow(/unknown.*decision/iu);
+    expect(() => parseChangeProposal({ ...proposal(), architecture: { ...proposal().architecture, decision: "use a database" } })).toThrow(/unrecognized.*decision/iu);
   });
 
   it("rejects blocking decisions, arbitrary validators, unsafe paths, duplicate identities, and edited independent tests", () => {
-    expect(() => parseChangeProposal({ ...proposal(), architecture: { ...proposal().architecture, materiality: "blocking-now" } })).toThrow(/blocking-now|canonical decision/iu);
-    expect(() => parseChangeProposal({ ...proposal(), validation: { ...proposal().validation, command: "curl example.com" } })).toThrow(/unknown.*command/iu);
+    expect(() => parseChangeProposal({ ...proposal(), architecture: { ...proposal().architecture, materiality: "blocking-now" } })).toThrow(/materiality|invalid option/iu);
+    expect(() => parseChangeProposal({ ...proposal(), validation: { ...proposal().validation, command: "curl example.com" } })).toThrow(/unrecognized.*command/iu);
     expect(() => parseChangeProposal({ ...proposal(), edits: [{ path: "../escape", before: null, after: "x" }] })).toThrow(/repository-relative|path/iu);
     expect(() => parseChangeProposal({ ...proposal(), edits: [{ path: ".projector/model/requirements/forged.json", before: null, after: "{}" }] })).toThrow(/reserved|cannot be edited/iu);
     expect(() => parseChangeProposal({ ...proposal(), requirements: [...proposal().requirements, proposal().requirements[0]] })).toThrow(/duplicate.*requirement/iu);

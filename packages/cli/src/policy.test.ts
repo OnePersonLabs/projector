@@ -49,7 +49,7 @@ describe("CLI execution-policy normalization", () => {
   });
 
   it("rejects all contradictory read-only and mutation combinations", () => {
-    expect(() => normalizeExecutionPolicy({ command: "reconcile", auditOnly: true })).toThrow(/contradictory/u);
+    expect(() => normalizeExecutionPolicy({ command: "apply", auditOnly: true })).toThrow(/contradictory/u);
     expect(() => normalizeExecutionPolicy({ command: "audit", mode: "autonomous", auditOnly: true })).toThrow(/contradictory/u);
   });
 
@@ -57,7 +57,7 @@ describe("CLI execution-policy normalization", () => {
     expect(deriveOperationRisk({ command: "audit", sideEffect: "read-only", externalWrite: false, canonicalMutation: false })).toBe("R0");
     expect(deriveOperationRisk({ command: "init", sideEffect: "canonical-write", externalWrite: false, canonicalMutation: true })).toBe("R2");
     expect(deriveOperationRisk({ command: "apply", sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false })).toBe("R1");
-    expect(deriveOperationRisk({ command: "reconcile", sideEffect: "external-write", externalWrite: true, canonicalMutation: true })).toBe("R3");
+    expect(deriveOperationRisk({ command: "apply", sideEffect: "external-write", externalWrite: true, canonicalMutation: true })).toBe("R3");
     const policy = { ...normalizeExecutionPolicy({ command: "apply", mode: "guide" }), maximumAutomaticRisk: "R3" as const };
     expect(() => assertOperationRiskAuthorized(policy, "R0")).not.toThrow();
     expect(() => assertOperationRiskAuthorized(policy, "R1")).not.toThrow();

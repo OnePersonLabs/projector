@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ContentHashSchema,
+  ChangeProposalSchema,
   ConceptSchema,
   EntityIdSchema,
   LineageRecordSchema,
@@ -10,21 +11,30 @@ import {
   exportContractJsonSchemas,
   validateJsonSchemaReferences,
   validateContractRegistry,
+  parseChangeProposal,
 } from "./index.js";
 
 describe("normative contract registry", () => {
   it("represents every exported normative declaration exactly once", () => {
-    expect(Object.keys(contractRegistry)).toHaveLength(147);
+    expect(Object.keys(contractRegistry)).toHaveLength(148);
     expect(validateContractRegistry()).toEqual([]);
   });
 
   it("exports strict JSON Schemas whose references resolve", () => {
     const schemas = exportContractJsonSchemas();
-    expect(Object.keys(schemas)).toHaveLength(138);
+    expect(Object.keys(schemas)).toHaveLength(139);
     expect(validateJsonSchemaReferences(schemas)).toEqual([]);
     for (const schema of Object.values(schemas)) {
       expect(schema).toMatchObject({ $schema: expect.any(String) });
     }
+  });
+
+  it("owns the strict public change proposal contract", () => {
+    const proposal = { apiVersion: "projector.change-proposal/v1", requirements: [{ key: "useful", title: "Useful", statement: "It is useful.", aliases: [] }], scenarios: [{ key: "observe-useful", title: "Observe useful", aliases: [], steps: [{ role: "trigger", statement: "A caller observes it." }, { role: "expected-outcome", statement: "It is useful." }] }], architecture: null, edits: [{ path: "src/value.mjs", before: "old", after: "new" }], validation: { independentNodeTests: ["test/value.test.mjs"], supplementalNodeTests: [] }, analysisFacets: ["architecture", "behavior"] };
+    expect(parseChangeProposal(proposal)).toEqual(proposal);
+    expect(ChangeProposalSchema.safeParse({ ...proposal, hidden: true }).success).toBe(false);
+    expect(ChangeProposalSchema.safeParse({ ...proposal, scenarios: [{ ...proposal.scenarios[0], steps: [{ ...proposal.scenarios[0]!.steps[0], hidden: true }, proposal.scenarios[0]!.steps[1]] }] }).success).toBe(false);
+    for (const path of ["../escape", "/absolute", "C:/absolute", "src\\value.mjs", ".projector/runtime/forged.json"]) expect(ChangeProposalSchema.safeParse({ ...proposal, edits: [{ ...proposal.edits[0], path }] }).success).toBe(false);
   });
 
   it("rejects malformed content hashes", () => {

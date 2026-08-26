@@ -9,3 +9,4 @@ export * from "./ports/index.js";
 export * from "./schemas/contracts.js";
 export * from "./schemas/canonical-envelope.js";
 export * from "./schemas/registry.js";
+export * from "./schemas/change-proposal.js";

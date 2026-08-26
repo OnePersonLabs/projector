@@ -19,10 +19,10 @@ Projector owns change semantics. Use this skill to inspect the repository, expre
    ```
 
 5. Show the returned preview, `changeSelector`, and exact `planHash` to the user. **Stop.** Never approve on the user's behalf and never treat general permission as approval of this particular hash.
-6. Only after the user supplies that exact hash, use the returned continuation:
+6. Only after the user supplies that exact hash, use the returned change identity:
 
    ```sh
-   node <projector-change.mjs> approve --continuation <continuation> --plan-hash <exact-plan-hash>
+   node <projector-change.mjs> approve --change <changeSelector> --plan-hash <exact-plan-hash>
    node <projector-change.mjs> apply --approval <approvalSelector>
    ```
 
@@ -38,8 +38,8 @@ Projector owns change semantics. Use this skill to inspect the repository, expre
 ## Fail-closed rules
 
 - Run from the repository root. The wrapper invokes only the installed `projector` executable, or the exact executable configured in `PROJECTOR_CLI`.
-- Preserve the proposal, authenticated continuation, approval selector, and `.projector/runtime/change-lifecycles/agent-trace.jsonl`.
-- The continuation is content-authenticated. A changed proposal or plan requires a new `start` and another exact-hash approval.
+- The wrapper is stateless. It creates no trace or continuation and delegates all durable lifecycle authority to the installed CLI.
+- Preserve the proposal and returned lifecycle selectors outside the wrapper. A changed proposal or plan requires a new `start` and another exact-hash approval.
 - Independent validators must already exist at the Git base and must not be edited by the proposal. Supplemental validators may be proposed, but they do not prove independence.
 - A blocking-now architecture concern requires a current canonical decision. A proposal may record only a bounded `material-soon` or `deferable` concern; it cannot make an architecture decision.
 - If the CLI, validator sandbox, capability proof, authenticated observation, or recovery evidence is unavailable, stop. Unavailability is not evidence of safety.

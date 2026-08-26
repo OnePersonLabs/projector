@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { hashFramedDomain } from "@projector/core";
-import { createOperationalReport, FileTransactionJournal, RepositoryPathService, unavailableOperationalEvidence } from "@projector/runtime";
+import { createOperationalReport, unavailableOperationalEvidence } from "@projector/runtime";
 import { executeProjector } from "./cli.js";
 
 const exec = promisify(execFile);
@@ -19,8 +19,8 @@ describe("built operational CLI", () => {
     expect(results.every(({ exitCode }) => exitCode === 5)).toBe(true); expect(results.every(({ output }) => output.includes("Required surface unavailable"))).toBe(true); expect(JSON.parse(results[1]!.output).dtoHash).toBe(operationalReport.dtoHash); expect(JSON.parse(results[3]!.output).runs[0].results[0].ruleId).toBe("unavailable");
   });
 
-  it("recovers an incomplete public transaction idempotently and rebuilds after deleting derived state", async () => {
-    const root = await repository(); try { const paths = await RepositoryPathService.create(root); const journal = new FileTransactionJournal(paths); const state = { gitBase: "base", worktreeDigest: hashFramedDomain("s", "w"), canonicalProjectorDigest: hashFramedDomain("s", "c"), toolchainDigest: hashFramedDomain("s", "t") }; const transaction = await journal.begin({ transactionId: "tx:ops", planId: "plan:ops", beforeState: state, allowedWriteRoots: ["."] }); await transaction.writeFile("a.json", "{\"changed\":true}\n"); const dry = await executeProjector(["recover", "--dry-run"], { cwd: root }); expect(dry.exitCode).toBe(3); expect(await readFile(join(root, "a.json"), "utf8")).toContain("changed"); const recovered = await executeProjector(["recover"], { cwd: root }); expect(recovered.exitCode).toBe(0); expect(await readFile(join(root, "a.json"), "utf8")).toBe("{}\n"); expect((await executeProjector(["recover"], { cwd: root })).exitCode).toBe(0); await writeFile(join(root, ".projector", "state.db"), "derived"); const verified = await executeProjector(["verify", "--clean", "--format", "json"], { cwd: root }); expect([0, 2, 5]).toContain(verified.exitCode); expect(JSON.parse(verified.output).dtoHash).toBe(verified.report.operationalReport.dtoHash); expect(JSON.parse(await readFile(join(root, ".projector", "state.db"), "utf8"))).toHaveProperty("canonicalDigest"); } finally { await rm(root, { recursive: true, force: true }); }
+  it("rebuilds after deleting derived state", async () => {
+    const root = await repository(); try { await mkdir(join(root, ".projector"), { recursive: true }); await writeFile(join(root, ".projector", "state.db"), "derived"); const verified = await executeProjector(["verify", "--clean", "--format", "json"], { cwd: root }); expect([0, 2, 5]).toContain(verified.exitCode); expect(JSON.parse(verified.output).dtoHash).toBe(verified.report.operationalReport.dtoHash); expect(JSON.parse(await readFile(join(root, ".projector", "state.db"), "utf8"))).toHaveProperty("canonicalDigest"); } finally { await rm(root, { recursive: true, force: true }); }
   }, 20_000);
 
   it("rejects unauthenticated/self-shaped green reports and refuses repository tool grants", async () => {

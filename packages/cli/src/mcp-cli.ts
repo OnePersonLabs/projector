@@ -14,7 +14,7 @@ export function createBuiltMcpCliPort() {
       : { ...tool, operational: false, reason: (tool.name === "projector.preview_representation" || tool.name === "projector.validate_representation") ? representationUnavailableReason : "no production handler is registered" });
     const read: Record<string, ProjectorMcpDependencies["read"][string]> = {
       "projector.audit": async () => { const analysis = await analyzeLocalRepository({ repositoryRoot: request.repositoryRoot }); return { status: "ok", failures: analysis.failures }; },
-      "projector.list_divergences": async () => { const analysis = await analyzeLocalRepository({ repositoryRoot: request.repositoryRoot }); return { status: "ok", failures: analysis.failures }; },
+      "projector.list_divergences": async () => { const analysis = await analyzeLocalRepository({ repositoryRoot: request.repositoryRoot }); return { status: "ok", divergences: analysis.divergences }; },
       "projector.status": async () => { const analysis = await analyzeLocalRepository({ repositoryRoot: request.repositoryRoot }); return { status: "ok", artifactCount: analysis.artifacts.length, unitCount: analysis.projectionUnits.length, failureCount: analysis.failures.length, toolAvailability: availability() }; },
     };
     const representation = async (input: Readonly<Record<string, unknown>>, includeContent: boolean) => {
