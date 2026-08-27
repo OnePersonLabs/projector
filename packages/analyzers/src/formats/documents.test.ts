@@ -66,4 +66,31 @@ describe("bounded structured document, Actions, and Markdown extraction", () => 
       expect.objectContaining({ trigger: "pull_request", include: [], exclude: ["docs/**", "examples/**"] }),
     ]);
   });
+
+  it("scopes repeated Actions step keys to their YAML sequence items", () => {
+    const result = analyzeDocuments([entry(".github/workflows/steps.yml", [
+      "on:", "  workflow_dispatch:", "jobs:", "  verify:", "    steps:",
+      "      - name: First", "        uses: ./first", "        run: echo first",
+      "      - name: Second", "        uses: ./second", "        run: echo second",
+    ].join("\n"))]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.documents[0]?.units.map(({ stablePath }) => stablePath)).toEqual(expect.arrayContaining([
+      "/jobs/verify/steps/0/name", "/jobs/verify/steps/0/uses", "/jobs/verify/steps/0/run",
+      "/jobs/verify/steps/1/name", "/jobs/verify/steps/1/uses", "/jobs/verify/steps/1/run",
+    ]));
+  });
+
+  it("still rejects a duplicate key within one Actions step", () => {
+    const result = analyzeDocuments([entry(".github/workflows/duplicate-step.yml", [
+      "on:", "  workflow_dispatch:", "jobs:", "  verify:", "    steps:",
+      "      - name: First", "        run: echo first", "        run: echo duplicate",
+    ].join("\n"))]);
+
+    expect(result.failures).toContainEqual(expect.objectContaining({
+      scope: ".github/workflows/duplicate-step.yml",
+      capability: "duplicate-key",
+      message: expect.stringContaining("/jobs/verify/steps/0/run"),
+    }));
+  });
 });

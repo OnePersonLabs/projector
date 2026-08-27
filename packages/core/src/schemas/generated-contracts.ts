@@ -316,7 +316,10 @@ export const RepresentationTokenAccountingSchema: z.ZodType = z.lazy(() => stric
   "outputTokens": z.number().finite().optional(),
   "profileOverheadTokens": z.number().finite().optional(),
   "estimatedNetTokens": z.number().finite().optional(),
-  "tokenizerProfileId": z.string().optional()
+  "tokenizerProfileId": z.string().optional(),
+  "estimatedNetInstructionEfficiency": z.number().finite().optional(),
+  "utilityProfileId": z.string().optional(),
+  "utilityEvidence": z.string().optional()
 }));
 
 export const RepresentationProjectionSchema: z.ZodType = z.lazy(() => strictObject({
@@ -528,6 +531,41 @@ export const MigrationBindingSchema: z.ZodType = z.lazy(() => strictObject({
   "toVersion": z.string(),
   "transformIds": z.array(z.string()),
   "validationIds": z.array(z.string())
+}));
+
+export const GovernanceExceptionSchema: z.ZodType = z.lazy(() => strictObject({
+  "id": EntityIdSchema,
+  "key": z.string(),
+  "selector": SelectorExprSchema,
+  "exceptedRuleIds": z.array(EntityIdSchema),
+  "exceptedLensIds": z.array(EntityIdSchema),
+  "exceptedExpectationIds": z.array(EntityIdSchema),
+  "rationale": z.string(),
+  "evidence": z.array(EvidenceRefSchema),
+  "owner": z.string(),
+  "reviewOrExpiryTrigger": AuthorityReconsiderTriggerSchema,
+  "invalidationConditions": z.array(AuthorityReconsiderTriggerSchema),
+  "exitCriteria": z.array(z.string()).optional(),
+  "status": z.union([z.literal("active"), z.literal("expired"), z.literal("revoked")]),
+  "semanticHash": ContentHashSchema
+}));
+
+export const MigrationOverlaySchema: z.ZodType = z.lazy(() => strictObject({
+  "id": EntityIdSchema,
+  "key": z.string(),
+  "sourceLensRef": LensRefSchema,
+  "targetLensRef": LensRefSchema,
+  "phase": z.union([z.literal("proposed"), z.literal("prepared"), z.literal("dual-running"), z.literal("cutover"), z.literal("cleanup"), z.literal("complete"), z.literal("rolled-back")]),
+  "entryCriteria": z.array(z.string()),
+  "exitCriteria": z.array(z.string()),
+  "compatibilityStrategy": z.string(),
+  "allowedTemporaryDivergenceIds": z.array(EntityIdSchema),
+  "generatedOutputOverlays": z.array(z.string()).optional(),
+  "validationObligations": z.array(z.string()),
+  "rollbackPlan": z.string(),
+  "compensationPlan": z.string().optional(),
+  "cleanupResidueDetector": z.string(),
+  "semanticHash": ContentHashSchema
 }));
 
 export const LensExampleSchema: z.ZodType = z.lazy(() => strictObject({

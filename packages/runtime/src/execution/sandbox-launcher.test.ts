@@ -49,6 +49,18 @@ class ProvenFallbackLauncher implements ProcessLauncher {
 }
 
 describe("createSandboxLauncher", () => {
+  it("refuses denied primary and incomplete fallback before commands while selecting and launching only a proven backend", async () => {
+    const deniedPrimary = new RecordingLauncher([result(1, "", "namespace denied")]);
+    const incomplete: SandboxBackendCandidate = { id: "incomplete", async probe() { return { ...provenEvidence(), networkDenied: false }; }, createLauncher() { throw new Error("unproven backend was created"); } };
+    await expect(createSandboxLauncher({ platform: "linux", nativeLauncher: deniedPrimary, fallbackBackends: [incomplete] })).rejects.toMatchObject({ code: "unsupported-isolation" });
+    expect(deniedPrimary.requests).toHaveLength(1);
+
+    const selectedLauncher = new ProvenFallbackLauncher();
+    const proven: SandboxBackendCandidate = { id: "proven", async probe() { return provenEvidence(); }, createLauncher() { return selectedLauncher; } };
+    const selected = await selectSandboxLauncher({ platform: "linux", nativeLauncher: new RecordingLauncher([result(1)]), fallbackBackends: [incomplete, proven] });
+    expect(selected).toMatchObject({ backendId: "proven", evidence: provenEvidence(), launcher: selectedLauncher });
+    await expect(selected.launcher.launch({ executable: "validator", args: [], cwd: "/repo", env: {}, readRoots: ["/repo"], writeRoots: [], readOnlyFileOverlays: [], network: "deny", timeoutMs: 100, maxOutputBytes: 100, signal: new AbortController().signal })).resolves.toMatchObject({ exitCode: 0 });
+  });
   it("refuses installed bubblewrap when its required namespace probe exits nonzero", async () => {
     const nativeLauncher = new RecordingLauncher([result(1, "", "namespace creation denied")]);
 

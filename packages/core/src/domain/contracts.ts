@@ -1,4 +1,4 @@
-// Generated from the 147 authoritative exported declarations in PROJECTOR_SPEC.
+// Generated from the authoritative exported declarations in PROJECTOR_SPEC.
 // Runtime schemas live in ../schemas/contracts.ts; this file is the TypeScript contract authority.
 
 export type ConcernMateriality = "blocking-now" | "material-soon" | "deferable";
@@ -682,6 +682,41 @@ export interface MigrationBinding {
   toVersion: string;
   transformIds: string[];
   validationIds: string[];
+}
+
+export interface GovernanceException {
+  id: EntityId;
+  key: string;
+  selector: SelectorExpr;
+  exceptedRuleIds: EntityId[];
+  exceptedLensIds: EntityId[];
+  exceptedExpectationIds: EntityId[];
+  rationale: string;
+  evidence: EvidenceRef[];
+  owner: string;
+  reviewOrExpiryTrigger: AuthorityReconsiderTrigger;
+  invalidationConditions: AuthorityReconsiderTrigger[];
+  exitCriteria?: string[];
+  status: "active" | "expired" | "revoked";
+  semanticHash: ContentHash;
+}
+
+export interface MigrationOverlay {
+  id: EntityId;
+  key: string;
+  sourceLensRef: LensRef;
+  targetLensRef: LensRef;
+  phase: "proposed" | "prepared" | "dual-running" | "cutover" | "cleanup" | "complete" | "rolled-back";
+  entryCriteria: string[];
+  exitCriteria: string[];
+  compatibilityStrategy: string;
+  allowedTemporaryDivergenceIds: EntityId[];
+  generatedOutputOverlays?: string[];
+  validationObligations: string[];
+  rollbackPlan: string;
+  compensationPlan?: string;
+  cleanupResidueDetector: string;
+  semanticHash: ContentHash;
 }
 
 export interface LensExample {

@@ -184,23 +184,36 @@ function rule(id: string): CanonicalDocumentEnvelope {
   });
 }
 
+function governanceDocument(kind: "projection-lens" | "exception" | "migration", id: string): CanonicalDocumentEnvelope {
+  const common = { apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key: `${kind}:${id}`, lifecycle: "active" } as const;
+  if (kind === "projection-lens") return withCanonicalHashes({ ...common, payload: { id, key: `${kind}:${id}`, version: "1", status: "active", purpose: "rebuild fixture", realizesConceptKinds: [], selector: { op: "all", items: [] }, contributions: [], expectedProjections: [], rules: [], impactRules: [], recognizers: [], validators: [], transforms: [], migrations: [], conflictsWith: [], compatibleWith: [], examples: [], counterExamples: [], authorityRecordId: "authority:fixture", governanceBasis: [], semanticHash: zeroHash } });
+  if (kind === "exception") return withCanonicalHashes({ ...common, payload: { id, key: `${kind}:${id}`, selector: { op: "all", items: [] }, exceptedRuleIds: ["rule-a"], exceptedLensIds: ["lens-a"], exceptedExpectationIds: ["expectation-a"], rationale: "bounded exception", evidence: [], owner: "team:fixture", reviewOrExpiryTrigger: { type: "manual-review" }, invalidationConditions: [{ type: "lens-changed", lensId: "lens-a" }], exitCriteria: ["migration complete"], status: "active", semanticHash: zeroHash } });
+  return withCanonicalHashes({ ...common, payload: { id, key: `${kind}:${id}`, sourceLensRef: { lensId: "lens-a", version: "1", semanticHash: zeroHash }, targetLensRef: { lensId: "lens-b", version: "2", semanticHash: zeroHash }, phase: "prepared", entryCriteria: ["validated"], exitCriteria: ["cut over"], compatibilityStrategy: "dual run", allowedTemporaryDivergenceIds: [], validationObligations: ["compare projections"], rollbackPlan: "restore lens-a", cleanupResidueDetector: "no old projection", semanticHash: zeroHash } });
+}
+
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe("SQLite derived canonical index", () => {
-  test("rebuilds equivalently after restart and deletion of state.db", async () => {
+  test("canonical concepts, requirements, scenarios, relations, rules, lenses, exceptions, and migrations rebuild equivalently after state.db deletion", async () => {
     const root = await temporaryRepository();
     const canonical = new CanonicalFileRepository(root);
     await canonical.write(concept("concept-a"));
     await canonical.write(concept("concept-b"));
     await canonical.write(relation("relation-a-b", "concept-a", "concept-b"));
+    await canonical.write(requirement("requirement-a"));
+    await canonical.write(scenario("scenario-a"));
+    await canonical.write(rule("rule-a"));
+    await canonical.write(governanceDocument("projection-lens", "lens-a"));
+    await canonical.write(governanceDocument("exception", "exception-a"));
+    await canonical.write(governanceDocument("migration", "migration-a"));
     const databasePath = join(root, ".projector", "state.db");
 
     const initialStore = new SqliteDerivedStore(databasePath);
     const initialResult = await rebuildDerivedStore(canonical, initialStore);
     const initialRows = initialStore.canonicalRows();
-    expect(initialResult).toMatchObject({ revision: 1, documentCount: 3 });
+    expect(initialResult).toMatchObject({ revision: 1, documentCount: 9 });
     expect(initialStore.relationCount()).toBe(1);
     initialStore.close();
 

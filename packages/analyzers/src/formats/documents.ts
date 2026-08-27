@@ -54,6 +54,7 @@ function parseYaml(path: string, content: string): DocumentFact {
   const units: DocumentUnitFact[] = [];
   const unknowns: string[] = [];
   const stack: Array<{ indent: number; key: string | number }> = [];
+  const sequenceIndexes = new Map<string, number>();
   const multiDocument = /^\s*---\s*$/mu.test(content);
   let documentIndex = multiDocument ? 0 : -1;
   let documentHasContent = false;
@@ -62,15 +63,23 @@ function parseYaml(path: string, content: string): DocumentFact {
     if (/^\s*---\s*$/u.test(line)) { if (documentHasContent) documentIndex += 1; documentHasContent = false; stack.length = 0; return; }
     if (/![A-Za-z]/u.test(line)) unknowns.push(`custom tag at line ${lineIndex + 1}`);
     if (/[&*][A-Za-z]/u.test(line)) unknowns.push(`anchor or alias at line ${lineIndex + 1}`);
-    const match = line.match(/^(\s*)(?:-\s*)?([^:#][^:]*):(?:\s*(.*))?$/u);
+    const match = line.match(/^(\s*)(-\s*)?([^:#][^:]*):(?:\s*(.*))?$/u);
     if (match === null || line.trimStart().startsWith("#")) return;
     documentHasContent = true;
     const indent = match[1]!.length;
-    const key = match[2]!.trim().replace(/^['"]|['"]$/gu, "");
+    const sequenceItem = match[2] !== undefined;
+    const key = match[3]!.trim().replace(/^['"]|['"]$/gu, "");
     while (stack.at(-1) !== undefined && stack.at(-1)!.indent >= indent) stack.pop();
+    if (sequenceItem) {
+      const sequencePath = pointer([...(documentIndex >= 0 ? [documentIndex] : []), ...stack.map(({ key: part }) => part)]);
+      const sequenceKey = `${sequencePath}\0${indent}`;
+      const itemIndex = sequenceIndexes.get(sequenceKey) ?? 0;
+      sequenceIndexes.set(sequenceKey, itemIndex + 1);
+      stack.push({ indent, key: itemIndex });
+    }
     const base = [...(documentIndex >= 0 ? [documentIndex] : []), ...stack.map(({ key }) => key), key];
-    const value = match[3]?.trim() ?? "";
-    if (value === "") stack.push({ indent, key }); else { const stablePath = pointer(base); if (seen.has(stablePath)) unknowns.push(`duplicate key ${stablePath} at line ${lineIndex + 1}`); else seen.add(stablePath); units.push(unit(base, value, lineIndex + 1, indent + 1)); }
+    const value = match[4]?.trim() ?? "";
+    if (value === "") stack.push({ indent: sequenceItem ? indent + 1 : indent, key }); else { const stablePath = pointer(base); if (seen.has(stablePath)) unknowns.push(`duplicate key ${stablePath} at line ${lineIndex + 1}`); else seen.add(stablePath); units.push(unit(base, value, lineIndex + 1, indent + 1)); }
   });
   units.sort((a, b) => compareCodePoint(a.stablePath, b.stablePath));
   return { path, format: "yaml", units, unknowns: [...new Set(unknowns)].sort(compareCodePoint), contentHash: hashFramedDomain("structured-document", { path, units, unknowns }) };

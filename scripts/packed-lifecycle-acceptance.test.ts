@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { canonicalJson, hashFramedDomain } from "../packages/core/src/index.js";
 
 import * as packedLifecycle from "./packed-lifecycle-acceptance.mjs";
 
@@ -16,10 +17,14 @@ const sortValue = (value) => Array.isArray(value) ? value.map(sortValue) : value
 const hash = (domain, value) => `sha256:v1:${createHash("sha256").update(`${domain}\0${JSON.stringify(sortValue(value))}`, "utf8").digest("hex")}`;
 
 function trace() {
-  const sequence = [["invoked", "change", null], ["completed", "change", 0], ["invoked", "plan", null], ["completed", "plan", 0], ["invoked", "approve", null], ["completed", "approve", 0], ["invoked", "apply", null], ["invoked", "recover", null], ["completed", "recover", 0], ["invoked", "resume", null], ["completed", "resume", 0], ["invoked", "resume", null], ["completed", "resume", 0]];
+  const sequence = [["invoked", "start", null], ["completed", "start", 3], ["invoked", "approve", null], ["completed", "approve", 2], ["invoked", "approve", null], ["completed", "approve", 0], ["invoked", "apply", null], ["invoked", "recover", null], ["completed", "recover", 0], ["invoked", "resume", null], ["completed", "resume", 0], ["invoked", "resume", null], ["completed", "resume", 0]];
   let previousHash = null;
   return sequence.map(([phase, command, exitCode], index) => {
-    const args = [command === "change" ? "held-out request" : "selector"];
+    const args = command === "approve"
+      ? ["--change", "semantic_change_abc", "--plan-hash", index === 2 || index === 3 ? "sha256:v1:substituted" : "sha256:v1:plan"]
+      : ["selector"];
+    const output = phase === "completed" ? JSON.stringify({ index }) : null;
+    const diagnostic = phase === "completed" && exitCode !== 0 ? "approval requires the exact plan hash" : phase === "completed" ? "" : null;
     const body = {
       version: 1,
       phase,
@@ -27,8 +32,10 @@ function trace() {
       args,
       exitCode,
       invocationHash: hash("projector-agent-cli-invocation", { command, args }),
-      outputHash: phase === "completed" ? hash("projector-agent-cli-output", { exitCode, output: { index } }) : null,
-      diagnosticHash: phase === "completed" ? hash("projector-agent-cli-diagnostic", "") : null,
+      output,
+      diagnostic,
+      outputHash: phase === "completed" ? hash("projector-agent-cli-output", { exitCode, stdout: output }) : null,
+      diagnosticHash: phase === "completed" ? hash("projector-agent-cli-diagnostic", diagnostic) : null,
       previousHash,
       recordedAt: `2026-08-26T00:00:${String(index).padStart(2, "0")}.000Z`,
     };
@@ -39,23 +46,32 @@ function trace() {
 }
 
 function evidence() {
+  const certificateArtifact = { version: 1, outcome: "success", certificate: { planId: "plan_abc" } };
+  const certificateHash = hashFramedDomain("change-certificate-artifact", certificateArtifact);
+  const receipt = { planId: "plan_abc", certificateHash };
+  const receiptHash = hashFramedDomain("transaction-receipt-artifact", receipt);
+  const sourceHash = hash("packed-lifecycle-source-bytes", "after");
   return {
     version: 1,
+    runId: "01234567-89ab-4def-8123-456789abcdef",
     request: "Trim surrounding label whitespace while preserving existing callers.",
+    activation: { initialized: true, projectEnabled: true, config: { apiVersion: "projector.config/v1", enabled: true } },
     sourceBoundary: { sourceAccessDenied: true, installedSymlinkCount: 0, pluginSourceReferenceCount: 0 },
     direct: { changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan", planId: "plan_abc", predictedChangedPaths: ["src/format-label.mjs", "test/trim-label.test.mjs"] },
     pause: { status: "approval-required", changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan" },
-    approval: { status: "approved", approvalSelector: "lifecycle_approval_abc", planHash: "sha256:v1:plan", substitutedHashRejected: true },
+    approval: { status: "approved", approvalSelector: "lifecycle_approval_abc", planHash: "sha256:v1:plan" },
     interruption: { signal: "SIGKILL", journalPhase: "validating", mutationObserved: true },
     recovery: { action: "rolled-back", exactBeforeRestored: true },
     result: {
       outcome: "success", approvalSelector: "lifecycle_approval_abc", planId: "plan_abc",
-      certificateHash: `sha256:v1:${"c".repeat(64)}`, receiptHash: `sha256:v1:${"d".repeat(64)}`,
+      certificateHash, receiptHash, certificateBytes: `${canonicalJson(certificateArtifact)}\n`, receiptBytes: `${canonicalJson(receipt)}\n`,
       predictedChangedPaths: ["src/format-label.mjs", "test/trim-label.test.mjs"],
       observedChangedPaths: ["src/format-label.mjs", "test/trim-label.test.mjs"],
       unexpectedChangedPaths: [], unexpectedChangedCanonicalIds: [], planningSurpriseIds: [], unknowns: [],
       independentExecutionSource: "immutable-captured-overlay", fixedPoint: true,
     },
+    independentOracle: { beforeExitCode: 1, afterExitCode: 0, gitObjectId: "a".repeat(40), expectedContentHash: "validator-hash", beforeContentHash: "validator-hash", afterContentHash: "validator-hash", executedContentHash: "validator-hash", executionSource: "immutable-captured-overlay" },
+    fixedPointRerun: { firstCertificateHash: certificateHash, secondCertificateHash: certificateHash, firstReceiptHash: receiptHash, secondReceiptHash: receiptHash, afterSourceHash: sourceHash, rerunSourceHash: sourceHash },
     trace: trace(),
     fixtureMarkerAbsent: true,
   };
@@ -124,4 +140,50 @@ describe("packed held-out lifecycle evidence", () => {
     surprise.result.observedChangedPaths.push("src/unapproved.mjs");
     expect(() => verifyPackedLifecycleEvidence(surprise)).toThrow(/impact|path/iu);
   });
+
+  it("recomputes completion hashes and derives oracle/fixed-point outcomes instead of trusting flags", () => {
+    const noncanonicalCertificate = evidence(); noncanonicalCertificate.result.certificateBytes += " ";
+    expect(() => verifyPackedLifecycleEvidence(noncanonicalCertificate)).toThrow(/artifact bytes/iu);
+    const corruptedCertificate = evidence(); const parsedCertificate = JSON.parse(corruptedCertificate.result.certificateBytes); parsedCertificate.certificate.planId = "forged"; corruptedCertificate.result.certificateBytes = `${canonicalJson(parsedCertificate)}\n`;
+    expect(() => verifyPackedLifecycleEvidence(corruptedCertificate)).toThrow(/completion hash/iu);
+    const corruptedReceipt = evidence(); corruptedReceipt.result.receiptBytes = `${canonicalJson({ planId: "forged", certificateHash: corruptedReceipt.result.certificateHash })}\n`;
+    expect(() => verifyPackedLifecycleEvidence(corruptedReceipt)).toThrow(/completion hash/iu);
+    const forgedFlags = evidence(); forgedFlags.result.fixedPoint = false; forgedFlags.result.independentExecutionSource = "caller-forged";
+    expect(verifyPackedLifecycleEvidence(forgedFlags)).toMatch(/^sha256:v1:/u);
+    const failedOracle = evidence(); failedOracle.independentOracle.beforeExitCode = 0;
+    expect(() => verifyPackedLifecycleEvidence(failedOracle)).toThrow(/desired-behavior oracle/iu);
+    const failedRerun = evidence(); failedRerun.fixedPointRerun.secondReceiptHash = `sha256:v1:${"f".repeat(64)}`;
+    expect(() => verifyPackedLifecycleEvidence(failedRerun)).toThrow(/fixed-point rerun/iu);
+  });
+
+  it("derives substituted plan-hash rejection from authenticated command evidence", () => {
+    const forgedFlag = evidence();
+    forgedFlag.approval.substitutedHashRejected = true;
+    expect(verifyPackedLifecycleEvidence(forgedFlag)).toMatch(/^sha256:v1:/u);
+
+    const missingNegative = evidence();
+    missingNegative.trace.splice(2, 2);
+    rechain(missingNegative.trace);
+    expect(() => verifyPackedLifecycleEvidence(missingNegative)).toThrow(/substituted|approval trace|interrupted invocation/iu);
+
+    const falseNegative = evidence();
+    falseNegative.trace[3].exitCode = 0;
+    falseNegative.trace[3].diagnostic = "";
+    rechain(falseNegative.trace);
+    expect(() => verifyPackedLifecycleEvidence(falseNegative)).toThrow(/substituted|approval trace/iu);
+  });
 });
+
+function rechain(entries) {
+  let previousHash = null;
+  for (const entry of entries) {
+    entry.previousHash = previousHash;
+    if (entry.phase === "completed") {
+      entry.outputHash = hash("projector-agent-cli-output", { exitCode: entry.exitCode, stdout: entry.output });
+      entry.diagnosticHash = hash("projector-agent-cli-diagnostic", entry.diagnostic);
+    }
+    const { entryHash: omitted, ...body } = entry; void omitted;
+    entry.entryHash = hash("projector-agent-trace-entry", body);
+    previousHash = entry.entryHash;
+  }
+}

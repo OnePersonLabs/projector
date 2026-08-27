@@ -1,6 +1,6 @@
 # Projector release acceptance
 
-This file is generated from authoritative acceptance headings and verified public test anchors.
+This file is generated from authoritative acceptance headings and an explicit exact-ID assertion authority.
 
 - Scenarios: 63
 - Property classes: 27

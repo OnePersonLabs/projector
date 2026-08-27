@@ -64,9 +64,19 @@ The Representation subsystem starts with seven obligations. They are `representa
 
 The packed release gate MUST invoke the installed sandbox composition and record its capability evidence. Authenticated traceability MUST map sandbox selection, fail-closed unavailability, and release-workflow ordering to observed public tests. A source-only import or self-reported capability flag is not release evidence.
 
+Release traceability authority MUST key one explicit mapping by each exact acceptance obligation ID. Generation MUST NOT infer mappings from titles, keywords, or suite anchors. Each mapping MUST name an observed exact Vitest `fullName` from a source-controlled test.
+
 The packed release gate MUST also execute `@onepersonlabs/projector@2.1.0` against a held-out ordinary Git repository. It MUST sever the Projector source checkout, drive the same request through the direct CLI and installed stateless agent wrapper, and bind their semantic/plan/approval/certificate identities. It MUST inject `SIGKILL` only after the authenticated journal reaches validation with durable mutation. It MUST prove stale-lease takeover, exact rollback, same-approval resume, immutable independent-validator execution, observed-impact closure, external invocation continuity, and idempotent certificate/receipt replay. Fixture-only transforms and source fallbacks are not release evidence.
 
 Each lifecycle traceability entry MUST name the packed lifecycle evidence and transcript artifacts that it requires. Release compilation MUST reject a run when either same-run artifact is absent. The final release evidence MUST authenticate both hashes.
+
+Release benchmark authority MUST maintain a bijective registry for the exact seventeen initial engineering gates. Every registry entry MUST execute one public/composed behavior assertion and one distinct executable negative-control assertion. Release evidence MUST authenticate both observed assertion identities and source bytes. It MUST reject a missing or renamed exact Vitest `fullName`. It MUST derive each metric status from its measured value and normative comparator.
+
+Labels, capability names, prose controls, caller-authored counts, and inconsistent value/status pairs are not evidence. The context-reduction gate MUST measure full and scoped context bytes through the production context compiler.
+
+Packed lifecycle verification MUST parse the canonical certificate and receipt artifact bytes. It MUST recompute their domain-separated hashes. Hash-shaped caller values and success booleans do not prove those artifacts. The held-out independent validator MUST be unchanged in the Git base and have an observed Git object identity. It MUST fail against before-state bytes for the requested behavior and pass against after-state bytes. Fixed point requires an actual second reconciliation/resume with identical authenticated certificate, receipt, and governed target bytes.
+
+Dogfood governance MUST bind `PROJECTOR_SPEC/spec.manifest.json`, its byte digest, and a deterministic root digest over the manifest-addressed entrypoint, index, and every listed module. A digest over a selected subset of normative modules does not bind the Projector specification.
 
 The repository GitHub Actions release workflow MUST remain manual-only with `workflow_dispatch` as its only trigger. It MUST provision and prove the sandbox before dogfooding, verification, artifact checks, and packed release acceptance. It MUST NOT disable the runner's global unprivileged-user-namespace restriction to make a probe pass.
 

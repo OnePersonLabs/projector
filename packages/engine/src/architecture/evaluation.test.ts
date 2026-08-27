@@ -107,6 +107,21 @@ describe("research, options, preferences, and deferral", () => {
     expect(result.governanceConsequences).toEqual([]);
   });
 
+  it("isolates user preferences until explicit project adoption makes them shared ranking input without governance", async () => {
+    const user = preference("preference:user-a", "managed", "user", "strongly-prefer");
+    const project = preference("preference:adopted", "managed", "project", "prefer");
+    const options = [option("local"), option("managed")];
+    const forUserA = await evaluateDecisionOptions({ concern, options, preferenceIds: [user.id], research: { required: false, affectedEvidenceIds: [] }, acceptance: { kind: "automatic" } }, evaluationPorts([user], { [user.id]: ["managed"] }));
+    const forUserB = await evaluateDecisionOptions({ concern, options, preferenceIds: [], research: { required: false, affectedEvidenceIds: [] }, acceptance: { kind: "automatic" } }, evaluationPorts());
+    const adoptedForUserB = await evaluateDecisionOptions({ concern, options, preferenceIds: [project.id], research: { required: false, affectedEvidenceIds: [] }, acceptance: { kind: "automatic" } }, evaluationPorts([project], { [project.id]: ["managed"] }));
+    expect(forUserA.evaluation.recommendedOptionKey).toBe("managed");
+    expect(forUserB.evaluation.recommendedOptionKey).toBe("local");
+    expect(forUserB.appliedPreferences).toEqual([]);
+    expect(adoptedForUserB.evaluation.recommendedOptionKey).toBe("managed");
+    expect(adoptedForUserB.appliedPreferences).toEqual([expect.objectContaining({ scope: "project" })]);
+    expect([forUserA, forUserB, adoptedForUserB].flatMap(({ governanceConsequences }) => governanceConsequences)).toEqual([]);
+  });
+
   it("accepts a negative/simple option and requires neutral, trigger-bound deferral", async () => {
     const result = await evaluateDecisionOptions({ concern, options: [option("do-not-add-orchestrator")], preferenceIds: [], research: { required: false, affectedEvidenceIds: [] }, acceptance: { kind: "automatic" } }, evaluationPorts());
     expect(result.evaluation.recommendedOptionKey).toBe("do-not-add-orchestrator");

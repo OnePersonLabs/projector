@@ -143,6 +143,25 @@ Broad path-wide suppressions SHOULD be rejected when a narrower semantic selecto
 
 An exception MUST NOT mutate the underlying authority record to make a conflict disappear. It is an explicit scoped deviation.
 
+```ts
+export interface GovernanceException {
+  id: EntityId;
+  key: string;
+  selector: SelectorExpr;
+  exceptedRuleIds: EntityId[];
+  exceptedLensIds: EntityId[];
+  exceptedExpectationIds: EntityId[];
+  rationale: string;
+  evidence: EvidenceRef[];
+  owner: string;
+  reviewOrExpiryTrigger: AuthorityReconsiderTrigger;
+  invalidationConditions: AuthorityReconsiderTrigger[];
+  exitCriteria?: string[];
+  status: "active" | "expired" | "revoked";
+  semanticHash: ContentHash;
+}
+```
+
 ## Migration overlays
 
 Required phases:
@@ -172,6 +191,25 @@ A migration definition MUST include:
 
 Migration residue is determined from explicit exit criteria, not merely age.
 
----
+```ts
+export interface MigrationOverlay {
+  id: EntityId;
+  key: string;
+  sourceLensRef: LensRef;
+  targetLensRef: LensRef;
+  phase: "proposed" | "prepared" | "dual-running" | "cutover" | "cleanup" | "complete" | "rolled-back";
+  entryCriteria: string[];
+  exitCriteria: string[];
+  compatibilityStrategy: string;
+  allowedTemporaryDivergenceIds: EntityId[];
+  generatedOutputOverlays?: string[];
+  validationObligations: string[];
+  rollbackPlan: string;
+  compensationPlan?: string;
+  cleanupResidueDetector: string;
+  semanticHash: ContentHash;
+}
+```
 
+---
 
