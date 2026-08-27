@@ -10,3 +10,4 @@ export * from "./schemas/contracts.js";
 export * from "./schemas/canonical-envelope.js";
 export * from "./schemas/registry.js";
 export * from "./schemas/change-proposal.js";
+export * from "./schemas/project-config.js";

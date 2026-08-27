@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type ContentHash, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import { createStateBinding } from "@projector/engine";
-import { CanonicalFileRepository, SqliteDerivedStore, createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, type OperationalExitProof, type OperationalReport, type ReportFormat } from "@projector/runtime";
+import { CanonicalFileRepository, SqliteDerivedStore, createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, initializeProjectActivation, inspectProjectActivation, type OperationalExitProof, type OperationalReport, type ReportFormat } from "@projector/runtime";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -329,7 +329,7 @@ export async function executeProjector(
   }
   const parsed = parseCommand(arguments_);
   const policy = normalizeExecutionPolicy(parsed.policy);
-  const repositoryRoot = options.cwd ?? process.cwd();
+  let repositoryRoot = options.cwd ?? process.cwd();
   const defaultOperation: OperationRiskInput = parsed.command === "init"
     ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
     : parsed.command === "approve" ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
@@ -349,6 +349,18 @@ export async function executeProjector(
       const output = error instanceof Error ? error.message : String(error);
       return { exitCode: 2, output, report: { policy, blocked: true, operationRisk } };
     }
+  }
+  const activation = await inspectProjectActivation(repositoryRoot);
+  repositoryRoot = activation.repositoryRoot;
+  if (parsed.command !== "init" && parsed.command !== "mcp" && activation.status !== "enabled") {
+    const report = { policy, projectEnabled: false, activation };
+    const output = parsed.format === "json" ? canonicalJson(report) : activation.reason;
+    return { exitCode: 5, output, report };
+  }
+  if (parsed.command === "init" && policy.allowAutoMutation && activation.status === "disabled" && activation.failure !== "missing") {
+    throw new Error(activation.reason);
+  }
+  if (policy.allowAutoMutation && parsed.command !== "mcp") {
     const governance = options.governance ?? { detectCanonicalConflictPaths: defaultCanonicalConflictPaths };
     const conflicts = await governance.detectCanonicalConflictPaths(repositoryRoot);
     if ((policy.preset === "govern" || policy.preset === "autonomous") && conflicts.length > 0) {
@@ -360,9 +372,11 @@ export async function executeProjector(
   let exitCode = 0;
   switch (parsed.command) {
     case "init":
-      report = policy.allowAutoMutation
-        ? { policy, initialized: true, rebuild: await safeRebuildAcceptedState(repositoryRoot) }
-        : { policy, initialized: false, dryRun: true };
+      if (policy.allowAutoMutation) {
+        const rebuild = await safeRebuildAcceptedState(repositoryRoot);
+        const initialized = await initializeProjectActivation(repositoryRoot);
+        report = { policy, initialized: true, projectEnabled: true, configCreated: initialized.created, rebuild };
+      } else report = { policy, initialized: false, projectEnabled: activation.status === "enabled", dryRun: true };
       break;
     case "audit": {
       if (parsed.decisions) {

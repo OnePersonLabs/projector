@@ -4,6 +4,18 @@
 
 Canonical authored/governance state MUST be closed under rebuild.
 
+`.projector/config.json` is the sole project activation marker. Its minimal form is strict canonical JSON:
+
+```json
+{"apiVersion":"projector.config/v1","enabled":true}
+```
+
+Repositories SHOULD commit the marker so activation is shared and reviewable.
+A directory, database, journal, environment variable, source checkout, or installed CLI does not activate a project.
+Missing, malformed, unsupported, non-regular, or symlink-resolved configuration fails closed.
+Only the explicit `projector init` operation can run before the marker validates.
+All other operations MUST NOT infer, scan, persist, or mutate project state until the repository-root marker validates.
+
 ```text
 .projector/
 ├─ config.json
@@ -72,7 +84,7 @@ Store derived and inferred observations in SQLite or ignored artifacts. This inc
 
 ## Canonical schema requirements
 
-Every canonical document MUST include:
+The activation config is versioned project configuration, not a canonical entity envelope. It accepts only the exact fields shown above. All canonical entity documents MUST include:
 
 - `apiVersion` and/or schema version.
 - stable ID and canonical key.
@@ -127,5 +139,3 @@ A deterministic local rebuild uses only:
 Live external systems are never silently read as part of the rebuild oracle.
 
 ---
-
-

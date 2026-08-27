@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolve } from "node:path";
 
 import { PROJECTOR_VERSION, createHostSessionRecord, executeProjector, hostSessionSelector, renderCli } from "./cli.js";
 
@@ -40,7 +41,7 @@ describe("minimal CLI entrypoint", () => {
 
   it("blocks canonical governance conflicts before public mutation work begins", async () => {
     const result = await executeProjector(["apply", "lifecycle_approval_test", "--mode", "govern"], {
-      cwd: "/definitely/not/a/repository",
+      cwd: resolve(import.meta.dirname, "../../.."),
       governance: { detectCanonicalConflictPaths: async () => [".projector/rules/conflicted.json"], assessOperationRisk: async () => "R1" },
     });
     expect(result.exitCode).toBe(2);

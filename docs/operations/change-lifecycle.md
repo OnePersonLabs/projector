@@ -13,7 +13,16 @@ codex plugin list --json
 
 The plugin version and global cache path in the Codex output must match the intended installation. The plugin does not search a source checkout. Set `PROJECTOR_CLI` only when you need one exact non-PATH executable.
 
-If the CLI, Git identity, capability-proven sandbox, immutable validator overlay, or authenticated repository observation is unavailable, stop. Unavailability is not approval and is not safety evidence.
+Explicitly enable the target repository once, then commit the marker:
+
+```sh
+projector init
+git add .projector/config.json
+```
+
+The only activation marker is the strict versioned `.projector/config.json` written by successful initialization. An existing `.projector/` directory does not enable the repository. Do not hand-create or repair a malformed marker; initialization preserves valid configuration and refuses incompatible configuration.
+
+If activation, the CLI, Git identity, capability-proven sandbox, immutable validator overlay, or authenticated repository observation is unavailable, stop. MCP status may report `not-enabled`; audit and divergence tools then remain unavailable and perform no scan. Unavailability is not approval and is not safety evidence.
 
 ## Prepare the proposal
 

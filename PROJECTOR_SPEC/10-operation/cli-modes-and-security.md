@@ -62,6 +62,8 @@ Friendly flags MAY include:
 
 Commands and flags are normalized to one internal `ExecutionPolicy` before work starts. Aliases such as `--audit-only` map to equivalent policy fields. Contradictory flags are rejected.
 
+Except for help, version, `init`, and MCP startup, every CLI command requires a valid repository-root `.projector/config.json` activation marker. The check occurs before analysis, lifecycle work, persistence, or mutation. Missing or invalid activation is a required-surface-unavailable outcome. `projector mcp` MAY start in an inactive repository to preserve protocol handshake and expose inactive status. Its tools remain activation-gated.
+
 For the installed repository change lifecycle, `change` and `plan` are read/compile operations. `approve` records only the exact immutable plan-hash decision. `apply`, lifecycle `recover`, and `resume` are mutation-capable operations. The CLI MUST preserve structured lifecycle reports for nonzero outcomes so an operator can distinguish partial, unavailable, and recovery-required states.
 
 Exit codes:

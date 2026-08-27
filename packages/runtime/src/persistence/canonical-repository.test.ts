@@ -193,7 +193,6 @@ describe("CanonicalFileRepository", () => {
   });
 
   test.each([
-    ["Config", ["config.json"]],
     ["Exception", ["exceptions", "unsafe.exception.json"]],
     ["Migration", ["migrations", "future.migration.json"]],
   ])("fails closed for unsupported %s canonical files", async (kind, pathParts) => {
@@ -204,6 +203,24 @@ describe("CanonicalFileRepository", () => {
     await writeFile(path, "{}\n", "utf8");
 
     await expect(repository.snapshot()).rejects.toThrow(new RegExp(`unsupported canonical ${kind} kind`, "i"));
+  });
+
+  test("accepts the strict project activation config without treating it as an entity envelope", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    await mkdir(join(root, ".projector"), { recursive: true });
+    await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+
+    expect((await repository.snapshot()).documents).toEqual([]);
+  });
+
+  test("fails closed for malformed project activation config", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    await mkdir(join(root, ".projector"), { recursive: true });
+    await writeFile(join(root, ".projector", "config.json"), "{}\n");
+
+    await expect(repository.snapshot()).rejects.toThrow(/invalid Projector config/iu);
   });
 
   test("rejects canonical-looking files outside their approved family", async () => {

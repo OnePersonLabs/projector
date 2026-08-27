@@ -111,7 +111,7 @@ projector init
 MUST:
 
 1. Detect repository root and Git state.
-2. Generate minimal `.projector/config.json`.
+2. Atomically generate the strict, versioned `.projector/config.json` activation marker only after initialization succeeds.
 3. Inventory repository surfaces.
 4. Build deterministic indexes.
 5. Classify stable Projection Units.
@@ -139,7 +139,7 @@ projector init --interactive
 projector init --autonomous
 ```
 
-`init` MUST be idempotent.
+`init` MUST be idempotent. Dry-run initialization MUST NOT activate a repository. Existing valid configuration is preserved. Missing configuration is not inferred from other `.projector/` state, and malformed or unsupported configuration MUST fail closed without being overwritten.
 
 ## Explain any governed target
 
@@ -251,5 +251,4 @@ Ordinary feature/change requests MUST trigger architecture preflight when the re
 Progressive disclosure is a semantic planning property, not only a UI style. Projector SHOULD avoid premature architecture and accidental architecture.
 
 ---
-
 

@@ -6,6 +6,7 @@ import { dirname, join, relative } from "node:path";
 import {
   CanonicalDocumentEnvelopeSchema,
   canonicalJson,
+  parseProjectorConfig,
   parseCanonicalJson,
   hashRootManifest,
   type CanonicalDocumentEnvelope,
@@ -224,14 +225,21 @@ export class CanonicalFileRepository {
     const documents: CanonicalDocumentEnvelope[] = [];
     for (const path of await canonicalJsonFiles(this.canonicalRoot)) {
       const relativePath = relative(this.canonicalRoot, path).replaceAll("\\", "/");
+      if (relativePath === "config.json") {
+        try {
+          parseProjectorConfig(parseCanonicalJson(await readFile(path, "utf8")));
+        } catch (error) {
+          throw new Error(`invalid Projector config at ${path}`, { cause: error });
+        }
+        continue;
+      }
       const topLevel = relativePath.split("/")[0];
       const supportedKind = (Object.entries(kindLocations) as Array<
         [SupportedCanonicalKind, (typeof kindLocations)[SupportedCanonicalKind]]
       >).find(([, location]) => path.endsWith(`.${location.at(-1)}.json`))?.[0];
       if (supportedKind === undefined) {
         if (topLevel !== undefined && derivedTopLevelDirectories.has(topLevel)) continue;
-        const unsupportedKind = relativePath === "config.json" ? "Config"
-          : relativePath.endsWith(".exception.json") ? "Exception"
+        const unsupportedKind = relativePath.endsWith(".exception.json") ? "Exception"
             : relativePath.endsWith(".migration.json") ? "Migration"
               : "unknown";
         throw new Error(`unsupported canonical ${unsupportedKind} kind at ${path}`);
