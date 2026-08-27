@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -44,13 +44,16 @@ describe("coverage/complete/cleanup CLI composition", () => {
   it("composes deterministic built coverage from real Task14 repository analysis", async () => {
     const repositoryRoot = await mkdtemp(join(tmpdir(), "projector-coverage-"));
     try {
+      await mkdir(join(repositoryRoot, ".git"));
+      await mkdir(join(repositoryRoot, ".projector"));
+      await writeFile(join(repositoryRoot, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
       await writeFile(join(repositoryRoot, "package.json"), JSON.stringify({ name: "fixture", scripts: { check: "node src/check.js" } }));
       await writeFile(join(repositoryRoot, "bad.json"), "{\"broken\":");
       const first = await executeProjector(["coverage", "--format", "json"], { cwd: repositoryRoot });
       const second = await executeProjector(["coverage"], { cwd: repositoryRoot });
       expect(first.report.lanes).toHaveLength(17);
       expect(new Set(first.report.lanes.map((lane: { key: string }) => lane.key))).toEqual(new Set(laneKeys));
-      expect(first.report.localAnalysis).toMatchObject({ artifactCount: 2, projectionUnitCount: 2 });
+      expect(first.report.localAnalysis).toMatchObject({ artifactCount: 3, projectionUnitCount: 3 });
       expect(first.report.localAnalysis.analyzerFailures).toContainEqual(expect.objectContaining({ capability: "document-parse", scope: "bad.json" }));
       expect(first.report.lanes.find((lane: { key: string }) => lane.key === "representation-projection-fidelity")).toMatchObject({ observability: "unavailable", numerator: 0, blindSpots: [expect.stringMatching(/projection evidence/iu)] });
       expect(first.report.boundState).toMatchObject({ dependencyDigest: expect.stringMatching(/^sha256:v1:/u) });
@@ -68,6 +71,9 @@ describe("coverage/complete/cleanup CLI composition", () => {
   it("excludes sibling structured-document failures from fidelity coverage", async () => {
     const repositoryRoot = await mkdtemp(join(tmpdir(), "projector-coverage-formats-"));
     try {
+      await mkdir(join(repositoryRoot, ".git"));
+      await mkdir(join(repositoryRoot, ".projector"));
+      await writeFile(join(repositoryRoot, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
       await writeFile(join(repositoryRoot, "valid.toml"), "name = \"fixture\"\n");
       await writeFile(join(repositoryRoot, "duplicate.yaml"), "name: first\nname: second\n");
       const result = await executeProjector(["coverage"], { cwd: repositoryRoot });

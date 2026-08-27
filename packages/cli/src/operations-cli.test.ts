@@ -9,7 +9,7 @@ import { createOperationalReport, unavailableOperationalEvidence } from "@projec
 import { executeProjector } from "./cli.js";
 
 const exec = promisify(execFile);
-async function repository() { const root = await mkdtemp(join(tmpdir(), "projector-ops-")); await exec("git", ["init", "-q", root]); await writeFile(join(root, "a.json"), "{}\n"); await exec("git", ["-C", root, "add", "."]); await exec("git", ["-C", root, "-c", "user.name=Fixture", "-c", "user.email=f@example.test", "commit", "-qm", "initial"]); return root; }
+async function repository() { const root = await mkdtemp(join(tmpdir(), "projector-ops-")); await exec("git", ["init", "-q", root]); await mkdir(join(root, ".projector")); await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n'); await writeFile(join(root, "a.json"), "{}\n"); await exec("git", ["-C", root, "add", "."]); await exec("git", ["-C", root, "-c", "user.name=Fixture", "-c", "user.email=f@example.test", "commit", "-qm", "initial"]); return root; }
 const proof = { commandFailed: false, blockingInvalidity: false, approvalRequired: false, incompleteCoverage: false, requiredUnavailable: false, recoveryFailure: false, budgetExhausted: false, resumable: false } as const;
 
 describe("built operational CLI", () => {

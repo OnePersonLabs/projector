@@ -1,17 +1,27 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { readlink } from "node:fs/promises";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 const configuredRoot = process.env.PROJECTOR_ROOT?.trim();
-const inheritedWorkingDirectory = process.env.PWD?.trim();
 let parentWorkingDirectory;
 try {
   parentWorkingDirectory = await readlink(`/proc/${process.ppid}/cwd`);
 } catch {
   // Linux and WSL expose the host repository here when the plugin has its own cwd.
 }
-let repositoryRoot = configuredRoot || inheritedWorkingDirectory || parentWorkingDirectory || process.cwd();
+const hostWorkingDirectory = process.env.CODEX_WORKSPACE_ROOT?.trim() || process.env.CODEX_CWD?.trim() || process.env.INIT_CWD?.trim();
+const pluginRoot = resolve(import.meta.dirname, "..");
+const candidate = configuredRoot || hostWorkingDirectory || parentWorkingDirectory;
+const candidatePath = candidate === undefined ? undefined : resolve(candidate);
+const fromPlugin = candidatePath === undefined ? undefined : relative(pluginRoot, candidatePath);
+const candidateIsPluginLocal = fromPlugin === "" || (fromPlugin !== undefined && !fromPlugin.startsWith("..") && !isAbsolute(fromPlugin));
+const inactive = candidatePath === undefined || candidateIsPluginLocal;
+const inactiveRoot = inactive ? mkdtempSync(join(tmpdir(), "projector-inactive-")) : undefined;
+if (inactiveRoot !== undefined) mkdirSync(join(inactiveRoot, ".git"));
+let repositoryRoot = inactiveRoot ?? candidatePath;
 
 if (!configuredRoot) {
   try {
@@ -121,5 +131,9 @@ child.on("error", (error) => {
   process.exitCode = 5;
 });
 child.on("exit", (code, signal) => {
+  if (inactiveRoot !== undefined) rmSync(inactiveRoot, { recursive: true, force: true });
   process.exitCode = code ?? (signal === null ? 1 : 6);
+});
+process.on("exit", () => {
+  if (inactiveRoot !== undefined) rmSync(inactiveRoot, { recursive: true, force: true });
 });

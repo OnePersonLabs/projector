@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { hashFramedDomain, type ExecutionCapsule, type ExecutionPlan, type StateBinding, type StateDigest } from "@projector/core";
@@ -16,7 +16,7 @@ describe("projector run host boundary", () => {
   it("preserves literal argv, filters environment, and reports reconciled host status", async () => {
     const run = vi.fn<RunHostCliPort["run"]>(async () => ({ status: "completed", exitCode: 0, changedPaths: ["src/a.ts"], reconciled: true }));
     const signal = new AbortController().signal;
-    const repositoryRoot = process.cwd();
+    const repositoryRoot = resolve(import.meta.dirname, "../../..");
     const result = await executeProjector(["run", "codex", "--mode", "guide", "--session", "session:fixture", "--", "--fake", "value with spaces", "$(never)"], { cwd: repositoryRoot, runHost: { resolve: async () => ({ authenticated: true, host: "codex" }), run }, environment: { PATH: "/bin", LANG: "C", SECRET: "drop" }, signal });
     expect(result.exitCode).toBe(0);
     expect(run).toHaveBeenCalledWith({ host: "codex", sessionSelector: "session:fixture", repositoryRoot, argv: ["--fake", "value with spaces", "$(never)"], environment: { LANG: "C", PATH: "/bin" }, signal });
@@ -51,7 +51,7 @@ describe("projector run host boundary", () => {
   it("resolves an authenticated built session and detects a fake host's committed-clean write", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-host-"));
     try {
-      await exec("git", ["init", "-q", root]); await writeFile(join(root, "tracked.txt"), "before\n"); await exec("git", ["-C", root, "add", "."]); await exec("git", ["-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "initial"]);
+      await exec("git", ["init", "-q", root]); await mkdir(join(root, ".projector")); await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n'); await writeFile(join(root, "tracked.txt"), "before\n"); await exec("git", ["-C", root, "add", "."]); await exec("git", ["-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "initial"]);
       const head = (await exec("git", ["-C", root, "rev-parse", "HEAD"])).stdout.trim(); const state: StateDigest = { gitBase: head, worktreeDigest: hashFramedDomain("fixture", "w"), canonicalProjectorDigest: hashFramedDomain("fixture", "c"), toolchainDigest: hashFramedDomain("fixture", "t") };
       const binding: StateBinding = { compiledAgainst: state, valueDependencies: [], queryDependencies: [], dependencyDigest: hashFramedDomain("state-binding-dependencies", { valueDependencies: [], queryDependencies: [] }) };
       const plan = { id: "plan:host", revision: 1, boundState: binding } as unknown as ExecutionPlan;

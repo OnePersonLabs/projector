@@ -1,11 +1,15 @@
 import { analyzeLocalRepository } from "@projector/analyzers";
 import { createProjectorMcpServer, loadAuthenticatedRepositorySession, PROJECTOR_MCP_TOOL_CATALOG, type JsonRpcRequest, type ProjectorMcpDependencies, type SessionRepresentationAuthentication } from "@projector/integrations";
+import { inspectProjectActivation } from "@projector/runtime";
 
 export interface BuiltMcpLifecycle { readonly status: "ready"; readonly tools: readonly string[]; readonly capabilityToken?: string; readonly transport: { handle(request: JsonRpcRequest): Promise<unknown> } }
 
-export function createBuiltMcpCliPort() {
+export function createBuiltMcpCliPort(dependencies: { readonly analyze?: typeof analyzeLocalRepository; readonly inspectActivation?: typeof inspectProjectActivation } = {}) {
   return { async start(request: { readonly repositoryRoot: string; readonly signal: AbortSignal; readonly sessionSelector?: string }): Promise<BuiltMcpLifecycle> {
-    const authenticated = request.sessionSelector === undefined ? undefined : await loadAuthenticatedRepositorySession({ repositoryRoot: request.repositoryRoot, sessionSelector: request.sessionSelector });
+    const activation = await (dependencies.inspectActivation ?? inspectProjectActivation)(request.repositoryRoot);
+    const enabled = activation.status === "enabled";
+    const repositoryRoot = activation.repositoryRoot;
+    const authenticated = !enabled || request.sessionSelector === undefined ? undefined : await loadAuthenticatedRepositorySession({ repositoryRoot, sessionSelector: request.sessionSelector });
     const representationAuthentication: SessionRepresentationAuthentication = authenticated?.representation ?? { status: "absent", reason: "no authenticated session is selected" };
     const representationUnavailableReason = representationAuthentication.status === "valid" ? "no production handler is registered" : representationAuthentication.reason;
     const operationalNames = new Set<string>();
@@ -13,9 +17,18 @@ export function createBuiltMcpCliPort() {
       ? { ...tool, operational: true }
       : { ...tool, operational: false, reason: (tool.name === "projector.preview_representation" || tool.name === "projector.validate_representation") ? representationUnavailableReason : "no production handler is registered" });
     const read: Record<string, ProjectorMcpDependencies["read"][string]> = {
-      "projector.audit": async () => { const analysis = await analyzeLocalRepository({ repositoryRoot: request.repositoryRoot }); return { status: "ok", failures: analysis.failures }; },
-      "projector.list_divergences": async () => { const analysis = await analyzeLocalRepository({ repositoryRoot: request.repositoryRoot }); return { status: "ok", divergences: analysis.divergences }; },
-      "projector.status": async () => { const analysis = await analyzeLocalRepository({ repositoryRoot: request.repositoryRoot }); return { status: "ok", artifactCount: analysis.artifacts.length, unitCount: analysis.projectionUnits.length, failureCount: analysis.failures.length, toolAvailability: availability() }; },
+      "projector.audit": async () => {
+        if (!enabled) return { status: "unavailable", reason: activation.reason };
+        const analysis = await (dependencies.analyze ?? analyzeLocalRepository)({ repositoryRoot }); return { status: "ok", failures: analysis.failures };
+      },
+      "projector.list_divergences": async () => {
+        if (!enabled) return { status: "unavailable", reason: activation.reason };
+        const analysis = await (dependencies.analyze ?? analyzeLocalRepository)({ repositoryRoot }); return { status: "ok", divergences: analysis.divergences };
+      },
+      "projector.status": async () => {
+        if (!enabled) return { status: "not-enabled", reason: activation.reason, toolAvailability: availability() };
+        const analysis = await (dependencies.analyze ?? analyzeLocalRepository)({ repositoryRoot }); return { status: "ok", artifactCount: analysis.artifacts.length, unitCount: analysis.projectionUnits.length, failureCount: analysis.failures.length, toolAvailability: availability() };
+      },
     };
     const representation = async (input: Readonly<Record<string, unknown>>, includeContent: boolean) => {
       if (representationAuthentication.status !== "valid") throw new Error(representationAuthentication.reason);

@@ -84,7 +84,7 @@ After the human supplies the exact hash, `approve` passes the change selector an
 
 The wrapper MUST be stateless CLI pass-through. It MUST NOT persist continuation, trace, approval, or recovery state. Durable lifecycle authority and evidence belong to the control plane. Release acceptance MAY capture an external invocation transcript.
 
-The installed session hook MAY announce Projector only when it resolves the current repository and the installed CLI boundary. The hook MUST remain silent when either is unavailable. Source-checkout layout is not availability evidence.
+The installed session hook MAY announce Projector only when it resolves the current repository and the installed CLI boundary. It MUST also validate the strict repository-root activation marker. The hook MUST remain silent when any condition is unavailable. Source-checkout layout, a Git root, or a `.projector/` directory is not activation evidence.
 
 ---
 
@@ -123,6 +123,10 @@ projector.apply_plan
 ```
 
 The tool names above are the canonical capability catalog, not a claim that every capability is operational in every server composition. `tools/list` MUST advertise only tools backed by production handlers in the current authenticated session. A conditional handler, such as a representation tool, MUST remain unadvertised when its required session binding is absent. Projector status output MUST account for every catalog entry and identify declarations that are not operational.
+
+MCP startup MUST bind one repository root from explicit host authority or the authenticated parent host context. Tool arguments MUST NOT retarget that root. Plugin, source, and cache working directories are not repository authority. An ambiguous root binds an inactive neutral context.
+
+In an inactive project, MCP initialization and `projector.status` remain available. Status reports `not-enabled`. Audit and divergence tools report unavailable without invoking analyzers. No inactive tool may infer, persist, or mutate project state.
 
 An unadvertised tool call MUST fail as unknown. It MUST NOT issue or consume authority, invoke a placeholder, or mutate repository state. A controlled tool MUST remain unadvertised until its production handler proves all required authority and scope restrictions. The handler MUST route mutation through the coordinated transaction, observation, and recovery boundary. Projector MUST NOT issue mutation capabilities solely because a controlled tool name exists in the catalog.
 

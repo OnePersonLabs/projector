@@ -12,6 +12,7 @@ type JsonRpcMessage = {
   result?: {
     serverInfo?: { name?: string; version?: string };
     tools?: Array<{ name?: string }>;
+    structuredContent?: { status?: string; artifactCount?: number };
   };
 };
 
@@ -101,7 +102,7 @@ describe("Projector Codex plugin MCP launch", () => {
       ]);
   });
 
-  test("session hook recognizes an installed CLI in an ordinary repository without a source fallback", async () => {
+  test("session hook announces Projector only after the repository explicitly opts in", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-plugin-hook-"));
     const installedPluginRoot = join(root, "installed-plugin");
     const repository = join(root, "repository");
@@ -112,11 +113,86 @@ describe("Projector Codex plugin MCP launch", () => {
       const hook = join(installedPluginRoot, "hooks", "projector-session.sh");
       const environment = { ...process.env, PLUGIN_ROOT: installedPluginRoot, PROJECTOR_CLI: resolve(repositoryRoot, "packages", "cli", "dist", "cli.js") };
       delete environment.PROJECTOR_ROOT;
-      const result = await runExecutable("bash", [hook], repository, environment);
-      expect(result.status).toBe(0);
-      expect(JSON.parse(result.stdout)).toMatchObject({ hookSpecificOutput: { hookEventName: "SessionStart" } });
+      const inactive = await runExecutable("bash", [hook], repository, environment);
+      expect(inactive).toMatchObject({ status: 0, stdout: "" });
+      await mkdir(join(repository, ".projector"));
+      await writeFile(join(repository, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true,"extra":true}\n');
+      const malformed = await runExecutable("bash", [hook], repository, environment);
+      expect(malformed).toMatchObject({ status: 0, stdout: "" });
+      await writeFile(join(repository, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      const active = await runExecutable("bash", [hook], repository, environment);
+      expect(active.status).toBe(0);
+      expect(JSON.parse(active.stdout)).toMatchObject({ hookSpecificOutput: { hookEventName: "SessionStart" } });
       const unavailable = await runExecutable("bash", [hook], repository, { PLUGIN_ROOT: installedPluginRoot, PATH: "/usr/bin:/bin" });
       expect(unavailable).toMatchObject({ status: 0, stdout: "" });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("MCP launcher binds the parent host repository instead of its plugin working directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-plugin-parent-root-"));
+    const installedPluginRoot = join(root, "installed-plugin");
+    const hostRepository = join(root, "host-repository");
+    try {
+      await cp(pluginRoot, installedPluginRoot, { recursive: true });
+      await mkdir(join(hostRepository, ".projector"), { recursive: true });
+      expect((await runExecutable("git", ["init", "-q"], hostRepository, process.env)).status).toBe(0);
+      await writeFile(join(hostRepository, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      await writeFile(join(hostRepository, "host-only.txt"), "host\n");
+      const parent = join(root, "host-parent.mjs");
+      await writeFile(parent, [
+        "import { spawn } from 'node:child_process';",
+        "const child = spawn(process.execPath, [process.env.WRAPPER], { cwd: process.env.PLUGIN_CWD, env: { ...process.env, PWD: process.env.PLUGIN_CWD } });",
+        "process.stdin.pipe(child.stdin); child.stdout.pipe(process.stdout); child.stderr.pipe(process.stderr);",
+        "child.on('exit', (code) => { process.exitCode = code ?? 1; });",
+      ].join("\n"));
+      const environment = { ...process.env, WRAPPER: join(installedPluginRoot, "scripts", "projector-mcp.mjs"), PLUGIN_CWD: installedPluginRoot, PROJECTOR_CLI: resolve(repositoryRoot, "packages", "cli", "dist", "cli.js") };
+      delete environment.PROJECTOR_ROOT;
+      const child = spawn(process.execPath, [parent], { cwd: hostRepository, env: environment, stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = ""; let stderr = "";
+      child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => { stdout += chunk; }); child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })}\n`);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.status", arguments: { cwd: installedPluginRoot } } })}\n`);
+      await new Promise<void>((accept, reject) => {
+        const timeout = setTimeout(() => { child.kill(); reject(new Error(`MCP launch timed out\n${stdout}\n${stderr}`)); }, 8_000);
+        child.stdout.on("data", () => { if (stdout.includes('"id":2')) { clearTimeout(timeout); child.kill(); accept(); } });
+        child.once("error", reject);
+      });
+      const status = stdout.trim().split("\n").map((line) => JSON.parse(line) as JsonRpcMessage).find(({ id }) => id === 2);
+      expect(status?.result?.structuredContent).toMatchObject({ status: "ok", artifactCount: 2 });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("MCP launcher uses an inactive root when only its own plugin directory is discoverable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-plugin-inactive-root-"));
+    try {
+      const parent = join(root, "plugin-parent.mjs");
+      await writeFile(parent, [
+        "import { spawn } from 'node:child_process';",
+        "import { mkdirSync, writeFileSync } from 'node:fs';",
+        "import { tmpdir } from 'node:os';",
+        "import { join } from 'node:path';",
+        "for (let pid = process.pid + 1; pid <= process.pid + 32; pid += 1) { const stale = join(tmpdir(), `projector-inactive-${pid}`); mkdirSync(join(stale, '.git'), { recursive: true }); mkdirSync(join(stale, '.projector'), { recursive: true }); writeFileSync(join(stale, '.projector', 'config.json'), '{\"apiVersion\":\"projector.config/v1\",\"enabled\":true}\\n'); writeFileSync(join(stale, 'stale-activation.txt'), 'must-not-scan\\n'); }",
+        "const child = spawn(process.execPath, [process.env.WRAPPER], { cwd: process.env.PLUGIN_CWD, env: { ...process.env, PWD: process.env.PLUGIN_CWD } });",
+        "process.stdin.pipe(child.stdin); child.stdout.pipe(process.stdout); child.stderr.pipe(process.stderr);",
+        "child.on('exit', (code) => { process.exitCode = code ?? 1; });",
+      ].join("\n"));
+      const isolatedTmp = join(root, "tmp"); await mkdir(isolatedTmp);
+      const environment = { ...process.env, TMPDIR: isolatedTmp, WRAPPER: join(pluginRoot, "scripts", "projector-mcp.mjs"), PLUGIN_CWD: pluginRoot, PROJECTOR_CLI: resolve(repositoryRoot, "packages", "cli", "dist", "cli.js") };
+      delete environment.PROJECTOR_ROOT; delete environment.CODEX_WORKSPACE_ROOT; delete environment.CODEX_CWD; delete environment.INIT_CWD;
+      const child = spawn(process.execPath, [parent], { cwd: pluginRoot, env: environment, stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = ""; let stderr = "";
+      child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8"); child.stdout.on("data", (chunk: string) => { stdout += chunk; }); child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })}\n`);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.status", arguments: {} } })}\n`);
+      await new Promise<void>((accept, reject) => {
+        const timeout = setTimeout(() => { child.kill(); reject(new Error(`MCP launch timed out\n${stdout}\n${stderr}`)); }, 8_000);
+        child.stdout.on("data", () => { if (stdout.includes('"id":2')) { clearTimeout(timeout); child.kill(); accept(); } }); child.once("error", reject);
+      });
+      const status = stdout.trim().split("\n").map((line) => JSON.parse(line) as JsonRpcMessage).find(({ id }) => id === 2);
+      expect(status?.result?.structuredContent).toMatchObject({ status: "not-enabled" });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
