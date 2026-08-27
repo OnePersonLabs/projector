@@ -147,6 +147,9 @@ describe("Projector Codex plugin MCP launch", () => {
       ].join("\n"));
       const environment = { ...process.env, WRAPPER: join(installedPluginRoot, "scripts", "projector-mcp.mjs"), PLUGIN_CWD: installedPluginRoot, PROJECTOR_CLI: resolve(repositoryRoot, "packages", "cli", "dist", "cli.js") };
       delete environment.PROJECTOR_ROOT;
+      delete environment.CODEX_CWD;
+      delete environment.CODEX_WORKSPACE_ROOT;
+      delete environment.INIT_CWD;
       const child = spawn(process.execPath, [parent], { cwd: hostRepository, env: environment, stdio: ["pipe", "pipe", "pipe"] });
       let stdout = ""; let stderr = "";
       child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");

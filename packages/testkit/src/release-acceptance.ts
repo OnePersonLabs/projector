@@ -1,10 +1,10 @@
-import { readFile } from "node:fs/promises";
-import { resolve, sep } from "node:path";
+import { lstat, readFile, realpath } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { hashFramedDomain, type ContentHash } from "@projector/core";
-import type { BenchmarkGateResult } from "./benchmark.js";
+import { validateBenchmarkMetrics, type BenchmarkGateResult } from "./benchmark.js";
 import type { SubsystemClosureReceipt } from "./subsystem-closure.js";
 
 export type AcceptanceStratum = "scenario" | "property" | "adversary";
@@ -13,6 +13,11 @@ export interface AcceptanceSource { readonly path: string; readonly text: string
 export interface TraceabilityEntry extends AcceptanceInventoryItem { readonly publicFacade: string; readonly testRef: string; readonly testSourceDigest: ContentHash; readonly requiredArtifactIds?: readonly string[]; readonly mappingHash: ContentHash }
 export interface TraceabilityManifest { readonly version: 2; readonly entries: readonly TraceabilityEntry[]; readonly inventoryHash: ContentHash }
 export interface VerifiedTraceability { readonly verified: true; readonly inventoryHash: ContentHash; readonly runEvidenceHash: ContentHash; readonly rawOutput?: string; readonly contentHash: ContentHash }
+export const PACKED_LIFECYCLE_OBLIGATION_IDS = Object.freeze(new Set([
+  "scenario:19:installed-held-out-change-lifecycle",
+  "adversary:33:installed-source-severed-lifecycle-interruption-recovery-and-identity-continuity",
+]));
+const PACKED_LIFECYCLE_ARTIFACT_IDS = Object.freeze(["packed-held-out-lifecycle", "packed-held-out-lifecycle-transcript"]);
 const execute = promisify(execFile);
 
 const slug = (value: string) => value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
@@ -35,6 +40,11 @@ export function deriveAcceptanceInventory(input: { readonly scenarios: readonly 
 const inventoryBody = (entries: readonly Pick<AcceptanceInventoryItem, "id" | "stratum" | "ordinal" | "title" | "sourcePath" | "sourceDigest">[]) => entries.map(({ id, stratum, ordinal, title, sourcePath, sourceDigest }) => ({ id, stratum, ordinal, title, sourcePath, sourceDigest }));
 export function traceabilityInventoryHash(inventory: readonly AcceptanceInventoryItem[]): ContentHash { return hashFramedDomain("release-traceability-inventory", inventoryBody(inventory)); }
 export function traceabilityEntryHash(entry: Omit<TraceabilityEntry, "mappingHash">): ContentHash { return hashFramedDomain("release-traceability-entry", entry); }
+export function verifyTraceabilityAssertionIdentity(testRef: string, result: { readonly status?: unknown; readonly assertionResults?: unknown }): void {
+  const exactTestIdentity = testRef.split("#", 2)[1];
+  const assertions = Array.isArray(result.assertionResults) ? result.assertionResults as { fullName?: unknown; status?: unknown }[] : [];
+  if (exactTestIdentity === undefined || exactTestIdentity.trim() === "" || result.status !== "passed" || !assertions.some(({ fullName, status }) => status === "passed" && fullName === exactTestIdentity)) throw new Error(`traceability exact passing test identity was not observed: ${testRef}`);
+}
 
 function validateManifestStructure(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[]): void {
   if (manifest.version !== 2 || manifest.inventoryHash !== traceabilityInventoryHash(inventory)) throw new Error("traceability inventory hash is stale");
@@ -48,25 +58,57 @@ function validateManifestStructure(manifest: TraceabilityManifest, inventory: re
     const { mappingHash, ...body } = entry;
     const requiredArtifactIds = entry.requiredArtifactIds ?? [];
     if (entry.publicFacade.length === 0 || !entry.testRef.includes("#") || entry.testSourceDigest.length === 0 || requiredArtifactIds.some((id) => id.length === 0) || new Set(requiredArtifactIds).size !== requiredArtifactIds.length || mappingHash !== traceabilityEntryHash(body)) throw new Error(`unauthenticated traceability mapping ${entry.id}`);
+    const expectedArtifacts = PACKED_LIFECYCLE_OBLIGATION_IDS.has(entry.id) ? PACKED_LIFECYCLE_ARTIFACT_IDS : [];
+    if (JSON.stringify([...requiredArtifactIds].sort()) !== JSON.stringify([...expectedArtifacts].sort())) throw new Error(`traceability artifact routing is not bound to exact obligation identity ${entry.id}`);
   }
+}
+
+export async function validateTraceabilityTestReferences(repositoryRoot: string, testRefs: readonly string[]): Promise<readonly string[]> {
+  const root = resolve(repositoryRoot);
+  const realRoot = await realpath(root);
+  const files = new Set<string>();
+  for (const testRef of testRefs) {
+    const parts = testRef.split("#");
+    const relativePath = parts[0];
+    if (parts.length !== 2 || relativePath === undefined || relativePath.length === 0 || parts[1]?.trim() === ""
+      || isAbsolute(relativePath) || relativePath.includes("\\") || relativePath.includes("\0")) {
+      throw new Error(`invalid traceability test reference: ${testRef}`);
+    }
+    const path = resolve(root, relativePath);
+    if (path === root || (!path.startsWith(`${root}${sep}`))) throw new Error(`traceability test escapes repository: ${relativePath}`);
+    const normalized = relative(root, path).replaceAll("\\", "/");
+    if (normalized !== relativePath) throw new Error(`traceability test reference is not normalized: ${relativePath}`);
+    let current = root;
+    for (const component of relativePath.split("/")) {
+      current = resolve(current, component);
+      let metadata;
+      try { metadata = await lstat(current); } catch { throw new Error(`traceability test does not exist: ${relativePath}`); }
+      if (metadata.isSymbolicLink()) throw new Error(`traceability test reference contains a symlink: ${relativePath}`);
+    }
+    const realPath = await realpath(path);
+    if (realPath !== realRoot && !realPath.startsWith(`${realRoot}${sep}`)) throw new Error(`traceability test escapes repository: ${relativePath}`);
+    files.add(relativePath);
+  }
+  return Object.freeze([...files].sort());
 }
 
 export async function verifyTraceabilityManifest(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[], input: { readonly repositoryRoot: string }): Promise<VerifiedTraceability> {
   validateManifestStructure(manifest, inventory);
   if (Object.keys(input).some((key) => key !== "repositoryRoot")) throw new Error("caller-supplied traceability results are forbidden");
-  const root = resolve(input.repositoryRoot); const testFiles = [...new Set(manifest.entries.map(({ testRef }) => testRef.split("#", 1)[0]!))].sort(); const vitest = resolve(root, "node_modules/vitest/vitest.mjs"); let reporterOutput: string; try { ({ stdout: reporterOutput } = await execute(process.execPath, [vitest, "run", ...testFiles, "--reporter=json"], { cwd: root, encoding: "utf8", maxBuffer: 20_000_000 })); } catch (error) { throw new Error("authoritative mapped Vitest execution failed", { cause: error }); }
-  let report: { success?: unknown; numTotalTests?: unknown; numPassedTests?: unknown; testResults?: unknown }; try { report = JSON.parse(reporterOutput) as typeof report; } catch { throw new Error("authoritative Vitest JSON reporter output is invalid"); }
-  if (report.success !== true || !Number.isSafeInteger(report.numTotalTests) || report.numTotalTests !== report.numPassedTests || !Array.isArray(report.testResults) || report.testResults.length === 0) throw new Error("traceability Vitest reporter contains failed or incomplete run evidence");
+  const root = resolve(input.repositoryRoot); const testFiles = await validateTraceabilityTestReferences(root, manifest.entries.map(({ testRef }) => testRef)); const exactNames = [...new Set(manifest.entries.map(({ testRef }) => testRef.split("#", 2)[1]!))].sort(); const testNamePattern = `^(?:${exactNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")})$`; const vitest = resolve(root, "node_modules/vitest/vitest.mjs"); let reporterOutput: string; try { ({ stdout: reporterOutput } = await execute(process.execPath, [vitest, "run", ...testFiles, "--testNamePattern", testNamePattern, "--reporter=json"], { cwd: root, encoding: "utf8", maxBuffer: 20_000_000 })); } catch (error) { throw new Error("authoritative mapped Vitest execution failed", { cause: error }); }
+  let report: { success?: unknown; numTotalTests?: unknown; numPassedTests?: unknown; numFailedTests?: unknown; testResults?: unknown }; try { report = JSON.parse(reporterOutput) as typeof report; } catch { throw new Error("authoritative Vitest JSON reporter output is invalid"); }
+  if (report.success !== true || !Number.isSafeInteger(report.numTotalTests) || !Number.isSafeInteger(report.numPassedTests) || Number(report.numPassedTests) < new Set(manifest.entries.map(({ testRef }) => testRef)).size || report.numFailedTests !== 0 || !Array.isArray(report.testResults) || report.testResults.length === 0) throw new Error("traceability Vitest reporter contains failed or incomplete run evidence");
   const results = report.testResults as { name?: unknown; status?: unknown; assertionResults?: unknown }[];
   const facades = new Set(["projector", "projector/cli", "projector/core", "projector/analyzers", "projector/engine", "projector/engine/architecture", "projector/engine/coverage", "projector/engine/modernization", "projector/runtime", "projector/integrations", "projector/integrations/surfaces", "projector/testkit"]);
   const sourceCache = new Map<string, string>();
   for (const entry of manifest.entries) {
-    const [relativePath, anchor] = entry.testRef.split("#", 2);
-    const result = results.find(({ name }) => typeof name === "string" && (resolve(name) === resolve(root, relativePath ?? "") || name === relativePath)); const assertions = Array.isArray(result?.assertionResults) ? result.assertionResults as { ancestorTitles?: unknown; fullName?: unknown; status?: unknown }[] : [];
-    if (relativePath === undefined || anchor === undefined || anchor.trim() === "" || result?.status !== "passed" || assertions.length === 0 || !assertions.some(({ ancestorTitles, fullName, status }) => status === "passed" && Array.isArray(ancestorTitles) && ancestorTitles.includes(anchor) && typeof fullName === "string") || assertions.some(({ status }) => status !== "passed") || !facades.has(entry.publicFacade)) throw new Error(`traceability passing test result or public facade was not observed: ${entry.testRef}`);
+    const [relativePath, exactTestIdentity] = entry.testRef.split("#", 2);
+    const result = results.find(({ name }) => typeof name === "string" && (resolve(name) === resolve(root, relativePath ?? "") || name === relativePath));
+    if (relativePath === undefined || exactTestIdentity === undefined || !facades.has(entry.publicFacade)) throw new Error(`traceability passing test result or public facade was not observed: ${entry.testRef}`);
+    verifyTraceabilityAssertionIdentity(entry.testRef, result ?? {});
     const path = resolve(root, relativePath); if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error(`traceability test escapes repository: ${relativePath}`);
     let text = sourceCache.get(relativePath); if (text === undefined) { try { text = await readFile(path, "utf8"); } catch { throw new Error(`traceability test does not exist: ${relativePath}`); } sourceCache.set(relativePath, text); }
-    if (hashFramedDomain("traceability-test-source", { path: relativePath, text }) !== entry.testSourceDigest || !text.includes(`describe("${anchor}"`)) throw new Error(`traceability test source or anchor is stale: ${entry.testRef}`);
+    if (hashFramedDomain("traceability-test-source", { path: relativePath, text }) !== entry.testSourceDigest) throw new Error(`traceability test source or exact identity is stale: ${entry.testRef}`);
   }
   const runEvidenceHash = hashFramedDomain("vitest-json-reporter-output", reporterOutput); const body = { inventoryHash: manifest.inventoryHash, runEvidenceHash, entries: manifest.entries.map(({ mappingHash }) => mappingHash) };
   return Object.freeze({ verified: true, inventoryHash: manifest.inventoryHash, runEvidenceHash, rawOutput: reporterOutput, contentHash: hashFramedDomain("verified-traceability", body) });
@@ -82,7 +124,7 @@ export function evaluateIndependentConformance(observation: IndependentConforman
 }
 
 export interface ReleaseDeviation { readonly id: string; readonly severity: "note" | "minor" | "major"; readonly impact: string; readonly evidenceIds: readonly string[]; readonly waivedGateIds: readonly string[] }
-export interface ReleaseArtifact { readonly id: string; readonly bytesHash: ContentHash }
+export interface ReleaseArtifact { readonly id: string; readonly bytesHash: ContentHash; readonly runId?: string }
 export interface ReleaseEvidenceInput { readonly sourceRevision: string; readonly worktreeDigest: ContentHash; readonly toolchainDigest: ContentHash; readonly buildDigest: ContentHash; readonly tarballDigest: ContentHash; readonly rawArtifacts: readonly ReleaseArtifact[]; readonly traceability: TraceabilityManifest; readonly traceabilityVerification: VerifiedTraceability; readonly inventory: readonly AcceptanceInventoryItem[]; readonly benchmark: Pick<BenchmarkGateResult, "metrics" | "failures" | "releaseAllowed"> | { readonly metrics: readonly unknown[]; readonly failures: readonly unknown[]; readonly releaseAllowed: boolean }; readonly rebuildDigest: ContentHash; readonly conformance: ReturnType<typeof evaluateIndependentConformance>; readonly deviations: readonly ReleaseDeviation[]; readonly subsystemClosureReceipts: readonly SubsystemClosureReceipt[] }
 export interface ReleaseEvidence extends Omit<ReleaseEvidenceInput, "inventory"> { readonly version: 2; readonly releaseAllowed: true; readonly contentHash: ContentHash }
 export function compileReleaseEvidence(input: ReleaseEvidenceInput): ReleaseEvidence {
@@ -93,7 +135,10 @@ export function compileReleaseEvidence(input: ReleaseEvidenceInput): ReleaseEvid
   const observedArtifactIds = new Set(input.rawArtifacts.map(({ id }) => id));
   const missingTraceabilityArtifacts = [...new Set(input.traceability.entries.flatMap(({ requiredArtifactIds }) => requiredArtifactIds ?? []))].filter((id) => !observedArtifactIds.has(id));
   if (missingTraceabilityArtifacts.length > 0) throw new Error(`release traceability is missing required packed lifecycle artifacts: ${missingTraceabilityArtifacts.join(", ")}`);
-  if (!input.benchmark.releaseAllowed || input.benchmark.metrics.length === 0 || input.benchmark.failures.length > 0 || !input.conformance.passed) throw new Error("release gates cannot be waived");
+  const lifecycleArtifacts = PACKED_LIFECYCLE_ARTIFACT_IDS.map((id) => input.rawArtifacts.find((artifact) => artifact.id === id));
+  if (lifecycleArtifacts.some((artifact) => artifact?.runId === undefined || artifact.runId.trim().length === 0) || new Set(lifecycleArtifacts.map((artifact) => artifact?.runId)).size !== 1) throw new Error("release traceability packed lifecycle evidence and transcript are not from the same authenticated run");
+  validateBenchmarkMetrics(input.benchmark.metrics as BenchmarkGateResult["metrics"]);
+  if (!input.benchmark.releaseAllowed || input.benchmark.failures.length > 0 || !input.conformance.passed) throw new Error("release gates cannot be waived");
   if (input.subsystemClosureReceipts.length === 0 || new Set(input.subsystemClosureReceipts.map(({ subsystemId }) => subsystemId)).size !== input.subsystemClosureReceipts.length) throw new Error("release subsystem closure receipts are missing or duplicated");
   for (const receipt of input.subsystemClosureReceipts) if (receipt.revision !== input.sourceRevision || receipt.worktreeDigest !== input.worktreeDigest || receipt.receiptHash !== hashFramedDomain("subsystem-closure-receipt:v1", (({ receiptHash: omitted, ...body }) => { void omitted; return body; })(receipt))) throw new Error(`release subsystem closure receipt is stale or unauthenticated: ${receipt.subsystemId}`);
   if (input.deviations.some(({ impact, evidenceIds, waivedGateIds }) => impact.length === 0 || evidenceIds.length === 0 || waivedGateIds.length > 0)) throw new Error("release deviations cannot waive gates or omit evidence");

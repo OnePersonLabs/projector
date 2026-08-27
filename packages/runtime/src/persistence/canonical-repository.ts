@@ -27,6 +27,8 @@ const kindLocations = {
   "authority-record": ["authorities", "authority"],
   "architecture-decision": ["decisions", "decision"],
   "transaction-receipt": ["receipts", "receipt"],
+  exception: ["exceptions", "exception"],
+  migration: ["migrations", "migration"],
 } as const;
 
 export type SupportedCanonicalKind = keyof typeof kindLocations;

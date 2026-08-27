@@ -11,6 +11,7 @@ import {
 } from "@projector/core";
 
 export * from "./change-plan.js";
+export * from "./generated-output-repair.js";
 
 import { createStateBinding } from "../state/index.js";
 

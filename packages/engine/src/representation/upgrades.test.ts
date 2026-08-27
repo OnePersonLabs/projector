@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { hashFramedDomain } from "@projector/core";
+import { hashFramedDomain, hashSemantic } from "@projector/core";
 import { UpgradeDeclarationSchema, planUpgradeInvalidation, reconcileRepresentationProfileUpgrade, upgradeDeclarationHash } from "./upgrades.js";
 
 describe("representation and semantic upgrade protocol", () => {
-  it("invalidates only dependents of a changed representation profile", () => {
+  it("invalidates only representation dependents while preserving actual canonical source semantic hashes", () => {
+    const canonicalRule = { version: "1", effect: "require", authorityClass: "explicit", governanceBasis: [], selector: { op: "all", items: [] }, predicates: [], validatorIds: [], transformIds: [] };
+    const sourceHashBefore = hashSemantic("rule", canonicalRule);
+    const profileHashBefore = hashFramedDomain("representation-profile", { id: "profile:agent-compact", version: "1" });
+    const profileHashAfter = hashFramedDomain("representation-profile", { id: "profile:agent-compact", version: "2" });
     const result = planUpgradeInvalidation({ kind: "representation-profile", id: "profile:agent-compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["representation-profile:profile:agent-compact"], requiredAction: "revalidate" }, [
       { id: "projection:agent", dependencyKeys: ["representation-profile:profile:agent-compact"], kind: "representation" },
       { id: "capsule:agent", dependencyKeys: ["representation:projection:agent"], kind: "capsule" },
@@ -20,6 +24,8 @@ describe("representation and semantic upgrade protocol", () => {
     });
     expect(result.invalidatedIds).toEqual(["capsule:agent", "projection:agent"]);
     expect(result.preservedCanonicalEntityIds).toEqual(["source:rule"]);
+    expect(profileHashAfter).not.toBe(profileHashBefore);
+    expect(hashSemantic("rule", canonicalRule)).toBe(sourceHashBefore);
   });
 
   it("requires explicit reindex or revalidation for semantic interpretation changes", () => {

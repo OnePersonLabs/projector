@@ -17,6 +17,7 @@ import {
   scoutRelevance,
   type RelevanceDiscoveryPort,
 } from "./index.js";
+import { DependencyScopedStateBindingValidator } from "../state/index.js";
 
 const hash = (value: string): ContentHash => `sha256:v1:${value.padEnd(64, "0")}`;
 const state: StateDigest = {
@@ -182,6 +183,23 @@ describe("bounded four-band Relevance Closure", () => {
 
     expect(compiled.closure.boundState.queryDependencies).toHaveLength(1);
     expect(compiled.closure.unknowns.join(" ")).toMatch(/sampled.*cannot prove absence/i);
+  });
+
+  it("recompiles newly relevant membership and replaces the negative-space StateBinding proof", async () => {
+    const compile = (withConsumer: boolean) => compileRelevanceClosure({
+      request: "change event contract", seeds: [seed("event")], identityResolution: identityResolution(["event"]), activatedFacetKeys: ["events"], compiledAgainst: state, context,
+      discovery: { discover: async (subjectId) => ({ edges: withConsumer && subjectId === "event" ? [{ entityId: "new-consumer", band: "consequence" as const, score: 1, requiredForPlanning: true, reason: reason("event-producer-consumer", subjectId), cost: 1 }] : [], dependency: dependency(`consumers-${subjectId}`, withConsumer && subjectId === "event" ? 1 : 0) }) },
+      valueDependencies: [], policy: { maxEntries: 3, maxDepth: 1, maxCost: 10, minimumScore: 0.1 },
+    });
+    const absent = await compile(false);
+    const present = await compile(true);
+    const currentQuery = present.closure.boundState.queryDependencies[0]!;
+    const validator = new DependencyScopedStateBindingValidator({ values: { readVersionHash: async () => undefined }, queries: { evaluate: async () => currentQuery.priorResult } });
+    await expect(validator.validate(absent.closure.boundState, state, context)).resolves.toMatchObject({ status: "stale", changedQueryDependencyIds: ["consumers-event"] });
+    expect(absent.closure.entries.map(({ entityId }) => entityId)).toEqual(["event"]);
+    expect(present.closure.entries.map(({ entityId }) => entityId)).toContain("new-consumer");
+    expect(present.closure.boundState.queryDependencies[0]?.priorResult.resultHash).not.toBe(absent.closure.boundState.queryDependencies[0]?.priorResult.resultHash);
+    expect(present.closure.boundState.dependencyDigest).not.toBe(absent.closure.boundState.dependencyDigest);
   });
 
   it("keeps an open discovery lane uncertain even when it returns a known consumer", async () => {

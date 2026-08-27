@@ -126,7 +126,7 @@ Reference implementation decisions MUST themselves show Projector's decision dis
 | Choice | Why this is the reference default | Reconsider when |
 |---|---|---|
 | Node.js 24 LTS | Stable supported runtime for a TypeScript-first local CLI/library. Avoids chasing the current non-LTS line. | Support window, required runtime APIs, host compatibility, or deployment target materially changes. |
-| Strict TypeScript + ESM | Keeps contracts explicit and machine-checkable in the primary implementation ecosystem. | A native or performance boundary clearly justifies another language or module boundary. |
+| Strict TypeScript + ESM | Keeps contracts explicit and machine-checkable in the primary implementation ecosystem. | A native or performance boundary justifies another language or module boundary. |
 | pnpm workspaces | Strong workspace support and low ceremony for the deliberately small monorepo. | Package topology, publishing requirements, organizational tooling, or package-manager constraints change. |
 | Zod + exported JSON Schema | One executable schema source validates runtime/canonical contracts and exports interoperable schemas. | Another tool improves cross-language schema generation or performance without duplicating authority. |
 | SQLite for derived state | Local, transactional, queryable, rebuildable state with no service dependency. | Measured graph/query/concurrency workloads exceed it. Do not pre-emptively add a graph/database service. |

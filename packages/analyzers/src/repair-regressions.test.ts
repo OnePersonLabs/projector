@@ -52,4 +52,17 @@ describe("Task 14 consolidated repair regressions", () => {
     });
     expect(result.actions[0]?.unknowns.join(" ")).toMatch(/unsupported.*permission/iu);
   });
+
+  it("audits repeated keys in separate Actions steps without false duplicate findings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-actions-sequences-")); roots.push(root);
+    await mkdir(join(root, ".github/workflows"), { recursive: true });
+    await writeFile(join(root, ".github/workflows/ci.yml"), [
+      "on:", "  workflow_dispatch:", "jobs:", "  verify:", "    steps:",
+      "      - name: First", "        uses: ./first", "        run: echo first",
+      "      - name: Second", "        uses: ./second", "        run: echo second",
+    ].join("\n"));
+
+    const analysis = await analyzeLocalRepository({ repositoryRoot: root });
+    expect(analysis.failures.filter(({ capability }) => capability === "duplicate-key")).toEqual([]);
+  });
 });

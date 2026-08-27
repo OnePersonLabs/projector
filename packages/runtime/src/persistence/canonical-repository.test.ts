@@ -192,17 +192,24 @@ describe("CanonicalFileRepository", () => {
     await expect(repository.write(unsupported)).rejects.toThrow(new RegExp(`unsupported canonical ${field}`, "i"));
   });
 
-  test.each([
-    ["Exception", ["exceptions", "unsafe.exception.json"]],
-    ["Migration", ["migrations", "future.migration.json"]],
-  ])("fails closed for unsupported %s canonical files", async (kind, pathParts) => {
+  test("round-trips standalone Exception and Migration governance documents through canonical rebuild", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
-    const path = join(root, ".projector", ...pathParts);
-    await mkdir(join(path, ".."), { recursive: true });
-    await writeFile(path, "{}\n", "utf8");
-
-    await expect(repository.snapshot()).rejects.toThrow(new RegExp(`unsupported canonical ${kind} kind`, "i"));
+    const exception = withCanonicalHashes({
+      apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "exception", id: "exception:one", key: "exception:one", lifecycle: "active",
+      payload: { id: "exception:one", key: "exception:one", selector: { op: "atom", field: "lens", matcher: "equals", value: "lens:old" }, exceptedRuleIds: ["rule:one"], exceptedLensIds: ["lens:old"], exceptedExpectationIds: ["expectation:one"], rationale: "Bounded compatibility exception", evidence: [], owner: "team:architecture", reviewOrExpiryTrigger: { type: "date", at: "2027-01-01" }, invalidationConditions: [{ type: "lens-changed", lensId: "lens:old" }], exitCriteria: ["migration complete"], status: "active", semanticHash: zeroHash },
+    });
+    const migration = withCanonicalHashes({
+      apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "migration", id: "migration:one", key: "migration:one", lifecycle: "active",
+      payload: { id: "migration:one", key: "migration:one", sourceLensRef: { lensId: "lens:old", version: "1", semanticHash: zeroHash }, targetLensRef: { lensId: "lens:new", version: "2", semanticHash: zeroHash }, phase: "dual-running", entryCriteria: ["shadow validated"], exitCriteria: ["cutover validated"], compatibilityStrategy: "dual write", allowedTemporaryDivergenceIds: ["divergence:one"], generatedOutputOverlays: ["generated/compat"], validationObligations: ["compare both projections"], rollbackPlan: "restore source lens", compensationPlan: "remove target output", cleanupResidueDetector: "no source-lens projections remain", semanticHash: zeroHash },
+    });
+    await repository.write(exception);
+    await repository.write(migration);
+    const before = await repository.snapshot();
+    const rebuilt = new CanonicalFileRepository(root);
+    const after = await rebuilt.snapshot();
+    expect(after.documents.map(({ kind, id }) => `${kind}:${id}`)).toEqual(["exception:exception:one", "migration:migration:one"]);
+    expect(after.rootDigest).toBe(before.rootDigest);
   });
 
   test("accepts the strict project activation config without treating it as an entity envelope", async () => {

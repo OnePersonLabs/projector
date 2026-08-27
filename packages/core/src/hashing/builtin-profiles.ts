@@ -56,6 +56,16 @@ const profiles: Readonly<Record<string, HashProfile>> = {
     discovery: ["key", "title"],
     volatile: [],
   },
+  exception: {
+    semantic: ["selector", "exceptedRuleIds", "exceptedLensIds", "exceptedExpectationIds", "rationale", "evidence", "owner", "reviewOrExpiryTrigger", "invalidationConditions", "exitCriteria", "status"],
+    discovery: ["key"],
+    volatile: [],
+  },
+  migration: {
+    semantic: ["sourceLensRef", "targetLensRef", "phase", "entryCriteria", "exitCriteria", "compatibilityStrategy", "allowedTemporaryDivergenceIds", "generatedOutputOverlays", "validationObligations", "rollbackPlan", "compensationPlan", "cleanupResidueDetector"],
+    discovery: ["key"],
+    volatile: [],
+  },
   "transaction-receipt": {
     semantic: ["planId", "semanticChangeId", "riskClass", "beforeState", "afterState", "changedCanonicalEntityIds", "changedRequirementIds", "changedScenarioIds", "changedUnitIds", "validationSummaryHash", "certificateHash", "rollbackRef"],
     discovery: [],

@@ -1,0 +1,620 @@
+{
+  "version": 1,
+  "obligations": {
+    "scenario:01:canonical-rebuild-closure": {
+      "obligationId": "scenario:01:canonical-rebuild-closure",
+      "publicFacade": "projector/runtime",
+      "testRef": "packages/runtime/src/sqlite/derived-store.test.ts#SQLite derived canonical index canonical concepts, requirements, scenarios, relations, rules, lenses, exceptions, and migrations rebuild equivalently after state.db deletion"
+    },
+    "scenario:02:copied-slop-majority-and-endogenous-evidence-defense": {
+      "obligationId": "scenario:02:copied-slop-majority-and-endogenous-evidence-defense",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/inference/inference.test.ts#causal evidence grouping collapses copied occurrences and discounts Projector-generated support for its causal lens"
+    },
+    "scenario:03:semantic-signature-insufficiency": {
+      "obligationId": "scenario:03:semantic-signature-insufficiency",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation refuses heuristic equality and widens to downstream clients"
+    },
+    "scenario:04:semantic-backdating": {
+      "obligationId": "scenario:04:semantic-backdating",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation backdates an unchanged exact public contract and keeps clients valid"
+    },
+    "scenario:05:shared-bug-rebuild-oracle": {
+      "obligationId": "scenario:05:shared-bug-rebuild-oracle",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles does not let a shared-bug clean rebuild override contradictory independent conformance"
+    },
+    "scenario:06:scc-backdating": {
+      "obligationId": "scenario:06:scc-backdating",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation evaluates a recursive contract SCC as one proof group before retaining consumers"
+    },
+    "scenario:07:selector-membership-change": {
+      "obligationId": "scenario:07:selector-membership-change",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles uses both prior and current selector membership so additions and removals invalidate"
+    },
+    "scenario:08:multiple-valid-shared-implementations": {
+      "obligationId": "scenario:08:multiple-valid-shared-implementations",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution uses coordinated modification for multiple owners and merge only for an explicit merge assessment"
+    },
+    "scenario:09:governance-cycle-detection": {
+      "obligationId": "scenario:09:governance-cycle-detection",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/governance.test.ts#bounded decision SCC convergence detects repeated non-stable digests and returns no partial activation"
+    },
+    "scenario:10:crash-recovery-matrix": {
+      "obligationId": "scenario:10:crash-recovery-matrix",
+      "publicFacade": "projector/runtime",
+      "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating"
+    },
+    "scenario:11:branch-governance-conflict": {
+      "obligationId": "scenario:11:branch-governance-conflict",
+      "publicFacade": "projector/cli",
+      "testRef": "packages/cli/src/cli.test.ts#minimal CLI entrypoint blocks canonical governance conflicts before public mutation work begins"
+    },
+    "scenario:12:open-world-completeness-refusal": {
+      "obligationId": "scenario:12:open-world-completeness-refusal",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure binds empty stopping queries and records open-world emptiness as unknown rather than absence"
+    },
+    "scenario:13:unreachable-external-surface": {
+      "obligationId": "scenario:13:unreachable-external-surface",
+      "publicFacade": "projector/testkit",
+      "testRef": "packages/integrations/src/surfaces/index.test.ts#surface snapshots and Task16 composition keeps open/read-only and unavailable observations truthful without mutation methods or absence proof"
+    },
+    "scenario:14:model-resampling-idempotence": {
+      "obligationId": "scenario:14:model-resampling-idempotence",
+      "publicFacade": "projector/integrations",
+      "testRef": "packages/integrations/src/models/inference.test.ts#provider-neutral structured inference fails explicitly on cancellation/exhaustion and makes resampling a distinct candidate"
+    },
+    "scenario:15:validator-independence": {
+      "obligationId": "scenario:15:validator-independence",
+      "publicFacade": "projector/runtime",
+      "testRef": "packages/runtime/src/execution/packet-coordinator.test.ts#packet execution coordinator detects same-path content mutation, rejects forged approval/independence, and replaces commit intent with failure truth"
+    },
+    "scenario:16:capability-proven-sandbox-isolation": {
+      "obligationId": "scenario:16:capability-proven-sandbox-isolation",
+      "publicFacade": "projector/runtime",
+      "testRef": "packages/runtime/src/execution/sandbox-launcher.test.ts#createSandboxLauncher refuses denied primary and incomplete fallback before commands while selecting and launching only a proven backend"
+    },
+    "scenario:17:manual-only-sandbox-release-workflow": {
+      "obligationId": "scenario:17:manual-only-sandbox-release-workflow",
+      "publicFacade": "projector",
+      "testRef": "scripts/sandbox-release-workflow.test.ts#manual sandbox release workflow has only a manual trigger and proves isolation before governed release gates"
+    },
+    "scenario:18:operational-mcp-advertisement": {
+      "obligationId": "scenario:18:operational-mcp-advertisement",
+      "publicFacade": "projector/cli",
+      "testRef": "packages/cli/src/run-cli.test.ts#projector run host boundary resolves an authenticated built session and detects a fake host's committed-clean write"
+    },
+    "scenario:19:installed-held-out-change-lifecycle": {
+      "obligationId": "scenario:19:installed-held-out-change-lifecycle",
+      "publicFacade": "projector",
+      "testRef": "packages/testkit/src/release-acceptance.test.ts#public release acceptance authority binds verified traceability, subsystem closure, full benchmark results, and same-run packed lifecycle artifacts"
+    },
+    "scenario:20:generated-output-upstream-repair": {
+      "obligationId": "scenario:20:generated-output-upstream-repair",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/planning/generated-output-repair.test.ts#generated output upstream repair policy plans upstream change regeneration and validation while rejecting direct patches and unauthenticated overlays"
+    },
+    "scenario:21:partial-completion-and-plan-rebase": {
+      "obligationId": "scenario:21:partial-completion-and-plan-rebase",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/planning/revisions.test.ts#immutable plan revision rebind and semantic rebase semantically rebases complete fields and carries only independently current completion"
+    },
+    "scenario:22:localized-cache-performance": {
+      "obligationId": "scenario:22:localized-cache-performance",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation rebinds an unrelated root change without recomputing semantic work"
+    },
+    "scenario:23:engine-signature-profile-upgrade": {
+      "obligationId": "scenario:23:engine-signature-profile-upgrade",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation marks profile-dependent derivations suspect after a signature profile upgrade"
+    },
+    "scenario:24:analyzer-partial-failure": {
+      "obligationId": "scenario:24:analyzer-partial-failure",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer localizes a malformed manifest failure while preserving filesystem and JavaScript observations"
+    },
+    "scenario:25:path-symlink-escape": {
+      "obligationId": "scenario:25:path-symlink-escape",
+      "publicFacade": "projector/runtime",
+      "testRef": "packages/runtime/src/activation/project-activation.test.ts#project activation authority rejects symlink escape at the marker directory"
+    },
+    "scenario:26:misleading-local-precedent": {
+      "obligationId": "scenario:26:misleading-local-precedent",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it"
+    },
+    "scenario:27:projector-repair-oscillation": {
+      "obligationId": "scenario:27:projector-repair-oscillation",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation iterates an SCC proof strategy to a fixed point and refuses oscillation at the bound"
+    },
+    "scenario:28:held-out-mutation-generated-benchmark": {
+      "obligationId": "scenario:28:held-out-mutation-generated-benchmark",
+      "publicFacade": "projector",
+      "testRef": "scripts/release-benchmark-authority.test.ts#release benchmark executable authority derives every gate metric from authenticated trials and production context bytes"
+    },
+    "scenario:29:synonymous-request-reuses-canonical-identity": {
+      "obligationId": "scenario:29:synonymous-request-reuses-canonical-identity",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution rejects cross-kind, cross-request, and cross-source typed claim replay"
+    },
+    "scenario:30:alias-change-refreshes-discovery-without-semantic-invalidation": {
+      "obligationId": "scenario:30:alias-change-refreshes-discovery-without-semantic-invalidation",
+      "publicFacade": "projector/core",
+      "testRef": "packages/core/src/hashing.test.ts#canonical serialization and hash domains excludes aliases from semantic hashes and volatile fields from all projected hashes"
+    },
+    "scenario:31:superseded-renamed-identity-is-not-resurrected-as-a-duplicate": {
+      "obligationId": "scenario:31:superseded-renamed-identity-is-not-resurrected-as-a-duplicate",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution blocks create-new when an active, deprecated, superseded, or tombstoned identity still overlaps"
+    },
+    "scenario:32:cross-cutting-governing-concern-outside-touched-package": {
+      "obligationId": "scenario:32:cross-cutting-governing-concern-outside-touched-package",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion"
+    },
+    "scenario:33:encapsulation-is-not-retrieval": {
+      "obligationId": "scenario:33:encapsulation-is-not-retrieval",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion"
+    },
+    "scenario:34:relevance-is-not-impact": {
+      "obligationId": "scenario:34:relevance-is-not-impact",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/analyzers/src/broad-analyzers.test.ts#broad analyzer public composition runs analyze -> topology -> relevance with cross-package and zero-consumer routes without execution"
+    },
+    "scenario:35:relevance-over-expansion-refusal": {
+      "obligationId": "scenario:35:relevance-over-expansion-refusal",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion"
+    },
+    "scenario:36:event-topology-discovers-non-obvious-consumers": {
+      "obligationId": "scenario:36:event-topology-discovers-non-obvious-consumers",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/analyzers/src/topology/topology.test.ts#event and contract topology routes every known event and contract consumer deterministically with conservatively capped raw assurance"
+    },
+    "scenario:37:contract-topology-discovers-consumers": {
+      "obligationId": "scenario:37:contract-topology-discovers-consumers",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/analyzers/src/topology/topology.test.ts#event and contract topology routes every known event and contract consumer deterministically with conservatively capped raw assurance"
+    },
+    "scenario:38:requirement-and-scenario-projections-are-derived": {
+      "obligationId": "scenario:38:requirement-and-scenario-projections-are-derived",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port"
+    },
+    "scenario:39:what-why-is-protected-without-where-blindness": {
+      "obligationId": "scenario:39:what-why-is-protected-without-where-blindness",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#WHAT/WHY and WHERE/WHAT-ELSE separation keeps a proposed implementation out of behavioral intent"
+    },
+    "scenario:40:unrelated-canonical-change-does-not-stale-local-work": {
+      "obligationId": "scenario:40:unrelated-canonical-change-does-not-stale-local-work",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation rebinds an unrelated root change without recomputing semantic work"
+    },
+    "scenario:41:bound-dependency-change-does-stale-local-work": {
+      "obligationId": "scenario:41:bound-dependency-change-does-stale-local-work",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/change/index.test.ts#state-bound deterministic change execution refuses stale bindings and approval mismatches before preview/apply while still recording failure evidence"
+    },
+    "scenario:42:membership-changing-fact-invalidates-context-even-when-loaded-entities-are-unchanged": {
+      "obligationId": "scenario:42:membership-changing-fact-invalidates-context-even-when-loaded-entities-are-unchanged",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation invalidates when the result set changes even though selected value hashes are unchanged"
+    },
+    "scenario:43:newly-relevant-semantic-state-invalidates-negative-space-proof": {
+      "obligationId": "scenario:43:newly-relevant-semantic-state-invalidates-negative-space-proof",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure recompiles newly relevant membership and replaces the negative-space StateBinding proof"
+    },
+    "scenario:44:query-semantics-are-part-of-state-binding": {
+      "obligationId": "scenario:44:query-semantics-are-part-of-state-binding",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation detects a query program version replacement against the same StateDigest"
+    },
+    "scenario:45:open-world-emptiness-is-not-absence-proof": {
+      "obligationId": "scenario:45:open-world-emptiness-is-not-absence-proof",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure binds empty stopping queries and records open-world emptiness as unknown rather than absence"
+    },
+    "scenario:46:planning-surprise-learns-a-missing-relationship": {
+      "obligationId": "scenario:46:planning-surprise-learns-a-missing-relationship",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#predicted versus observed Planning Surprises proposes an evidence-backed missing relationship without silently making it canonical"
+    },
+    "scenario:47:planning-surprise-rejects-agent-overreach": {
+      "obligationId": "scenario:47:planning-surprise-rejects-agent-overreach",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#predicted versus observed Planning Surprises classifies unrelated agent edits as overreach and refuses to learn a false relationship"
+    },
+    "scenario:48:fine-grained-canonical-merge-locality": {
+      "obligationId": "scenario:48:fine-grained-canonical-merge-locality",
+      "publicFacade": "projector/runtime",
+      "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository updates one canonical entity without rewriting an unrelated entity"
+    },
+    "scenario:49:semantic-storage-path-does-not-define-meaning": {
+      "obligationId": "scenario:49:semantic-storage-path-does-not-define-meaning",
+      "publicFacade": "projector/runtime",
+      "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository derives the same root from document identity regardless of write order or storage path"
+    },
+    "scenario:50:analysis-facets-compose-without-methodology-lock-in": {
+      "obligationId": "scenario:50:analysis-facets-compose-without-methodology-lock-in",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/context/index.test.ts#Analysis Facets composes only applicable facets and adds obligations without selecting technology"
+    },
+    "scenario:51:representation-semantic-fidelity-rejection": {
+      "obligationId": "scenario:51:representation-semantic-fidelity-rejection",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles"
+    },
+    "scenario:52:cross-projection-consistency": {
+      "obligationId": "scenario:52:cross-projection-consistency",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port"
+    },
+    "scenario:53:net-negative-compact-context-fallback": {
+      "obligationId": "scenario:53:net-negative-compact-context-fallback",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation falls back for measured net-negative compact output but selects compact for measured positive utility"
+    },
+    "scenario:54:representation-profile-invalidation": {
+      "obligationId": "scenario:54:representation-profile-invalidation",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/upgrades.test.ts#representation and semantic upgrade protocol invalidates only representation dependents while preserving actual canonical source semantic hashes"
+    },
+    "scenario:55:authoritative-specification-human-technical-conformance": {
+      "obligationId": "scenario:55:authoritative-specification-human-technical-conformance",
+      "publicFacade": "projector/engine",
+      "testRef": "scripts/check-spec-human-technical.test.ts#authoritative specification executable style check executes the human-technical checker across the entrypoint, index, and every manifest module"
+    },
+    "scenario:56:compact-context-preserves-critical-tokens-and-avoids-false-compression": {
+      "obligationId": "scenario:56:compact-context-preserves-critical-tokens-and-avoids-false-compression",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation accepts the exact machine kernel and preserves every protected literal"
+    },
+    "scenario:57:architecture-expansion-web-app-cross-platform-product": {
+      "obligationId": "scenario:57:architecture-expansion-web-app-cross-platform-product",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/architecture-expansion.acceptance.test.ts#cross-platform architecture acceptance composes the complete ten-step decision frontier before planning"
+    },
+    "scenario:58:preference-scope-isolation": {
+      "obligationId": "scenario:58:preference-scope-isolation",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/evaluation.test.ts#research, options, preferences, and deferral isolates user preferences until explicit project adoption makes them shared ranking input without governance"
+    },
+    "scenario:59:stale-architecture-research": {
+      "obligationId": "scenario:59:stale-architecture-research",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/evaluation.test.ts#research, options, preferences, and deferral verifies only the affected option set through the port and blocks unavailable automatic acceptance"
+    },
+    "scenario:60:decision-deferral-preserves-optionality": {
+      "obligationId": "scenario:60:decision-deferral-preserves-optionality",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/repair.test.ts#typed discovery and verified deferral rejects any verified originating-decision inference and requires semantic deferral assessment"
+    },
+    "scenario:61:negative-simple-decision": {
+      "obligationId": "scenario:61:negative-simple-decision",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/evaluation.test.ts#research, options, preferences, and deferral accepts a negative/simple option and requires neutral, trigger-bound deferral"
+    },
+    "scenario:62:decision-overlap-conflict": {
+      "obligationId": "scenario:62:decision-overlap-conflict",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/governance.test.ts#atomic decision consequences and overlap blocks incompatible overlap before opening the semantic governance transaction"
+    },
+    "scenario:63:held-out-concern-discovery-robustness": {
+      "obligationId": "scenario:63:held-out-concern-discovery-robustness",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/architecture-expansion.acceptance.test.ts#cross-platform architecture acceptance measures held-out concern discovery without fixture-name routing"
+    },
+    "property:01:canonical-serialization-independent-of-object-insertion-order": {
+      "obligationId": "property:01:canonical-serialization-independent-of-object-insertion-order",
+      "publicFacade": "projector/core",
+      "testRef": "packages/core/src/hashing.test.ts#canonical serialization and hash domains is independent of object insertion order"
+    },
+    "property:02:splitting-canonical-entities-into-independent-files-does-not-alter-semantic-project-root-identity": {
+      "obligationId": "property:02:splitting-canonical-entities-into-independent-files-does-not-alter-semantic-project-root-identity",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository derives the same root from document identity regardless of write order or storage path"
+    },
+    "property:03:unrelated-canonical-worktree-changes-do-not-invalidate-a-statebinding-whose-value-dependencies-and-query-result-fingerprints-remain-unchanged": {
+      "obligationId": "property:03:unrelated-canonical-worktree-changes-do-not-invalidate-a-statebinding-whose-value-dependencies-and-query-result-fingerprints-remain-unchanged",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation rebinds an unrelated root change without recomputing semantic work"
+    },
+    "property:04:adding-changing-a-bound-value-dependency-always-invalidates-or-revalidates-the-affected-binding": {
+      "obligationId": "property:04:adding-changing-a-bound-value-dependency-always-invalidates-or-revalidates-the-affected-binding",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation marks a changed value dependency stale"
+    },
+    "property:05:adding-an-entity-relation-membership-that-changes-a-bound-query-result-invalidates-revalidates-the-binding-even-when-every-previously-returned-entity-hash-is-unchanged": {
+      "obligationId": "property:05:adding-an-entity-relation-membership-that-changes-a-bound-query-result-invalidates-revalidates-the-binding-even-when-every-previously-returned-entity-hash-is-unchanged",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation invalidates when the result set changes even though selected value hashes are unchanged"
+    },
+    "property:06:changing-a-statequeryspec-program-version-or-closure-sensitive-result-projection-invalidates-the-corresponding-query-dependency": {
+      "obligationId": "property:06:changing-a-statequeryspec-program-version-or-closure-sensitive-result-projection-invalidates-the-corresponding-query-dependency",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation detects a query program version replacement against the same StateDigest"
+    },
+    "property:07:an-empty-query-on-an-open-sampled-unavailable-lane-never-upgrades-a-negative-space-claim-to-proof": {
+      "obligationId": "property:07:an-empty-query-on-an-open-sampled-unavailable-lane-never-upgrades-a-negative-space-claim-to-proof",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/evaluation.test.ts#scoped decision proof and StateBinding binds applicability and negative-space queries and never treats open empty results as absence"
+    },
+    "property:08:stable-semantic-hash-excludes-declared-volatile-metadata": {
+      "obligationId": "property:08:stable-semantic-hash-excludes-declared-volatile-metadata",
+      "publicFacade": "projector/core",
+      "testRef": "packages/core/src/hashing.test.ts#canonical serialization and hash domains excludes aliases from semantic hashes and volatile fields from all projected hashes"
+    },
+    "property:09:deterministic-derived-ids-are-stable-across-repeated-indexing": {
+      "obligationId": "property:09:deterministic-derived-ids-are-stable-across-repeated-indexing",
+      "publicFacade": "projector/testkit",
+      "testRef": "packages/testkit/src/testkit.test.ts#deterministic providers allocates stable instance-local IDs"
+    },
+    "property:10:hard-rule-composition-is-order-independent": {
+      "obligationId": "property:10:hard-rule-composition-is-order-independent",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/governance/selectors-rules.test.ts#hard rule compilation is order-independent and sorts higher authority before specificity and stable ID"
+    },
+    "property:11:selector-lens-rule-applicability-is-deterministic-for-fixed-dependencies": {
+      "obligationId": "property:11:selector-lens-rule-applicability-is-deterministic-for-fixed-dependencies",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles binds selector membership, rule applicability, reverse traversal, and enumeration queries"
+    },
+    "property:12:lowering-evidence-coverage-cannot-produce-a-stronger-completion-claim": {
+      "obligationId": "property:12:lowering-evidence-coverage-cannot-produce-a-stronger-completion-claim",
+      "publicFacade": "projector",
+      "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence recomputes completion hashes and derives oracle/fixed-point outcomes instead of trusting flags"
+    },
+    "property:13:increasing-uncertainty-cannot-lower-approval-risk-requirements": {
+      "obligationId": "property:13:increasing-uncertainty-cannot-lower-approval-risk-requirements",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/governance/execution-policy.test.ts#risk policy never weakens approval, isolation, evidence, or validation as risk rises"
+    },
+    "property:14:idempotent-transforms-converge": {
+      "obligationId": "property:14:idempotent-transforms-converge",
+      "publicFacade": "projector",
+      "testRef": "packages/runtime/src/transforms/index.test.ts#move/reference transform previews, applies, verifies, and converges with source operations before generated operations"
+    },
+    "property:15:exact-reverse-derivation-dependencies-are-never-lost": {
+      "obligationId": "property:15:exact-reverse-derivation-dependencies-are-never-lost",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation normalizes records and reverse dependencies independent of insertion order"
+    },
+    "property:16:relevance-closure-never-gains-exact-impact-authority-merely-from-semantic-similarity-score": {
+      "obligationId": "property:16:relevance-closure-never-gains-exact-impact-authority-merely-from-semantic-similarity-score",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion"
+    },
+    "property:17:identity-resolution-renames-aliases-cannot-create-a-second-identity-for-the-same-selected-entity": {
+      "obligationId": "property:17:identity-resolution-renames-aliases-cannot-create-a-second-identity-for-the-same-selected-entity",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution blocks create-new when an active, deprecated, superseded, or tombstoned identity still overlaps"
+    },
+    "property:18:alias-name-only-changes-alter-discovery-canonical-document-hashes-but-not-semantic-meaning-hashes-and-therefore-refresh-affected-identity-relevance-queries-without-staling-meaning-only-derivations": {
+      "obligationId": "property:18:alias-name-only-changes-alter-discovery-canonical-document-hashes-but-not-semantic-meaning-hashes-and-therefore-refresh-affected-identity-relevance-queries-without-staling-meaning-only-derivations",
+      "publicFacade": "projector/core",
+      "testRef": "packages/core/src/hashing.test.ts#canonical serialization and hash domains excludes volatile-only changes from semantic and discovery hashes"
+    },
+    "property:19:scc-invalidation-backdating-reaches-the-same-fixed-point-as-a-clean-group-recomputation": {
+      "obligationId": "property:19:scc-invalidation-backdating-reaches-the-same-fixed-point-as-a-clean-group-recomputation",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation iterates an SCC proof strategy to a fixed point and refuses oscillation at the bound"
+    },
+    "property:20:reconciliation-terminates-or-emits-an-explicit-non-convergence-failure": {
+      "obligationId": "property:20:reconciliation-terminates-or-emits-an-explicit-non-convergence-failure",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/governance.test.ts#bounded decision SCC convergence uses stable normalized digests and terminates at a fixed point"
+    },
+    "property:21:rollback-restores-fixture-supported-physical-and-canonical-state": {
+      "obligationId": "property:21:rollback-restores-fixture-supported-physical-and-canonical-state",
+      "publicFacade": "projector/runtime",
+      "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating"
+    },
+    "property:22:rebuilding-sqlite-from-canonical-inputs-preserves-semantic-state": {
+      "obligationId": "property:22:rebuilding-sqlite-from-canonical-inputs-preserves-semantic-state",
+      "publicFacade": "projector/runtime",
+      "testRef": "packages/runtime/src/sqlite/derived-store.test.ts#SQLite derived canonical index canonical concepts, requirements, scenarios, relations, rules, lenses, exceptions, and migrations rebuild equivalently after state.db deletion"
+    },
+    "property:23:a-projector-caused-conforming-occurrence-never-becomes-independent-support-for-its-causal-lens-rule": {
+      "obligationId": "property:23:a-projector-caused-conforming-occurrence-never-becomes-independent-support-for-its-causal-lens-rule",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/inference/inference.test.ts#causal evidence grouping defaults every Projector-caused occurrence to authority-ineligible without requiring a target"
+    },
+    "property:24:changing-only-a-representation-profile-never-changes-canonical-semantic-hashes-of-its-source-entities": {
+      "obligationId": "property:24:changing-only-a-representation-profile-never-changes-canonical-semantic-hashes-of-its-source-entities",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/upgrades.test.ts#representation and semantic upgrade protocol invalidates only representation dependents while preserving actual canonical source semantic hashes"
+    },
+    "property:25:a-representation-projection-cannot-validate-when-any-required-protected-dimension-fingerprint-differs": {
+      "obligationId": "property:25:a-representation-projection-cannot-validate-when-any-required-protected-dimension-fingerprint-differs",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles"
+    },
+    "property:26:reducing-text-token-count-cannot-strengthen-a-fidelity-completion-claim": {
+      "obligationId": "property:26:reducing-text-token-count-cannot-strengthen-a-fidelity-completion-claim",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation selects compact by measured net instruction efficiency and falls back when compact fidelity is unsafe"
+    },
+    "property:27:profile-selection-is-deterministic-for-fixed-inputs-tokenizer-profile-policy-and-measured-cost-model": {
+      "obligationId": "property:27:profile-selection-is-deterministic-for-fixed-inputs-tokenizer-profile-policy-and-measured-cost-model",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation selects compact by measured net instruction efficiency and falls back when compact fidelity is unsafe"
+    },
+    "adversary:01:canonical-rebuild-closure": {
+      "obligationId": "adversary:01:canonical-rebuild-closure",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/runtime/src/sqlite/derived-store.test.ts#SQLite derived canonical index canonical concepts, requirements, scenarios, relations, rules, lenses, exceptions, and migrations rebuild equivalently after state.db deletion"
+    },
+    "adversary:02:semantic-signature-insufficiency": {
+      "obligationId": "adversary:02:semantic-signature-insufficiency",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation refuses heuristic equality and widens to downstream clients"
+    },
+    "adversary:03:shared-analyzer-bug-fooling-both-incremental-and-rebuild-paths": {
+      "obligationId": "adversary:03:shared-analyzer-bug-fooling-both-incremental-and-rebuild-paths",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles does not let a shared-bug clean rebuild override contradictory independent conformance"
+    },
+    "adversary:04:crash-at-every-semantic-transaction-phase": {
+      "obligationId": "adversary:04:crash-at-every-semantic-transaction-phase",
+      "publicFacade": "projector/testkit",
+      "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating"
+    },
+    "adversary:05:branch-merge-canonical-governance-conflict": {
+      "obligationId": "adversary:05:branch-merge-canonical-governance-conflict",
+      "publicFacade": "projector/cli",
+      "testRef": "packages/cli/src/cli.test.ts#minimal CLI entrypoint blocks canonical governance conflicts before public mutation work begins"
+    },
+    "adversary:06:projector-endogenous-authority-evidence": {
+      "obligationId": "adversary:06:projector-endogenous-authority-evidence",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/inference/inference.test.ts#causal evidence grouping defaults every Projector-caused occurrence to authority-ineligible without requiring a target"
+    },
+    "adversary:07:governance-cycle-and-non-convergence": {
+      "obligationId": "adversary:07:governance-cycle-and-non-convergence",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/governance.test.ts#bounded decision SCC convergence detects repeated non-stable digests and returns no partial activation"
+    },
+    "adversary:08:open-world-completeness-refusal": {
+      "obligationId": "adversary:08:open-world-completeness-refusal",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure binds empty stopping queries and records open-world emptiness as unknown rather than absence"
+    },
+    "adversary:09:multiple-valid-handwritten-implementations": {
+      "obligationId": "adversary:09:multiple-valid-handwritten-implementations",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution uses coordinated modification for multiple owners and merge only for an explicit merge assessment"
+    },
+    "adversary:10:scc-backdating": {
+      "obligationId": "adversary:10:scc-backdating",
+      "publicFacade": "projector/engine/architecture",
+      "testRef": "packages/engine/src/architecture/governance.test.ts#bounded decision SCC convergence detects repeated non-stable digests and returns no partial activation"
+    },
+    "adversary:11:model-resampling-idempotence": {
+      "obligationId": "adversary:11:model-resampling-idempotence",
+      "publicFacade": "projector/integrations",
+      "testRef": "packages/integrations/src/models/inference.test.ts#provider-neutral structured inference fails explicitly on cancellation/exhaustion and makes resampling a distinct candidate"
+    },
+    "adversary:12:correlated-self-authored-validator-evidence": {
+      "obligationId": "adversary:12:correlated-self-authored-validator-evidence",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles does not grant strong completion to weak, ungrouped, correlated conformance evidence"
+    },
+    "adversary:13:generated-output-upstream-repair": {
+      "obligationId": "adversary:13:generated-output-upstream-repair",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/planning/generated-output-repair.test.ts#generated output upstream repair policy plans upstream change regeneration and validation while rejecting direct patches and unauthenticated overlays"
+    },
+    "adversary:14:localized-cache-performance": {
+      "obligationId": "adversary:14:localized-cache-performance",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped cache refuses an entry that omits consumed value hashes"
+    },
+    "adversary:15:projector-engine-signature-profile-upgrade-invalidation": {
+      "obligationId": "adversary:15:projector-engine-signature-profile-upgrade-invalidation",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation marks profile-dependent derivations suspect after a signature profile upgrade"
+    },
+    "adversary:16:misleading-local-precedent": {
+      "obligationId": "adversary:16:misleading-local-precedent",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it"
+    },
+    "adversary:17:mutation-generated-near-misses": {
+      "obligationId": "adversary:17:mutation-generated-near-misses",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer marks generated sources explicitly and limits unresolved imports to dependency claims"
+    },
+    "adversary:18:unsupported-analyzer-capability-degradation": {
+      "obligationId": "adversary:18:unsupported-analyzer-capability-degradation",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/analyzers/src/repair-regressions.test.ts#Task 14 consolidated repair regressions preserves block-list path filters and scalar permissions and marks unsupported shapes uncertain"
+    },
+    "adversary:19:semantic-identity-duplicate-overlap-creation-under-synonymous-requests": {
+      "obligationId": "adversary:19:semantic-identity-duplicate-overlap-creation-under-synonymous-requests",
+      "publicFacade": "projector",
+      "testRef": "packages/control-plane/src/change-lifecycle/compiler.test.ts#repository change compiler blocks duplicate identity candidates and invalid or expired deferrals"
+    },
+    "adversary:20:cross-cutting-governing-semantics-hidden-outside-the-touched-package": {
+      "obligationId": "adversary:20:cross-cutting-governing-semantics-hidden-outside-the-touched-package",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion"
+    },
+    "adversary:21:relevance-over-expansion-returning-effectively-project-wide-context": {
+      "obligationId": "adversary:21:relevance-over-expansion-returning-effectively-project-wide-context",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion"
+    },
+    "adversary:22:event-contract-consumer-omission-despite-deterministic-topology": {
+      "obligationId": "adversary:22:event-contract-consumer-omission-despite-deterministic-topology",
+      "publicFacade": "projector/analyzers",
+      "testRef": "packages/analyzers/src/topology/topology.test.ts#event and contract topology routes every known event and contract consumer deterministically with conservatively capped raw assurance"
+    },
+    "adversary:23:unrelated-root-state-mutation-incorrectly-staling-scoped-work": {
+      "obligationId": "adversary:23:unrelated-root-state-mutation-incorrectly-staling-scoped-work",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles keeps unrelated work valid under an unrelated root mutation"
+    },
+    "adversary:24:missing-statebinding-value-dependency-incorrectly-preserving-stale-work": {
+      "obligationId": "adversary:24:missing-statebinding-value-dependency-incorrectly-preserving-stale-work",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped cache refuses an entry that omits consumed value hashes"
+    },
+    "adversary:25:missing-negative-space-query-dependency-incorrectly-preserving-stale-relevance-after-a-newly-matching-entity-edge-appears": {
+      "obligationId": "adversary:25:missing-negative-space-query-dependency-incorrectly-preserving-stale-relevance-after-a-newly-matching-entity-edge-appears",
+      "publicFacade": "projector",
+      "testRef": "packages/control-plane/src/change-lifecycle/query-programs.test.ts#change query programs reruns identity and reverse-import negative space against current observations"
+    },
+    "adversary:26:query-program-version-drift-silently-preserving-an-old-result-fingerprint": {
+      "obligationId": "adversary:26:query-program-version-drift-silently-preserving-an-old-result-fingerprint",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/query/query.test.ts#registered query dependencies rejects replacing a registered program without a version change"
+    },
+    "adversary:27:open-sampled-discovery-lane-incorrectly-proving-absence": {
+      "obligationId": "adversary:27:open-sampled-discovery-lane-incorrectly-proving-absence",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/inference/inference.test.ts#causal evidence grouping never treats an empty sampled lane as absence proof"
+    },
+    "adversary:28:predicted-versus-observed-impact-surprise-and-relationship-learning": {
+      "obligationId": "adversary:28:predicted-versus-observed-impact-surprise-and-relationship-learning",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/relevance/index.test.ts#predicted versus observed Planning Surprises proposes an evidence-backed missing relationship without silently making it canonical"
+    },
+    "adversary:29:representation-modal-negation-cardinality-logical-connective-condition-exception-drift": {
+      "obligationId": "adversary:29:representation-modal-negation-cardinality-logical-connective-condition-exception-drift",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles"
+    },
+    "adversary:30:token-compression-that-passes-style-lint-while-changing-semantics": {
+      "obligationId": "adversary:30:token-compression-that-passes-style-lint-while-changing-semantics",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation keeps style lint separate from semantic truth and reports blocking mechanics deterministically"
+    },
+    "adversary:31:net-negative-representation-overhead-and-fallback-selection": {
+      "obligationId": "adversary:31:net-negative-representation-overhead-and-fallback-selection",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation falls back for measured net-negative compact output but selects compact for measured positive utility"
+    },
+    "adversary:32:human-agent-machine-gherkin-projections-with-different-text-but-one-canonical-semantic-source": {
+      "obligationId": "adversary:32:human-agent-machine-gherkin-projections-with-different-text-but-one-canonical-semantic-source",
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port"
+    },
+    "adversary:33:installed-source-severed-lifecycle-interruption-recovery-and-identity-continuity": {
+      "obligationId": "adversary:33:installed-source-severed-lifecycle-interruption-recovery-and-identity-continuity",
+      "publicFacade": "projector",
+      "testRef": "packages/testkit/src/release-acceptance.test.ts#public release acceptance authority binds verified traceability, subsystem closure, full benchmark results, and same-run packed lifecycle artifacts"
+    }
+  }
+}
