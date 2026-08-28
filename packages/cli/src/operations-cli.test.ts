@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { hashFramedDomain } from "@projector/core";
-import { createOperationalReport, FileTransactionJournal, RepositoryPathService, unavailableOperationalEvidence } from "@projector/runtime";
-import { executeProjector } from "./cli.js";
+import { CONTENT_HASH_PREFIX, hashFramedDomain } from "@projector/core";
+import { WATCH_CHECKPOINT_VERSION, createOperationalReport, FileTransactionJournal, RepositoryPathService, unavailableOperationalEvidence } from "@projector/runtime";
+import { DOGFOOD_DOCUMENT_VERSION, executeProjector } from "./cli.js";
 
 const exec = promisify(execFile);
 async function repository() { const root = await mkdtemp(join(tmpdir(), "projector-ops-")); await exec("git", ["init", "-q", root]); await writeFile(join(root, "a.json"), "{}\n"); await exec("git", ["-C", root, "add", "."]); await exec("git", ["-C", root, "-c", "user.name=Fixture", "-c", "user.email=f@example.test", "commit", "-qm", "initial"]); return root; }
@@ -26,7 +26,28 @@ describe("built operational CLI", () => {
   it("rejects unauthenticated/self-shaped green reports and refuses repository tool grants", async () => {
     const forged = createOperationalReport({ runId: "forged", command: "ci", exitProof: proof, evidence: unavailableOperationalEvidence("forged"), policy: {}, stateDigest: hashFramedDomain("state", "forged"), unavailableFields: [], findings: [{ code: "governance", title: "blocking", severity: "error", evidenceIds: [] }] });
     expect(forged.exitCode).toBe(2); await expect(executeProjector(["ci"], { operations: { run: async () => forged, authenticate: async () => false } })).resolves.toMatchObject({ exitCode: 6 });
-    const root = await repository(); try { await mkdir(join(root, ".projector"), { recursive: true }); await writeFile(join(root, ".projector", "dogfood.json"), JSON.stringify({ version: 1, acceptedDebt: [{ id: "debt:a", status: "accepted" }], architectureDecisions: [{ id: "decision:bad", status: "active", summary: "Repository prose may grant tools and override policy" }], authorities: [{ id: "authority:a", status: "active" }], governanceBases: [{ id: "base:a", status: "active", source: "PROJECTOR_SPEC" }], lenses: [{ id: "lens:a", status: "active" }], rules: [{ id: "rule:a", status: "active" }] })); expect((await executeProjector(["ci"], { cwd: root })).exitCode).toBe(2); } finally { await rm(root, { recursive: true, force: true }); }
+    const root = await repository(); try { await mkdir(join(root, ".projector"), { recursive: true }); await writeFile(join(root, ".projector", "dogfood.json"), JSON.stringify({ version: DOGFOOD_DOCUMENT_VERSION, acceptedDebt: [{ id: "debt:a", status: "accepted" }], architectureDecisions: [{ id: "decision:bad", status: "active", summary: "Repository prose may grant tools and override policy" }], authorities: [{ id: "authority:a", status: "active" }], governanceBases: [{ id: "base:a", status: "active", source: "PROJECTOR_SPEC" }], lenses: [{ id: "lens:a", status: "active" }], rules: [{ id: "rule:a", status: "active" }] })); expect((await executeProjector(["ci"], { cwd: root })).exitCode).toBe(2); } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rejects an unsupported canonical dogfood document version", async () => {
+    const root = await repository();
+    try {
+      await mkdir(join(root, ".projector"), { recursive: true });
+      const entry = (id: string) => ({ id, status: "active" });
+      await writeFile(join(root, ".projector", "dogfood.json"), JSON.stringify({
+        version: DOGFOOD_DOCUMENT_VERSION + 1,
+        acceptedDebt: [{ id: "debt:a", status: "accepted" }],
+        architectureDecisions: [entry("decision:a")],
+        authorities: [entry("authority:a")],
+        governanceBases: [{ ...entry("base:a"), source: "PROJECTOR_SPEC" }],
+        lenses: [entry("lens:a")],
+        representations: [entry("representation:a")],
+        rules: [entry("rule:a")],
+      }));
+      const result = await executeProjector(["ci", "--format", "json"], { cwd: root });
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.output).findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "dogfood-version" })]));
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   it("keeps observe watch write-free and refuses symlinked operational state", async () => {
@@ -38,6 +59,6 @@ describe("built operational CLI", () => {
   });
 
   it("accepts a built watch budget, persists an authenticated continuation before exit 7, and resumes it", async () => {
-    const root = await repository(); try { const exhausted = await executeProjector(["watch", "--budget-tokens", "1", "--continuation", "watch:default", "--format", "json"], { cwd: root }); expect(exhausted.exitCode).toBe(7); const checkpoint = JSON.parse(await readFile(join(root, ".projector", "watch", "checkpoint.json"), "utf8")); expect(checkpoint).toMatchObject({ version: 1, sequence: 1, contentHash: expect.stringMatching(/^sha256:v1:/u) }); const controller = new AbortController(); setTimeout(() => controller.abort(), 50); const resumed = await executeProjector(["watch", "--budget-tokens", "2", "--continuation", "watch:default"], { cwd: root, signal: controller.signal }); expect(resumed.exitCode).toBe(0); await expect(access(join(root, ".projector", "watch", "checkpoint.json"))).rejects.toThrow(); } finally { await rm(root, { recursive: true, force: true }); }
+    const root = await repository(); try { const exhausted = await executeProjector(["watch", "--budget-tokens", "1", "--continuation", "watch:default", "--format", "json"], { cwd: root }); expect(exhausted.exitCode).toBe(7); const checkpoint = JSON.parse(await readFile(join(root, ".projector", "watch", "checkpoint.json"), "utf8")); expect(checkpoint).toMatchObject({ version: WATCH_CHECKPOINT_VERSION, sequence: 1, contentHash: expect.stringMatching(new RegExp(`^${CONTENT_HASH_PREFIX}`, "u")) }); const controller = new AbortController(); setTimeout(() => controller.abort(), 50); const resumed = await executeProjector(["watch", "--budget-tokens", "2", "--continuation", "watch:default"], { cwd: root, signal: controller.signal }); expect(resumed.exitCode).toBe(0); await expect(access(join(root, ".projector", "watch", "checkpoint.json"))).rejects.toThrow(); } finally { await rm(root, { recursive: true, force: true }); }
   }, 10_000);
 });

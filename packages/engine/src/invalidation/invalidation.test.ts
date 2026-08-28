@@ -1,18 +1,20 @@
-import type {
-  AdapterContext,
-  ContentHash,
-  DerivationRecord,
-  ImpactRule,
-  InvalidationEvent,
-  SemanticSignature,
-  StateBinding,
-  ValidationResult,
+import {
+  CONTENT_HASH_PREFIX,
+  type AdapterContext,
+  type ContentHash,
+  type DerivationRecord,
+  type ImpactRule,
+  type InvalidationEvent,
+  type SemanticSignature,
+  type StateBinding,
+  type ValidationResult,
 } from "@projector/core";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
   DerivationIndex,
+  INVALIDATION_DERIVED_SCHEMA_VERSION,
   type DerivationIndexSnapshot,
   ImpactRuleRegistry,
   InvalidationEngine,
@@ -27,7 +29,7 @@ import { InMemoryGraphReader, QueryDependencyRegistry } from "../query/index.js"
 import { selectorHash as canonicalSelectorHash } from "../governance/selectors.js";
 import { DependencyScopedStateBindingValidator, createStateBinding } from "../state/index.js";
 
-const hash = (value: string): ContentHash => `sha256:v1:${value.padEnd(64, "0").slice(0, 64)}`;
+const hash = (value: string): ContentHash => `${CONTENT_HASH_PREFIX}${value.padEnd(64, "0").slice(0, 64)}`;
 const signature = (
   value: string,
   assurance: SemanticSignature["assurance"] = "exact",
@@ -60,7 +62,7 @@ const validation = (overrides: Partial<ValidationResult> = {}): ValidationResult
 const record = (unitId: string, inputs: Array<[string, string]>, output = unitId, proofGroupId?: string): DerivationRecord => ({
   unitId,
   ...(proofGroupId === undefined ? {} : { proofGroupId }),
-  engineVersion: "2.0.0",
+  engineVersion: "test-engine@1",
   adapterVersion: "ts@1",
   inputs: inputs.map(([kind, id]) => ({
     kind: kind as "unit" | "artifact",
@@ -273,7 +275,7 @@ describe("derivation index and exact invalidation", () => {
       record("client", [["unit", "contract"]]),
     ]);
     expect(index.snapshot()).toMatchObject({
-      schemaVersion: "invalidation-derived@1",
+      schemaVersion: INVALIDATION_DERIVED_SCHEMA_VERSION,
       reverseDependencies: [
         { subjectId: "contract", dependentIds: ["client"] },
         { subjectId: "handler", dependentIds: ["contract"] },

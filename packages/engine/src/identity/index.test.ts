@@ -233,7 +233,7 @@ function trustedRepository(
   });
   const authorityPayload = { ...(options.authority ?? authority), subjectId: resolution.id, evidence: [{ evidenceId: evidence.id, stance: "supports" as const }] };
   const authorityEnvelope = withCanonicalHashes({
-    apiVersion: "projector/v2", schemaVersion: "2", kind: "authority-record", id: authorityPayload.id,
+    apiVersion: "test-api", schemaVersion: "test-schema", kind: "authority-record", id: authorityPayload.id,
     key: authorityPayload.key, lifecycle: authorityPayload.status, payload: authorityPayload,
   });
   return {

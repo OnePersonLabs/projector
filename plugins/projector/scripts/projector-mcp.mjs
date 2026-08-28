@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, readlink } from "node:fs/promises";
+import { access, readFile, readlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const pluginRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const pluginManifest = JSON.parse(await readFile(join(pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+if (typeof pluginManifest.version !== "string" || pluginManifest.version.trim() === "") throw new Error("Projector plugin manifest version is invalid");
+const pluginVersion = pluginManifest.version;
 const configuredRoot = process.env.PROJECTOR_ROOT?.trim();
 const inheritedWorkingDirectory = process.env.PWD?.trim();
 let parentWorkingDirectory;
@@ -92,7 +95,7 @@ input.on("line", (line) => {
       result: {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "projector", version: "2.0.2" },
+        serverInfo: { name: "projector", version: pluginVersion },
         instructions: "Projector tools are state-bound; inspect evidence before mutation.",
       },
     });

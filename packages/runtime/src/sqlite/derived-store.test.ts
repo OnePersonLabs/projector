@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Worker } from "node:worker_threads";
 
-import { hashRootManifest, withCanonicalHashes, type CanonicalDocumentEnvelope } from "@projector/core";
+import { CANONICAL_API_VERSION, CANONICAL_SCHEMA_VERSION, hashRootManifest, withCanonicalHashes, type CanonicalDocumentEnvelope } from "@projector/core";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { CanonicalFileRepository } from "../persistence/index.js";
@@ -25,8 +25,8 @@ function concept(
   key = `concept:${id}`,
 ): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: CANONICAL_API_VERSION,
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
     kind: "concept",
     id,
     key,
@@ -51,8 +51,8 @@ function concept(
 
 function relation(id: string, fromId: string, toId: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: CANONICAL_API_VERSION,
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
     kind: "relation",
     id,
     key: `relation:${id}`,
@@ -73,8 +73,8 @@ function relation(id: string, fromId: string, toId: string): CanonicalDocumentEn
 
 function requirement(id: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: CANONICAL_API_VERSION,
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
     kind: "requirement",
     id,
     key: `requirement:${id}`,
@@ -98,8 +98,8 @@ function requirement(id: string): CanonicalDocumentEnvelope {
 
 function scenario(id: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: CANONICAL_API_VERSION,
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
     kind: "behavioral-scenario",
     id,
     key: `scenario:${id}`,
@@ -122,8 +122,8 @@ function scenario(id: string): CanonicalDocumentEnvelope {
 
 function lineage(id: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: CANONICAL_API_VERSION,
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
     kind: "lineage",
     id,
     key: `lineage:${id}`,
@@ -141,8 +141,8 @@ function lineage(id: string): CanonicalDocumentEnvelope {
 
 function tombstone(id: string, entityId: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: CANONICAL_API_VERSION,
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
     kind: "tombstone",
     id,
     key: `tombstone:${entityId}`,
@@ -159,8 +159,8 @@ function tombstone(id: string, entityId: string): CanonicalDocumentEnvelope {
 
 function rule(id: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: CANONICAL_API_VERSION,
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
     kind: "rule",
     id,
     key: `rule:${id}`,

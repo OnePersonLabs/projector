@@ -9,6 +9,8 @@ import {
 } from "@projector/core";
 
 import {
+  MOVE_REFERENCE_TRANSFORM_ID,
+  MOVE_REFERENCE_TRANSFORM_VERSION,
   MoveReferenceTransform,
   TransformClaimConflictError,
   TransformRegistry,
@@ -390,13 +392,13 @@ describe("transform registry", () => {
       },
     });
 
-    expect(registry.get("move-reference-update", "1")?.metadata.preconditions).toEqual([
+    expect(registry.get(MOVE_REFERENCE_TRANSFORM_ID, MOVE_REFERENCE_TRANSFORM_VERSION)?.metadata.preconditions).toEqual([
       "preview-complete",
       "state-current",
     ]);
     expect(() => registry.orderInvocations([
-      { transformId: "move-reference-update", version: "1", unitIds: ["unit:same"] },
-      { transformId: "move-reference-update", version: "1", unitIds: ["unit:same"] },
+      { transformId: MOVE_REFERENCE_TRANSFORM_ID, version: MOVE_REFERENCE_TRANSFORM_VERSION, unitIds: ["unit:same"] },
+      { transformId: MOVE_REFERENCE_TRANSFORM_ID, version: MOVE_REFERENCE_TRANSFORM_VERSION, unitIds: ["unit:same"] },
     ])).toThrow(TransformClaimConflictError);
   });
 
@@ -423,8 +425,8 @@ describe("transform registry", () => {
     });
 
     expect(() => registry.orderInvocations([
-      { transformId: "move-reference-update", version: "1", unitIds: ["unit:left"] },
-      { transformId: "conflicting-transform", version: "1", unitIds: ["unit:right"] },
+      { transformId: MOVE_REFERENCE_TRANSFORM_ID, version: MOVE_REFERENCE_TRANSFORM_VERSION, unitIds: ["unit:left"] },
+      { transformId: "conflicting-transform", version: MOVE_REFERENCE_TRANSFORM_VERSION, unitIds: ["unit:right"] },
     ])).toThrow(/excludes/u);
   });
 

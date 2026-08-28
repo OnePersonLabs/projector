@@ -329,13 +329,26 @@ export interface CreateRepositoryScriptLensInput {
   governanceBasis: GovernanceBasis[];
 }
 
+export const REPOSITORY_SCRIPT_LENS_VERSIONS = Object.freeze({
+  lens: "1",
+  placementRule: "1",
+  testColocationRule: "1",
+  recognizer: "1",
+  validator: "1",
+  transform: "1",
+} as const);
+
+const repositoryScriptPlacementValidatorId = `repository-script-placement@${REPOSITORY_SCRIPT_LENS_VERSIONS.validator}`;
+const repositoryScriptTestColocationValidatorId = `repository-script-test-colocation@${REPOSITORY_SCRIPT_LENS_VERSIONS.validator}`;
+const repositoryScriptTransformId = `move-repository-script@${REPOSITORY_SCRIPT_LENS_VERSIONS.transform}`;
+
 export function createRepositoryScriptLens(input: CreateRepositoryScriptLensInput): ProjectionLens {
   const id = input.id ?? "lens:repository-script";
   const selector = input.selector ?? { op: "atom", field: "tag", matcher: "equals", value: "repository-automation" };
   const pathRuleWithoutHash = {
     id: `${id}:placement`,
     key: `${id}:placement`,
-    version: "1",
+    version: REPOSITORY_SCRIPT_LENS_VERSIONS.placementRule,
     effect: "require" as const,
     authorityClass: "active-lens" as const,
     governanceBasis: structuredClone(input.governanceBasis),
@@ -344,13 +357,13 @@ export function createRepositoryScriptLens(input: CreateRepositoryScriptLensInpu
     rationale: "repository automation belongs under scripts",
     evidence: [],
     conflictPolicy: "error" as const,
-    validatorIds: ["repository-script-placement@1"],
-    transformIds: ["move-repository-script@1"],
+    validatorIds: [repositoryScriptPlacementValidatorId],
+    transformIds: [repositoryScriptTransformId],
   };
   const testRuleWithoutHash = {
     id: `${id}:test-colocation`,
     key: `${id}:test-colocation`,
-    version: "1",
+    version: REPOSITORY_SCRIPT_LENS_VERSIONS.testColocationRule,
     effect: "require" as const,
     authorityClass: "active-lens" as const,
     governanceBasis: structuredClone(input.governanceBasis),
@@ -363,8 +376,8 @@ export function createRepositoryScriptLens(input: CreateRepositoryScriptLensInpu
     rationale: "repository automation has colocated verification",
     evidence: [],
     conflictPolicy: "error" as const,
-    validatorIds: ["repository-script-test-colocation@1"],
-    transformIds: ["move-repository-script@1"],
+    validatorIds: [repositoryScriptTestColocationValidatorId],
+    transformIds: [repositoryScriptTransformId],
   };
   const rules: Rule[] = [pathRuleWithoutHash, testRuleWithoutHash].map((rule) => ({
     ...rule,
@@ -373,7 +386,7 @@ export function createRepositoryScriptLens(input: CreateRepositoryScriptLensInpu
   const lensWithoutHash = {
     id,
     key: id,
-    version: "1",
+    version: REPOSITORY_SCRIPT_LENS_VERSIONS.lens,
     status: input.status,
     purpose: "keep repository-wide automation and its tests under scripts",
     realizesConceptKinds: ["capability" as const],
@@ -388,27 +401,27 @@ export function createRepositoryScriptLens(input: CreateRepositoryScriptLensInpu
       expectation: {
         kind: "predicate-constrained" as const,
         predicateIds: rules.map(({ id: ruleId }) => ruleId),
-        validatorIds: ["repository-script-placement@1", "repository-script-test-colocation@1"],
+        validatorIds: [repositoryScriptPlacementValidatorId, repositoryScriptTestColocationValidatorId],
       },
     }],
     rules,
     impactRules: [],
     recognizers: [{
       id: "repository-script-recognizer",
-      version: "1",
+      version: REPOSITORY_SCRIPT_LENS_VERSIONS.recognizer,
       adapterId: "projection-unit-facts",
       query: { tags: ["repository-automation"] },
       minimumConfidence: 0.8,
     }],
     validators: [{
       id: "repository-script-validator",
-      version: "1",
+      version: REPOSITORY_SCRIPT_LENS_VERSIONS.validator,
       provider: "deterministic-governance",
       input: { ruleIds: rules.map(({ id: ruleId }) => ruleId) },
       required: true,
-      requiredIndependenceGroup: "repository-script-validator@1",
+      requiredIndependenceGroup: `repository-script-validator@${REPOSITORY_SCRIPT_LENS_VERSIONS.validator}`,
     }],
-    transforms: [{ id: "move-repository-script", version: "1", input: { root: "scripts" }, exclusiveUnitClaim: true }],
+    transforms: [{ id: "move-repository-script", version: REPOSITORY_SCRIPT_LENS_VERSIONS.transform, input: { root: "scripts" }, exclusiveUnitClaim: true }],
     migrations: [],
     conflictsWith: [],
     compatibleWith: [],

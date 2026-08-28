@@ -23,7 +23,8 @@ describe("runtime public entrypoint", () => {
     expect(WriterLeaseManager).toBeTypeOf("function");
     expect(MoveReferenceTransform).toBeTypeOf("function");
     expect(assertSupportedCanonicalVersions).toBeTypeOf("function");
-    expect(currentSqliteSchemaVersion).toBe(1);
+    expect(currentSqliteSchemaVersion).toBeTypeOf("number");
+    expect(currentSqliteSchemaVersion).toBeGreaterThan(0);
     expect(executePacketPlan).toBeTypeOf("function");
   });
 });

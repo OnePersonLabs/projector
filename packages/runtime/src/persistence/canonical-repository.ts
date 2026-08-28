@@ -4,6 +4,8 @@ import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promi
 import { dirname, join, relative } from "node:path";
 
 import {
+  CANONICAL_API_VERSION,
+  CANONICAL_SCHEMA_VERSION,
   CanonicalDocumentEnvelopeSchema,
   canonicalJson,
   parseCanonicalJson,
@@ -29,8 +31,8 @@ const kindLocations = {
 } as const;
 
 export type SupportedCanonicalKind = keyof typeof kindLocations;
-export const canonicalApiVersion = "projector/v2";
-export const canonicalSchemaVersion = "2.0.0";
+export const canonicalApiVersion = CANONICAL_API_VERSION;
+export const canonicalSchemaVersion = CANONICAL_SCHEMA_VERSION;
 
 export interface CanonicalSnapshot {
   readonly documents: readonly CanonicalDocumentEnvelope[];

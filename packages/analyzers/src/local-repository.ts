@@ -95,7 +95,15 @@ export interface AnalyzeLocalRepositoryOptions {
   readonly observationRevision?: string;
 }
 
-const adapterVersion = "2.0.0";
+export const LOCAL_REPOSITORY_ANALYZER_VERSION = "2.0.0" as const;
+export const LOCAL_REPOSITORY_SIGNATURE_PROFILE_VERSION = "1" as const;
+const localRepositorySurfaceAdapterId = "projector.local-repository" as const;
+const localRepositorySurfaceAdapterVersion = "1" as const;
+export const LOCAL_REPOSITORY_SURFACE_ADAPTER = Object.freeze({
+  id: localRepositorySurfaceAdapterId,
+  version: localRepositorySurfaceAdapterVersion,
+  key: `${localRepositorySurfaceAdapterId}@${localRepositorySurfaceAdapterVersion}`,
+} as const);
 
 function tokenizeCommand(command: string): string[] {
   const tokens: string[] = [];
@@ -296,7 +304,7 @@ function signature(profileId: string, scope: string, value: unknown): SemanticSi
   return {
     hash: hashFramedDomain(profileId, value),
     profileId,
-    profileVersion: "1",
+    profileVersion: LOCAL_REPOSITORY_SIGNATURE_PROFILE_VERSION,
     scope,
     assurance: "exact",
     evidenceIds: [],
@@ -329,7 +337,7 @@ function buildCapabilities(rootAvailable: boolean): AnalyzerCapabilities[] {
   return [
     {
       analyzerId: "projector.filesystem-local",
-      adapterVersion,
+      adapterVersion: LOCAL_REPOSITORY_ANALYZER_VERSION,
       supportedLanguages: [],
       supportedSemantics: ["deterministic-file-inventory", "generated-source-markers"],
       enumeration: {
@@ -343,7 +351,7 @@ function buildCapabilities(rootAvailable: boolean): AnalyzerCapabilities[] {
     },
     {
       analyzerId: "projector.git-local",
-      adapterVersion,
+      adapterVersion: LOCAL_REPOSITORY_ANALYZER_VERSION,
       supportedLanguages: [],
       supportedSemantics: ["tracked-object-identity", "introduction-commit", "working-tree-moves"],
       enumeration: {
@@ -357,7 +365,7 @@ function buildCapabilities(rootAvailable: boolean): AnalyzerCapabilities[] {
     },
     {
       analyzerId: "projector.javascript-local",
-      adapterVersion,
+      adapterVersion: LOCAL_REPOSITORY_ANALYZER_VERSION,
       supportedLanguages: ["JavaScript", "TypeScript"],
       supportedSemantics: ["static-imports", "named-exports", "test-targets", "hook-lifecycle", "package-script-invocations"],
       enumeration: {
@@ -371,7 +379,7 @@ function buildCapabilities(rootAvailable: boolean): AnalyzerCapabilities[] {
     },
     {
       analyzerId: "projector.typescript-semantic",
-      adapterVersion,
+      adapterVersion: LOCAL_REPOSITORY_ANALYZER_VERSION,
       supportedLanguages: ["JavaScript", "TypeScript"],
       supportedSemantics: ["semantic-declarations", "scoped-symbol-identity", "event-topology", "public-contract-topology"],
       enumeration: rootAvailable ? {
@@ -381,7 +389,7 @@ function buildCapabilities(rootAvailable: boolean): AnalyzerCapabilities[] {
     },
     {
       analyzerId: "projector.structured-documents",
-      adapterVersion,
+      adapterVersion: LOCAL_REPOSITORY_ANALYZER_VERSION,
       supportedLanguages: ["JSON", "YAML", "TOML", "Markdown", "GitHub Actions"],
       supportedSemantics: ["stable-document-paths", "actions-workflow-structure", "markdown-structure"],
       enumeration: { observability: rootAvailable ? "bounded" : "unavailable", method: "inert bounded document parsing", assumptions: rootAvailable ? ["inventoried text is complete"] : [], blindSpots: ["custom YAML tags", "runtime Actions expressions"], dynamicMechanisms: ["Actions expressions"], },
@@ -407,7 +415,7 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
     id: surfaceId,
     key: packageFacts.repositoryKey,
     kind: "repository",
-    adapter: "projector.local-repository@1",
+    adapter: LOCAL_REPOSITORY_SURFACE_ADAPTER.key,
     access: rootAvailable ? "read-only" : "unavailable",
     enumeration: rootAvailable
       ? {

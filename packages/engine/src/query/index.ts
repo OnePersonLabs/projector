@@ -325,6 +325,10 @@ function idResults(ids: readonly string[], disposition?: string): QueryResult[] 
 }
 
 export const BUILT_IN_QUERY_PROGRAM_IDS = Object.freeze({
+  semanticIdentitySearch: "graph.semantic-identity-search",
+  relationNeighborhood: "graph.relation-neighborhood",
+  reverseDerivation: "graph.reverse-derivation",
+  selectorMembership: "graph.selector-membership",
   eventTopologyRelevance: "projector.topology.event-relevance",
   contractTopologyRelevance: "projector.topology.contract-relevance",
   exactReverseDerivation: "invalidation.exact-reverse-derivation",
@@ -333,6 +337,22 @@ export const BUILT_IN_QUERY_PROGRAM_IDS = Object.freeze({
   impactRuleApplicability: "invalidation.impact-rule-applicability",
   impactRuleReverseTraversal: "invalidation.impact-rule-reverse-traversal",
   impactRuleEnumeration: "invalidation.impact-rule-enumeration",
+} as const);
+
+/** Current versions remain keyed per program so each query contract can evolve independently. */
+export const BUILT_IN_QUERY_PROGRAM_VERSIONS = Object.freeze({
+  semanticIdentitySearch: "1",
+  relationNeighborhood: "1",
+  reverseDerivation: "1",
+  selectorMembership: "1",
+  eventTopologyRelevance: "1",
+  contractTopologyRelevance: "1",
+  exactReverseDerivation: "1",
+  transitiveReverseDerivation: "1",
+  impactRuleSelectorMembership: "1",
+  impactRuleApplicability: "1",
+  impactRuleReverseTraversal: "1",
+  impactRuleEnumeration: "1",
 } as const);
 
 /** Canonical IDs for host-registered identity boundary programs; these are deliberately not generic built-ins. */
@@ -345,6 +365,15 @@ export const IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS = Object.freeze({
   topology: "identity.topology",
 } as const);
 
+export const IDENTITY_BOUNDARY_QUERY_PROGRAM_VERSIONS = Object.freeze({
+  exact: "2",
+  alias: "2",
+  lineage: "2",
+  tombstone: "2",
+  relations: "2",
+  topology: "2",
+} as const);
+
 export interface TopologyRelevanceQueryStatePort {
   inspect(subjectId: string, subjectKind: "event" | "contract", context: AdapterContext): QueryProgramResult | Promise<QueryProgramResult>;
 }
@@ -352,7 +381,7 @@ export interface TopologyRelevanceQueryStatePort {
 export function createTopologyRelevanceQueryPrograms(port: TopologyRelevanceQueryStatePort): RegisteredQueryProgram[] {
   const create = (subjectKind: "event" | "contract"): RegisteredQueryProgram => ({
     id: subjectKind === "event" ? BUILT_IN_QUERY_PROGRAM_IDS.eventTopologyRelevance : BUILT_IN_QUERY_PROGRAM_IDS.contractTopologyRelevance,
-    version: "1",
+    version: subjectKind === "event" ? BUILT_IN_QUERY_PROGRAM_VERSIONS.eventTopologyRelevance : BUILT_IN_QUERY_PROGRAM_VERSIONS.contractTopologyRelevance,
     kind: subjectKind === "event" ? "event-topology" : "contract-topology",
     normalizeInput: (input) => ({ subjectId: requireString(input, "subjectId") }),
     evaluate: ({ input, context }) => port.inspect(requireString(input, "subjectId"), subjectKind, context),
@@ -371,13 +400,13 @@ export interface IdentityBoundaryQueryStatePort {
 }
 
 const identityBoundaryDefinitions = [
-  ["exact", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.exact, "semantic-identity-search"],
-  ["alias", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.alias, "semantic-identity-search"],
-  ["lineage", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.lineage, "custom"],
-  ["tombstone", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.tombstone, "custom"],
-  ["relations", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.relations, "relation-neighborhood"],
-  ["topology", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.topology, "custom"],
-] as const satisfies readonly [IdentityBoundaryLane, string, StateQueryKind][];
+  ["exact", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.exact, IDENTITY_BOUNDARY_QUERY_PROGRAM_VERSIONS.exact, "semantic-identity-search"],
+  ["alias", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.alias, IDENTITY_BOUNDARY_QUERY_PROGRAM_VERSIONS.alias, "semantic-identity-search"],
+  ["lineage", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.lineage, IDENTITY_BOUNDARY_QUERY_PROGRAM_VERSIONS.lineage, "custom"],
+  ["tombstone", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.tombstone, IDENTITY_BOUNDARY_QUERY_PROGRAM_VERSIONS.tombstone, "custom"],
+  ["relations", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.relations, IDENTITY_BOUNDARY_QUERY_PROGRAM_VERSIONS.relations, "relation-neighborhood"],
+  ["topology", IDENTITY_BOUNDARY_QUERY_PROGRAM_IDS.topology, IDENTITY_BOUNDARY_QUERY_PROGRAM_VERSIONS.topology, "custom"],
+] as const satisfies readonly [IdentityBoundaryLane, string, string, StateQueryKind][];
 
 /**
  * Registers host-authoritative identity lanes. GraphReader cannot truthfully replay
@@ -393,9 +422,9 @@ export function createIdentityBoundaryQueryPrograms(port: IdentityBoundaryQueryS
     }
     return { requestedMeaning, requestedKind: requestedKind as "concept" | "requirement" | "scenario" | "unknown" };
   };
-  return identityBoundaryDefinitions.map(([lane, id, kind]) => ({
+  return identityBoundaryDefinitions.map(([lane, id, version, kind]) => ({
     id,
-    version: "2",
+    version,
     kind,
     normalizeInput: normalize,
     evaluate: ({ input, context }) => port.inspect(lane, normalize(input), context),
@@ -408,7 +437,9 @@ function impactTraversalProgram(
 ): RegisteredQueryProgram {
   return {
     id,
-    version: "1",
+    version: id === BUILT_IN_QUERY_PROGRAM_IDS.impactRuleReverseTraversal
+      ? BUILT_IN_QUERY_PROGRAM_VERSIONS.impactRuleReverseTraversal
+      : BUILT_IN_QUERY_PROGRAM_VERSIONS.impactRuleEnumeration,
     kind,
     normalizeInput: (input) => ({
       ...normalizeObservationInput(input, ["seedIds", "excludedIds"]),
@@ -430,8 +461,8 @@ function impactTraversalProgram(
 function builtInPrograms(): RegisteredQueryProgram[] {
   return [
     {
-      id: "graph.semantic-identity-search",
-      version: "1",
+      id: BUILT_IN_QUERY_PROGRAM_IDS.semanticIdentitySearch,
+      version: BUILT_IN_QUERY_PROGRAM_VERSIONS.semanticIdentitySearch,
       kind: "semantic-identity-search",
       normalizeInput: (input) => {
         const query = requireString(input, "query");
@@ -462,8 +493,8 @@ function builtInPrograms(): RegisteredQueryProgram[] {
       },
     },
     {
-      id: "graph.relation-neighborhood",
-      version: "1",
+      id: BUILT_IN_QUERY_PROGRAM_IDS.relationNeighborhood,
+      version: BUILT_IN_QUERY_PROGRAM_VERSIONS.relationNeighborhood,
       kind: "relation-neighborhood",
       evaluate: ({ input, graph }) => {
         const entityId = requireString(input, "entityId");
@@ -488,8 +519,8 @@ function builtInPrograms(): RegisteredQueryProgram[] {
       },
     },
     {
-      id: "graph.reverse-derivation",
-      version: "1",
+      id: BUILT_IN_QUERY_PROGRAM_IDS.reverseDerivation,
+      version: BUILT_IN_QUERY_PROGRAM_VERSIONS.reverseDerivation,
       kind: "reverse-derivation",
       evaluate: ({ input, graph }) => {
         const subjectId = requireString(input, "subjectId");
@@ -503,8 +534,8 @@ function builtInPrograms(): RegisteredQueryProgram[] {
       },
     },
     {
-      id: "graph.selector-membership",
-      version: "1",
+      id: BUILT_IN_QUERY_PROGRAM_IDS.selectorMembership,
+      version: BUILT_IN_QUERY_PROGRAM_VERSIONS.selectorMembership,
       kind: "selector-membership",
       evaluate: ({ input, graph }) => {
         const selectorHash = requireString(input, "selectorHash") as ContentHash;
@@ -519,7 +550,7 @@ function builtInPrograms(): RegisteredQueryProgram[] {
     },
     {
       id: BUILT_IN_QUERY_PROGRAM_IDS.exactReverseDerivation,
-      version: "1",
+      version: BUILT_IN_QUERY_PROGRAM_VERSIONS.exactReverseDerivation,
       kind: "reverse-derivation",
       normalizeInput: (input) => ({ ...structuredClone(input), subjectId: requireString(input, "subjectId") }),
       evaluate: ({ input, graph }) => {
@@ -535,7 +566,7 @@ function builtInPrograms(): RegisteredQueryProgram[] {
     },
     {
       id: BUILT_IN_QUERY_PROGRAM_IDS.transitiveReverseDerivation,
-      version: "1",
+      version: BUILT_IN_QUERY_PROGRAM_VERSIONS.transitiveReverseDerivation,
       kind: "reverse-derivation",
       normalizeInput: (input) => ({
         ...structuredClone(input),
@@ -556,7 +587,7 @@ function builtInPrograms(): RegisteredQueryProgram[] {
     },
     {
       id: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleSelectorMembership,
-      version: "1",
+      version: BUILT_IN_QUERY_PROGRAM_VERSIONS.impactRuleSelectorMembership,
       kind: "selector-membership",
       normalizeInput: (input) => ({
         ...normalizeObservationInput(input, ["historicalMemberIds"]),
@@ -578,7 +609,7 @@ function builtInPrograms(): RegisteredQueryProgram[] {
     },
     {
       id: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleApplicability,
-      version: "1",
+      version: BUILT_IN_QUERY_PROGRAM_VERSIONS.impactRuleApplicability,
       kind: "impact-rule-applicability",
       normalizeInput: (input) => ({
         ...normalizeObservationInput(input, ["beforeMemberIds"]),

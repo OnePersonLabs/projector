@@ -1,4 +1,5 @@
 import {
+  CONTENT_HASH_PREFIX,
   canonicalJson,
   hashFramedDomain,
   type ContentHash,
@@ -329,8 +330,10 @@ export interface DerivationProofGroup {
   cyclic: boolean;
 }
 
+export const INVALIDATION_DERIVED_SCHEMA_VERSION = "invalidation-derived@1" as const;
+
 export interface DerivationIndexSnapshot {
-  schemaVersion: "invalidation-derived@1";
+  schemaVersion: typeof INVALIDATION_DERIVED_SCHEMA_VERSION;
   records: DerivationRecord[];
   reverseDependencies: Array<{ subjectId: EntityId | string; dependentIds: EntityId[] }>;
   proofGroups: DerivationProofGroup[];
@@ -411,7 +414,7 @@ export class DerivationIndex {
     const groups = new Map<string, DerivationProofGroup>();
     for (const group of this.groups.values()) groups.set(group.id, group);
     return {
-      schemaVersion: "invalidation-derived@1",
+      schemaVersion: INVALIDATION_DERIVED_SCHEMA_VERSION,
       records: this.records(),
       reverseDependencies: [...this.reverse.entries()]
         .sort(([left], [right]) => compareStrings(left, right))
@@ -469,7 +472,7 @@ export class DerivationIndex {
       if (declaredId === undefined) {
         if (members.length > 1 || selfCycle) {
           const group: DerivationProofGroup = {
-            id: `proof-group:${hashFramedDomain("derivation-proof-group", members).slice("sha256:v1:".length)}`,
+            id: `proof-group:${hashFramedDomain("derivation-proof-group", members).slice(CONTENT_HASH_PREFIX.length)}`,
             memberIds: members,
             cyclic: true,
           };
@@ -633,8 +636,10 @@ export interface ImpactClosureBlock {
   reason: string;
 }
 
+export const IMPACT_CLOSURE_VERSION = "impact-closure@1" as const;
+
 export interface InternalImpactClosure {
-  version: "impact-closure@1";
+  version: typeof IMPACT_CLOSURE_VERSION;
   event: InvalidationEvent;
   stateBinding: StateBinding;
   entries: ImpactClosureEntry[];
@@ -683,7 +688,7 @@ export function createImpactClosure(input: {
   })).sort((left, right) => compareStrings(`${left.ruleId}\u0000${left.ruleVersion}`, `${right.ruleId}\u0000${right.ruleVersion}`)
     || compareStrings(left.reason, right.reason));
   const payload = {
-    version: "impact-closure@1" as const,
+    version: IMPACT_CLOSURE_VERSION,
     event: structuredClone(input.event),
     stateBinding: structuredClone(input.stateBinding),
     entries,

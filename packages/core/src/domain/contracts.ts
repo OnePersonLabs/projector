@@ -151,7 +151,8 @@ export type GovernanceBasis =
   | { kind: "active-lens"; lensId: EntityId };
 export type EntityId = string;
 export type Confidence = number; // 0..1; inference confidence, not a calibrated probability unless stated
-export type ContentHash = `sha256:v1:${string}`;
+export const CONTENT_HASH_PREFIX = "sha256:v1:" as const;
+export type ContentHash = `${typeof CONTENT_HASH_PREFIX}${string}`;
 
 export type SourceClass =
   | "authored"

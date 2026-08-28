@@ -2,13 +2,13 @@ import { mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/prom
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { ContentHash, StateBinding, StateDigest } from "@projector/core";
+import { CONTENT_HASH_PREFIX, type ContentHash, type StateBinding, type StateDigest } from "@projector/core";
 import { describe, expect, it } from "vitest";
 
 import { RepositoryPathService } from "../security/index.js";
-import { LeaseConflictError, WriterLeaseManager } from "./writer-lease.js";
+import { LeaseConflictError, WRITER_LEASE_VERSION, WriterLeaseManager } from "./writer-lease.js";
 
-const hash = `sha256:v1:${"1".repeat(64)}` as ContentHash;
+const hash = `${CONTENT_HASH_PREFIX}${"1".repeat(64)}` as ContentHash;
 const state: StateDigest = {
   gitBase: "base-revision",
   worktreeDigest: hash,
@@ -44,7 +44,7 @@ describe("WriterLeaseManager", () => {
       await readFile(join(root, ".projector", "runtime", "writer-lease.lock", "owner.json"), "utf8"),
     );
     expect(record).toMatchObject({
-      version: 1,
+      version: WRITER_LEASE_VERSION,
       sessionId: "session-a",
       processId: 42,
       stateBinding,
