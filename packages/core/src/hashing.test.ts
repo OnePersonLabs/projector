@@ -2,6 +2,8 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  CANONICAL_API_VERSION,
+  CANONICAL_SCHEMA_VERSION,
   canonicalJson,
   hashCanonicalDocument,
   hashDiscovery,
@@ -132,7 +134,7 @@ describe("canonical serialization and hash domains", () => {
 
   it("creates and verifies a versioned canonical envelope", () => {
     const payload = { id: "concept_charge", key: "charge", kind: "behavior", name: "Charge", aliases: [], statement: "charge once", status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [], discoveryHash: `sha256:v1:${"0".repeat(64)}`, semanticHash: `sha256:v1:${"0".repeat(64)}` };
-    const envelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: payload.id, key: payload.key, lifecycle: payload.status, payload });
+    const envelope = withCanonicalHashes({ apiVersion: CANONICAL_API_VERSION, schemaVersion: CANONICAL_SCHEMA_VERSION, kind: "concept", id: payload.id, key: payload.key, lifecycle: payload.status, payload });
     expect(verifyCanonicalEnvelope(envelope)).toEqual([]);
     expect(verifyCanonicalEnvelope({ ...envelope, key: "different" })).toContain("envelope key must match payload key");
   });

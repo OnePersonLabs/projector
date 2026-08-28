@@ -124,8 +124,10 @@ export interface CompletionAssessmentPort {
   }): Promise<CompletionAssessment>;
 }
 
+export const CHANGE_CERTIFICATE_ARTIFACT_VERSION = 1 as const;
+
 export interface ChangeCertificateArtifact {
-  readonly version: 1;
+  readonly version: typeof CHANGE_CERTIFICATE_ARTIFACT_VERSION;
   readonly outcome: ChangeOutcome;
   readonly lastCheckpointId?: string;
   readonly journalPhase: TransactionPhase | "not-started";
@@ -586,7 +588,7 @@ export class StateBoundChangeExecutor<TInput> {
       createdAt,
     };
     const artifact: ChangeCertificateArtifact = {
-      version: 1,
+      version: CHANGE_CERTIFICATE_ARTIFACT_VERSION,
       outcome,
       ...(attempt.transaction?.lastCheckpointId === undefined
         ? {}

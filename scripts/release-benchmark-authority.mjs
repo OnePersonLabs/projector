@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { analyzeLocalRepository } from "../packages/analyzers/dist/index.js";
 import { hashFramedDomain } from "../packages/core/dist/index.js";
 import { REQUIRED_BENCHMARK_GATES } from "../packages/testkit/dist/benchmark.js";
-import { RepresentationCompiler } from "../packages/engine/dist/index.js";
+import { BUILT_IN_REPRESENTATION_PROFILE_KEYS, RepresentationCompiler } from "../packages/engine/dist/index.js";
 
 const execute = promisify(execFile);
 const stable = (analysis) => JSON.stringify({ artifacts: analysis.artifacts, projectionUnits: analysis.projectionUnits, failures: analysis.failures, capabilities: analysis.capabilities });
@@ -22,10 +22,10 @@ async function representationBenchmark() {
   const state = { gitBase: "benchmark", worktreeDigest: hashFramedDomain("representation-benchmark", "worktree"), canonicalProjectorDigest: hashFramedDomain("representation-benchmark", "canonical"), toolchainDigest: hashFramedDomain("representation-benchmark", "toolchain") };
   const binding = { compiledAgainst: state, valueDependencies: [], queryDependencies: [], dependencyDigest: hashFramedDomain("state-binding-dependencies", { valueDependencies: [], queryDependencies: [] }) };
   const compiler = new RepresentationCompiler({ artifacts: store, tokenizer: { profileId: "benchmark@1", measure: (text) => text.trim().split(/\s+/u).filter(Boolean).length }, utility: { profileId: "benchmark-utility@1", measure: () => ({ netInstructionEfficiency: -1, evidence: "held-out benchmark instruction cost" }) } });
-  const compact = await compiler.compile({ source, binding, profileKey: "agent-compact@1" }); const exact = artifacts.get(compact.projection.contentHash);
+  const compact = await compiler.compile({ source, binding, profileKey: BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact }); const exact = artifacts.get(compact.projection.contentHash);
   const candidates = [exact.replace("FORBID", "PERMIT"), exact.replace(" NOT ", " "), exact.replace("production", "staging"), exact.replace("EXACTLY-ONE", "ONE-OR-MORE"), exact.replace("IFF", "AND"), exact.replace("IF approved", "approved"), exact.replace(" | EXCEPT approved", ""), exact.replace("authenticate > delete", "delete > authenticate"), exact.replace("concept:data", "concept:other"), exact.replace("API_V2", "API_V3")];
-  let falseAcceptances = 0; for (const candidate of candidates) { try { await compiler.validateCandidate({ source, profileKey: "agent-compact@1", candidate }); falseAcceptances += 1; } catch { /* expected rejection */ } }
-  const selected = await compiler.compileBest({ source, binding, requestedProfileKey: "agent-compact@1" });
+  let falseAcceptances = 0; for (const candidate of candidates) { try { await compiler.validateCandidate({ source, profileKey: BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact, candidate }); falseAcceptances += 1; } catch { /* expected rejection */ } }
+  const selected = await compiler.compileBest({ source, binding, requestedProfileKey: BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact });
   const compactNetNegativeSelections = selected.projection.profileId === "profile:agent-compact" ? 1 : 0;
   const output = { falseAcceptances, compactNetNegativeSelections, candidateCount: candidates.length, selectedProfileId: selected.projection.profileId };
   return { ...output, outputHash: hashFramedDomain("authoritative-representation-benchmark", output) };

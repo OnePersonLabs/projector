@@ -4,6 +4,8 @@ import { join } from "node:path";
 import {
   ArtifactFingerprintSchema,
   ArtifactSchema,
+  CONTENT_HASH_PREFIX,
+  ContentHashSchema,
   SurfaceApplyResultSchema,
   SurfacePlanSchema,
   SurfaceSchema,
@@ -172,7 +174,7 @@ function authenticateSnapshot(snapshot: SurfaceSnapshotRevision): void {
 export class FileSurfaceSnapshotStore implements SurfaceSnapshotStore {
   readonly #root: string;
   constructor(root: string) { this.#root = root; }
-  #path(digest: ContentHash): string { if (!/^sha256:v1:[0-9a-f]{64}$/u.test(digest)) throw new Error("snapshot digest is invalid"); return join(this.#root, `${digest.slice("sha256:v1:".length)}.json`); }
+  #path(digest: ContentHash): string { if (!ContentHashSchema.safeParse(digest).success) throw new Error("snapshot digest is invalid"); return join(this.#root, `${digest.slice(CONTENT_HASH_PREFIX.length)}.json`); }
   async put(snapshot: SurfaceSnapshotRevision): Promise<void> {
     authenticateSnapshot(snapshot); await mkdir(this.#root, { recursive: true });
     const bytes = `${canonicalSnapshotJson(snapshot)}\n`; const path = this.#path(snapshot.snapshotDigest);
@@ -241,7 +243,7 @@ export class InMemoryExternalOperationJournal implements ExternalOperationJourna
 export class FileExternalOperationJournal implements ExternalOperationJournal {
   readonly #root: string;
   constructor(root: string) { this.#root = root; }
-  #key(operationId: string): string { return hashFramedDomain("external-operation-journal-key", operationId).slice("sha256:v1:".length); }
+  #key(operationId: string): string { return hashFramedDomain("external-operation-journal-key", operationId).slice(CONTENT_HASH_PREFIX.length); }
   #path(operationId: string): string { return join(this.#root, `${this.#key(operationId)}.json`); }
   #lockPath(operationId: string): string { return join(this.#root, `${this.#key(operationId)}.lock`); }
   async #read(operationId: string): Promise<JournalRecord | undefined> { try { return JSON.parse(await readFile(this.#path(operationId), "utf8")) as JournalRecord; } catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined; throw error; } }

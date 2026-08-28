@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hashFramedDomain } from "@projector/core";
-import { UpgradeDeclarationSchema, planUpgradeInvalidation, reconcileRepresentationProfileUpgrade, upgradeDeclarationHash } from "./upgrades.js";
+import { UPGRADE_DECLARATION_API_VERSION, UPGRADE_DECLARATION_SCHEMA_VERSION, UpgradeDeclarationSchema, planUpgradeInvalidation, reconcileRepresentationProfileUpgrade, upgradeDeclarationHash } from "./upgrades.js";
 
 describe("representation and semantic upgrade protocol", () => {
   it("invalidates only dependents of a changed representation profile", () => {
@@ -27,7 +27,7 @@ describe("representation and semantic upgrade protocol", () => {
   });
 
   it("parses implementation upgrade declarations through a strict versioned schema", () => {
-    const declaration = { apiVersion: "projector.dev/upgrade-declaration/v1", schemaVersion: "1", kind: "engine", id: "projector", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["engine:projector"], requiredAction: "migrate" };
+    const declaration = { apiVersion: UPGRADE_DECLARATION_API_VERSION, schemaVersion: UPGRADE_DECLARATION_SCHEMA_VERSION, kind: "engine", id: "projector", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["engine:projector"], requiredAction: "migrate" };
     expect(UpgradeDeclarationSchema.parse(declaration)).toEqual(declaration);
     expect(() => UpgradeDeclarationSchema.parse({ ...declaration, undeclared: true })).toThrow();
   });
@@ -38,7 +38,7 @@ describe("representation and semantic upgrade protocol", () => {
   });
 
   it("canonicalizes dependency keys before hashing declarations", () => {
-    const base = { apiVersion: "projector.dev/upgrade-declaration/v1" as const, schemaVersion: "1" as const, kind: "engine" as const, id: "projector", fromVersion: "1", toVersion: "2", requiredAction: "migrate" as const };
+    const base = { apiVersion: UPGRADE_DECLARATION_API_VERSION, schemaVersion: UPGRADE_DECLARATION_SCHEMA_VERSION, kind: "engine" as const, id: "projector", fromVersion: "1", toVersion: "2", requiredAction: "migrate" as const };
     expect(upgradeDeclarationHash({ ...base, affectedDependencyKeys: ["b", "a", "a"] }))
       .toBe(upgradeDeclarationHash({ ...base, affectedDependencyKeys: ["a", "b"] }));
   });
@@ -75,7 +75,7 @@ describe("representation and semantic upgrade protocol", () => {
     const declaration = { kind: "representation-profile" as const, id: "compact", fromVersion: "1", toVersion: "2", affectedDependencyKeys: ["representation-profile:profile:other"], requiredAction: "revalidate" as const };
     expect(() => planUpgradeInvalidation(declaration, [{ id: "projection:other", kind: "representation", dependencyKeys: ["representation-profile:profile:other"] }], registry))
       .toThrow(/ownership|target|namespace/u);
-    expect(() => UpgradeDeclarationSchema.parse({ apiVersion: "projector.dev/upgrade-declaration/v1", schemaVersion: "1", ...declaration, id: " compact " }))
+    expect(() => UpgradeDeclarationSchema.parse({ apiVersion: UPGRADE_DECLARATION_API_VERSION, schemaVersion: UPGRADE_DECLARATION_SCHEMA_VERSION, ...declaration, id: " compact " }))
       .toThrow();
     expect(() => planUpgradeInvalidation({ ...declaration, id: "compact", affectedDependencyKeys: [" representation-profile:profile:compact"] }, [], registry))
       .toThrow(/blank|trim|dependency/u);

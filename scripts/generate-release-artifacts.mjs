@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { hashFramedDomain } from "../packages/core/dist/index.js";
-import { deriveAcceptanceInventory, traceabilityEntryHash, traceabilityInventoryHash } from "../packages/testkit/dist/index.js";
+import { deriveAcceptanceInventory, TRACEABILITY_MANIFEST_VERSION, traceabilityEntryHash, traceabilityInventoryHash } from "../packages/testkit/dist/index.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const scenarioPaths = ["PROJECTOR_SPEC/12-delivery/acceptance-core.md", "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md", "PROJECTOR_SPEC/12-delivery/acceptance-representation.md", "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md"];
@@ -32,7 +32,7 @@ for (const item of inventory) {
   const entry = { ...item, publicFacade, testRef, testSourceDigest: hashFramedDomain("traceability-test-source", { path, text }) };
   entries.push({ ...entry, mappingHash: traceabilityEntryHash(entry) });
 }
-const manifest = { version: 2, entries, inventoryHash: traceabilityInventoryHash(inventory) };
+const manifest = { version: TRACEABILITY_MANIFEST_VERSION, entries, inventoryHash: traceabilityInventoryHash(inventory) };
 const json = `${JSON.stringify(manifest, null, 2)}\n`;
 const counts = Object.fromEntries(["scenario", "property", "adversary"].map((stratum) => [stratum, inventory.filter((item) => item.stratum === stratum).length]));
 const documentation = `# Projector release acceptance\n\nThis file is generated from authoritative acceptance headings and verified public test anchors.\n\n- Scenarios: ${counts.scenario}\n- Property classes: ${counts.property}\n- Adversary classes: ${counts.adversary}\n- Inventory hash: \`${manifest.inventoryHash}\`\n\nRun \`pnpm release:acceptance\` to execute the mapped tests and validate the packed artifact, installed workflow, benchmarks, rebuild, conformance, and durable release evidence.\n`;

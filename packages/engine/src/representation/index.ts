@@ -93,11 +93,21 @@ function profile(key: string, target: SemanticRepresentationProfile["target"], o
   return { ...value, semanticHash: hashFramedDomain("semantic-representation-profile", value) };
 }
 
+export const BUILT_IN_REPRESENTATION_PROFILE_KEYS = Object.freeze({
+  humanTechnical: "human-technical@1",
+  behaviorGherkin: "behavior-gherkin@1",
+  agentCompact: "agent-compact@1",
+  machineInvariant: "machine-invariant@1",
+} as const);
+export const MACHINE_REPRESENTATION_API_VERSION = "projector.dev/representation/v1" as const;
+export const REPRESENTATION_FIDELITY_VALIDATOR_ID = "representation-fidelity@1" as const;
+export const REPRESENTATION_FIDELITY_INDEPENDENCE_GROUP = "deterministic-representation-validator@1" as const;
+
 export const BUILT_IN_REPRESENTATION_PROFILES = Object.freeze({
-  "human-technical@1": profile("human-technical@1", "human-technical", "clarity-first"),
-  "behavior-gherkin@1": profile("behavior-gherkin@1", "behavior-spec", "clarity-first"),
-  "agent-compact@1": profile("agent-compact@1", "agent-context", "token-first"),
-  "machine-invariant@1": profile("machine-invariant@1", "machine-invariant", "machine-first"),
+  [BUILT_IN_REPRESENTATION_PROFILE_KEYS.humanTechnical]: profile(BUILT_IN_REPRESENTATION_PROFILE_KEYS.humanTechnical, "human-technical", "clarity-first"),
+  [BUILT_IN_REPRESENTATION_PROFILE_KEYS.behaviorGherkin]: profile(BUILT_IN_REPRESENTATION_PROFILE_KEYS.behaviorGherkin, "behavior-spec", "clarity-first"),
+  [BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact]: profile(BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact, "agent-context", "token-first"),
+  [BUILT_IN_REPRESENTATION_PROFILE_KEYS.machineInvariant]: profile(BUILT_IN_REPRESENTATION_PROFILE_KEYS.machineInvariant, "machine-invariant", "machine-first"),
 });
 export type BuiltInRepresentationProfileKey = keyof typeof BUILT_IN_REPRESENTATION_PROFILES;
 
@@ -232,17 +242,17 @@ function kernel(statement: CanonicalRepresentationStatement): Record<string, unk
 }
 
 function render(source: CanonicalRepresentationSource, key: BuiltInRepresentationProfileKey): string {
-  if (key === "machine-invariant@1") {
-    return canonicalJson({ apiVersion: "projector.dev/representation/v1", kind: "MachineInvariant", sourceIds: source.sourceEntityIds, statements: source.statements.map(kernel), scenarios: source.scenarios });
+  if (key === BUILT_IN_REPRESENTATION_PROFILE_KEYS.machineInvariant) {
+    return canonicalJson({ apiVersion: MACHINE_REPRESENTATION_API_VERSION, kind: "MachineInvariant", sourceIds: source.sourceEntityIds, statements: source.statements.map(kernel), scenarios: source.scenarios });
   }
-  if (key === "behavior-gherkin@1") {
+  if (key === BUILT_IN_REPRESENTATION_PROFILE_KEYS.behaviorGherkin) {
     const scenarios = source.scenarios.map((scenario) => {
       const keywords: Record<BehavioralScenarioStep["role"], string> = { precondition: "Given", trigger: "When", "expected-outcome": "Then", "forbidden-outcome": "But" };
       return [`# source: ${scenario.id}`, `Scenario: ${scenario.title}`, ...scenario.steps.map((step) => `  ${keywords[step.role]} ${step.statement}`)].join("\n");
     }).join("\n\n");
     return `${scenarios}\n\n# invariant-kernel: ${canonicalJson(source.statements.map(kernel))}`;
   }
-  if (key === "agent-compact@1") {
+  if (key === BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact) {
     const statements = source.statements.map((statement) => [
       `${statement.normativeForce === "forbid" ? "FORBID" : statement.normativeForce.toUpperCase()}${statement.negated ? " NOT" : ""} ${statement.id}`,
       statement.cardinality?.toUpperCase(), statement.connective?.toUpperCase(),
@@ -269,8 +279,8 @@ function renderLessAggressiveCompact(source: CanonicalRepresentationSource): str
 
 function validation(status: "passed" | "failed", summary: string, details: Record<string, unknown> = {}): ValidationResult {
   return {
-    validatorId: "representation-fidelity@1", status, summary, evidenceIds: [], evidenceLane: "representation",
-    independenceGroup: "deterministic-representation-validator@1", assurance: status === "passed" ? "exact" : "strong",
+    validatorId: REPRESENTATION_FIDELITY_VALIDATOR_ID, status, summary, evidenceIds: [], evidenceLane: "representation",
+    independenceGroup: REPRESENTATION_FIDELITY_INDEPENDENCE_GROUP, assurance: status === "passed" ? "exact" : "strong",
     authorSource: "projector-engine", sideEffectClass: "none", details,
     startedAt: "1970-01-01T00:00:00.000Z", completedAt: "1970-01-01T00:00:00.000Z",
   };
@@ -386,7 +396,7 @@ function parseMachineCandidate(candidate: string): ParsedCandidateSource {
   if (canonicalJson(Object.keys(parsed).sort(compare)) !== canonicalJson(["apiVersion", "kind", "scenarios", "sourceIds", "statements"])) {
     throw new TypeError("machine invariant has unknown or missing schema keys");
   }
-  if (parsed.apiVersion !== "projector.dev/representation/v1" || parsed.kind !== "MachineInvariant"
+  if (parsed.apiVersion !== MACHINE_REPRESENTATION_API_VERSION || parsed.kind !== "MachineInvariant"
     || !Array.isArray(parsed.statements) || !Array.isArray(parsed.sourceIds)
     || !parsed.sourceIds.every((id) => typeof id === "string")) throw new TypeError("candidate is not a supported machine invariant kernel");
   const statements = parsed.statements.map(parseKernelStatement);
@@ -502,9 +512,9 @@ function parseCompactCandidate(candidate: string): ParsedCandidateSource {
 function parseCandidate(candidate: string, profileKey: BuiltInRepresentationProfileKey): ParsedCandidateSource {
   try {
     candidate = candidate.trim().replaceAll("\r\n", "\n");
-    if (profileKey === "machine-invariant@1") return parseMachineCandidate(candidate);
-    if (profileKey === "behavior-gherkin@1") return parseGherkinCandidate(candidate);
-    if (profileKey === "agent-compact@1") return parseCompactCandidate(candidate);
+    if (profileKey === BUILT_IN_REPRESENTATION_PROFILE_KEYS.machineInvariant) return parseMachineCandidate(candidate);
+    if (profileKey === BUILT_IN_REPRESENTATION_PROFILE_KEYS.behaviorGherkin) return parseGherkinCandidate(candidate);
+    if (profileKey === BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact) return parseCompactCandidate(candidate);
     return parseHumanCandidate(candidate);
   } catch (error) {
     throw new RepresentationFidelityError("normative-force", `candidate cannot be deterministically parsed or proved: ${error instanceof Error ? error.message : String(error)}`);
@@ -624,7 +634,7 @@ function assertCandidate(
     || canonicalJson(source.scenarios) !== canonicalJson(normalizedObserved.scenarios)) {
     throw new RepresentationFidelityError("normative-force", "candidate contains unparsed or contradictory semantic content");
   }
-  if (profileKey === "human-technical@1") {
+  if (profileKey === BUILT_IN_REPRESENTATION_PROFILE_KEYS.humanTechnical) {
     for (const statement of source.statements) {
       const observedStatement = normalizedObserved.statements.find(({ id }) => id === statement.id);
       if (observedStatement === undefined
@@ -636,7 +646,7 @@ function assertCandidate(
       }
     }
   }
-  if (profileKey === "agent-compact@1") {
+  if (profileKey === BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact) {
     const structural = new Set(["FORBID", "NOT", "MUST", "IFF", "IF", "ORDER", "SCOPE", "TITLE", "ONE", "MORE", "MOST", "ALL", "NONE", "AND", "OR"]);
     const protectedAcronyms = new Set(source.statements.flatMap(({ protectedLiterals }) => protectedLiterals)
       .flatMap((literal) => literal.match(/\b[A-Z]{2,5}\b/gu) ?? []));
@@ -782,22 +792,22 @@ export class RepresentationCompiler {
     try {
       requested = await this.compile({ ...input, profileKey: input.requestedProfileKey });
     } catch (error) {
-      if (input.requestedProfileKey !== "agent-compact@1" || !(error instanceof RepresentationFidelityError)) throw error;
+      if (input.requestedProfileKey !== BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact || !(error instanceof RepresentationFidelityError)) throw error;
     }
     const efficiency = requested?.projection.tokenAccounting?.estimatedNetInstructionEfficiency
       ?? requested?.projection.tokenAccounting?.estimatedNetTokens ?? Number.NEGATIVE_INFINITY;
-    if (input.requestedProfileKey !== "agent-compact@1" && requested !== undefined) return requested;
+    if (input.requestedProfileKey !== BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact && requested !== undefined) return requested;
     if (requested !== undefined && efficiency > 0) return requested;
     const tiers: Array<{ tier: RepresentationFallbackTier; profileKey: BuiltInRepresentationProfileKey }> = [
-      { tier: "exact-machine-plus-advisory-compact", profileKey: "machine-invariant@1" },
-      { tier: "less-aggressive-compact", profileKey: "agent-compact@1" },
-      { tier: "human-technical", profileKey: "human-technical@1" },
+      { tier: "exact-machine-plus-advisory-compact", profileKey: BUILT_IN_REPRESENTATION_PROFILE_KEYS.machineInvariant },
+      { tier: "less-aggressive-compact", profileKey: BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact },
+      { tier: "human-technical", profileKey: BUILT_IN_REPRESENTATION_PROFILE_KEYS.humanTechnical },
     ];
     for (const { tier, profileKey } of tiers) {
       if (this.ports.fallbackGate?.(tier) === false) continue;
       const { candidate: omittedCandidate, ...fallbackInput } = input; void omittedCandidate;
       const accepted = tier === "less-aggressive-compact"
-        ? await this.compileRendered({ ...input, profileKey: "agent-compact@1" }, renderLessAggressiveCompact(normalizedSource(input.source)), "less-aggressive-compact")
+        ? await this.compileRendered({ ...input, profileKey: BUILT_IN_REPRESENTATION_PROFILE_KEYS.agentCompact }, renderLessAggressiveCompact(normalizedSource(input.source)), "less-aggressive-compact")
         : profileKey === input.requestedProfileKey && requested !== undefined ? requested : await this.compile({ ...fallbackInput, profileKey });
       const base = { ...accepted.projection, status: "fallback-used" as const };
       const projection = deepFreeze({ ...base, semanticHash: hashFramedDomain("representation-projection", { ...base, semanticHash: undefined }) });

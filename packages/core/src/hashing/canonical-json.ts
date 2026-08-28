@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { CONTENT_HASH_PREFIX, type ContentHash } from "../domain/contracts.js";
+
 export type CanonicalJsonValue =
   | null
   | boolean
@@ -168,12 +170,12 @@ function frame(value: Uint8Array): Uint8Array {
   return Buffer.concat([length, value]);
 }
 
-export function hashFramedDomain(domain: string, ...values: readonly unknown[]): `sha256:v1:${string}` {
+export function hashFramedDomain(domain: string, ...values: readonly unknown[]): ContentHash {
   const hash = createHash("sha256");
   hash.update(frame(Buffer.from("projector\0sha256\0v1", "utf8")));
   hash.update(frame(Buffer.from(domain, "utf8")));
   for (const value of values) {
     hash.update(frame(Buffer.from(canonicalJson(value), "utf8")));
   }
-  return `sha256:v1:${hash.digest("hex")}`;
+  return `${CONTENT_HASH_PREFIX}${hash.digest("hex")}`;
 }

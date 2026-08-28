@@ -5,6 +5,13 @@ export const SUBSYSTEM_CLOSURE_STAGES = [
   "observability", "dogfood", "packed-release",
 ] as const;
 export type SubsystemClosureStage = (typeof SUBSYSTEM_CLOSURE_STAGES)[number];
+export const SUBSYSTEM_CLOSURE_OBLIGATION_VERSION = 1 as const;
+export const SUBSYSTEM_CLOSURE_RECEIPT_VERSION = 1 as const;
+export const SUBSYSTEM_CLOSURE_RECEIPT_HASH_DOMAIN = `subsystem-closure-receipt:v${SUBSYSTEM_CLOSURE_RECEIPT_VERSION}` as const;
+
+export function subsystemClosureObligationId(subsystemId: string, stage: SubsystemClosureStage): string {
+  return `${subsystemId}.${stage}.v${SUBSYSTEM_CLOSURE_OBLIGATION_VERSION}`;
+}
 
 export interface SubsystemClosureObservation {
   readonly obligationId: string;
@@ -17,7 +24,7 @@ export interface SubsystemClosureObservation {
 }
 
 export interface SubsystemClosureReceipt {
-  readonly version: 1;
+  readonly version: typeof SUBSYSTEM_CLOSURE_RECEIPT_VERSION;
   readonly subsystemId: string;
   readonly revision: string;
   readonly worktreeDigest: ContentHash;
@@ -31,8 +38,8 @@ function receiptBody(receipt: Omit<SubsystemClosureReceipt, "receiptHash"> | Sub
 }
 
 export function createSubsystemClosureReceipt(input: Omit<SubsystemClosureReceipt, "version" | "receiptHash">): Readonly<SubsystemClosureReceipt> {
-  const body = { version: 1 as const, ...structuredClone(input), observations: [...input.observations].sort((left, right) => left.obligationId.localeCompare(right.obligationId)) };
-  return Object.freeze({ ...body, observations: Object.freeze(body.observations.map((observation) => Object.freeze(observation))), receiptHash: hashFramedDomain("subsystem-closure-receipt:v1", body) });
+  const body = { version: SUBSYSTEM_CLOSURE_RECEIPT_VERSION, ...structuredClone(input), observations: [...input.observations].sort((left, right) => left.obligationId.localeCompare(right.obligationId)) };
+  return Object.freeze({ ...body, observations: Object.freeze(body.observations.map((observation) => Object.freeze(observation))), receiptHash: hashFramedDomain(SUBSYSTEM_CLOSURE_RECEIPT_HASH_DOMAIN, body) });
 }
 
 export function evaluateSubsystemClosure(contract: {
@@ -42,7 +49,8 @@ export function evaluateSubsystemClosure(contract: {
   readonly expectedWorktreeDigest?: ContentHash;
 }, receipt: SubsystemClosureReceipt): { readonly status: "closed" | "open"; readonly blockers: readonly string[] } {
   const blockers: string[] = [];
-  if (receipt.receiptHash !== hashFramedDomain("subsystem-closure-receipt:v1", receiptBody(receipt))) blockers.push("receipt authentication failed");
+  if (receipt.version !== SUBSYSTEM_CLOSURE_RECEIPT_VERSION) blockers.push("receipt version is unsupported");
+  if (receipt.receiptHash !== hashFramedDomain(SUBSYSTEM_CLOSURE_RECEIPT_HASH_DOMAIN, receiptBody(receipt))) blockers.push("receipt authentication failed");
   if (receipt.subsystemId !== contract.subsystemId) blockers.push("receipt subsystem identity mismatch");
   if (contract.expectedRevision !== undefined && receipt.revision !== contract.expectedRevision) blockers.push("receipt revision is stale");
   if (contract.expectedWorktreeDigest !== undefined && receipt.worktreeDigest !== contract.expectedWorktreeDigest) blockers.push("receipt worktree digest is stale");

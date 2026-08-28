@@ -9,9 +9,11 @@ export interface UpgradeDeclaration {
 }
 const normalizeKeys = (keys: readonly string[]): string[] => [...new Set(keys)].sort();
 const strictNonblank = z.string().min(1).refine((value) => value === value.trim(), "value must be trimmed");
+export const UPGRADE_DECLARATION_API_VERSION = "projector.dev/upgrade-declaration/v1" as const;
+export const UPGRADE_DECLARATION_SCHEMA_VERSION = "1" as const;
 export const UpgradeDeclarationSchema = z.strictObject({
-  apiVersion: z.literal("projector.dev/upgrade-declaration/v1"),
-  schemaVersion: z.literal("1"),
+  apiVersion: z.literal(UPGRADE_DECLARATION_API_VERSION),
+  schemaVersion: z.literal(UPGRADE_DECLARATION_SCHEMA_VERSION),
   kind: z.enum(["engine", "schema", "analyzer", "signature-profile", "representation-profile"]),
   id: strictNonblank, fromVersion: strictNonblank, toVersion: strictNonblank,
   affectedDependencyKeys: z.array(strictNonblank).transform(normalizeKeys),
@@ -129,12 +131,12 @@ export async function reconcileRepresentationProfileUpgrade(plan: UpgradeInvalid
   const refreshedEntries: Array<readonly [string, string]> = [];
   for (const id of invalidatedIds) {
     const contentHash = await ports.refresh(id);
-    if (!/^sha256:v1:[a-f0-9]{64}$/u.test(contentHash)) throw new TypeError(`refreshed representation dependent ${id} is unauthenticated`);
+    if (!ContentHashSchema.safeParse(contentHash).success) throw new TypeError(`refreshed representation dependent ${id} is unauthenticated`);
     refreshedEntries.push([id, contentHash]);
   }
   const refreshed = Object.fromEntries(refreshedEntries);
   const body = { invalidatedIds, refreshed, preservedCanonicalEntityIds, requiredAction: plan.requiredAction };
   return { status: "reconciled", ...body, refreshedIds: Object.keys(refreshed).sort(), receiptHash: hashFramedDomain("representation-upgrade-reconciliation", body) };
 }
-import { canonicalJson, hashFramedDomain } from "@projector/core";
+import { canonicalJson, ContentHashSchema, hashFramedDomain } from "@projector/core";
 import { z } from "zod";

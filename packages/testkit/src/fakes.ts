@@ -27,6 +27,7 @@ import type {
   EnumerationContract,
 } from "@projector/core";
 
+export const FAKE_SURFACE_ADAPTER_VERSION = "fake@1" as const;
 const clone = <T>(value: T): T => structuredClone(value);
 const compareText = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const sortStrings = (values: readonly string[]): string[] => [...values].sort(compareText);
@@ -244,7 +245,7 @@ export class FakeSurfaceAdapter implements SurfaceAdapter {
   }
 
   public async fingerprint(artifact: Artifact, _context: AdapterContext): Promise<ArtifactFingerprint> {
-    return clone(this.#fingerprints[artifact.id] ?? { contentHash: artifact.contentHash, adapterVersion: "fake@1" });
+    return clone(this.#fingerprints[artifact.id] ?? { contentHash: artifact.contentHash, adapterVersion: FAKE_SURFACE_ADAPTER_VERSION });
   }
 
   public async plan(change: SurfaceChange, _context: AdapterContext): Promise<SurfacePlan> {

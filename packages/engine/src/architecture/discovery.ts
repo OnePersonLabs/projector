@@ -1,5 +1,6 @@
 import {
   ArchitectureConcernSchema,
+  CONTENT_HASH_PREFIX,
   canonicalJson,
   hashFramedDomain,
   type ArchitectureConcern,
@@ -72,7 +73,7 @@ function stronger(left: ConcernMateriality, right: ConcernMateriality): ConcernM
 }
 
 function architectureId(hash: ContentHash): string {
-  return `architecture-concern:${hash.slice("sha256:v1:".length, "sha256:v1:".length + 24)}`;
+  return `architecture-concern:${hash.slice(CONTENT_HASH_PREFIX.length, CONTENT_HASH_PREFIX.length + 24)}`;
 }
 
 interface AccumulatedCandidate {

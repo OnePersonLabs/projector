@@ -147,7 +147,7 @@ export function compileEventContractTopology(
       subjectId: head.subjectId,
       subjectKind: head.subjectKind,
       semanticKey: head.semanticKey,
-      queryVersion: sortedUnique(links.map(({ adapterVersion }) => adapterVersion)).join("+") || "1",
+      queryVersion: sortedUnique(links.map(({ adapterVersion }) => adapterVersion)).join("+"),
       producerIds: sortedUnique(links.filter(({ role }) => role === "producer").map(({ participantId }) => participantId)),
       consumerIds: sortedUnique(links.filter(({ role }) => role === "consumer").map(({ participantId }) => participantId)),
       links,

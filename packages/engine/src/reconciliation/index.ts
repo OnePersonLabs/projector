@@ -1,4 +1,4 @@
-import { hashFramedDomain, type ContentHash } from "@projector/core";
+import { ContentHashSchema, hashFramedDomain, type ContentHash } from "@projector/core";
 
 export const MANDATORY_VERTICAL_SLICE_STEPS = [
   "inventory-and-classify-without-execution",
@@ -153,7 +153,7 @@ export function assertMandatoryVerticalSliceEvidence(
     if (item?.sequence !== index + 1 || item.step !== expected || item.summary.trim().length === 0) {
       throw new Error(`mandatory vertical slice step ${index + 1} must be ${expected}`);
     }
-    if (item.details === undefined || !item.details.outputDigest.startsWith("sha256:v1:")
+    if (item.details === undefined || !ContentHashSchema.safeParse(item.details.outputDigest).success
       || item.details.evidenceKind !== contract?.kind
       || item.details.artifactRefs.length === 0 || item.details.assertions.length === 0
       || !isConcreteArtifactRefs(item.details.artifactRefs)
@@ -218,7 +218,7 @@ function isStringArray(value: unknown): value is readonly string[] {
 }
 
 function isHash(value: unknown): value is string {
-  return typeof value === "string" && /^sha256:v1:[0-9a-f]{64}$/u.test(value);
+  return ContentHashSchema.safeParse(value).success;
 }
 
 function isEntityReference(value: unknown): value is string {

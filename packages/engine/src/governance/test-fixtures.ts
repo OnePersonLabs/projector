@@ -8,6 +8,7 @@ import {
 } from "@projector/core";
 
 const hash = (label: string) => hashFramedDomain("task-7-test-fixture", label);
+const TEST_GOVERNANCE_COMPONENT_VERSION = "1" as const;
 
 export function projectionUnit(
   id: string,
@@ -30,11 +31,11 @@ export function projectionUnit(
     conceptIds: [],
     requirementIds: [],
     scenarioIds: [],
-    lenses: (options.lenses ?? []).map((lensId) => ({ lensId, version: "1", semanticHash: hash(lensId) })),
+    lenses: (options.lenses ?? []).map((lensId) => ({ lensId, version: TEST_GOVERNANCE_COMPONENT_VERSION, semanticHash: hash(lensId) })),
     tags: options.tags ?? [],
     structuralSignature: {
       profileId: "test",
-      profileVersion: "1",
+      profileVersion: TEST_GOVERNANCE_COMPONENT_VERSION,
       scope: id,
       hash: hash(`structural:${id}`),
       assurance: "heuristic",
@@ -42,7 +43,7 @@ export function projectionUnit(
     },
     semanticSignature: {
       profileId: "test",
-      profileVersion: "1",
+      profileVersion: TEST_GOVERNANCE_COMPONENT_VERSION,
       scope: id,
       hash: hash(`semantic:${id}`),
       assurance: "heuristic",
@@ -124,7 +125,7 @@ export function rule(
   return {
     id,
     key: id,
-    version: "1",
+    version: TEST_GOVERNANCE_COMPONENT_VERSION,
     effect: options.effect ?? "require",
     authorityClass: options.authorityClass ?? "active-lens",
     governanceBasis: options.governanceBasis ?? [{ kind: "hard-constraint", conceptId: "concept:repository-layout" }],

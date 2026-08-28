@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { canonicalJson, hashFramedDomain, type ContentHash } from "@projector/core";
+import { CONTENT_HASH_PREFIX, canonicalJson, hashFramedDomain, type ContentHash } from "@projector/core";
 import { createExecutionPlan, createStateBinding, executionPlanHash, type CompiledSemanticChangePlan } from "@projector/engine";
 import { executePacketPlan, type AuthenticatedPacketExecution, type PacketExecutionPorts, type PacketExecutionResult } from "@projector/runtime";
 
@@ -56,7 +56,7 @@ export async function runDefaultUpgradeWorkflow(repositoryRoot: string): Promise
   const result = await composeUpgradePlan({ recommendationId: "upgrade:none", semanticChangeId: plan.semanticChangeId!, revision: plan.revision, sourceRunId: plan.sourceRunId }, { compile: async () => compiled });
   const root = join(repositoryRoot, ".projector", "task18-upgrades"); await mkdir(root, { recursive: true });
   const body = { kind: "upgrade-candidate", selector: result.selector, immutablePlanHash: result.immutablePlanHash, plan: result.plan, applied: false, reason: "no authenticated approved modernization recommendation is currently selected" };
-  const bytes = `${canonicalJson(body)}\n`; const path = join(root, `${result.immutablePlanHash.slice("sha256:v1:".length)}.json`);
+  const bytes = `${canonicalJson(body)}\n`; const path = join(root, `${result.immutablePlanHash.slice(CONTENT_HASH_PREFIX.length)}.json`);
   try { await writeFile(path, bytes, { encoding: "utf8", flag: "wx" }); } catch (error) { if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || await readFile(path, "utf8") !== bytes) throw error; }
   return { ...body, pipeline: "modernization-task16", persisted: true };
 }

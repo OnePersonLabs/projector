@@ -8,6 +8,7 @@ import type { RepositoryPathService } from "../security/index.js";
 
 const runtimeDirectory = ".projector/runtime";
 const activeLeaseName = "writer-lease.lock";
+export const WRITER_LEASE_VERSION = 1 as const;
 
 export type LeaseConflictCode = "lease-corrupt" | "lease-held" | "lease-lost";
 
@@ -28,7 +29,7 @@ export interface WriterLeaseOwner {
 }
 
 export interface WriterLeaseRecord extends WriterLeaseOwner {
-  version: 1;
+  version: typeof WRITER_LEASE_VERSION;
   leaseId: string;
   acquiredAt: string;
   heartbeatAt: string;
@@ -99,7 +100,7 @@ export class WriterLeaseManager {
         const acquired = this.now();
         const expires = new Date(acquired.getTime() + this.staleAfterMs);
         const record: WriterLeaseRecord = {
-          version: 1,
+          version: WRITER_LEASE_VERSION,
           leaseId: randomUUID(),
           sessionId: owner.sessionId,
           processId: owner.processId,
@@ -242,7 +243,7 @@ function isLeaseRecord(value: unknown): value is WriterLeaseRecord {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<WriterLeaseRecord>;
   return (
-    candidate.version === 1 &&
+    candidate.version === WRITER_LEASE_VERSION &&
     typeof candidate.leaseId === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(candidate.leaseId) &&
     typeof candidate.sessionId === "string" &&

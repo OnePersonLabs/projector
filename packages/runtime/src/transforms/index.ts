@@ -133,9 +133,12 @@ export interface MoveReferenceTransformOptions {
   now?: () => string;
 }
 
+export const MOVE_REFERENCE_TRANSFORM_ID = "move-reference-update" as const;
+export const MOVE_REFERENCE_TRANSFORM_VERSION = "1" as const;
+
 export class MoveReferenceTransform implements Transform<MoveReferenceUpdateInput> {
-  readonly id = "move-reference-update";
-  readonly version = "1";
+  readonly id = MOVE_REFERENCE_TRANSFORM_ID;
+  readonly version = MOVE_REFERENCE_TRANSFORM_VERSION;
   readonly description = "Move projection units and update exact registered references";
 
   private readonly now: () => string;

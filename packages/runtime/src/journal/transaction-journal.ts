@@ -12,7 +12,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join, posix } from "node:path";
 
-import type { ContentHash, StateDigest, TransactionJournalEntry, TransactionPhase } from "@projector/core";
+import { ContentHashSchema, type ContentHash, type StateDigest, type TransactionJournalEntry, type TransactionPhase } from "@projector/core";
 
 import type { RepositoryPathService } from "../security/index.js";
 
@@ -80,8 +80,10 @@ export interface CompensationRecord {
   completedAt?: string;
 }
 
+export const TRANSACTION_JOURNAL_VERSION = 1 as const;
+
 export interface DurableTransactionRecord {
-  version: 1;
+  version: typeof TRANSACTION_JOURNAL_VERSION;
   entry: TransactionJournalEntry;
   allowedWriteRoots: string[];
   operations: FileJournalOperation[];
@@ -268,7 +270,7 @@ export class FileTransactionJournal {
     await this.ensureJournalRoot();
     const now = this.timestamp();
     const record: DurableTransactionRecord = {
-      version: 1,
+      version: TRANSACTION_JOURNAL_VERSION,
       entry: {
         transactionId: input.transactionId,
         planId: input.planId,
@@ -600,7 +602,7 @@ function isRecord(value: unknown): value is DurableTransactionRecord {
   const record = value as Partial<DurableTransactionRecord>;
   const entry = record.entry as Partial<TransactionJournalEntry> | undefined;
   return (
-    record.version === 1 &&
+    record.version === TRANSACTION_JOURNAL_VERSION &&
     typeof entry === "object" &&
     entry !== null &&
     typeof entry.transactionId === "string" &&
@@ -760,7 +762,7 @@ function allUnique(values: readonly string[]): boolean {
 }
 
 function isContentHash(value: unknown): value is ContentHash {
-  return typeof value === "string" && /^sha256:v1:[0-9a-f]{64}$/u.test(value);
+  return ContentHashSchema.safeParse(value).success;
 }
 
 function lastCheckpoint(record: DurableTransactionRecord): { lastCheckpointId?: string } {

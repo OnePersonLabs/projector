@@ -1,3 +1,4 @@
+import type { ContentHash } from "../domain/contracts.js";
 import { canonicalJson, hashFramedDomain } from "./canonical-json.js";
 
 export interface HashProfile {
@@ -114,27 +115,27 @@ function exactProjection(value: unknown, profile: HashProfile): Record<string, u
   return result;
 }
 
-export function hashSemantic(kind: string, value: unknown): `sha256:v1:${string}` {
+export function hashSemantic(kind: string, value: unknown): ContentHash {
   const profile = getHashProfile(kind);
   return hashFramedDomain("semantic", { kind, projection: select(value, profile.semantic) });
 }
 
-export function hashDiscovery(kind: string, value: unknown): `sha256:v1:${string}` {
+export function hashDiscovery(kind: string, value: unknown): ContentHash {
   const profile = getHashProfile(kind);
   return hashFramedDomain("discovery", { kind, projection: select(value, profile.discovery) });
 }
 
-export function hashCanonicalDocument(kind: string, value: unknown): `sha256:v1:${string}` {
+export function hashCanonicalDocument(kind: string, value: unknown): ContentHash {
   const profile = getHashProfile(kind);
   return hashFramedDomain("canonical-document", { kind, document: exactProjection(value, profile) });
 }
 
 export interface RootManifestEntry {
   readonly entityId: string;
-  readonly canonicalDocumentHash: `sha256:v1:${string}`;
+  readonly canonicalDocumentHash: ContentHash;
 }
 
-export function hashRootManifest(entries: readonly RootManifestEntry[]): `sha256:v1:${string}` {
+export function hashRootManifest(entries: readonly RootManifestEntry[]): ContentHash {
   const sorted = [...entries].sort((left, right) =>
     Buffer.compare(Buffer.from(left.entityId), Buffer.from(right.entityId)) ||
     Buffer.compare(Buffer.from(left.canonicalDocumentHash), Buffer.from(right.canonicalDocumentHash)),

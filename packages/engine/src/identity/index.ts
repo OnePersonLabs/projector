@@ -121,8 +121,11 @@ export const CanonicalSemanticBoundarySchema = NewSemanticBoundarySchema.superRe
   reportCanonicalBoundaryIssues(boundary as NewSemanticBoundary, (message, path) => context.addIssue({ code: "custom", message, path }));
 });
 
+export const IDENTITY_OPERATION_FACT_VERSION = 1 as const;
+export const ADJUDICATED_IDENTITY_RESOLUTION_VERSION = 1 as const;
+
 const OperationFactCommon = {
-  version: z.literal(1),
+  version: z.literal(IDENTITY_OPERATION_FACT_VERSION),
   requestId: EntityIdSchema,
   requestedMeaning: z.string().min(1),
   requestedKind: RequestedKindSchema,
@@ -251,7 +254,7 @@ export const IdentityAdjudicationSchema = z.strictObject({
 
 /** Complete persistence/API contract for the engine-owned adjudicated resolution v1. */
 export const AdjudicatedSemanticIdentityResolutionSchema = z.strictObject({
-  contractVersion: z.literal(1),
+  contractVersion: z.literal(ADJUDICATED_IDENTITY_RESOLUTION_VERSION),
   id: EntityIdSchema,
   requestedMeaning: z.string(),
   requestedKind: RequestedKindSchema,
@@ -395,7 +398,7 @@ export interface IdentityTombstoneProposal {
 }
 
 export interface AdjudicatedSemanticIdentityResolution extends SemanticIdentityResolution {
-  contractVersion: 1;
+  contractVersion: typeof ADJUDICATED_IDENTITY_RESOLUTION_VERSION;
   candidateRecords: IdentityCandidateRecord[];
   operation: IdentityAssessment;
   proposedTargetIds: string[];
@@ -809,7 +812,7 @@ function outcomeFactFromEvidence(
   const proposedTargetIds = sortedUnique(input.proposedTargetIds ?? []);
   const targetIds = assessment === "same" || assessment === "overlap" ? analysis.endpointIds : proposedTargetIds;
   const common = {
-    version: 1, requestId, requestedMeaning, requestedKind: input.requestedKind,
+    version: IDENTITY_OPERATION_FACT_VERSION, requestId, requestedMeaning, requestedKind: input.requestedKind,
     operation: assessment, sourceIds, targetIds,
   };
   const expectedByPredicate: Partial<Record<string, unknown>> = assessment === "same"
@@ -1166,7 +1169,7 @@ function resolvePreparedSemanticIdentity(
       return { id: `tombstone_proposal_${hashFramedDomain("identity-tombstone-proposal", basis).slice(-32)}`, canonical: false as const, ...basis };
     }) : [];
   const semantic = {
-    contractVersion: 1 as const,
+    contractVersion: ADJUDICATED_IDENTITY_RESOLUTION_VERSION,
     requestedMeaning: input.requestedMeaning.normalize("NFKC").trim(),
     requestedKind: input.requestedKind,
     outcome: resolved.outcome,

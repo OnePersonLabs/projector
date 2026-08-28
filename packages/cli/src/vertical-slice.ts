@@ -6,6 +6,9 @@ import { promisify } from "node:util";
 
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import {
+  CANONICAL_API_VERSION,
+  CANONICAL_SCHEMA_VERSION,
+  CONTENT_HASH_PREFIX,
   canonicalJson,
   parseCanonicalJson,
   hashFramedDomain,
@@ -63,20 +66,24 @@ import {
   CanonicalFileRepository,
   FileTransactionJournal,
   GovernedWorktreeRuntime,
+  MOVE_REFERENCE_TRANSFORM_ID,
+  MOVE_REFERENCE_TRANSFORM_VERSION,
   MoveReferenceTransform,
   RepositoryPathService,
   SqliteDerivedStore,
   WriterLeaseManager,
   StateBoundCommandExecutor,
+  TRANSACTION_JOURNAL_VERSION,
   createSandboxLauncher,
   type FileTransaction,
   type MoveReferenceUpdateInput,
   type TransformMutationPort,
 } from "@projector/runtime";
 import { assertOperationRiskAuthorized } from "./policy.js";
+import { PROJECTOR_VERSION } from "./version.js";
 
 const executeFile = promisify(execFile);
-const zeroHash = `sha256:v1:${"0".repeat(64)}` as ContentHash;
+const zeroHash = `${CONTENT_HASH_PREFIX}${"0".repeat(64)}` as ContentHash;
 const fixedTime = "2026-08-07T00:00:00.000Z";
 const authorityId = "authority:repository-script-placement";
 const activeLensId = "lens:repository-script";
@@ -145,11 +152,11 @@ function authorityRecord(): AuthorityRecord {
 function canonicalDocuments(authority: AuthorityRecord, lens: ProjectionLens): CanonicalDocumentEnvelope[] {
   return [
     withCanonicalHashes({
-      apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "authority-record",
+      apiVersion: CANONICAL_API_VERSION, schemaVersion: CANONICAL_SCHEMA_VERSION, kind: "authority-record",
       id: authority.id, key: authority.key, lifecycle: authority.status, payload: { ...authority },
     }),
     withCanonicalHashes({
-      apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "projection-lens",
+      apiVersion: CANONICAL_API_VERSION, schemaVersion: CANONICAL_SCHEMA_VERSION, kind: "projection-lens",
       id: lens.id, key: lens.key, lifecycle: lens.status, payload: { ...lens },
     }),
   ];
@@ -232,8 +239,8 @@ interface PersistedJournalRecord {
 
 const MANDATORY_JOURNAL_CHECKPOINTS = [
   { id: "before-transform", phase: "prepared", operationCount: 0 },
-  { id: "move-reference-update@1:before", phase: "prepared", operationCount: 0 },
-  { id: "move-reference-update@1:after", phase: "workspace-mutating", operationCount: 3 },
+  { id: `${MOVE_REFERENCE_TRANSFORM_ID}@${MOVE_REFERENCE_TRANSFORM_VERSION}:before`, phase: "prepared", operationCount: 0 },
+  { id: `${MOVE_REFERENCE_TRANSFORM_ID}@${MOVE_REFERENCE_TRANSFORM_VERSION}:after`, phase: "workspace-mutating", operationCount: 3 },
   { id: "after-validation", phase: "validating", operationCount: 5 },
 ] as const;
 
@@ -261,8 +268,10 @@ async function parseCanonicalArtifact(path: string): Promise<unknown> {
 }
 
 function contentHashFromArtifactName(name: string): ContentHash | undefined {
-  const match = /^(sha256:v1:)?([0-9a-f]{64})\.json$/u.exec(name);
-  return match === null ? undefined : `sha256:v1:${match[2]}` as ContentHash;
+  if (!name.endsWith(".json")) return undefined;
+  const base = name.slice(0, -".json".length);
+  const digest = base.startsWith(CONTENT_HASH_PREFIX) ? base.slice(CONTENT_HASH_PREFIX.length) : base;
+  return /^[0-9a-f]{64}$/u.test(digest) ? `${CONTENT_HASH_PREFIX}${digest}` as ContentHash : undefined;
 }
 
 function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
@@ -303,7 +312,7 @@ function journalContentReference(raw: string): string {
 function strictJournalRecord(value: unknown): value is PersistedJournalRecord {
   if (value === null || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
-  if (!sameKeys(record, ["version", "entry", "allowedWriteRoots", "operations", "checkpoints", "compensations"]) || record.version !== 1) return false;
+  if (!sameKeys(record, ["version", "entry", "allowedWriteRoots", "operations", "checkpoints", "compensations"]) || record.version !== TRANSACTION_JOURNAL_VERSION) return false;
   if (record.entry === null || typeof record.entry !== "object" || !TransactionJournalEntrySchema.safeParse(record.entry).success) return false;
   if (!Array.isArray(record.allowedWriteRoots) || record.allowedWriteRoots.length !== 1 || record.allowedWriteRoots[0] !== ".") return false;
   if (!Array.isArray(record.operations) || !Array.isArray(record.checkpoints) || !Array.isArray(record.compensations)) return false;
@@ -419,7 +428,7 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
       const { semanticHash, ...receiptWithoutHash } = receipt;
       if (hashSemantic("transaction-receipt", receiptWithoutHash) !== semanticHash) continue;
       if (hashFramedDomain("transaction-receipt-artifact", receipt) !== receiptHashFromName) continue;
-      const certificateName = `${receipt.certificateHash.slice("sha256:v1:".length)}.json`;
+      const certificateName = `${receipt.certificateHash.slice(CONTENT_HASH_PREFIX.length)}.json`;
       if (contentHashFromArtifactName(certificateName) !== receipt.certificateHash) continue;
       const certificatePath = join(repositoryRoot, ".projector", "reports", "certificates", certificateName);
       const artifact = await parseCanonicalArtifact(certificatePath) as {
@@ -449,7 +458,7 @@ async function persistedProjectorRepairPaths(repositoryRoot: string): Promise<Se
       if (journal === undefined || journal.entry?.transactionId === undefined || !Array.isArray(journal.operations)
         || journal.entry.transactionId !== "transaction:mandatory-repository-script:1"
         || journal.name !== `${createHash("sha256").update(journal.entry.transactionId).digest("hex")}.json`
-        || journal.version !== 1 || journal.entry.worktreePath !== repositoryRoot
+        || journal.version !== TRANSACTION_JOURNAL_VERSION || journal.entry.worktreePath !== repositoryRoot
         || canonicalJson(journal.entry.beforeState) !== canonicalJson(receipt.beforeState)
         || !TransactionJournalEntrySchema.safeParse(journal.entry).success
         || !Array.isArray(journal.allowedWriteRoots) || !journal.allowedWriteRoots.includes(".")
@@ -575,7 +584,11 @@ export async function currentSliceState(repositoryRoot: string, analysis?: Slice
     gitBase: await git(repositoryRoot, ["rev-parse", "HEAD"]),
     worktreeDigest: hashFramedDomain("slice-one-worktree", governed),
     canonicalProjectorDigest: (await knownCanonicalSnapshot(repositoryRoot)).rootDigest,
-    toolchainDigest: hashFramedDomain("slice-one-toolchain", { node: process.versions.node, analyzer: "projector.local-repository@1", engine: "2.0.0" }),
+    toolchainDigest: hashFramedDomain("slice-one-toolchain", {
+      node: process.versions.node,
+      analyzers: currentAnalysis.repository.capabilities.map(({ analyzerId, adapterVersion }) => `${analyzerId}@${adapterVersion}`).sort(),
+      engine: PROJECTOR_VERSION,
+    }),
   };
 }
 
@@ -714,7 +727,7 @@ export async function prepareMandatorySlice(repositoryRoot: string): Promise<Sli
       .filter(({ key }) => key === "scripts/build-index.mjs" || key === "scripts/check-links.mjs")
       .map((unit) => ({ unitId: unit.id, similarity: 1, relevance: "independently authored repository automation", evidenceIds: [] })),
     allowedWrites: [{ selector: { op: "atom", field: "path", matcher: "glob", value: "**" }, operations: ["move-reference-update"], reason: "bounded approved fixture repair" }],
-    forbiddenWrites: [], availablePrimitives: ["move-reference-update@1"], requiredValidations: completion.requiredValidators,
+    forbiddenWrites: [], availablePrimitives: [`${MOVE_REFERENCE_TRANSFORM_ID}@${MOVE_REFERENCE_TRANSFORM_VERSION}`], requiredValidations: completion.requiredValidators,
     upstreamImplications: ["package scripts must reference the new path"], downstreamImplications: ["tests must remain colocated and runnable"],
     knownExceptions: [], unknowns: [], risk: assessedRisk, completionContract: completion,
   });
@@ -837,8 +850,8 @@ class ArtifactStore implements ChangeArtifactStore {
   constructor(private readonly root: string) {}
   async write(kind: "certificate" | "receipt", hash: ContentHash, content: string): Promise<string> {
     const path = kind === "receipt"
-      ? join(this.root, ".projector", "receipts", `${hash.slice("sha256:v1:".length)}.json`)
-      : join(this.root, ".projector", "reports", "certificates", `${hash.slice("sha256:v1:".length)}.json`);
+      ? join(this.root, ".projector", "receipts", `${hash.slice(CONTENT_HASH_PREFIX.length)}.json`)
+      : join(this.root, ".projector", "reports", "certificates", `${hash.slice(CONTENT_HASH_PREFIX.length)}.json`);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, `${content}\n`, "utf8");
     return path;
@@ -904,7 +917,7 @@ async function bindJournalReference(
   const originalArtifact = await parseCanonicalArtifact(result.certificateRef) as Record<string, unknown>;
   const certificateArtifact = { ...originalArtifact, certificate };
   const certificateHash = hashFramedDomain("change-certificate-artifact", certificateArtifact);
-  const certificateRef = join(dirname(result.certificateRef), `${certificateHash.slice("sha256:v1:".length)}.json`);
+  const certificateRef = join(dirname(result.certificateRef), `${certificateHash.slice(CONTENT_HASH_PREFIX.length)}.json`);
   await writeFile(certificateRef, `${canonicalJson(certificateArtifact)}\n`, "utf8");
   const { semanticHash: _semanticHash, ...receiptWithoutHash } = result.receipt;
   const receipt = {
@@ -913,7 +926,7 @@ async function bindJournalReference(
     semanticHash: hashSemantic("transaction-receipt", { ...receiptWithoutHash, certificateHash }),
   };
   const receiptHash = hashFramedDomain("transaction-receipt-artifact", receipt);
-  const receiptRef = join(dirname(result.receiptRef), `${receiptHash.slice("sha256:v1:".length)}.json`);
+  const receiptRef = join(dirname(result.receiptRef), `${receiptHash.slice(CONTENT_HASH_PREFIX.length)}.json`);
   await writeFile(receiptRef, `${canonicalJson(receipt)}\n`, "utf8");
   if (certificateRef !== result.certificateRef) await rm(result.certificateRef, { force: true });
   if (receiptRef !== result.receiptRef) await rm(result.receiptRef, { force: true });

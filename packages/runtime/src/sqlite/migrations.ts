@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const currentSqliteSchemaVersion = 1;
+export const INITIAL_SQLITE_SCHEMA_VERSION = 1 as const;
+export const currentSqliteSchemaVersion = INITIAL_SQLITE_SCHEMA_VERSION;
 
 const migrationOne = `
   CREATE TABLE canonical_documents (
@@ -81,7 +82,7 @@ export function migrateSqlite(database: DatabaseSync): void {
     }
     if (version === 0) {
       database.exec(migrationOne);
-      database.prepare("INSERT INTO schema_migrations(version) VALUES (?)").run(1);
+      database.prepare("INSERT INTO schema_migrations(version) VALUES (?)").run(INITIAL_SQLITE_SCHEMA_VERSION);
     }
     database.exec("COMMIT");
   } catch (error) {

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { withCanonicalHashes, type CanonicalDocumentEnvelope } from "@projector/core";
+import { CANONICAL_API_VERSION, CANONICAL_SCHEMA_VERSION, withCanonicalHashes, type CanonicalDocumentEnvelope } from "@projector/core";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { CanonicalFileRepository } from "./canonical-repository.js";
@@ -18,8 +18,8 @@ async function temporaryRepository(): Promise<string> {
 
 function concept(id: string, statement: string, key = `concept:${id}`): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: CANONICAL_API_VERSION,
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
     kind: "concept",
     id,
     key,

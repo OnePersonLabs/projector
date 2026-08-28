@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { analyzeLocalRepository } from "@projector/analyzers";
-import { hashFramedDomain, type ContentHash } from "@projector/core";
+import { CONTENT_HASH_PREFIX, hashFramedDomain, type ContentHash } from "@projector/core";
 import { createBuiltProjectorMcpServer, createMutationCapabilityService, createNodeCapabilitySecurityPorts, REQUIRED_PROJECTOR_CONTROLLED_TOOLS, type CapabilityRecord, type CapabilityStore, type JsonRpcRequest } from "@projector/integrations";
 import { RepositoryPathService } from "@projector/runtime";
 
@@ -13,7 +13,7 @@ import { loadBuiltHostSession } from "./host-cli.js";
 const exec = promisify(execFile);
 class FileCapabilityStore implements CapabilityStore {
   constructor(private readonly root: string) {}
-  private path(hash: ContentHash) { return join(this.root, `${hash.slice("sha256:v1:".length)}.json`); }
+  private path(hash: ContentHash) { return join(this.root, `${hash.slice(CONTENT_HASH_PREFIX.length)}.json`); }
   async issue(record: CapabilityRecord) { await mkdir(this.root, { recursive: true }); try { await writeFile(this.path(record.tokenHash), JSON.stringify(record), { flag: "wx" }); return true; } catch (error) { if (error instanceof Error && "code" in error && error.code === "EEXIST") return false; throw error; } }
   async read(hash: ContentHash) { try { return JSON.parse(await readFile(this.path(hash), "utf8")) as CapabilityRecord; } catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined; throw error; } }
   async compareAndSwap(hash: ContentHash, revision: number, next: CapabilityRecord) {

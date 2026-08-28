@@ -1,4 +1,5 @@
 import {
+  CONTENT_HASH_PREFIX,
   DecisionDeferralSchema,
   DecisionEvaluationSchema,
   DecisionOptionSchema,
@@ -300,7 +301,7 @@ export async function evaluateDecisionOptions(
   };
   const semanticHash = hashFramedDomain("decision-evaluation", stableEvaluation);
   const evaluation = DecisionEvaluationSchema.parse({
-    id: `decision-evaluation:${semanticHash.slice("sha256:v1:".length, "sha256:v1:".length + 24)}`,
+    id: `decision-evaluation:${semanticHash.slice(CONTENT_HASH_PREFIX.length, CONTENT_HASH_PREFIX.length + 24)}`,
     ...stableEvaluation,
     evaluatedAt: input.evaluatedAt ?? "deterministic",
     semanticHash,
