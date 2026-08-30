@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0e12" />
+  <meta name="color-scheme" content="dark" />
+  <title>Steady Helm v2 Assembly Viewer</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.min.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="Steady Helm Assembly Viewer">
+        <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M24 4 11 29h26L24 4Z" fill="currentColor" opacity=".92"/>
+          <path d="M8 33h32M12 38h24M17 42h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+          <path d="M24 5v24" stroke="#07100f" stroke-width="2" opacity=".7"/>
+        </svg>
+        <div class="brand-copy">
+          <strong>Steady Helm Assembly v2</strong>
+          <span>3D engineering viewer</span>
+        </div>
+      </div>
+
+      <div class="view-switch" role="group" aria-label="Projection">
+        <button class="seg active" id="perspectiveBtn">Perspective</button>
+        <button class="seg" id="orthoBtn">CAD iso</button>
+      </div>
+
+      <div class="tool-strip" role="toolbar" aria-label="Viewer tools">
+        <button class="tool active" data-tool="orbit" title="Orbit camera (O)">
+          <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v6h6"/></svg><span>Orbit</span>
+        </button>
+        <button class="tool" data-tool="select" title="Select object (S)">
+          <svg viewBox="0 0 24 24"><path d="m5 3 12 8-6 1 4 7-3 2-4-7-3 4V3Z"/></svg><span>Select</span>
+        </button>
+        <button class="tool" data-tool="move" title="Move selected (G)">
+          <svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M12 2l-3 3m3-3 3 3M22 12l-3-3m3 3-3 3M12 22l3-3m-3 3-3-3M2 12l3 3m-3-3 3-3"/></svg><span>Move</span>
+        </button>
+        <button class="tool" data-tool="rotate" title="Rotate selected (R)">
+          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 20v-6h-6"/></svg><span>Rotate</span>
+        </button>
+      </div>
+
+      <div class="header-actions">
+        <select id="sectionPreset" class="select-control" aria-label="Section preset">
+          <option value="none">Section presets</option>
+          <option value="lid-off">Lid off</option>
+          <option value="xray">X-ray enclosure</option>
+          <option value="electronics">Electronics only</option>
+          <option value="wiring">Wiring only</option>
+        </select>
+        <button class="action-btn" id="explodeBtn" title="Explode assembly">Explode</button>
+        <button class="action-btn" id="resetViewBtn" title="Reset camera">Reset view</button>
+        <button class="icon-btn mobile-panel-toggle" id="objectsToggle" aria-label="Toggle object panel">☰</button>
+        <button class="icon-btn mobile-panel-toggle" id="inspectorToggle" aria-label="Toggle inspector">⌁</button>
+      </div>
+    </header>
+
+    <aside class="panel objects-panel" id="objectsPanel">
+      <div class="panel-head">
+        <h2>Objects</h2>
+        <button class="panel-close" data-close="objectsPanel" aria-label="Close objects panel">×</button>
+      </div>
+      <div class="search-row">
+        <input id="objectSearch" type="search" placeholder="Search objects…" autocomplete="off" />
+        <button id="showAllBtn" class="mini-btn" title="Show all">All</button>
+      </div>
+      <div class="state-filter" role="group" aria-label="Apply material state">
+        <button data-bulk-state="solid" class="active">Solid</button>
+        <button data-bulk-state="translucent">Translucent</button>
+        <button data-bulk-state="hidden">Hidden</button>
+      </div>
+      <div id="objectTree" class="object-tree" aria-label="Assembly objects"></div>
+      <div class="legend">
+        <span><i class="swatch solid"></i>Solid</span>
+        <span><i class="swatch translucent"></i>Translucent</span>
+        <span><i class="swatch hidden"></i>Hidden</span>
+      </div>
+    </aside>
+
+    <main class="viewport-shell">
+      <div id="viewport" class="viewport" tabindex="0" aria-label="Interactive three-dimensional assembly viewport"></div>
+      <div class="viewport-hud top-left">
+        <span id="projectionLabel">Perspective</span>
+        <span>mm</span>
+        <span id="routeHealth">Routing 0/0</span>
+      </div>
+      <div class="viewport-hud bottom-left">
+        <span class="axis x">X</span><span class="axis y">Y</span><span class="axis z">Z</span>
+      </div>
+      <div class="viewport-hud bottom-right" id="selectionHud">No object selected</div>
+      <div id="loadingCard" class="loading-card">
+        <div class="spinner"></div>
+        <strong>Building assembly</strong>
+        <span>Generating components, connectors, and routed harnesses…</span>
+      </div>
+    </main>
+
+    <aside class="panel inspector-panel" id="inspectorPanel">
+      <div class="panel-head">
+        <h2>Inspector</h2>
+        <button class="panel-close" data-close="inspectorPanel" aria-label="Close inspector">×</button>
+      </div>
+      <div id="emptyInspector" class="empty-inspector">
+        <div class="empty-cube">◇</div>
+        <strong>Select an object</strong>
+        <span>Click the model or choose a row in Objects.</span>
+      </div>
+      <div id="inspectorContent" class="inspector-content hidden">
+        <section class="selected-heading">
+          <div><span class="eyebrow">Selected object</span><h3 id="selectedName"></h3></div>
+          <span id="selectedStateBadge" class="state-badge">Solid</span>
+        </section>
+
+        <section class="inspector-section">
+          <h4>Transform</h4>
+          <label>Position (mm)</label>
+          <div class="triple-input" id="positionInputs">
+            <span>X<input data-axis="x" type="number" step="1"></span>
+            <span>Y<input data-axis="y" type="number" step="1"></span>
+            <span>Z<input data-axis="z" type="number" step="1"></span>
+          </div>
+          <label>Rotation (deg)</label>
+          <div class="triple-input" id="rotationInputs">
+            <span>X<input data-axis="x" type="number" step="1"></span>
+            <span>Y<input data-axis="y" type="number" step="1"></span>
+            <span>Z<input data-axis="z" type="number" step="1"></span>
+          </div>
+          <div class="button-row">
+            <button id="focusBtn">Focus</button>
+            <button id="resetObjectBtn">Reset object</button>
+          </div>
+        </section>
+
+        <section class="inspector-section">
+          <h4>Dimensions</h4>
+          <dl id="dimensionList" class="property-list"></dl>
+        </section>
+
+        <section class="inspector-section">
+          <h4>Model info</h4>
+          <dl id="modelInfo" class="property-list"></dl>
+        </section>
+
+        <section class="inspector-section">
+          <h4>Connectors / pins</h4>
+          <div id="connectorList" class="connector-list"></div>
+        </section>
+
+        <section class="inspector-section">
+          <h4>Material / appearance</h4>
+          <label for="objectStateSelect">Display state</label>
+          <select id="objectStateSelect" class="select-control full">
+            <option value="solid">Solid</option>
+            <option value="translucent">Translucent</option>
+            <option value="hidden">Hidden</option>
+          </select>
+          <label for="opacityRange">Opacity <output id="opacityOutput">100%</output></label>
+          <input id="opacityRange" type="range" min="5" max="100" value="100" />
+        </section>
+
+        <section class="inspector-section">
+          <h4>Clearance</h4>
+          <div id="collisionState" class="clearance-state ok"><i></i><span>No hard intersections</span></div>
+        </section>
+      </div>
+    </aside>
+
+    <section class="wires-panel" id="wiresPanel">
+      <div class="wires-head">
+        <div><h2>Nets / wires</h2><span id="wireSummary">0 conductors</span></div>
+        <div class="wires-actions">
+          <button id="rerouteBtn">Reroute</button>
+          <button id="toggleLabelsBtn">Labels</button>
+          <button id="collapseWiresBtn" aria-label="Collapse wire table">⌄</button>
+        </div>
+      </div>
+      <div class="wire-table-wrap">
+        <table>
+          <thead><tr><th>Net</th><th>Signal</th><th>Color</th><th>Gauge</th><th>From</th><th>To</th><th>Modeled</th><th>Cut</th><th>Status</th></tr></thead>
+          <tbody id="wireTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="statusbar">
+      <span>Steady Helm v2</span>
+      <span>Enclosure 124.5 × 124.5 × 88.9 mm</span>
+      <span id="statusText">Ready</span>
+    </footer>
+  </div>
+
+  <script type="module" src="./bootstrap.js"></script>
+</body>
+</html>
