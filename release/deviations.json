@@ -1,9 +1,9 @@
 [
   {
-    "id": "deviation:external-adapters-deferred",
+    "id": "deviation:additional-external-adapters-not-selected",
     "severity": "note",
-    "impact": "No live external provider ships in the local-kernel release; demand-selected adapters remain Task 21 and do not weaken local release gates.",
-    "evidenceIds": ["plan:task-21-demand-driven-external-adapters"],
+    "impact": "Task 21 ships the Codex CLI ChatGPT-subscription provider. No additional live external provider or surface adapter was demand-selected; unavailable adapters remain explicit and no release gate is weakened.",
+    "evidenceIds": ["task-report:task-21-codex-cli-subscription-provider"],
     "waivedGateIds": []
   }
 ]

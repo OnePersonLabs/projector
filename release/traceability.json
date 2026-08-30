@@ -22,8 +22,8 @@
       "sourceDigest": "sha256:v1:853e574c24149290add5978408aafa474453271548fc317bce451f9bca7076b9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:899d91c3ec66c9ab7c995bda6a660c381c34c14285a0ad1fb7b7928bdbe92f43"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:77fe77c17bd9f917e53029c27d7e6f2efa2d3fe99fdca264634fbe47e4367b6e"
     },
     {
       "id": "scenario:03:semantic-signature-insufficiency",
@@ -94,8 +94,8 @@
       "sourceDigest": "sha256:v1:853e574c24149290add5978408aafa474453271548fc317bce451f9bca7076b9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:3070a9c8516a4e776f7b39eebdfcd495af09a0119334e1c490871e57734a8032"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:b9f22f576b2d54a74c08f805edd9659c768706eff8bc66d107be76bc92e054c4"
     },
     {
       "id": "scenario:09:governance-cycle-detection",
@@ -154,8 +154,8 @@
       "sourceDigest": "sha256:v1:853e574c24149290add5978408aafa474453271548fc317bce451f9bca7076b9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:436e8a63c00e1f5a7c63d5d41fa97a29e452f37b5a2ea06a7321462059841793"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:f723ee2f4ee3ef36b334f40f27f4003c05583ee2f0362aeaff0f31ab553fc914"
     },
     {
       "id": "scenario:14:model-resampling-idempotence",
@@ -214,8 +214,8 @@
       "sourceDigest": "sha256:v1:853e574c24149290add5978408aafa474453271548fc317bce451f9bca7076b9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:182477e6b33cc8ecefc3921fa78a8eb34c5b988287cc6c750a4bdca353bfaed8"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:a95a70e84d500faba19761fe4ddf24a2e7751074f4554a70d9d28962a3b2b02c"
     },
     {
       "id": "scenario:19:partial-completion-and-plan-rebase",
@@ -226,8 +226,8 @@
       "sourceDigest": "sha256:v1:853e574c24149290add5978408aafa474453271548fc317bce451f9bca7076b9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:624db9dadf5ffb18ecea2cf8b4f1b6388ff90351b065a4f68330e3051bcdd27f"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:70053b7f99955f7ae9753587b2528dd952d9c1996aa92399eab54e398b350bda"
     },
     {
       "id": "scenario:20:localized-cache-performance",
@@ -274,8 +274,8 @@
       "sourceDigest": "sha256:v1:853e574c24149290add5978408aafa474453271548fc317bce451f9bca7076b9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:474d5d85b53a095158b77992a4ad0f9727c8887106db8f34f8ceef09d11429db"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:f1440cabd64d336e23c74a2c3d8096ff1adff6f63a7c8da30355c71857a1ced2"
     },
     {
       "id": "scenario:24:misleading-local-precedent",
@@ -286,8 +286,8 @@
       "sourceDigest": "sha256:v1:853e574c24149290add5978408aafa474453271548fc317bce451f9bca7076b9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:f94582b3b4992ee354aac21d8182f55fd0ffbdaa69c5c92f90addb3fb5eaf96f"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:3db64ea30e7195be964910cb1bedf3814c9c22254111913fc40ea73ce6ba8010"
     },
     {
       "id": "scenario:25:projector-repair-oscillation",
@@ -298,8 +298,8 @@
       "sourceDigest": "sha256:v1:853e574c24149290add5978408aafa474453271548fc317bce451f9bca7076b9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:3504a7e8068e3442c461e029c60352cd5015fc6b323caba1da9976b33b735c10"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:50c01f1939d8faa8e00f03aa1a149378810e719b32d2c512fe6e005056bfc239"
     },
     {
       "id": "scenario:26:held-out-mutation-generated-benchmark",
@@ -310,8 +310,8 @@
       "sourceDigest": "sha256:v1:853e574c24149290add5978408aafa474453271548fc317bce451f9bca7076b9",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:d1b7ffc08a126b57954a1685e9dd3fb820d44a2ab65e8b8ca9e8b4b01fb1bd65"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:255b25b49fc603f5c4193db96ca3a770852f36eed15d4e58f08c3cddaa5cb40d"
     },
     {
       "id": "scenario:27:synonymous-request-reuses-canonical-identity",
@@ -370,8 +370,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:f602aaadfe8bf127314ecdc0fec2bfbc8db036455abf92ce3eba5699a9169449"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:ea0896e317af87cb229dfd26d4f1969a9b981909fee8aaf1d1c3f88bbd53491a"
     },
     {
       "id": "scenario:32:relevance-is-not-impact",
@@ -442,8 +442,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:ae0db75c8d66456f9a8ed8776b07ad45e35d99b2e38c608c3e4d68a562d52df5"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:aa329bdc0d304d904d4c67907ae7e004a9b9d617618a63af9792911d0cd8cf7d"
     },
     {
       "id": "scenario:38:unrelated-canonical-change-does-not-stale-local-work",
@@ -466,8 +466,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:ec6c242ed2b66742fb7d3b80917a5c5dd09fa1c156abfaa1529fcd0a7d9972c1"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:e29f5cdfb7068aa5598646c80fc4756dfe10fa37130211e0f25c4a152445e866"
     },
     {
       "id": "scenario:40:membership-changing-fact-invalidates-context-even-when-loaded-entities-are-unchanged",
@@ -478,8 +478,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:3d73e28095c5b0610bfd726b41972d0158570f27f3018777d42d1c365a7b3217"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:c18322cb03793c37b132925014a5cbd9a553c2e780f30c8986c6e8673baafb67"
     },
     {
       "id": "scenario:41:newly-relevant-semantic-state-invalidates-negative-space-proof",
@@ -490,8 +490,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:4f2d5ec4cf940a3ac5fe464c74b17fef2e9ac83b25d88b0ff92c201b65cd680e"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:a454365f9a686270a75d0bb6277c0709d0fbdc677a6946a40a2b59971be944fe"
     },
     {
       "id": "scenario:42:query-semantics-are-part-of-state-binding",
@@ -634,8 +634,8 @@
       "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:a2ed09c07511812481d3b578b7109ea5c84fd082610330f6dffa90d7ebf1826e"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:059f947ab79941a0ba53ccaa5c61a5be5c3aa7981c7a524c563b33f2463d6a26"
     },
     {
       "id": "scenario:54:compact-context-preserves-critical-tokens-and-avoids-false-compression",
@@ -778,8 +778,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:df8857a01393910445988cde8781511e4308f381b1d0e8e70da1fc168214b6e2"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:6cea347f08f0546f772b4e1133ebc00b8bdaab2d09617393ebb1b9cb854fb5e8"
     },
     {
       "id": "property:05:adding-an-entity-relation-membership-that-changes-a-bound-query-result-invalidates-revalidates-the-binding-even-when-every-previously-returned-entity-hash-is-unchanged",
@@ -826,8 +826,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:2f0e7192969243a3a3ad9bacab4f9fc9dff86daba0e17882c70b4b16b4ed6642"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:236d10c83454dd3b2a6a8fd74da157b1c71fdc51b22b2d56c8f83cc629f1e020"
     },
     {
       "id": "property:09:deterministic-derived-ids-are-stable-across-repeated-indexing",
@@ -838,8 +838,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:c758f56ec9fdfdde558e0fccc132e6e2f1015306fb2b3145c1e86d1ebd3798f0"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:0a30b3b1a5ee3f290f1174d19aaae4f3d01366178349779e6d834883af5c1ebe"
     },
     {
       "id": "property:10:hard-rule-composition-is-order-independent",
@@ -874,8 +874,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:547cf2d9e6a74c7e69e73c0a777667e3bec5de6f438434f0de0df15d3edc16b7"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:d832ca9eb4419299ef16177104f0700c57bb05d5608740c5e675d9669df6e073"
     },
     {
       "id": "property:13:increasing-uncertainty-cannot-lower-approval-risk-requirements",
@@ -886,8 +886,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:0ea8598dc5c316424263f3bccf76c3d6b7f54665ea38809a2a77a7b645684137"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:3ff4b0ba8782a45c1124dc2f192062d066aa6b875ad6efecc4973f49d9a4be52"
     },
     {
       "id": "property:14:idempotent-transforms-converge",
@@ -898,8 +898,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:eca3732239794fd2d8d466de21494751e01321e7f00f5549e2d3be54322fe644"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:56c3304297fe896418c66ea019b8cf08a609715fe18a71ecd7f30f9360eb8f80"
     },
     {
       "id": "property:15:exact-reverse-derivation-dependencies-are-never-lost",
@@ -970,8 +970,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:c6021e4aa0fb710c4f98937d0bc201ff904189bdd91c7a6ceb7b3ddf4dbed46f"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:8f80b70f8638564940f2b1a66e30b0409ed30398cac2a6ed52062a1d87206a6b"
     },
     {
       "id": "property:21:rollback-restores-fixture-supported-physical-and-canonical-state",
@@ -1162,8 +1162,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:81a519b3745a453c4d139aa87167c265e18826470c5c105cd47b28bfdb039b24"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:33f95277f72ce5c8dba3c672efe9e38ba86916ebf7bd351f0b9363be00cdf260"
     },
     {
       "id": "adversary:10:scc-backdating",
@@ -1210,8 +1210,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:4f09d576efe005a2723ec3e7fccda7962d5963af02094cbfb55eb314bbc41d17"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:25e5d369c7fd1489d12b40ea5c880f45769ee90cfd0b6a64013869daaca3d6be"
     },
     {
       "id": "adversary:14:localized-cache-performance",
@@ -1246,8 +1246,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:4fdae544024080198b5166efce56e079a02bf6433c06c8e179182356a3cd28e4"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:d49ff9803aac6cff75354bb9e19be369d337dc42b9befcafacc37725da9d97e9"
     },
     {
       "id": "adversary:17:mutation-generated-near-misses",
@@ -1258,8 +1258,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:abdd60346796d09c04c86a219a122e19c61d32fcf145a87c7e30d56bfa0f67a7"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:43b4b63a62e757b0eac6b629455b5ca64fdb2fb51f868fdebf017ec0c5b008ae"
     },
     {
       "id": "adversary:18:unsupported-analyzer-capability-degradation",
@@ -1294,8 +1294,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:d3d29f791a124950769580ff9a3636a9e039eb14051212f9bdcd0323ed7e957e"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:4c26f96483efdabc2340c90e6321a28ed59553d94c841dd58bcab37d7ecc6914"
     },
     {
       "id": "adversary:21:relevance-over-expansion-returning-effectively-project-wide-context",
@@ -1330,8 +1330,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:7e5f4e567b517c4a7f850ad34bf125da6dd11ec4166767e00d810ae98fe708ff"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:9738246f44ca7db01fad55f9c87dc68b6e6c4ef3cd0f2286f71f50c40543ae56"
     },
     {
       "id": "adversary:24:missing-statebinding-value-dependency-incorrectly-preserving-stale-work",
@@ -1342,8 +1342,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:07ae6e5385e0a7a366204f8162c8ca753194d6bda834976c82e900d48ca5d152"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:862fa8207a73aa511b712b49cb1b1cb3886c27a22bb65b0c1718007707a1c76f"
     },
     {
       "id": "adversary:25:missing-negative-space-query-dependency-incorrectly-preserving-stale-relevance-after-a-newly-matching-entity-edge-appears",
@@ -1378,8 +1378,8 @@
       "sourceDigest": "sha256:v1:7419397f5eb4c45d3dbd199f0f84b595408d64982023445d8f9eb6be4012899c",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/vertical-slice.test.ts#mandatory misplaced repository-script vertical slice",
-      "testSourceDigest": "sha256:v1:15ca24779b68815060684c1b51fb64d29e0c8dddde830b25bff90ee66d2d1bf5",
-      "mappingHash": "sha256:v1:2554c426f450a2e8e5d741708c7d850b71d0fc9e3fc82176b758f43426857ae1"
+      "testSourceDigest": "sha256:v1:96bef1ed86ef3e757f2915281a5dc96382aa77bea2c99d9f68697a64105cf59f",
+      "mappingHash": "sha256:v1:0753a55aa9b6d145c3fbd9ebc3e2c7936457ff3e2059f5a8859a306c6b263127"
     },
     {
       "id": "adversary:28:predicted-versus-observed-impact-surprise-and-relationship-learning",
