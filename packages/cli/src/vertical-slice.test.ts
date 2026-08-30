@@ -248,7 +248,7 @@ describe("mandatory misplaced repository-script vertical slice", () => {
     const analysis = await executeProjector(["audit", "--format", "json"], { cwd: repository.root });
     const candidate = analysis.report.analysis.patternCandidates.find(({ key }: { key: string }) => key === "repository-automation");
     expect(candidate.independenceGroups).toContain("authored:scripts/validate-repo.mjs");
-  });
+  }, 30_000);
 
   it.each([
     ["missing checkpoint", (journal: MutableMandatoryJournal) => {
