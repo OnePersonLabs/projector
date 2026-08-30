@@ -771,8 +771,10 @@ function bindEvents() {
 initScene();
 
 
-focusObject = function focusObjectSafe(id) {
-  const def = state.components.get(id);
+focusObject = function focusObjectSafe(target) {
+  const def = typeof target === 'string'
+    ? state.components.get(target)
+    : [...state.components.values()].find(component => component.root === target);
   if (!def || !def.root || !state.camera || !state.orbit) return;
 
   def.root.updateWorldMatrix(true, true);
