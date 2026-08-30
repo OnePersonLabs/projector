@@ -1,0 +1,221 @@
+name: Package Steady Helm viewer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/package-steady-helm-viewer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out published viewer
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: published
+
+      - name: Install Three.js source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack three@0.171.0
+          mkdir -p vendor
+          tar -xzf three-0.171.0.tgz -C vendor --strip-components=1
+
+      - name: Reconstruct and patch viewer runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import gzip
+
+          root = Path('published/steady-helm-v2')
+          encoded = ''.join(
+              path.read_text(encoding='utf-8').strip()
+              for path in sorted(root.glob('app.js.gz.b64.part.*'))
+          )
+          app = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+
+          focus_override = r'''
+          focusObject = function focusObjectSafe(id) {
+            const def = state.components.get(id);
+            if (!def || !def.root || !state.camera || !state.orbit) return;
+
+            def.root.updateWorldMatrix(true, true);
+            const bounds = new THREE.Box3();
+            const local = new THREE.Box3();
+            const finite = (box) => [
+              box.min.x, box.min.y, box.min.z,
+              box.max.x, box.max.y, box.max.z,
+            ].every(Number.isFinite);
+
+            def.root.traverse((obj) => {
+              if (!(obj.isMesh || obj.isLine || obj.isLineSegments) || !obj.geometry) return;
+              if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+              if (!obj.geometry.boundingBox) return;
+              local.copy(obj.geometry.boundingBox).applyMatrix4(obj.matrixWorld);
+              if (finite(local)) bounds.union(local);
+            });
+
+            if (bounds.isEmpty() || !finite(bounds)) {
+              const fallback = def.root.getWorldPosition(new THREE.Vector3());
+              bounds.setFromCenterAndSize(fallback, new THREE.Vector3(20, 20, 20));
+            }
+
+            const center = bounds.getCenter(new THREE.Vector3());
+            const size = bounds.getSize(new THREE.Vector3());
+            const radius = Math.max(size.length() * 0.55, 18);
+            const direction = state.camera.position.clone().sub(state.orbit.target);
+            if (![direction.x, direction.y, direction.z].every(Number.isFinite) || direction.lengthSq() < 1e-6) {
+              direction.set(1, 0.75, 1);
+            }
+            direction.normalize();
+
+            state.orbit.target.copy(center);
+            state.camera.position.copy(center).addScaledVector(direction, radius * 2.4);
+            if (state.camera.isOrthographicCamera) {
+              state.camera.zoom = THREE.MathUtils.clamp(115 / radius, 0.55, 6);
+            }
+            state.camera.lookAt(center);
+            state.camera.updateProjectionMatrix();
+            state.orbit.update();
+          };
+          '''
+
+          marker = app.rfind('init();')
+          if marker < 0:
+              raise RuntimeError('Could not locate viewer initialization marker')
+          if 'focusObjectSafe' not in app:
+              app = app[:marker] + focus_override + '\n' + app[marker:]
+
+          css_path = root / 'styles.css'
+          css = css_path.read_text(encoding='utf-8')
+          if '.hidden { display: none !important; }' not in css:
+              css += '\n.hidden { display: none !important; }\n'
+          css_path.write_text(css, encoding='utf-8')
+
+          (root / 'app.js').write_text(app, encoding='utf-8')
+
+          packed = gzip.compress(app.encode('utf-8'), compresslevel=9, mtime=0)
+          refreshed = base64.b64encode(packed).decode('ascii')
+          for old in root.glob('app.js.gz.b64.part.*'):
+              old.unlink()
+          for index, offset in enumerate(range(0, len(refreshed), 12000)):
+              (root / f'app.js.gz.b64.part.{index:02d}').write_text(
+                  refreshed[offset:offset + 12000], encoding='utf-8'
+              )
+          PY
+          node --check published/steady-helm-v2/app.js
+          grep -q "Twidec 12 mm waterproof" published/steady-helm-v2/app.js
+          grep -q "focusObjectSafe" published/steady-helm-v2/app.js
+
+      - name: Build zero-network standalone HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import hashlib
+          import json
+          import re
+          import shutil
+
+          site = Path('published/steady-helm-v2')
+          vendor = Path('vendor')
+          out = Path('artifact')
+          out.mkdir(parents=True, exist_ok=True)
+
+          def data_url(source: str) -> str:
+              payload = base64.b64encode(source.encode('utf-8')).decode('ascii')
+              return 'data:text/javascript;base64,' + payload
+
+          core = (vendor / 'build/three.core.min.js').read_text(encoding='utf-8')
+          core_url = data_url(core)
+
+          three = (vendor / 'build/three.module.min.js').read_text(encoding='utf-8')
+          three = three.replace('"./three.core.min.js"', json.dumps(core_url))
+          three = three.replace("'./three.core.min.js'", json.dumps(core_url))
+          three_url = data_url(three)
+
+          addon_paths = {
+              'three/addons/controls/OrbitControls.js': vendor / 'examples/jsm/controls/OrbitControls.js',
+              'three/addons/controls/TransformControls.js': vendor / 'examples/jsm/controls/TransformControls.js',
+              'three/addons/renderers/CSS2DRenderer.js': vendor / 'examples/jsm/renderers/CSS2DRenderer.js',
+          }
+          addon_urls = {}
+          for specifier, path in addon_paths.items():
+              source = path.read_text(encoding='utf-8')
+              source = re.sub(r"from\s+['\"]three['\"]", 'from ' + json.dumps(three_url), source)
+              addon_urls[specifier] = data_url(source)
+
+          app = (site / 'app.js').read_text(encoding='utf-8')
+          app = re.sub(r"from\s+['\"]three['\"]", 'from ' + json.dumps(three_url), app)
+          for specifier, url in addon_urls.items():
+              app = app.replace(json.dumps(specifier), json.dumps(url))
+              app = app.replace("'" + specifier + "'", json.dumps(url))
+          app_url = data_url(app)
+
+          html = (site / 'index.html').read_text(encoding='utf-8')
+          css = (site / 'styles.css').read_text(encoding='utf-8')
+          html = re.sub(r'<script type="importmap">.*?</script>', '', html, flags=re.S)
+          html = html.replace('<link rel="stylesheet" href="./styles.css" />', '<style>' + css + '</style>')
+          html = html.replace('<script type="module" src="./bootstrap.js"></script>', '<script type="module" src="' + app_url + '"></script>')
+
+          standalone = out / 'Steady-Helm-v2-3D-Assembly-Viewer.html'
+          standalone.write_text(html, encoding='utf-8')
+          digest = hashlib.sha256(standalone.read_bytes()).hexdigest()
+          (out / 'Steady-Helm-v2-3D-Assembly-Viewer.sha256').write_text(
+              f'{digest}  {standalone.name}\n', encoding='utf-8'
+          )
+
+          served = out / 'served-site'
+          served.mkdir(exist_ok=True)
+          for name in ['index.html', 'styles.css', 'bootstrap.js', 'app.js']:
+              shutil.copy2(site / name, served / name)
+          for part in site.glob('app.js.gz.b64.part.*'):
+              shutil.copy2(part, served / part.name)
+
+          if standalone.stat().st_size < 1_000_000:
+              raise RuntimeError('Standalone viewer is unexpectedly small')
+          if 'https://' in html or 'http://' in html:
+              raise RuntimeError('Standalone viewer still contains a network dependency')
+          print(f'standalone_bytes={standalone.stat().st_size}')
+          print(f'sha256={digest}')
+          PY
+
+      - name: Publish patched hosted viewer
+        shell: bash
+        working-directory: published
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add steady-helm-v2
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: harden Steady Helm viewer focus and inspector"
+            git push origin HEAD:gh-pages
+          fi
+
+      - name: Create checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          find artifact -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ARTIFACT-SHA256.txt
+
+      - name: Upload viewer package
+        uses: actions/upload-artifact@v4
+        with:
+          name: steady-helm-v2-viewer
+          path: artifact
+          if-no-files-found: error
+          retention-days: 7
