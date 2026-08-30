@@ -91,11 +91,8 @@ jobs:
           };
           '''
 
-          marker = app.rfind('init();')
-          if marker < 0:
-              raise RuntimeError('Could not locate viewer initialization marker')
           if 'focusObjectSafe' not in app:
-              app = app[:marker] + focus_override + '\n' + app[marker:]
+              app += '\n' + focus_override + '\n'
 
           css_path = root / 'styles.css'
           css = css_path.read_text(encoding='utf-8')
