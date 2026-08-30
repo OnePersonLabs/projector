@@ -1,0 +1,68 @@
+name: Patch Steady Helm viewer focus
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/patch-steady-helm-viewer-focus.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out published viewer
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Patch, validate, and repack runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import gzip
+
+          root = Path('steady-helm-v2')
+          parts = sorted(root.glob('app.js.gz.b64.part.*'))
+          encoded = ''.join(path.read_text(encoding='utf-8').strip() for path in parts)
+          app = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+
+          old = "focusObject = function focusObjectSafe(id) {\n  const def = state.components.get(id);"
+          new = "focusObject = function focusObjectSafe(target) {\n  const def = typeof target === 'string'\n    ? state.components.get(target)\n    : [...state.components.values()].find(component => component.root === target);"
+          if old in app:
+              app = app.replace(old, new, 1)
+          elif 'focusObjectSafe(target)' not in app:
+              raise RuntimeError('Expected focus override was not found')
+
+          (root / 'app.js').write_text(app, encoding='utf-8')
+          packed = gzip.compress(app.encode('utf-8'), compresslevel=9, mtime=0)
+          refreshed = base64.b64encode(packed).decode('ascii')
+          for path in parts:
+              path.unlink()
+          for index, offset in enumerate(range(0, len(refreshed), 12000)):
+              (root / f'app.js.gz.b64.part.{index:02d}').write_text(
+                  refreshed[offset:offset + 12000], encoding='utf-8'
+              )
+          PY
+          node --check steady-helm-v2/app.js
+          grep -q "focusObjectSafe(target)" steady-helm-v2/app.js
+          grep -q "Twidec 12 mm waterproof" steady-helm-v2/app.js
+
+      - name: Publish patched viewer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add steady-helm-v2
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: accept object roots in Steady Helm focus control"
+            git push origin HEAD:gh-pages
+          fi
