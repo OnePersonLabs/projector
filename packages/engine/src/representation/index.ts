@@ -741,11 +741,9 @@ export class RepresentationCompiler {
       queryDependencies: input.binding.queryDependencies,
     });
     const content = contentOverride ?? render(source, input.profileKey);
+    // Validate decoded, statement-local literals. Structured profiles escape newlines,
+    // quotes, and backslashes, so raw substring checks would reject exact round trips.
     assertCandidate(source, content, input.profileKey);
-    // Generated renderers originate from the normalized kernel. Literal checks guard accidental renderer loss.
-    for (const literal of source.statements.flatMap(({ protectedLiterals }) => protectedLiterals)) {
-      if (!content.includes(literal)) throw new RepresentationFidelityError("identifier-literal", `renderer dropped protected literal: ${literal}`);
-    }
     const contentHash = hashFramedDomain("representation-artifact", content);
     await this.ports.artifacts.put(contentHash, content);
     const preservation = fingerprint(source, selected);

@@ -132,6 +132,31 @@ describe("semantic representation compilation", () => {
     await expect(compiler.validateCandidate({ source, profileKey: "machine-invariant@1", candidate: rendered! })).resolves.toBeDefined();
   });
 
+  it("preserves escaped literals through structured renderers and compact fallback", async () => {
+    const literals = ["First paragraph.\n\nSecond paragraph.", 'Keep "quoted" meaning.', "C:\\dev\\projector", "one\ttwo\r\nthree", "literal \\n differs from a newline"];
+    const body = { ...sourceBody, statements: [{ ...sourceBody.statements[0]!, protectedLiterals: literals }] };
+    const escapedSource = { ...body, sourceSemanticHash: canonicalSourceHash(body) };
+    const artifacts = new MemoryArtifacts();
+    const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });
+    for (const profileKey of ["machine-invariant@1", "human-technical@1", "behavior-gherkin@1"] as const) {
+      const { projection } = await compiler.compile({ source: escapedSource, binding, profileKey });
+      const candidate = (await artifacts.get(projection.contentHash))!;
+      await expect(compiler.validateCandidate({ source: escapedSource, profileKey, candidate }))
+        .resolves.toMatchObject({ assurance: "exact" });
+    }
+    const { projection, fallback } = await compiler.compileBest({ source: escapedSource, binding, requestedProfileKey: "agent-compact@1" });
+    expect(fallback?.tier).toBe("exact-machine-plus-advisory-compact");
+    const rendered = JSON.parse((await artifacts.get(projection.contentHash))!);
+    expect(rendered.statements[0].literals).toEqual([...literals].sort());
+    for (const altered of [literals.slice(1), [literals[0]!.replaceAll("\n", " "), ...literals.slice(1)]]) {
+      const candidate = JSON.stringify({ ...rendered, statements: [{ ...rendered.statements[0], literals: altered }] });
+      const before = artifacts.values.size;
+      await expect(compiler.compile({ source: escapedSource, binding, profileKey: "machine-invariant@1", candidate }))
+        .rejects.toMatchObject({ dimension: "identifier-literal" });
+      expect(artifacts.values.size).toBe(before);
+    }
+  });
+
   it("derives exact observations by parsing candidate structure rather than comparing bytes", async () => {
     const artifacts = new MemoryArtifacts();
     const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });

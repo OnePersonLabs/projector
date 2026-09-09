@@ -302,8 +302,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/activation/project-activation.test.ts#project activation authority rejects symlink escape at the marker directory",
-      "testSourceDigest": "sha256:v1:c252b20eb90c37c044b613660b9b93a2399fe54d379f576d65959dcb6b5489a2",
-      "mappingHash": "sha256:v1:87a63a63c23437d4908f04a8bd0de88a3907240aa9beb42144157fe4285ccb1d"
+      "testSourceDigest": "sha256:v1:7fef11439e97871d5986826e24cbc2b0dccbb2c5c545780f95b6a9cdae409b18",
+      "mappingHash": "sha256:v1:dfd274cab096709b8ef7206bd54acd1e4e8493fccfae8903ca4d62cd70bdcac5"
     },
     {
       "id": "scenario:26:misleading-local-precedent",
@@ -458,8 +458,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:14e0895489e3770deb61d656ccbdcdfb35d502851f1f315f9772baff009556ba"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:61050a5f3be4e75cd8da84d6fdd0f7dc815725e54be21788fc6f322191dea833"
     },
     {
       "id": "scenario:39:what-why-is-protected-without-where-blindness",
@@ -614,8 +614,8 @@
       "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:caff3d9a31d385c278c731c175d2131157a7c74f5881107f794a6dd81e5eb810"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:2057aafb1993f977e5316b2c6c3e368393bb547484d24356c363cb7f319b5eb4"
     },
     {
       "id": "scenario:52:cross-projection-consistency",
@@ -626,8 +626,8 @@
       "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:1d1edcccdaf8d95d5d9feb4bf33d035f148efad9206a51b57a280e8e8a159907"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:766ddfcf36d93cbc90d5911ca37421405ca18aff72b6c86d1eacc67a4104bb59"
     },
     {
       "id": "scenario:53:net-negative-compact-context-fallback",
@@ -638,8 +638,8 @@
       "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation falls back for measured net-negative compact output but selects compact for measured positive utility",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:88355482e584a15e615dc0ad94ac0b7484c86fb4a06f4848f46047ca63d6149b"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:1c3f53bbda3c3bb1e8926922c0894966df947af82bcceeb6a707e25dadb5dbf5"
     },
     {
       "id": "scenario:54:representation-profile-invalidation",
@@ -674,8 +674,8 @@
       "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation accepts the exact machine kernel and preserves every protected literal",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:ac3cb2b6b6425bf62ad2630d94b10d8aeffce8e6b0168442fbc179a63485ccac"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:7edc1134c04b9997b7cc16cd4e559f0409c997c4b35ecd566357bb3767d9c2e7"
     },
     {
       "id": "scenario:57:architecture-expansion-web-app-cross-platform-product",
@@ -1058,8 +1058,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:2488d0b0b5864eab503c0ee773083bbf4fe56034a9664de57f879c76ef63af5a"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:cc51f309175103de00779c3e2481e6e3d5574565672995a263b4940cc2b552cd"
     },
     {
       "id": "property:26:reducing-text-token-count-cannot-strengthen-a-fidelity-completion-claim",
@@ -1070,8 +1070,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation selects compact by measured net instruction efficiency and falls back when compact fidelity is unsafe",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:20a224b49526d2f57dda7295923013f6251eb8a1984f2e91aa40ec688a4edc2c"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:4de7fe06a36b4d1b722db314b953aa7c9231f5ad04cafa38abab32e14894fdd2"
     },
     {
       "id": "property:27:profile-selection-is-deterministic-for-fixed-inputs-tokenizer-profile-policy-and-measured-cost-model",
@@ -1082,8 +1082,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation selects compact by measured net instruction efficiency and falls back when compact fidelity is unsafe",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:c3e385653b24900e860398479a24de37b831c5aae92b415473e077a42e34064b"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:35641226d22db4bb3be022ce4a904bc6b42c00ed7b795a881e0a9864276a021f"
     },
     {
       "id": "adversary:01:canonical-rebuild-closure",
@@ -1430,8 +1430,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:5ab3b83658cba683e35405525de6092935e27ce180aa8d76eddbb6405786fbb0"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:8d04dbc581b7be070dcd9aa571a6ebbe323e18ce89fec5b90852d3923d94f98e"
     },
     {
       "id": "adversary:30:token-compression-that-passes-style-lint-while-changing-semantics",
@@ -1442,8 +1442,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation keeps style lint separate from semantic truth and reports blocking mechanics deterministically",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:f7a27b751d19359f596e79fd8a6eceb17e18580fa01cd8e7f811c803c0c460d2"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:1eb089bbe9b8ba70018dc799e17e2514bc50e382316a16badad2b48fd9ceeb3a"
     },
     {
       "id": "adversary:31:net-negative-representation-overhead-and-fallback-selection",
@@ -1454,8 +1454,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation falls back for measured net-negative compact output but selects compact for measured positive utility",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:06d240c5c4dffcbb0563433418c742d8d7272992eff3a612637616436f40375f"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:0f6e5d738ceb7d59a3c1f3097470e55d6cc9cfdf3e5e90b4689e7295d03772f7"
     },
     {
       "id": "adversary:32:human-agent-machine-gherkin-projections-with-different-text-but-one-canonical-semantic-source",
@@ -1466,8 +1466,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port",
-      "testSourceDigest": "sha256:v1:98734ee7693acdb1577c6aa7500989809c81ba2e1877c91adc7e3e0aa722035d",
-      "mappingHash": "sha256:v1:6116009e23f71d28a81ffb49ea0cc2602731dec065aa54c9d874db660e79510b"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:a4ad3741ee08d5502ec591fbde7f2a663d25517b2bec22d8c566f0d3398bc1b0"
     },
     {
       "id": "adversary:33:installed-source-severed-lifecycle-interruption-recovery-and-identity-continuity",
