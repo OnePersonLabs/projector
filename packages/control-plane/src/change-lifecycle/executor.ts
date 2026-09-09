@@ -202,8 +202,10 @@ interface RepositoryPostObservation {
     readonly matches: boolean;
   }[];
   readonly unitStates: readonly { readonly unitId: string; readonly state: "valid" | "removed" | "exception" }[];
+  readonly changedConceptIds: readonly string[];
   readonly changedRequirementIds: readonly string[];
   readonly changedScenarioIds: readonly string[];
+  readonly changedRelationIds: readonly string[];
   readonly predictedChangedPaths: readonly string[];
   readonly observedChangedPaths: readonly string[];
   readonly observedChangedCanonicalIds: readonly string[];
@@ -264,12 +266,13 @@ async function observeAppliedRepositoryChange(
         : "exception" as const;
     })(),
   }));
-  const changedRequirementIds = compiled.canonicalWrites.filter(({ id, kind, envelope }) => kind === "requirement"
+  const changedCanonicalIdsForKind = (expectedKind: typeof compiled.canonicalWrites[number]["kind"]): string[] => compiled.canonicalWrites.filter(({ id, kind, envelope }) => kind === expectedKind
     && observedChangedCanonicalIds.includes(id)
     && canonicalJson(observation.canonical.documents.find((document) => document.id === id)) === canonicalJson(envelope)).map(({ id }) => id).sort();
-  const changedScenarioIds = compiled.canonicalWrites.filter(({ id, kind, envelope }) => kind === "behavioral-scenario"
-    && observedChangedCanonicalIds.includes(id)
-    && canonicalJson(observation.canonical.documents.find((document) => document.id === id)) === canonicalJson(envelope)).map(({ id }) => id).sort();
+  const changedConceptIds = changedCanonicalIdsForKind("concept");
+  const changedRequirementIds = changedCanonicalIdsForKind("requirement");
+  const changedScenarioIds = changedCanonicalIdsForKind("behavioral-scenario");
+  const changedRelationIds = changedCanonicalIdsForKind("relation");
   const baselineFailures = new Set(compiled.baselineObservation.analyzerFailures.map((failure) => canonicalJson(failure)));
   const newAnalyzerFailures = observation.analysis.failures.map(({ analyzerId, capability, scope, message, affectedClaimKinds }) => ({ analyzerId, capability, scope, message, affectedClaimKinds: [...affectedClaimKinds].sort() }))
     .filter((failure) => !baselineFailures.has(canonicalJson(failure)))
@@ -286,8 +289,10 @@ async function observeAppliedRepositoryChange(
     unitStates,
     baselineObservationHash: compiled.baselineObservation.contentHash,
     canonicalRootDigest: observation.canonical.rootDigest,
+    changedConceptIds,
     changedRequirementIds,
     changedScenarioIds,
+    changedRelationIds,
     predictedChangedPaths,
     observedChangedPaths,
     observedChangedCanonicalIds,
@@ -304,8 +309,10 @@ async function observeAppliedRepositoryChange(
     afterState: observation.state,
     exactWrites,
     unitStates,
+    changedConceptIds,
     changedRequirementIds,
     changedScenarioIds,
+    changedRelationIds,
     predictedChangedPaths,
     observedChangedPaths,
     observedChangedCanonicalIds,
@@ -561,8 +568,10 @@ export async function executeCompiledRepositoryChange(
       },
     },
     changedCanonicalEntityIds: () => input.compiled.canonicalWrites.map(({ id }) => id),
+    changedConceptIds: () => postObservation?.changedConceptIds ?? [],
     changedRequirementIds: () => postObservation?.changedRequirementIds ?? [],
     changedScenarioIds: () => postObservation?.changedScenarioIds ?? [],
+    changedRelationIds: () => postObservation?.changedRelationIds ?? [],
     planningSurpriseIds: () => postObservation?.planningSurpriseIds ?? [],
     environment: { repositoryRoot: input.repositoryRoot, signal: input.signal },
     ...(input.now === undefined ? {} : { now: input.now }),

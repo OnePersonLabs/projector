@@ -189,8 +189,10 @@ export interface StateBoundChangeExecutorOptions<TInput> {
   successDurability?: StateBoundSuccessDurabilityPort;
   /** Resolves canonical entity IDs from the approved transform result for receipt provenance. */
   changedCanonicalEntityIds?: (result: TransformResult) => readonly string[];
+  changedConceptIds?: (result: TransformResult) => readonly string[];
   changedRequirementIds?: (result: TransformResult) => readonly string[];
   changedScenarioIds?: (result: TransformResult) => readonly string[];
+  changedRelationIds?: (result: TransformResult) => readonly string[];
   planningSurpriseIds?: (result: TransformResult) => readonly string[];
   environment: {
     readonly repositoryRoot: string;
@@ -338,8 +340,10 @@ export class StateBoundChangeExecutor<TInput> {
   private readonly completion: CompletionAssessmentPort;
   private readonly successDurability: StateBoundSuccessDurabilityPort | undefined;
   private readonly changedCanonicalEntityIds: (result: TransformResult) => readonly string[];
+  private readonly changedConceptIds: (result: TransformResult) => readonly string[];
   private readonly changedRequirementIds: (result: TransformResult) => readonly string[];
   private readonly changedScenarioIds: (result: TransformResult) => readonly string[];
+  private readonly changedRelationIds: (result: TransformResult) => readonly string[];
   private readonly planningSurpriseIds: (result: TransformResult) => readonly string[];
   private readonly environment: Readonly<{ repositoryRoot: string; signal: AbortSignal }>;
   private readonly now: () => string;
@@ -353,8 +357,10 @@ export class StateBoundChangeExecutor<TInput> {
     this.completion = options.completion;
     this.successDurability = options.successDurability;
     this.changedCanonicalEntityIds = options.changedCanonicalEntityIds ?? (() => []);
+    this.changedConceptIds = options.changedConceptIds ?? (() => []);
     this.changedRequirementIds = options.changedRequirementIds ?? (() => []);
     this.changedScenarioIds = options.changedScenarioIds ?? (() => []);
+    this.changedRelationIds = options.changedRelationIds ?? (() => []);
     this.planningSurpriseIds = options.planningSurpriseIds ?? (() => []);
     if (options.environment.repositoryRoot.length === 0) throw new TypeError("execution repository root cannot be blank");
     this.environment = Object.freeze({
@@ -499,8 +505,10 @@ export class StateBoundChangeExecutor<TInput> {
         validations: attempt.validations,
         completionAssessment: attempt.completionAssessment,
         changedCanonicalEntityIds: this.changedCanonicalEntityIds(attempt.result),
+        changedConceptIds: this.changedConceptIds(attempt.result),
         changedRequirementIds: this.changedRequirementIds(attempt.result),
         changedScenarioIds: this.changedScenarioIds(attempt.result),
+        changedRelationIds: this.changedRelationIds(attempt.result),
         planningSurpriseIds: this.planningSurpriseIds(attempt.result),
         createdAt: this.now(),
       });
@@ -543,6 +551,10 @@ export class StateBoundChangeExecutor<TInput> {
     const createdAt = this.now();
     const operations = attempt.result?.operations ?? [];
     const changedUnits = sortedUnique(attempt.result?.touchedUnitIds ?? []);
+    const changedConceptIds = attempt.result === undefined ? [] : sortedUnique(this.changedConceptIds(attempt.result).filter((id) => changedUnits.includes(id)));
+    const changedRequirementIds = attempt.result === undefined ? [] : sortedUnique(this.changedRequirementIds(attempt.result).filter((id) => changedUnits.includes(id)));
+    const changedScenarioIds = attempt.result === undefined ? [] : sortedUnique(this.changedScenarioIds(attempt.result).filter((id) => changedUnits.includes(id)));
+    const changedRelationIds = attempt.result === undefined ? [] : sortedUnique(this.changedRelationIds(attempt.result).filter((id) => changedUnits.includes(id)));
     const transactionPhase = attempt.transaction?.phase ?? "not-started";
     const rollbackSucceeded = transactionPhase === "rolled-back";
     const recoveryState = outcome === "success" || transactionPhase === "not-started" || transactionPhase === "committed"
@@ -553,10 +565,10 @@ export class StateBoundChangeExecutor<TInput> {
       planId: input.plan.id,
       beforeState: structuredClone(beforeState),
       afterState: structuredClone(afterState),
-      changedConcepts: [],
-      changedRequirements: attempt.result === undefined ? [] : sortedUnique(this.changedRequirementIds(attempt.result)),
-      changedScenarios: attempt.result === undefined ? [] : sortedUnique(this.changedScenarioIds(attempt.result)),
-      changedRelations: [],
+      changedConcepts: changedConceptIds,
+      changedRequirements: changedRequirementIds,
+      changedScenarios: changedScenarioIds,
+      changedRelations: changedRelationIds,
       changedUnits,
       planningSurpriseIds: attempt.result === undefined ? [] : sortedUnique(this.planningSurpriseIds(attempt.result)),
       deterministicOperations: structuredClone(operations),
@@ -596,12 +608,6 @@ export class StateBoundChangeExecutor<TInput> {
     const validationSummaryHash = hashFramedDomain("validation-summary", certificate.validations);
     const changedCanonicalEntityIds = attempt.result === undefined ? [] : sortedUnique(
       this.changedCanonicalEntityIds(attempt.result).filter((id) => changedUnits.includes(id)),
-    );
-    const changedRequirementIds = attempt.result === undefined ? [] : sortedUnique(
-      this.changedRequirementIds(attempt.result).filter((id) => changedUnits.includes(id)),
-    );
-    const changedScenarioIds = attempt.result === undefined ? [] : sortedUnique(
-      this.changedScenarioIds(attempt.result).filter((id) => changedUnits.includes(id)),
     );
     const receiptWithoutHash: Omit<TransactionReceipt, "semanticHash"> = {
       id: `receipt:${input.plan.id}:${input.approval.id}`,
@@ -650,8 +656,10 @@ export interface CreatePreparedStateBoundChangeSuccessInput {
   readonly validations: readonly ValidationResult[];
   readonly completionAssessment: CompletionAssessment;
   readonly changedCanonicalEntityIds: readonly string[];
+  readonly changedConceptIds?: readonly string[];
   readonly changedRequirementIds: readonly string[];
   readonly changedScenarioIds: readonly string[];
+  readonly changedRelationIds?: readonly string[];
   readonly planningSurpriseIds: readonly string[];
   readonly createdAt: string;
 }
@@ -670,8 +678,10 @@ function preparedSuccessIdentityHash(input: {
   readonly validations: readonly ValidationResult[];
   readonly completionAssessment: CompletionAssessment;
   readonly changedCanonicalEntityIds: readonly string[];
+  readonly changedConceptIds?: readonly string[];
   readonly changedRequirementIds: readonly string[];
   readonly changedScenarioIds: readonly string[];
+  readonly changedRelationIds?: readonly string[];
   readonly planningSurpriseIds: readonly string[];
 }): ContentHash {
   return hashFramedDomain("state-bound-success-preparation-identity", input);
@@ -682,8 +692,10 @@ export function createPreparedStateBoundChangeSuccess(
 ): PreparedStateBoundChangeSuccess {
   const changedUnits = sortedUnique(input.transformResult.touchedUnitIds);
   const changedCanonicalEntityIds = sortedUnique(input.changedCanonicalEntityIds.filter((id) => changedUnits.includes(id)));
+  const changedConceptIds = sortedUnique((input.changedConceptIds ?? []).filter((id) => changedUnits.includes(id)));
   const changedRequirementIds = sortedUnique(input.changedRequirementIds.filter((id) => changedUnits.includes(id)));
   const changedScenarioIds = sortedUnique(input.changedScenarioIds.filter((id) => changedUnits.includes(id)));
+  const changedRelationIds = sortedUnique((input.changedRelationIds ?? []).filter((id) => changedUnits.includes(id)));
   const validations = normalizeValidations(input.validations);
   const completionAssessment = normalizeCompletionAssessment(input.completionAssessment);
   const preparationIdentityHash = preparedSuccessIdentityHash({
@@ -696,8 +708,10 @@ export function createPreparedStateBoundChangeSuccess(
     validations,
     completionAssessment,
     changedCanonicalEntityIds,
+    ...(changedConceptIds.length === 0 ? {} : { changedConceptIds }),
     changedRequirementIds,
     changedScenarioIds,
+    ...(changedRelationIds.length === 0 ? {} : { changedRelationIds }),
     planningSurpriseIds: sortedUnique(input.planningSurpriseIds),
   });
   const preparationId = `prepared_success_${preparationIdentityHash.slice(-32)}`;
@@ -707,10 +721,10 @@ export function createPreparedStateBoundChangeSuccess(
     planId: input.plan.id,
     beforeState: structuredClone(input.beforeState),
     afterState: structuredClone(input.afterState),
-    changedConcepts: [],
+    changedConcepts: changedConceptIds,
     changedRequirements: changedRequirementIds,
     changedScenarios: changedScenarioIds,
-    changedRelations: [],
+    changedRelations: changedRelationIds,
     changedUnits,
     planningSurpriseIds: sortedUnique(input.planningSurpriseIds),
     deterministicOperations: structuredClone(input.transformResult.operations),
@@ -786,8 +800,10 @@ export function authenticatePreparedStateBoundChangeSuccess(
     validations: success.validations,
     completionAssessment: success.completionAssessment,
     changedCanonicalEntityIds: success.receipt.changedCanonicalEntityIds,
+    ...(success.certificateArtifact.certificate.changedConcepts.length === 0 ? {} : { changedConceptIds: success.certificateArtifact.certificate.changedConcepts }),
     changedRequirementIds: success.receipt.changedRequirementIds,
     changedScenarioIds: success.receipt.changedScenarioIds,
+    ...(success.certificateArtifact.certificate.changedRelations.length === 0 ? {} : { changedRelationIds: success.certificateArtifact.certificate.changedRelations }),
     planningSurpriseIds: success.certificateArtifact.certificate.planningSurpriseIds,
   }).slice(-32)}`;
   if (success.version !== 1

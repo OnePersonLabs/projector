@@ -38,6 +38,7 @@ const modelProposal = () => ({
   canonicalMutations: [
     { kind: "concept", operation: "add", expectedAbsent: true, rationale: "Record the future clock boundary before implementation.", payload: { id: "concept:clock", key: "clock", kind: "invariant", name: "Clock boundary", aliases: [], statement: "All domain time enters through the clock port.", status: "active", sourceClass: "authored", confidence: 1, tags: ["time"], evidence: [] } },
     { kind: "concept", operation: "add", expectedAbsent: true, rationale: "Record producer ownership before implementation.", payload: { id: "concept:time-producer", key: "time-producer", kind: "ownership", name: "Time producer", aliases: [], statement: "The domain owns production of time values.", status: "active", sourceClass: "authored", confidence: 1, tags: ["time"], evidence: [] } },
+    { kind: "relation", operation: "add", expectedAbsent: true, rationale: "Connect the clock boundary to its producer ownership meaning.", payload: { id: "relation:clock-time-producer", fromId: "concept:clock", toId: "concept:time-producer", type: "depends-on", active: true, sourceClass: "authored", confidence: 1, evidence: [] } },
   ],
 });
 
@@ -81,6 +82,10 @@ describe("repository change lifecycle service", () => {
       const stored = await new CanonicalFileRepository(root).read("concept", "concept:clock");
       expect(stored?.payload).toMatchObject({ statement: "All domain time enters through the clock port.", status: "active" });
       expect((await new CanonicalFileRepository(root).read("concept", "concept:time-producer"))?.payload).toMatchObject({ status: "active" });
+      expect((await new CanonicalFileRepository(root).read("relation", "relation:clock-time-producer"))?.payload).toMatchObject({ fromId: "concept:clock", toId: "concept:time-producer" });
+      expect(result.certificate.changedConcepts).toEqual(["concept:clock", "concept:time-producer"]);
+      expect(result.certificate.changedRelations).toEqual(["relation:clock-time-producer"]);
+      expect(result.receipt.changedCanonicalEntityIds).toEqual(["concept:clock", "concept:time-producer", "relation:clock-time-producer"]);
       expect(result.validations.map(({ validatorId }) => validatorId)).toContain("projector.canonical-model-integrity");
       expect(result.validations.map(({ validatorId }) => validatorId)).not.toContain("projector.post-change-knowledge");
     } finally { await rm(root, { recursive: true, force: true }); }
