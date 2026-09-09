@@ -114,8 +114,12 @@ export async function initializeProjectActivation(repositoryRoot: string): Promi
       if (raced.status !== "enabled") throw new Error(raced.reason);
       return { config: raced.config, created: false };
     }
-    const directoryHandle = await open(dirname(target), constants.O_RDONLY);
-    try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
+    // The marker file is flushed above. Node does not support flushing a
+    // directory handle on Windows; POSIX additionally flushes the new entry.
+    if (process.platform !== "win32") {
+      const directoryHandle = await open(dirname(target), constants.O_RDONLY);
+      try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
+    }
     return { config: defaultProjectorConfig, created: true };
   } finally {
     if (handle !== undefined) await handle.close();

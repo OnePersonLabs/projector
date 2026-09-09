@@ -5,12 +5,14 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { hashFramedDomain, withCanonicalHashes, type Requirement } from "@projector/core";
+import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type Requirement } from "@projector/core";
+import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository, FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
 import { RepositoryChangeLifecycleService } from "./service.js";
 import { ChangeLifecycleStore } from "./store.js";
+import { RepositoryKnowledgeService } from "../knowledge/service.js";
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "placeholder");
@@ -47,6 +49,15 @@ async function repository(): Promise<string> {
   return root;
 }
 
+function authority(id: string, subjectId: string): AuthorityRecord {
+  return {
+    id, key: id, subjectId, status: "approved", conclusion: "normalize", rationale: "test governance", alternatives: [], assumptions: [],
+    reconsiderWhen: [{ type: "manual-review" }],
+    vector: { explicitDecisionAlignment: 1, productConstraintFit: 1, semanticFit: 1, independentOccurrence: 1, historicalStability: 1, independentValidationSupport: 1, boundaryCoherence: 1, maintenanceOutcome: 1, platformCompatibility: 1, externalRationale: 0, ecosystemHealth: 0, securitySupport: 0, reversibility: 1, migrationCost: 0, counterEvidence: 0 },
+    assessmentConfidence: "high", evidence: [], governanceRiskClass: "R1", decidedBy: "user", createdAt: "2026-09-09T00:00:00.000Z", semanticHash: placeholder,
+  };
+}
+
 describe("repository change lifecycle service", () => {
   it("captures, replans, and approves only the exact human-presented plan hash", async () => {
     const root = await repository();
@@ -61,6 +72,136 @@ describe("repository change lifecycle service", () => {
       expect(approved.semanticChangeId).toBe(captured.capture.semanticChangeId);
       expect(approved.approvals).toHaveLength(1);
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("durably binds one reconciled knowledge context through capture, plan, and approval", async () => {
+    const root = await repository();
+    try {
+      const knowledge = await RepositoryKnowledgeService.create(root);
+      const context = await knowledge.context({ request: "change greeting safely", namedTargets: ["src/greeting.mjs"] });
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const captured = await service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal(), knowledgeContextId: context.id });
+      const planned = await service.plan(captured.capture.semanticChangeId);
+      const approved = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+
+      expect(captured.capture.knowledgeContextId).toBe(context.id);
+      expect(planned.capture.knowledgeContextId).toBe(context.id);
+      expect(approved.knowledgeContextId).toBe(context.id);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rejects unresolved knowledge before capture and when replanning an authenticated retained capture", async () => {
+    const root = await repository();
+    try {
+      const unresolved = await (await RepositoryKnowledgeService.create(root)).context({ request: "meaning-that-does-not-exist-anywhere" });
+      expect(unresolved.interpretation.status).toBe("unresolved");
+      expect(unresolved.branches).toHaveLength(0);
+      const service = await RepositoryChangeLifecycleService.create(root);
+
+      await expect(service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal(), knowledgeContextId: unresolved.id }))
+        .rejects.toThrow(/no direct, accepted, usable interpretation branch/iu);
+      expect(await readdir(join(root, ".projector", "runtime", "change-lifecycles", "captures")).catch(() => [])).toHaveLength(0);
+
+      const baseline = await service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal() });
+      await rm(join(root, ".projector", "runtime", "change-lifecycles", "captures"), { recursive: true, force: true });
+      const store = await ChangeLifecycleStore.create(root);
+      await store.capture({
+        request: baseline.capture.request,
+        proposal: baseline.capture.proposal,
+        proposalHash: baseline.capture.proposalHash,
+        semanticChangeId: baseline.capture.semanticChangeId,
+        plan: baseline.capture.plan,
+        capsules: baseline.capture.capsules,
+        exactPatchInputHash: baseline.capture.exactPatchInputHash,
+        knowledgeContextId: unresolved.id,
+      });
+      await expect(service.plan(baseline.capture.semanticChangeId)).rejects.toThrow(/no direct, accepted, usable interpretation branch/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rejects a direct decision context whose referenced authority is ineligible", async () => {
+    for (const variant of ["rejected", "provisional", "wrong-subject"] as const) {
+      const root = await repository();
+      try {
+        const canonical = new CanonicalFileRepository(root);
+        const authorityRecord: AuthorityRecord = {
+          ...authority("authority:decision", variant === "wrong-subject" ? "concern:other" : "concern:change"),
+          status: variant === "provisional" ? "provisional" : variant === "rejected" ? "rejected" : "approved",
+        };
+        const decision: ArchitectureDecision = {
+          id: "decision:change", key: "change", concernId: "concern:change", title: "Change strategy",
+          decision: "Use the selected change strategy.", selectedOptionKey: "selected",
+          scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, lifecycle: "active",
+          authorityRecordId: authorityRecord.id, governanceBasis: [], consequences: [], appliedPreferences: [], supersedesDecisionIds: [], semanticHash: placeholder,
+        };
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "authority-record", id: authorityRecord.id, key: authorityRecord.key, lifecycle: authorityRecord.status, payload: { ...authorityRecord } }));
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "architecture-decision", id: decision.id, key: decision.key, lifecycle: decision.lifecycle, payload: { ...decision } }));
+        const context = await (await RepositoryKnowledgeService.create(root)).context({ request: "use decision", entities: [decision.id] });
+        const service = await RepositoryChangeLifecycleService.create(root);
+
+        await expect(service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal(), knowledgeContextId: context.id }))
+          .rejects.toThrow(/knowledge context governance is unknown.*referenced authority/iu);
+      } finally { await rm(root, { recursive: true, force: true }); }
+    }
+  });
+
+  it("rejects stale knowledge before replanning or starting a new apply attempt", async () => {
+    const root = await repository();
+    try {
+      const context = await (await RepositoryKnowledgeService.create(root)).context({ request: "preserve callers", namedTargets: ["src/index.mjs"] });
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal(), knowledgeContextId: context.id });
+      const approved = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      await writeFile(join(root, "src", "index.mjs"), "export const changedElsewhere = true;\n");
+
+      await expect(service.plan(captured.capture.semanticChangeId)).rejects.toThrow(/knowledge context binding is stale/iu);
+      await expect(service.approve(captured.capture.semanticChangeId, captured.capture.planHash)).rejects.toThrow(/knowledge context binding is stale/iu);
+      await expect(service.apply(approved.id)).rejects.toThrow(/knowledge context binding is stale/iu);
+      expect(await readdir(join(root, ".projector", "runtime", "journal")).catch(() => [])).toHaveLength(0);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("allows rollback recovery even when retained knowledge became stale", async () => {
+    const root = await repository();
+    try {
+      const context = await (await RepositoryKnowledgeService.create(root)).context({ request: "preserve callers", namedTargets: ["src/index.mjs"] });
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal(), knowledgeContextId: context.id });
+      const approved = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const store = await ChangeLifecycleStore.create(root, { newId: () => "knowledge-recovery" });
+      const attempt = await store.beginAttempt(approved.id);
+      const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
+      const transaction = await journal.begin({ transactionId: attempt.transactionId, planId: captured.capture.planId, beforeState: captured.capture.stateBinding.compiledAgainst, allowedWriteRoots: ["src/greeting.mjs"] });
+      await transaction.writeFile("src/greeting.mjs", "export const greet = () => 'interrupted';\n");
+      await writeFile(join(root, "src", "index.mjs"), "export const changedElsewhere = true;\n");
+
+      expect(await service.recover(approved.id)).toEqual([expect.objectContaining({ action: "rolled-back" })]);
+      expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toBe("export const greet = () => 'hello';\n");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rejects violated or unavailable lens governance before capture", async () => {
+    for (const invalidAuthority of [false, true]) {
+      const root = await repository();
+      try {
+        const canonical = new CanonicalFileRepository(root);
+        const authorityRecord = authority("authority:greeting-placement", "lens:greeting-placement");
+        const lens = createRepositoryScriptLens({
+          id: "lens:greeting-placement",
+          status: "active",
+          authorityRecordId: invalidAuthority ? "authority:missing" : authorityRecord.id,
+          selector: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" },
+          governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:repository-layout" }],
+        });
+        if (!invalidAuthority) await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "authority-record", id: authorityRecord.id, key: authorityRecord.key, lifecycle: authorityRecord.status, payload: { ...authorityRecord } }));
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "projection-lens", id: lens.id, key: lens.key, lifecycle: lens.status, payload: { ...lens } }));
+        const context = await (await RepositoryKnowledgeService.create(root)).context({ request: "change greeting", namedTargets: ["src/greeting.mjs"] });
+        const service = await RepositoryChangeLifecycleService.create(root);
+
+        await expect(service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal(), knowledgeContextId: context.id }))
+          .rejects.toThrow(invalidAuthority ? /binding is unavailable|governance is unknown/iu : /governance is violated/iu);
+      } finally { await rm(root, { recursive: true, force: true }); }
+    }
   });
 
   it("refuses approval after governed state drifts and leaves no stale approval", async () => {
@@ -357,7 +498,10 @@ describe("repository change lifecycle service", () => {
       await writeFile(join(root, ".projector", "runtime", "cancellation-hold"), "hold\n");
       const controller = new AbortController();
       const applying = service.apply(approval.id, { signal: controller.signal });
-      await waitForValidatingTransaction(root);
+      await Promise.race([
+        waitForValidatingTransaction(root),
+        applying.then(() => { throw new Error("apply completed before the cancellation fixture reached validation"); }),
+      ]);
       controller.abort();
       const result = await applying;
       expect(result.outcome).toBe("partial");

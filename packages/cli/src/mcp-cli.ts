@@ -1,10 +1,11 @@
 import { analyzeLocalRepository } from "@projector/analyzers";
 import { createProjectorMcpServer, loadAuthenticatedRepositorySession, PROJECTOR_MCP_TOOL_CATALOG, type JsonRpcRequest, type ProjectorMcpDependencies, type SessionRepresentationAuthentication } from "@projector/integrations";
 import { inspectProjectActivation } from "@projector/runtime";
+import { defaultKnowledgeCliPort, presentKnowledgeContext, presentKnowledgeReconciliation, type RepositoryKnowledgeCliPort } from "./knowledge-cli.js";
 
 export interface BuiltMcpLifecycle { readonly status: "ready"; readonly tools: readonly string[]; readonly capabilityToken?: string; readonly transport: { handle(request: JsonRpcRequest): Promise<unknown> } }
 
-export function createBuiltMcpCliPort(dependencies: { readonly analyze?: typeof analyzeLocalRepository; readonly inspectActivation?: typeof inspectProjectActivation } = {}) {
+export function createBuiltMcpCliPort(dependencies: { readonly analyze?: typeof analyzeLocalRepository; readonly inspectActivation?: typeof inspectProjectActivation; readonly knowledge?: RepositoryKnowledgeCliPort } = {}) {
   return { async start(request: { readonly repositoryRoot: string; readonly signal: AbortSignal; readonly sessionSelector?: string }): Promise<BuiltMcpLifecycle> {
     const activation = await (dependencies.inspectActivation ?? inspectProjectActivation)(request.repositoryRoot);
     const enabled = activation.status === "enabled";
@@ -17,6 +18,19 @@ export function createBuiltMcpCliPort(dependencies: { readonly analyze?: typeof 
       ? { ...tool, operational: true }
       : { ...tool, operational: false, reason: (tool.name === "projector.preview_representation" || tool.name === "projector.validate_representation") ? representationUnavailableReason : "no production handler is registered" });
     const read: Record<string, ProjectorMcpDependencies["read"][string]> = {
+      "projector.context": async (input) => {
+        if (!enabled) return { status: "unavailable", reason: activation.reason };
+        if (Object.keys(input).some(key => key !== "request" && key !== "entities")) throw new Error("context accepts only request and optional entities");
+        if (typeof input.request !== "string" || input.request.trim() === "" || input.request.includes("\0")) throw new Error("context requires a safe nonblank request");
+        if (input.entities !== undefined && (!Array.isArray(input.entities) || input.entities.some(value => typeof value !== "string" || value.trim() === "" || value.includes("\0")))) throw new Error("entities must be nonblank identities");
+        return presentKnowledgeContext(await (dependencies.knowledge ?? defaultKnowledgeCliPort()).context({ repositoryRoot, request: input.request,
+          ...(input.entities === undefined ? {} : { entities: input.entities as string[] }), persist: false, signal: request.signal }));
+      },
+      "projector.validate": async (input) => {
+        if (!enabled) return { status: "unavailable", reason: activation.reason };
+        if (Object.keys(input).some(key => key !== "contextId") || typeof input.contextId !== "string" || !/^[a-z0-9][a-z0-9._:-]*$/iu.test(input.contextId)) throw new Error("validate requires a saved contextId");
+        return presentKnowledgeReconciliation(await (dependencies.knowledge ?? defaultKnowledgeCliPort()).reconcile({ repositoryRoot, contextId: input.contextId, signal: request.signal }));
+      },
       "projector.audit": async () => {
         if (!enabled) return { status: "unavailable", reason: activation.reason };
         const analysis = await (dependencies.analyze ?? analyzeLocalRepository)({ repositoryRoot }); return { status: "ok", failures: analysis.failures };

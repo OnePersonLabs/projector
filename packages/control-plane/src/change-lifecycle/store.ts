@@ -47,6 +47,7 @@ export interface LifecycleCaptureInput {
   readonly plan: ExecutionPlan;
   readonly capsules: readonly ExecutionCapsule[];
   readonly exactPatchInputHash: ContentHash;
+  readonly knowledgeContextId?: string;
 }
 
 export interface LifecycleCapsuleBinding {
@@ -69,6 +70,7 @@ export interface LifecycleCaptureRecord {
   readonly capsules: readonly ExecutionCapsule[];
   readonly capsuleBindings: readonly LifecycleCapsuleBinding[];
   readonly exactPatchInputHash: ContentHash;
+  readonly knowledgeContextId?: string;
   readonly capturedAt: string;
   readonly contentHash: ContentHash;
 }
@@ -78,6 +80,7 @@ export interface LifecycleApprovalRecord {
   readonly id: string;
   readonly semanticChangeId: string;
   readonly planHash: ContentHash;
+  readonly knowledgeContextId?: string;
   readonly approvals: readonly ExecutionApproval[];
   readonly approvedAt: string;
   readonly contentHash: ContentHash;
@@ -139,8 +142,8 @@ export interface LifecycleAttemptStateRecord {
 
 const capsuleBindingSchema = z.object({ packetId: z.string(), capsuleId: z.string(), capsuleHash: ContentHashSchema }).strict();
 const executionApprovalSchema = z.object({ id: z.string(), planId: z.string(), planRevision: z.number().int(), planHash: ContentHashSchema, dependencyDigest: ContentHashSchema, capsuleId: z.string(), capsuleHash: ContentHashSchema }).strict();
-const captureSchema = z.object({ apiVersion: z.literal(apiVersion), semanticChangeId: z.string(), request: z.string(), proposal: ChangeProposalSchema, proposalHash: ContentHashSchema, planId: z.string(), planRevision: z.number().int(), planHash: ContentHashSchema, stateBinding: StateBindingSchema, plan: ExecutionPlanSchema, capsules: z.array(ExecutionCapsuleSchema), capsuleBindings: z.array(capsuleBindingSchema), exactPatchInputHash: ContentHashSchema, capturedAt: z.string(), contentHash: ContentHashSchema }).strict();
-const approvalSchema = z.object({ apiVersion: z.literal(apiVersion), id: z.string(), semanticChangeId: z.string(), planHash: ContentHashSchema, approvals: z.array(executionApprovalSchema), approvedAt: z.string(), contentHash: ContentHashSchema }).strict();
+const captureSchema = z.object({ apiVersion: z.literal(apiVersion), semanticChangeId: z.string(), request: z.string(), proposal: ChangeProposalSchema, proposalHash: ContentHashSchema, planId: z.string(), planRevision: z.number().int(), planHash: ContentHashSchema, stateBinding: StateBindingSchema, plan: ExecutionPlanSchema, capsules: z.array(ExecutionCapsuleSchema), capsuleBindings: z.array(capsuleBindingSchema), exactPatchInputHash: ContentHashSchema, knowledgeContextId: z.string().min(1).optional(), capturedAt: z.string(), contentHash: ContentHashSchema }).strict();
+const approvalSchema = z.object({ apiVersion: z.literal(apiVersion), id: z.string(), semanticChangeId: z.string(), planHash: ContentHashSchema, knowledgeContextId: z.string().min(1).optional(), approvals: z.array(executionApprovalSchema), approvedAt: z.string(), contentHash: ContentHashSchema }).strict();
 const attemptSchema = z.object({ apiVersion: z.literal(apiVersion), id: z.string(), approvalId: z.string(), semanticChangeId: z.string(), planHash: ContentHashSchema, transactionId: z.string(), startedAt: z.string(), contentHash: ContentHashSchema }).strict();
 const completionAssessmentSchema = z.object({ unitStates: z.array(z.object({ unitId: z.string(), state: z.enum(["valid", "removed", "exception"]) }).strict()), newDivergenceIds: z.array(z.string()), unknowns: z.array(z.string()), unavailableActions: z.array(z.string()), availableArtifacts: z.array(z.string()), cleanWorkingTree: z.boolean() }).strict();
 const certificateArtifactSchema = z.object({ version: z.literal(1), outcome: z.enum(["success", "failure", "partial"]), lastCheckpointId: z.string().optional(), journalPhase: z.union([TransactionPhaseSchema, z.literal("not-started")]), recoveryState: z.enum(["not-required", "rolled-back", "recovery-required"]), reasons: z.array(z.string()), completionAssessment: completionAssessmentSchema.optional(), certificate: ChangeCertificateSchema }).strict();
@@ -234,6 +237,7 @@ export class ChangeLifecycleStore {
       capsules: structuredClone(input.capsules),
       capsuleBindings: bindings,
       exactPatchInputHash: input.exactPatchInputHash,
+      ...(input.knowledgeContextId === undefined ? {} : { knowledgeContextId: input.knowledgeContextId }),
     };
     const existing = await this.tryReadCapture(input.semanticChangeId);
     if (existing !== undefined) {
@@ -270,7 +274,7 @@ export class ChangeLifecycleStore {
       const approvalId = `approval_${hashFramedDomain("change-lifecycle-execution-approval-id", { semanticChangeId: selector, planHash: capture.planHash, capsuleId: capsule.id }).slice(-32)}`;
       return createExecutionApproval(plan, capsule, approvalId);
     });
-    const stable = { apiVersion, semanticChangeId: selector, planHash: capture.planHash, approvals };
+    const stable = { apiVersion, semanticChangeId: selector, planHash: capture.planHash, ...(capture.knowledgeContextId === undefined ? {} : { knowledgeContextId: capture.knowledgeContextId }), approvals };
     const stableHash = hashFramedDomain("change-lifecycle-approval-identity", stable);
     const withTime = { ...stable, id: `lifecycle_approval_${stableHash.slice(-32)}`, approvedAt: this.now() };
     const record: LifecycleApprovalRecord = { ...withTime, contentHash: hashFramedDomain("change-lifecycle-approval", withTime) };
@@ -585,11 +589,20 @@ export class ChangeLifecycleStore {
       await handle.close();
     }
     try {
-      await link(temporary, destination);
-      const directory = await open(dirname(destination), constants.O_RDONLY);
-      try { await directory.sync(); } finally { await directory.close(); }
-    } catch (error) {
-      if (!isCode(error, "EEXIST")) throw error;
+      let inserted = false;
+      try {
+        await link(temporary, destination);
+        inserted = true;
+      } catch (error) {
+        if (!isCode(error, "EEXIST")) throw error;
+      }
+      // The temporary file is flushed above and link() inserts the destination
+      // atomically. Node cannot fsync directory handles on Windows, so only
+      // platforms that support it establish directory-entry power-loss durability.
+      if (inserted && process.platform !== "win32") {
+        const directory = await open(dirname(destination), constants.O_RDONLY);
+        try { await directory.sync(); } finally { await directory.close(); }
+      }
     } finally {
       await rm(temporary, { force: true });
     }

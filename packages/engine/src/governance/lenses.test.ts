@@ -9,7 +9,35 @@ import {
   createRepositoryScriptLens,
 } from "./index.js";
 
+function separatelyApproved(lenses: ProjectionLens[]) {
+  return {
+    lenses: lenses.map(lens => ({ ...lens, authorityRecordId: `authority:${lens.id}` })),
+    authorityRecords: lenses.map(lens => authorityRecord(`authority:${lens.id}`, lens.id)),
+  };
+}
+
 describe("minimal repository-script lens", () => {
+  it("refuses an authority record approved for another lens", () => {
+    const record = authorityRecord("authority:trusted", "lens:trusted");
+    const lens = createRepositoryScriptLens({ id: "lens:untrusted", status: "active", authorityRecordId: record.id,
+      governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }] });
+    expect(() => compileProjectionLenses({ lenses: [lens], units: [], authorityRecords: [record] })).toThrow(/belongs to/iu);
+  });
+
+  it("uses observed file facts for symbol-anchored units in lens membership and ownership", () => {
+    const record = authorityRecord("authority:repository-script");
+    const unit = { ...projectionUnit("symbol"), anchor: { kind: "symbol" as const, value: "export:verify" } };
+    const selector: SelectorExpr = { op: "atom", field: "path", matcher: "glob", value: "scripts/**" };
+    const lens = createRepositoryScriptLens({ status: "active", selector, authorityRecordId: record.id,
+      governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }] });
+    const input = { lenses: [lens], units: [unit], authorityRecords: [record],
+      selectorFactsByUnitId: new Map([[unit.id, { path: "scripts/verify.ts" }]]) };
+    expect(compileProjectionLenses(input).memberships[lens.id]).toEqual([unit.id]);
+    expect(compileProjectionLenses({ ...input, selectorFactsByUnitId: new Map([[unit.id, { path: "other/verify.ts" }]]) }).memberships[lens.id]).toEqual([]);
+    const other = { ...lens, id: "lens:other", key: "lens:other" };
+    expect(() => compileProjectionLenses({ ...input, ...separatelyApproved([lens, other]) })).toThrow(/owner collision/iu);
+  });
+
   it("keeps a shadow lens observable but non-governing and activates the same rules only with approved authority", () => {
     const unit = projectionUnit("repository-script", { path: ".codex/hooks/validate-repo.mjs", tags: ["repository-automation"] });
     const record = authorityRecord("authority:repository-script");
@@ -62,7 +90,7 @@ describe("lens composition and fixed points", () => {
     });
     const unit = projectionUnit("repository-script", { tags: ["repository-automation"] });
 
-    expect(() => compileProjectionLenses({ lenses: [second, first], units: [unit], authorityRecords: [record] }))
+    expect(() => compileProjectionLenses({ ...separatelyApproved([second, first]), units: [unit] }))
       .toThrow(/projection owner/i);
   });
 
@@ -99,7 +127,7 @@ describe("lens composition and fixed points", () => {
       governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }],
     });
 
-    expect(() => compileProjectionLenses({ lenses: [first, second], units: [], authorityRecords: [record] }))
+    expect(() => compileProjectionLenses({ ...separatelyApproved([first, second]), units: [] }))
       .toThrow(GovernanceCycleError);
   });
 
@@ -124,7 +152,7 @@ describe("lens composition and fixed points", () => {
       governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:layout" }],
     });
 
-    expect(() => compileProjectionLenses({ lenses: [first, second], units: [], authorityRecords: [record] }))
+    expect(() => compileProjectionLenses({ ...separatelyApproved([first, second]), units: [] }))
       .toThrow(GovernanceCycleError);
   });
 
@@ -183,9 +211,8 @@ describe("lens composition and fixed points", () => {
     }), contributions: ["constraint-contributor" as const] };
 
     expect(() => compileProjectionLenses({
-      lenses: [first, second],
+      ...separatelyApproved([first, second]),
       units: [],
-      authorityRecords: [record],
       fixedPointGroups: [{ id: "group:bad", lensIds: ["lens:first", "lens:second"], semantics: "monotonic-union", maxIterations: 4 }],
     })).toThrow(/monotonic/i);
   });
@@ -212,9 +239,8 @@ describe("lens composition and fixed points", () => {
     const unit = projectionUnit("seed-unit", { tags: ["seed"] });
 
     const result = compileProjectionLenses({
-      lenses: [closure, seed],
+      ...separatelyApproved([closure, seed]),
       units: [unit],
-      authorityRecords: [record],
       fixedPointGroups: [{ id: "group:closure", lensIds: ["lens:closure", "lens:seed"], semantics: "monotonic-union", maxIterations: 4 }],
     });
 

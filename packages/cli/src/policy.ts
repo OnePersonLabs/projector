@@ -1,6 +1,6 @@
 import type { ExecutionPolicy, RiskClass } from "@projector/core";
 
-export type SliceCommand = "init" | "audit" | "change" | "plan" | "approve" | "apply" | "resume" | "upgrade" | "explain" | "coverage" | "complete" | "cleanup" | "run" | "mcp" | "watch" | "ci" | "recover" | "verify";
+export type SliceCommand = "init" | "audit" | "context" | "reconcile" | "change" | "plan" | "approve" | "apply" | "resume" | "upgrade" | "explain" | "coverage" | "complete" | "cleanup" | "run" | "mcp" | "watch" | "ci" | "recover" | "verify";
 
 export interface CliPolicyInput {
   readonly command: SliceCommand;
@@ -49,7 +49,8 @@ export function normalizeExecutionPolicy(input: CliPolicyInput): Readonly<Execut
   if (input.auditOnly === true && input.dryRun === true) {
     throw new Error("contradictory mutation and audit-only/dry-run flags");
   }
-  const allowAutoMutation = mutationCommand && input.dryRun !== true && preset !== "observe";
+  const cacheWrite = input.command === "context" && input.auditOnly !== true && preset !== "observe";
+  const allowAutoMutation = (mutationCommand || cacheWrite) && input.dryRun !== true && preset !== "observe";
   const policy = Object.freeze({
     preset,
     maximumAutomaticRisk: allowAutoMutation ? "R1" : "R0",

@@ -25,6 +25,14 @@ function error(id: JsonRpcRequest["id"], code: number, message: string) { return
 
 function toolDefinition(name: string, controlled: boolean): McpToolDefinition {
   const label = name.replace(/^projector\./u, "").replaceAll("_", " ");
+  if (name === "projector.context") return {
+    name, title: "Projector context", description: "Retrieve relevant accepted meaning, candidate interpretations, and architectural obligations before choosing edits. Does not save a context; use the context CLI command to retain one across sessions.",
+    inputSchema: { type: "object", properties: { request: { type: "string", minLength: 1 }, entities: { type: "array", items: { type: "string", minLength: 1 } } }, required: ["request"], additionalProperties: false },
+  };
+  if (name === "projector.validate") return {
+    name, title: "Projector validate knowledge", description: "Reconcile a saved context against current repository observations. Reports stale knowledge separately from current architectural conformance.",
+    inputSchema: { type: "object", properties: { contextId: { type: "string", minLength: 1 } }, required: ["contextId"], additionalProperties: false },
+  };
   return {
     name,
     title: `Projector ${label}`,

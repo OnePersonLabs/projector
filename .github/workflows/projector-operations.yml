@@ -24,7 +24,7 @@ jobs:
       - run: pnpm build
       - name: Prove sandbox isolation
         run: node scripts/probe-sandbox.mjs
-      - run: node scripts/task19-dogfood.mjs
+      - run: pnpm acceptance:knowledge
       - run: pnpm verify
       - run: pnpm release:artifacts:check
       - run: node scripts/build-source-severed-release-bundle.mjs .temp/release-candidate

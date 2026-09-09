@@ -48,6 +48,9 @@ export function assessLensAuthority(
   if (record === undefined) {
     reasons.push(`authority record ${lens.authorityRecordId} is missing`);
   } else {
+    if (record.subjectId !== lens.id) {
+      reasons.push(`authority record ${record.id} belongs to ${record.subjectId}, not lens ${lens.id}`);
+    }
     if (record.status !== "approved" && record.status !== "auto-approved") {
       reasons.push(`authority record ${record.id} has non-active status ${record.status}`);
     }

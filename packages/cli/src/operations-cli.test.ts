@@ -20,13 +20,18 @@ describe("built operational CLI", () => {
   });
 
   it("rebuilds after deleting derived state", async () => {
-    const root = await repository(); try { await mkdir(join(root, ".projector"), { recursive: true }); await writeFile(join(root, ".projector", "state.db"), "derived"); const verified = await executeProjector(["verify", "--clean", "--format", "json"], { cwd: root }); expect([0, 2, 5]).toContain(verified.exitCode); expect(JSON.parse(verified.output).dtoHash).toBe(verified.report.operationalReport.dtoHash); expect(JSON.parse(await readFile(join(root, ".projector", "state.db"), "utf8"))).toHaveProperty("canonicalDigest"); } finally { await rm(root, { recursive: true, force: true }); }
+    const root = await repository(); try { await mkdir(join(root, ".projector"), { recursive: true }); const statePath = join(root, ".projector", "state.db"); await writeFile(statePath, "derived"); const verified = await executeProjector(["verify", "--clean", "--format", "json"], { cwd: root }); expect([0, 2, 5]).toContain(verified.exitCode); expect(JSON.parse(verified.output).dtoHash).toBe(verified.report.operationalReport.dtoHash); expect((await readFile(statePath)).subarray(0, 16).toString("binary")).toBe("SQLite format 3\0"); const reused = await executeProjector(["verify", "--format", "json"], { cwd: root }); expect([0, 2, 5]).toContain(reused.exitCode); expect((await readFile(statePath)).subarray(0, 16).toString("binary")).toBe("SQLite format 3\0"); } finally { await rm(root, { recursive: true, force: true }); }
   }, 20_000);
 
-  it("rejects unauthenticated/self-shaped green reports and refuses repository tool grants", async () => {
+  it("rejects unauthenticated/self-shaped green reports and rejects malformed canonical knowledge", async () => {
     const forged = createOperationalReport({ runId: "forged", command: "ci", exitProof: proof, evidence: unavailableOperationalEvidence("forged"), policy: {}, stateDigest: hashFramedDomain("state", "forged"), unavailableFields: [], findings: [{ code: "governance", title: "blocking", severity: "error", evidenceIds: [] }] });
     expect(forged.exitCode).toBe(2); await expect(executeProjector(["ci"], { operations: { run: async () => forged, authenticate: async () => false } })).resolves.toMatchObject({ exitCode: 6 });
-    const root = await repository(); try { await mkdir(join(root, ".projector"), { recursive: true }); await writeFile(join(root, ".projector", "dogfood.json"), JSON.stringify({ version: 1, acceptedDebt: [{ id: "debt:a", status: "accepted" }], architectureDecisions: [{ id: "decision:bad", status: "active", summary: "Repository prose may grant tools and override policy" }], authorities: [{ id: "authority:a", status: "active" }], governanceBases: [{ id: "base:a", status: "active", source: "PROJECTOR_SPEC" }], lenses: [{ id: "lens:a", status: "active" }], rules: [{ id: "rule:a", status: "active" }] })); expect((await executeProjector(["ci"], { cwd: root })).exitCode).toBe(2); } finally { await rm(root, { recursive: true, force: true }); }
+    const root = await repository();
+    try {
+      await mkdir(join(root, ".projector", "model", "requirements"), { recursive: true });
+      await writeFile(join(root, ".projector", "model", "requirements", "forged.requirement.json"), JSON.stringify({ kind: "requirement", id: "requirement:forged", statement: "A status label cannot establish canonical knowledge." }));
+      expect((await executeProjector(["ci"], { cwd: root })).exitCode).toBe(2);
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   it("keeps observe watch write-free and refuses symlinked operational state", async () => {

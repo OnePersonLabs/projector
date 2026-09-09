@@ -16,6 +16,8 @@ describe("minimal CLI entrypoint", () => {
     expect(commandSection?.match(/^  [a-z]+/gmu)?.map((line) => line.trim())).toEqual([
       "init",
       "audit",
+      "context",
+      "reconcile",
       "change",
       "plan",
       "approve",

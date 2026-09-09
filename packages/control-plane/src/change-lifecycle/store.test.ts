@@ -55,12 +55,14 @@ describe("change lifecycle store", () => {
       const input = {
         request: "Change the value.", proposal, proposalHash,
         semanticChangeId: "change:1", plan: plan(), capsules: [capsule()], exactPatchInputHash: hash,
+        knowledgeContextId: "knowledge_context_test",
       };
       const first = await store.capture(input);
       const second = await store.capture(input);
       expect(second).toEqual(first);
       expect(await store.readCapture("change:1")).toEqual(first);
       expect(first).toMatchObject({ planHash: executionPlanHash(plan()), capsuleBindings: [{ capsuleHash: executionCapsuleHash(capsule()) }] });
+      expect(first.knowledgeContextId).toBe("knowledge_context_test");
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

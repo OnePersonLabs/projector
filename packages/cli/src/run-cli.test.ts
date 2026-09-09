@@ -42,8 +42,10 @@ describe("projector run host boundary", () => {
     const result = await executeProjector(["mcp", "--format", "json"]);
     expect(result.exitCode).toBe(0); expect(result.report.tools).toEqual([
       "projector.audit",
+      "projector.context",
       "projector.list_divergences",
       "projector.status",
+      "projector.validate",
     ]);
     expect(JSON.parse(result.output)).toEqual(result.report);
   });
@@ -65,7 +67,7 @@ describe("projector run host boundary", () => {
       const unavailable = await executeProjector(["run", "codex", "--session", selector, "--"], { cwd: root, environment: { PATH: join(root, "missing-bin") } }); expect(unavailable.exitCode).toBe(5);
       const mcp = await createBuiltMcpCliPort().start({ repositoryRoot: root, sessionSelector: selector, signal: new AbortController().signal });
       expect(mcp).not.toHaveProperty("capabilityToken");
-      expect(mcp.tools).toEqual(["projector.audit", "projector.list_divergences", "projector.preview_representation", "projector.status", "projector.validate_representation"]);
+      expect(mcp.tools).toEqual(["projector.audit", "projector.context", "projector.list_divergences", "projector.preview_representation", "projector.status", "projector.validate", "projector.validate_representation"]);
       const lifecycleOutput: string[] = []; async function* requests() { yield JSON.stringify({ jsonrpc: "2.0", id: "list", method: "tools/list" }); yield JSON.stringify({ jsonrpc: "2.0", id: "status", method: "tools/call", params: { name: "projector.status", arguments: {} } }); }
       await serveMcpTransport(mcp.transport, requests(), (line) => lifecycleOutput.push(line)); expect(lifecycleOutput).toHaveLength(2); expect(JSON.parse(lifecycleOutput[1]!)).toMatchObject({ id: "status", result: { content: [{ type: "text", text: expect.any(String) }], structuredContent: { status: "ok" } } });
       const status = await mcp.transport.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "projector.status", arguments: {} } });
@@ -84,12 +86,12 @@ describe("projector run host boundary", () => {
       const noRepresentationRecord = createHostSessionRecord({ kind: "task17-host-session", host: "codex", sessionId: "session:no-representation", repositoryRootHash: hashFramedDomain("task17-host-repository-root", await realpath(root)), plan, capsule: capsuleWithoutRepresentation as ExecutionCapsule, approval: createExecutionApproval(plan, capsuleWithoutRepresentation as ExecutionCapsule, "approval:no-representation"), instructions: { text: representationText, sourceHashes: [capsule.normativeKernelHash], representation } });
       const noRepresentationSelector = hostSessionSelector(noRepresentationRecord); const noRepresentationId = noRepresentationSelector.slice("session:".length); await writeFile(join(root, ".projector", "task17-sessions", `session-${noRepresentationId}.json`), JSON.stringify(noRepresentationRecord));
       const noRepresentationMcp = await createBuiltMcpCliPort().start({ repositoryRoot: root, sessionSelector: noRepresentationSelector, signal: new AbortController().signal });
-      expect(noRepresentationMcp.tools).toEqual(["projector.audit", "projector.list_divergences", "projector.status"]);
+      expect(noRepresentationMcp.tools).toEqual(["projector.audit", "projector.context", "projector.list_divergences", "projector.status", "projector.validate"]);
 
       const invalidRepresentationRecord = createHostSessionRecord({ kind: "task17-host-session", host: "codex", sessionId: "session:invalid-representation", repositoryRootHash: hashFramedDomain("task17-host-repository-root", await realpath(root)), plan, capsule, approval: createExecutionApproval(plan, capsule, "approval:invalid-representation"), instructions: { text: `${representationText} tampered`, sourceHashes: [capsule.normativeKernelHash], representation } });
       const invalidRepresentationSelector = hostSessionSelector(invalidRepresentationRecord); const invalidRepresentationId = invalidRepresentationSelector.slice("session:".length); await writeFile(join(root, ".projector", "task17-sessions", `session-${invalidRepresentationId}.json`), JSON.stringify(invalidRepresentationRecord));
       const invalidRepresentationMcp = await createBuiltMcpCliPort().start({ repositoryRoot: root, sessionSelector: invalidRepresentationSelector, signal: new AbortController().signal });
-      expect(invalidRepresentationMcp.tools).toEqual(["projector.audit", "projector.list_divergences", "projector.status"]);
+      expect(invalidRepresentationMcp.tools).toEqual(["projector.audit", "projector.context", "projector.list_divergences", "projector.status", "projector.validate"]);
       const invalidRepresentationStatus = await invalidRepresentationMcp.transport.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.status", arguments: {} } });
       expect(invalidRepresentationStatus).toMatchObject({ result: { structuredContent: { toolAvailability: expect.arrayContaining([{ name: "projector.preview_representation", class: "read", operational: false, reason: expect.stringMatching(/artifact hash/iu) }]) } } });
       await expect(invalidRepresentationMcp.transport.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.preview_representation", arguments: {} } })).resolves.toMatchObject({ error: { message: expect.stringMatching(/unknown MCP tool/iu) } });
