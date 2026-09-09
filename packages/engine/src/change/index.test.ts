@@ -27,6 +27,7 @@ import {
   type ChangeTransaction,
   type ChangeTransactionPort,
   type DeterministicTransformPort,
+  type PreparedStateBoundChangeSuccess,
 } from "./index.js";
 
 const state = (suffix: string): StateDigest => ({
@@ -294,10 +295,13 @@ const execute = async (input: {
   subjectPlan?: ExecutionPlan;
   completionAssessment?: TestCompletionAssessment;
   changedCanonicalEntityIds?: readonly string[];
+  changedConceptIds?: readonly string[];
   changedRequirementIds?: readonly string[];
   changedScenarioIds?: readonly string[];
+  changedRelationIds?: readonly string[];
   callerRiskClass?: "R0" | "R1" | "R2" | "R3" | "R4";
   preparedSuccesses?: Array<{ checkpointId: string; contentHash: string }>;
+  preparedArtifacts?: PreparedStateBoundChangeSuccess[];
 }) => {
   const artifacts = new MemoryArtifactStore();
   const lifecycle: string[] = [];
@@ -324,17 +328,20 @@ const execute = async (input: {
         return input.completionAssessment ?? completeAssessment();
       },
     },
-    ...(input.preparedSuccesses === undefined ? {} : {
+    ...(input.preparedSuccesses === undefined && input.preparedArtifacts === undefined ? {} : {
       successDurability: {
         prepare: async (success) => {
           lifecycle.push(`prepare:${success.checkpointId}`);
-          input.preparedSuccesses!.push({ checkpointId: success.checkpointId, contentHash: success.contentHash });
+          input.preparedSuccesses?.push({ checkpointId: success.checkpointId, contentHash: success.contentHash });
+          input.preparedArtifacts?.push(structuredClone(success));
         },
       },
     }),
-    changedCanonicalEntityIds: (result) => input.changedCanonicalEntityIds?.filter((id) => result.touchedUnitIds.includes(id)) ?? [],
-    changedRequirementIds: (result) => input.changedRequirementIds?.filter((id) => result.touchedUnitIds.includes(id)) ?? [],
-    changedScenarioIds: (result) => input.changedScenarioIds?.filter((id) => result.touchedUnitIds.includes(id)) ?? [],
+    changedCanonicalEntityIds: () => input.changedCanonicalEntityIds ?? [],
+    changedConceptIds: () => input.changedConceptIds ?? [],
+    changedRequirementIds: () => input.changedRequirementIds ?? [],
+    changedScenarioIds: () => input.changedScenarioIds ?? [],
+    changedRelationIds: () => input.changedRelationIds ?? [],
     environment: { repositoryRoot: "/approved/repo", signal: new AbortController().signal },
     now: () => "2026-08-07T12:00:00.000Z",
   });
@@ -386,7 +393,8 @@ describe("state-bound deterministic change execution", () => {
 
   it("durably prepares authenticated success before binding its identity into the commit journal", async () => {
     const preparedSuccesses: Array<{ checkpointId: string; contentHash: string }> = [];
-    const { result, lifecycle } = await execute({ preparedSuccesses });
+    const preparedArtifacts: PreparedStateBoundChangeSuccess[] = [];
+    const { result, lifecycle } = await execute({ preparedSuccesses, preparedArtifacts });
 
     expect(result.outcome).toBe("success");
     expect(preparedSuccesses).toHaveLength(1);
@@ -396,22 +404,46 @@ describe("state-bound deterministic change execution", () => {
     expect(prepareIndex).toBeGreaterThan(-1);
     expect(prepareIndex).toBeLessThan(checkpointIndex);
     expect(checkpointIndex).toBeLessThan(lifecycle.indexOf("commit"));
+    const legacy = preparedArtifacts[0]!;
+    const legacyIdentity = hashFramedDomain("state-bound-success-preparation-identity", {
+      planId: legacy.planId, executionApprovalId: legacy.executionApprovalId, beforeState: legacy.beforeState, afterState: legacy.afterState,
+      ...(legacy.preview === undefined ? {} : { preview: legacy.preview }), transformResult: legacy.transformResult, validations: legacy.validations,
+      completionAssessment: legacy.completionAssessment, changedCanonicalEntityIds: legacy.receipt.changedCanonicalEntityIds,
+      changedRequirementIds: legacy.receipt.changedRequirementIds, changedScenarioIds: legacy.receipt.changedScenarioIds,
+      planningSurpriseIds: legacy.certificateArtifact.certificate.planningSurpriseIds,
+    });
+    expect(legacy.preparationId).toBe(`prepared_success_${legacyIdentity.slice(-32)}`);
   });
 
   it("records declared canonical entities in the content-addressed receipt", async () => {
+    const preparedArtifacts: PreparedStateBoundChangeSuccess[] = [];
     const { result, artifacts } = await execute({
-      changedCanonicalEntityIds: ["unit:move"],
-      changedRequirementIds: ["unit:move"],
-      changedScenarioIds: ["unit:move"],
+      changedCanonicalEntityIds: ["unit:untouched", "unit:move"],
+      changedConceptIds: ["unit:untouched", "unit:move"],
+      changedRequirementIds: ["unit:untouched", "unit:move"],
+      changedScenarioIds: ["unit:untouched", "unit:move"],
+      changedRelationIds: ["unit:untouched", "unit:move"],
+      preparedArtifacts,
     });
     expect(result.receipt.changedCanonicalEntityIds).toEqual(["unit:move"]);
     expect(result.receipt.changedRequirementIds).toEqual(["unit:move"]);
     expect(result.receipt.changedScenarioIds).toEqual(["unit:move"]);
+    expect(result.certificate.changedConcepts).toEqual(["unit:move"]);
+    expect(result.certificate.changedRelations).toEqual(["unit:move"]);
     expect(JSON.parse(artifacts.writes[1]?.content ?? "{}").changedCanonicalEntityIds).toEqual(["unit:move"]);
+    const prepared = preparedArtifacts[0]!;
+    const typedIdentity = hashFramedDomain("state-bound-success-preparation-identity", {
+      planId: prepared.planId, executionApprovalId: prepared.executionApprovalId, beforeState: prepared.beforeState, afterState: prepared.afterState,
+      ...(prepared.preview === undefined ? {} : { preview: prepared.preview }), transformResult: prepared.transformResult, validations: prepared.validations,
+      completionAssessment: prepared.completionAssessment, changedCanonicalEntityIds: ["unit:move"], changedConceptIds: ["unit:move"],
+      changedRequirementIds: ["unit:move"], changedScenarioIds: ["unit:move"], changedRelationIds: ["unit:move"], planningSurpriseIds: [],
+    });
+    expect(prepared.preparationId).toBe(`prepared_success_${typedIdentity.slice(-32)}`);
   });
 
   it("does not persist false success evidence when durable commit fails", async () => {
-    const { result, artifacts, transactions } = await execute({ commitFails: true });
+    const { result, artifacts, transactions } = await execute({ commitFails: true,
+      changedCanonicalEntityIds: ["unit:move", "unit:untouched"], changedConceptIds: ["unit:move", "unit:untouched"], changedRelationIds: ["unit:move", "unit:untouched"] });
 
     expect(result.outcome).toBe("partial");
     expect(transactions.transaction.phase).toBe("rolled-back");
@@ -420,7 +452,9 @@ describe("state-bound deterministic change execution", () => {
       outcome: "partial",
       recoveryState: "rolled-back",
       reasons: ["durable commit failed"],
+      certificate: { changedConcepts: ["unit:move"], changedRelations: ["unit:move"] },
     });
+    expect(result.receipt.changedCanonicalEntityIds).toEqual(["unit:move"]);
   });
 
   it("refuses stale bindings and approval mismatches before preview/apply while still recording failure evidence", async () => {

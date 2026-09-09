@@ -494,8 +494,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/change/index.test.ts#state-bound deterministic change execution refuses stale bindings and approval mismatches before preview/apply while still recording failure evidence",
-      "testSourceDigest": "sha256:v1:7e4fb6ee4fe170108ba6e3eb1a59c5b5200433e076219cf67da1d8cc0b5e9079",
-      "mappingHash": "sha256:v1:df618e0a9e18855a6293cf6b6fba8d87cefb434a496a9168a398d2dc82814c46"
+      "testSourceDigest": "sha256:v1:117e93e266b32fb42b7681f14ac243f0ab893a09e36c25e7467da37a12026ae7",
+      "mappingHash": "sha256:v1:4a449f2ba85f46be453c2f63831cd7dfc63273e6eccf36ef8efea3409792dc2d"
     },
     {
       "id": "scenario:42:membership-changing-fact-invalidates-context-even-when-loaded-entities-are-unchanged",
