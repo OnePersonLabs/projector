@@ -17,6 +17,16 @@ const grant = { sessionId: "s", worktreeId: "w", repositoryRoot: "/repo", planHa
 const use = (token: string, overrides = {}) => ({ token, toolName: "projector.write", operation: "write-file", semanticScopes: ["unit:api"], writePaths: ["src/a.ts"], risk: "R1" as const, ...overrides });
 
 describe("MCP transport and durable mutation capabilities", () => {
+  it("advertises bounded context with entity-addressed progressive disclosure", async () => {
+    const server = createProjectorMcpServer({ read: { "projector.context": async () => ({}) }, controlled: {} });
+    const listed = await server.transport.handle({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    expect(listed).toMatchObject({ result: { tools: [{
+      name: "projector.context",
+      description: expect.stringMatching(/bounded overview.*repeat.*entity ID.*focused disclosure/iu),
+      inputSchema: { properties: { entities: { type: "array", items: { type: "string" } } } },
+    }] } });
+  });
+
   it("authenticates current authority and atomically rejects replay, revocation, expiry, and cross-worktree use", async () => {
     const store = new MemoryStore(); let nonce = 0;
     const weak = createMutationCapabilityService({ store: new MemoryStore(), entropy: () => new Uint8Array(8), clock: { now: () => 1_000 }, roots: { resolveRoot: async () => "/repo", resolveTarget: async (_root, path) => path }, authority: { verify: async () => true }, currentness: { verify: async () => true } });

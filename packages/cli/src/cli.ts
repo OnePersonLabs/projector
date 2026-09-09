@@ -39,7 +39,7 @@ Usage: projector <command> [options]
 Commands:
   init                  Initialize local Projector derived state
   audit                 Analyze governed state; add --decisions for architecture decisions
-  context <request> [--entity <id-or-key>] [--compact]  Retrieve relevant meaning before choosing edits
+  context (<request> | --request <request>) [--entity <id-or-key>] [--compact]  Retrieve relevant meaning before choosing edits
   reconcile <context-id> [--compact]  Check saved knowledge against current state
   change <request> --proposal <path> [--context <id>]  Capture a repository change
   plan <semantic-change-id>           Preview its immutable plan
@@ -159,13 +159,19 @@ interface ParsedCommand {
   readonly clean: boolean;
 }
 
-function optionValue(arguments_: readonly string[], name: string): string | undefined {
-  const indexes = arguments_.flatMap((value, index) => value === name ? [index] : []);
+function optionValue(arguments_: readonly string[], name: string, allowLeadingHyphen = false): string | undefined {
+  const indexes: number[] = [];
+  for (let index = 1; index < arguments_.length; index += 1) {
+    const value = arguments_[index]!;
+    if (!valueFlags.has(value)) continue;
+    if (value === name) indexes.push(index);
+    index += 1;
+  }
   if (indexes.length > 1) throw new Error(`duplicate ${name.replace(/^--/u, "")} option`);
   const index = indexes[0];
   if (index === undefined) return undefined;
   const value = arguments_[index + 1];
-  if (value === undefined || value.startsWith("-")) throw new Error(`${name} requires a value`);
+  if (value === undefined || (!allowLeadingHyphen && value.startsWith("-"))) throw new Error(`${name} requires a value`);
   return value;
 }
 
@@ -182,8 +188,24 @@ function normalizeScope(raw: string | undefined): string {
   return scope;
 }
 
-const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--continuation", "--session", "--proposal", "--plan-hash", "--entity", "--context"]);
+const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--continuation", "--session", "--proposal", "--plan-hash", "--entity", "--context", "--request"]);
 const booleanFlags = new Set(["--decisions", "--dry-run", "--audit-only", "--non-interactive", "--clean", "--compact"]);
+function hasBooleanFlag(arguments_: readonly string[], name: string): boolean {
+  for (let index = 1; index < arguments_.length; index += 1) {
+    const value = arguments_[index]!;
+    if (valueFlags.has(value)) { index += 1; continue; }
+    if (value === name) return true;
+  }
+  return false;
+}
+function argumentSeparatorIndex(arguments_: readonly string[]): number {
+  for (let index = 1; index < arguments_.length; index += 1) {
+    const value = arguments_[index]!;
+    if (valueFlags.has(value)) { index += 1; continue; }
+    if (value === "--") return index;
+  }
+  return -1;
+}
 function validateArguments(arguments_: readonly string[], command: SliceCommand): void {
   const seen = new Set<string>();
   for (let index = 1; index < arguments_.length; index += 1) {
@@ -207,13 +229,13 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     && command !== "approve" && command !== "resume" && command !== "upgrade" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run" && command !== "mcp" && command !== "watch" && command !== "ci" && command !== "recover" && command !== "verify") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
-  const separator = arguments_.indexOf("--");
+  const separator = argumentSeparatorIndex(arguments_);
   if (command === "run" && separator < 0) throw new Error("run requires the -- argv separator");
   if (command !== "run" && separator >= 0) throw new Error("argv separator is only valid with run");
   const commandArguments = command === "run" ? arguments_.slice(0, separator) : arguments_;
   const hostArgv = command === "run" ? arguments_.slice(separator + 1) : [];
   validateArguments(commandArguments, command);
-  if (commandArguments.includes("--compact") && command !== "context" && command !== "reconcile") throw new Error("--compact is only valid with context or reconcile");
+  if (hasBooleanFlag(commandArguments, "--compact") && command !== "context" && command !== "reconcile") throw new Error("--compact is only valid with context or reconcile");
   const formatValue = optionValue(commandArguments, "--format") ?? "text";
   if (formatValue !== "text" && formatValue !== "json" && formatValue !== "md" && formatValue !== "sarif") throw new Error(`unsupported format: ${formatValue}`);
   const modeValue = optionValue(commandArguments, "--mode");
@@ -226,7 +248,11 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     : undefined;
   if (command === "explain" && target === undefined) throw new Error("explain requires a target");
   const positional = (command === "context" || command === "reconcile" || command === "change" || command === "plan" || command === "approve" || command === "apply" || command === "resume" || command === "recover") && arguments_[1] !== undefined && !arguments_[1].startsWith("-") ? arguments_[1] : undefined;
-  if (command === "context" && (positional === undefined || positional.trim() === "" || positional.includes("\0"))) throw new Error("context requires a safe nonblank request");
+  const explicitRequest = optionValue(commandArguments, "--request", true);
+  if (explicitRequest !== undefined && command !== "context") throw new Error("--request is only valid with context");
+  if (command === "context" && positional !== undefined && explicitRequest !== undefined) throw new Error("context request must use either positional syntax or --request, not both");
+  const contextRequest = command === "context" ? explicitRequest ?? positional : undefined;
+  if (command === "context" && (contextRequest === undefined || contextRequest.trim() === "" || contextRequest.includes("\0"))) throw new Error("context requires a safe nonblank request");
   if (command === "reconcile" && positional === undefined) throw new Error("reconcile requires a context identity");
   const entity = optionValue(commandArguments, "--entity");
   const knowledgeContextId = optionValue(commandArguments, "--context");
@@ -250,8 +276,8 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
   if (command === "run" && (sessionSelector === undefined || !/^session:[a-z0-9][a-z0-9._:-]*$/iu.test(sessionSelector))) throw new Error("run requires a safe explicit --session selector");
   if (command === "mcp" && sessionSelector !== undefined && !/^session:[a-z0-9][a-z0-9._:-]*$/iu.test(sessionSelector)) throw new Error("mcp requires a safe session selector");
   if (command !== "run" && command !== "mcp" && sessionSelector !== undefined) throw new Error("--session is only valid with run or mcp");
-  const decisions = commandArguments.includes("--decisions");
-  const clean = commandArguments.includes("--clean"); if (clean && command !== "verify") throw new Error("--clean is only valid with verify");
+  const decisions = hasBooleanFlag(commandArguments, "--decisions");
+  const clean = hasBooleanFlag(commandArguments, "--clean"); if (clean && command !== "verify") throw new Error("--clean is only valid with verify");
   if (decisions && command !== "audit") throw new Error("--decisions is only valid with audit");
   const coverageCommand = command === "coverage" || command === "complete" || command === "cleanup";
   const explicitStrictness = optionValue(commandArguments, "--strictness");
@@ -267,6 +293,7 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
   if (command === "watch" && continuationSelector !== undefined && continuationSelector !== "watch:default") throw new Error("watch continuation selector must be watch:default");
   const budgetTokens = positiveNumber(rawBudgetTokens, "--budget-tokens", true);
   const budgetCost = positiveNumber(rawBudgetCost, "--budget-cost");
+  const selector = contextRequest ?? positional;
   return {
     command,
     ...(target === undefined ? {} : { target }),
@@ -283,7 +310,7 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
       ...(budgetCost === undefined ? {} : { budgetCost }),
       ...(continuationSelector === undefined ? {} : { continuationSelector: continuationSelector.trim() }),
     },
-    ...(positional === undefined ? {} : { selector: positional }),
+    ...(selector === undefined ? {} : { selector }),
     ...(proposalPath === undefined ? {} : { proposalPath }),
     ...(planHash === undefined ? {} : { planHash }),
     ...(entity === undefined ? {} : { entity }),
@@ -291,9 +318,9 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     policy: {
       command,
       ...(modeValue === undefined ? {} : { mode: modeValue }),
-      dryRun: commandArguments.includes("--dry-run"),
-      auditOnly: commandArguments.includes("--audit-only"),
-      nonInteractive: commandArguments.includes("--non-interactive"),
+      dryRun: hasBooleanFlag(commandArguments, "--dry-run"),
+      auditOnly: hasBooleanFlag(commandArguments, "--audit-only"),
+      nonInteractive: hasBooleanFlag(commandArguments, "--non-interactive"),
       clean,
     },
   };
@@ -403,8 +430,9 @@ export async function executeProjector(
   arguments_: readonly string[],
   options: ProjectorCommandOptions = {},
 ): Promise<ProjectorCommandResult> {
-  if (arguments_.length === 0 || arguments_.includes("--help") || arguments_.includes("-h")
-    || arguments_.includes("--version") || arguments_.includes("-v")) {
+  const invocationFlag = (name: string): boolean => arguments_[0] === name || hasBooleanFlag(arguments_, name);
+  if (arguments_.length === 0 || invocationFlag("--help") || invocationFlag("-h")
+    || invocationFlag("--version") || invocationFlag("-v")) {
     const output = renderCli(arguments_);
     return { exitCode: 0, output, report: { output } };
   }
@@ -608,7 +636,7 @@ export async function executeProjector(
       break;
     }
   }
-  const compact = arguments_.includes("--compact");
+  const compact = hasBooleanFlag(arguments_, "--compact");
   const display = !compact ? report : parsed.command === "context" ? presentKnowledgeContext(report)
     : parsed.command === "reconcile" ? presentKnowledgeReconciliation(report) : report;
   return { exitCode, output: outputFor(parsed.command, display, parsed.format), report };

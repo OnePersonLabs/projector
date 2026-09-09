@@ -14,6 +14,7 @@ async function fakeCodex(root: string): Promise<{ executable: string; calls: str
   if (process.platform === "win32") {
     const calls = join(root, "calls.jsonl"); const behavior = join(root, "behavior.json"); await writeFile(behavior, "{}\n");
     const runner: CodexProcessRunner = { async run(request: CodexProcessRequest) {
+      if (request.signal?.aborted === true) throw new CodexExecProviderError("cancelled", "Codex CLI execution was cancelled");
       const args = [...request.args]; const configured = JSON.parse(await readFile(behavior, "utf8"));
       await writeFile(calls, `${await readFile(calls, "utf8").catch(() => "")}${JSON.stringify({ args, env: request.environment, stdin: args[0] === "exec" ? request.stdin : "" })}\n`);
       if (args[0] === "--version") return { exitCode: 0, stdout: "codex-cli 0.147.0\n", stderr: "" };

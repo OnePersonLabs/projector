@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open, rm } from "node:fs/promises";
+import { link, lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import { dirname, join, parse } from "node:path";
 
 import {
@@ -16,6 +16,7 @@ import { RepositoryPathService } from "../security/repository-path.js";
 
 export const PROJECTOR_CONFIG_PATH = ".projector/config.json" as const;
 const MAXIMUM_CONFIG_BYTES = 16 * 1024;
+const PROJECTOR_LOCAL_IGNORE_RULES = ["/state.db", "/state.db-wal", "/state.db-shm", "/state.db-journal", "/runtime/", "/telemetry/", "/watch/"];
 
 export type ProjectActivationFailure = "missing" | "malformed" | "unsupported" | "unsafe";
 export type ProjectActivation =
@@ -91,12 +92,16 @@ export async function inspectProjectActivation(repositoryRoot: string): Promise<
 
 export async function initializeProjectActivation(repositoryRoot: string): Promise<{ readonly config: ProjectorConfig; readonly created: boolean }> {
   const current = await inspectProjectActivation(repositoryRoot);
-  if (current.status === "enabled") return { config: current.config, created: false };
+  if (current.status === "enabled") {
+    await initializeProjectIgnore(await RepositoryPathService.create(current.repositoryRoot));
+    return { config: current.config, created: false };
+  }
   if (current.failure !== "missing") throw new Error(current.reason);
 
   const paths = await RepositoryPathService.create(current.repositoryRoot);
   const projectorDirectory = (await paths.resolveWrite(".projector")).realTarget;
   await mkdir(projectorDirectory, { recursive: true });
+  await initializeProjectIgnore(paths);
   const target = (await paths.resolveWrite(PROJECTOR_CONFIG_PATH)).realTarget;
   const temporary = join(dirname(target), `.config.${randomBytes(12).toString("hex")}.tmp`);
   let handle;
@@ -125,4 +130,30 @@ export async function initializeProjectActivation(repositoryRoot: string): Promi
     if (handle !== undefined) await handle.close();
     await rm(temporary, { force: true });
   }
+}
+
+async function initializeProjectIgnore(paths: RepositoryPathService): Promise<void> {
+  const target = (await paths.resolveWrite(".projector/.gitignore")).realTarget;
+  let existing = "";
+  try {
+    const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      if (!(await handle.stat()).isFile()) throw new Error(".projector/.gitignore must be a regular file");
+      existing = await handle.readFile("utf8");
+    } finally { await handle.close(); }
+  } catch (error) { if (!isMissing(error)) throw error; }
+  const existingRules = new Set(existing.split(/\r?\n/u).map(line => line.trim()));
+  const missing = PROJECTOR_LOCAL_IGNORE_RULES.filter(rule => !existingRules.has(rule));
+  if (missing.length === 0) return;
+
+  // Defaults precede existing content so explicit project exceptions keep their
+  // precedence. Runtime includes local recovery/receipt history, not just cache.
+  const next = `# Projector derived indexes and execution-local state\n${missing.join("\n")}\n${existing}`;
+  const temporary = join(dirname(target), `.gitignore.${randomBytes(12).toString("hex")}.tmp`);
+  try {
+    const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+    try { await handle.writeFile(next, "utf8"); await handle.sync(); } finally { await handle.close(); }
+    await paths.resolveWrite(".projector/.gitignore");
+    await rename(temporary, target);
+  } finally { await rm(temporary, { force: true }); }
 }
