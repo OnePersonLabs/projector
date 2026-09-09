@@ -3,40 +3,60 @@ import { spawn } from "node:child_process";
 import { access, cp, lstat, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { canonicalJson, hashFramedDomain } from "../packages/core/dist/index.js";
 
 const bubblewrap = "/usr/bin/bwrap";
-const canonical = (value) => JSON.stringify(sortValue(value));
+const canonical = canonicalJson;
 const hash = (domain, value) => `sha256:v1:${createHash("sha256").update(`${domain}\0${canonical(value)}`, "utf8").digest("hex")}`;
 
-export function packedLifecycleSeveranceMode(environment = process.env) {
-  return environment.GITHUB_ACTIONS === "true" ? "host-mount-namespace" : "bubblewrap";
-}
-
-export function packedLifecycleNsenterWorkingDirectoryArguments(repository) {
-  return [`--wd=${repository}`];
-}
-
-export async function closePackedLifecycleNamespaceKeeper({ namespaceProcessId, keeper, signalProcess }) {
-  const signal = async (name) => {
-    try { await signalProcess(namespaceProcessId, name); }
-    catch (error) { if (error?.code !== "ESRCH") throw error; }
-  };
-  await signal("SIGTERM");
-  if (!(await waitForProcessExit(namespaceProcessId, 2_000))) {
-    await signal("SIGKILL");
-    if (!(await waitForProcessExit(namespaceProcessId, 2_000))) throw new Error("host source-severance namespace did not terminate");
+function serializeCanonical(value, seen, inArray) {
+  if (value === undefined) {
+    if (inArray) throw new TypeError("undefined array elements are not JSON values");
+    return undefined;
   }
-  if (!(await completesWithin(keeper.completed, 2_000))) {
-    try { keeper.child.kill("SIGTERM"); } catch (error) { if (error?.code !== "ESRCH") throw error; }
-    if (!(await completesWithin(keeper.completed, 2_000))) throw new Error("host source-severance launcher did not terminate");
+  if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError("canonical JSON numbers must be finite");
+    return JSON.stringify(Object.is(value, -0) ? 0 : value);
+  }
+  if (typeof value !== "object") throw new TypeError(`${typeof value} is not a JSON value`);
+  if (seen.has(value)) throw new TypeError("cyclic values are not JSON values");
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index += 1) if (!Object.hasOwn(value, index)) throw new TypeError(`sparse array hole at index ${index} is not a JSON value`);
+      return `[${value.map((item) => serializeCanonical(item, seen, true)).join(",")}]`;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) throw new TypeError("only plain objects are JSON values");
+    const entries = [];
+    for (const key of Object.keys(value).sort()) {
+      const item = serializeCanonical(value[key], seen, false);
+      if (item !== undefined) entries.push(`${JSON.stringify(key)}:${item}`);
+    }
+    return `{${entries.join(",")}}`;
+  } finally {
+    seen.delete(value);
   }
 }
 
-function sortValue(value) {
-  if (Array.isArray(value)) return value.map(sortValue);
-  if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortValue(item)]));
-  return value;
+function canonicalJson(value) {
+  const result = serializeCanonical(value, new Set(), false);
+  if (result === undefined) throw new TypeError("top-level undefined is not a JSON value");
+  return result;
+}
+
+function frame(value) {
+  const length = Buffer.allocUnsafe(8);
+  length.writeBigUInt64BE(BigInt(value.byteLength));
+  return Buffer.concat([length, value]);
+}
+
+function hashFramedDomain(domain, ...values) {
+  const framed = createHash("sha256");
+  framed.update(frame(Buffer.from("projector\0sha256\0v1", "utf8")));
+  framed.update(frame(Buffer.from(domain, "utf8")));
+  for (const value of values) framed.update(frame(Buffer.from(canonicalJson(value), "utf8")));
+  return `sha256:v1:${framed.digest("hex")}`;
 }
 
 function assert(condition, message) {
@@ -230,83 +250,9 @@ async function pathAbsent(path) {
   try { await access(path); return false; } catch (error) { if (error?.code === "ENOENT") return true; throw error; }
 }
 
-async function waitForProcessExit(processId, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await pathAbsent(`/proc/${String(processId)}`)) return true;
-    await delay(25);
-  }
-  return pathAbsent(`/proc/${String(processId)}`);
-}
-
-function completesWithin(completed, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => resolve(false), timeoutMs);
-    timer.unref();
-    completed.then(() => { clearTimeout(timer); resolve(true); }, (error) => { clearTimeout(timer); reject(error); });
-  });
-}
-
-async function signalPrivilegedProcess(processId, signal) {
-  const result = await run("sudo", ["-n", "kill", `-${signal}`, String(processId)], { env: process.env });
-  if (result.exitCode !== 0 && !/No such process/iu.test(result.stderr)) {
-    throw new Error(`host source-severance namespace ${signal} failed: ${result.stderr || result.stdout || String(result.exitCode)}`);
-  }
-}
-
-async function waitForTextFile(path, label) {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    try { return (await readFile(path, "utf8")).trim(); }
-    catch (error) { if (error?.code !== "ENOENT") throw error; }
-    await delay(25);
-  }
-  throw new Error(`${label} did not become ready`);
-}
-
-async function createHostMountNamespaceSeverance(input, sandbox) {
-  const root = join(input.temporaryRoot, "host-severance");
-  const emptySource = join(root, "empty-source");
-  const pidFile = join(root, "namespace.pid");
-  await mkdir(emptySource, { recursive: true });
-  const script = [
-    "mount --make-rprivate /",
-    "mount --bind \"$1\" \"$2\"",
-    "ip link set lo up",
-    "printf '%s\\n' \"$$\" > \"$3\"",
-    "exec sleep infinity",
-  ].join("\n");
-  const keeper = launch("sudo", ["-n", "unshare", "--mount", "--net", "--fork", "--kill-child", "--propagation", "private", "bash", "-ceu", script, "projector-severance", emptySource, input.repositoryRoot, pidFile], { cwd: input.temporaryRoot, env: process.env });
-  const namespaceProcessId = await Promise.race([
-    waitForTextFile(pidFile, "host source-severance namespace"),
-    keeper.completed.then((result) => { throw new Error(`host source-severance namespace exited early: ${result.stderr || result.stdout || String(result.exitCode)}`); }),
-  ]);
-  if (!/^\d+$/u.test(namespaceProcessId)) throw new Error("host source-severance namespace returned an invalid process ID");
-  const environment = {
-    HOME: sandbox.repository,
-    NODE_PATH: "",
-    PATH: `${dirname(process.execPath)}:/usr/bin`,
-    PROJECTOR_CLI: sandbox.installedCli,
-    PROJECTOR_FIXTURE_EXECUTION_MARKER: sandbox.fixtureMarker,
-  };
-  return {
-    launch(executable, args, options = {}) {
-      const command = [
-        "-n", "nsenter", "--target", namespaceProcessId, "--mount", "--net",
-        `--setgid=${String(process.getgid())}`, `--setuid=${String(process.getuid())}`,
-        ...packedLifecycleNsenterWorkingDirectoryArguments(sandbox.repository), "--", "/usr/bin/env", "-i",
-        ...Object.entries(environment).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => `${key}=${value}`),
-        executable, ...args,
-      ];
-      return launch("sudo", command, { cwd: sandbox.repository, env: process.env, detached: options.detached });
-    },
-    async close() {
-      await closePackedLifecycleNamespaceKeeper({ namespaceProcessId, keeper, signalProcess: signalPrivilegedProcess });
-    },
-  };
-}
-
 export async function runPackedLifecycleAcceptance(input) {
+  const fixture = input.fixture;
+  assert(fixture?.version === 1 && typeof fixture.request === "string" && Array.isArray(fixture.expectedPaths), "received an invalid held-out fixture");
   const runId = randomUUID();
   const pluginRoot = join(input.temporaryRoot, "held-out-plugin");
   const repository = join(input.temporaryRoot, "held-out-repository");
@@ -318,24 +264,13 @@ export async function runPackedLifecycleAcceptance(input) {
   await mkdir(join(repository, "test"), { recursive: true });
   await writeFile(join(repository, ".gitignore"), ".projector/runtime/\n", "utf8");
   await writeFile(join(repository, "package.json"), "{\"type\":\"module\"}\n", "utf8");
-  const beforeSource = "export const formatLabel = (value) => String(value);\n";
-  const afterSource = "export const formatLabel = (value) => typeof value === 'string' ? value.trim() : String(value);\n";
-  const supplemental = "import assert from 'node:assert/strict'; import { formatLabel } from '../src/index.mjs'; assert.equal(formatLabel('  beta  '), 'beta');\n";
+  const { beforeSource, afterSource, supplementalTestSource: supplemental } = fixture;
+  assert([beforeSource, afterSource, supplemental, fixture.indexSource, fixture.independentOracleSource].every((value) => typeof value === "string" && value.length > 0), "received incomplete held-out fixture bytes");
   await writeFile(join(repository, "src", "format-label.mjs"), beforeSource, "utf8");
-  await writeFile(join(repository, "src", "index.mjs"), "export { formatLabel } from './format-label.mjs';\n", "utf8");
-  await writeFile(join(repository, "test", "public-api.test.mjs"), [
-    "import assert from 'node:assert/strict';",
-    "import { existsSync } from 'node:fs';",
-    "import { setTimeout as delay } from 'node:timers/promises';",
-    "import { formatLabel } from '../src/index.mjs';",
-    "if (existsSync('.projector/runtime/interruption-hold')) await delay(120_000);",
-    "assert.equal(formatLabel('alpha'), 'alpha');",
-    "assert.equal(formatLabel('  beta  '), 'beta');",
-    "",
-  ].join("\n"), "utf8");
-  const request = "Trim surrounding label whitespace while preserving existing callers.";
-  const proposalPath = "change-proposal.json";
-  const expectedPaths = ["src/format-label.mjs", "test/trim-label.test.mjs"];
+  await writeFile(join(repository, "src", "index.mjs"), fixture.indexSource, "utf8");
+  await writeFile(join(repository, "test", "public-api.test.mjs"), fixture.independentOracleSource, "utf8");
+  const { request, proposalPath, expectedPaths } = fixture;
+  assert(typeof proposalPath === "string" && proposalPath.length > 0 && expectedPaths.every((path) => typeof path === "string" && path.length > 0), "received invalid held-out fixture paths");
   const proposal = {
     apiVersion: "projector.change-proposal/v1",
     requirements: [{ key: "trimmed-project-label", title: "Trimmed project label", statement: "A string project label excludes surrounding whitespace.", aliases: [] }],
@@ -359,10 +294,7 @@ export async function runPackedLifecycleAcceptance(input) {
   await writeFile(join(repository, ".projector", "runtime", "interruption-hold"), "hold\n", "utf8");
 
   const sandbox = { temporaryRoot: input.temporaryRoot, consumerRoot: input.consumerRoot, pluginRoot, repository, installedCli, fixtureMarker };
-  const isolation = packedLifecycleSeveranceMode() === "host-mount-namespace"
-    ? await createHostMountNamespaceSeverance(input, sandbox)
-    : { launch: (executable, args, options = {}) => launch(bubblewrap, sandboxArguments(sandbox, executable, args), { cwd: repository, detached: options.detached }), close: async () => {} };
-  const severed = isolation.launch;
+  const severed = (executable, args, options = {}) => launch(bubblewrap, sandboxArguments(sandbox, executable, args), { cwd: repository, detached: options.detached });
   const direct = async (args) => (await severed(process.execPath, [installedCli, ...args]).completed);
   const trace = [];
   const recordInvocation = (phase, command, args, result) => {
@@ -377,10 +309,9 @@ export async function runPackedLifecycleAcceptance(input) {
     return { ...launched, completed };
   };
   const agent = async (args) => launchAgent(args).completed;
-  try {
   const sourceProbeCode = "import { access } from 'node:fs/promises'; try { await access(process.argv[1]); process.exitCode=9; } catch (error) { if (error?.code !== 'ENOENT') throw error; process.stdout.write(JSON.stringify({sourceAccessDenied:true})+'\\n'); }";
   const installedVersion = requireExit(await direct(["--version"]), "source-severed installed CLI version").stdout;
-  assert(installedVersion === "2.0.0", "did not execute the installed CLI");
+  assert(installedVersion === "2.1.0", "did not execute the installed CLI");
   const denied = json(await severed(process.execPath, ["--input-type=module", "--eval", sourceProbeCode, join(input.repositoryRoot, "package.json")]).completed, "source access negative probe");
   const initialized = json(await direct(["init", "--format", "json"]), "explicit held-out repository activation");
   const activationConfig = JSON.parse(await readFile(join(repository, ".projector", "config.json"), "utf8"));
@@ -453,8 +384,6 @@ export async function runPackedLifecycleAcceptance(input) {
     fixtureMarkerAbsent: await pathAbsent(fixtureMarker),
   };
   const evidenceHash = verifyPackedLifecycleEvidence(evidence);
-  return { runId, evidence, evidenceHash, transcriptHash: hash("packed-held-out-lifecycle-transcript", { runId, directChange, directPlan, pause, approval, interrupted, recovered, result, fixed, trace }) };
-  } finally {
-    await isolation.close();
-  }
+  const transcript = { runId, directChange, directPlan, pause, approval, interrupted, recovered, result, fixed, trace };
+  return { runId, evidence, evidenceHash, transcript, transcriptHash: hash("packed-held-out-lifecycle-transcript", transcript) };
 }

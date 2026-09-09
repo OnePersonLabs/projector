@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  governed-ci:
+  build-candidate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
@@ -27,4 +27,44 @@ jobs:
       - run: node scripts/task19-dogfood.mjs
       - run: pnpm verify
       - run: pnpm release:artifacts:check
-      - run: pnpm release:acceptance
+      - run: node scripts/build-source-severed-release-bundle.mjs .temp/release-candidate
+      - name: Upload exact release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: projector-release-candidate
+          path: .temp/release-candidate
+          if-no-files-found: error
+          retention-days: 7
+
+  source-severed-acceptance:
+    needs: build-candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Download exact release candidate without a checkout
+        uses: actions/download-artifact@v4
+        with:
+          name: projector-release-candidate
+          path: candidate
+      - name: Provision capability-proven Ubuntu sandbox
+        run: bash candidate/provision-ubuntu-sandbox.sh
+      - name: Accept downloaded source-severed candidate
+        run: node candidate/source-severed-release-acceptance.mjs candidate
+      - name: Upload exact accepted artifacts and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: projector-2.1.0-accepted
+          path: |
+            candidate/artifacts
+            candidate/plugin
+            candidate/manifest.json
+            candidate/results/packed-held-out-lifecycle.json
+            candidate/results/packed-held-out-lifecycle-transcript.json
+            candidate/results/digests.json
+          if-no-files-found: error
+          retention-days: 14

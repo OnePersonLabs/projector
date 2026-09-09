@@ -25,7 +25,7 @@
     {
       "id": "governance-base:projector-self",
       "source": "PROJECTOR_SPEC",
-      "sourceDigest": "sha256:v1:16b702104cb0660ba319a80f9958afe74278e2b377c4f9a9fbf5461216633217",
+      "sourceDigest": "sha256:v1:f33c4775c3ee01be6c91af737c807989d092c5cf5d84923ee648b58788c1db14",
       "status": "active",
       "manifestPath": "PROJECTOR_SPEC/spec.manifest.json",
       "manifestDigest": "sha256:v1:863a6c685c874043fb204ef7c5623c280999af903181d1636c8c2e1263d399e2"

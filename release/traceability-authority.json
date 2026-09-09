@@ -84,7 +84,7 @@
     "scenario:17:manual-only-sandbox-release-workflow": {
       "obligationId": "scenario:17:manual-only-sandbox-release-workflow",
       "publicFacade": "projector",
-      "testRef": "scripts/sandbox-release-workflow.test.ts#manual sandbox release workflow has only a manual trigger and proves isolation before governed release gates"
+      "testRef": "scripts/sandbox-release-workflow.test.ts#manual sandbox release workflow has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job"
     },
     "scenario:18:operational-mcp-advertisement": {
       "obligationId": "scenario:18:operational-mcp-advertisement",

@@ -85,7 +85,7 @@ input.on("line", (line) => {
       result: {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "projector", version: "2.0.5" },
+        serverInfo: { name: "projector", version: "2.1.0" },
         instructions: "Projector tools are state-bound; inspect evidence before mutation.",
       },
     });
