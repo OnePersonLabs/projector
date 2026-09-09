@@ -312,7 +312,7 @@ function outputFor(command: SliceCommand, report: unknown, format: ReportFormat)
     const count = (report as { divergences: readonly unknown[] }).divergences.length;
     return count === 0 ? "No governed divergences found." : `${count} governed divergences found.`;
   }
-  if (command === "plan") return (report as { preview: { expectedDiff: string } }).preview.expectedDiff;
+  if (command === "plan") return renderLifecyclePlan(report);
   if (command === "change") return `change: ${(report as { selector: string }).selector}`;
   if (command === "explain") return (report as { explanation: string }).explanation;
   if (command === "coverage" || command === "complete" || command === "cleanup") return `${command}: ${(report as CoverageCliReport).proofStatement}`;
@@ -320,6 +320,67 @@ function outputFor(command: SliceCommand, report: unknown, format: ReportFormat)
   if (command === "mcp") return `mcp: ${(report as { status: string }).status}`;
   if (command === "upgrade") return `upgrade: ${(report as { selector: string }).selector}`;
   return `${command} completed.`;
+}
+
+interface IntentReviewValue {
+  readonly subjects: readonly {
+    readonly id: string;
+    readonly kind: "requirement" | "scenario";
+    readonly operation: "preserve" | "add" | "revise";
+    readonly before: unknown;
+    readonly after: unknown;
+    readonly rationale: string | null;
+  }[];
+  readonly relatedObligations: readonly { readonly id: string; readonly kind: string; readonly payload: unknown }[];
+  readonly blockingUnknowns?: readonly string[];
+}
+
+function renderLifecyclePlan(report: unknown): string {
+  const preview = (report as { preview: { expectedDiff: string; intentReview?: IntentReviewValue } }).preview;
+  if (preview.intentReview === undefined) return preview.expectedDiff;
+  const review = preview.intentReview;
+  const lines = [preview.expectedDiff, "", "Intent review:"];
+  for (const subject of review.subjects) {
+    lines.push(`${subject.operation.toUpperCase()} ${subject.kind} ${subject.id}`);
+    appendMeaning(lines, "before", subject.kind, subject.before);
+    appendMeaning(lines, "after", subject.kind, subject.after);
+    lines.push(`  rationale: ${subject.rationale ?? "none provided"}`);
+  }
+  lines.push("", "Related obligations:");
+  if (review.relatedObligations.length === 0) lines.push("- none");
+  else for (const obligation of review.relatedObligations) {
+    lines.push(`- ${obligation.kind} ${obligation.id}`);
+    if (obligation.kind === "requirement") appendMeaning(lines, "  current", "requirement", obligation.payload);
+    else if (obligation.kind === "behavioral-scenario") appendMeaning(lines, "  current", "scenario", obligation.payload);
+  }
+  lines.push("", "Blocking unknowns:");
+  if ((review.blockingUnknowns?.length ?? 0) === 0) lines.push("- none");
+  else for (const unknown of review.blockingUnknowns!) lines.push(`- ${unknown}`);
+  return lines.join("\n");
+}
+
+function appendMeaning(lines: string[], label: string, kind: "requirement" | "scenario", value: unknown): void {
+  if (!isRecord(value)) { lines.push(`  ${label}: absent`); return; }
+  lines.push(`  ${label} title: ${stringValue(value.title)}`);
+  if (kind === "requirement") {
+    lines.push(`  ${label} meaning: ${stringValue(value.statement)}`);
+    return;
+  }
+  const steps = Array.isArray(value.steps) ? value.steps : [];
+  lines.push(`  ${label} meaning:`);
+  if (steps.length === 0) lines.push("    (no scenario steps)");
+  else for (const step of steps) {
+    const record = isRecord(step) ? step : {};
+    lines.push(`    ${stringValue(record.role)}: ${stringValue(record.statement)}`);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "(unavailable)";
 }
 
 function coverageExitCode(request: CoverageCliRequest, report: CoverageCliReport): number {
@@ -573,7 +634,7 @@ function defaultRepositoryLifecyclePort(): RepositoryLifecycleCliPort {
     plan: async ({ repositoryRoot, selector }) => {
       const planned = await (await service(repositoryRoot)).plan(selector);
       const expectedDiff = planned.compiled.exactPatchInput.edits.map(({ path, before, after }) => `${before === null ? "create" : after === null ? "delete" : "replace"} ${path}`).join("\n");
-      return { kind: "lifecycle-plan", selector, immutablePlanHash: planned.capture.planHash, preview: { expectedDiff }, plan: planned.compiled.compiledPlan.plan };
+      return { kind: "lifecycle-plan", selector, immutablePlanHash: planned.capture.planHash, preview: { expectedDiff, intentReview: planned.compiled.intentReview }, plan: planned.compiled.compiledPlan.plan };
     },
     approve: async ({ repositoryRoot, selector, planHash }) => {
       const approval = await (await service(repositoryRoot)).approve(selector, planHash as ContentHash);

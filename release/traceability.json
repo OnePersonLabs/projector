@@ -118,8 +118,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating",
-      "testSourceDigest": "sha256:v1:ac3e12a269c7df29685299a3d291fe3ad8e21ed619226d1fe5025fdc928e0487",
-      "mappingHash": "sha256:v1:be97489acabb8efa7b7e63e36bb24c6aa9a8b8b86a7b63850f7e1a75fce52dcc"
+      "testSourceDigest": "sha256:v1:0c7001001769a29465572e55a9fc904bed512e98e7777f304e0abefdc59669a8",
+      "mappingHash": "sha256:v1:c1142a7fa3be1d6789abea811416453678aad64c5c31f74e1af53e191e17bc18"
     },
     {
       "id": "scenario:11:branch-governance-conflict",
@@ -214,8 +214,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/run-cli.test.ts#projector run host boundary resolves an authenticated built session and detects a fake host's committed-clean write",
-      "testSourceDigest": "sha256:v1:89670850fc1333224272546d1851a814ff557432a446e76a0765faf476d66d3f",
-      "mappingHash": "sha256:v1:846b2e11723af35a02d83270e222ef7534a9e937f03cb8a22832d0f1c15c8b39"
+      "testSourceDigest": "sha256:v1:7954bdb3ea6c7f7fb523d0a9b8a3e2df2d90305b426b0a49fce82c3f50b8c4d7",
+      "mappingHash": "sha256:v1:c52b71d609090c22b79663e3332ac56982deb807db2cb515c493c01fffa74f6b"
     },
     {
       "id": "scenario:19:installed-held-out-change-lifecycle",
@@ -290,8 +290,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer localizes a malformed manifest failure while preserving filesystem and JavaScript observations",
-      "testSourceDigest": "sha256:v1:171751bcdc265d51112dcf1b3b77837f127f243e56270f6ceae042ed8333d4f4",
-      "mappingHash": "sha256:v1:1c758e93c7738353225b4c6a8caa65c83c64f4cc0ef83652d008201043e1d3b0"
+      "testSourceDigest": "sha256:v1:c372643b7df1c08fcdce0f4d368a5991c49a9400b891b91d85eed21b03dad8a0",
+      "mappingHash": "sha256:v1:073dc9f4fc7a1367827479f51a9305dce5ca00a9359684a0a6c197f5890a517b"
     },
     {
       "id": "scenario:25:path-symlink-escape",
@@ -314,8 +314,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it",
-      "testSourceDigest": "sha256:v1:171751bcdc265d51112dcf1b3b77837f127f243e56270f6ceae042ed8333d4f4",
-      "mappingHash": "sha256:v1:e1ea1324e52eff259fb22844dd7a3986c3c126fea14d4f0f63a750c640afbf6f"
+      "testSourceDigest": "sha256:v1:c372643b7df1c08fcdce0f4d368a5991c49a9400b891b91d85eed21b03dad8a0",
+      "mappingHash": "sha256:v1:51bf641edc3934814fb3725cefbbd7d0e4babe5694dbca328bd54246eceae029"
     },
     {
       "id": "scenario:27:projector-repair-oscillation",
@@ -1010,8 +1010,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating",
-      "testSourceDigest": "sha256:v1:ac3e12a269c7df29685299a3d291fe3ad8e21ed619226d1fe5025fdc928e0487",
-      "mappingHash": "sha256:v1:fc2cac56634d228ba5449077cb8de13abaceabcda32cdf12687b660f65529429"
+      "testSourceDigest": "sha256:v1:0c7001001769a29465572e55a9fc904bed512e98e7777f304e0abefdc59669a8",
+      "mappingHash": "sha256:v1:033f531cf8d33ebbd69b122034913a1c9265c08e2db48dc7956cbfd5fa48ff06"
     },
     {
       "id": "property:22:rebuilding-sqlite-from-canonical-inputs-preserves-semantic-state",
@@ -1130,8 +1130,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/testkit",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating",
-      "testSourceDigest": "sha256:v1:ac3e12a269c7df29685299a3d291fe3ad8e21ed619226d1fe5025fdc928e0487",
-      "mappingHash": "sha256:v1:35386b2e9204e81ec621d4ee6ebd4dbfe7913d5b78f456c3fd49aaf19c04a17c"
+      "testSourceDigest": "sha256:v1:0c7001001769a29465572e55a9fc904bed512e98e7777f304e0abefdc59669a8",
+      "mappingHash": "sha256:v1:614b2087a0e658a00f9ced18cd2667263787cc738103d055c2b80fbc33ed22af"
     },
     {
       "id": "adversary:05:branch-merge-canonical-governance-conflict",
@@ -1274,8 +1274,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it",
-      "testSourceDigest": "sha256:v1:171751bcdc265d51112dcf1b3b77837f127f243e56270f6ceae042ed8333d4f4",
-      "mappingHash": "sha256:v1:258b788204b655289b5e8cc08374587fe45f3babf2e937a9ae93dca008f0fb09"
+      "testSourceDigest": "sha256:v1:c372643b7df1c08fcdce0f4d368a5991c49a9400b891b91d85eed21b03dad8a0",
+      "mappingHash": "sha256:v1:f00e665ac39fa63d42be0bf8a927b41afe599642713928c8009ca5c5052e14a8"
     },
     {
       "id": "adversary:17:mutation-generated-near-misses",
@@ -1286,8 +1286,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer marks generated sources explicitly and limits unresolved imports to dependency claims",
-      "testSourceDigest": "sha256:v1:171751bcdc265d51112dcf1b3b77837f127f243e56270f6ceae042ed8333d4f4",
-      "mappingHash": "sha256:v1:87d54645e1ea1ff71ff52ebc0c93c059a8268d08952a506c13e93bc0b0c77772"
+      "testSourceDigest": "sha256:v1:c372643b7df1c08fcdce0f4d368a5991c49a9400b891b91d85eed21b03dad8a0",
+      "mappingHash": "sha256:v1:5e0b7c6c07fdc3be33a1d50f74af5c7fe84399faf120ffd895ee541eba6581dd"
     },
     {
       "id": "adversary:18:unsupported-analyzer-capability-degradation",
@@ -1310,8 +1310,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector",
       "testRef": "packages/control-plane/src/change-lifecycle/compiler.test.ts#repository change compiler blocks duplicate identity candidates and invalid or expired deferrals",
-      "testSourceDigest": "sha256:v1:3349e1131aa0ec8b74ced57c0b86adc0b713183a4ad85584c1777f2d453edba1",
-      "mappingHash": "sha256:v1:47db3e9ace504f1ae0328f93a22f46e60281646f0d90d7045d0e08ada62fff06"
+      "testSourceDigest": "sha256:v1:f148dca9b0acebee6d813c6d823f7c9d56a5ba956da2b6416d462cdd5196b24a",
+      "mappingHash": "sha256:v1:2bc948a6bd7e944846c859bdf768c0d55063cf3169ed81bf9a96a0b6551f4b1d"
     },
     {
       "id": "adversary:20:cross-cutting-governing-semantics-hidden-outside-the-touched-package",

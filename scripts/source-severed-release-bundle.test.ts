@@ -25,6 +25,7 @@ describe("source-severed release candidate", () => {
       "plugin/projector/.codex-plugin/plugin.json",
       "packed-lifecycle-acceptance.mjs",
       "source-severed-release-acceptance.mjs",
+      "npm-command.mjs",
       "release-candidate.mjs",
       "fixtures/held-out-change.json",
       "provision-ubuntu-sandbox.sh",

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -60,7 +60,7 @@ function workspaceProposal(): ChangeProposal {
 
 async function existingRequirement(root: string, id: string, key: string, aliases: string[]): Promise<void> {
   const payload: Requirement = {
-    id, key, title: "Legacy named greeting", aliases, statement: "A greeting may include a name.", status: "active",
+    id, key, title: "Personalized greeting", aliases, statement: "The greeting includes the supplied name.", status: "active",
     sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" },
     origin: [{ kind: "document", locator: "README.md" }], evidence: [], discoveryHash: placeholder, semanticHash: placeholder,
   };
@@ -107,8 +107,9 @@ describe("repository change compiler", () => {
         expect.objectContaining({ kind: "requirement", outcome: "reuse-existing", targetId: "requirement:legacy-greeting" }),
         expect.objectContaining({ kind: "scenario", outcome: "create-new" }),
       ]));
-      expect(first.canonicalWrites.map(({ id }) => id)).toContain("requirement:legacy-greeting");
-      expect(first.compiledChange.change.operations.filter(({ subjectType }) => subjectType === "requirement")[0]).toMatchObject({ requirementId: "requirement:legacy-greeting" });
+      expect(first.canonicalWrites.map(({ id }) => id)).not.toContain("requirement:legacy-greeting");
+      expect(first.intentReview.subjects).toEqual(expect.arrayContaining([expect.objectContaining({ id: "requirement:legacy-greeting", operation: "preserve" })]));
+      expect(first.compiledChange.change.operations.filter(({ subjectType }) => subjectType === "requirement")).toHaveLength(0);
       expect(first.relevance.knownAffectedPaths).toEqual(["src/greeting.mjs", "src/index.mjs", "test/public-contract.test.mjs"]);
       expect(first.compiledChange.boundState.queryDependencies.map(({ query }) => query.id)).toEqual(expect.arrayContaining([
         expect.stringMatching(/^identity:/u),
@@ -180,6 +181,95 @@ describe("repository change compiler", () => {
       expect(compiled.canonicalWrites).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "scenario:greet-supplied-name" })]));
       expect(compiled.compiledChange.change.operations).not.toEqual(expect.arrayContaining([expect.objectContaining({ subjectType: "scenario", scenarioId: "scenario:greet-supplied-name" })]));
       expect(compiled.exactPatchInput.edits.every(({ before, after }) => before !== after)).toBe(true);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rejects a test-passing simplification of existing meaning and preserves reference bytes", async () => {
+    const root = await repository();
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      const path = canonical.pathFor("requirement", "requirement:legacy-greeting");
+      const before = await readFile(path, "utf8");
+      const reduced = parseChangeProposal({ ...proposal(), requirements: [{ ...proposal().requirements[0], statement: "The greeting returns text." }],
+        edits: [{ path: "src/greeting.mjs", before: proposal().edits[0]!.before, after: 'export const greet = () => "hello";\n' }] });
+      await writeFile(join(root, "src/greeting.mjs"), reduced.edits[0]!.after!);
+      await exec(process.execPath, ["--test", "test/public-contract.test.mjs"], { cwd: root });
+      await writeFile(join(root, "src/greeting.mjs"), reduced.edits[0]!.before!);
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Refactor greeting without changing its behavior.", proposal: reduced }))
+        .rejects.toThrow(/implicit canonical revision is forbidden/iu);
+      const reference = await compileRepositoryChange({ repositoryRoot: root, request: "Implement the recorded greeting behavior.", proposal: proposal() });
+      expect(reference.canonicalWrites.some(({ id }) => id === "requirement:legacy-greeting")).toBe(false);
+      expect(await readFile(path, "utf8")).toBe(before);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("binds explicit revisions to prior meaning and retains related future commitments", async () => {
+    const root = await repository();
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      const existing = (await canonical.snapshot()).documents.find(({ id }) => id === "requirement:legacy-greeting")!;
+      await existingRequirement(root, "requirement:future", "future-personalization", []);
+      await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: "relation:future", key: "relation:relation:future", lifecycle: "active",
+        payload: { id: "relation:future", fromId: existing.id, toId: "requirement:future", type: "requires", active: true, sourceClass: "authored", confidence: 1, evidence: [], semanticHash: placeholder } }));
+      const revised = parseChangeProposal({ ...proposal(), requirements: [{ ...proposal().requirements[0], statement: "The greeting includes the supplied name and preserves its case.",
+        revision: { id: existing.id, expectedSemanticHash: existing.payload.semanticHash, rationale: "Make the previously implicit case-preservation requirement explicit." } }] });
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Clarify case preservation.", proposal: revised });
+      const review = compiled.intentReview.subjects.find(({ id }) => id === existing.id)!;
+      expect(review.operation).toBe("revise");
+      expect(review.before?.semanticHash).toBe(existing.payload.semanticHash);
+      expect(review.after.semanticHash).not.toBe(review.before?.semanticHash);
+      expect(compiled.intentReview.relatedObligations.map(({ id }) => id)).toContain("requirement:future");
+      expect(compiled.intentReview.relations.map(({ id }) => id)).toEqual(["relation:future"]);
+      expect(compiled.intentReview.blockingUnknowns).toEqual([]);
+      expect(compiled.compiledChange.change.operations).toEqual(expect.arrayContaining([expect.objectContaining({ subjectType: "requirement", rationale: expect.stringContaining("case-preservation") })]));
+      expect(compiled.compiledChange.change.assumptions.join(" ")).toContain("requirement:future");
+      const stale = parseChangeProposal({ ...revised, requirements: [{ ...revised.requirements[0], revision: { ...revised.requirements[0]!.revision, expectedSemanticHash: placeholder } }] });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Clarify case preservation.", proposal: stale })).rejects.toThrow(/semantic hash is stale/iu);
+      await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: "relation:unimplemented", key: "relation:relation:unimplemented", lifecycle: "active",
+        payload: { id: "relation:unimplemented", fromId: "requirement:future", toId: "concept:not-yet-modeled", type: "depends-on", active: true, sourceClass: "authored", confidence: 1, evidence: [], semanticHash: placeholder } }));
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Clarify case preservation.", proposal: revised })).rejects.toThrow(/unresolved conceptual obligations.*concept:not-yet-modeled/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("requires an explicit revision for a weakened scenario outcome", async () => {
+    const root = await repository();
+    try {
+      await existingScenario(root);
+      const weaker = parseChangeProposal({ ...proposal(), scenarios: [{ ...proposal().scenarios[0], steps: [
+        { role: "trigger", statement: "The caller requests a greeting." }, { role: "expected-outcome", statement: "A greeting is returned." },
+      ] }] });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Refactor greeting.", proposal: weaker })).rejects.toThrow(/implicit canonical revision/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("does not promote descriptive or inferred relations to obligations", async () => {
+    const root = await repository();
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      for (const [id, type, sourceClass] of [["relation:descriptive", "documents", "authored"], ["relation:inferred", "requires", "inferred"]] as const) {
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id, key: `relation:${id}`, lifecycle: "active",
+          payload: { id, fromId: "requirement:legacy-greeting", toId: "unaccepted:meaning", type, sourceClass, active: true, confidence: 1, evidence: [], semanticHash: placeholder } }));
+      }
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Implement greeting.", proposal: proposal() });
+      expect(compiled.intentReview.relations).toEqual([]);
+      expect(compiled.intentReview.blockingUnknowns).toEqual([]);
+      expect(compiled.intentReview.unknowns.join(" ")).toContain("inferred relation remains a candidate");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("follows explicit ownership forward without importing an unrelated owner's commitments", async () => {
+    const root = await repository();
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      await existingRequirement(root, "requirement:owned", "owned", []);
+      for (const [id, fromId, toId] of [["relation:owned", "requirement:legacy-greeting", "requirement:owned"], ["relation:other-owner", "concept:unrelated-owner", "requirement:legacy-greeting"]]) {
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: id!, key: `relation:${id}`, lifecycle: "active",
+          payload: { id, fromId, toId, type: "owns", sourceClass: "authored", active: true, confidence: 1, evidence: [], semanticHash: placeholder } }));
+      }
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Implement greeting.", proposal: proposal() });
+      expect(compiled.intentReview.relations.map(({ id }) => id)).toEqual(["relation:owned"]);
+      expect(compiled.intentReview.relatedObligations.map(({ id }) => id)).toContain("requirement:owned");
+      expect(compiled.intentReview.blockingUnknowns).toEqual([]);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

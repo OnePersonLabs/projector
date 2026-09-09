@@ -36,6 +36,7 @@ import type { CompiledRepositoryChange } from "./compiler.js";
 import { observeChangeRepository, type ChangeRepositoryObservation } from "./repository-observer.js";
 import { createChangeQueryRegistry } from "./query-programs.js";
 import type { ChangeLifecycleStore, LifecycleAttemptRecord } from "./store.js";
+import { validatePostChangeKnowledge } from "./knowledge-validation.js";
 
 export interface ExecuteCompiledRepositoryChangeInput {
   readonly repositoryRoot: string;
@@ -472,6 +473,10 @@ export async function executeCompiledRepositoryChange(
         if (dependency.id === "canonical-root") return observation.canonical.rootDigest;
         if (dependency.id === "projector.local-repository") return observation.state.toolchainDigest;
         if (dependency.id.startsWith("proposal:")) return input.compiled.proposalHash;
+        if (dependency.id.startsWith("knowledge-context:")) {
+          const retained = input.compiled.knowledgeContext;
+          return retained !== undefined && dependency.id === `knowledge-context:${retained.id}` ? retained.contentHash : undefined;
+        }
         if (dependency.id === "architecture-discovery") return dependency.versionHash;
         return undefined;
       },
@@ -508,8 +513,10 @@ export async function executeCompiledRepositoryChange(
       ),
       ];
       const observationStartedAt = now();
-      postObservation = await observeAppliedRepositoryChange(input.compiled, await observeChangeRepository(input.repositoryRoot), paths);
-      return [...validations, postObservationValidation(postObservation, observationStartedAt, now())];
+      const observation = await observeChangeRepository(input.repositoryRoot);
+      postObservation = await observeAppliedRepositoryChange(input.compiled, observation, paths);
+      return [...validations, postObservationValidation(postObservation, observationStartedAt, now()),
+        await validatePostChangeKnowledge(input.compiled, observation, observationStartedAt, now)];
     },
   };
   const executor = new StateBoundChangeExecutor<ExactTextPatchInput>({

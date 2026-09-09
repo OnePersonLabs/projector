@@ -321,28 +321,33 @@ describe("FileTransactionJournal", () => {
     const { root, journal } = await harness();
     const path = join(root, "sample.txt");
     await writeFile(path, "before");
-    await chmod(path, 0o600);
+    const originalMode = process.platform === "win32" ? 0o666 : 0o600;
+    const changedMode = process.platform === "win32" ? 0o444 : 0o640;
+    await chmod(path, originalMode);
     const transaction = await journal.begin(beginInput("tx-mode-change"));
     await transaction.writeFile("sample.txt", "planned-after");
-    await chmod(path, 0o640);
+    await chmod(path, changedMode);
 
     const [result] = await journal.recoverIncomplete();
     expect(result).toMatchObject({ action: "recovery-required" });
     expect(await readFile(path, "utf8")).toBe("planned-after");
-    expect((await stat(path)).mode & 0o777).toBe(0o640);
+    expect((await stat(path)).mode & 0o777).toBe(changedMode);
   });
 
   it("restores the original mode together with file content during rollback", async () => {
     const { root, journal } = await harness();
     const path = join(root, "sample.txt");
     await writeFile(path, "before");
-    await chmod(path, 0o600);
+    // Windows exposes only the writable/read-only bit through chmod; an atomic
+    // replacement of an existing read-only file is rejected by the platform.
+    const originalMode = process.platform === "win32" ? 0o666 : 0o600;
+    await chmod(path, originalMode);
     const transaction = await journal.begin(beginInput("tx-mode-restore"));
     await transaction.writeFile("sample.txt", "after");
 
     await journal.recoverIncomplete();
     expect(await readFile(path, "utf8")).toBe("before");
-    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await stat(path)).mode & 0o777).toBe(originalMode);
   });
 
   it("records checkpoints and requires intervention for an uncompensated external operation", async () => {
