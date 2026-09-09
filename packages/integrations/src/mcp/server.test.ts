@@ -59,6 +59,7 @@ describe("MCP transport and durable mutation capabilities", () => {
       controlled: {},
     });
     expect(server.registry.list().map(({ name }) => name)).toEqual(["projector.status"]);
+    expect(server.registry.list()[0]?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
     expect(PROJECTOR_MCP_TOOL_CATALOG).toHaveLength(21);
     expect(PROJECTOR_MCP_TOOL_CATALOG).toContainEqual({ name: "projector.apply_plan", class: "controlled" });
   });

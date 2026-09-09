@@ -22,6 +22,11 @@ function strings(value: unknown, label: string): string[] {
   return unique(value.map((item) => (item as string).normalize("NFKC").trim()));
 }
 
+function textArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim() === "")) throw new Error(`${label} must be a text array`);
+  return unique(value.map((item) => (item as string).normalize("NFKC").trim()));
+}
+
 function normalizedIdentity(value: string): string {
   return value.normalize("NFKC").trim().toLocaleLowerCase("en-US");
 }
@@ -122,7 +127,7 @@ function relevanceProgram(observation: ChangeRepositoryObservation): RegisteredQ
     id: CHANGE_QUERY_PROGRAM_IDS.reverseImporters,
     version: "1",
     kind: "package-dependency",
-    normalizeInput: (input) => ({ editedPaths: strings(input.editedPaths, "edited paths") }),
+    normalizeInput: (input) => ({ editedPaths: textArray(input.editedPaths, "edited paths") }),
     evaluate({ input }) {
       const relevance = calculateRepositoryRelevance(observation, input.editedPaths as string[]);
       return {

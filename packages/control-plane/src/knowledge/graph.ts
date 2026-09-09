@@ -573,9 +573,6 @@ export class KnowledgeGraph implements ContextSourcePort {
     const failures = this.observation.analysis.javaScript.failures
       .filter(({ scope, affectedClaimKinds }) => scope === path && (affectedClaimKinds.includes("dependency") || affectedClaimKinds.includes("test-target")))
       .map(({ analyzerId, capability: failedCapability, scope }) => `${analyzerId}:${failedCapability}:${scope}`);
-    const unknowns = file.unknowns
-      .filter((item) => /import|module|dependency/iu.test(item))
-      .map((item) => `projector.javascript-local:static-dependency-topology:${path}:${item}`);
     return {
       observability: capability.enumeration.observability,
       assumptions: unique([
@@ -583,7 +580,10 @@ export class KnowledgeGraph implements ContextSourcePort {
         `topology is bounded to observed static import, export, and test-target syntax for ${path}`,
         "incoming runtime dependency targets are not inferred; uncertain importer identities and source hashes are bound separately",
       ]),
-      unavailableLanes: unique([...failures, ...unknowns]),
+      // Dynamic/runtime targets are explicit uncertainty records in the query
+      // result. They remain unknown, but do not make the supported static
+      // syntax lane itself unavailable.
+      unavailableLanes: unique(failures),
     };
   }
 

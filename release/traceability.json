@@ -1310,8 +1310,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector",
       "testRef": "packages/control-plane/src/change-lifecycle/compiler.test.ts#repository change compiler blocks duplicate identity candidates and invalid or expired deferrals",
-      "testSourceDigest": "sha256:v1:f148dca9b0acebee6d813c6d823f7c9d56a5ba956da2b6416d462cdd5196b24a",
-      "mappingHash": "sha256:v1:2bc948a6bd7e944846c859bdf768c0d55063cf3169ed81bf9a96a0b6551f4b1d"
+      "testSourceDigest": "sha256:v1:124acc84ef629824d23d59958beb7c68518d8c454c88f46df360d746501d4343",
+      "mappingHash": "sha256:v1:341242ad9ee4d93581f413d21a4cff7744b09a768ac00039b773daa6bf40e2b8"
     },
     {
       "id": "adversary:20:cross-cutting-governing-semantics-hidden-outside-the-touched-package",

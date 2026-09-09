@@ -116,6 +116,7 @@ describe("Projector Codex plugin MCP launch", () => {
         expect.objectContaining({ name: "projector.list_divergences" }),
         expect.objectContaining({ name: "projector.status" }),
         expect.objectContaining({ name: "projector.validate" }),
+        expect.objectContaining({ name: "projector.bind_workspace" }),
       ]);
   });
 
@@ -181,7 +182,7 @@ describe("Projector Codex plugin MCP launch", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  test("MCP launcher uses an inactive root when only its own plugin directory is discoverable", async () => {
+  test("MCP launcher reports an unbound workspace when only its own plugin directory is discoverable", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-plugin-inactive-root-"));
     try {
       const parent = join(root, "plugin-parent.mjs");
@@ -206,12 +207,68 @@ describe("Projector Codex plugin MCP launch", () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.status", arguments: {} } })}\n`);
       await finishMcpExchange(child, () => stdout.includes('"id":2'), () => `${stdout}\n${stderr}`);
       const status = stdout.trim().split("\n").map((line) => JSON.parse(line) as JsonRpcMessage).find(({ id }) => id === 2);
-      expect(status?.result?.structuredContent).toMatchObject({ status: "not-enabled" });
+      expect(status?.result?.structuredContent).toMatchObject({ status: "workspace-unbound" });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("an invalid host directory leaves the session unbound so it can select its repository once", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-plugin-bind-"));
+    const repository = join(root, "repository");
+    const other = join(root, "other");
+    try {
+      for (const directory of [repository, other]) {
+        await mkdir(directory);
+        expect((await runExecutable("git", ["init", "-q"], directory, process.env)).status).toBe(0);
+      }
+      await mkdir(join(repository, ".projector"));
+      await writeFile(join(repository, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      await writeFile(join(repository, "host-only.txt"), "host\n");
+      const child = spawn(process.execPath, [join(pluginRoot, "scripts", "projector-mcp.mjs")], {
+        cwd: pluginRoot,
+        env: { ...process.env, PROJECTOR_ROOT: root, PROJECTOR_CLI: join(repositoryRoot, "packages", "cli", "dist", "cli.js") },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let stdout = ""; let stderr = "";
+      child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => { stdout += chunk; }); child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+      const send = (value: unknown): void => { child.stdin.write(`${JSON.stringify(value)}\n`); };
+      send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
+      send({ jsonrpc: "2.0", method: "notifications/initialized" });
+      send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.status", arguments: {} } });
+      send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "projector.bind_workspace", arguments: { repositoryRoot: repository } } });
+      send({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.bind_workspace", arguments: { repositoryRoot: other } } });
+      send({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "projector.bind_workspace", arguments: { repositoryRoot: repository } } });
+      send({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "projector.status", arguments: { cwd: other } } });
+      await finishMcpExchange(child, () => stdout.includes('"id":6'), () => `${stdout}\n${stderr}`);
+      const messages = stdout.trim().split("\n").map((line) => JSON.parse(line));
+      expect(messages.find(({ id }) => id === 2)?.result.structuredContent.status).toBe("workspace-unbound");
+      expect(messages.find(({ id }) => id === 3)?.result.structuredContent.status).toBe("bound");
+      expect(messages.find(({ id }) => id === 4)?.result.isError).toBe(true);
+      expect(messages.find(({ id }) => id === 5)?.result.structuredContent.status).toBe("bound");
+      expect(messages.find(({ id }) => id === 6)?.result.structuredContent).toMatchObject({ status: "ok", artifactCount: 2 });
+      expect(await readdir(other)).toEqual([".git"]);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
 
 describe("Projector installed change workflow", () => {
+  test("the installed wrapper uses its bundled CLI without a global installation or source checkout", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-plugin-runtime-"));
+    const installedPluginRoot = join(root, "installed-plugin");
+    const repository = join(root, "repository");
+    try {
+      await cp(pluginRoot, installedPluginRoot, { recursive: true });
+      await mkdir(repository);
+      const cliDirectory = join(installedPluginRoot, "runtime", "projector", "bin");
+      await mkdir(cliDirectory, { recursive: true });
+      await writeFile(join(installedPluginRoot, "runtime", "projector", "package.json"), '{"type":"module"}');
+      await writeFile(join(cliDirectory, "projector.js"), 'process.stdout.write(JSON.stringify({kind:"bundled-init",args:process.argv.slice(2),cwd:process.cwd()})+"\\n");');
+      const env = { ...process.env }; delete env.PROJECTOR_CLI;
+      const result = await runPluginChange(join(installedPluginRoot, "scripts", "projector-change.mjs"), ["init"], repository, env);
+      expect(result.status).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ kind: "bundled-init", args: ["init", "--format", "json"], cwd: repository });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
   test("uses only the installed CLI, preserves JSON and exit codes, and writes no repository state", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-plugin-change-"));
     const installedPluginRoot = join(root, "installed-plugin");

@@ -45,10 +45,14 @@ describe("explicit Projector project activation", () => {
     await expect(access(join(root, ".projector"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps MCP handshake-stable without invoking the analyzer when the project is not enabled", async () => {
+  it("keeps MCP handshake-stable and observes activation changes at its bound repository root", async () => {
     const root = await gitRepository();
-    const analyze = vi.fn(() => { throw new Error("analyzer must not run"); });
-    const mcp = await createBuiltMcpCliPort({ analyze } as never).start({ repositoryRoot: root, signal: new AbortController().signal });
+    const analyze = vi.fn(async () => ({ artifacts: [], projectionUnits: [], failures: [], divergences: [] }));
+    const knowledge = { context: vi.fn(async ({ request }: { request: string }) => ({
+      id: "knowledge:context:activation", request, persisted: false,
+      interpretation: { status: "unresolved" as const, candidates: [], unknowns: [] }, branches: [], unknowns: [],
+    })), reconcile: vi.fn() };
+    const mcp = await createBuiltMcpCliPort({ analyze, knowledge } as never).start({ repositoryRoot: root, signal: new AbortController().signal });
 
     const status = await mcp.transport.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "projector.status", arguments: { repo_root: "/tmp/attacker-selected" } } });
     const audit = await mcp.transport.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.audit", arguments: {} } });
@@ -59,6 +63,19 @@ describe("explicit Projector project activation", () => {
     expect(audit).toMatchObject({ result: { structuredContent: { status: "unavailable" } } });
     expect(divergences).toMatchObject({ result: { structuredContent: { status: "unavailable" } } });
     expect(analyze).not.toHaveBeenCalled();
+
+    await mkdir(join(root, ".projector"));
+    await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+    const enabledStatus = await mcp.transport.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.status", arguments: {} } });
+    expect(enabledStatus).toMatchObject({ result: { structuredContent: { status: "ok" } } });
+    expect(analyze).toHaveBeenCalledWith({ repositoryRoot: root });
+    await mcp.transport.handle({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "projector.context", arguments: { request: "Inspect enabled meaning" } } });
+    expect(knowledge.context).toHaveBeenCalledWith(expect.objectContaining({ repositoryRoot: root, request: "Inspect enabled meaning" }));
+
+    await writeFile(join(root, ".projector", "config.json"), "{\n");
+    const malformedStatus = await mcp.transport.handle({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "projector.status", arguments: {} } });
+    expect(malformedStatus).toMatchObject({ result: { structuredContent: { status: "not-enabled", reason: expect.stringMatching(/malformed/iu) } } });
+    expect(analyze).toHaveBeenCalledTimes(1);
   });
 
   it("allows the top-level MCP process command to start in an inactive repository", async () => {
