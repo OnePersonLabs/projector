@@ -56,7 +56,7 @@ const makeAuthority = (decision: ArchitectureDecision, conclusion: AuthorityReco
 const option = (key: string): DecisionOption => ({ key, title: key, description: key, hardConstraintStatus: "passes", tradeoffs: [], evidence: [], preferenceFit: [] });
 const preference = (): DeveloperPreference => {
   const base: Omit<DeveloperPreference, "semanticHash"> = { id: "preference:project", key: "local", scope: "project", selector: sharedScope, strength: "prefer", statement: "local", status: "active", sourceClass: "authored" };
-  return { ...base, semanticHash: hashFramedDomain("developer-preference", base) };
+  return { ...base, semanticHash: hashSemantic("developer-preference", base) };
 };
 
 describe("authenticated proof boundaries", () => {

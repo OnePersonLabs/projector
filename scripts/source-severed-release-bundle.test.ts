@@ -1,6 +1,8 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -8,6 +10,7 @@ import { buildSourceSeveredReleaseBundle } from "./build-source-severed-release-
 import { validateReleaseCandidate } from "./release-candidate.mjs";
 
 const roots: string[] = [];
+const execute = promisify(execFile);
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 describe("source-severed release candidate", () => {
@@ -23,6 +26,8 @@ describe("source-severed release candidate", () => {
     expect(manifest.files.map(({ path }: { path: string }) => path)).toEqual(expect.arrayContaining([
       manifest.tarballPath,
       "plugin/projector/.codex-plugin/plugin.json",
+      "plugin/projector/runtime/projector/bin/projector.js",
+      "plugin/projector/runtime/projector/node_modules/@projector/runtime/package.json",
       "packed-lifecycle-acceptance.mjs",
       "source-severed-release-acceptance.mjs",
       "npm-command.mjs",
@@ -32,7 +37,15 @@ describe("source-severed release candidate", () => {
     ]));
     expect(validated.files).toHaveLength(manifest.files.length);
 
+    const repository = join(root, "source checkout absent");
+    await mkdir(repository);
+    await execute("git", ["init", "--quiet"], { cwd: repository });
+    const env = { ...process.env, NODE_PATH: "" };
+    delete env.PROJECTOR_CLI;
+    const { stdout } = await execute(process.execPath, [join(candidate, "plugin/projector/scripts/projector-change.mjs"), "init"], { cwd: repository, env, encoding: "utf8" });
+    expect(JSON.parse(stdout)).toMatchObject({ initialized: true, projectEnabled: true });
+
     await writeFile(join(candidate, "fixtures/held-out-change.json"), "{}\n");
     await expect(validateReleaseCandidate(candidate)).rejects.toThrow(/digest|bytes/iu);
-  });
+  }, 30_000);
 });

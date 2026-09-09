@@ -2,6 +2,8 @@ import {
   AnalyzerCapabilitiesSchema,
   AnalyzerFailureSchema,
   ContentHashSchema,
+  AuthorityReconsiderTriggerSchema,
+  DecisionValidityAssessmentSchema,
   NormalizedPredicateSchema,
   RelevanceClosureSchema,
   StateBindingSchema,
@@ -10,6 +12,8 @@ import {
   type AnalyzerCapabilities,
   type AnalyzerFailure,
   type ContentHash,
+  type AuthorityReconsiderTrigger,
+  type DecisionValidityAssessment,
   type NormalizedPredicate,
   type RelevanceClosure,
   type StateBinding,
@@ -18,6 +22,7 @@ import {
 } from "@projector/core";
 import type { CompiledSemanticContext, GovernanceBundleEvaluation, RelevanceMetrics } from "@projector/engine";
 import { z } from "zod";
+import { RepositoryImpactReferenceSchema, RepositoryImpactReportSchema, type RepositoryImpactReference, type RepositoryImpactReport } from "../impact/service.js";
 
 export const KNOWLEDGE_API_VERSION = "projector.knowledge/v1" as const;
 
@@ -26,6 +31,8 @@ export type KnowledgeEntityKind =
   | "requirement"
   | "scenario"
   | "architecture-decision"
+  | "architecture-concern"
+  | "developer-preference"
   | "projection-unit"
   | "projection-lens";
 
@@ -92,12 +99,30 @@ export interface KnowledgeContextBranch {
   readonly metrics: RelevanceMetrics;
   readonly frontier: readonly string[];
   readonly lensObligations: readonly KnowledgeLensObligation[];
+  readonly decisionValidity?: readonly KnowledgeDecisionValidity[];
+  readonly governanceEvaluations?: readonly GovernanceBundleEvaluation[];
   readonly sourceFingerprint: ContentHash;
   readonly semanticFingerprint: ContentHash;
   readonly queryFingerprint: ContentHash;
 }
 
+export interface KnowledgeDecisionCheck {
+  readonly trigger: AuthorityReconsiderTrigger;
+  readonly status: "current" | "fired" | "unknown" | "unobserved";
+  readonly reason: string;
+}
+
+export interface KnowledgeDecisionValidity {
+  readonly decisionId: string;
+  readonly authorityId: string;
+  readonly baseline: { readonly kind: "authenticated-transaction" | "tracked-git-history" | "unavailable"; readonly reference?: string; readonly reason?: string };
+  readonly checks: readonly KnowledgeDecisionCheck[];
+  readonly assessment: DecisionValidityAssessment;
+  readonly contentHash: ContentHash;
+}
+
 export interface KnowledgeContextResult {
+  readonly impactBaseline?: RepositoryImpactReference;
   readonly apiVersion: typeof KNOWLEDGE_API_VERSION;
   readonly id: string;
   readonly request: string;
@@ -131,6 +156,7 @@ export interface KnowledgeGovernanceReconciliationBranch {
   readonly currentBranchId?: string;
   readonly status: "conformant" | "violated" | "unknown" | "not-applicable";
   readonly evaluations: readonly GovernanceBundleEvaluation[];
+  readonly decisionValidity?: readonly KnowledgeDecisionValidity[];
   readonly reasons: readonly string[];
 }
 
@@ -142,6 +168,7 @@ export interface KnowledgeGovernanceReconciliation {
 }
 
 export interface KnowledgeReconciliationResult {
+  readonly impact?: RepositoryImpactReport;
   readonly apiVersion: typeof KNOWLEDGE_API_VERSION;
   readonly contextId: string;
   readonly capturedState: StateDigest;
@@ -157,7 +184,7 @@ export interface KnowledgeReconciliationResult {
 const candidateSignalSchema = z.enum(["id", "key", "alias", "lexical", "lineage", "tombstone"]);
 export const KnowledgeInterpretationCandidateSchema: z.ZodType<KnowledgeInterpretationCandidate> = z.strictObject({
   entityId: z.string().min(1),
-  entityKind: z.enum(["concept", "requirement", "scenario", "architecture-decision", "projection-unit", "projection-lens"]),
+  entityKind: z.enum(["concept", "requirement", "scenario", "architecture-decision", "architecture-concern", "developer-preference", "projection-unit", "projection-lens"]),
   score: z.number().min(0).max(1).finite(),
   direct: z.boolean(),
   signals: z.array(candidateSignalSchema),
@@ -219,6 +246,21 @@ const compiledContextSchema: z.ZodType<CompiledSemanticContext> = z.strictObject
   contentHash: ContentHashSchema,
 });
 
+export const KnowledgeDecisionValiditySchema = z.strictObject({
+  decisionId: z.string(), authorityId: z.string(),
+  baseline: z.strictObject({ kind: z.enum(["authenticated-transaction", "tracked-git-history", "unavailable"]), reference: z.string().optional(), reason: z.string().optional() }),
+  checks: z.array(z.strictObject({ trigger: AuthorityReconsiderTriggerSchema, status: z.enum(["current", "fired", "unknown", "unobserved"]), reason: z.string() })),
+  assessment: DecisionValidityAssessmentSchema,
+  contentHash: ContentHashSchema,
+}) as unknown as z.ZodType<KnowledgeDecisionValidity>;
+
+const governanceEvaluationSchema = z.strictObject({
+  unitId: z.string(), status: z.enum(["conformant", "violated", "unknown"]),
+  findings: z.array(z.strictObject({ id: z.string(), unitId: z.string(), ruleId: z.string(), predicateHash: ContentHashSchema,
+    status: z.enum(["satisfied", "violated", "unknown"]), reason: z.string(), evidenceIds: z.array(z.string()) })),
+  boundary: z.array(z.string()), observationHash: ContentHashSchema, contentHash: ContentHashSchema,
+}) as unknown as z.ZodType<GovernanceBundleEvaluation>;
+
 export const KnowledgeContextBranchSchema = z.strictObject({
   id: z.string(),
   interpretation: KnowledgeInterpretationCandidateSchema,
@@ -228,12 +270,15 @@ export const KnowledgeContextBranchSchema = z.strictObject({
   metrics: relevanceMetricsSchema,
   frontier: z.array(z.string()),
   lensObligations: z.array(KnowledgeLensObligationSchema),
+  decisionValidity: z.array(KnowledgeDecisionValiditySchema).optional(),
+  governanceEvaluations: z.array(governanceEvaluationSchema).optional(),
   sourceFingerprint: ContentHashSchema,
   semanticFingerprint: ContentHashSchema,
   queryFingerprint: ContentHashSchema,
 }) as unknown as z.ZodType<KnowledgeContextBranch>;
 
 export const KnowledgeContextResultSchema = z.strictObject({
+  impactBaseline: RepositoryImpactReferenceSchema.optional(),
   apiVersion: z.literal(KNOWLEDGE_API_VERSION),
   id: z.string(),
   request: z.string(),
@@ -264,6 +309,7 @@ export const KnowledgeContextResultSchema = z.strictObject({
 }) as unknown as z.ZodType<KnowledgeContextResult>;
 
 export const KnowledgeReconciliationResultSchema = z.strictObject({
+  impact: RepositoryImpactReportSchema.optional(),
   apiVersion: z.literal(KNOWLEDGE_API_VERSION),
   contextId: z.string(),
   capturedState: StateDigestSchema,
@@ -278,6 +324,7 @@ export const KnowledgeReconciliationResultSchema = z.strictObject({
       interpretationEntityId: z.string(),
       retainedBranchId: z.string().optional(),
       currentBranchId: z.string().optional(),
+      decisionValidity: z.array(KnowledgeDecisionValiditySchema).optional(),
       status: z.enum(["conformant", "violated", "unknown", "not-applicable"]),
       evaluations: z.array(z.strictObject({
         unitId: z.string(),

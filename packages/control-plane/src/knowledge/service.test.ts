@@ -472,6 +472,8 @@ describe("RepositoryKnowledgeService", () => {
     const lens: ProjectionLens = {
       ...base,
       rules: [{ id: "rule:core-boundary", ...ruleBasis, semanticHash: hashFramedDomain("rule", ruleBasis) }],
+      validators: [{ id: "projector.builtin.static-dependency-boundary", version: "1", provider: "deterministic-governance", input: { ruleIds: ["rule:core-boundary"] }, required: true }],
+      expectedProjections: base.expectedProjections.map((projection) => ({ ...projection, expectation: { kind: "predicate-constrained", predicateIds: ["rule:core-boundary"], validatorIds: ["projector.builtin.static-dependency-boundary@1"] } })),
     };
     await writeCanonical(root, "authority-record", authorityRecord.id, authorityRecord.key, authorityRecord.status, { ...authorityRecord });
     await writeCanonical(root, "projection-lens", lens.id, lens.key, lens.status, { ...lens });

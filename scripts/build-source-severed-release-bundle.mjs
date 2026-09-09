@@ -5,21 +5,23 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { buildReleasePackage, releasePackageName, releaseVersion } from "./build-release-package.mjs";
+import { buildPluginRuntime, checkedBuildDirectory, pluginBuildOptions } from "./build-plugin-runtime.mjs";
 import { canonicalJson, inventoryCandidateFiles, releaseCandidateApiVersion, validateReleaseCandidate } from "./release-candidate.mjs";
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
-export async function buildSourceSeveredReleaseBundle(candidateRoot) {
-  candidateRoot = resolve(candidateRoot);
+export async function buildSourceSeveredReleaseBundle(candidateRoot, options = {}) {
+  const protectedInputs = [options.windowsNode, options.linuxNode, options.nodeLicense].filter((path) => path !== undefined);
+  candidateRoot = await checkedBuildDirectory(resolve(candidateRoot), protectedInputs);
   if (basename(candidateRoot) !== "release-candidate") throw new Error("release candidate output must end in release-candidate");
-  const stagingRoot = join(dirname(candidateRoot), `projector-release-${process.pid}`);
+  const stagingRoot = await checkedBuildDirectory(join(dirname(candidateRoot), `projector-release-${process.pid}`), protectedInputs);
   await rm(candidateRoot, { recursive: true, force: true });
   await rm(stagingRoot, { recursive: true, force: true });
   await mkdir(join(candidateRoot, "artifacts"), { recursive: true });
   try {
     const tarball = await buildReleasePackage(stagingRoot, join(candidateRoot, "artifacts"));
-    await cp(join(repositoryRoot, "plugins/projector"), join(candidateRoot, "plugin/projector"), { recursive: true });
+    await buildPluginRuntime(join(candidateRoot, "plugin/projector"), { ...options, releaseRoot: stagingRoot });
     await mkdir(join(candidateRoot, "fixtures"), { recursive: true });
     for (const [source, target] of [
       ["scripts/packed-lifecycle-acceptance.mjs", "packed-lifecycle-acceptance.mjs"],
@@ -59,6 +61,6 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const candidateRoot = process.argv[2];
   if (candidateRoot === undefined) throw new Error("usage: build-source-severed-release-bundle <release-candidate>");
-  const result = await buildSourceSeveredReleaseBundle(candidateRoot);
+  const result = await buildSourceSeveredReleaseBundle(candidateRoot, pluginBuildOptions(process.argv.slice(3)));
   process.stdout.write(`${JSON.stringify({ status: "release-candidate-built", root: result.root, manifestHash: result.manifestHash, files: result.files.length })}\n`);
 }

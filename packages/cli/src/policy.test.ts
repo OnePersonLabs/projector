@@ -49,6 +49,7 @@ describe("CLI execution-policy normalization", () => {
   });
 
   it("rejects all contradictory read-only and mutation combinations", () => {
+    expect(normalizeExecutionPolicy({ command: "cleanup", mode: "observe" }).allowAutoMutation).toBe(false);
     expect(() => normalizeExecutionPolicy({ command: "apply", auditOnly: true })).toThrow(/contradictory/u);
     expect(() => normalizeExecutionPolicy({ command: "audit", mode: "autonomous", auditOnly: true })).toThrow(/contradictory/u);
   });

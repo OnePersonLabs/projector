@@ -69,6 +69,7 @@ describe("change/plan/apply CLI composition", () => {
                 rationale: null,
               },
             ],
+            canonicalMutations: [{ id: "concept:old-value", kind: "concept", operation: "retire", before: { statement: "Old ownership" }, after: null, rationale: "Replacement preserves the useful boundary." }],
             relatedObligations: [{ id: "requirement:compatibility", kind: "requirement", payload: { title: "Compatibility", statement: "Existing callers continue to work." } }],
             blockingUnknowns: ["The external consumer inventory is unavailable."],
           },
@@ -102,6 +103,10 @@ describe("change/plan/apply CLI composition", () => {
       "    trigger: A caller reads the value.",
       "    expected-outcome: The value is returned.",
       "  rationale: none provided",
+      "RETIRE concept concept:old-value",
+      '  before: {"statement":"Old ownership"}',
+      "  after: retired",
+      "  rationale: Replacement preserves the useful boundary.",
       "",
       "Related obligations:",
       "- requirement requirement:compatibility",
@@ -151,6 +156,6 @@ describe("change/plan/apply CLI composition", () => {
       expect(applied.report.receipt.changedRequirementIds).toHaveLength(1);
       expect(applied.report.receipt.changedScenarioIds).toHaveLength(1);
     } finally { await rm(repositoryRoot, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
 });

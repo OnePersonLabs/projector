@@ -46,10 +46,8 @@ async function main(args) {
   if (command === "reconcile") return runCli("reconcile", [required(parsed, "--context")]);
   if (command === "start") {
     const context = parsed.get("--context");
-    if (context !== undefined) {
-      const reconciled = await runCli("reconcile", [context]);
-      if (reconciled.exitCode !== 0) return reconciled;
-    }
+    // Capture validates freshness and governance together with the proposal,
+    // including narrowly authorized reconsideration of a stale decision.
     const changed = await runCli("change", [required(parsed, "--request"), "--proposal", required(parsed, "--proposal"), ...(context === undefined ? [] : ["--context", context])]);
     if (changed.exitCode !== 0) return changed;
     const planned = await runCli("plan", [changed.output.selector]);

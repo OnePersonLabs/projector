@@ -107,7 +107,7 @@ describe("local repository analyzer", () => {
     delete process.env.PROJECTOR_FIXTURE_EXECUTION_MARKER;
     await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     expect(result.capabilities.every((capability) => !capability.executesRepositoryCode)).toBe(true);
-    expect(result.capabilities.every(({ adapterVersion }) => adapterVersion === "2.1.0")).toBe(true);
+    expect(result.capabilities.every(({ adapterVersion }) => adapterVersion === "2.2.0")).toBe(true);
 
     const misplaced = result.files.find((file) => file.path === ".codex/hooks/validate-repo.mjs");
     expect(misplaced).toMatchObject({
@@ -356,7 +356,7 @@ describe("local repository analyzer", () => {
 
     expect(result.surface.enumeration).toMatchObject({
       observability: "bounded",
-      blindSpots: expect.arrayContaining(["ignored .git, .worktrees, and node_modules contents"]),
+      blindSpots: expect.arrayContaining(["untracked Git-ignored files outside the repository inventory"]),
     });
   });
 

@@ -86,4 +86,22 @@ describe("observed predicate evaluation", () => {
     expect(evaluate([forbidden], observation(), ["node run-arbitrary-code.js"]).status).toBe("unknown");
     expect(evaluate([forbidden], observation(), ["projector.builtin.static-dependency-boundary@1"]).status).toBe("conformant");
   });
+
+  it("accepts external validator evidence only for its exact unit and versioned identity", () => {
+    const bundle = compileEffectiveRuleBundle({ unit: projectionUnit("core"), operation: "reconcile", rules: [rule("custom", { selector: all, predicates: [{ kind: "validator", validatorId: "check@pin" }], validatorIds: [] })] });
+    const finding = { unitId: "core", validatorId: "check@pin", status: "satisfied" as const, reason: "observed", evidenceIds: ["proof"] };
+    const options = { validatorFindings: [finding] };
+    const valid = evaluateEffectiveRuleBundle(bundle, observation(), options);
+    expect(valid.status).toBe("conformant");
+    expect(evaluateEffectiveRuleBundle(bundle, observation(), { validatorFindings: [{ ...finding, unitId: "engine" }] }).status).toBe("unknown");
+    expect(evaluateEffectiveRuleBundle(bundle, observation(), { validatorFindings: [{ ...finding, validatorId: "check@other" }] }).status).toBe("unknown");
+    const violated = evaluateEffectiveRuleBundle(bundle, observation(), { validatorFindings: [{ ...finding, status: "violated" }] });
+    expect(violated.status).toBe("violated"); expect(violated.observationHash).not.toBe(valid.observationHash);
+  });
+
+  it("enforces a required lens validator even without a rule predicate", () => {
+    const bundle = compileEffectiveRuleBundle({ unit: projectionUnit("core"), operation: "reconcile", rules: [] });
+    expect(evaluateEffectiveRuleBundle(bundle, observation(), { requiredValidatorIds: ["required@pin"] }).status).toBe("unknown");
+    expect(evaluateEffectiveRuleBundle(bundle, observation(), { requiredValidatorIds: ["required@pin"], validatorFindings: [{ unitId: "core", validatorId: "required@pin", status: "satisfied", reason: "checked", evidenceIds: [] }] }).status).toBe("conformant");
+  });
 });

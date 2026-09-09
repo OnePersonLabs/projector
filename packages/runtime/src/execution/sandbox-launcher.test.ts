@@ -145,6 +145,24 @@ describe("createSandboxLauncher", () => {
     });
   });
 
+  it("permits explicitly disabling WSL before selecting a separately proven Windows fallback", async () => {
+    const launcher = new ProvenFallbackLauncher();
+    const backend: SandboxBackendCandidate = {
+      id: "configured-windows-backend",
+      async probe() { return provenEvidence(); },
+      createLauncher() { return launcher; },
+    };
+
+    await expect(selectSandboxLauncher({ platform: "win32", wsl: false, fallbackBackends: [backend] })).resolves.toEqual({
+      backendId: "configured-windows-backend",
+      evidence: provenEvidence(),
+      launcher,
+    });
+    await expect(selectSandboxLauncher({ platform: "win32", wsl: false })).rejects.toMatchObject({
+      code: "unsupported-isolation",
+    });
+  });
+
   it("rejects a fallback whose proof omits a required isolation capability", async () => {
     const fallbackLauncher = new ProvenFallbackLauncher();
     const dishonestFallback: SandboxBackendCandidate = {
@@ -269,6 +287,34 @@ describe("createSandboxLauncher", () => {
       "scripts/check.mjs",
       "literal argument",
     ]);
+  });
+
+  it("rejects writable roots that can replace protected bubblewrap mounts", async () => {
+    const request: ProcessLaunchRequest = {
+      executable: "/opt/runtime/node",
+      args: ["validator.mjs"],
+      cwd: "/workspace/repository",
+      env: {},
+      readRoots: ["/workspace/repository"],
+      writeRoots: ["/workspace/repository/output"],
+      network: "deny",
+      timeoutMs: 1_000,
+      maxOutputBytes: 1_000,
+      signal: new AbortController().signal,
+    };
+    const launcherFor = async () => {
+      const native = new RecordingLauncher([provenProbe(), result(0)]);
+      return { native, launcher: await createSandboxLauncher({ platform: "linux", nativeLauncher: native }) };
+    };
+
+    const nested = await launcherFor();
+    await expect(nested.launcher.launch(request)).resolves.toMatchObject({ exitCode: 0 });
+
+    for (const writeRoot of ["/workspace/repository", "/workspace", "/", "/opt/runtime"]) {
+      const { native, launcher } = await launcherFor();
+      expect(() => launcher.launch({ ...request, writeRoots: [writeRoot] })).toThrow(/contains protected read-only path/u);
+      expect(native.requests).toHaveLength(1);
+    }
   });
 });
 

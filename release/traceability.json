@@ -190,8 +190,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/execution/sandbox-launcher.test.ts#createSandboxLauncher refuses denied primary and incomplete fallback before commands while selecting and launching only a proven backend",
-      "testSourceDigest": "sha256:v1:b54ecdce26d3a4bed1e432b6dd359cf5cb34da6d55578bc9daaa2029a27ee831",
-      "mappingHash": "sha256:v1:b22c157cd50835b9313c97a37e7dbff6418d260e0644ebf0a37734457dc6e085"
+      "testSourceDigest": "sha256:v1:4b55f1da00ed88feeaec702f2d902146af9b5ad3454477c3c3ee067639766aef",
+      "mappingHash": "sha256:v1:54c347154c4c398595a118339ddf386d018fc68b914e82988acf1b8d60e1ef6f"
     },
     {
       "id": "scenario:17:manual-only-sandbox-release-workflow",
@@ -290,8 +290,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer localizes a malformed manifest failure while preserving filesystem and JavaScript observations",
-      "testSourceDigest": "sha256:v1:c372643b7df1c08fcdce0f4d368a5991c49a9400b891b91d85eed21b03dad8a0",
-      "mappingHash": "sha256:v1:073dc9f4fc7a1367827479f51a9305dce5ca00a9359684a0a6c197f5890a517b"
+      "testSourceDigest": "sha256:v1:3012a3222b60e6c3c770be8ef17b322fd1ff8e0aa91029b0bc83c09d1e597696",
+      "mappingHash": "sha256:v1:d488bc7e4306154a94f21618cf9f85e9925a793401c192053bda212ea4ea5360"
     },
     {
       "id": "scenario:25:path-symlink-escape",
@@ -314,8 +314,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it",
-      "testSourceDigest": "sha256:v1:c372643b7df1c08fcdce0f4d368a5991c49a9400b891b91d85eed21b03dad8a0",
-      "mappingHash": "sha256:v1:51bf641edc3934814fb3725cefbbd7d0e4babe5694dbca328bd54246eceae029"
+      "testSourceDigest": "sha256:v1:3012a3222b60e6c3c770be8ef17b322fd1ff8e0aa91029b0bc83c09d1e597696",
+      "mappingHash": "sha256:v1:b4f321eff8363a9a4799cfe637757a431240d240c44d4ba15745d4c8b69a2b28"
     },
     {
       "id": "scenario:27:projector-repair-oscillation",
@@ -686,8 +686,8 @@
       "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/architecture-expansion.acceptance.test.ts#cross-platform architecture acceptance composes the complete ten-step decision frontier before planning",
-      "testSourceDigest": "sha256:v1:035d11e3bbd288a615d6ae03384f4d0166b2728d8f892d03a05fe04df51b1afb",
-      "mappingHash": "sha256:v1:b291df53c2c8cbbf1460fb3e838053a1249c93b08f409dd4230bc2131a1778a7"
+      "testSourceDigest": "sha256:v1:89825431187a3647a0fbfcc93ada5285f2a0f7b0718de88585799d785d9639cd",
+      "mappingHash": "sha256:v1:dcd30e02c585405d2bd6560b013a9ae4528dee7f10449165d371da406e5d0c33"
     },
     {
       "id": "scenario:58:preference-scope-isolation",
@@ -698,8 +698,8 @@
       "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/evaluation.test.ts#research, options, preferences, and deferral isolates user preferences until explicit project adoption makes them shared ranking input without governance",
-      "testSourceDigest": "sha256:v1:032b7942d2a6c33b723f36fe698bcefe91f1faa2b9eba2a48047a9984de6a98e",
-      "mappingHash": "sha256:v1:5fafc33bebd5f89674e2294961c89b6b486a4311c1637875d252193523ff51b5"
+      "testSourceDigest": "sha256:v1:72c91441fba9e9539a7772a0fd1bc79f5a92393363c86fc0606abd9fedda99f2",
+      "mappingHash": "sha256:v1:2989e2bcb832ef9b0b5edfad300b60c678957ad8302d56d11433f38d58ed0e96"
     },
     {
       "id": "scenario:59:stale-architecture-research",
@@ -710,8 +710,8 @@
       "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/evaluation.test.ts#research, options, preferences, and deferral verifies only the affected option set through the port and blocks unavailable automatic acceptance",
-      "testSourceDigest": "sha256:v1:032b7942d2a6c33b723f36fe698bcefe91f1faa2b9eba2a48047a9984de6a98e",
-      "mappingHash": "sha256:v1:a77b565f163cd4f67f5a01b848e8c4e384743cb8747d35bcf51664d9d69d01e1"
+      "testSourceDigest": "sha256:v1:72c91441fba9e9539a7772a0fd1bc79f5a92393363c86fc0606abd9fedda99f2",
+      "mappingHash": "sha256:v1:39f391a2642ce8ea7eeca11580a5f87ba0bd1031360579d08ac5c841ee87c54f"
     },
     {
       "id": "scenario:60:decision-deferral-preserves-optionality",
@@ -722,8 +722,8 @@
       "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/repair.test.ts#typed discovery and verified deferral rejects any verified originating-decision inference and requires semantic deferral assessment",
-      "testSourceDigest": "sha256:v1:e6d3b4a77993c672bef72578e0a42cfab3b2daf86e6fab7f2622fc7d848472c6",
-      "mappingHash": "sha256:v1:a59395c5f97a55faa3efc99b2213f6be2d2f5e8acc727bdf1ebfe0a4bab58bc1"
+      "testSourceDigest": "sha256:v1:aedda4917c7bd3e2e6a258abf55c8d4427055db1392f5e5808ed3b2c5c258c56",
+      "mappingHash": "sha256:v1:5d7ab2322df4b4e1b0fe1ff76d6709c25c839dbeeda06360822b0040bf1578f3"
     },
     {
       "id": "scenario:61:negative-simple-decision",
@@ -734,8 +734,8 @@
       "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/evaluation.test.ts#research, options, preferences, and deferral accepts a negative/simple option and requires neutral, trigger-bound deferral",
-      "testSourceDigest": "sha256:v1:032b7942d2a6c33b723f36fe698bcefe91f1faa2b9eba2a48047a9984de6a98e",
-      "mappingHash": "sha256:v1:44dbb5bb72623853b4d0929b7de49b6a2ab1d70badfd6f833d636f011d7f7546"
+      "testSourceDigest": "sha256:v1:72c91441fba9e9539a7772a0fd1bc79f5a92393363c86fc0606abd9fedda99f2",
+      "mappingHash": "sha256:v1:42557c98ef8ee62f246c18f8adca216a7fee5de0a18eb7289305e209c8a1136d"
     },
     {
       "id": "scenario:62:decision-overlap-conflict",
@@ -758,8 +758,8 @@
       "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/architecture-expansion.acceptance.test.ts#cross-platform architecture acceptance measures held-out concern discovery without fixture-name routing",
-      "testSourceDigest": "sha256:v1:035d11e3bbd288a615d6ae03384f4d0166b2728d8f892d03a05fe04df51b1afb",
-      "mappingHash": "sha256:v1:507fd2489a52eff2cb0671e735922f87e236664989be44ec7c2d33f6ee936db7"
+      "testSourceDigest": "sha256:v1:89825431187a3647a0fbfcc93ada5285f2a0f7b0718de88585799d785d9639cd",
+      "mappingHash": "sha256:v1:4eeb529c90f3256609ca349faf9d42e4ed34d0a7155f2364d7da9450f5773a67"
     },
     {
       "id": "property:01:canonical-serialization-independent-of-object-insertion-order",
@@ -842,8 +842,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/evaluation.test.ts#scoped decision proof and StateBinding binds applicability and negative-space queries and never treats open empty results as absence",
-      "testSourceDigest": "sha256:v1:032b7942d2a6c33b723f36fe698bcefe91f1faa2b9eba2a48047a9984de6a98e",
-      "mappingHash": "sha256:v1:a00c7658cef2ecb48ef3f161f784499c70f62038c7fd9cda7e6804bffeb50a25"
+      "testSourceDigest": "sha256:v1:72c91441fba9e9539a7772a0fd1bc79f5a92393363c86fc0606abd9fedda99f2",
+      "mappingHash": "sha256:v1:63aca352b2b545cdbf74fc2bc0729a2c4f2ee7ffdd608fa5341ee67b02a829e5"
     },
     {
       "id": "property:08:stable-semantic-hash-excludes-declared-volatile-metadata",
@@ -1274,8 +1274,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it",
-      "testSourceDigest": "sha256:v1:c372643b7df1c08fcdce0f4d368a5991c49a9400b891b91d85eed21b03dad8a0",
-      "mappingHash": "sha256:v1:f00e665ac39fa63d42be0bf8a927b41afe599642713928c8009ca5c5052e14a8"
+      "testSourceDigest": "sha256:v1:3012a3222b60e6c3c770be8ef17b322fd1ff8e0aa91029b0bc83c09d1e597696",
+      "mappingHash": "sha256:v1:cf5b63fb269b26f00aa5759a4d278ee0a02765860a6b54981699fd4083e2b9fa"
     },
     {
       "id": "adversary:17:mutation-generated-near-misses",
@@ -1286,8 +1286,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer marks generated sources explicitly and limits unresolved imports to dependency claims",
-      "testSourceDigest": "sha256:v1:c372643b7df1c08fcdce0f4d368a5991c49a9400b891b91d85eed21b03dad8a0",
-      "mappingHash": "sha256:v1:5e0b7c6c07fdc3be33a1d50f74af5c7fe84399faf120ffd895ee541eba6581dd"
+      "testSourceDigest": "sha256:v1:3012a3222b60e6c3c770be8ef17b322fd1ff8e0aa91029b0bc83c09d1e597696",
+      "mappingHash": "sha256:v1:b1282d7fffe578731538775ee636388455e1b2add2fbe7354b162c5276e83791"
     },
     {
       "id": "adversary:18:unsupported-analyzer-capability-degradation",
@@ -1310,8 +1310,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector",
       "testRef": "packages/control-plane/src/change-lifecycle/compiler.test.ts#repository change compiler blocks duplicate identity candidates and invalid or expired deferrals",
-      "testSourceDigest": "sha256:v1:124acc84ef629824d23d59958beb7c68518d8c454c88f46df360d746501d4343",
-      "mappingHash": "sha256:v1:341242ad9ee4d93581f413d21a4cff7744b09a768ac00039b773daa6bf40e2b8"
+      "testSourceDigest": "sha256:v1:30f3acf6c99930c6117c27e6282c882461b3eb25cb471f022e6e3c8798e89b1b",
+      "mappingHash": "sha256:v1:093e7330fe821d61b4e6ccb3adec41b5cd12996d61c0930427c4c72d33a7a256"
     },
     {
       "id": "adversary:20:cross-cutting-governing-semantics-hidden-outside-the-touched-package",

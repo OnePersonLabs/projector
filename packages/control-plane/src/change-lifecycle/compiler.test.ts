@@ -109,6 +109,7 @@ describe("repository change compiler", () => {
       const newerAuthority = approvedAuthority("authority:clock-new", "concern:clock-source");
       const withoutHash = (record: AuthorityRecord) => { const { semanticHash: _hash, ...payload } = record; return payload; };
       const mutations = (olderLifecycle: "active" | "superseded", supersedesDecisionIds: string[]) => [
+        { kind: "architecture-concern", operation: "add", expectedAbsent: true, rationale: "Retain the question behind both clock choices.", payload: { id: "concern:clock-source", key: "clock-source-concern", title: "Clock source", question: "Which clock source should be used?", scope: decisionPayload("decision:clock-new", newerAuthority.id, "active").scope, sourceClass: "authored", status: "resolved", materiality: "blocking-now", activationReasons: [], relatedConceptIds: [], relatedRequirementIds: [], decisionIds: ["decision:clock-old", "decision:clock-new"], evidence: [] } },
         { kind: "authority-record", operation: "add", expectedAbsent: true, rationale: "Bind the prior decision.", payload: withoutHash(olderAuthority) },
         { kind: "authority-record", operation: "add", expectedAbsent: true, rationale: "Bind the replacement decision.", payload: withoutHash(newerAuthority) },
         { kind: "architecture-decision", operation: "add", expectedAbsent: true, rationale: "Record the prior choice.", payload: decisionPayload("decision:clock-old", olderAuthority.id, olderLifecycle) },
@@ -177,17 +178,151 @@ describe("repository change compiler", () => {
       expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).not.toContain("projector.post-change-knowledge");
       await new CanonicalFileRepository(root).write(compiled.canonicalWrites[0]!.envelope);
       const current = compiled.canonicalWrites[0]!.envelope;
+      const modelConcept = model.canonicalMutations!.find((mutation) => mutation.kind === "concept")!;
       const revision = parseChangeProposal({
         ...model,
         canonicalMutations: [{
           kind: "concept", operation: "revise", rationale: "Clarify ownership while preserving the boundary.",
           expectedSemanticHash: current.semanticHash, expectedDocumentHash: current.canonicalDocumentHash,
-          payload: { ...model.canonicalMutations![0]!.payload, statement: "All domain time enters through the producer-owned clock port." },
+          payload: { ...modelConcept.payload, statement: "All domain time enters through the producer-owned clock port." },
         }],
       });
       await expect(compileRepositoryChange({ repositoryRoot: root, request: "Clarify the clock boundary.", proposal: revision })).resolves.toMatchObject({ executionKind: "canonical-only" });
       await expect(compileRepositoryChange({ repositoryRoot: root, request: "Use stale evidence.", proposal: parseChangeProposal({ ...revision, canonicalMutations: [{ ...revision.canonicalMutations![0], expectedDocumentHash: hashFramedDomain("stale", null) }] }) }))
         .rejects.toThrow(/hashes are stale/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("compiles exact replacement lineage, tombstone continuity, and source retirement atomically", async () => {
+    const root = await repository();
+    try {
+      await existingRequirement(root, "requirement:new-greeting", "new-greeting", ["replacement-greeting"]);
+      const canonical = new CanonicalFileRepository(root);
+      const source = (await canonical.read("requirement", "requirement:legacy-greeting"))!;
+      const proposal = parseChangeProposal({
+        apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [],
+        validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"],
+        identityResolution: {
+          contextId: "knowledge_context_replacement", contextHash: placeholder, outcome: "replace-existing",
+          selectedEntityIds: [source.id], rationale: "The replacement owns the clarified boundary.",
+          newBoundary: { owns: ["the clarified greeting contract"], excludes: ["the retired greeting identity"], nearestEntityIds: [source.id], rationale: "Responsibility moved to the accepted replacement." },
+        },
+        canonicalMutations: [{
+          kind: "lineage", operation: "add", lineageKind: "replace",
+          sources: [{ id: source.id, kind: "requirement", expectedSemanticHash: source.semanticHash, expectedDocumentHash: source.canonicalDocumentHash }],
+          replacementIds: ["requirement:new-greeting"], rationale: "Replace the legacy identity without losing continuity.",
+        }],
+      });
+
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Replace the legacy greeting identity.", proposal });
+      expect(compiled.canonicalWrites).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: source.id, kind: "requirement", after: null }),
+        expect.objectContaining({ kind: "lineage", before: null, after: expect.any(String) }),
+        expect.objectContaining({ kind: "tombstone", before: null, after: expect.any(String) }),
+      ]));
+      expect(compiled.exactPatchInput.edits).toEqual(expect.arrayContaining([expect.objectContaining({ unitId: source.id, after: null })]));
+      expect(compiled.intentReview).toMatchObject({
+        identityResolution: proposal.identityResolution,
+        canonicalMutations: expect.arrayContaining([
+          expect.objectContaining({ id: source.id, operation: "retire", after: null }),
+          expect.objectContaining({ kind: "lineage", operation: "add" }),
+          expect.objectContaining({ kind: "tombstone", operation: "add" }),
+        ]),
+      });
+      const lineage = compiled.canonicalWrites.find(({ kind }) => kind === "lineage")!.envelope.payload;
+      const tombstone = compiled.canonicalWrites.find(({ kind }) => kind === "tombstone")!.envelope.payload;
+      expect(lineage).toMatchObject({ kind: "replace", fromIds: [source.id], toIds: ["requirement:new-greeting"], stateDigest: expect.stringMatching(/^sha256:v1:/u) });
+      expect(tombstone).toMatchObject({ entityId: source.id, lastSemanticHash: source.semanticHash, replacementIds: ["requirement:new-greeting"], deletedAtRevision: 1 });
+
+      const disposition = proposal.canonicalMutations!.find((mutation) => mutation.kind === "lineage")!;
+      const stale = parseChangeProposal({ ...proposal, canonicalMutations: [{ ...disposition, sources: [{ ...disposition.sources[0]!, expectedDocumentHash: hashFramedDomain("stale", null) }] }] });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Use stale retirement evidence.", proposal: stale })).rejects.toThrow(/source hashes are stale/iu);
+      const wrongKind = parseChangeProposal({ ...proposal, canonicalMutations: [{ ...disposition, replacementIds: ["scenario:greet-supplied-name"] }] });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Use a wrong-kind replacement.", proposal: wrongKind })).rejects.toThrow(/replacement is absent or has another kind/iu);
+
+      await existingScenario(root);
+      const scenario = (await canonical.read("behavioral-scenario", "scenario:greet-supplied-name"))!;
+      const deletion = parseChangeProposal({
+        apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [],
+        validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"],
+        canonicalMutations: [{
+          kind: "lineage", operation: "add", lineageKind: "delete", replacementIds: [], rationale: "Retire the obsolete scenario while retaining deletion continuity.",
+          sources: [{ id: scenario.id, kind: "behavioral-scenario", expectedSemanticHash: scenario.semanticHash, expectedDocumentHash: scenario.canonicalDocumentHash }],
+        }],
+      });
+      const deletedScenario = await compileRepositoryChange({ repositoryRoot: root, request: "Retire the obsolete scenario.", proposal: deletion });
+      expect(deletedScenario.canonicalWrites).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: scenario.id, kind: "behavioral-scenario", after: null }),
+        expect.objectContaining({ kind: "tombstone", envelope: expect.objectContaining({ payload: expect.objectContaining({ entityId: scenario.id, replacementIds: [] }) }) }),
+      ]));
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rejects resurrection of tombstoned requirement, scenario, and concept identities", async () => {
+    const root = await repository();
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      const requirementId = deriveEntityId("projector.requirement", "retired-requirement");
+      const scenarioId = deriveEntityId("projector.scenario", "retired-scenario");
+      const conceptId = "concept:retired-clock";
+      for (const entityId of [requirementId, scenarioId, conceptId]) {
+        const id = deriveEntityId("projector.tombstone", entityId);
+        await canonical.write(withCanonicalHashes({
+          apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "tombstone", id,
+          key: `tombstone:${entityId}`, lifecycle: "deleted",
+          payload: { entityId, deletedAtRevision: 1, lastSemanticHash: placeholder, replacementIds: [], reason: "Retain the retired identity." },
+        }));
+      }
+      const base = { apiVersion: "projector.change-proposal/v1", architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"] };
+      const requirement = parseChangeProposal({ ...base, requirements: [{ key: "retired-requirement", title: "Retired requirement", statement: "This stable identity remains retired.", aliases: [] }], scenarios: [] });
+      const scenario = parseChangeProposal({ ...base, requirements: [], scenarios: [{ key: "retired-scenario", title: "Retired scenario", aliases: [], steps: [
+        { role: "trigger", statement: "A caller attempts to recreate the scenario." },
+        { role: "expected-outcome", statement: "This stable identity remains retired." },
+      ] }] });
+      const concept = parseChangeProposal({ ...base, requirements: [], scenarios: [], canonicalMutations: [{
+        kind: "concept", operation: "add", expectedAbsent: true, rationale: "Attempt to reuse a retired stable ID.",
+        payload: { id: conceptId, key: "retired-clock", kind: "invariant", name: "Retired clock", aliases: [], statement: "This stable identity remains retired.", status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [] },
+      }] });
+
+      for (const proposal of [requirement, scenario, concept]) {
+        await expect(compileRepositoryChange({ repositoryRoot: root, request: "Attempt to reuse a retired identity.", proposal }))
+          .rejects.toThrow(/stable ID is retired by an immutable tombstone/iu);
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("requires active references to be retired with their source identity", async () => {
+    const root = await repository();
+    try {
+      await existingRequirement(root, "requirement:new-greeting", "new-greeting", ["replacement-greeting"]);
+      const canonical = new CanonicalFileRepository(root);
+      const source = (await canonical.read("requirement", "requirement:legacy-greeting"))!;
+      const relationPayload = { id: "relation:legacy-replacement", fromId: source.id, toId: "requirement:new-greeting", type: "supersedes", sourceClass: "authored", confidence: 1, evidence: [], active: true, semanticHash: placeholder };
+      const relationEnvelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: relationPayload.id, key: `relation:${relationPayload.id}`, lifecycle: "active", payload: relationPayload });
+      await canonical.write(relationEnvelope);
+      const disposition = {
+        kind: "lineage", operation: "add", lineageKind: "replace",
+        sources: [{ id: source.id, kind: "requirement", expectedSemanticHash: source.semanticHash, expectedDocumentHash: source.canonicalDocumentHash }],
+        replacementIds: ["requirement:new-greeting"], rationale: "Retire the legacy identity.",
+      };
+      const base = { apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"] };
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Retire with a live reference.", proposal: parseChangeProposal({ ...base, canonicalMutations: [disposition] }) }))
+        .rejects.toThrow(/active relation.*retired identity/iu);
+      const { semanticHash: _relationHash, ...inactivePayload } = relationEnvelope.payload;
+      const proposal = parseChangeProposal({ ...base, canonicalMutations: [
+        {
+          kind: "relation", operation: "revise", expectedSemanticHash: relationEnvelope.semanticHash,
+          expectedDocumentHash: relationEnvelope.canonicalDocumentHash, rationale: "Retain the relationship as inactive history.",
+          payload: { ...inactivePayload, active: false },
+        },
+        disposition,
+      ] });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Retire the reference and identity together.", proposal })).resolves.toMatchObject({
+        canonicalWrites: expect.arrayContaining([
+          expect.objectContaining({ id: relationPayload.id, kind: "relation" }),
+          expect.objectContaining({ id: source.id, after: null }),
+        ]),
+      });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

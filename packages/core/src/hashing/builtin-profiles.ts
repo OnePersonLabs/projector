@@ -56,6 +56,16 @@ const profiles: Readonly<Record<string, HashProfile>> = {
     discovery: ["key", "title"],
     volatile: [],
   },
+  "architecture-concern": {
+    semantic: ["question", "scope", "sourceClass", "status", "materiality", "activationReasons", "relatedConceptIds", "relatedRequirementIds", "decisionIds", "deferral", "evidence"],
+    discovery: ["key", "title"],
+    volatile: [],
+  },
+  "developer-preference": {
+    semantic: ["scope", "selector", "strength", "statement", "status", "sourceClass"],
+    discovery: ["key"],
+    volatile: [],
+  },
   exception: {
     semantic: ["selector", "exceptedRuleIds", "exceptedLensIds", "exceptedExpectationIds", "rationale", "evidence", "owner", "reviewOrExpiryTrigger", "invalidationConditions", "exitCriteria", "status"],
     discovery: ["key"],

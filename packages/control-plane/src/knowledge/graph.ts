@@ -1,5 +1,7 @@
 import {
   ArchitectureDecisionSchema,
+  ArchitectureConcernSchema,
+  DeveloperPreferenceSchema,
   AuthorityRecordSchema,
   BehavioralScenarioSchema,
   ConceptSchema,
@@ -12,6 +14,8 @@ import {
   hashFramedDomain,
   type AdapterContext,
   type ArchitectureDecision,
+  type ArchitectureConcern,
+  type DeveloperPreference,
   type AuthorityRecord,
   type BehavioralScenario,
   type CanonicalDocumentEnvelope,
@@ -41,6 +45,7 @@ import {
   type ContextSource,
   type ContextSourcePort,
   type GovernanceBundleEvaluation,
+  type ExternalGovernanceValidatorFinding,
   type GovernanceObservation,
   type ProjectionLensCompilation,
   type ProjectionUnitSelectorFacts,
@@ -49,6 +54,8 @@ import {
 } from "@projector/engine";
 
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
+import { KnowledgeDecisionRun, type KnowledgeDecisionHost } from "./governance.js";
+import type { KnowledgeValidatorRequest } from "./validators.js";
 import type {
   KnowledgeCandidateSignal,
   KnowledgeEntityKind,
@@ -70,7 +77,7 @@ interface SemanticEntity {
   readonly semanticHash: ContentHash;
   readonly discoveryHash: ContentHash;
   readonly accepted: boolean;
-  readonly payload: Concept | Requirement | BehavioralScenario | ArchitectureDecision | ProjectionLens;
+  readonly payload: Concept | Requirement | BehavioralScenario | ArchitectureDecision | ArchitectureConcern | DeveloperPreference | ProjectionLens;
   readonly envelope: CanonicalDocumentEnvelope;
 }
 
@@ -85,6 +92,9 @@ const KNOWLEDGE_QUERY_PROGRAMS = Object.freeze({
   implementation: "projector.knowledge.implementation-binding",
   topology: "projector.knowledge.repository-topology",
   lensMembership: "projector.knowledge.lens-membership",
+  decisionMembership: "projector.knowledge.decision-membership",
+  decisionApplicability: "projector.knowledge.decision-applicability",
+  decisionTriggers: "projector.knowledge.decision-triggers",
 });
 
 function entityStatusAccepted(value: Concept | Requirement | BehavioralScenario): boolean {
@@ -109,6 +119,12 @@ function parseEntities(documents: readonly CanonicalDocumentEnvelope[]): Semanti
     } else if (envelope.kind === "projection-lens") {
       const payload = ProjectionLensSchema.parse(envelope.payload) as ProjectionLens;
       result.push({ id: payload.id, key: payload.key, kind: "projection-lens", aliases: [], searchable: [payload.key, payload.purpose], semanticHash: payload.semanticHash, discoveryHash: envelope.canonicalDocumentHash, accepted: payload.status === "active", payload, envelope });
+    } else if (envelope.kind === "architecture-concern") {
+      const payload = ArchitectureConcernSchema.parse(envelope.payload) as ArchitectureConcern;
+      result.push({ id: payload.id, key: payload.key, kind: "architecture-concern", aliases: [], searchable: [payload.key, payload.title, payload.question], semanticHash: payload.semanticHash, discoveryHash: envelope.discoveryHash ?? envelope.canonicalDocumentHash, accepted: payload.sourceClass === "authored", payload, envelope });
+    } else if (envelope.kind === "developer-preference") {
+      const payload = DeveloperPreferenceSchema.parse(envelope.payload) as DeveloperPreference;
+      result.push({ id: payload.id, key: payload.key, kind: "developer-preference", aliases: [], searchable: [payload.key, payload.statement], semanticHash: payload.semanticHash, discoveryHash: envelope.discoveryHash ?? envelope.canonicalDocumentHash, accepted: payload.sourceClass === "authored", payload, envelope });
     }
   }
   return result.sort((left, right) => compare(left.id, right.id));
@@ -156,6 +172,8 @@ export class KnowledgeGraph implements ContextSourcePort {
   readonly relations: readonly Relation[];
   readonly units: readonly ProjectionUnit[];
   readonly lenses: readonly ProjectionLens[];
+  readonly decisions: readonly ArchitectureDecision[];
+  readonly decisionRun: KnowledgeDecisionRun;
   readonly authorities: readonly AuthorityRecord[];
   readonly lineages: readonly LineageRecord[];
   readonly tombstones: readonly Tombstone[];
@@ -168,12 +186,14 @@ export class KnowledgeGraph implements ContextSourcePort {
   private readonly selectorFactsByUnitId = new Map<string, ProjectionUnitSelectorFacts>();
   private readonly envelopeById = new Map<string, CanonicalDocumentEnvelope>();
 
-  constructor(readonly observation: ChangeRepositoryObservation) {
+  constructor(readonly observation: ChangeRepositoryObservation, decisionHost: KnowledgeDecisionHost = {}) {
     this.entities = parseEntities(observation.canonical.documents);
     this.entitiesById = new Map(this.entities.map((entity) => [entity.id, entity]));
     for (const envelope of observation.canonical.documents) this.envelopeById.set(envelope.id, envelope);
     this.relations = observation.canonical.documents.filter(({ kind }) => kind === "relation").map(({ payload }) => RelationSchema.parse(payload) as Relation).filter(({ active }) => active).sort((left, right) => compare(left.id, right.id));
     this.lenses = this.entities.filter(({ kind }) => kind === "projection-lens").map(({ payload }) => payload as ProjectionLens);
+    this.decisions = this.entities.filter(({ kind }) => kind === "architecture-decision").map(({ payload }) => payload as ArchitectureDecision).filter(({ lifecycle }) => lifecycle === "active");
+    this.decisionRun = new KnowledgeDecisionRun(observation, decisionHost);
     this.authorities = observation.canonical.documents.filter(({ kind }) => kind === "authority-record").map(({ payload }) => AuthorityRecordSchema.parse(payload) as AuthorityRecord).sort((left, right) => compare(left.id, right.id));
     this.lineages = observation.canonical.documents.filter(({ kind }) => kind === "lineage").map(({ payload }) => LineageRecordSchema.parse(payload) as LineageRecord).sort((left, right) => compare(left.id, right.id));
     this.tombstones = observation.canonical.documents.filter(({ kind }) => kind === "tombstone").map(({ payload }) => TombstoneSchema.parse(payload) as Tombstone).sort((left, right) => compare(left.entityId, right.entityId));
@@ -225,18 +245,7 @@ export class KnowledgeGraph implements ContextSourcePort {
         else if (normalize(entity.key) === normalized) candidates.push(candidateFor(entity, "key", 1, entity.accepted));
         else if (entity.accepted && entity.aliases.some((alias) => normalize(alias) === normalized)) candidates.push(candidateFor(entity, "alias", 1, true));
       }
-      for (const lineage of this.lineages.filter(({ fromIds }) => fromIds.some((id) => normalize(id) === normalized))) {
-        for (const targetId of lineage.toIds) {
-          const target = this.entitiesById.get(targetId);
-          if (target !== undefined) candidates.push(candidateFor(target, "lineage", 1, target.accepted, lineage.fromIds));
-        }
-      }
-      for (const tombstone of this.tombstones.filter(({ entityId }) => normalize(entityId) === normalized)) {
-        for (const targetId of tombstone.replacementIds) {
-          const target = this.entitiesById.get(targetId);
-          if (target !== undefined) candidates.push(candidateFor(target, "tombstone", 1, target.accepted, [tombstone.entityId]));
-        }
-      }
+      candidates.push(...this.continuityCandidates(normalized));
     }
     const direct = mergeCandidates(candidates);
     if (direct.length > 0 || addressed.length > 0) return direct.slice(0, maxCandidates);
@@ -246,6 +255,32 @@ export class KnowledgeGraph implements ContextSourcePort {
       .filter(({ score }) => score > 0)
       .map(({ entity, score }) => candidateFor(entity, "lexical", score, false)))
       .slice(0, maxCandidates);
+  }
+
+  private continuityCandidates(normalized: string): KnowledgeInterpretationCandidate[] {
+    const edges = [
+      ...this.lineages.flatMap(({ fromIds, toIds }) => fromIds.map((from) => ({ from, toIds, origins: fromIds, signal: "lineage" as const }))),
+      ...this.tombstones.map(({ entityId, replacementIds }) => ({ from: entityId, toIds: replacementIds, origins: [entityId], signal: "tombstone" as const })),
+    ];
+    const seen = new Map<string, { origins: string[]; signals: Array<"lineage" | "tombstone"> }>();
+    const pending = unique(edges.filter(({ from }) => normalize(from) === normalized).map(({ from }) => from));
+    for (const id of pending) seen.set(id, { origins: [], signals: [] });
+    // Monotone sets over finite canonical IDs reach a fixed point even for malformed cycles.
+    for (let index = 0; index < pending.length; index += 1) {
+      const id = pending[index]!; const current = seen.get(id)!;
+      for (const edge of edges.filter(({ from }) => from === id)) for (const targetId of edge.toIds) {
+        const prior = seen.get(targetId);
+        const origins = unique([...(prior?.origins ?? []), ...current.origins, ...edge.origins]);
+        const signals = [...new Set([...(prior?.signals ?? []), ...current.signals, edge.signal])].sort();
+        if (prior === undefined || origins.length !== prior.origins.length || signals.length !== prior.signals.length) {
+          seen.set(targetId, { origins, signals }); pending.push(targetId);
+        }
+      }
+    }
+    return [...seen].flatMap(([id, { origins, signals }]) => {
+      const target = this.entitiesById.get(id);
+      return target === undefined ? [] : signals.map((signal) => candidateFor(target, signal, 1, target.accepted, origins.filter((origin) => origin !== id)));
+    });
   }
 
   resolveNamedTargets(namedTargets: readonly string[]): KnowledgeInterpretationCandidate[] {
@@ -280,7 +315,7 @@ export class KnowledgeGraph implements ContextSourcePort {
   async load(entityId: string): Promise<ContextSource | undefined> {
     const entity = this.entitiesById.get(entityId);
     if (entity !== undefined) {
-      const kind = entity.kind === "architecture-decision" ? "decision" : entity.kind === "projection-lens" ? "other" : entity.kind;
+      const kind = entity.kind === "architecture-decision" ? "decision" : entity.kind === "projection-lens" || entity.kind === "architecture-concern" || entity.kind === "developer-preference" ? "other" : entity.kind;
       const authority = this.authorityFor(entity);
       const authorityEnvelope = authority === undefined ? undefined : this.envelopeById.get(authority.id);
       const full = canonicalJson(authorityEnvelope === undefined
@@ -375,7 +410,7 @@ export class KnowledgeGraph implements ContextSourcePort {
           applicabilityFingerprint: hashFramedDomain("knowledge-lens-applicability", { lensId: lens.id, unitId: unit.id, operation, bundle: bundle.dependencyFingerprint, expectations: expectations.map(({ role, expectation }) => ({ role, kind: expectation.kind })) }),
           ruleIds: bundle.rules.map(({ id }) => id),
           predicates: bundle.predicates,
-          validatorIds: unique([...bundle.rules.flatMap(({ validatorIds }) => validatorIds), ...expectationValidators, ...lens.validators.map(({ id, version }) => `${id}@${version}`)]),
+          validatorIds: unique([...bundle.rules.flatMap(({ validatorIds }) => validatorIds), ...bundle.predicates.flatMap((predicate) => predicate.kind === "validator" ? [predicate.validatorId] : []), ...expectationValidators, ...lens.validators.filter(({ required }) => required).map(({ id, version }) => `${id}@${version}`)]),
           expectationKinds: unique(expectations.map(({ expectation }) => expectation.kind)),
           status: "applicable",
           unknowns: [],
@@ -385,7 +420,35 @@ export class KnowledgeGraph implements ContextSourcePort {
     return result.sort((left, right) => compare(`${left.lensId}\0${left.unitId}`, `${right.lensId}\0${right.unitId}`));
   }
 
-  governanceEvaluations(entityIds: ReadonlySet<string>, operation: string): GovernanceBundleEvaluation[] {
+  validatorRequests(entityIds: ReadonlySet<string>, operation: string): KnowledgeValidatorRequest[] {
+    const requests: KnowledgeValidatorRequest[] = [];
+    for (const obligation of this.lensObligations(entityIds, operation)) {
+      const lens = this.lenses.find(({ id }) => id === obligation.lensId)!;
+      for (const binding of lens.validators) {
+        if (binding.provider === "deterministic-governance" && binding.id === "projector.builtin.static-dependency-boundary" && binding.version === "1") continue;
+        if (binding.required || obligation.validatorIds.includes(`${binding.id}@${binding.version}`)) requests.push({ binding, unitId: obligation.unitId, unitPath: this.unitPath.get(obligation.unitId) ?? "" });
+      }
+    }
+    return requests;
+  }
+
+  relevantDecisions(entityIds: ReadonlySet<string>): ArchitectureDecision[] {
+    const selected = new Set(entityIds);
+    for (const lens of this.lenses.filter(({ id }) => entityIds.has(id))) {
+      for (const basis of [...lens.governanceBasis, ...lens.rules.flatMap(({ governanceBasis }) => governanceBasis)]) if (basis.kind === "architecture-decision") selected.add(basis.decisionId);
+    }
+    return this.decisions.filter(({ id }) => selected.has(id));
+  }
+
+  bindDecisionApplicability(decisionId: string, context: AdapterContext): Promise<StateQueryDependency> {
+    return this.dependency(KNOWLEDGE_QUERY_PROGRAMS.decisionApplicability, `knowledge-decision-applicability:${decisionId}`, { decisionId }, "decision-applicability", context);
+  }
+
+  bindDecisionTriggers(decisionId: string, operation: string, context: AdapterContext): Promise<StateQueryDependency> {
+    return this.dependency(KNOWLEDGE_QUERY_PROGRAMS.decisionTriggers, `knowledge-decision-triggers:${decisionId}`, { decisionId, operation }, "decision-trigger-observations", context);
+  }
+
+  governanceEvaluations(entityIds: ReadonlySet<string>, operation: string, validatorFindings: readonly ExternalGovernanceValidatorFinding[] = []): GovernanceBundleEvaluation[] {
     if (this.lensCompilation === undefined) return [];
     const observation = this.governanceObservation();
     const evaluations: GovernanceBundleEvaluation[] = [];
@@ -394,7 +457,10 @@ export class KnowledgeGraph implements ContextSourcePort {
       for (const unit of this.units.filter(({ id }) => entityIds.has(id) && members.has(id))) {
         const selectorFacts = { ...(this.selectorFactsByUnitId.get(unit.id) ?? {}), operation };
         const bundle = compileEffectiveRuleBundle({ unit, operation, rules: lens.rules, selectorFacts });
-        evaluations.push(evaluateEffectiveRuleBundle(bundle, observation));
+        const requiredValidatorIds = lens.validators.filter(({ required }) => required).map(({ id, version }) => `${id}@${version}`);
+        const expected = this.lensObligations(entityIds, operation).find((item) => item.lensId === lens.id && item.unitId === unit.id);
+        const expectationIds = expected?.validatorIds ?? [];
+        evaluations.push(evaluateEffectiveRuleBundle(bundle, observation, { validatorFindings, requiredValidatorIds: unique([...requiredValidatorIds, ...expectationIds]) }));
       }
     }
     return evaluations.sort((left, right) => compare(left.unitId, right.unitId) || compare(left.contentHash, right.contentHash));
@@ -460,6 +526,14 @@ export class KnowledgeGraph implements ContextSourcePort {
   }
 
   private registerPrograms(): void {
+    this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.decisionApplicability, version: "1", kind: "decision-applicability", normalizeInput: (input) => ({ decisionId: String(input.decisionId) }), evaluate: ({ input }) => this.decisionApplicabilityResult(String(input.decisionId)) });
+    this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.decisionMembership, version: "1", kind: "selector-membership", normalizeInput: (input) => ({ unitId: String(input.unitId) }), evaluate: ({ input }) => ({ results: this.decisions.filter((decision) => this.implementationBindings(decision.id).some(({ id }) => id === input.unitId)).map(({ id, semanticHash }) => ({ id, semanticHash })), observability: this.observation.analysis.surface.enumeration.observability, assumptions: [], unavailableLanes: this.failureLanes(["projector.filesystem-local"]), dependencyKeys: ["canonical-decisions", "projection-unit-membership"] }) });
+    this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.decisionTriggers, version: "1", kind: "custom", normalizeInput: (input) => ({ decisionId: String(input.decisionId), operation: String(input.operation) }), evaluate: async ({ input }) => {
+      const decision = this.decisions.find(({ id }) => id === input.decisionId);
+      if (decision === undefined) return { results: [], observability: "unavailable", assumptions: [], unavailableLanes: ["decision missing"], dependencyKeys: ["canonical-decisions"] };
+      const observed = await this.decisionRun.observe(decision, String(input.operation));
+      return { results: [{ id: decision.id, baseline: observed.baseline, checks: observed.checks, observations: observed.observations }], observability: "closed", assumptions: observed.checks.filter(({ status }) => status === "unobserved").map(({ reason }) => reason), unavailableLanes: [...observed.unknowns], dependencyKeys: ["canonical-decisions", "canonical-authorities", "decision-trigger-observations"] };
+    } });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.identity, version: "1", kind: "semantic-identity-search", normalizeInput: (input) => ({ request: String(input.request ?? "").normalize("NFKC").trim(), addressed: unique(Array.isArray(input.addressed) ? input.addressed.map(String).map((item) => item.normalize("NFKC").trim()).filter(Boolean) : []), namedTargets: unique(Array.isArray(input.namedTargets) ? input.namedTargets.map(String).map((item) => item.replaceAll("\\", "/").normalize("NFKC").trim()).filter(Boolean) : []) }), evaluate: ({ input }) => ({ results: mergeCandidates([...this.search(input.request as string, input.addressed as string[], Number.MAX_SAFE_INTEGER), ...this.resolveNamedTargets(input.namedTargets as string[])]).map((item) => ({ id: item.entityId, ...item })), observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: ["canonical-identity-discovery", "canonical-lineage", "canonical-tombstones", "projection-unit-membership", ...((input.namedTargets as string[]).map((target) => `path:${target}`))] }) });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.relations, version: "1", kind: "relation-neighborhood", normalizeInput: (input) => ({ subjectId: String(input.subjectId ?? "") }), evaluate: ({ input }) => ({ results: this.relations.filter(({ fromId, toId }) => fromId === input.subjectId || toId === input.subjectId).map(({ id, fromId, toId, type, semanticHash }) => ({ id, fromId, toId, type, semanticHash })), observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: ["canonical-relations", `entity:${String(input.subjectId)}`] }) });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.implementation, version: "1", kind: "implementation-binding", normalizeInput: (input) => ({ subjectId: String(input.subjectId ?? "") }), evaluate: ({ input }) => ({ results: this.implementationBindings(String(input.subjectId)), observability: this.observation.analysis.surface.enumeration.observability, assumptions: this.observation.analysis.surface.enumeration.assumptions, unavailableLanes: this.failureLanes(["projector.filesystem-local"]), dependencyKeys: ["canonical-scopes", "projection-unit-membership", `entity:${String(input.subjectId)}`] }) });
@@ -484,6 +558,9 @@ export class KnowledgeGraph implements ContextSourcePort {
     dependencies.push(implementationDependency);
     edges.push(...this.implementationBindings(subjectId).map(({ id, reason }) => this.edge(subjectId, id as string, "consequence", 0.82, "implementation-binding", reason as string, "derived")));
     if (this.units.some(({ id }) => id === subjectId)) {
+      const decisionDependency = await this.dependency(KNOWLEDGE_QUERY_PROGRAMS.decisionMembership, `knowledge-decisions:${subjectId}`, { unitId: subjectId }, `active decision applicability for ${subjectId}`, context);
+      dependencies.push(decisionDependency);
+      for (const decision of this.decisions.filter((item) => this.implementationBindings(item.id).some(({ id }) => id === subjectId))) edges.push(this.edge(subjectId, decision.id, "governing", 0.93, "selector-applicability", `active decision ${decision.id} applies to ${subjectId}`, "derived", true));
       if (this.supportsStaticTopology(subjectId)) {
         const topologyDependency = await this.dependency(KNOWLEDGE_QUERY_PROGRAMS.topology, `knowledge-topology:${subjectId}`, { unitId: subjectId }, `static dependency and test topology for ${subjectId}`, context);
         dependencies.push(topologyDependency);
@@ -517,14 +594,29 @@ export class KnowledgeGraph implements ContextSourcePort {
     });
   }
 
-  private implementationBindings(subjectId: string): Array<Record<string, unknown>> {
+  implementationBindings(subjectId: string): Array<Record<string, unknown>> {
     const direct = this.units.filter((unit) => unit.conceptIds.includes(subjectId) || unit.requirementIds.includes(subjectId) || unit.scenarioIds.includes(subjectId)).map(({ id }) => ({ id, reason: "typed projection-unit semantic binding" }));
     const entity = this.entitiesById.get(subjectId);
-    if (entity === undefined || !("scope" in entity.payload)) return direct;
+    // Preferences influence future options. They do not implicitly govern code or
+    // reactivate decisions that retain an earlier preference snapshot.
+    if (entity?.kind === "developer-preference") return direct;
+    if (entity?.kind === "projection-lens") return (this.lensCompilation?.memberships[subjectId] ?? []).map((id) => ({ id, reason: "active lens selector matched observed unit", membershipFingerprint: this.lensCompilation!.membershipFingerprints[subjectId] }));
+    if (entity === undefined || !("scope" in entity.payload) || typeof entity.payload.scope === "string") return direct;
     const subjects = this.units.map((unit) => projectionUnitSelectorSubject(unit, this.selectorFactsByUnitId.get(unit.id)));
     const membership = evaluateSelectorMembership(entity.payload.scope, subjects, { observability: this.observation.analysis.surface.enumeration.observability, assumptions: this.observation.analysis.surface.enumeration.assumptions, unavailableLanes: this.failureLanes(["projector.filesystem-local"]) });
     return [...direct, ...membership.memberIds.map((id) => ({ id, reason: `canonical ${entity.kind} scope selector matched observed unit`, selectorHash: membership.selectorHash }))]
       .sort((left, right) => compare(String(left.id), String(right.id)));
+  }
+
+  private decisionApplicabilityResult(decisionId: string) {
+    const decision = this.decisions.find(({ id }) => id === decisionId);
+    const fields = (selector: ArchitectureDecision["scope"]): string[] => selector.op === "atom" ? [selector.field] : selector.op === "not" ? fields(selector.item) : selector.items.flatMap(fields);
+    const supported = decision !== undefined && fields(decision.scope).every((field) => ["path", "surface", "package", "package-kind"].includes(field));
+    const failures = this.failureLanes(["projector.filesystem-local"]);
+    const available = this.observation.analysis.surface.access !== "unavailable";
+    return { results: this.implementationBindings(decisionId), observability: supported && available && failures.length === 0 ? "closed" as const : "unavailable" as const,
+      assumptions: [...this.observation.analysis.surface.enumeration.assumptions, "Applicability is closed over the repository inventory's declared file boundary, not runtime-created or external units."],
+      unavailableLanes: [...failures, ...(!supported ? ["decision selector requires facts outside the supported repository applicability observer"] : []), ...(!available ? ["repository inventory unavailable"] : [])], dependencyKeys: ["canonical-decisions", "projection-unit-membership"] };
   }
 
   private topologyNeighbors(unitId: string): Array<{ readonly id: string; readonly reasons: string[]; readonly directions: string[] }> {
@@ -658,6 +750,8 @@ export class KnowledgeGraph implements ContextSourcePort {
     if (entity.kind === "requirement") return `${(payload as Requirement).title}: ${(payload as Requirement).statement}`;
     if (entity.kind === "scenario") return `${(payload as BehavioralScenario).title}: ${(payload as BehavioralScenario).steps.map(({ role, statement }) => `${role}: ${statement}`).join("; ")}`;
     if (entity.kind === "architecture-decision") return `${(payload as ArchitectureDecision).title}: ${(payload as ArchitectureDecision).decision}`;
+    if (entity.kind === "architecture-concern") return `${(payload as ArchitectureConcern).title}: ${(payload as ArchitectureConcern).question}`;
+    if (entity.kind === "developer-preference") return `${(payload as DeveloperPreference).key}: ${(payload as DeveloperPreference).statement}`;
     return `${(payload as ProjectionLens).key}: ${(payload as ProjectionLens).purpose}`;
   }
 }

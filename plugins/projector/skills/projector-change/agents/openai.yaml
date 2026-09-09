@@ -1,0 +1,5 @@
+interface:
+  display_name: "Projector change"
+  short_description: "Carry accepted meaning through governed changes"
+policy:
+  allow_implicit_invocation: true

@@ -190,8 +190,7 @@ export function authorityRecordHashIsValid(record: AuthorityRecord): boolean {
 }
 
 export function developerPreferenceHashIsValid(preference: DeveloperPreference): boolean {
-  const { semanticHash: _semanticHash, ...semantic } = preference;
-  return preference.semanticHash === hashFramedDomain("developer-preference", semantic);
+  return preference.semanticHash === hashSemantic("developer-preference", preference);
 }
 
 export async function evaluateDecisionOptions(

@@ -26,6 +26,8 @@ const kindLocations = {
   "semantic-representation-profile": ["representations", "representation"],
   "authority-record": ["authorities", "authority"],
   "architecture-decision": ["decisions", "decision"],
+  "architecture-concern": ["concerns", "concern"],
+  "developer-preference": ["preferences", "preference"],
   "transaction-receipt": ["receipts", "receipt"],
   exception: ["exceptions", "exception"],
   migration: ["migrations", "migration"],

@@ -118,7 +118,7 @@ describe("cross-platform architecture acceptance", () => {
     const projectPreferenceBase: Omit<DeveloperPreference, "semanticHash"> = {
       id: "preference:project-runtime", key: "native-shell", scope: "project", selector: scope, strength: "prefer", statement: "Prefer a native shell when otherwise viable.", status: "active", sourceClass: "authored",
     };
-    const projectPreference = { ...projectPreferenceBase, semanticHash: hashFramedDomain("developer-preference", projectPreferenceBase) };
+    const projectPreference = { ...projectPreferenceBase, semanticHash: hashSemantic("developer-preference", projectPreferenceBase) };
     const verifyRuntimeOptions = vi.fn().mockResolvedValue({ options: [option("native-shell"), option("web-container")], evidenceIds: ["evidence:current-platform-docs"], unavailable: false, uncertainty: [] });
     const runtimeEvaluation = await evaluateDecisionOptions({
       concern: runtimeConcern,

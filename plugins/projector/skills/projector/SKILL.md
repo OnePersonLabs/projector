@@ -1,6 +1,7 @@
 ---
 name: projector
 description: Develop through Projector's canonical conceptual model, architectural lenses, and scoped reconciliation, including a fresh implementation without an existing specification workflow.
+disable-model-invocation: false
 ---
 
 # Projector workflow
@@ -27,6 +28,12 @@ When Codex implements or revises code under the host's permissions, reconcile th
 ## Across changes
 
 Reuse stable identities and the accepted selectors, constraints, and decisions that remain applicable. Reconcile saved context before reusing its conclusions. When new evidence challenges an architectural reason, propose an explicit revision with the old identity, current hashes, rationale, and affected obligations. Preserve unrelated decisions and independently justified exceptions. Never promote repeated generated code into proof that its originating rule was correct.
+
+For an unresolved area, use the bundled CLI's `complete --scope <scope> --mode observe --format json` to inspect ranked obligations and `cleanup --scope <scope> --mode observe --format json` for a read-only repair plan. Start with the relevant directory; use `.` when checking future capabilities with no implementation members. Follow an issue's context request and settle it through accepted meaning or actual implementation evidence. Check omitted counts. File mapping does not prove fulfillment, and unavailable coverage is not a green result. These are tools for unresolved work, not mandatory ceremony after every edit.
+
+Inspect reconciliation's impact, Planning Surprises and repair route. Exact derivation inputs and versioned impact rules support post-delta review; they do not replace pre-edit relevance. Candidate relations remain inferred until accepted. Never use source-shape similarity or a derived cache hit to skip required behavioral validation.
+
+Completion preserves future behavior ahead of nonblocking file-mapping questions. Use `--question-offset <nextOffset>` from `completion.questionPage` to inspect another page against unchanged evidence; repository changes recompute the ranking. A token budget too small for the next question requires increasing that budget, not skipping the question.
 
 ## Failure behavior
 
