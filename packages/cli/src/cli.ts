@@ -28,7 +28,7 @@ export { createHostSessionRecord, hostSessionSelector } from "@projector/integra
 import { runDefaultUpgradeWorkflow } from "./upgrade.js";
 export * from "./upgrade.js";
 
-export const PROJECTOR_VERSION = "2.0.0";
+export const PROJECTOR_VERSION = "2.1.0";
 
 const HELP = `Projector ${PROJECTOR_VERSION}
 

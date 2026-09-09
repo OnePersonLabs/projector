@@ -1,15 +1,8 @@
 import { createHash } from "node:crypto";
-import { spawn, spawnSync } from "node:child_process";
-import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canonicalJson, hashFramedDomain } from "../packages/core/src/index.js";
 
-import * as packedLifecycle from "./packed-lifecycle-acceptance.mjs";
-
-const { packedLifecycleSeveranceMode, verifyPackedLifecycleEvidence } = packedLifecycle;
+import { verifyPackedLifecycleEvidence } from "./packed-lifecycle-acceptance.mjs";
 
 const sortValue = (value) => Array.isArray(value) ? value.map(sortValue) : value !== null && typeof value === "object"
   ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortValue(item)]))
@@ -78,56 +71,6 @@ function evidence() {
 }
 
 describe("packed held-out lifecycle evidence", () => {
-  it("closes the actual namespace keeper instead of only its launcher", async () => {
-    const launcher = spawn("/bin/sh", ["-c", "sleep 120 & printf '%s\\n' \"$!\"; wait"], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const [chunk] = await once(launcher.stdout, "data");
-    const namespaceProcessId = String(chunk).trim();
-    const completed = once(launcher, "exit");
-    try {
-      const closeNamespaceKeeper = Reflect.get(packedLifecycle, "closePackedLifecycleNamespaceKeeper");
-      expect(typeof closeNamespaceKeeper).toBe("function");
-      if (typeof closeNamespaceKeeper !== "function") return;
-
-      await closeNamespaceKeeper({
-        namespaceProcessId,
-        keeper: { child: launcher, completed },
-        signalProcess: async (processId, signal) => { process.kill(Number(processId), signal); },
-      });
-
-      expect(() => process.kill(Number(namespaceProcessId), 0)).toThrow();
-      expect(launcher.exitCode === null && launcher.signalCode === null).toBe(false);
-    } finally {
-      try { process.kill(Number(namespaceProcessId), "SIGKILL"); } catch { /* already closed */ }
-      if (launcher.exitCode === null && launcher.signalCode === null) launcher.kill("SIGKILL");
-      await completed;
-    }
-  });
-
-  it("launches nsenter in the hosted repository working directory", () => {
-    const repository = mkdtempSync(join(tmpdir(), "projector-nsenter-cwd-"));
-    try {
-      const buildWorkingDirectoryArguments = Reflect.get(packedLifecycle, "packedLifecycleNsenterWorkingDirectoryArguments");
-      const workingDirectoryArguments = typeof buildWorkingDirectoryArguments === "function"
-        ? buildWorkingDirectoryArguments(repository)
-        : [];
-      const result = spawnSync("/usr/bin/nsenter", [
-        "--target", String(process.pid), ...workingDirectoryArguments, "--", "/usr/bin/pwd",
-      ], { cwd: process.cwd(), encoding: "utf8" });
-
-      expect(result.status, result.stderr).toBe(0);
-      expect(result.stdout.trim()).toBe(repository);
-    } finally {
-      rmSync(repository, { recursive: true, force: true });
-    }
-  });
-
-  it("uses a host mount namespace on GitHub Actions to preserve the inner sandbox boundary", () => {
-    expect(packedLifecycleSeveranceMode({ GITHUB_ACTIONS: "true" })).toBe("host-mount-namespace");
-    expect(packedLifecycleSeveranceMode({})).toBe("bubblewrap");
-  });
-
   it("accepts one source-severed approval/interruption/recovery proof with closed impact", () => {
     expect(verifyPackedLifecycleEvidence(evidence())).toMatch(/^sha256:v1:[a-f0-9]{64}$/u);
   });

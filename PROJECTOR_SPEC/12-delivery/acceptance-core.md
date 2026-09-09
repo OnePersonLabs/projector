@@ -125,7 +125,9 @@ Expected: installation and advertised capabilities do not authorize execution. P
 
 Inspect the repository release workflow and run its sandbox lane on the pinned Ubuntu runner.
 
-Expected: `workflow_dispatch` is the only trigger. The workflow provisions the pinned sandbox without disabling Ubuntu's global user-namespace restriction. It proves filesystem and network isolation before dogfooding, verification, artifact checks, and packed release acceptance. The traceability manifest binds this scenario to an observed public test.
+Expected: `workflow_dispatch` is the only trigger. A build job provisions the pinned sandbox without disabling Ubuntu's global user-namespace restriction. It proves filesystem and network isolation before dogfooding, verification, artifact checks, and creation of one authenticated candidate.
+
+A fresh job with no checkout downloads that candidate and provisions the sandbox. It installs the exact tarball and plugin and runs packed acceptance. It uploads the exact tested artifacts and evidence. The traceability manifest binds this scenario to an observed public test.
 
 
 ## Operational MCP advertisement

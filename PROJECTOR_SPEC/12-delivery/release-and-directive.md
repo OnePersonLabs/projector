@@ -78,7 +78,7 @@ Packed lifecycle verification MUST parse the canonical certificate and receipt a
 
 Dogfood governance MUST bind `PROJECTOR_SPEC/spec.manifest.json`, its byte digest, and a deterministic root digest over the manifest-addressed entrypoint, index, and every listed module. A digest over a selected subset of normative modules does not bind the Projector specification.
 
-The repository GitHub Actions release workflow MUST remain manual-only with `workflow_dispatch` as its only trigger. It MUST provision and prove the sandbox before dogfooding, verification, artifact checks, and packed release acceptance. It MUST NOT disable the runner's global unprivileged-user-namespace restriction to make a probe pass.
+The repository GitHub Actions release workflow MUST remain manual-only with `workflow_dispatch` as its only trigger. One build job MUST provision and prove the sandbox before dogfooding, verification, artifact checks, and creation of one authenticated release candidate. A fresh job with no source checkout MUST download that candidate and provision and prove its sandbox. It MUST install the exact tarball and plugin and run packed release acceptance. The workflow MUST upload the exact tested tarball, plugin, evidence, transcript, and digests. It MUST NOT publish, tag, create a release, or disable the runner's global unprivileged-user-namespace restriction to make a probe pass.
 
 The authoritative Projector specification MUST pass the blocking `human-technical@1` mechanical style gate. Code blocks and exact technical literals are outside that prose gate. Passive voice and nominalization remain review signals when a deterministic checker cannot identify a better actor or verb safely.
 

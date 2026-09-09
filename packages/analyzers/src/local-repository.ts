@@ -95,7 +95,7 @@ export interface AnalyzeLocalRepositoryOptions {
   readonly observationRevision?: string;
 }
 
-const adapterVersion = "2.0.0";
+const adapterVersion = "2.1.0";
 
 function tokenizeCommand(command: string): string[] {
   const tokens: string[] = [];
