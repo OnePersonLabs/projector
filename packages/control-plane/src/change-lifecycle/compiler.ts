@@ -3,14 +3,21 @@ import { relative } from "node:path";
 
 import {
   BehavioralScenarioSchema,
+  ArchitectureDecisionSchema,
+  AuthorityRecordSchema,
+  ConceptSchema,
+  ProjectionLensSchema,
   ArchitectureConcernSchema,
   RelationSchema,
   RequirementSchema,
   canonicalJson,
   deriveEntityId,
   hashFramedDomain,
+  hashSemantic,
   withCanonicalHashes,
   type BehavioralScenario,
+  type ArchitectureDecision,
+  type AuthorityRecord,
   type ChangeProposal,
   type ArchitectureConcern,
   type CanonicalDocumentEnvelope,
@@ -21,6 +28,8 @@ import {
   type Requirement,
   type ProposedRequirement,
   type ProposedScenario,
+  type ProposedCanonicalMutation,
+  type ProjectionLens,
   type SelectorExpr,
   type StateQueryDependency,
   type Relation,
@@ -31,6 +40,7 @@ import {
   canonicalRepresentationSourceFromSemanticChange,
   compileSemanticChange,
   compileSemanticChangePlan,
+  compileProjectionLenses,
   createStateBinding,
   discoverArchitectureConcerns,
   executionPlanHash,
@@ -64,7 +74,7 @@ export interface SemanticIdentityResolutionEvidence {
 
 export interface CanonicalChangeWrite {
   readonly id: string;
-  readonly kind: "requirement" | "behavioral-scenario";
+  readonly kind: "requirement" | "behavioral-scenario" | "concept" | "relation" | "architecture-decision" | "projection-lens" | "authority-record";
   readonly path: string;
   readonly before: string | null;
   readonly after: string;
@@ -105,6 +115,7 @@ export interface RepresentationArtifactStore {
 }
 
 export interface CompiledRepositoryChange {
+  readonly executionKind: "canonical-only" | "repository-code";
   readonly proposalHash: ContentHash;
   readonly identityResolutions: readonly SemanticIdentityResolutionEvidence[];
   readonly architectureDeferral?: ArchitectureDeferralEvidence;
@@ -141,6 +152,14 @@ export interface RepositoryIntentReview {
     readonly rationale: string | null;
   }[];
   readonly relations: readonly Relation[];
+  readonly canonicalMutations?: readonly {
+    readonly id: string;
+    readonly kind: "concept" | "relation" | "architecture-decision" | "projection-lens" | "authority-record";
+    readonly operation: "add" | "revise";
+    readonly before: Record<string, unknown> | null;
+    readonly after: Record<string, unknown>;
+    readonly rationale: string;
+  }[];
   readonly relatedObligations: readonly { readonly id: string; readonly kind: string; readonly payload: unknown }[];
   readonly unknowns: readonly string[];
   readonly blockingUnknowns: readonly string[];
@@ -286,9 +305,14 @@ async function canonicalWrite(
   kind: CanonicalChangeWrite["kind"],
   id: string,
   key: string,
-  payload: Requirement | BehavioralScenario,
+  payload: Requirement | BehavioralScenario | Record<string, unknown>,
 ): Promise<CanonicalChangeWrite> {
-  const envelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key, lifecycle: "active", payload: { ...payload } });
+  const body = { ...payload } as Record<string, unknown>;
+  const lifecycle = kind === "relation" ? body.active === true ? "active" : "inactive"
+    : typeof body.lifecycle === "string" ? body.lifecycle
+      : typeof body.status === "string" ? body.status
+        : "active";
+  const envelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key, lifecycle, payload: body });
   const absolutePath = repository.pathFor(kind, id);
   return {
     id,
@@ -298,6 +322,47 @@ async function canonicalWrite(
     after: `${canonicalJson(envelope)}\n`,
     envelope,
   };
+}
+
+const canonicalMutationSchemas = {
+  concept: ConceptSchema,
+  relation: RelationSchema,
+  "architecture-decision": ArchitectureDecisionSchema,
+  "projection-lens": ProjectionLensSchema,
+  "authority-record": AuthorityRecordSchema,
+} as const;
+
+function parsedMutationPayload(mutation: ProposedCanonicalMutation): Record<string, unknown> {
+  const supplied = mutation.payload as Record<string, unknown>;
+  const payloadWithNestedHashes = mutation.kind === "projection-lens" ? {
+    ...supplied,
+    rules: (supplied.rules as readonly Record<string, unknown>[]).map((rule) => ({ ...rule, semanticHash: hashSemantic("rule", rule) })),
+    impactRules: (supplied.impactRules as readonly Record<string, unknown>[]).map((rule) => ({ ...rule, semanticHash: hashFramedDomain("impact-rule", rule) })),
+  } : supplied;
+  const result = canonicalMutationSchemas[mutation.kind].safeParse({
+    ...payloadWithNestedHashes,
+    semanticHash: placeholder,
+    ...(mutation.kind === "concept" ? { discoveryHash: placeholder } : {}),
+  });
+  if (!result.success) throw new Error(`invalid ${mutation.kind} mutation payload: ${result.error.message}`);
+  const payload = result.data as Record<string, unknown>;
+  if ((mutation.kind === "concept" || mutation.kind === "relation") && payload.sourceClass !== "authored") {
+    throw new Error(`${mutation.kind} mutations must be explicitly authored; observed or inferred material cannot be promoted`);
+  }
+  return payload;
+}
+
+function mutationKey(kind: ProposedCanonicalMutation["kind"], payload: Record<string, unknown>): string {
+  if (kind === "relation") return `relation:${String(payload.id)}`;
+  if (typeof payload.key !== "string" || payload.key.trim() === "") throw new Error(`${kind} mutation payload requires a key`);
+  return payload.key;
+}
+
+function assertEligibleAuthority(record: AuthorityRecord, subjectId: string, label: string): void {
+  if (record.subjectId !== subjectId) throw new Error(`${label} authority ${record.id} is bound to ${record.subjectId}, expected ${subjectId}`);
+  if (record.status !== "approved" && record.status !== "auto-approved") throw new Error(`${label} authority ${record.id} is not approved`);
+  if (record.conclusion === "unknown" || record.conclusion === "exception") throw new Error(`${label} authority ${record.id} does not authorize activation`);
+  if (record.decidedBy === "system" && record.status !== "auto-approved") throw new Error(`system authority ${record.id} lacks auto-approval`);
 }
 
 function defaultRepresentationArtifacts(): RepresentationArtifactStore {
@@ -323,6 +388,7 @@ export async function compileRepositoryChange(
   const request = input.request.normalize("NFKC").trim();
   if (request.length === 0 || request.length > 16_384 || request.includes("\0")) throw new Error("natural-language change request must be nonblank bounded UTF-8 text");
   const now = input.now ?? new Date().toISOString();
+  const executionKind = input.proposal.edits.length === 0 ? "canonical-only" as const : "repository-code" as const;
   const semanticAnalysisFacets = input.proposal.analysisFacets.filter((facet) => facet !== "workspace-expansion");
   if (input.proposal.architecture !== null) {
     const deferralDurationMs = Date.parse(input.proposal.architecture.deferral.validUntil) - Date.parse(now);
@@ -398,9 +464,106 @@ export async function compileRepositoryChange(
       operations.push({ subjectType: "scenario", kind: existing === undefined ? "add" : "modify", scenarioId: targetId, proposedScenario: payload, rationale: proposed.revision?.rationale ?? `structured proposal ${proposalHash}` });
     }
   }
+  const mutationReviews: NonNullable<RepositoryIntentReview["canonicalMutations"]>[number][] = [];
+  const documentsAfter = new Map(observation.canonical.documents.map((document) => [document.id, document]));
+  for (const write of canonicalWrites) documentsAfter.set(write.id, write.envelope);
+  for (const mutation of input.proposal.canonicalMutations ?? []) {
+    const payload = parsedMutationPayload(mutation);
+    const id = String(payload.id);
+    const existing = documentsAfter.get(id);
+    if (mutation.operation === "add") {
+      if (existing !== undefined) throw new Error(`canonical addition expected ${id} to be absent`);
+      const duplicateKey = [...documentsAfter.values()].find((document) => document.kind === mutation.kind && document.key === mutationKey(mutation.kind, payload));
+      if (duplicateKey !== undefined) throw new Error(`${mutation.kind} key is already owned by ${duplicateKey.id}`);
+    } else {
+      if (existing === undefined || existing.kind !== mutation.kind) throw new Error(`canonical revision target is absent or has another kind: ${id}`);
+      if (existing.semanticHash !== mutation.expectedSemanticHash || existing.canonicalDocumentHash !== mutation.expectedDocumentHash) {
+        throw new Error(`canonical revision target hashes are stale: ${id}`);
+      }
+    }
+    const write = await canonicalWrite(input.repositoryRoot, canonical, mutation.kind, id, mutationKey(mutation.kind, payload), payload);
+    if (mutation.operation === "revise" && existing?.canonicalDocumentHash === write.envelope.canonicalDocumentHash) {
+      throw new Error(`canonical revision is a no-op: ${id}`);
+    }
+    canonicalWrites.push(write);
+    documentsAfter.set(id, write.envelope);
+    mutationReviews.push({ id, kind: mutation.kind, operation: mutation.operation, before: existing?.payload ?? null, after: write.envelope.payload, rationale: mutation.rationale });
+    operations.push({
+      subjectType: mutation.kind === "architecture-decision" ? "decision" : mutation.kind === "projection-lens" ? "lens" : mutation.kind === "authority-record" ? "other" : mutation.kind,
+      subjectKey: mutationKey(mutation.kind, payload),
+      subjectId: id,
+      kind: mutation.operation === "add" ? mutation.kind === "projection-lens" ? "adopt-rule" : "add" : "modify",
+      payload: { ...write.envelope.payload, revisionRationale: mutation.rationale },
+    });
+  }
+  const knownAfterIds = new Set([...documentsAfter.keys(), ...observation.analysis.projectionUnits.map(({ id }) => id)]);
+  for (const review of mutationReviews.filter(({ kind }) => kind === "relation")) {
+    const relation = RelationSchema.parse(documentsAfter.get(review.id)!.payload) as Relation;
+    if (!knownAfterIds.has(relation.fromId) || !knownAfterIds.has(relation.toId)) throw new Error(`relation ${relation.id} has a dangling endpoint`);
+  }
+  const authoritiesAfter = [...documentsAfter.values()].filter(({ kind }) => kind === "authority-record").map(({ payload }) => AuthorityRecordSchema.parse(payload) as AuthorityRecord);
+  const authorityById = new Map(authoritiesAfter.map((record) => [record.id, record]));
+  const decisionsAfter = [...documentsAfter.values()].filter(({ kind }) => kind === "architecture-decision").map(({ payload }) => ArchitectureDecisionSchema.parse(payload) as ArchitectureDecision);
+  const lensesAfter = [...documentsAfter.values()].filter(({ kind }) => kind === "projection-lens").map(({ payload }) => ProjectionLensSchema.parse(payload) as ProjectionLens);
+  if (mutationReviews.length > 0) {
+    const decisionConcernIds = new Set(decisionsAfter.map(({ concernId }) => concernId));
+    for (const authority of authoritiesAfter) if (!knownAfterIds.has(authority.subjectId) && !decisionConcernIds.has(authority.subjectId)) {
+      throw new Error(`authority ${authority.id} has a dangling subject ${authority.subjectId}`);
+    }
+    for (const decision of decisionsAfter.filter(({ lifecycle }) => lifecycle === "active")) {
+      const authority = authorityById.get(decision.authorityRecordId);
+      if (authority === undefined) throw new Error(`active decision ${decision.id} has no authority record ${decision.authorityRecordId}`);
+      assertEligibleAuthority(authority, decision.concernId, `active decision ${decision.id}`);
+    }
+    const activeByConcern = new Map<string, string[]>();
+    for (const decision of decisionsAfter) {
+      if (decision.lifecycle === "active") activeByConcern.set(decision.concernId, [...(activeByConcern.get(decision.concernId) ?? []), decision.id]);
+      for (const supersededId of decision.supersedesDecisionIds) {
+        const targetDocument = documentsAfter.get(supersededId);
+        if (targetDocument?.kind !== "architecture-decision") throw new Error(`decision ${decision.id} supersedes a missing or non-decision target ${supersededId}`);
+        const target = ArchitectureDecisionSchema.parse(targetDocument.payload) as ArchitectureDecision;
+        if (target.concernId !== decision.concernId) throw new Error(`decision ${decision.id} cannot supersede ${supersededId} from another concern`);
+        if (target.lifecycle !== "superseded") throw new Error(`superseded decision ${supersededId} must be superseded in the proposed final state`);
+      }
+    }
+    for (const [concernId, ids] of activeByConcern) if (ids.length > 1) throw new Error(`concern ${concernId} has multiple active decisions: ${ids.sort(compare).join(", ")}`);
+    for (const governed of [...decisionsAfter, ...lensesAfter]) for (const basis of governed.governanceBasis) {
+      const referencedId = basis.kind === "architecture-decision" ? basis.decisionId
+        : basis.kind === "hard-constraint" ? basis.conceptId
+          : basis.kind === "adopted-standard" ? basis.authorityRecordId
+            : basis.kind === "migration-overlay" ? basis.migrationId
+              : basis.kind === "active-lens" ? basis.lensId
+                : undefined;
+      if (referencedId === undefined) continue;
+      const target = documentsAfter.get(referencedId);
+      const expectedKind = basis.kind === "architecture-decision" ? "architecture-decision"
+        : basis.kind === "hard-constraint" ? "concept"
+          : basis.kind === "adopted-standard" ? "authority-record"
+            : basis.kind === "migration-overlay" ? "migration"
+              : "projection-lens";
+      if (target?.kind !== expectedKind) throw new Error(`${governed.id} governance basis ${basis.kind} references missing or wrong-kind ${referencedId}`);
+      if (basis.kind === "hard-constraint") {
+        const concept = ConceptSchema.parse(target.payload) as { status: string };
+        if (concept.status !== "active") throw new Error(`${governed.id} hard constraint ${referencedId} is not active`);
+      } else if (basis.kind === "architecture-decision") {
+        const decision = ArchitectureDecisionSchema.parse(target.payload) as ArchitectureDecision;
+        if (decision.lifecycle !== "active") throw new Error(`${governed.id} decision basis ${referencedId} is not active`);
+      } else if (basis.kind === "adopted-standard") {
+        const authority = AuthorityRecordSchema.parse(target.payload) as AuthorityRecord;
+        const subjectId = "concernId" in governed ? governed.concernId : governed.id;
+        assertEligibleAuthority(authority, subjectId, `${governed.id} adopted-standard basis`);
+      } else if (basis.kind === "active-lens") {
+        const lens = ProjectionLensSchema.parse(target.payload) as ProjectionLens;
+        if (lens.status !== "active") throw new Error(`${governed.id} lens basis ${referencedId} is not active`);
+      }
+    }
+    compileProjectionLenses({ lenses: lensesAfter, units: [], authorityRecords: authoritiesAfter });
+  }
+  if (executionKind === "canonical-only" && canonicalWrites.length === 0) throw new Error("canonical-only proposal produces no model change");
   canonicalWrites.sort((left, right) => compare(left.path, right.path));
   const relatedIds = new Set([
     ...identityResolutions.map(({ targetId }) => targetId),
+    ...mutationReviews.map(({ id }) => id),
     ...(input.knowledgeContext?.branches.filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct).flatMap(({ closure }) => closure.entries.map(({ entityId }) => entityId)) ?? []),
   ]);
   const relations = observation.canonical.documents.filter(({ kind }) => kind === "relation").map(({ payload }) => RelationSchema.parse(payload) as Relation).filter(({ active }) => active);
@@ -427,7 +590,7 @@ export async function compileRepositoryChange(
       }
     }
   }
-  const knownIds = new Set([...observation.canonical.documents.map(({ id }) => id), ...observation.analysis.projectionUnits.map(({ id }) => id), ...identityResolutions.map(({ targetId }) => targetId)]);
+  const knownIds = new Set([...observation.canonical.documents.map(({ id }) => id), ...observation.analysis.projectionUnits.map(({ id }) => id), ...identityResolutions.map(({ targetId }) => targetId), ...canonicalWrites.map(({ id }) => id)]);
   const blockingUnknowns = unique([
     ...[...relatedIds].filter((id) => !knownIds.has(id)).map((id) => `related commitment has no current canonical entity or observed projection: ${id}`),
     ...[...commitmentFrontier].map((id) => `conceptual obligation traversal reached its ${maximumCommitments}-entity bound before resolving ${id}`),
@@ -435,6 +598,7 @@ export async function compileRepositoryChange(
   const reviewBasis = {
     subjects: reviewSubjects.sort((a, b) => compare(a.id, b.id)),
     relations: [...relatedRelations.values()].sort((a, b) => compare(a.id, b.id)),
+    canonicalMutations: mutationReviews.sort((a, b) => compare(a.id, b.id)),
     relatedObligations: observation.canonical.documents.filter(({ id, kind }) => relatedIds.has(id) && kind !== "relation").map(({ id, kind, payload }) => ({ id, kind, payload })).sort((a, b) => compare(a.id, b.id)),
     blockingUnknowns,
     unknowns: unique([
@@ -587,6 +751,12 @@ export async function compileRepositoryChange(
     statements: [
       ...input.proposal.requirements.map(({ statement }) => ({ kind: "behavior" as const, statement, origin: [{ kind: "document" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash, description: "Proposed interpretation; semantic fidelity to the user request is unverified." }], confidence: 1 })),
       ...input.proposal.scenarios.flatMap(({ steps }) => steps.map(({ statement }) => ({ kind: "behavior" as const, statement, origin: [{ kind: "document" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash, description: "Proposed interpretation; semantic fidelity to the user request is unverified." }], confidence: 1 }))),
+      ...mutationReviews.map(({ kind, id, after }) => ({
+        kind: (kind === "architecture-decision" || kind === "projection-lens" || kind === "relation" ? "constraint" : "behavior") as "constraint" | "behavior",
+        statement: [after.statement, after.decision, after.purpose, after.rationale, after.name].find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? `${kind} ${id}`,
+        origin: [{ kind: "document" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash, description: "Explicit canonical mutation proposed for approval." }],
+        confidence: 1,
+      })),
       ...(architectureDeferral?.forbiddenCommitments ?? []).map((statement) => ({ kind: "constraint" as const, statement, origin: [{ kind: "user-request" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash }], confidence: 1 })),
     ],
     ambiguity: [] as string[],
@@ -595,7 +765,10 @@ export async function compileRepositoryChange(
   const intentAnalysis = { ...intentBase, contentHash: hashFramedDomain("change-intent-analysis", intentBase) };
   const factsValue = {
     intentAnalysis,
-    identityResolutionIds: identityResolutions.map(({ id }) => id),
+    identityResolutionIds: [
+      ...identityResolutions.map(({ id }) => id),
+      ...mutationReviews.map(({ kind, id, operation }) => `explicit-canonical-${operation}:${kind}:${id}`),
+    ],
     relevanceClosureId: relevance.id,
     analysisFacetKeys: semanticAnalysisFacets,
     operations: operations.map((operation) => ({ provenance: "authenticated" as const, operation })),
@@ -630,16 +803,17 @@ export async function compileRepositoryChange(
     ],
     queryDependencyIds: [relevance.queryDependency.query.id],
   };
+  const mutatesGovernanceAuthority = (input.proposal.canonicalMutations ?? []).some(({ kind }) => kind === "architecture-decision" || kind === "projection-lens" || kind === "authority-record");
   const risk = {
     class: "R2" as const,
-    inherentOperationRisk: 2,
+    inherentOperationRisk: executionKind === "repository-code" || mutatesGovernanceAuthority ? 2 : 1,
     affectedUnitCount: knownAffectedUnitIds.length,
     affectedSurfaceCount: 1,
     publicContractImpact: input.proposal.analysisFacets.includes("public-contract"),
     externalImpact: false,
     dataImpact: input.proposal.analysisFacets.includes("persistence"),
     reversibility: "full" as const,
-    validationStrength: "strong" as const,
+    validationStrength: executionKind === "canonical-only" ? "exact" as const : "strong" as const,
     closureConfidence: "bounded" as const,
     unresolvedIdentityCount: 0,
     relevanceFrontierCount: relevance.possibleFrontierUnitIds.length,
@@ -647,7 +821,9 @@ export async function compileRepositoryChange(
     unresolvedBlockingConcernCount: 0,
     suspectDecisionCount: 0,
     compensationAvailable: true,
-    reasons: ["canonical requirement/scenario mutation requires explicit approval", "bounded local static relevance with an independent Git-base validator"],
+    reasons: executionKind === "canonical-only"
+      ? [mutatesGovernanceAuthority ? "canonical authority or executable governance mutation is R2" : "canonical meaning mutation is reversible R1", "validation covers canonical integrity and eligible lens compilation; implementation fidelity is not claimed"]
+      : ["canonical requirement/scenario mutation requires explicit approval", "bounded local static relevance with an independent Git-base validator"],
   };
   const compiledChange = await compileSemanticChange({ request, currentState: observation.state, context }, {
     facts: { load: async () => ({ value: factsValue, contentHash: factsHash }) },
@@ -661,16 +837,16 @@ export async function compileRepositoryChange(
   const validatorIds = [
     "exact-text-patch.verify",
     "projector.repository-post-observation",
-    "projector.post-change-knowledge",
+    ...(executionKind === "canonical-only" ? ["projector.canonical-model-integrity"] : ["projector.post-change-knowledge"]),
     ...independentValidators.map(({ path }) => `node-independent:${path}`),
     ...input.proposal.validation.supplementalNodeTests.map((path) => `node-supplemental:${path}`),
   ];
   const completionContract = {
     requiredUnitStates: knownAffectedUnitIds.map((unitId) => ({ unitId, state: "valid" as const })),
     requiredValidators: validatorIds,
-    requiredEvidenceLanes: ["runtime" as const, "test" as const],
-    minimumValidationAssurance: "strong" as const,
-    requireIndependentValidation: true,
+    requiredEvidenceLanes: executionKind === "canonical-only" ? ["runtime" as const] : ["runtime" as const, "test" as const],
+    minimumValidationAssurance: executionKind === "canonical-only" ? "exact" as const : "strong" as const,
+    requireIndependentValidation: executionKind !== "canonical-only",
     maximumNewDivergences: 0,
     maximumUnknowns: 0,
     allowUnavailableExternalActions: false,
@@ -680,11 +856,11 @@ export async function compileRepositoryChange(
   const planningValue = { change: compiledChange.change, boundState: compiledChange.boundState, compilerFactsHash: compiledChange.compilerFactsHash };
   const packetValue = {
     proposals: [{
-      key: "exact-text-change",
-      title: input.proposal.requirements.map(({ title }) => title).join("; "),
+      key: executionKind === "canonical-only" ? "canonical-model-change" : "exact-text-change",
+      title: input.proposal.requirements.map(({ title }) => title).join("; ") || mutationReviews.map(({ kind, id }) => `${kind} ${id}`).join("; "),
       stage: "source" as const,
       executionMode: "deterministic" as const,
-      transformId: "exact-text-patch",
+      transformId: executionKind === "canonical-only" ? "canonical-model-write" : "exact-text-patch",
       unitIds: knownAffectedUnitIds,
       semanticOwnerIds: identityResolutions.map(({ targetId }) => targetId),
       writeSelectors: boundary,
@@ -707,6 +883,7 @@ export async function compileRepositoryChange(
     ].sort((left, right) => compare(left.path, right.path)),
   };
   return {
+    executionKind,
     proposalHash,
     identityResolutions: identityResolutions.sort((left, right) => compare(left.id, right.id)),
     ...(architectureDeferral === undefined ? {} : { architectureDeferral }),

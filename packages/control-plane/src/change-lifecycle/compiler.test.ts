@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { deriveEntityId, hashFramedDomain, parseChangeProposal, withCanonicalHashes, type BehavioralScenario, type ChangeProposal, type Requirement } from "@projector/core";
-import { executionPlanHash } from "@projector/engine";
+import { deriveEntityId, hashFramedDomain, parseChangeProposal, withCanonicalHashes, type AuthorityRecord, type BehavioralScenario, type ChangeProposal, type Requirement } from "@projector/core";
+import { createRepositoryScriptLens, executionPlanHash } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
@@ -13,6 +13,14 @@ import { compileRepositoryChange } from "./compiler.js";
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "placeholder");
+
+function approvedAuthority(id: string, subjectId: string): AuthorityRecord {
+  return { id, key: id, subjectId, status: "approved", conclusion: "preserve", rationale: "Explicitly adopt the bounded rule.", alternatives: [], assumptions: [], reconsiderWhen: [{ type: "manual-review" }], vector: { explicitDecisionAlignment: 1, productConstraintFit: 1, semanticFit: 1, independentOccurrence: 1, historicalStability: 0, independentValidationSupport: 1, boundaryCoherence: 1, maintenanceOutcome: 0, platformCompatibility: 1, externalRationale: 0, ecosystemHealth: 0, securitySupport: 0, reversibility: 1, migrationCost: 0, counterEvidence: 0 }, assessmentConfidence: "high", evidence: [], governanceRiskClass: "R1", decidedBy: "user", createdAt: "2026-09-09T00:00:00.000Z", semanticHash: placeholder };
+}
+
+function decisionPayload(id: string, authorityRecordId: string, lifecycle: "active" | "superseded", supersedesDecisionIds: string[] = []) {
+  return { id, key: id, concernId: "concern:clock-source", title: id, decision: `Use ${id}.`, selectedOptionKey: id, scope: { op: "atom" as const, field: "package" as const, matcher: "equals" as const, value: "domain" }, lifecycle, authorityRecordId, governanceBasis: [], consequences: [], appliedPreferences: [], supersedesDecisionIds };
+}
 
 function proposal(): ChangeProposal {
   return parseChangeProposal({
@@ -94,6 +102,95 @@ async function repository(): Promise<string> {
 }
 
 describe("repository change compiler", () => {
+  it("requires explicit same-concern decision supersession and one active decision", async () => {
+    const root = await repository();
+    try {
+      const olderAuthority = approvedAuthority("authority:clock-old", "concern:clock-source");
+      const newerAuthority = approvedAuthority("authority:clock-new", "concern:clock-source");
+      const withoutHash = (record: AuthorityRecord) => { const { semanticHash: _hash, ...payload } = record; return payload; };
+      const mutations = (olderLifecycle: "active" | "superseded", supersedesDecisionIds: string[]) => [
+        { kind: "authority-record", operation: "add", expectedAbsent: true, rationale: "Bind the prior decision.", payload: withoutHash(olderAuthority) },
+        { kind: "authority-record", operation: "add", expectedAbsent: true, rationale: "Bind the replacement decision.", payload: withoutHash(newerAuthority) },
+        { kind: "architecture-decision", operation: "add", expectedAbsent: true, rationale: "Record the prior choice.", payload: decisionPayload("decision:clock-old", olderAuthority.id, olderLifecycle) },
+        { kind: "architecture-decision", operation: "add", expectedAbsent: true, rationale: "Record the replacement choice.", payload: decisionPayload("decision:clock-new", newerAuthority.id, "active", supersedesDecisionIds) },
+      ];
+      const parse = (items: ReturnType<typeof mutations>) => parseChangeProposal({ apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], canonicalMutations: items, architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"] });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Adopt contradictory clock decisions.", proposal: parse(mutations("active", [])) })).rejects.toThrow(/multiple active decisions/iu);
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Claim supersession without changing prior state.", proposal: parse(mutations("active", ["decision:clock-old"])) })).rejects.toThrow(/must be superseded/iu);
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Replace the clock decision explicitly.", proposal: parse(mutations("superseded", ["decision:clock-old"])) })).resolves.toMatchObject({ executionKind: "canonical-only" });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("accepts a jointly authorized active lens and rejects ineligible authority", async () => {
+    const root = await repository();
+    try {
+      const authority = approvedAuthority("authority:repository-layout", "lens:repository-layout");
+      const lens = createRepositoryScriptLens({ id: "lens:repository-layout", status: "active", authorityRecordId: authority.id, governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:repository-layout" }] });
+      const { semanticHash: _authorityHash, ...authorityPayload } = authority;
+      const { semanticHash: _lensHash, ...lensWithNestedHashes } = lens;
+      const lensPayload = {
+        ...lensWithNestedHashes,
+        rules: lensWithNestedHashes.rules.map(({ semanticHash: _ruleHash, ...rule }) => rule),
+        impactRules: lensWithNestedHashes.impactRules.map(({ semanticHash: _impactHash, ...rule }) => rule),
+      };
+      const mutations = [
+        { kind: "concept", operation: "add", expectedAbsent: true, rationale: "Name the governing constraint.", payload: { id: "concept:repository-layout", key: "repository-layout", kind: "constraint", name: "Repository layout", aliases: [], statement: "Repository automation stays in its governed location.", status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [] } },
+        { kind: "authority-record", operation: "add", expectedAbsent: true, rationale: "Approve the bounded structural rule.", payload: authorityPayload },
+        { kind: "projection-lens", operation: "add", expectedAbsent: true, rationale: "Make the structural rule reusable.", payload: lensPayload },
+      ];
+      const proposal = parseChangeProposal({ apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], canonicalMutations: mutations, architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"] });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Adopt the repository automation boundary.", proposal })).resolves.toMatchObject({ executionKind: "canonical-only", canonicalWrites: expect.arrayContaining([expect.objectContaining({ kind: "projection-lens" })]) });
+      const governed = await compileRepositoryChange({ repositoryRoot: root, request: "Adopt the repository automation boundary.", proposal });
+      expect(governed.compiledChange.change.risk).toMatchObject({ class: "R2", inherentOperationRisk: 2, affectedUnitCount: 3 });
+      const rejected = parseChangeProposal({ ...proposal, canonicalMutations: mutations.map((mutation) => mutation.kind === "authority-record" ? { ...mutation, payload: { ...mutation.payload, status: "provisional" } } : mutation) });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Adopt an unauthorized boundary.", proposal: rejected })).rejects.toThrow(/authority|approved|active/iu);
+      const wrongKind = parseChangeProposal({ ...proposal, canonicalMutations: mutations.map((mutation) => mutation.kind === "projection-lens" ? { ...mutation, payload: { ...mutation.payload, governanceBasis: [{ kind: "hard-constraint", conceptId: authority.id }] } } : mutation) });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Use a wrong-kind governance basis.", proposal: wrongKind })).rejects.toThrow(/wrong-kind/iu);
+      const unrelatedStandard = approvedAuthority("authority:unrelated-standard", "concept:repository-layout");
+      const { semanticHash: _standardHash, ...standardPayload } = unrelatedStandard;
+      const unrelatedBasis = parseChangeProposal({ ...proposal, canonicalMutations: [
+        ...mutations,
+        { kind: "authority-record", operation: "add", expectedAbsent: true, rationale: "A separately scoped authority.", payload: standardPayload },
+      ].map((mutation) => mutation.kind === "projection-lens" ? { ...mutation, payload: { ...mutation.payload, governanceBasis: [...((mutation.payload as { governanceBasis: unknown[] }).governanceBasis), { kind: "adopted-standard", authorityRecordId: unrelatedStandard.id }] } } : mutation) });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Use unrelated authority as the lens basis.", proposal: unrelatedBasis })).rejects.toThrow(/adopted-standard.*bound/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("compiles an authenticated model-only concept addition without runtime-test claims", async () => {
+    const root = await repository();
+    try {
+      const model = parseChangeProposal({
+        apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [],
+        validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"],
+        canonicalMutations: [{
+          kind: "concept", operation: "add", expectedAbsent: true, rationale: "Establish the clock boundary before implementation.",
+          payload: { id: "concept:clock", key: "clock", kind: "invariant", name: "Clock boundary", aliases: [], statement: "All domain time enters through the clock port.", status: "active", sourceClass: "authored", confidence: 1, tags: ["time"], evidence: [] },
+        }],
+      });
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Establish the domain clock boundary before implementing it.", proposal: model });
+      expect(compiled.executionKind).toBe("canonical-only");
+      expect(compiled.compiledChange.change.risk).toMatchObject({ inherentOperationRisk: 1, affectedUnitCount: 1 });
+      expect(compiled.canonicalWrites).toEqual([expect.objectContaining({ id: "concept:clock", kind: "concept", before: null })]);
+      expect(compiled.intentReview.canonicalMutations).toEqual([expect.objectContaining({ id: "concept:clock", operation: "add" })]);
+      expect(compiled.compiledPlan.packets[0]?.packet.transformId).toBe("canonical-model-write");
+      expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).toContain("projector.canonical-model-integrity");
+      expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).not.toContain("projector.post-change-knowledge");
+      await new CanonicalFileRepository(root).write(compiled.canonicalWrites[0]!.envelope);
+      const current = compiled.canonicalWrites[0]!.envelope;
+      const revision = parseChangeProposal({
+        ...model,
+        canonicalMutations: [{
+          kind: "concept", operation: "revise", rationale: "Clarify ownership while preserving the boundary.",
+          expectedSemanticHash: current.semanticHash, expectedDocumentHash: current.canonicalDocumentHash,
+          payload: { ...model.canonicalMutations![0]!.payload, statement: "All domain time enters through the producer-owned clock port." },
+        }],
+      });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Clarify the clock boundary.", proposal: revision })).resolves.toMatchObject({ executionKind: "canonical-only" });
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Use stale evidence.", proposal: parseChangeProposal({ ...revision, canonicalMutations: [{ ...revision.canonicalMutations![0], expectedDocumentHash: hashFramedDomain("stale", null) }] }) }))
+        .rejects.toThrow(/hashes are stale/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("reuses semantic identity, binds reverse relevance, projects a spec, and compiles one exact packet", async () => {
     const root = await repository();
     try {
@@ -102,6 +199,7 @@ describe("repository change compiler", () => {
       const second = await compileRepositoryChange({ repositoryRoot: root, request, proposal: proposal(), now: "2026-08-26T00:00:00.000Z" });
 
       expect(first.compiledChange.change.id).toBe(second.compiledChange.change.id);
+      expect(first.compiledChange.change.risk.inherentOperationRisk).toBe(2);
       expect(first.planHash).toBe(second.planHash);
       expect(first.identityResolutions).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "requirement", outcome: "reuse-existing", targetId: "requirement:legacy-greeting" }),

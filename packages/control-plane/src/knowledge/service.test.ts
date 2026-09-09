@@ -401,7 +401,7 @@ describe("RepositoryKnowledgeService", () => {
     expect(reconciliation.branches[0]?.validation.reasons.join(" ")).not.toMatch(/observation boundary is incomplete/i);
   });
 
-  it("keeps a queried source with dynamic dependency syntax explicitly suspect", async () => {
+  it("binds unchanged dynamic dependency uncertainty without treating the static lane as unavailable", async () => {
     const root = await repository();
     await mkdir(join(root, "src"), { recursive: true });
     await writeFile(join(root, "src", "dynamic.ts"), "export const load = (name: string) => import(name);\n", "utf8");
@@ -410,8 +410,14 @@ describe("RepositoryKnowledgeService", () => {
     const retained = await first.context({ request: "inspect dynamic source", namedTargets: ["src/dynamic.ts"] });
     const reconciliation = await (await RepositoryKnowledgeService.create(root)).reconcile(retained.id);
 
-    expect(reconciliation.status).toBe("suspect");
-    expect(reconciliation.branches[0]?.validation.reasons.join(" ")).toMatch(/observation boundary is incomplete/i);
+    expect(retained.unknowns.join(" ")).toMatch(/runtime dependency target remains unknown in src\/dynamic\.ts/i);
+    expect(reconciliation.status).toBe("current");
+    expect(reconciliation.branches[0]?.validation.reasons.join(" ")).not.toMatch(/proof-eligible|unavailable/i);
+
+    await writeFile(join(root, "src", "dynamic.ts"), "export const load = (name: string) => import(`./${name}.js`);\n", "utf8");
+    const changed = await (await RepositoryKnowledgeService.create(root)).reconcile(retained.id);
+    expect(changed.status).toBe("stale");
+    expect(changed.branches[0]?.validation.changedQueryDependencyIds).toContain(`knowledge-topology:${retained.interpretation.candidates[0]!.entityId}`);
   });
 
   it("stales inbound topology when a new uncertain importer appears and retains that uncertainty on recapture", async () => {

@@ -31,6 +31,16 @@ const proposal = () => ({
   analysisFacets: ["behavior", "architecture"],
 });
 
+const modelProposal = () => ({
+  apiVersion: "projector.change-proposal/v1",
+  requirements: [], scenarios: [], architecture: null, edits: [],
+  validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"],
+  canonicalMutations: [
+    { kind: "concept", operation: "add", expectedAbsent: true, rationale: "Record the future clock boundary before implementation.", payload: { id: "concept:clock", key: "clock", kind: "invariant", name: "Clock boundary", aliases: [], statement: "All domain time enters through the clock port.", status: "active", sourceClass: "authored", confidence: 1, tags: ["time"], evidence: [] } },
+    { kind: "concept", operation: "add", expectedAbsent: true, rationale: "Record producer ownership before implementation.", payload: { id: "concept:time-producer", key: "time-producer", kind: "ownership", name: "Time producer", aliases: [], statement: "The domain owns production of time values.", status: "active", sourceClass: "authored", confidence: 1, tags: ["time"], evidence: [] } },
+  ],
+});
+
 async function repository(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "projector-lifecycle-service-"));
   await mkdir(join(root, "src"), { recursive: true });
@@ -59,6 +69,42 @@ function authority(id: string, subjectId: string): AuthorityRecord {
 }
 
 describe("repository change lifecycle service", () => {
+  it("journals and applies a model-only future obligation without a code sandbox or runtime satisfaction claim", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-09-09T00:00:00.000Z" });
+      const captured = await service.capture({ request: "Record the clock boundary before implementing it.", proposal: modelProposal() });
+      expect(captured.compiled.executionKind).toBe("canonical-only");
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const result = await service.apply(approval.id);
+      expect(result.outcome).toBe("success");
+      const stored = await new CanonicalFileRepository(root).read("concept", "concept:clock");
+      expect(stored?.payload).toMatchObject({ statement: "All domain time enters through the clock port.", status: "active" });
+      expect((await new CanonicalFileRepository(root).read("concept", "concept:time-producer"))?.payload).toMatchObject({ status: "active" });
+      expect(result.validations.map(({ validatorId }) => validatorId)).toContain("projector.canonical-model-integrity");
+      expect(result.validations.map(({ validatorId }) => validatorId)).not.toContain("projector.post-change-knowledge");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rolls back an interrupted multi-record model mutation and then applies the approved transaction", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Commit the clock model atomically.", proposal: modelProposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const interruptedStore = await ChangeLifecycleStore.create(root, { newId: () => "model-interrupted" });
+      const attempt = await interruptedStore.beginAttempt(approval.id);
+      const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
+      const transaction = await journal.begin({ transactionId: attempt.transactionId, planId: captured.capture.planId, beforeState: captured.capture.stateBinding.compiledAgainst, allowedWriteRoots: captured.capture.plan.boundary });
+      for (const write of captured.compiled.canonicalWrites) await transaction.writeFile(write.path, write.after);
+      expect(await new CanonicalFileRepository(root).read("concept", "concept:clock")).toBeDefined();
+      expect(await service.recover(approval.id)).toEqual([expect.objectContaining({ action: "rolled-back" })]);
+      expect(await new CanonicalFileRepository(root).read("concept", "concept:clock")).toBeUndefined();
+      expect(await new CanonicalFileRepository(root).read("concept", "concept:time-producer")).toBeUndefined();
+      expect((await service.apply(approval.id)).outcome).toBe("success");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("captures, replans, and approves only the exact human-presented plan hash", async () => {
     const root = await repository();
     try {

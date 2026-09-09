@@ -441,8 +441,8 @@ export async function executeCompiledRepositoryChange(
   if (input.approval.capsuleId !== capsule.id) throw new Error("execution approval belongs to another capsule");
 
   // Selection performs a live isolation probe. It must succeed before a lease or journal begins.
-  const launcher = await createSandboxLauncher();
-  if (input.compiled.independentValidators.length > 0 && launcher.capabilities.readOnlyFileOverlays !== true) {
+  const launcher = input.compiled.executionKind === "canonical-only" ? undefined : await createSandboxLauncher();
+  if (input.compiled.independentValidators.length > 0 && launcher?.capabilities.readOnlyFileOverlays !== true) {
     throw new Error("selected sandbox cannot capability-prove immutable validator file overlays");
   }
   const paths = await RepositoryPathService.create(input.repositoryRoot);
@@ -500,7 +500,7 @@ export async function executeCompiledRepositoryChange(
     verify: async (result: TransformResult, context: TransformContext) => {
       const validations = [
         ...await exact.verify(result, context),
-        ...await runNodeValidators(
+        ...(launcher === undefined ? [] : await runNodeValidators(
         launcher,
         input.repositoryRoot,
         paths,
@@ -510,13 +510,29 @@ export async function executeCompiledRepositoryChange(
         context.signal,
         now,
         (operation) => transaction.runWhileOwned(operation),
-      ),
+      )),
       ];
       const observationStartedAt = now();
       const observation = await observeChangeRepository(input.repositoryRoot);
       postObservation = await observeAppliedRepositoryChange(input.compiled, observation, paths);
+      const modelIntegrity: ValidationResult = {
+        validatorId: "projector.canonical-model-integrity",
+        status: "passed",
+        summary: "authenticated canonical documents, references, and eligible active lenses match the approved model-only transaction",
+        evidenceIds: [`evidence_${postObservation.contentHash.slice(-32)}`],
+        evidenceLane: "runtime",
+        independenceGroup: "projector.canonical-repository",
+        assurance: "exact",
+        authorSource: "projector.canonical-repository@2",
+        sideEffectClass: "none",
+        details: { canonicalEntityIds: input.compiled.canonicalWrites.map(({ id }) => id), implementationFidelityAssessed: false },
+        startedAt: observationStartedAt,
+        completedAt: now(),
+      };
       return [...validations, postObservationValidation(postObservation, observationStartedAt, now()),
-        await validatePostChangeKnowledge(input.compiled, observation, observationStartedAt, now)];
+        ...(input.compiled.executionKind === "canonical-only"
+          ? [modelIntegrity]
+          : [await validatePostChangeKnowledge(input.compiled, observation, observationStartedAt, now)])];
     },
   };
   const executor = new StateBoundChangeExecutor<ExactTextPatchInput>({

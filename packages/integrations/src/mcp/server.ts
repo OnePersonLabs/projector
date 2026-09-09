@@ -58,7 +58,15 @@ export function createProjectorMcpServer(dependencies: ProjectorMcpDependencies)
   const names = [...Object.keys(dependencies.read), ...Object.keys(dependencies.controlled)].sort();
   if (Object.keys(dependencies.controlled).length > 0 && dependencies.capability === undefined) throw new Error("controlled MCP handlers require a mutation capability service");
   const registry = {
-    list: () => names.map((name) => toolDefinition(name, dependencies.controlled[name] !== undefined)),
+    list: () => names.map((name) => {
+      const controlled = dependencies.controlled[name] !== undefined;
+      return { ...toolDefinition(name, controlled), annotations: {
+        readOnlyHint: !controlled,
+        destructiveHint: controlled,
+        idempotentHint: !controlled,
+        openWorldHint: controlled,
+      } };
+    }),
     async call(name: string, input: Readonly<Record<string, unknown>>) {
       const reader = dependencies.read[name]; if (reader !== undefined) return sanitize(await reader(input));
       const controlled = dependencies.controlled[name]; if (controlled === undefined) throw new Error(`unknown MCP tool: ${name}`);

@@ -3,9 +3,15 @@ import { execFileSync } from "node:child_process";
 import { constants } from "node:fs";
 import { access, lstat, readFile } from "node:fs/promises";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { projectorRuntime } from "../scripts/projector-runtime.mjs";
 
 // Advisory only: do not mutate, invoke a model, or create repository authority.
 async function availableCli() {
+  const runtime = await projectorRuntime();
+  if (runtime.prefix.length !== 0) {
+    try { await access(runtime.cli, constants.R_OK); return true; }
+    catch { return false; }
+  }
   const configured = process.env.PROJECTOR_CLI?.trim();
   const candidates = configured
     ? [isAbsolute(configured) ? configured : resolve(configured)]

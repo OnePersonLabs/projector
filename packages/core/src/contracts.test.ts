@@ -37,6 +37,18 @@ describe("normative contract registry", () => {
     for (const path of ["../escape", "/absolute", "C:/absolute", "src\\value.mjs", ".projector/runtime/forged.json"]) expect(ChangeProposalSchema.safeParse({ ...proposal, edits: [{ ...proposal.edits[0], path }] }).success).toBe(false);
   });
 
+  it("accepts explicit model-only additions while rejecting empty and unauthenticated revisions", () => {
+    const base = { apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["architecture", "behavior"] };
+    const addition = { ...base, canonicalMutations: [{ kind: "concept", operation: "add", expectedAbsent: true, rationale: "Establish the future obligation before implementation.", payload: { id: "concept:clock", key: "clock", kind: "invariant", name: "Clock boundary", aliases: [], statement: "All domain time enters through the clock port.", status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [] } }] };
+    expect(parseChangeProposal(addition).canonicalMutations).toHaveLength(1);
+    expect(ChangeProposalSchema.safeParse(base).success).toBe(false);
+    expect(ChangeProposalSchema.safeParse({ ...addition, canonicalMutations: [{ ...addition.canonicalMutations[0], operation: "revise", expectedAbsent: undefined }] }).success).toBe(false);
+    const publicSchema = JSON.stringify(exportContractJsonSchemas().ChangeProposal);
+    expect(publicSchema).toContain("realizesConceptKinds");
+    expect(publicSchema).toContain("selectedOptionKey");
+    expect(publicSchema).toContain("requiredIndependenceGroup");
+  });
+
   it("rejects malformed content hashes", () => {
     expect(ContentHashSchema.safeParse("sha256:v1:abc").success).toBe(false);
     expect(
