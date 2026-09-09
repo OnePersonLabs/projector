@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { hashFramedDomain } from "../packages/core/dist/index.js";
@@ -63,7 +63,7 @@ async function observeTestIdentities(authority) {
   let tests;
   try { tests = JSON.parse(stdout.slice(stdout.indexOf("["))); } catch { throw new Error("traceability authority Vitest collection is invalid"); }
   if (!Array.isArray(tests)) throw new Error("traceability authority Vitest collection is incomplete");
-  return new Set(tests.map(({ file, name }) => `${String(file).replace(`${root}/`, "")}#${String(name).replaceAll(" > ", " ")}`));
+  return new Set(tests.map(({ file, name }) => `${relative(root, resolve(root, String(file))).replaceAll("\\", "/")}#${String(name).replaceAll(" > ", " ")}`));
 }
 
 export async function generateReleaseArtifacts({ check = false } = {}) {

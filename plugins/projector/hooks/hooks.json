@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${PLUGIN_ROOT}/hooks/projector-session.sh\"",
+            "command": "node \"${PLUGIN_ROOT}/hooks/projector-session.mjs\"",
             "statusMessage": "Loading Projector context",
             "additionalContextLimit": 256
           }

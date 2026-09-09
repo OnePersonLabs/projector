@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline";
 import { execFile } from "node:child_process";
 import { watch as watchFileSystem } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { promisify } from "node:util";
 import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type ContentHash, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
@@ -23,6 +23,8 @@ import { compileAuthenticatedCoverageSnapshot, REQUIRED_COVERAGE_LANES, type Cov
 import { assertOperationRiskAuthorized, deriveOperationRisk, normalizeExecutionPolicy, type CliPolicyInput, type OperationRiskInput, type SliceCommand } from "./policy.js";
 import { createBuiltRunHostPort } from "./host-cli.js";
 import { createBuiltMcpCliPort } from "./mcp-cli.js";
+import { defaultKnowledgeCliPort, presentKnowledgeContext, presentKnowledgeReconciliation, renderKnowledgeContext, renderKnowledgeReconciliation, type RepositoryKnowledgeCliPort } from "./knowledge-cli.js";
+export type { RepositoryKnowledgeCliPort } from "./knowledge-cli.js";
 import { RepositoryChangeLifecycleService } from "@projector/control-plane";
 export { createHostSessionRecord, hostSessionSelector } from "@projector/integrations";
 import { runDefaultUpgradeWorkflow } from "./upgrade.js";
@@ -37,7 +39,9 @@ Usage: projector <command> [options]
 Commands:
   init                  Initialize local Projector derived state
   audit                 Analyze governed state; add --decisions for architecture decisions
-  change <request> --proposal <path>  Capture a repository change
+  context <request> [--entity <id-or-key>] [--compact]  Retrieve relevant meaning before choosing edits
+  reconcile <context-id> [--compact]  Check saved knowledge against current state
+  change <request> --proposal <path> [--context <id>]  Capture a repository change
   plan <semantic-change-id>           Preview its immutable plan
   approve <semantic-change-id> --plan-hash <hash>  Approve that exact plan
   apply <approval-id>                 Apply an approval once
@@ -78,6 +82,7 @@ export interface ProjectorCommandOptions {
   readonly architecture?: ArchitectureCliPort;
   readonly coverage?: CoverageCliPort;
   readonly lifecycle?: RepositoryLifecycleCliPort;
+  readonly knowledge?: RepositoryKnowledgeCliPort;
   readonly runHost?: RunHostCliPort;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal;
@@ -94,7 +99,7 @@ export interface OperationalCliPort { readonly run: (request: { readonly command
 
 
 export interface RepositoryLifecycleCliPort {
-  readonly capture: (request: { readonly repositoryRoot: string; readonly request: string; readonly proposalPath: string }) => Promise<Record<string, unknown>>;
+  readonly capture: (request: { readonly repositoryRoot: string; readonly request: string; readonly proposalPath: string; readonly knowledgeContextId?: string }) => Promise<Record<string, unknown>>;
   readonly plan: (request: { readonly repositoryRoot: string; readonly selector: string }) => Promise<Record<string, unknown>>;
   readonly approve: (request: { readonly repositoryRoot: string; readonly selector: string; readonly planHash: string }) => Promise<Record<string, unknown>>;
   readonly apply: (request: { readonly repositoryRoot: string; readonly selector: string; readonly signal: AbortSignal }) => Promise<Record<string, unknown>>;
@@ -146,6 +151,8 @@ interface ParsedCommand {
   readonly selector?: string;
   readonly proposalPath?: string;
   readonly planHash?: string;
+  readonly entity?: string;
+  readonly knowledgeContextId?: string;
   readonly host?: "codex" | "claude";
   readonly hostArgv: readonly string[];
   readonly sessionSelector?: string;
@@ -175,8 +182,8 @@ function normalizeScope(raw: string | undefined): string {
   return scope;
 }
 
-const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--continuation", "--session", "--proposal", "--plan-hash"]);
-const booleanFlags = new Set(["--decisions", "--dry-run", "--audit-only", "--non-interactive", "--clean"]);
+const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--continuation", "--session", "--proposal", "--plan-hash", "--entity", "--context"]);
+const booleanFlags = new Set(["--decisions", "--dry-run", "--audit-only", "--non-interactive", "--clean", "--compact"]);
 function validateArguments(arguments_: readonly string[], command: SliceCommand): void {
   const seen = new Set<string>();
   for (let index = 1; index < arguments_.length; index += 1) {
@@ -190,13 +197,13 @@ function validateArguments(arguments_: readonly string[], command: SliceCommand)
       seen.add(argument); continue;
     }
     if (argument.startsWith("-")) throw new Error(`unknown flag: ${argument}`);
-    if ((command !== "explain" && command !== "change" && command !== "plan" && command !== "approve" && command !== "apply" && command !== "resume" && command !== "recover" && command !== "run") || index !== 1) throw new Error(`unknown argument: ${argument}`);
+    if ((command !== "context" && command !== "reconcile" && command !== "explain" && command !== "change" && command !== "plan" && command !== "approve" && command !== "apply" && command !== "resume" && command !== "recover" && command !== "run") || index !== 1) throw new Error(`unknown argument: ${argument}`);
   }
 }
 
 function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const command = arguments_[0];
-  if (command !== "init" && command !== "audit" && command !== "change" && command !== "plan" && command !== "apply"
+  if (command !== "init" && command !== "audit" && command !== "context" && command !== "reconcile" && command !== "change" && command !== "plan" && command !== "apply"
     && command !== "approve" && command !== "resume" && command !== "upgrade" && command !== "explain" && command !== "coverage" && command !== "complete" && command !== "cleanup" && command !== "run" && command !== "mcp" && command !== "watch" && command !== "ci" && command !== "recover" && command !== "verify") {
     throw new Error(`unknown command: ${command ?? ""}`);
   }
@@ -206,6 +213,7 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const commandArguments = command === "run" ? arguments_.slice(0, separator) : arguments_;
   const hostArgv = command === "run" ? arguments_.slice(separator + 1) : [];
   validateArguments(commandArguments, command);
+  if (commandArguments.includes("--compact") && command !== "context" && command !== "reconcile") throw new Error("--compact is only valid with context or reconcile");
   const formatValue = optionValue(commandArguments, "--format") ?? "text";
   if (formatValue !== "text" && formatValue !== "json" && formatValue !== "md" && formatValue !== "sarif") throw new Error(`unsupported format: ${formatValue}`);
   const modeValue = optionValue(commandArguments, "--mode");
@@ -217,14 +225,22 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     ? arguments_[1]
     : undefined;
   if (command === "explain" && target === undefined) throw new Error("explain requires a target");
-  const positional = (command === "change" || command === "plan" || command === "approve" || command === "apply" || command === "resume" || command === "recover") && arguments_[1] !== undefined && !arguments_[1].startsWith("-") ? arguments_[1] : undefined;
+  const positional = (command === "context" || command === "reconcile" || command === "change" || command === "plan" || command === "approve" || command === "apply" || command === "resume" || command === "recover") && arguments_[1] !== undefined && !arguments_[1].startsWith("-") ? arguments_[1] : undefined;
+  if (command === "context" && (positional === undefined || positional.trim() === "" || positional.includes("\0"))) throw new Error("context requires a safe nonblank request");
+  if (command === "reconcile" && positional === undefined) throw new Error("reconcile requires a context identity");
+  const entity = optionValue(commandArguments, "--entity");
+  const knowledgeContextId = optionValue(commandArguments, "--context");
+  if (knowledgeContextId !== undefined && command !== "change") throw new Error("--context is only valid with change");
+  if (knowledgeContextId !== undefined && !/^[a-z0-9][a-z0-9._:-]*$/iu.test(knowledgeContextId)) throw new Error("--context requires a safe saved context identity");
+  if (entity !== undefined && command !== "context") throw new Error("--entity is only valid with context");
+  if (entity !== undefined && (entity.trim() === "" || entity.includes("\0"))) throw new Error("--entity requires a safe nonblank identity");
   if (command === "change" && positional === undefined) throw new Error("change requires a request");
   const proposalPath = optionValue(commandArguments, "--proposal");
   const planHash = optionValue(commandArguments, "--plan-hash");
   if (proposalPath !== undefined && command !== "change") throw new Error("--proposal is only valid with change");
   if (command === "change" && proposalPath === undefined) throw new Error("change requires --proposal");
   if (command === "change" && proposalPath !== undefined && (positional!.trim() === "" || positional!.includes("\0"))) throw new Error("lifecycle change request must be safe nonblank text");
-  if (positional !== undefined && !(command === "change" && proposalPath !== undefined) && !/^[a-z0-9][a-z0-9._:-]*$/iu.test(positional)) throw new Error("change lifecycle selector must be a safe repository-local identity");
+  if (positional !== undefined && command !== "context" && !(command === "change" && proposalPath !== undefined) && !/^[a-z0-9][a-z0-9._:-]*$/iu.test(positional)) throw new Error("selector must be a safe repository-local identity");
   if (command === "approve" && (planHash === undefined || !planHash.startsWith("sha256:v1:"))) throw new Error("approve requires an authenticated plan hash via --plan-hash");
   if (command !== "approve" && planHash !== undefined) throw new Error("--plan-hash is only valid with approve");
   if ((command === "plan" || command === "approve" || command === "apply" || command === "recover" || command === "resume") && positional === undefined) throw new Error(`${command} requires a lifecycle selector`);
@@ -270,6 +286,8 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
     ...(positional === undefined ? {} : { selector: positional }),
     ...(proposalPath === undefined ? {} : { proposalPath }),
     ...(planHash === undefined ? {} : { planHash }),
+    ...(entity === undefined ? {} : { entity }),
+    ...(knowledgeContextId === undefined ? {} : { knowledgeContextId }),
     policy: {
       command,
       ...(modeValue === undefined ? {} : { mode: modeValue }),
@@ -284,6 +302,8 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
 function outputFor(command: SliceCommand, report: unknown, format: ReportFormat): string {
   if ((command === "watch" || command === "ci" || command === "recover" || command === "verify") && "operationalReport" in (report as object)) return renderOperationalReport((report as { operationalReport: OperationalReport }).operationalReport, format);
   if (format === "json") return JSON.stringify(report, null, 2);
+  if (command === "context") return renderKnowledgeContext(report as Parameters<typeof renderKnowledgeContext>[0]);
+  if (command === "reconcile") return renderKnowledgeReconciliation(report as Parameters<typeof renderKnowledgeReconciliation>[0]);
   if (command === "audit") {
     if ("decisionAudit" in (report as object)) {
       const count = (report as { decisionAudit: { findings: readonly unknown[] } }).decisionAudit.findings.length;
@@ -330,7 +350,7 @@ export async function executeProjector(
   const parsed = parseCommand(arguments_);
   const policy = normalizeExecutionPolicy(parsed.policy);
   let repositoryRoot = options.cwd ?? process.cwd();
-  const defaultOperation: OperationRiskInput = parsed.command === "init"
+  const defaultOperation: OperationRiskInput = parsed.command === "init" || (parsed.command === "context" && policy.allowAutoMutation)
     ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
     : parsed.command === "approve" ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
     : parsed.command === "apply" || parsed.command === "resume" || parsed.command === "upgrade" || parsed.command === "cleanup" || parsed.command === "run" || parsed.command === "recover" || (parsed.command === "verify" && parsed.clean)
@@ -397,7 +417,23 @@ export async function executeProjector(
     }
     case "change": {
       const lifecycle = options.lifecycle ?? defaultRepositoryLifecyclePort();
-      report = { policy, ...await lifecycle.capture({ repositoryRoot, request: parsed.selector!, proposalPath: parsed.proposalPath! }) };
+      report = { policy, ...await lifecycle.capture({ repositoryRoot, request: parsed.selector!, proposalPath: parsed.proposalPath!,
+        ...(parsed.knowledgeContextId === undefined ? {} : { knowledgeContextId: parsed.knowledgeContextId }) }) };
+      break;
+    }
+    case "context": {
+      const knowledge = options.knowledge ?? defaultKnowledgeCliPort();
+      report = { policy, ...await knowledge.context({ repositoryRoot, request: parsed.selector!,
+        ...(parsed.entity === undefined ? {} : { entities: [parsed.entity] }),
+        persist: policy.allowAutoMutation, signal: options.signal ?? new AbortController().signal }) };
+      break;
+    }
+    case "reconcile": {
+      const knowledge = options.knowledge ?? defaultKnowledgeCliPort();
+      const result = await knowledge.reconcile({ repositoryRoot, contextId: parsed.selector!, signal: options.signal ?? new AbortController().signal });
+      report = { policy, ...result };
+      exitCode = result.governance?.status === "violated" ? 2 : result.status === "stale" ? 4
+        : result.governance?.status === "unknown" || (result.status !== "current" && result.status !== "rebound") ? 5 : 0;
       break;
     }
     case "plan": {
@@ -511,7 +547,10 @@ export async function executeProjector(
       break;
     }
   }
-  return { exitCode, output: outputFor(parsed.command, report, parsed.format), report };
+  const compact = arguments_.includes("--compact");
+  const display = !compact ? report : parsed.command === "context" ? presentKnowledgeContext(report)
+    : parsed.command === "reconcile" ? presentKnowledgeReconciliation(report) : report;
+  return { exitCode, output: outputFor(parsed.command, display, parsed.format), report };
 }
 
 async function safeRebuildAcceptedState(repositoryRoot: string) { const paths = await RepositoryPathService.create(repositoryRoot); const statePath = await paths.resolveWrite(".projector/state.db"); const snapshot = await new CanonicalFileRepository(repositoryRoot).snapshot(); const store = new SqliteDerivedStore(statePath.realTarget); try { const revision = store.replaceCanonicalSnapshot(snapshot); return { rootDigest: revision.rootDigest, documentCount: revision.documentCount, canonicalSemantics: { rootDigest: snapshot.rootDigest, documents: snapshot.documents.map(({ id, kind, semanticHash }) => ({ id, kind, semanticHash })) } }; } finally { store.close(); } }
@@ -519,15 +558,16 @@ async function safeRebuildAcceptedState(repositoryRoot: string) { const paths = 
 function defaultRepositoryLifecyclePort(): RepositoryLifecycleCliPort {
   const service = (repositoryRoot: string) => RepositoryChangeLifecycleService.create(repositoryRoot);
   return {
-    capture: async ({ repositoryRoot, request, proposalPath }) => {
+    capture: async ({ repositoryRoot, request, proposalPath, knowledgeContextId }) => {
       const paths = await RepositoryPathService.create(repositoryRoot);
       const proposal = JSON.parse(await readFile((await paths.resolveRead(proposalPath)).realTarget, "utf8")) as unknown;
-      const captured = await (await service(repositoryRoot)).capture({ request, proposal });
+      const captured = await (await service(repositoryRoot)).capture({ request, proposal, ...(knowledgeContextId === undefined ? {} : { knowledgeContextId }) });
       return {
         kind: "lifecycle-change",
         selector: captured.capture.semanticChangeId,
         immutablePlanHash: captured.capture.planHash,
         proposalHash: captured.capture.proposalHash,
+        ...(captured.capture.knowledgeContextId === undefined ? {} : { knowledgeContextId: captured.capture.knowledgeContextId }),
       };
     },
     plan: async ({ repositoryRoot, selector }) => {
@@ -547,32 +587,54 @@ function defaultRepositoryLifecyclePort(): RepositoryLifecycleCliPort {
 
 function defaultArchitecturePort(repositoryRoot: string): ArchitectureCliPort {
   const load = async () => { const snapshot = await new CanonicalFileRepository(repositoryRoot).snapshot(); return { decisions: snapshot.documents.filter(({ kind }) => kind === "architecture-decision").map(({ payload }) => payload as unknown as ArchitectureDecision), concerns: [] as ArchitectureConcern[] }; };
-  return { load, overlap: { assess: async (left, right) => left.semanticHash === right.semanticHash ? "compatible" as const : "disjoint" as const }, population: { inspect: async () => ({ count: 1, observability: "closed" }) }, validity: async (decisionId) => { const decision = (await load()).decisions.find(({ id }) => id === decisionId); if (decision === undefined) throw new Error(`architecture decision ${decisionId} is unavailable`); return { decisionId, scope: decision.scope, state: decision.lifecycle === "active" ? "valid" as const : "invalid-for-scope" as const, firedTriggers: [], invalidatedAssumptions: [], staleEvidenceIds: [], blocksCurrentChange: decision.lifecycle !== "active", explanation: decision.lifecycle === "active" ? "Canonical decision and its authenticated semantic hash remain current." : "Canonical decision is no longer active." }; } };
+  return {
+    load,
+    overlap: { assess: async () => "unknown" },
+    population: { inspect: async () => ({ count: 0, observability: "unavailable" }) },
+    validity: async (decisionId) => {
+      const decision = (await load()).decisions.find(({ id }) => id === decisionId);
+      if (decision === undefined) throw new Error(`architecture decision ${decisionId} is unavailable`);
+      return {
+        decisionId, scope: decision.scope,
+        state: decision.lifecycle === "active" ? "suspect" : "invalid-for-scope",
+        firedTriggers: [], invalidatedAssumptions: [], staleEvidenceIds: [], blocksCurrentChange: true,
+        explanation: decision.lifecycle === "active"
+          ? "The decision is recorded as active. This command has no retained applicability, assumption, or preference proof establishing its validity. Use saved context reconciliation to check bound evidence and executable lens predicates; those checks alone do not establish every decision assumption."
+          : "Canonical decision is no longer active.",
+      };
+    },
+  };
 }
 
 function defaultOperationalCliPort(): OperationalCliPort {
   return { authenticate: async (report) => validateOperationalReport(report), run: async ({ command, repositoryRoot, clean, policy, signal, allowPersistence, maximumEvents }) => {
     const started = Date.now(); const paths = await RepositoryPathService.create(repositoryRoot); let findings: Array<{ code: string; title: string; path?: string; severity: "note" | "warning" | "error"; evidenceIds: string[] }> = []; const proof: { -readonly [Key in keyof OperationalExitProof]: OperationalExitProof[Key] } = { commandFailed: false, blockingInvalidity: false, approvalRequired: false, incompleteCoverage: false, requiredUnavailable: false, recoveryFailure: false, budgetExhausted: false, resumable: false }; let analysisRecords: string[] = []; let journalRecords: string[] = []; let canonicalDigest: ContentHash = hashFramedDomain("operational-canonical", []);
     {
-      const dogfood = await inspectDogfood(paths); findings.push(...dogfood.findings); canonicalDigest = dogfood.canonicalDigest; proof.blockingInvalidity = dogfood.findings.length > 0;
+      const knowledge = await inspectCanonicalKnowledge(repositoryRoot); findings.push(...knowledge.findings); canonicalDigest = knowledge.canonicalDigest; proof.blockingInvalidity = knowledge.findings.length > 0;
+      findings.push({ code: "canonical-authentication-scope", title: "Canonical checking authenticates document schemas and hashes. Architectural conformance and decision validity are not evaluated by this operational command; use context and reconcile for scoped semantic evidence.", severity: "note", evidenceIds: [] });
       if (clean && allowPersistence && policy.allowAutoMutation) { const state = await paths.resolveWrite(".projector/state.db"); await rm(state.realTarget, { force: true }); }
       const analyze = async () => analyzeLocalRepository({ repositoryRoot });
       if (command === "watch") { const coordinator = new WatchCoordinator({ scan: async ({ paths: changedPaths, fullScan }) => { const analysis = await analyze(); const value = { digest: hashFramedDomain("cli-watch-analysis", { paths: changedPaths, fullScan, artifacts: analysis.artifacts.map(({ id, contentHash }) => ({ id, contentHash })) }), affectedDependencyIds: changedPaths, generatedEventIds: [] }; return { ...value, contentHash: hashFramedDomain("authenticated-watch-scan", value) }; }, process: async ({ digest, affectedDependencyIds }) => ({ digest, cacheKeys: affectedDependencyIds }) }); const checkpointStore = allowPersistence && maximumEvents !== undefined ? await FileWatchCheckpointStore.create(paths) : undefined; const lifecycle = await runWatchLifecycle(coordinator, { subscribe: (listener, failure) => { const watcher = watchFileSystem(paths.root, (eventType, filename) => { if (filename !== null) { const path = filename.toString().replaceAll("\\", "/"); listener({ kind: /(?:^|\/)(?:dist|generated)(?:\/|$)/u.test(path) ? "generated" : eventType === "rename" ? "rename" : "change", path }); } }); watcher.on("error", failure); const overflow = setInterval(() => listener({ kind: "overflow", path: "." }), 500); overflow.unref(); return () => { clearInterval(overflow); watcher.close(); }; } }, { signal, ...(maximumEvents === undefined ? {} : { maximumEvents }), ...(checkpointStore === undefined ? {} : { checkpointStore }) }); proof.budgetExhausted = lifecycle.budgetExhausted; proof.resumable = lifecycle.checkpoint !== undefined; if (lifecycle.checkpoint !== undefined) journalRecords.push(lifecycle.checkpoint.contentHash); }
       const first = await analyze(); const second = clean ? await analyze() : first; const firstHash = hashFramedDomain("cli-operational-analysis", { artifacts: first.artifacts.map(({ id, contentHash }) => ({ id, contentHash })), failures: first.failures }); const secondHash = hashFramedDomain("cli-operational-analysis", { artifacts: second.artifacts.map(({ id, contentHash }) => ({ id, contentHash })), failures: second.failures }); analysisRecords = first.capabilities.map(({ analyzerId, adapterVersion }) => `${analyzerId}@${adapterVersion}`); findings.push(...first.failures.map(({ capability, message, scope, analyzerId }) => ({ code: capability, title: message, path: scope, severity: "error" as const, evidenceIds: [analyzerId] }))); if (firstHash !== secondHash) { findings.push({ code: "clean-incremental-mismatch", title: "Clean and incremental analysis differ", severity: "error", evidenceIds: [firstHash, secondHash] }); proof.recoveryFailure = true; } else if (first.surface.access === "unavailable") proof.requiredUnavailable = true; else if (first.failures.length > 0) proof.blockingInvalidity = true;
-      if (clean && allowPersistence && policy.allowAutoMutation && !proof.recoveryFailure) { const state = await paths.resolveWrite(".projector/state.db"); await mkdir((await paths.resolveWrite(".projector")).realTarget, { recursive: true }); await writeFile(state.realTarget, `${canonicalJson({ version: 1, canonicalDigest, analysisDigest: secondHash })}\n`, "utf8"); }
+      if (clean && allowPersistence && policy.allowAutoMutation && !proof.recoveryFailure && !proof.blockingInvalidity) await safeRebuildAcceptedState(repositoryRoot);
     }
     const stateDigest = hashFramedDomain("operational-run-state", { repositoryRoot, command, findings, canonicalDigest }); let gitHead: string | undefined; try { gitHead = (await execFileAsync("git", ["-C", repositoryRoot, "rev-parse", "HEAD"], { encoding: "utf8" })).stdout.trim(); } catch { gitHead = undefined; } const evidence = { ...unavailableOperationalEvidence("not exercised by local operational composition"), configDigest: canonicalDigest, toolchainDigest: hashFramedDomain("operational-toolchain", PROJECTOR_VERSION), ...(gitHead === undefined ? {} : { gitHead: hashFramedDomain("operational-git-head", gitHead) }), worktreeDigest: stateDigest, canonicalDigest, analyzerRecords: analysisRecords, journalRecords, errorRecords: findings.filter(({ severity }) => severity === "error").map(({ code }) => code), durationMs: Date.now() - started }; let operational = createOperationalReport({ runId: hashFramedDomain("operational-run-id", { command, stateDigest, started }), command, exitProof: proof, evidence, policy, stateDigest, unavailableFields: ["modelRecords", "snapshotRecords", "decisionRecords", "transformRecords", "validationRecords"], findings });
+    operational = createOperationalReport({ ...operational, unavailableFields: [...operational.unavailableFields, "architecturalConformance", "decisionValidity"] });
     if (allowPersistence && command !== "watch") { try { const store = await JsonlTelemetryStore.create(paths, ".projector/telemetry/runs.jsonl"); await store.append(operational); } catch (error) { operational = createOperationalReport({ ...operational, exitProof: { ...operational.exitProof, recoveryFailure: true }, evidence: { ...operational.evidence, errorRecords: [...operational.evidence.errorRecords, "telemetry-persistence"] }, findings: [...operational.findings.map(({ id: omitted, ...finding }) => { void omitted; return finding; }), { code: "telemetry-persistence", title: error instanceof Error ? error.message : String(error), severity: "error", evidenceIds: [] }] }); } }
     return operational;
   } };
 }
 
-async function inspectDogfood(paths: RepositoryPathService): Promise<{ readonly canonicalDigest: ContentHash; readonly findings: Array<{ code: string; title: string; path?: string; severity: "error"; evidenceIds: string[] }> }> {
-  let text: string; try { text = await readFile((await paths.resolveRead(".projector/dogfood.json")).realTarget, "utf8"); } catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return { canonicalDigest: hashFramedDomain("operational-dogfood", null), findings: [] }; throw error; }
-  const findings: Array<{ code: string; title: string; path?: string; severity: "error"; evidenceIds: string[] }> = []; let document: any; try { document = JSON.parse(text); } catch { return { canonicalDigest: hashFramedDomain("operational-dogfood", text), findings: [{ code: "dogfood-parse", title: "Canonical dogfood governance is malformed", path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }] }; }
-  const groups = ["acceptedDebt", "architectureDecisions", "authorities", "governanceBases", "lenses", "representations", "rules"] as const; const ids: string[] = []; for (const group of groups) { if (!Array.isArray(document[group]) || document[group].length === 0) findings.push({ code: "dogfood-incomplete", title: `Canonical dogfood ${group} is empty`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }); else for (const item of document[group]) { if (typeof item?.id !== "string" || (item.status !== "active" && item.status !== "accepted")) findings.push({ code: "dogfood-invalid", title: `Invalid canonical dogfood ${group} entry`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [] }); else ids.push(item.id); } } if (new Set(ids).size !== ids.length) findings.push({ code: "dogfood-duplicate", title: "Canonical dogfood identities conflict", path: ".projector/dogfood.json", severity: "error", evidenceIds: ids });
-  for (const decision of Array.isArray(document.architectureDecisions) ? document.architectureDecisions : []) if (/(?:repository|prose|instruction).*(?:grant|authorize|override).*(?:tool|policy)|(?:grant|authorize).*(?:tool)/iu.test(`${decision.summary ?? ""} ${decision.decision ?? ""}`)) findings.push({ code: "untrusted-tool-grant", title: `Architecture decision ${decision.id ?? "unknown"} attempts to grant tools or override policy`, path: ".projector/dogfood.json", severity: "error", evidenceIds: [String(decision.id ?? "unknown")] });
-  return { canonicalDigest: hashFramedDomain("operational-dogfood", document), findings };
+async function inspectCanonicalKnowledge(repositoryRoot: string): Promise<{ readonly canonicalDigest: ContentHash; readonly findings: Array<{ code: string; title: string; path?: string; severity: "error"; evidenceIds: string[] }> }> {
+  try {
+    const snapshot = await new CanonicalFileRepository(repositoryRoot).snapshot();
+    return { canonicalDigest: snapshot.rootDigest, findings: [] };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { canonicalDigest: hashFramedDomain("unavailable-canonical-knowledge", reason), findings: [{
+      code: "canonical-knowledge-invalid", title: reason, path: ".projector", severity: "error", evidenceIds: [],
+    }] };
+  }
 }
 
 function defaultCoveragePort(repositoryRoot: string): CoverageCliPort {

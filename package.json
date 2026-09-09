@@ -10,6 +10,7 @@
   "scripts": {
     "build": "pnpm -r --if-present build",
     "check:boundaries": "node scripts/check-package-boundaries.mjs",
+    "acceptance:knowledge": "node scripts/knowledge-acceptance.mjs",
     "plugin:proposal-schema": "node scripts/generate-plugin-proposal-schema.mjs",
     "plugin:proposal-schema:check": "node scripts/generate-plugin-proposal-schema.mjs --check",
     "spec:check": "python3 PROJECTOR_SPEC/scripts/check_spec.py && node scripts/check-spec-human-technical.mjs",

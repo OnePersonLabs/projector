@@ -24,7 +24,7 @@ describe("manual sandbox release workflow", () => {
     const buildCommands = [
       "bash .github/scripts/provision-ubuntu-sandbox.sh",
       "node scripts/probe-sandbox.mjs",
-      "node scripts/task19-dogfood.mjs",
+      "pnpm acceptance:knowledge",
       "pnpm verify",
       "pnpm release:artifacts:check",
       "node scripts/build-source-severed-release-bundle.mjs .temp/release-candidate",

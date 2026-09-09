@@ -5,6 +5,7 @@ import { FileTransactionJournal, GovernedWorktreeRuntime, RepositoryPathService,
 
 import { compileRepositoryChange, type CompiledRepositoryChange } from "./compiler.js";
 import { executeCompiledRepositoryChange } from "./executor.js";
+import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import {
   ChangeLifecycleStore,
   type ChangeLifecycleStoreOptions,
@@ -15,6 +16,8 @@ import {
 export interface CaptureRepositoryChangeInput {
   readonly request: string;
   readonly proposal: unknown;
+  /** Authenticated freshness/conformance evidence; it does not expand write authorization. */
+  readonly knowledgeContextId?: string;
 }
 
 export interface PlannedRepositoryChange {
@@ -104,6 +107,9 @@ export class RepositoryChangeLifecycleService {
   async capture(input: CaptureRepositoryChangeInput): Promise<CapturedRepositoryChange> {
     const proposal = parseChangeProposal(input.proposal);
     const compiled = await this.compile(input.request, proposal);
+    const knowledgeContextId = input.knowledgeContextId?.normalize("NFKC").trim();
+    if (input.knowledgeContextId !== undefined && !knowledgeContextId) throw new Error("knowledge context ID must be nonblank");
+    if (knowledgeContextId !== undefined) await this.assertKnowledgeContext(knowledgeContextId, compiled.compiledPlan.plan.boundState.compiledAgainst);
     const capture = await this.store.capture({
       request: input.request.normalize("NFKC").trim(),
       proposal,
@@ -112,6 +118,7 @@ export class RepositoryChangeLifecycleService {
       plan: compiled.compiledPlan.plan,
       capsules: capsules(compiled),
       exactPatchInputHash: exactPatchInputHash(compiled),
+      ...(knowledgeContextId === undefined ? {} : { knowledgeContextId }),
     });
     return { capture, compiled };
   }
@@ -120,6 +127,7 @@ export class RepositoryChangeLifecycleService {
     const capture = await this.store.readCapture(selector);
     const proposal = parseChangeProposal(capture.proposal);
     const compiled = await this.compile(capture.request, proposal);
+    if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, compiled.compiledPlan.plan.boundState.compiledAgainst);
     const mismatches: string[] = [];
     if (compiled.compiledChange.change.id !== capture.semanticChangeId) mismatches.push("semantic change identity");
     if (compiled.proposalHash !== capture.proposalHash) mismatches.push("proposal hash");
@@ -152,13 +160,16 @@ export class RepositoryChangeLifecycleService {
     const approvalRecord = await this.store.readApproval(approvalSelector);
     const capture = await this.store.readCapture(approvalRecord.semanticChangeId);
     if (approvalRecord.planHash !== capture.planHash) throw new Error("lifecycle approval is stale for the current authenticated plan");
+    if (approvalRecord.knowledgeContextId !== capture.knowledgeContextId) throw new Error("lifecycle approval knowledge context does not match the authenticated capture");
     if (approvalRecord.approvals.length !== 1) throw new Error("initial repository lifecycle requires exactly one packet approval");
     const paths = await RepositoryPathService.create(this.repositoryRoot);
     const journal = new FileTransactionJournal(paths);
     const incomplete = await journal.incomplete();
     if (incomplete.length > 0) throw new Error(`incomplete governed transaction requires recovery before apply: ${incomplete.map(({ entry }) => entry.transactionId).join(", ")}`);
     const proposal = parseChangeProposal(capture.proposal);
-    const compiled = approvedCompilation(await this.compile(capture.request, proposal), capture);
+    const currentCompilation = await this.compile(capture.request, proposal);
+    if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, currentCompilation.compiledPlan.plan.boundState.compiledAgainst);
+    const compiled = approvedCompilation(currentCompilation, capture);
     const attempt = await this.store.beginAttempt(approvalRecord.id);
     let result: StateBoundChangeResult;
     try {
@@ -193,6 +204,7 @@ export class RepositoryChangeLifecycleService {
   async recover(approvalSelector: string): Promise<LifecycleRecoveryOutcome[]> {
     const approval = await this.store.readApproval(approvalSelector);
     const capture = await this.store.readCapture(approval.semanticChangeId);
+    if (approval.knowledgeContextId !== capture.knowledgeContextId) throw new Error("lifecycle approval knowledge context does not match the authenticated capture");
     const attempts = await this.store.incompleteAttemptsForApproval(approval.id);
     if (attempts.length === 0) return [];
     const paths = await RepositoryPathService.create(this.repositoryRoot);
@@ -263,5 +275,26 @@ export class RepositoryChangeLifecycleService {
 
   private compile(request: string, proposal: ChangeProposal): Promise<CompiledRepositoryChange> {
     return compileRepositoryChange({ repositoryRoot: this.repositoryRoot, request, proposal, now: this.now() });
+  }
+
+  private async assertKnowledgeContext(contextId: string, expectedState: CompiledRepositoryChange["compiledPlan"]["plan"]["boundState"]["compiledAgainst"]): Promise<void> {
+    const knowledge = await RepositoryKnowledgeService.create(this.repositoryRoot);
+    const retained = await knowledge.read(contextId);
+    const usableBranches = retained.branches.filter((branch) => !branch.hypothesis && branch.interpretation.direct);
+    if (retained.interpretation.status === "unresolved"
+      || retained.interpretation.candidates.length === 0
+      || usableBranches.length === 0) {
+      throw new Error("knowledge context has no direct, accepted, usable interpretation branch");
+    }
+    const reconciliation = await knowledge.reconcile(contextId);
+    if (canonicalJson(reconciliation.currentState) !== canonicalJson(expectedState)) {
+      throw new Error("knowledge context and lifecycle compilation observed different repository states; retry before mutation");
+    }
+    if (reconciliation.status !== "current" && reconciliation.status !== "rebound") {
+      throw new Error(`knowledge context binding is ${reconciliation.status}: ${reconciliation.reasons.join("; ")}`);
+    }
+    if (reconciliation.governance.status !== "conformant" && reconciliation.governance.status !== "not-applicable") {
+      throw new Error(`knowledge context governance is ${reconciliation.governance.status}: ${reconciliation.governance.reasons.join("; ")}`);
+    }
   }
 }

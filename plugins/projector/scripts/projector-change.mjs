@@ -21,7 +21,7 @@ async function runCli(command, args) {
   const configured = process.env.PROJECTOR_CLI?.trim();
   const executable = configured === undefined || configured === "" ? "projector" : configured;
   const nodeScript = /\.(?:c|m)?js$/u.test(executable);
-  const child = spawn(nodeScript ? process.execPath : executable, [...(nodeScript ? [executable] : []), command, ...args, "--format", "json"], { cwd: process.cwd(), env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(nodeScript ? process.execPath : executable, [...(nodeScript ? [executable] : []), command, ...args, ...(command === "context" || command === "reconcile" ? ["--compact"] : []), "--format", "json"], { cwd: process.cwd(), env: process.env, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = ""; let stderr = "";
   child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -36,8 +36,18 @@ async function runCli(command, args) {
 
 async function main(args) {
   const command = args[0]; const parsed = options(args.slice(1));
+  if (command === "context") {
+    const entity = parsed.get("--entity");
+    return runCli("context", [required(parsed, "--request"), ...(entity === undefined ? [] : ["--entity", entity])]);
+  }
+  if (command === "reconcile") return runCli("reconcile", [required(parsed, "--context")]);
   if (command === "start") {
-    const changed = await runCli("change", [required(parsed, "--request"), "--proposal", required(parsed, "--proposal")]);
+    const context = parsed.get("--context");
+    if (context !== undefined) {
+      const reconciled = await runCli("reconcile", [context]);
+      if (reconciled.exitCode !== 0) return reconciled;
+    }
+    const changed = await runCli("change", [required(parsed, "--request"), "--proposal", required(parsed, "--proposal"), ...(context === undefined ? [] : ["--context", context])]);
     if (changed.exitCode !== 0) return changed;
     const planned = await runCli("plan", [changed.output.selector]);
     if (planned.exitCode !== 0) return planned;
@@ -45,7 +55,7 @@ async function main(args) {
   }
   if (command === "approve") return runCli("approve", [required(parsed, "--change"), "--plan-hash", required(parsed, "--plan-hash")]);
   if (command === "apply" || command === "recover" || command === "resume") return runCli(command, [required(parsed, "--approval")]);
-  throw new Error("usage: projector-change <start|approve|apply|recover|resume> [options]");
+  throw new Error("usage: projector-change <context|reconcile|start|approve|apply|recover|resume> [options]");
 }
 
 try {

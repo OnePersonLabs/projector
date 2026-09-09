@@ -15,6 +15,7 @@ import {
   normalizeSelector,
   projectionUnitSelectorSubject,
   selectorLensDependencies,
+  type ProjectionUnitSelectorFacts,
   type SelectorSubject,
 } from "./selectors.js";
 
@@ -63,6 +64,7 @@ export interface CompileProjectionLensesInput {
   lenses: readonly ProjectionLens[];
   units: readonly ProjectionUnit[];
   authorityRecords: readonly AuthorityRecord[];
+  selectorFactsByUnitId?: ReadonlyMap<string, ProjectionUnitSelectorFacts>;
   fixedPointGroups?: readonly GovernanceFixedPointGroup[];
 }
 
@@ -117,8 +119,9 @@ function stronglyConnectedComponents(lenses: readonly ProjectionLens[]): string[
 function subjectWithMemberships(
   unit: ProjectionUnit,
   memberships: ReadonlyMap<string, ReadonlySet<string>>,
+  facts: ProjectionUnitSelectorFacts = {},
 ): SelectorSubject {
-  const subject = projectionUnitSelectorSubject(unit);
+  const subject = projectionUnitSelectorSubject(unit, facts);
   const computedLensIds = [...memberships.entries()]
     .filter(([, memberIds]) => memberIds.has(unit.id))
     .map(([lensId]) => lensId);
@@ -139,9 +142,10 @@ function evaluateLensMembers(
   lens: ProjectionLens,
   units: readonly ProjectionUnit[],
   memberships: ReadonlyMap<string, ReadonlySet<string>>,
+  facts?: ReadonlyMap<string, ProjectionUnitSelectorFacts>,
 ): Set<string> {
   return new Set(units
-    .filter((unit) => evaluateSelector(lens.selector, subjectWithMemberships(unit, memberships)).matched)
+    .filter((unit) => evaluateSelector(lens.selector, subjectWithMemberships(unit, memberships, facts?.get(unit.id))).matched)
     .map(({ id }) => id));
 }
 
@@ -219,6 +223,7 @@ function compileOwnership(
   lenses: readonly ProjectionLens[],
   units: readonly ProjectionUnit[],
   memberships: ReadonlyMap<string, ReadonlySet<string>>,
+  facts?: ReadonlyMap<string, ProjectionUnitSelectorFacts>,
 ): void {
   const owners = new Map<string, Set<string>>();
   for (const lens of lenses.filter(({ status, contributions }) => status === "active" && contributions.includes("projection-owner"))) {
@@ -226,7 +231,7 @@ function compileOwnership(
       if (!(memberships.get(lens.id)?.has(unit.id) ?? false)) continue;
       for (const projection of lens.expectedProjections) {
         if (projection.role !== unit.role) continue;
-        if (!evaluateSelector(projection.selector, subjectWithMemberships(unit, memberships)).matched) continue;
+        if (!evaluateSelector(projection.selector, subjectWithMemberships(unit, memberships, facts?.get(unit.id))).matched) continue;
         const key = `${unit.id}\u0000${projection.role}`;
         const entries = owners.get(key) ?? new Set<string>();
         entries.add(lens.id);
@@ -247,11 +252,12 @@ function stabilizeAcyclicMemberships(
   units: readonly ProjectionUnit[],
   memberships: Map<string, Set<string>>,
   iterationBudget: number,
+  facts?: ReadonlyMap<string, ProjectionUnitSelectorFacts>,
 ): void {
   for (let iteration = 0; iteration <= iterationBudget; iteration += 1) {
     let changed = false;
     for (const lens of lenses) {
-      const next = evaluateLensMembers(lens, units, memberships);
+      const next = evaluateLensMembers(lens, units, memberships, facts);
       if (!sameSet(memberships.get(lens.id)!, next)) {
         memberships.set(lens.id, next);
         changed = true;
@@ -274,7 +280,7 @@ export function compileProjectionLenses(input: CompileProjectionLensesInput): Pr
 
   // Acyclic memberships are evaluated to a stable state independent of input order.
   const acyclic = lenses.filter((lens) => !groupByLens.has(lens.id));
-  stabilizeAcyclicMemberships(acyclic, units, memberships, lenses.length);
+  stabilizeAcyclicMemberships(acyclic, units, memberships, lenses.length, input.selectorFactsByUnitId);
 
   const groups = [...new Map(fixedPointGroups.map((group) => [group.id, group])).values()]
     .sort((left, right) => compareStrings(left.id, right.id));
@@ -283,7 +289,7 @@ export function compileProjectionLenses(input: CompileProjectionLensesInput): Pr
     let changeRounds = 0;
     let converged = false;
     for (let iteration = 0; iteration < group.maxIterations; iteration += 1) {
-      const proposals = new Map(groupLenses.map((lens) => [lens.id, evaluateLensMembers(lens, units, memberships)]));
+      const proposals = new Map(groupLenses.map((lens) => [lens.id, evaluateLensMembers(lens, units, memberships, input.selectorFactsByUnitId)]));
       let changed = false;
       for (const lens of groupLenses) {
         const current = memberships.get(lens.id)!;
@@ -304,9 +310,9 @@ export function compileProjectionLenses(input: CompileProjectionLensesInput): Pr
   }
 
   // Downstream acyclic lenses may depend on membership produced by a fixed-point group.
-  stabilizeAcyclicMemberships(acyclic, units, memberships, lenses.length);
+  stabilizeAcyclicMemberships(acyclic, units, memberships, lenses.length, input.selectorFactsByUnitId);
 
-  compileOwnership(lenses, units, memberships);
+  compileOwnership(lenses, units, memberships, input.selectorFactsByUnitId);
   const membershipObject = Object.fromEntries([...memberships.entries()]
     .sort(([left], [right]) => compareStrings(left, right))
     .map(([lensId, memberIds]) => [lensId, [...memberIds].sort(compareStrings)]));

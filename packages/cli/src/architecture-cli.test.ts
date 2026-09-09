@@ -1,4 +1,11 @@
 import type { ArchitectureConcern, ArchitectureDecision, ContentHash, DecisionValidityAssessment, SelectorExpr } from "@projector/core";
+import { withCanonicalHashes } from "@projector/core";
+import { CanonicalFileRepository } from "@projector/runtime";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 
 import { executeProjector } from "./cli.js";
@@ -10,6 +17,25 @@ const concern: ArchitectureConcern = { id: "concern:runtime", key: "runtime", ti
 const validity: DecisionValidityAssessment = { decisionId: selected.id, scope, state: "valid", firedTriggers: [], invalidatedAssumptions: [], staleEvidenceIds: [], blocksCurrentChange: false, explanation: "scope and proof remain current" };
 
 describe("decision CLI composition", () => {
+  it("does not mistake a canonical active label for proven decision validity or population", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-decision-cli-"));
+    try {
+      await promisify(execFile)("git", ["init", "-q", root]);
+      await mkdir(join(root, ".projector"));
+      await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      await new CanonicalFileRepository(root).write(withCanonicalHashes({
+        apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "architecture-decision",
+        id: selected.id, key: selected.key, lifecycle: selected.lifecycle, payload: { ...selected },
+      }));
+      const explained = await executeProjector(["explain", selected.id, "--format", "json"], { cwd: root });
+      expect(explained.report.decisionExplanation, explained.output).toMatchObject({ reconsidered: true });
+      expect(explained.output).toContain("no retained applicability");
+      const audited = await executeProjector(["audit", "--decisions", "--format", "json"], { cwd: root });
+      expect(audited.exitCode).toBe(2);
+      expect(audited.report.decisionAudit.findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "population-unproven" })]));
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("binds provider preflight mode and risk to normalized CLI policy and operation risk", async () => {
     const preflight = vi.fn().mockResolvedValue({
       closure: { id: "closure:cli", requestHash: hash("request"), seeds: [], entries: [], activatedFacetKeys: [], unknowns: [], unavailableLanes: [], boundState: { compiledAgainst: { gitBase: "base", worktreeDigest: hash("worktree"), canonicalProjectorDigest: hash("canonical"), toolchainDigest: hash("toolchain") }, valueDependencies: [], queryDependencies: [], dependencyDigest: hash("binding") }, contentHash: hash("closure") },

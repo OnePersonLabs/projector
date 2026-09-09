@@ -449,15 +449,28 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
     keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
   }
 
+  const semanticKeys = new Map<string, string>();
   for (const entry of inventory) {
     const javaScript = javaScriptByPath.get(entry.path);
-    const { role, evidence } = roleFor(entry, javaScript, packageFacts.invocations, javaScriptFacts.testTargets, hookReachable);
     const baseSemanticKey = baseSemanticKeys.get(entry.path)!;
     const semanticKey = keyCounts.get(baseSemanticKey) === 1
       ? baseSemanticKey
       : `${baseSemanticKey}:variant:${hashFramedDomain("local-unit-variant", javaScript?.normalizedSemantics ?? entry.content)}`;
-    const artifactId = deriveEntityId("projector.repository-artifact", semanticKey, { path: entry.path });
-    const unitId = deriveEntityId("projector.projection-unit", semanticKey, { path: entry.path });
+    semanticKeys.set(entry.path, semanticKey);
+  }
+
+  for (const entry of inventory) {
+    const javaScript = javaScriptByPath.get(entry.path);
+    const { role, evidence } = roleFor(entry, javaScript, packageFacts.invocations, javaScriptFacts.testTargets, hookReachable);
+    const semanticKey = semanticKeys.get(entry.path)!;
+    // Physical source identity is independent of syntax and of whether another
+    // file has the same contents. Available Git move evidence preserves the
+    // source address across the observed move. Canonical conceptual identities
+    // and semantic signatures remain separate from this observation identity.
+    const movedFrom = gitFacts.moves.find(move => move.toPath === entry.path)?.fromPath;
+    const observationKey = `source:${movedFrom ?? entry.path}`;
+    const artifactId = deriveEntityId("projector.repository-artifact", observationKey);
+    const unitId = deriveEntityId("projector.projection-unit", observationKey);
     const structuralSignature = signature("projector.local-structural", semanticKey, {
       role,
       exports: javaScript?.exports ?? [],

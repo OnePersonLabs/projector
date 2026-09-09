@@ -30,6 +30,7 @@ describe("explicit Projector project activation", () => {
     const lifecycle = {
       capture: vi.fn(), plan: vi.fn(), approve: vi.fn(), apply: vi.fn(), recover: vi.fn(), resume: vi.fn(),
     };
+    const knowledge = { context: vi.fn(), reconcile: vi.fn() };
 
     const audit = await executeProjector(["audit", "--format", "json"], { cwd: root });
     const change = await executeProjector(["change", "request", "--proposal", "proposal.json"], { cwd: root, lifecycle });
@@ -37,6 +38,10 @@ describe("explicit Projector project activation", () => {
     expect(audit).toMatchObject({ exitCode: 5, report: { projectEnabled: false } });
     expect(change).toMatchObject({ exitCode: 5, report: { projectEnabled: false } });
     expect(lifecycle.capture).not.toHaveBeenCalled();
+    expect(await executeProjector(["context", "inspect meaning"], { cwd: root, knowledge })).toMatchObject({ exitCode: 5 });
+    expect(await executeProjector(["reconcile", "knowledge:context:123"], { cwd: root, knowledge })).toMatchObject({ exitCode: 5 });
+    expect(knowledge.context).not.toHaveBeenCalled();
+    expect(knowledge.reconcile).not.toHaveBeenCalled();
     await expect(access(join(root, ".projector"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 

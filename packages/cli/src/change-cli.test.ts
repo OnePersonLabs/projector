@@ -19,7 +19,7 @@ describe("change/plan/apply CLI composition", () => {
       recover: vi.fn(async () => ({ kind: "lifecycle-recovery", selector: "lifecycle_approval_abc", outcomes: [] })),
       resume: vi.fn(async () => ({ kind: "lifecycle-resume", selector: "lifecycle_approval_abc", immutablePlanHash: "sha256:v1:plan", outcome: "success" })),
     } satisfies RepositoryLifecycleCliPort;
-    expect((await executeProjector(["change", "Make the value useful for real callers", "--proposal", "proposal.json"], { lifecycle })).report.selector).toBe("semantic_change_abc");
+    expect((await executeProjector(["change", "Make the value useful for real callers", "--proposal", "proposal.json", "--context", "knowledge_context_abc"], { lifecycle })).report.selector).toBe("semantic_change_abc");
     expect((await executeProjector(["plan", "semantic_change_abc"], { lifecycle })).output).toBe("replace src/value.mjs");
     expect((await executeProjector(["approve", "semantic_change_abc", "--plan-hash", "sha256:v1:plan"], { lifecycle })).report.selector).toBe("lifecycle_approval_abc");
     const controller = new AbortController();
@@ -30,7 +30,7 @@ describe("change/plan/apply CLI composition", () => {
     const blocked = await executeProjector(["resume", "lifecycle_approval_abc", "--format", "json"], { lifecycle });
     expect(blocked).toMatchObject({ exitCode: 6, report: { kind: "lifecycle-resume", outcome: "recovery-required", outcomes: [expect.objectContaining({ reason: "third state" })] } });
     expect(JSON.parse(blocked.output)).toMatchObject({ outcome: "recovery-required", selector: "lifecycle_approval_abc" });
-    expect(lifecycle.capture).toHaveBeenCalledWith(expect.objectContaining({ request: "Make the value useful for real callers", proposalPath: "proposal.json" }));
+    expect(lifecycle.capture).toHaveBeenCalledWith(expect.objectContaining({ request: "Make the value useful for real callers", proposalPath: "proposal.json", knowledgeContextId: "knowledge_context_abc" }));
     expect(lifecycle.apply).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
     expect(lifecycle.resume).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
     await expect(executeProjector(["approve", "semantic_change_abc", "--plan-hash", "wrong"], { lifecycle })).rejects.toThrow(/plan hash/iu);

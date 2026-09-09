@@ -16,6 +16,43 @@ type JsonRpcMessage = {
   };
 };
 
+async function finishMcpExchange(
+  child: ReturnType<typeof spawn>,
+  responseSeen: () => boolean,
+  output: () => string,
+): Promise<void> {
+  const closed = new Promise<number | null>((resolveClose, rejectClose) => {
+    child.once("error", rejectClose);
+    child.once("close", resolveClose);
+  });
+  try {
+    await new Promise<void>((accept, reject) => {
+      const timeout = setTimeout(() => reject(new Error(`MCP launch timed out\n${output()}`)), 8_000);
+      const inspect = (): void => {
+        if (!responseSeen()) return;
+        clearTimeout(timeout);
+        accept();
+      };
+      child.stdout.on("data", inspect);
+      child.once("error", (error) => { clearTimeout(timeout); reject(error); });
+      child.once("exit", (code) => {
+        if (responseSeen()) return;
+        clearTimeout(timeout);
+        reject(new Error(`MCP server exited ${code}\n${output()}`));
+      });
+      inspect();
+    });
+    child.stdin.end();
+    const code = await closed;
+    if (code !== 0) throw new Error(`MCP server exited ${code}\n${output()}`);
+  } catch (error) {
+    child.stdin.end();
+    child.kill();
+    await closed.catch(() => undefined);
+    throw error;
+  }
+}
+
 const launchConfiguredServer = async (): Promise<JsonRpcMessage[]> => {
   const installationRoot = await mkdtemp(join(tmpdir(), "projector-plugin-test-"));
   const installedPluginRoot = resolve(installationRoot, "projector");
@@ -56,29 +93,7 @@ const launchConfiguredServer = async (): Promise<JsonRpcMessage[]> => {
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
 
-  await new Promise<void>((accept, reject) => {
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error(`MCP launch timed out\nstdout: ${stdout}\nstderr: ${stderr}`));
-    }, 8_000);
-    child.stdout.on("data", () => {
-      if (stdout.includes('"id":2')) {
-        clearTimeout(timeout);
-        child.kill();
-        accept();
-      }
-    });
-    child.once("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.once("exit", (code) => {
-      clearTimeout(timeout);
-      if (!stdout.includes('"id":2')) {
-        reject(new Error(`MCP server exited ${code}\nstdout: ${stdout}\nstderr: ${stderr}`));
-      }
-    });
-  });
+  await finishMcpExchange(child, () => stdout.includes('"id":2'), () => `stdout: ${stdout}\nstderr: ${stderr}`);
 
   const messages = stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as JsonRpcMessage);
   await rm(installationRoot, { recursive: true, force: true });
@@ -97,8 +112,10 @@ describe("Projector Codex plugin MCP launch", () => {
     expect(messages.find((message) => message.id === 2)?.result?.tools)
       .toEqual([
         expect.objectContaining({ name: "projector.audit" }),
+        expect.objectContaining({ name: "projector.context" }),
         expect.objectContaining({ name: "projector.list_divergences" }),
         expect.objectContaining({ name: "projector.status" }),
+        expect.objectContaining({ name: "projector.validate" }),
       ]);
   });
 
@@ -110,20 +127,20 @@ describe("Projector Codex plugin MCP launch", () => {
       await cp(pluginRoot, installedPluginRoot, { recursive: true });
       await mkdir(repository);
       expect((await runExecutable("git", ["init", "-q"], repository, process.env)).status).toBe(0);
-      const hook = join(installedPluginRoot, "hooks", "projector-session.sh");
+      const hook = join(installedPluginRoot, "hooks", "projector-session.mjs");
       const environment = { ...process.env, PLUGIN_ROOT: installedPluginRoot, PROJECTOR_CLI: resolve(repositoryRoot, "packages", "cli", "dist", "cli.js") };
       delete environment.PROJECTOR_ROOT;
-      const inactive = await runExecutable("bash", [hook], repository, environment);
+      const inactive = await runExecutable(process.execPath, [hook], repository, environment);
       expect(inactive).toMatchObject({ status: 0, stdout: "" });
       await mkdir(join(repository, ".projector"));
       await writeFile(join(repository, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true,"extra":true}\n');
-      const malformed = await runExecutable("bash", [hook], repository, environment);
+      const malformed = await runExecutable(process.execPath, [hook], repository, environment);
       expect(malformed).toMatchObject({ status: 0, stdout: "" });
       await writeFile(join(repository, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
-      const active = await runExecutable("bash", [hook], repository, environment);
+      const active = await runExecutable(process.execPath, [hook], repository, environment);
       expect(active.status).toBe(0);
       expect(JSON.parse(active.stdout)).toMatchObject({ hookSpecificOutput: { hookEventName: "SessionStart" } });
-      const unavailable = await runExecutable("bash", [hook], repository, { PLUGIN_ROOT: installedPluginRoot, PATH: "/usr/bin:/bin" });
+      const unavailable = await runExecutable(process.execPath, [hook], repository, { ...environment, PROJECTOR_CLI: join(root, "absent-cli.mjs") });
       expect(unavailable).toMatchObject({ status: 0, stdout: "" });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
@@ -148,7 +165,8 @@ describe("Projector Codex plugin MCP launch", () => {
       const environment = { ...process.env, WRAPPER: join(installedPluginRoot, "scripts", "projector-mcp.mjs"), PLUGIN_CWD: installedPluginRoot, PROJECTOR_CLI: resolve(repositoryRoot, "packages", "cli", "dist", "cli.js") };
       delete environment.PROJECTOR_ROOT;
       delete environment.CODEX_CWD;
-      delete environment.CODEX_WORKSPACE_ROOT;
+      if (process.platform === "win32") environment.CODEX_WORKSPACE_ROOT = hostRepository;
+      else delete environment.CODEX_WORKSPACE_ROOT;
       delete environment.INIT_CWD;
       const child = spawn(process.execPath, [parent], { cwd: hostRepository, env: environment, stdio: ["pipe", "pipe", "pipe"] });
       let stdout = ""; let stderr = "";
@@ -157,11 +175,7 @@ describe("Projector Codex plugin MCP launch", () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })}\n`);
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.status", arguments: { cwd: installedPluginRoot } } })}\n`);
-      await new Promise<void>((accept, reject) => {
-        const timeout = setTimeout(() => { child.kill(); reject(new Error(`MCP launch timed out\n${stdout}\n${stderr}`)); }, 8_000);
-        child.stdout.on("data", () => { if (stdout.includes('"id":2')) { clearTimeout(timeout); child.kill(); accept(); } });
-        child.once("error", reject);
-      });
+      await finishMcpExchange(child, () => stdout.includes('"id":2'), () => `${stdout}\n${stderr}`);
       const status = stdout.trim().split("\n").map((line) => JSON.parse(line) as JsonRpcMessage).find(({ id }) => id === 2);
       expect(status?.result?.structuredContent).toMatchObject({ status: "ok", artifactCount: 2 });
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -190,10 +204,7 @@ describe("Projector Codex plugin MCP launch", () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })}\n`);
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "projector.status", arguments: {} } })}\n`);
-      await new Promise<void>((accept, reject) => {
-        const timeout = setTimeout(() => { child.kill(); reject(new Error(`MCP launch timed out\n${stdout}\n${stderr}`)); }, 8_000);
-        child.stdout.on("data", () => { if (stdout.includes('"id":2')) { clearTimeout(timeout); child.kill(); accept(); } }); child.once("error", reject);
-      });
+      await finishMcpExchange(child, () => stdout.includes('"id":2'), () => `${stdout}\n${stderr}`);
       const status = stdout.trim().split("\n").map((line) => JSON.parse(line) as JsonRpcMessage).find(({ id }) => id === 2);
       expect(status?.result?.structuredContent).toMatchObject({ status: "not-enabled" });
     } finally { await rm(root, { recursive: true, force: true }); }

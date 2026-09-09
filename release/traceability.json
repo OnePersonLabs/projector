@@ -130,8 +130,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/cli.test.ts#minimal CLI entrypoint blocks canonical governance conflicts before public mutation work begins",
-      "testSourceDigest": "sha256:v1:f223c03ad4551f13fc686dc96edaf69560fde27688f5a7f06de530376e98dd90",
-      "mappingHash": "sha256:v1:afdc7fa7998f740c280bef8e666ab9f8190d12b2cd6fa25e3478a0cf2f0d147f"
+      "testSourceDigest": "sha256:v1:2731ee22c11326556fd455c33c28142cfe2ff29f8a7de9767039cf3517daf332",
+      "mappingHash": "sha256:v1:b159b67623be8ac26694164f38a29a6223003da7a774cefb57b340acbe636529"
     },
     {
       "id": "scenario:12:open-world-completeness-refusal",
@@ -202,8 +202,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector",
       "testRef": "scripts/sandbox-release-workflow.test.ts#manual sandbox release workflow has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job",
-      "testSourceDigest": "sha256:v1:ba4d0ec5125f485829b26675b6121dc8532354d49188d82c8e96357295b70a82",
-      "mappingHash": "sha256:v1:74f927dceb574d255a24f459992e580f164086a80ed8b76fad3f179e42d619c6"
+      "testSourceDigest": "sha256:v1:e9a5d45abed050147e6a7dc7ad840b33380519b996f28738724bb11dc209d39c",
+      "mappingHash": "sha256:v1:8667713f38b8f1df58fc434680d1ad11f19e5d7d550da627d3234f00ad5ebb03"
     },
     {
       "id": "scenario:18:operational-mcp-advertisement",
@@ -214,8 +214,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/run-cli.test.ts#projector run host boundary resolves an authenticated built session and detects a fake host's committed-clean write",
-      "testSourceDigest": "sha256:v1:3ac2f850d0b67ed51555675e2f8a66bf5886f0675af34b471490eb926283231d",
-      "mappingHash": "sha256:v1:52e9f74412977351127a074f4de79485e423763008ab232c1b3288167e1964f5"
+      "testSourceDigest": "sha256:v1:89670850fc1333224272546d1851a814ff557432a446e76a0765faf476d66d3f",
+      "mappingHash": "sha256:v1:846b2e11723af35a02d83270e222ef7534a9e937f03cb8a22832d0f1c15c8b39"
     },
     {
       "id": "scenario:19:installed-held-out-change-lifecycle",
@@ -290,8 +290,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer localizes a malformed manifest failure while preserving filesystem and JavaScript observations",
-      "testSourceDigest": "sha256:v1:8684691cc2a4833b27c7669dd83035e9f55faf4e9ae144c9f8030da67d959666",
-      "mappingHash": "sha256:v1:fe67f4c53b8b0ed5766c9041264e22542c3373d65c91893c4ead86060f46653e"
+      "testSourceDigest": "sha256:v1:171751bcdc265d51112dcf1b3b77837f127f243e56270f6ceae042ed8333d4f4",
+      "mappingHash": "sha256:v1:1c758e93c7738353225b4c6a8caa65c83c64f4cc0ef83652d008201043e1d3b0"
     },
     {
       "id": "scenario:25:path-symlink-escape",
@@ -314,8 +314,8 @@
       "sourceDigest": "sha256:v1:08319f7d3416f81b2c6b6c263456f605fae00b9680f2497fdf917753972b4a1f",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it",
-      "testSourceDigest": "sha256:v1:8684691cc2a4833b27c7669dd83035e9f55faf4e9ae144c9f8030da67d959666",
-      "mappingHash": "sha256:v1:f80d635614d5f924c20a548855ccaebfac1cd4f4bb369a1d1713ea5211c2be87"
+      "testSourceDigest": "sha256:v1:171751bcdc265d51112dcf1b3b77837f127f243e56270f6ceae042ed8333d4f4",
+      "mappingHash": "sha256:v1:e1ea1324e52eff259fb22844dd7a3986c3c126fea14d4f0f63a750c640afbf6f"
     },
     {
       "id": "scenario:27:projector-repair-oscillation",
@@ -1142,8 +1142,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/cli.test.ts#minimal CLI entrypoint blocks canonical governance conflicts before public mutation work begins",
-      "testSourceDigest": "sha256:v1:f223c03ad4551f13fc686dc96edaf69560fde27688f5a7f06de530376e98dd90",
-      "mappingHash": "sha256:v1:c2ff3de5d5027e6a581ef5a4a34176f3f2fb4f1ee4bf6ccfbde8e3285de02407"
+      "testSourceDigest": "sha256:v1:2731ee22c11326556fd455c33c28142cfe2ff29f8a7de9767039cf3517daf332",
+      "mappingHash": "sha256:v1:37570001c5258fba55aa5bf04e2537e342aec41146494130dd64b40132bcc97d"
     },
     {
       "id": "adversary:06:projector-endogenous-authority-evidence",
@@ -1274,8 +1274,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it",
-      "testSourceDigest": "sha256:v1:8684691cc2a4833b27c7669dd83035e9f55faf4e9ae144c9f8030da67d959666",
-      "mappingHash": "sha256:v1:1ad5af54165c81c56fdfbb95efcb6a4f926a4123819960c6e644d8c2d53f48ba"
+      "testSourceDigest": "sha256:v1:171751bcdc265d51112dcf1b3b77837f127f243e56270f6ceae042ed8333d4f4",
+      "mappingHash": "sha256:v1:258b788204b655289b5e8cc08374587fe45f3babf2e937a9ae93dca008f0fb09"
     },
     {
       "id": "adversary:17:mutation-generated-near-misses",
@@ -1286,8 +1286,8 @@
       "sourceDigest": "sha256:v1:b1824e89c845ed9e73aacc919bb64894aaa2bcc439927d284ce4df4a765748ea",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer marks generated sources explicitly and limits unresolved imports to dependency claims",
-      "testSourceDigest": "sha256:v1:8684691cc2a4833b27c7669dd83035e9f55faf4e9ae144c9f8030da67d959666",
-      "mappingHash": "sha256:v1:acecb70a18a6af6c5e50b8ef5535e1b785f63a11fe02e0c11ca936a97b2851e5"
+      "testSourceDigest": "sha256:v1:171751bcdc265d51112dcf1b3b77837f127f243e56270f6ceae042ed8333d4f4",
+      "mappingHash": "sha256:v1:87d54645e1ea1ff71ff52ebc0c93c059a8268d08952a506c13e93bc0b0c77772"
     },
     {
       "id": "adversary:18:unsupported-analyzer-capability-degradation",

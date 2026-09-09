@@ -150,7 +150,7 @@ async function main() {
   const errors = [
     ...validatePackageDependencies(await readWorkspaceGraph(root)),
     ...validatePackageDependencies(await readImportGraph(root)),
-    ...validateCuratedExports(controlPlaneFacade, ["LifecycleRecoveryOutcome", "RepositoryChangeLifecycleService"]),
+    ...validateCuratedExports(controlPlaneFacade, ["LifecycleRecoveryOutcome", "RepositoryChangeLifecycleService", "RepositoryKnowledgeService", "KnowledgeContextRequest", "KnowledgeContextResult", "KnowledgeReconciliationResult"]),
     ...validateSubsystemArchitecture(subsystemFiles),
   ];
   if (errors.length > 0) {

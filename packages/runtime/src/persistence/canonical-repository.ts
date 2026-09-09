@@ -122,16 +122,21 @@ async function atomicWrite(path: string, contents: string): Promise<void> {
     await handle.close();
     handle = undefined;
     await rename(temporaryPath, path);
-    const directoryHandle = await open(directory, constants.O_RDONLY);
-    try {
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
-    }
+    await syncCanonicalDirectory(directory);
   } finally {
     if (handle !== undefined) await handle.close();
     await rm(temporaryPath, { force: true });
   }
+}
+
+async function syncCanonicalDirectory(directory: string): Promise<void> {
+  // Node cannot fsync a directory on Windows. The file contents are still
+  // flushed before atomic replacement; power-loss durability of the directory
+  // entry is only established on platforms that support directory fsync.
+  if (process.platform === "win32") return;
+  const handle = await open(directory, constants.O_RDONLY);
+  try { await handle.sync(); }
+  finally { await handle.close(); }
 }
 
 export class CanonicalFileRepository {
@@ -213,12 +218,7 @@ export class CanonicalFileRepository {
     if (owned.length === 0) return false;
     for (const path of owned) await rm(path);
     for (const directory of new Set(owned.map(dirname))) {
-      const directoryHandle = await open(directory, constants.O_RDONLY);
-      try {
-        await directoryHandle.sync();
-      } finally {
-        await directoryHandle.close();
-      }
+      await syncCanonicalDirectory(directory);
     }
     return true;
   }

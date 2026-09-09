@@ -40,6 +40,26 @@ afterEach(async () => {
 });
 
 describe("local repository analyzer", () => {
+  it("keeps distinct source and generated copies addressable when their syntax and bytes match", async () => {
+    const root = await fixtureRepository();
+    await mkdir(join(root, "copies"));
+    await writeFile(join(root, "copies", "first.ts"), "export const identical = 1;\n");
+    await writeFile(join(root, "copies", "second.ts"), "export const identical = 1;\n");
+    await writeFile(join(root, "copies", "empty-a.d.ts"), "export {};\n");
+    await writeFile(join(root, "copies", "empty-b.d.ts"), "export {};\n");
+    const analysis = await analyzeLocalRepository({ repositoryRoot: root });
+    expect(new Set(analysis.artifacts.map(({ id }) => id)).size).toBe(analysis.artifacts.length);
+    expect(new Set(analysis.projectionUnits.map(({ id }) => id)).size).toBe(analysis.projectionUnits.length);
+    const copies = analysis.projectionUnits.filter(({ key }) => key.startsWith("copies/"));
+    expect(copies).toHaveLength(4);
+    expect(copies[0]!.semanticSignature.hash).toBe(copies[1]!.semanticSignature.hash);
+    const survivorId = copies.find(({ key }) => key === "copies/first.ts")!.id;
+    await unlink(join(root, "copies", "second.ts"));
+    await writeFile(join(root, "copies", "first.ts"), "export const renamed = 2;\n");
+    const changed = await analyzeLocalRepository({ repositoryRoot: root });
+    expect(changed.projectionUnits.find(({ key }) => key === "copies/first.ts")!.id).toBe(survivorId);
+  });
+
   it("classifies the misplaced repository script from invocation and dependency evidence without executing it", async () => {
     const root = await fixtureRepository();
     const marker = join(root, "execution-marker.txt");
