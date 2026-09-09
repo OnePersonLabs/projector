@@ -3,7 +3,4 @@ node_modules/
 dist/
 *.tsbuildinfo
 .temp/
-.projector/runtime/
-.projector/state.db*
-.projector/telemetry/
-.projector/watch/
+
