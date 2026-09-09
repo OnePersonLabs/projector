@@ -24,6 +24,7 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot) {
     for (const [source, target] of [
       ["scripts/packed-lifecycle-acceptance.mjs", "packed-lifecycle-acceptance.mjs"],
       ["scripts/source-severed-release-acceptance.mjs", "source-severed-release-acceptance.mjs"],
+      ["scripts/npm-command.mjs", "npm-command.mjs"],
       ["scripts/release-candidate.mjs", "release-candidate.mjs"],
       ["release/fixtures/held-out-change.json", "fixtures/held-out-change.json"],
       [".github/scripts/provision-ubuntu-sandbox.sh", "provision-ubuntu-sandbox.sh"],

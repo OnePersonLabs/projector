@@ -106,9 +106,9 @@ export class RepositoryChangeLifecycleService {
 
   async capture(input: CaptureRepositoryChangeInput): Promise<CapturedRepositoryChange> {
     const proposal = parseChangeProposal(input.proposal);
-    const compiled = await this.compile(input.request, proposal);
     const knowledgeContextId = input.knowledgeContextId?.normalize("NFKC").trim();
     if (input.knowledgeContextId !== undefined && !knowledgeContextId) throw new Error("knowledge context ID must be nonblank");
+    const compiled = await this.compile(input.request, proposal, knowledgeContextId);
     if (knowledgeContextId !== undefined) await this.assertKnowledgeContext(knowledgeContextId, compiled.compiledPlan.plan.boundState.compiledAgainst);
     const capture = await this.store.capture({
       request: input.request.normalize("NFKC").trim(),
@@ -126,7 +126,7 @@ export class RepositoryChangeLifecycleService {
   async plan(selector: string): Promise<PlannedRepositoryChange> {
     const capture = await this.store.readCapture(selector);
     const proposal = parseChangeProposal(capture.proposal);
-    const compiled = await this.compile(capture.request, proposal);
+    const compiled = await this.compile(capture.request, proposal, capture.knowledgeContextId);
     if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, compiled.compiledPlan.plan.boundState.compiledAgainst);
     const mismatches: string[] = [];
     if (compiled.compiledChange.change.id !== capture.semanticChangeId) mismatches.push("semantic change identity");
@@ -167,7 +167,7 @@ export class RepositoryChangeLifecycleService {
     const incomplete = await journal.incomplete();
     if (incomplete.length > 0) throw new Error(`incomplete governed transaction requires recovery before apply: ${incomplete.map(({ entry }) => entry.transactionId).join(", ")}`);
     const proposal = parseChangeProposal(capture.proposal);
-    const currentCompilation = await this.compile(capture.request, proposal);
+    const currentCompilation = await this.compile(capture.request, proposal, capture.knowledgeContextId);
     if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, currentCompilation.compiledPlan.plan.boundState.compiledAgainst);
     const compiled = approvedCompilation(currentCompilation, capture);
     const attempt = await this.store.beginAttempt(approvalRecord.id);
@@ -273,8 +273,9 @@ export class RepositoryChangeLifecycleService {
     return this.apply(approvalSelector, options);
   }
 
-  private compile(request: string, proposal: ChangeProposal): Promise<CompiledRepositoryChange> {
-    return compileRepositoryChange({ repositoryRoot: this.repositoryRoot, request, proposal, now: this.now() });
+  private async compile(request: string, proposal: ChangeProposal, contextId?: string): Promise<CompiledRepositoryChange> {
+    const knowledgeContext = contextId === undefined ? undefined : await (await RepositoryKnowledgeService.create(this.repositoryRoot)).read(contextId);
+    return compileRepositoryChange({ repositoryRoot: this.repositoryRoot, request, proposal, now: this.now(), ...(knowledgeContext === undefined ? {} : { knowledgeContext }) });
   }
 
   private async assertKnowledgeContext(contextId: string, expectedState: CompiledRepositoryChange["compiledPlan"]["plan"]["boundState"]["compiledAgainst"]): Promise<void> {

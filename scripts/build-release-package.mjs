@@ -5,6 +5,8 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { resolveNpmCommand } from "./npm-command.mjs";
+
 const execute = promisify(execFile);
 const require = createRequire(import.meta.url);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -23,7 +25,9 @@ export async function buildReleasePackage(stagingRoot, packDestination) {
   for (const [subpath, target] of Object.entries(exportTargets)) { const name = subpath === "." ? "index" : subpath.slice(2).replaceAll("/", "-"); const statement = target === "cli" ? `export * from "../dist/cli.js";\n` : `export * from "@projector/${target.split("/")[0]}${target.includes("/") ? `/${target.split("/").slice(1).join("/")}` : ""}";\n`; await writeFile(join(stagingRoot, `exports/${name}.js`), statement); await writeFile(join(stagingRoot, `exports/${name}.d.ts`), `/// <reference types="node" />\n${statement}`); }
   await mkdir(join(stagingRoot, "bin")); const binPath = join(stagingRoot, "bin/projector.js"); await writeFile(binPath, "#!/usr/bin/env node\nimport { main } from \"../dist/cli.js\";\nprocess.exitCode = await main();\n"); await chmod(binPath, 0o755);
   const packageJson = { name: releasePackageName, version: releaseVersion, description: "Local semantic governance and change execution kernel", type: "module", engines: { node: ">=24 <25" }, bin: { projector: "./bin/projector.js" }, exports: Object.fromEntries(Object.keys(exportTargets).map((subpath) => { const base = `./exports/${subpath === "." ? "index" : subpath.slice(2).replaceAll("/", "-")}`; return [subpath, { types: `${base}.d.ts`, default: `${base}.js` }]; })), files: ["bin", "dist", "exports"], dependencies: Object.fromEntries([...bundledNames.map((name) => [name, releaseVersion]), ["@types/node", "^24.13.3"], ["undici-types", "^7.18.2"], ["zod", "^4.0.15"]]), bundledDependencies: [...bundledNames, "@types/node", "undici-types", "zod"], publishConfig: { access: "public" } }; await writeFile(join(stagingRoot, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
-  const { stdout } = await execute("npm", ["pack", "--json", "--pack-destination", packDestination], { cwd: stagingRoot, encoding: "utf8", maxBuffer: 10_000_000 }); const packed = JSON.parse(stdout); const metadata = Array.isArray(packed) ? packed[0] : Object.values(packed)[0]; if (metadata?.name !== releasePackageName || metadata?.version !== releaseVersion || metadata?.filename === undefined) throw new Error("npm pack did not return the expected scoped tarball"); return join(packDestination, metadata.filename);
+  const npmArguments = ["pack", "--json", "--pack-destination", packDestination];
+  const { executable, arguments: arguments_ } = await resolveNpmCommand(npmArguments);
+  const { stdout } = await execute(executable, arguments_, { cwd: stagingRoot, encoding: "utf8", maxBuffer: 10_000_000 }); const packed = JSON.parse(stdout); const metadata = Array.isArray(packed) ? packed[0] : Object.values(packed)[0]; if (metadata?.name !== releasePackageName || metadata?.version !== releaseVersion || metadata?.filename === undefined) throw new Error("npm pack did not return the expected scoped tarball"); return join(packDestination, metadata.filename);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) { const staging = process.argv[2]; const destination = process.argv[3] ?? (staging === undefined ? undefined : dirname(staging)); if (staging === undefined || destination === undefined) throw new Error("usage: build-release-package <projector-release-staging> [pack-destination]"); process.stdout.write(`${await buildReleasePackage(staging, destination)}\n`); }

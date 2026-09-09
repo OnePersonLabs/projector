@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { hashFramedDomain, type ExecutionCapsule, type ExecutionPlan, type StateBinding, type StateDigest } from "@projector/core";
@@ -11,6 +11,20 @@ import { createHostSessionRecord, executeProjector, hostSessionSelector, serveMc
 import { createBuiltMcpCliPort } from "./mcp-cli.js";
 
 const exec = promisify(execFile);
+
+async function createFakeHost(bin: string): Promise<string> {
+  if (process.platform !== "win32") {
+    const path = join(bin, "codex");
+    await writeFile(path, "#!/usr/bin/env node\nconst fs=require('node:fs');const cp=require('node:child_process');const corrupt=process.argv.includes('--corrupt');const path=corrupt?'.projector/governance.json':'tracked.txt';fs.mkdirSync('.projector',{recursive:true});fs.writeFileSync(path,corrupt?'{invalid':'after\\n');cp.execFileSync('git',['add',path]);cp.execFileSync('git',['-c','user.name=Fixture','-c','user.email=fixture@example.test','commit','-qm','host']);\n");
+    await chmod(path, 0o755); return path;
+  }
+  const path = join(bin, "codex.exe"); const sourcePath = join(bin, "codex.cs");
+  await writeFile(sourcePath, `using System; using System.Diagnostics; using System.IO;
+public static class Program { static int Git(string arguments) { var child = Process.Start(new ProcessStartInfo("git") { UseShellExecute = false, Arguments = arguments }); child.WaitForExit(); return child.ExitCode; }
+public static int Main(string[] args) { bool corrupt = Array.IndexOf(args, "--corrupt") >= 0; string path = corrupt ? ".projector/governance.json" : "tracked.txt"; Directory.CreateDirectory(".projector"); File.WriteAllText(path, corrupt ? "{invalid" : "after\\n"); if (Git("add \\\"" + path + "\\\"") != 0) return 2; return Git("-c user.name=Fixture -c user.email=fixture@example.test commit -qm host"); } }`);
+  await exec("powershell.exe", ["-NoProfile", "-Command", `Add-Type -Path '${sourcePath.replaceAll("'", "''")}' -OutputAssembly '${path.replaceAll("'", "''")}' -OutputType ConsoleApplication`]);
+  return path;
+}
 
 describe("projector run host boundary", () => {
   it("preserves literal argv, filters environment, and reports reconciled host status", async () => {
@@ -62,7 +76,7 @@ describe("projector run host boundary", () => {
       const record = createHostSessionRecord({ kind: "task17-host-session", host: "codex", sessionId: "session:fixture", repositoryRootHash: hashFramedDomain("task17-host-repository-root", await realpath(root)), plan, capsule, approval: createExecutionApproval(plan, capsule, "approval:host"), instructions: { text: representationText, sourceHashes: [capsule.normativeKernelHash], representation } });
       const selector = hostSessionSelector(record); const id = selector.slice("session:".length); await mkdir(join(root, ".projector", "task17-sessions"), { recursive: true }); await writeFile(join(root, ".projector", "task17-sessions", `session-${id}.json`), JSON.stringify(record));
       await writeFile(join(root, "unrelated.txt"), "unrelated\n"); await exec("git", ["-C", root, "add", "unrelated.txt"]); await exec("git", ["-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "unrelated"]);
-      const bin = join(root, "bin"); await mkdir(bin); const fake = join(bin, "codex"); await writeFile(fake, "#!/usr/bin/env node\nconst fs=require('node:fs');const cp=require('node:child_process');const corrupt=process.argv.includes('--corrupt');const path=corrupt?'.projector/governance.json':'tracked.txt';fs.mkdirSync('.projector',{recursive:true});fs.writeFileSync(path,corrupt?'{invalid':'after\\n');cp.execFileSync('git',['add',path]);cp.execFileSync('git',['-c','user.name=Fixture','-c','user.email=fixture@example.test','commit','-qm','host']);\n"); await chmod(fake, 0o755);
+      const bin = join(root, "bin"); await mkdir(bin); await createFakeHost(bin);
       const dry = await executeProjector(["run", "codex", "--dry-run", "--session", selector, "--"], { cwd: root, environment: { PATH: bin } }); expect(dry.report).toMatchObject({ dryRun: true, sessionAuthenticated: true });
       const unavailable = await executeProjector(["run", "codex", "--session", selector, "--"], { cwd: root, environment: { PATH: join(root, "missing-bin") } }); expect(unavailable.exitCode).toBe(5);
       const mcp = await createBuiltMcpCliPort().start({ repositoryRoot: root, sessionSelector: selector, signal: new AbortController().signal });
@@ -98,12 +112,12 @@ describe("projector run host boundary", () => {
       const wrongOperationCapsule = { ...capsule, id: "capsule:wrong-operation", allowedWrites: [{ ...capsule.allowedWrites[0]!, operations: ["delete"] }] } as ExecutionCapsule;
       const wrongOperationRecord = createHostSessionRecord({ kind: "task17-host-session", host: "codex", sessionId: "session:wrong-operation", repositoryRootHash: hashFramedDomain("task17-host-repository-root", await realpath(root)), plan, capsule: wrongOperationCapsule, approval: createExecutionApproval(plan, wrongOperationCapsule, "approval:wrong-operation"), instructions: { text: representationText, sourceHashes: [capsule.normativeKernelHash], representation } });
       const wrongOperationSelector = hostSessionSelector(wrongOperationRecord); const wrongOperationId = wrongOperationSelector.slice("session:".length); await writeFile(join(root, ".projector", "task17-sessions", `session-${wrongOperationId}.json`), JSON.stringify(wrongOperationRecord));
-      const blockedOperation = await executeProjector(["run", "codex", "--session", wrongOperationSelector, "--"], { cwd: root, environment: { PATH: `${bin}:${process.env.PATH ?? ""}` } });
+      const blockedOperation = await executeProjector(["run", "codex", "--session", wrongOperationSelector, "--"], { cwd: root, environment: { PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` } });
       expect(blockedOperation).toMatchObject({ exitCode: 6, report: { status: "failed", changedPaths: [], reconciled: false } });
       expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("before\n");
-      const result = await executeProjector(["run", "codex", "--session", selector, "--"], { cwd: root, environment: { PATH: `${bin}:${process.env.PATH ?? ""}` } });
+      const result = await executeProjector(["run", "codex", "--session", selector, "--"], { cwd: root, environment: { PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` } });
       expect(result).toMatchObject({ exitCode: 0, report: { status: "completed", reconciled: true } }); expect(result.report.changedPaths).toContain("tracked.txt"); expect(result.report.journalId).toBeUndefined();
-      const invalid = await executeProjector(["run", "codex", "--session", selector, "--", "--corrupt"], { cwd: root, environment: { PATH: `${bin}:${process.env.PATH ?? ""}` } });
+      const invalid = await executeProjector(["run", "codex", "--session", selector, "--", "--corrupt"], { cwd: root, environment: { PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` } });
       expect(invalid).toMatchObject({ exitCode: 6, report: { status: "failed", reconciled: false } }); expect(invalid.report.changedPaths).toContain(".projector/governance.json");
     } finally { await rm(root, { recursive: true, force: true }); }
   }, 20_000);

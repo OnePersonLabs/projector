@@ -14,9 +14,14 @@ const unique = <T extends z.ZodTypeAny>(schema: T, minimum = 0, maximum = 64) =>
   if (new Set(values.map((value) => JSON.stringify(value))).size !== values.length) context.addIssue({ code: "custom", message: "contains duplicates" });
 });
 
-const RequirementProposalSchema = z.object({ key, title: text(240), statement: text(), aliases: unique(text(512)).default([]) }).strict();
+const RevisionSchema = z.object({
+  id: text(512),
+  expectedSemanticHash: z.string().regex(/^sha256:v1:[a-f0-9]{64}$/u),
+  rationale: text(),
+}).strict();
+const RequirementProposalSchema = z.object({ key, title: text(240), statement: text(), aliases: unique(text(512)).default([]), revision: RevisionSchema.optional() }).strict();
 const ScenarioStepSchema = z.object({ role: z.enum(["precondition", "trigger", "expected-outcome", "forbidden-outcome"]), statement: text() }).strict();
-const ScenarioProposalSchema = z.object({ key, title: text(240), aliases: unique(text(512)).default([]), steps: unique(ScenarioStepSchema, 2, 32) }).strict().superRefine(({ steps }, context) => {
+const ScenarioProposalSchema = z.object({ key, title: text(240), aliases: unique(text(512)).default([]), steps: unique(ScenarioStepSchema, 2, 32), revision: RevisionSchema.optional() }).strict().superRefine(({ steps }, context) => {
   if (!steps.some(({ role }) => role === "trigger") || !steps.some(({ role }) => role === "expected-outcome" || role === "forbidden-outcome")) context.addIssue({ code: "custom", message: "steps must contain a trigger and an outcome" });
 });
 const DeferralSchema = z.object({ rationale: text(), reconsiderWhen: text(), validUntil: z.iso.datetime(), preservedOptions: unique(text(512), 1), forbiddenCommitments: unique(text(512), 1), forbiddenWritePaths: unique(repositoryPath, 1).superRefine((paths, context) => { if (paths.some((path) => /[*?[\]]/u.test(path))) context.addIssue({ code: "custom", message: "forbidden write paths must contain exact canonical paths, not globs" }); }) }).strict();

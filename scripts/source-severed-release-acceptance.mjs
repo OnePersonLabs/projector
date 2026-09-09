@@ -7,17 +7,20 @@ import { promisify } from "node:util";
 
 import { runPackedLifecycleAcceptance } from "./packed-lifecycle-acceptance.mjs";
 import { canonicalJson, hashBytes, hashCanonical, releasePackageName, releaseVersion, validateReleaseCandidate } from "./release-candidate.mjs";
+import { resolveNpmCommand } from "./npm-command.mjs";
 
 const execute = promisify(execFile);
 
-async function installTarball(consumer, tarball, temporaryRoot) {
+export async function installTarball(consumer, tarball, temporaryRoot) {
   await mkdir(consumer, { recursive: true });
   await writeFile(join(consumer, "package.json"), `${canonicalJson({ private: true, type: "module" })}\n`);
   const isolatedNpmConfig = join(temporaryRoot, "empty-npmrc");
   await writeFile(isolatedNpmConfig, "");
   const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith("npm_config_")));
   environment.NPM_CONFIG_USERCONFIG = isolatedNpmConfig;
-  await execute("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock", tarball], { cwd: consumer, env: environment, encoding: "utf8", maxBuffer: 20_000_000 });
+  const npmArguments = ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock", tarball];
+  const { executable, arguments: arguments_ } = await resolveNpmCommand(npmArguments);
+  await execute(executable, arguments_, { cwd: consumer, env: environment, encoding: "utf8", maxBuffer: 20_000_000 });
 }
 
 export async function runSourceSeveredReleaseAcceptance(candidateRoot) {

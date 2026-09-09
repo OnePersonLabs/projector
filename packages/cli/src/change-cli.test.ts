@@ -40,6 +40,79 @@ describe("change/plan/apply CLI composition", () => {
     await expect(executeProjector(["recover"], { lifecycle })).rejects.toThrow(/selector/iu);
   });
 
+  it("renders the authenticated intent review before approval in text mode", async () => {
+    const unused = vi.fn(async () => ({}));
+    const lifecycle = {
+      capture: unused,
+      plan: vi.fn(async () => ({
+        kind: "lifecycle-plan",
+        selector: "semantic_change_review",
+        immutablePlanHash: "sha256:v1:review",
+        preview: {
+          expectedDiff: "replace src/value.mjs",
+          intentReview: {
+            subjects: [
+              {
+                id: "requirement:public-value",
+                kind: "requirement",
+                operation: "revise",
+                before: { title: "Public value", statement: "The public value is available." },
+                after: { title: "Useful public value", statement: "The public value is useful." },
+                rationale: "Callers need a meaningful result.",
+              },
+              {
+                id: "scenario:read-value",
+                kind: "scenario",
+                operation: "preserve",
+                before: { title: "Read the value", steps: [{ role: "trigger", statement: "A caller reads the value." }, { role: "expected-outcome", statement: "The value is returned." }] },
+                after: { title: "Read the value", steps: [{ role: "trigger", statement: "A caller reads the value." }, { role: "expected-outcome", statement: "The value is returned." }] },
+                rationale: null,
+              },
+            ],
+            relatedObligations: [{ id: "requirement:compatibility", kind: "requirement", payload: { title: "Compatibility", statement: "Existing callers continue to work." } }],
+            blockingUnknowns: ["The external consumer inventory is unavailable."],
+          },
+        },
+      })),
+      approve: unused,
+      apply: unused,
+      recover: unused,
+      resume: unused,
+    } satisfies RepositoryLifecycleCliPort;
+
+    const result = await executeProjector(["plan", "semantic_change_review"], { lifecycle });
+
+    expect(result.output).toBe([
+      "replace src/value.mjs",
+      "",
+      "Intent review:",
+      "REVISE requirement requirement:public-value",
+      "  before title: Public value",
+      "  before meaning: The public value is available.",
+      "  after title: Useful public value",
+      "  after meaning: The public value is useful.",
+      "  rationale: Callers need a meaningful result.",
+      "PRESERVE scenario scenario:read-value",
+      "  before title: Read the value",
+      "  before meaning:",
+      "    trigger: A caller reads the value.",
+      "    expected-outcome: The value is returned.",
+      "  after title: Read the value",
+      "  after meaning:",
+      "    trigger: A caller reads the value.",
+      "    expected-outcome: The value is returned.",
+      "  rationale: none provided",
+      "",
+      "Related obligations:",
+      "- requirement requirement:compatibility",
+      "    current title: Compatibility",
+      "    current meaning: Existing callers continue to work.",
+      "",
+      "Blocking unknowns:",
+      "- The external consumer inventory is unavailable.",
+    ].join("\n"));
+  });
+
   it("runs the built natural-language lifecycle end to end against an ordinary Git repository", async () => {
     const repositoryRoot = await mkdtemp(join(tmpdir(), "projector-real-change-cli-"));
     try {

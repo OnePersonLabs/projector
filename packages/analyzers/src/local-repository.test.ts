@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,6 +11,43 @@ import { analyzeLocalRepository } from "./index.js";
 const execFileAsync = promisify(execFile);
 const fixtureRoot = new URL("../../../fixtures/misplaced-repository-script/", import.meta.url);
 const temporaryRoots: string[] = [];
+
+async function gitExecutable(): Promise<string> {
+  const locator = process.platform === "win32" ? "where.exe" : "which";
+  const { stdout } = await execFileAsync(locator, ["git"]);
+  return stdout.trim().split(/\r?\n/u)[0]!;
+}
+
+async function gitWrapper(root: string, gitPath: string, marker: string | undefined, failLog: boolean): Promise<string> {
+  if (process.platform === "win32") {
+    const path = join(root, "git.exe");
+    const source = `using System; using System.Diagnostics; using System.IO; using System.Linq;
+public static class Program { public static int Main(string[] args) {
+  foreach (var arg in args) if (arg == "log") { ${marker === undefined ? "" : `File.AppendAllText(${JSON.stringify(marker)}, "x");`} ${failLog ? "return 71;" : ""} }
+  var start = new ProcessStartInfo(${JSON.stringify(gitPath)}) { UseShellExecute = false, Arguments = String.Join(" ", args.Select(arg => "\\\"" + arg.Replace("\\\"", "\\\\\\\"") + "\\\"")) };
+  var child = Process.Start(start); child.WaitForExit(); return child.ExitCode;
+} }`;
+    const sourcePath = join(root, "git-wrapper.cs"); await writeFile(sourcePath, source);
+    await execFileAsync("powershell.exe", ["-NoProfile", "-Command", `Add-Type -Path '${sourcePath.replaceAll("'", "''")}' -OutputAssembly '${path.replaceAll("'", "''")}' -OutputType ConsoleApplication`]);
+    return path;
+  }
+  const path = join(root, "git");
+  const action = failLog ? "exit 71" : marker === undefined ? ":" : `printf x >> '${marker}'`;
+  await writeFile(path, `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "log" ]; then ${action}; fi\ndone\nexec '${gitPath}' "$@"\n`);
+  await chmod(path, 0o755);
+  return path;
+}
+
+async function denyRead(path: string): Promise<() => Promise<void>> {
+  if (process.platform !== "win32") {
+    await chmod(path, 0);
+    return async () => chmod(path, 0o600);
+  }
+  const principal = process.env.USERNAME;
+  if (principal === undefined || principal === "") throw new Error("Windows unreadable-file fixture requires USERNAME");
+  await execFileAsync("icacls.exe", [path, "/deny", `${principal}:(R)`]);
+  return async () => { await execFileAsync("icacls.exe", [path, "/remove:d", principal]); };
+}
 
 async function fixtureRepository(): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), "projector-analyzer-"));
@@ -227,14 +264,11 @@ describe("local repository analyzer", () => {
     const root = await fixtureRepository();
     const wrapperRoot = await mkdtemp(join(tmpdir(), "projector-git-batch-wrapper-"));
     temporaryRoots.push(wrapperRoot);
-    const wrapper = join(wrapperRoot, "git");
     const marker = join(wrapperRoot, "log-invocations.txt");
-    const { stdout: gitPathOutput } = await execFileAsync("which", ["git"]);
-    const gitPath = gitPathOutput.trim();
-    await writeFile(wrapper, `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "log" ]; then printf x >> '${marker}'; fi\ndone\nexec '${gitPath}' "$@"\n`);
-    await chmod(wrapper, 0o755);
+    const gitPath = await gitExecutable();
+    await gitWrapper(wrapperRoot, gitPath, marker, false);
     const originalPath = process.env.PATH;
-    process.env.PATH = `${wrapperRoot}:${originalPath ?? ""}`;
+    process.env.PATH = `${wrapperRoot}${delimiter}${originalPath ?? ""}`;
 
     try {
       const result = await analyzeLocalRepository({ repositoryRoot: root });
@@ -250,9 +284,8 @@ describe("local repository analyzer", () => {
     const root = await fixtureRepository();
     const unreadable = join(root, "scripts/unreadable.mjs");
     await writeFile(unreadable, "export const unavailable = true;\n");
-    await chmod(unreadable, 0);
-
-    const result = await analyzeLocalRepository({ repositoryRoot: root });
+    const restore = await denyRead(unreadable);
+    const result = await analyzeLocalRepository({ repositoryRoot: root }).finally(restore);
 
     expect(result.failures).toContainEqual(expect.objectContaining({
       analyzerId: "projector.filesystem-local",
@@ -403,9 +436,8 @@ describe("local repository analyzer", () => {
     const root = await fixtureRepository();
     const unreadable = join(root, "scripts/child-unavailable.mjs");
     await writeFile(unreadable, "export const childUnavailable = true;\n");
-    await chmod(unreadable, 0);
-
-    const result = await analyzeLocalRepository({ repositoryRoot: root });
+    const restore = await denyRead(unreadable);
+    const result = await analyzeLocalRepository({ repositoryRoot: root }).finally(restore);
 
     expect(result.surface).toMatchObject({
       access: "read-only",
@@ -434,16 +466,10 @@ describe("local repository analyzer", () => {
     const root = await fixtureRepository();
     const wrapperRoot = await mkdtemp(join(tmpdir(), "projector-git-wrapper-"));
     temporaryRoots.push(wrapperRoot);
-    const wrapper = join(wrapperRoot, "git");
-    const { stdout: gitPathOutput } = await execFileAsync("which", ["git"]);
-    const gitPath = gitPathOutput.trim();
-    await writeFile(
-      wrapper,
-      `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "log" ]; then exit 71; fi\ndone\nexec '${gitPath}' "$@"\n`,
-    );
-    await chmod(wrapper, 0o755);
+    const gitPath = await gitExecutable();
+    await gitWrapper(wrapperRoot, gitPath, undefined, true);
     const originalPath = process.env.PATH;
-    process.env.PATH = `${wrapperRoot}:${originalPath ?? ""}`;
+    process.env.PATH = `${wrapperRoot}${delimiter}${originalPath ?? ""}`;
 
     try {
       const result = await analyzeLocalRepository({ repositoryRoot: root });

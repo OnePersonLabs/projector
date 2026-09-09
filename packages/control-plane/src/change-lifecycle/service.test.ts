@@ -39,7 +39,7 @@ async function repository(): Promise<string> {
   await writeFile(join(root, "src", "greeting.mjs"), "export const greet = () => 'hello';\n");
   await writeFile(join(root, "src", "index.mjs"), "import { greet } from './greeting.mjs'; export { greet };\n");
   await writeFile(join(root, "test", "public-contract.test.mjs"), "import assert from 'node:assert/strict'; import { greet } from '../src/index.mjs'; assert.equal(greet(), 'hello');\n");
-  const payload: Requirement = { id: "requirement:legacy-greeting", key: "legacy-greeting", title: "Legacy greeting", aliases: ["named-greeting"], statement: "A greeting may include a name.", status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, origin: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder };
+  const payload: Requirement = { id: "requirement:legacy-greeting", key: "legacy-greeting", title: "Personalized greeting", aliases: ["named-greeting"], statement: "The greeting includes the supplied name.", status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, origin: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder };
   await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload } }));
   await exec("git", ["init", "-q"], { cwd: root });
   await exec("git", ["config", "user.email", "projector@example.invalid"], { cwd: root });
@@ -237,7 +237,7 @@ describe("repository change lifecycle service", () => {
       });
       expect(independent?.details.expectedContentHash).toBe(independent?.details.afterContentHash);
       expect(independent?.evidenceIds).toHaveLength(1);
-      expect(applied.receipt.changedRequirementIds).toHaveLength(1);
+      expect(applied.receipt.changedRequirementIds).toHaveLength(0);
       expect(applied.receipt.changedScenarioIds).toHaveLength(1);
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("hello ${name}");
       expect((await service.apply(approval.id)).certificateHash).toBe(applied.certificateHash);

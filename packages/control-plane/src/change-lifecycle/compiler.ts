@@ -4,6 +4,7 @@ import { relative } from "node:path";
 import {
   BehavioralScenarioSchema,
   ArchitectureConcernSchema,
+  RelationSchema,
   RequirementSchema,
   canonicalJson,
   deriveEntityId,
@@ -22,6 +23,7 @@ import {
   type ProposedScenario,
   type SelectorExpr,
   type StateQueryDependency,
+  type Relation,
 } from "@projector/core";
 import {
   RepresentationCompiler,
@@ -41,6 +43,8 @@ import { CanonicalFileRepository, RepositoryPathService, type ExactTextPatchInpu
 
 import { observeChangeRepository, type IndependentValidatorObservation } from "./repository-observer.js";
 import { CHANGE_QUERY_PROGRAM_IDS, calculateRepositoryRelevance, createChangeQueryRegistry, exactIdentityCandidates } from "./query-programs.js";
+import type { KnowledgeContextResult } from "../knowledge/types.js";
+import { KnowledgeGraph } from "../knowledge/graph.js";
 
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
@@ -106,6 +110,12 @@ export interface CompiledRepositoryChange {
   readonly architectureDeferral?: ArchitectureDeferralEvidence;
   readonly relevance: RepositoryRelevanceEvidence;
   readonly canonicalWrites: readonly CanonicalChangeWrite[];
+  readonly intentReview: RepositoryIntentReview;
+  readonly knowledgeContext?: KnowledgeContextResult;
+  readonly governanceBefore: {
+    readonly memberships: readonly { readonly lensId: string; readonly unitId: string; readonly path: string }[];
+    readonly contentHash: ContentHash;
+  };
   readonly independentValidators: readonly IndependentValidatorObservation[];
   readonly baselineObservation: RepositoryBaselineObservation;
   readonly compiledChange: CompiledSemanticChange;
@@ -119,6 +129,22 @@ export interface CompiledRepositoryChange {
   readonly compiledPlan: CompiledSemanticChangePlan;
   readonly planHash: ContentHash;
   readonly exactPatchInput: ExactTextPatchInput;
+}
+
+export interface RepositoryIntentReview {
+  readonly subjects: readonly {
+    readonly id: string;
+    readonly kind: "requirement" | "scenario";
+    readonly operation: "preserve" | "add" | "revise";
+    readonly before: Requirement | BehavioralScenario | null;
+    readonly after: Requirement | BehavioralScenario;
+    readonly rationale: string | null;
+  }[];
+  readonly relations: readonly Relation[];
+  readonly relatedObligations: readonly { readonly id: string; readonly kind: string; readonly payload: unknown }[];
+  readonly unknowns: readonly string[];
+  readonly blockingUnknowns: readonly string[];
+  readonly contentHash: ContentHash;
 }
 
 export interface RepositoryBaselineObservation {
@@ -144,6 +170,7 @@ export interface CompileRepositoryChangeInput {
   readonly request: string;
   readonly proposal: ChangeProposal;
   readonly now?: string;
+  readonly knowledgeContext?: KnowledgeContextResult;
 }
 
 export interface CompileRepositoryChangeOptions {
@@ -184,8 +211,12 @@ function proposedRequirementPayload(
   proposalHash: ContentHash,
   paths: readonly string[],
 ): Requirement {
+  assertExplicitRevision(proposal, existing, existing !== undefined && (proposal.title !== existing.title || proposal.statement !== existing.statement));
+  if (existing !== undefined && proposal.revision === undefined) return existing;
   const key = existing?.key ?? proposal.key;
-  const origin = [...(existing?.origin ?? []), { kind: "user-request" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash }];
+  const origin = [...(existing?.origin ?? []), { kind: "document" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash,
+    description: proposal.revision === undefined ? "Structured interpretation proposed for approval; not a verbatim user request."
+      : `Proposed revision of ${proposal.revision.id} at ${proposal.revision.expectedSemanticHash}: ${proposal.revision.rationale}` }];
   return {
     ...(existing ?? {}),
     id,
@@ -209,6 +240,8 @@ function proposedScenarioPayload(
   id: string,
   paths: readonly string[],
 ): BehavioralScenario {
+  assertExplicitRevision(proposal, existing, existing !== undefined && (proposal.title !== existing.title || canonicalJson(proposal.steps) !== canonicalJson(existing.steps)));
+  if (existing !== undefined && proposal.revision === undefined) return existing;
   const key = existing?.key ?? proposal.key;
   return {
     ...(existing ?? {}),
@@ -224,6 +257,22 @@ function proposedScenarioPayload(
     discoveryHash: existing?.discoveryHash ?? placeholder,
     semanticHash: existing?.semanticHash ?? placeholder,
   };
+}
+
+function assertExplicitRevision(
+  proposal: ProposedRequirement | ProposedScenario,
+  existing: Requirement | BehavioralScenario | undefined,
+  contentChanged: boolean,
+): void {
+  const revision = proposal.revision;
+  if (revision !== undefined && (existing === undefined || revision.id !== existing.id || revision.expectedSemanticHash !== existing.semanticHash)) {
+    throw new Error(`canonical revision target or semantic hash is stale: ${proposal.key}`);
+  }
+  if (existing !== undefined && existing.status !== "active") throw new Error(`canonical intent is not active: ${existing.id}`);
+  if (contentChanged && revision === undefined) {
+    throw new Error(`implicit canonical revision is forbidden for ${existing!.id}; preserve its exact title and meaning, or supply revision.id, expectedSemanticHash, and rationale`);
+  }
+  if (revision !== undefined && !contentChanged) throw new Error(`canonical revision does not change title or meaning: ${existing!.id}`);
 }
 
 async function optionalText(path: string): Promise<string | null> {
@@ -301,6 +350,7 @@ export async function compileRepositoryChange(
   const identityQueries: StateQueryDependency[] = [];
   const canonicalWrites: CanonicalChangeWrite[] = [];
   const operations: ChangeOperation[] = [];
+  const reviewSubjects: RepositoryIntentReview["subjects"][number][] = [];
 
   for (const proposed of input.proposal.requirements) {
     const claims = [proposed.key, ...proposed.aliases];
@@ -316,10 +366,13 @@ export async function compileRepositoryChange(
     if (priorResult.resultCount !== candidates.length) throw new Error(`authenticated requirement identity query disagrees with resolved candidates: ${proposed.key}`);
     identityResolutions.push(resolution); identityQueries.push({ query, priorResult, role: "exact requirement key and alias negative-space search" });
     const payload = proposedRequirementPayload(proposed, existing, targetId, proposalHash, editedPaths);
+    reviewSubjects.push({ id: targetId, kind: "requirement", operation: existing === undefined ? "add" : proposed.revision === undefined ? "preserve" : "revise", before: existing ?? null, after: payload, rationale: proposed.revision?.rationale ?? null });
+    if (existing !== undefined && proposed.revision === undefined) continue;
     const write = await canonicalWrite(input.repositoryRoot, canonical, "requirement", targetId, payload.key, payload);
+    reviewSubjects[reviewSubjects.length - 1] = { ...reviewSubjects.at(-1)!, after: RequirementSchema.parse(write.envelope.payload) as Requirement };
     if (write.before !== write.after) {
       canonicalWrites.push(write);
-      operations.push({ subjectType: "requirement", kind: existing === undefined ? "add" : "modify", requirementId: targetId, proposedRequirement: payload, rationale: `authenticated proposal ${proposalHash}` });
+      operations.push({ subjectType: "requirement", kind: existing === undefined ? "add" : "modify", requirementId: targetId, proposedRequirement: payload, rationale: proposed.revision?.rationale ?? `structured proposal ${proposalHash}` });
     }
   }
   for (const proposed of input.proposal.scenarios) {
@@ -336,13 +389,63 @@ export async function compileRepositoryChange(
     if (priorResult.resultCount !== candidates.length) throw new Error(`authenticated scenario identity query disagrees with resolved candidates: ${proposed.key}`);
     identityResolutions.push(resolution); identityQueries.push({ query, priorResult, role: "exact scenario key and alias negative-space search" });
     const payload = proposedScenarioPayload(proposed, existing, targetId, editedPaths);
+    reviewSubjects.push({ id: targetId, kind: "scenario", operation: existing === undefined ? "add" : proposed.revision === undefined ? "preserve" : "revise", before: existing ?? null, after: payload, rationale: proposed.revision?.rationale ?? null });
+    if (existing !== undefined && proposed.revision === undefined) continue;
     const write = await canonicalWrite(input.repositoryRoot, canonical, "behavioral-scenario", targetId, payload.key, payload);
+    reviewSubjects[reviewSubjects.length - 1] = { ...reviewSubjects.at(-1)!, after: BehavioralScenarioSchema.parse(write.envelope.payload) as BehavioralScenario };
     if (write.before !== write.after) {
       canonicalWrites.push(write);
-      operations.push({ subjectType: "scenario", kind: existing === undefined ? "add" : "modify", scenarioId: targetId, proposedScenario: payload, rationale: `authenticated proposal ${proposalHash}` });
+      operations.push({ subjectType: "scenario", kind: existing === undefined ? "add" : "modify", scenarioId: targetId, proposedScenario: payload, rationale: proposed.revision?.rationale ?? `structured proposal ${proposalHash}` });
     }
   }
   canonicalWrites.sort((left, right) => compare(left.path, right.path));
+  const relatedIds = new Set([
+    ...identityResolutions.map(({ targetId }) => targetId),
+    ...(input.knowledgeContext?.branches.filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct).flatMap(({ closure }) => closure.entries.map(({ entityId }) => entityId)) ?? []),
+  ]);
+  const relations = observation.canonical.documents.filter(({ kind }) => kind === "relation").map(({ payload }) => RelationSchema.parse(payload) as Relation).filter(({ active }) => active);
+  const relatedRelations = new Map<string, Relation>();
+  const candidateRelationIds = new Set<string>();
+  const commitmentFrontier = new Set<string>();
+  const maximumCommitments = 128;
+  // Dependencies require both prerequisite and dependent impact review. Ownership,
+  // realization, scenario, and governance edges expand from subject to obligation.
+  // Descriptive edges (documents, observes, variants, etc.) do not impose obligations.
+  const dependencyRelations = new Set(["requires", "depends-on", "constrains"]);
+  const forwardRelations = new Set(["owns", "has-requirement", "realizes", "demonstrated-by", "governed-by"]);
+  let widened = true;
+  while (widened) {
+    widened = false;
+    for (const relation of relations) {
+      if (!dependencyRelations.has(relation.type) && !forwardRelations.has(relation.type)) continue;
+      if (!relatedIds.has(relation.fromId) && !(dependencyRelations.has(relation.type) && relatedIds.has(relation.toId))) continue;
+      if (relation.sourceClass === "inferred") { candidateRelationIds.add(relation.id); continue; }
+      relatedRelations.set(relation.id, relation);
+      for (const id of [relation.fromId, relation.toId]) if (!relatedIds.has(id)) {
+        if (relatedIds.size >= maximumCommitments) { commitmentFrontier.add(id); continue; }
+        relatedIds.add(id); widened = true;
+      }
+    }
+  }
+  const knownIds = new Set([...observation.canonical.documents.map(({ id }) => id), ...observation.analysis.projectionUnits.map(({ id }) => id), ...identityResolutions.map(({ targetId }) => targetId)]);
+  const blockingUnknowns = unique([
+    ...[...relatedIds].filter((id) => !knownIds.has(id)).map((id) => `related commitment has no current canonical entity or observed projection: ${id}`),
+    ...[...commitmentFrontier].map((id) => `conceptual obligation traversal reached its ${maximumCommitments}-entity bound before resolving ${id}`),
+  ]);
+  const reviewBasis = {
+    subjects: reviewSubjects.sort((a, b) => compare(a.id, b.id)),
+    relations: [...relatedRelations.values()].sort((a, b) => compare(a.id, b.id)),
+    relatedObligations: observation.canonical.documents.filter(({ id, kind }) => relatedIds.has(id) && kind !== "relation").map(({ id, kind, payload }) => ({ id, kind, payload })).sort((a, b) => compare(a.id, b.id)),
+    blockingUnknowns,
+    unknowns: unique([
+      ...blockingUnknowns,
+      ...[...candidateRelationIds].map((id) => `inferred relation remains a candidate and has not been adopted as an obligation: ${id}`),
+      "Independent validator provenance does not establish coverage of every requirement or scenario outcome.",
+      ...(input.knowledgeContext === undefined ? ["No retained pre-edit conceptual context was supplied; relevance starts from proposal identities."] : input.knowledgeContext.unknowns),
+    ]),
+  };
+  const intentReview: RepositoryIntentReview = { ...reviewBasis, contentHash: hashFramedDomain("repository-intent-review", reviewBasis) };
+  if (blockingUnknowns.length > 0) throw new Error(`unresolved conceptual obligations prevent planning: ${blockingUnknowns.join("; ")}`);
   const boundary = unique([...editedPaths, ...canonicalWrites.map(({ path }) => path)]);
   const calculatedRelevance = calculateRepositoryRelevance(observation, editedPaths);
   if (calculatedRelevance.unavailableSurfaceIds.length > 0) {
@@ -360,12 +463,20 @@ export async function compileRepositoryChange(
   };
   const relevanceHash = hashFramedDomain("repository-change-relevance", relevanceValue);
   const relevance: RepositoryRelevanceEvidence = { id: `relevance_${relevanceHash.slice(-32)}`, ...relevanceValue, contentHash: relevanceHash };
+  const knowledgeGraph = new KnowledgeGraph(observation);
+  const affectedBefore = new Set(relevance.knownAffectedUnitIds);
+  const memberships = knowledgeGraph.lenses.filter(({ status }) => status === "active").flatMap(({ id: lensId }) =>
+    (knowledgeGraph.lensCompilation?.memberships[lensId] ?? []).filter((unitId) => affectedBefore.has(unitId))
+      .map((unitId) => ({ lensId, unitId, path: knowledgeGraph.units.find(({ id }) => id === unitId)!.key })))
+    .sort((a, b) => compare(a.lensId, b.lensId) || compare(a.unitId, b.unitId));
+  const governanceBefore = { memberships, contentHash: hashFramedDomain("repository-pre-change-governance", memberships) };
   const valueDependencies = [
     ...input.proposal.edits.map((edit) => ({ kind: "projection-unit" as const, id: `path:${edit.path}`, versionHash: hashFramedDomain("transform-content", edit.before), role: `exact before content for ${edit.path}` })),
     ...independentValidators.map((validator) => ({ kind: "artifact" as const, id: `independent-validator:${validator.path}`, versionHash: validator.contentHash, role: `Git-base-bound independent validator introduced by ${validator.introductionCommit}` })),
     { kind: "canonical-governance" as const, id: "canonical-root", versionHash: observation.canonical.rootDigest, role: "canonical identity and decision search root" },
     { kind: "adapter" as const, id: "projector.local-repository", versionHash: observation.state.toolchainDigest, role: "no-exec local analyzer versions" },
     { kind: "artifact" as const, id: `proposal:${proposalHash}`, versionHash: proposalHash, role: "authenticated structured interpretation of the user request" },
+    ...(input.knowledgeContext === undefined ? [] : [{ kind: "artifact" as const, id: `knowledge-context:${input.knowledgeContext.id}`, versionHash: input.knowledgeContext.contentHash, role: "retained pre-edit conceptual context" }]),
   ];
   const preliminaryBinding = createStateBinding({ compiledAgainst: observation.state, valueDependencies, queryDependencies: [...identityQueries, relevance.queryDependency] });
   const closureBasis = {
@@ -474,8 +585,8 @@ export async function compileRepositoryChange(
     request,
     normalizedIntent: request,
     statements: [
-      ...input.proposal.requirements.map(({ statement }) => ({ kind: "behavior" as const, statement, origin: [{ kind: "user-request" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash }], confidence: 1 })),
-      ...input.proposal.scenarios.flatMap(({ steps }) => steps.map(({ statement }) => ({ kind: "behavior" as const, statement, origin: [{ kind: "user-request" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash }], confidence: 1 }))),
+      ...input.proposal.requirements.map(({ statement }) => ({ kind: "behavior" as const, statement, origin: [{ kind: "document" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash, description: "Proposed interpretation; semantic fidelity to the user request is unverified." }], confidence: 1 })),
+      ...input.proposal.scenarios.flatMap(({ steps }) => steps.map(({ statement }) => ({ kind: "behavior" as const, statement, origin: [{ kind: "document" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash, description: "Proposed interpretation; semantic fidelity to the user request is unverified." }], confidence: 1 }))),
       ...(architectureDeferral?.forbiddenCommitments ?? []).map((statement) => ({ kind: "constraint" as const, statement, origin: [{ kind: "user-request" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash }], confidence: 1 })),
     ],
     ambiguity: [] as string[],
@@ -488,11 +599,21 @@ export async function compileRepositoryChange(
     relevanceClosureId: relevance.id,
     analysisFacetKeys: semanticAnalysisFacets,
     operations: operations.map((operation) => ({ provenance: "authenticated" as const, operation })),
-    relations: [] as { id: string; subjectIds: string[] }[],
-    assumptions: architectureDeferral === undefined ? [] : [
+    relations: intentReview.relations.map(({ id, fromId, toId }) => ({ id, subjectIds: [fromId, toId] })),
+    assumptions: [
+      `Preserve reviewed conceptual commitments except the explicit revisions in intent review ${intentReview.contentHash}.`,
+      `Preserve or explicitly reconcile pre-change architectural applicability ${governanceBefore.contentHash}.`,
+      ...intentReview.subjects.filter(({ operation }) => operation === "preserve").flatMap(({ id, after }) => "statement" in after
+        ? [`Preserve ${id}: ${after.statement}`]
+        : after.steps.map(({ role, statement }) => `Preserve ${id} ${role}: ${statement}`)),
+      ...intentReview.relatedObligations.filter(({ id, kind }) => (kind === "requirement" || kind === "behavioral-scenario") && !intentReview.subjects.some((subject) => subject.id === id)).flatMap(({ id, kind, payload }) => kind === "requirement"
+        ? [`Related commitment ${id}: ${(RequirementSchema.parse(payload) as Requirement).statement}`]
+        : (BehavioralScenarioSchema.parse(payload) as BehavioralScenario).steps.map(({ role, statement }) => `Related commitment ${id} ${role}: ${statement}`)),
+      ...(architectureDeferral === undefined ? [] : [
       `architecture deferral ${architectureDeferral.id}: ${architectureDeferral.rationale}`,
       ...architectureDeferral.preservedOptions.map((value) => `preserve option: ${value}`),
       ...architectureDeferral.forbiddenCommitments.map((value) => `forbidden commitment: ${value}`),
+      ]),
     ],
     boundary,
     boundState,
@@ -540,6 +661,7 @@ export async function compileRepositoryChange(
   const validatorIds = [
     "exact-text-patch.verify",
     "projector.repository-post-observation",
+    "projector.post-change-knowledge",
     ...independentValidators.map(({ path }) => `node-independent:${path}`),
     ...input.proposal.validation.supplementalNodeTests.map((path) => `node-supplemental:${path}`),
   ];
@@ -590,6 +712,9 @@ export async function compileRepositoryChange(
     ...(architectureDeferral === undefined ? {} : { architectureDeferral }),
     relevance,
     canonicalWrites,
+    intentReview,
+    governanceBefore,
+    ...(input.knowledgeContext === undefined ? {} : { knowledgeContext: input.knowledgeContext }),
     independentValidators,
     baselineObservation: baselineObservation(observation),
     compiledChange,
