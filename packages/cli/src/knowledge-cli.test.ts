@@ -15,6 +15,47 @@ function knowledgePort() {
 }
 
 describe("request-first knowledge CLI", () => {
+  it("discloses impact and surprises in compact reconciliation without unbounded relation or unit dumps", () => {
+    const ids = Array.from({ length: 50_000 }, (_, index) => `unit:${index}`);
+    const view = presentKnowledgeReconciliation({ contextId: "context:impact", status: "stale", branches: [], reasons: [], impact: {
+      status: "changed", contentHash: "sha256:v1:impact", repairRoute: "widen-analysis", predictedUnitIds: [], observedChangedUnitIds: ids,
+      knownAffectedUnitIds: ids, possibleFrontierUnitIds: ids, backdatedUnitIds: [], blockedUnitIds: [], diagnostics: [],
+      surprises: [{ id: "surprise:1", kind: "unpredicted-code-impact", disposition: "unresolved", unexpectedEntityIds: ids, contentHash: "sha256:v1:surprise" }],
+      candidateRelations: ids.map((id) => ({ id: `relation:${id}`, fromId: "unit:origin", toId: id, sourceClass: "inferred", evidenceHash: "sha256:v1:evidence" })),
+    } } as never);
+    expect(view.impact?.knownAffected.disclosure).toEqual({ total: 50_000, included: 24, omitted: 49_976 });
+    expect(view.impact?.surprises[0]?.unexpected.disclosure.omitted).toBe(49_976);
+    expect(view.impact?.candidateRelationDisclosure).toEqual({ total: 50_000, included: 8, omitted: 49_992 });
+    expect(view.impact?.repairRoute).toBe("widen-analysis");
+    expect(view.inspection).toContain("Planning Surprise");
+    expect(JSON.stringify(view).length).toBeLessThan(10_000);
+  });
+
+  it("discloses candidate meaning before repeated frontier metadata under ambiguity", () => {
+    const candidates = Array.from({ length: 5 }, (_, index) => ({ entityId: `requirement:${index}`, entityKind: "requirement" as const,
+      score: 0.8, direct: false, signals: ["lexical" as const], explanation: "candidate", continuityFromIds: [] }));
+    const unknowns = Array.from({ length: 50_000 }, (_, index) => `Relevance budget bound stopped expansion before projector-projection-unit_${index}`);
+    const branches = candidates.map((interpretation) => ({ id: `branch:${interpretation.entityId}`, interpretation, hypothesis: true,
+      context: { items: [{ entityId: interpretation.entityId, kind: "requirement" as const, band: "direct" as const, disclosure: "full" as const,
+        content: JSON.stringify({ title: `Meaning ${interpretation.entityId}`, statement: "Preserve the cross-cutting obligation. ".repeat(100) }),
+        sourceSemanticHash: `sha256:v1:${interpretation.entityId}`, relevanceScore: 1, relevanceReasons: [], uncertainty: [], confidence: 1 }],
+        estimatedCost: 4000, requiredBudgetOverrun: 0, requiredExpansionIds: [], unknowns: [], sourceClosureId: "closure", contentHash: "sha256:v1:context" },
+      lensObligations: [], frontier: [], closure: {}, metrics: {}, sourceFingerprint: "sha256:v1:s", semanticFingerprint: "sha256:v1:m", queryFingerprint: "sha256:v1:q" }));
+    const view = presentKnowledgeContext({ id: "knowledge:ambiguous", request: "find related meaning", persisted: true,
+      interpretation: { status: "candidates", candidates, unknowns: [] }, branches, unknowns: [...unknowns, "Evidence source is unavailable."] } as never);
+
+    expect(view.candidateMeanings).toHaveLength(5);
+    expect(view.candidateMeanings.every((meaning) => meaning.title?.startsWith("Meaning requirement:"))).toBe(true);
+    expect(view.candidateMeanings.every((meaning) => meaning.statement?.startsWith("Preserve the cross-cutting obligation."))).toBe(true);
+    expect(view.candidateMeanings.every((meaning) => meaning.statementTruncated && meaning.fullRecordAvailable && meaning.sourceSemanticHash !== null)).toBe(true);
+    expect(view.branches[0]?.context.items).toHaveLength(1);
+    expect(view.unknowns).toEqual(["Evidence source is unavailable."]);
+    expect(view.unknownGroups).toEqual([{ reason: "Relevance budget stopped expansion of projection units", total: 50_000,
+      examples: ["projector-projection-unit_0", "projector-projection-unit_1", "projector-projection-unit_2"], omitted: 49_997 }]);
+    expect(view.unknownDisclosure).toEqual({ total: 50_001, included: 1, omitted: 50_000 });
+    expect(JSON.stringify(view).length).toBeLessThan(27_000);
+  });
+
   it("presents lexical candidates as bounded whole-record overviews with explicit drill-down", async () => {
     const largeMeaning = JSON.stringify({ statement: "x".repeat(20_000) });
     const candidate = (entityId: string) => ({ entityId, entityKind: "requirement" as const, score: 0.8, direct: false, signals: ["lexical" as const], explanation: "candidate", continuityFromIds: [] });

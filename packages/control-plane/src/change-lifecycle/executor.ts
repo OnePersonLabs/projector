@@ -4,6 +4,7 @@ import {
   canonicalJson,
   hashFramedDomain,
   type ExecutionCapsule,
+  type ContentHash,
   type StateBinding,
   type StateDigest,
   type TransformContext,
@@ -36,7 +37,8 @@ import type { CompiledRepositoryChange } from "./compiler.js";
 import { observeChangeRepository, type ChangeRepositoryObservation } from "./repository-observer.js";
 import { createChangeQueryRegistry } from "./query-programs.js";
 import type { ChangeLifecycleStore, LifecycleAttemptRecord } from "./store.js";
-import { validatePostChangeKnowledge } from "./knowledge-validation.js";
+import { validateCanonicalDecisionBaselines, validatePostChangeKnowledge } from "./knowledge-validation.js";
+import { buildRepositoryImpactSnapshot, persistRepositoryImpactSnapshot, predictRepositoryImpact, reconcileRepositoryImpact, repositoryImpactProofHash, type RepositoryImpactReport, type RepositoryImpactSnapshot } from "../impact/service.js";
 
 export interface ExecuteCompiledRepositoryChangeInput {
   readonly repositoryRoot: string;
@@ -257,7 +259,9 @@ async function observeAppliedRepositoryChange(
       const canonical = canonicalByUnit.get(unitId);
       if (canonical !== undefined) {
         const document = observation.canonical.documents.find(({ id }) => id === unitId);
-        return document !== undefined && canonicalJson(document) === canonicalJson(canonical.envelope) ? "valid" as const : "exception" as const;
+        return canonical.after === null
+          ? document === undefined ? "valid" as const : "exception" as const
+          : document !== undefined && canonicalJson(document) === canonicalJson(canonical.envelope) ? "valid" as const : "exception" as const;
       }
       const before = beforeUnits.get(unitId);
       const after = afterUnits.get(unitId);
@@ -266,9 +270,11 @@ async function observeAppliedRepositoryChange(
         : "exception" as const;
     })(),
   }));
-  const changedCanonicalIdsForKind = (expectedKind: typeof compiled.canonicalWrites[number]["kind"]): string[] => compiled.canonicalWrites.filter(({ id, kind, envelope }) => kind === expectedKind
+  const changedCanonicalIdsForKind = (expectedKind: typeof compiled.canonicalWrites[number]["kind"]): string[] => compiled.canonicalWrites.filter(({ id, kind, envelope, after }) => kind === expectedKind
     && observedChangedCanonicalIds.includes(id)
-    && canonicalJson(observation.canonical.documents.find((document) => document.id === id)) === canonicalJson(envelope)).map(({ id }) => id).sort();
+    && (after === null
+      ? observation.canonical.documents.every((document) => document.id !== id)
+      : canonicalJson(observation.canonical.documents.find((document) => document.id === id)) === canonicalJson(envelope))).map(({ id }) => id).sort();
   const changedConceptIds = changedCanonicalIdsForKind("concept");
   const changedRequirementIds = changedCanonicalIdsForKind("requirement");
   const changedScenarioIds = changedCanonicalIdsForKind("behavioral-scenario");
@@ -326,10 +332,10 @@ async function observeAppliedRepositoryChange(
   return { ...basis, contentHash: hashFramedDomain("repository-change-post-observation", basis) };
 }
 
-function postObservationValidation(observation: RepositoryPostObservation, startedAt: string, completedAt: string): ValidationResult {
+function postObservationValidation(observation: RepositoryPostObservation, startedAt: string, completedAt: string, impact: RepositoryImpactReport, impactProofHash: ContentHash): ValidationResult {
   const invalidWrites = observation.exactWrites.filter(({ matches }) => !matches).map(({ path }) => path);
   const invalidUnits = observation.unitStates.filter(({ state }) => state !== "valid").map(({ unitId }) => unitId);
-  const passed = invalidWrites.length === 0 && invalidUnits.length === 0 && observation.planningSurpriseIds.length === 0 && observation.unknowns.length === 0;
+  const passed = invalidWrites.length === 0 && invalidUnits.length === 0 && observation.planningSurpriseIds.length === 0 && observation.unknowns.length === 0 && impact.surprises.length === 0 && impact.blockedUnitIds.length === 0;
   return {
     validatorId: "projector.repository-post-observation",
     status: passed ? "passed" : "failed",
@@ -340,7 +346,7 @@ function postObservationValidation(observation: RepositoryPostObservation, start
     assurance: "exact",
     authorSource: "projector.local-repository@1",
     sideEffectClass: "none",
-    details: { observation },
+    details: { observation, impact, impactProofHash },
     startedAt,
     completedAt,
   };
@@ -480,6 +486,11 @@ export async function executeCompiledRepositoryChange(
         if (dependency.id === "canonical-root") return observation.canonical.rootDigest;
         if (dependency.id === "projector.local-repository") return observation.state.toolchainDigest;
         if (dependency.id.startsWith("proposal:")) return input.compiled.proposalHash;
+        if (dependency.id === "repository-impact-proof") {
+          const snapshot = buildRepositoryImpactSnapshot(observation);
+          const prediction = await predictRepositoryImpact(snapshot, input.compiled.exactPatchInput.edits.filter(({ path }) => !path.startsWith(".projector/")).map(({ path }) => path), input.compiled.canonicalWrites);
+          return repositoryImpactProofHash(snapshot, prediction);
+        }
         if (dependency.id.startsWith("knowledge-context:")) {
           const retained = input.compiled.knowledgeContext;
           return retained !== undefined && dependency.id === `knowledge-context:${retained.id}` ? retained.contentHash : undefined;
@@ -501,6 +512,7 @@ export async function executeCompiledRepositoryChange(
     },
   };
   let postObservation: RepositoryPostObservation | undefined;
+  let refreshedImpact: RepositoryImpactSnapshot | undefined;
   const transform = {
     preview: (transformInput: ExactTextPatchInput, context: TransformContext) => exact.preview(transformInput, context),
     apply: (transformInput: ExactTextPatchInput, context: TransformContext) => exact.apply(transformInput, context),
@@ -522,6 +534,8 @@ export async function executeCompiledRepositoryChange(
       const observationStartedAt = now();
       const observation = await observeChangeRepository(input.repositoryRoot);
       postObservation = await observeAppliedRepositoryChange(input.compiled, observation, paths);
+      refreshedImpact = buildRepositoryImpactSnapshot(observation);
+      const impact = await reconcileRepositoryImpact(input.compiled.derivationImpact.baseline, refreshedImpact, plan.completionCriteria.requiredUnitStates.map(({ unitId }) => unitId), plan.id, input.compiled.exactPatchInput.edits.map(({ path }) => path));
       const modelIntegrity: ValidationResult = {
         validatorId: "projector.canonical-model-integrity",
         status: "passed",
@@ -536,10 +550,10 @@ export async function executeCompiledRepositoryChange(
         startedAt: observationStartedAt,
         completedAt: now(),
       };
-      return [...validations, postObservationValidation(postObservation, observationStartedAt, now()),
+      return [...validations, postObservationValidation(postObservation, observationStartedAt, now(), impact, input.compiled.derivationImpact.contentHash),
         ...(input.compiled.executionKind === "canonical-only"
-          ? [modelIntegrity]
-          : [await validatePostChangeKnowledge(input.compiled, observation, observationStartedAt, now)])];
+          ? [modelIntegrity, await validateCanonicalDecisionBaselines(input.compiled, observation, observationStartedAt, now, context.signal)]
+          : [await validatePostChangeKnowledge(input.compiled, observation, observationStartedAt, now, context.signal)])];
     },
   };
   const executor = new StateBoundChangeExecutor<ExactTextPatchInput>({
@@ -576,5 +590,7 @@ export async function executeCompiledRepositoryChange(
     environment: { repositoryRoot: input.repositoryRoot, signal: input.signal },
     ...(input.now === undefined ? {} : { now: input.now }),
   });
-  return executor.execute({ plan, capsule, approval: input.approval, transformInput: input.compiled.exactPatchInput });
+  const result = await executor.execute({ plan, capsule, approval: input.approval, transformInput: input.compiled.exactPatchInput });
+  if (result.outcome === "success" && refreshedImpact !== undefined) await persistRepositoryImpactSnapshot(input.repositoryRoot, refreshedImpact);
+  return result;
 }

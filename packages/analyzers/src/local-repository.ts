@@ -13,7 +13,7 @@ import {
   type Surface,
 } from "@projector/core";
 
-import { inventoryRepository, type InventoryEntry } from "./filesystem/inventory.js";
+import { inventoryRepository, type InventoryEntry, type InventoryResult } from "./filesystem/inventory.js";
 import { analyzeDocuments, type ActionsWorkflowFact, type DocumentFact, type MarkdownFact } from "./formats/documents.js";
 import { collectGitFacts, type GitFacts, type GitIdentityFact, type GitMoveFact } from "./git/facts.js";
 import { compareCodePoint } from "./ordering.js";
@@ -95,7 +95,7 @@ export interface AnalyzeLocalRepositoryOptions {
   readonly observationRevision?: string;
 }
 
-const adapterVersion = "2.1.0";
+const adapterVersion = "2.2.0";
 
 function tokenizeCommand(command: string): string[] {
   const tokens: string[] = [];
@@ -325,7 +325,7 @@ function projectionRole(role: LocalSemanticRole): ProjectionUnit["role"] {
   return "implementation";
 }
 
-function buildCapabilities(rootAvailable: boolean): AnalyzerCapabilities[] {
+function buildCapabilities(rootAvailable: boolean, inventoryEnumeration: InventoryResult["enumeration"]): AnalyzerCapabilities[] {
   return [
     {
       analyzerId: "projector.filesystem-local",
@@ -334,9 +334,9 @@ function buildCapabilities(rootAvailable: boolean): AnalyzerCapabilities[] {
       supportedSemantics: ["deterministic-file-inventory", "generated-source-markers"],
       enumeration: {
         observability: "bounded",
-        method: "recursive-lstat-without-symlink-following",
-        assumptions: ["repository root is readable"],
-        blindSpots: ["ignored .git, .worktrees, and node_modules contents"],
+        method: inventoryEnumeration.method,
+        assumptions: [...inventoryEnumeration.assumptions],
+        blindSpots: [...inventoryEnumeration.blindSpots],
         dynamicMechanisms: [],
       },
       executesRepositoryCode: false,
@@ -413,8 +413,8 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
       ? {
           observability: "bounded",
           method: "composed-local-filesystem-git-and-static-syntax-observation",
-          assumptions: ["repository root and available Git metadata are readable"],
-          blindSpots: ["ignored .git, .worktrees, and node_modules contents", "dynamic module resolution", "unavailable per-entry observations"],
+          assumptions: [...inventoryResult.enumeration.assumptions],
+          blindSpots: [...inventoryResult.enumeration.blindSpots, "dynamic module resolution", "unavailable per-entry observations"],
           dynamicMechanisms: ["runtime module resolution", "generated state outside inventory boundary"],
         }
       : {
@@ -548,7 +548,7 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
   files.sort((left, right) => compareCodePoint(left.path, right.path));
   const failures = [...inventoryResult.failures, ...packageFacts.failures, ...javaScriptFacts.failures, ...documentFacts.failures, ...gitFacts.failures]
     .sort((left, right) => compareCodePoint(left.analyzerId, right.analyzerId) || compareCodePoint(left.scope, right.scope) || compareCodePoint(left.capability, right.capability));
-  const capabilities = buildCapabilities(rootAvailable);
+  const capabilities = buildCapabilities(rootAvailable, inventoryResult.enumeration);
   const topology = compileRepositoryTopology(javaScriptFacts, capabilities, failures);
   const divergences = detectMechanicalDivergences(javaScriptFacts, documentFacts.actions);
   return {

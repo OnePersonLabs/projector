@@ -6,9 +6,10 @@ import {
 } from "@projector/control-plane";
 import { canonicalJson } from "@projector/core";
 
-type ContextReport = Pick<KnowledgeContextResult, "id" | "request" | "persisted" | "interpretation" | "branches" | "unknowns">;
+type ContextReport = Pick<KnowledgeContextResult, "id" | "request" | "persisted" | "interpretation" | "branches" | "unknowns">
+  & Partial<Pick<KnowledgeContextResult, "contentHash">>;
 type ReconciliationReport = Pick<KnowledgeReconciliationResult, "contextId" | "status" | "branches" | "reasons">
-  & Partial<Pick<KnowledgeReconciliationResult, "governance">>;
+  & Partial<Pick<KnowledgeReconciliationResult, "governance" | "impact">>;
 
 export interface RepositoryKnowledgeCliPort {
   context(request: KnowledgeContextRequest & { repositoryRoot: string; persist: boolean }): Promise<ContextReport>;
@@ -56,6 +57,23 @@ type DeferredObligation = Pick<GroupedObligation, "lensId" | "lensVersion" | "au
 };
 type DisclosureCount = { total: number; included: number; omitted: number };
 type FullEvidenceInstruction = { command: "projector"; arguments: string[]; note: string };
+type CandidateMeaning = {
+  entityId: string;
+  title: string | null;
+  statement: string | null;
+  sourceSemanticHash: string | null;
+  titleTruncated: boolean;
+  statementTruncated: boolean;
+  fullRecordAvailable: boolean;
+};
+type UnknownGroup = { reason: string; total: number; examples: string[]; omitted: number };
+type DecisionValidity = NonNullable<ContextBranch["decisionValidity"]>[number];
+type DecisionView = {
+  decisionId: string; authorityId: string; state: DecisionValidity["assessment"]["state"]; blocksCurrentChange: boolean;
+  baselineKind: DecisionValidity["baseline"]["kind"]; checks: Array<{ type: string; status: string; reason: string; reasonTruncated: boolean }>;
+  checkDisclosure: DisclosureCount; checkCounts: { current: number; fired: number; unknown: number; unobserved: number };
+};
+type DecisionDisclosure = { decisions: DecisionView[]; disclosure: DisclosureCount; blocked: number };
 
 const OVERVIEW_CONTENT_BUDGET = 16_000;
 const FOCUSED_CONTENT_BUDGET = 32_000;
@@ -71,7 +89,9 @@ const OBLIGATION_SUMMARY_SAMPLE_LIMIT = 12;
 type ContextView = Omit<ContextReport, "branches" | "interpretation" | "unknowns"> & {
   detail: "agent";
   interpretation: ContextReport["interpretation"] & { candidateDisclosure: DisclosureCount; unknownDisclosure: DisclosureCount };
+  candidateMeanings: CandidateMeaning[];
   unknowns: string[];
+  unknownGroups: UnknownGroup[];
   branches: Array<Pick<ContextBranch, "id" | "interpretation" | "hypothesis" | "frontier"> & {
     context: Pick<ContextBranch["context"], "items" | "estimatedCost" | "requiredBudgetOverrun" | "requiredExpansionIds"> & {
       itemsDisclosure: DisclosureCount;
@@ -86,6 +106,8 @@ type ContextView = Omit<ContextReport, "branches" | "interpretation" | "unknowns
     deferredObligations: DeferredObligation[];
     deferredObligationDisclosure: DisclosureCount;
     frontierDisclosure: DisclosureCount;
+    decisionValidity: DecisionDisclosure;
+    governance: { evaluationCount: number; violated: number; unknown: number; criticalFindings: GovernanceFinding[]; criticalFindingDisclosure: DisclosureCount };
     fullEvidence: FullEvidenceInstruction;
   }>;
   branchDisclosure: DisclosureCount;
@@ -105,6 +127,7 @@ type ReconciliationView = Pick<ReconciliationReport, "contextId" | "status"> & {
     changedQueryDependencyDisclosure: DisclosureCount;
   }>;
   branchDisclosure: DisclosureCount;
+  impact?: ReturnType<typeof projectImpact>;
   governance: undefined | Pick<GovernanceReport, "status" | "regeneratedContextId"> & {
     reasons: string[];
     reasonDisclosure: DisclosureCount;
@@ -115,6 +138,7 @@ type ReconciliationView = Pick<ReconciliationReport, "contextId" | "status"> & {
       findingCounts: { satisfied: number; violated: number; unknown: number };
       criticalFindings: GovernanceFinding[];
       criticalFindingDisclosure: DisclosureCount;
+      decisionValidity: DecisionDisclosure;
     }>;
     branchDisclosure: DisclosureCount;
   };
@@ -127,13 +151,19 @@ export function presentKnowledgeContext(report: ContextReport): ContextView {
   const disclosedCandidates = report.interpretation.candidates.slice(0, CANDIDATE_SAMPLE_LIMIT);
   const perBranchContentBudget = Math.floor((focused ? FOCUSED_CONTENT_BUDGET : OVERVIEW_CONTENT_BUDGET) / Math.max(1, disclosedBranches.length));
   const interpretationUnknowns = boundedStrings(report.interpretation.unknowns, MESSAGE_BUDGET);
-  const unknowns = boundedStrings(report.unknowns, MESSAGE_BUDGET);
+  const unknowns = groupedUnknowns(report.unknowns);
+  let remainingContentBudget = focused ? FOCUSED_CONTENT_BUDGET : OVERVIEW_CONTENT_BUDGET;
+  let remainingDecisionBudget = MESSAGE_BUDGET;
+  let remainingGovernanceBudget = MESSAGE_BUDGET;
   return {
     detail: "agent" as const,
     id: report.id, request: report.request, persisted: report.persisted,
+    ...(report.contentHash === undefined ? {} : { contentHash: report.contentHash }),
     interpretation: { ...report.interpretation, candidates: disclosedCandidates, candidateDisclosure: count(report.interpretation.candidates.length, disclosedCandidates.length), unknowns: interpretationUnknowns.included, unknownDisclosure: interpretationUnknowns.disclosure },
-    branches: disclosedBranches.map(({ id, interpretation, hypothesis, context, lensObligations, frontier }) => {
-      const projectedItems = projectContextItems(context.items, focused, perBranchContentBudget);
+    candidateMeanings: disclosedCandidates.map(({ entityId }) => candidateMeaning(entityId, report.branches)),
+    branches: disclosedBranches.map(({ id, interpretation, hypothesis, context, lensObligations, frontier, decisionValidity, governanceEvaluations }) => {
+      const projectedItems = projectContextItems(context.items, focused, focused ? perBranchContentBudget : remainingContentBudget);
+      remainingContentBudget -= projectedItems.included.reduce((bytes, item) => bytes + serializedBytes(item), 0);
       const projectedObligations = projectObligations(lensObligations, focused);
       const frontierLimit = focused ? 24 : 8;
       const disclosedFrontier = frontier.slice(0, frontierLimit);
@@ -141,6 +171,10 @@ export function presentKnowledgeContext(report: ContextReport): ContextView {
       const requiredDisclosureIds = focused
         ? projectedItems.requiredDisclosureExpansionIds.slice(0, IDENTITY_SAMPLE_LIMIT)
         : [];
+      const decisions = projectDecisionValidity(decisionValidity ?? [], remainingDecisionBudget);
+      remainingDecisionBudget -= decisions.decisions.reduce((bytes, item) => bytes + serializedBytes(item), 0);
+      const governance = projectContextGovernance(governanceEvaluations ?? [], remainingGovernanceBudget);
+      remainingGovernanceBudget -= governance.criticalFindings.reduce((bytes, item) => bytes + serializedBytes(item), 0);
       return {
         id, interpretation, hypothesis,
         context: {
@@ -161,16 +195,94 @@ export function presentKnowledgeContext(report: ContextReport): ContextView {
         deferredObligationDisclosure: projectedObligations.deferredDisclosure,
         frontier: disclosedFrontier,
         frontierDisclosure: count(frontier.length, disclosedFrontier.length),
+        decisionValidity: decisions,
+        governance,
         fullEvidence: fullEvidenceInstruction(report, interpretation.entityId),
       };
     }),
     branchDisclosure: count(report.branches.length, disclosedBranches.length),
     unknowns: unknowns.included,
     unknownDisclosure: unknowns.disclosure,
+    unknownGroups: unknowns.groups,
     inspection: focused
       ? "This focused agent view contains whole records only. Deferred identities and counts are explicit; use each branch's fullEvidence command for the complete current context and dependency proof."
       : "Choose a candidate, then call projector.context again with that returned entity ID. Deferred identities and counts are explicit; saved knowledge remains authoritative for reconciliation.",
   };
+}
+
+function projectDecisionValidity(values: readonly DecisionValidity[], budget = MESSAGE_BUDGET): DecisionDisclosure {
+  const ordered = [...values].sort((a, b) => Number(b.assessment.blocksCurrentChange) - Number(a.assessment.blocksCurrentChange));
+  const decisions = ordered.slice(0, 12).map((value) => {
+    const checks = [...value.checks].sort((a, b) => Number(b.status === "fired" || b.status === "unknown") - Number(a.status === "fired" || a.status === "unknown")).slice(0, 6);
+    return { decisionId: value.decisionId, authorityId: value.authorityId, state: value.assessment.state, blocksCurrentChange: value.assessment.blocksCurrentChange,
+      baselineKind: value.baseline.kind, checks: checks.map(({ trigger, status, reason }) => { const part = excerpt(reason, 480); return { type: trigger.type, status, reason: part.text!, reasonTruncated: part.truncated }; }),
+      checkDisclosure: count(value.checks.length, checks.length), checkCounts: {
+        current: value.checks.filter(({ status }) => status === "current").length, fired: value.checks.filter(({ status }) => status === "fired").length,
+        unknown: value.checks.filter(({ status }) => status === "unknown").length, unobserved: value.checks.filter(({ status }) => status === "unobserved").length,
+      } };
+  }).filter((decision) => { const size = serializedBytes(decision); if (size > budget) return false; budget -= size; return true; });
+  return { decisions, disclosure: count(values.length, decisions.length), blocked: values.filter(({ assessment }) => assessment.blocksCurrentChange).length };
+}
+
+function projectContextGovernance(values: NonNullable<ContextBranch["governanceEvaluations"]>, budget = MESSAGE_BUDGET): ContextView["branches"][number]["governance"] {
+  const critical = values.flatMap(({ findings }) => findings).filter(({ status }) => status !== "satisfied");
+  const criticalFindings = critical.filter((finding) => { const size = serializedBytes(finding); if (size > budget) return false; budget -= size; return true; });
+  return { evaluationCount: values.length, violated: values.filter(({ status }) => status === "violated").length, unknown: values.filter(({ status }) => status === "unknown").length,
+    criticalFindings, criticalFindingDisclosure: count(critical.length, criticalFindings.length) };
+}
+
+function excerpt(value: unknown, limit: number): { text: string | null; truncated: boolean } {
+  if (typeof value !== "string") return { text: null, truncated: false };
+  const characters = Array.from(value);
+  return { text: characters.slice(0, limit).join(""), truncated: characters.length > limit };
+}
+
+function candidateMeaning(entityId: string, branches: readonly ContextBranch[]): CandidateMeaning {
+  const items = branches.flatMap(({ context }) => context.items).filter((candidate) => candidate.entityId === entityId);
+  const item = items.find(({ disclosure }) => disclosure === "full") ?? items[0];
+  let record: Record<string, unknown> = {};
+  if (item !== undefined) {
+    try {
+      const parsed: unknown = JSON.parse(item.content);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        const object = parsed as Record<string, unknown>;
+        record = typeof object.payload === "object" && object.payload !== null && !Array.isArray(object.payload)
+          ? object.payload as Record<string, unknown> : object;
+      }
+    } catch {
+      // Context also contains plain-text observations. They have no structured
+      // title or statement; the whole record remains available through drill-down.
+    }
+  }
+  const title = excerpt(record.title ?? record.name, 160);
+  const steps = Array.isArray(record.steps) ? record.steps.flatMap((step: unknown) => {
+    if (typeof step !== "object" || step === null || !("statement" in step) || typeof step.statement !== "string") return [];
+    return [`${"role" in step && typeof step.role === "string" ? step.role : "step"}: ${step.statement}`];
+  }).join("; ") : undefined;
+  const statement = excerpt(record.statement ?? record.decision ?? record.reason ?? steps ?? (item?.disclosure === "summary" ? item.content : undefined), 480);
+  return { entityId, title: title.text, statement: statement.text, sourceSemanticHash: item?.sourceSemanticHash ?? null,
+    titleTruncated: title.truncated, statementTruncated: statement.truncated, fullRecordAvailable: items.some(({ disclosure }) => disclosure === "full") };
+}
+
+function groupedUnknowns(values: readonly string[]): { included: string[]; disclosure: DisclosureCount; groups: UnknownGroup[] } {
+  const groups = new Map<string, string[]>();
+  const other: string[] = [];
+  const prefix = "Relevance budget bound stopped expansion before ";
+  for (const value of values) {
+    if (!value.startsWith(prefix)) { other.push(value); continue; }
+    const identity = value.slice(prefix.length);
+    const kind = identity.startsWith("projector-projection-unit_") ? "projection units" : identity.split(":", 1)[0] ?? "entities";
+    const reason = `Relevance budget stopped expansion of ${kind}`;
+    const examples = groups.get(reason);
+    if (examples === undefined) groups.set(reason, [identity]); else examples.push(identity);
+  }
+  // Group only this known, repeated diagnostic. Preserve other uncertainty
+  // verbatim and never interpret a grouped frontier as an absent constraint.
+  const disclosedGroups = [...groups].slice(0, IDENTITY_SAMPLE_LIMIT).map(([reason, examples]) => ({
+    reason, total: examples.length, examples: examples.slice(0, 3), omitted: Math.max(0, examples.length - 3),
+  }));
+  const messages = boundedStrings(other, MESSAGE_BUDGET);
+  return { included: messages.included, disclosure: count(values.length, messages.included.length), groups: disclosedGroups };
 }
 
 function count(total: number, included: number): DisclosureCount {
@@ -206,7 +318,8 @@ function projectContextItems(items: readonly ContextItem[], focused: boolean, bu
   const included: ContextItem[] = [];
   const deferred = new Map<string, DeferredContextItemGroup>();
   let used = 0;
-  for (const item of items) {
+  const priority = (item: ContextItem): number => item.band === "direct" ? 0 : item.band === "governing" ? 1 : 2;
+  for (const item of [...items].sort((left, right) => priority(left) - priority(right))) {
     const bytes = serializedBytes(item);
     if (eligible.has(item) && used + bytes <= budget) {
       included.push(item);
@@ -325,7 +438,23 @@ export function presentKnowledgeReconciliation(report: ReconciliationReport): Re
     })),
     branchDisclosure: count(report.branches.length, disclosedBranches.length),
     governance: report.governance === undefined ? undefined : projectGovernance(report.governance),
-    inspection: `Run projector reconcile ${report.contextId} --format json for the full dependency proof and governance evaluations.`,
+    ...(report.impact === undefined ? {} : { impact: projectImpact(report.impact) }),
+    inspection: `Run projector reconcile ${report.contextId} --format json for the full dependency proof, governance evaluations, impact and Planning Surprise evidence.`,
+  };
+}
+
+function projectImpact(impact: NonNullable<ReconciliationReport["impact"]>) {
+  const sample = (ids: readonly string[]) => ({ ids: ids.slice(0, IDENTITY_SAMPLE_LIMIT), disclosure: count(ids.length, Math.min(ids.length, IDENTITY_SAMPLE_LIMIT)) });
+  const diagnostics = boundedStrings(impact.diagnostics, MESSAGE_BUDGET);
+  return { status: impact.status, contentHash: impact.contentHash, repairRoute: impact.repairRoute,
+    predicted: sample(impact.predictedUnitIds), observedChanged: sample(impact.observedChangedUnitIds), knownAffected: sample(impact.knownAffectedUnitIds),
+    possibleFrontier: sample(impact.possibleFrontierUnitIds), backdated: sample(impact.backdatedUnitIds), blocked: sample(impact.blockedUnitIds),
+    surpriseDisclosure: count(impact.surprises.length, Math.min(impact.surprises.length, 3)),
+    surprises: impact.surprises.slice(0, 3).map((surprise) => ({ id: surprise.id, kind: surprise.kind, disposition: surprise.disposition, unexpected: sample(surprise.unexpectedEntityIds), contentHash: surprise.contentHash })),
+    candidateRelationDisclosure: count(impact.candidateRelations.length, Math.min(impact.candidateRelations.length, 8)),
+    candidateRelations: impact.candidateRelations.slice(0, 8).map(({ id, fromId, toId, sourceClass, evidenceHash }) => ({ id, fromId, toId, sourceClass, evidenceHash })),
+    diagnostics: diagnostics.included, diagnosticDisclosure: diagnostics.disclosure,
+    limits: "Derived impact and candidate relations do not establish behavioral equivalence or canonical authority. Inspect omitted evidence before relying on this boundary.",
   };
 }
 
@@ -346,6 +475,7 @@ function projectGovernance(governance: GovernanceReport): NonNullable<Reconcilia
   const reasons = boundedStrings(governance.reasons, MESSAGE_BUDGET);
   const disclosedBranches = governance.branches.slice(0, BRANCH_SAMPLE_LIMIT);
   let remainingCriticalBudget = OBLIGATION_BUDGET;
+  let remainingDecisionBudget = MESSAGE_BUDGET;
   return {
     status: governance.status,
     regeneratedContextId: governance.regeneratedContextId,
@@ -362,6 +492,8 @@ function projectGovernance(governance: GovernanceReport): NonNullable<Reconcilia
         criticalFindings.push(finding);
         remainingCriticalBudget -= bytes;
       }
+      const decisions = projectDecisionValidity(branch.decisionValidity ?? [], remainingDecisionBudget);
+      remainingDecisionBudget -= decisions.decisions.reduce((bytes, item) => bytes + serializedBytes(item), 0);
       return {
         interpretationEntityId: branch.interpretationEntityId,
         ...(branch.retainedBranchId === undefined ? {} : { retainedBranchId: branch.retainedBranchId }),
@@ -377,6 +509,7 @@ function projectGovernance(governance: GovernanceReport): NonNullable<Reconcilia
         },
         criticalFindings,
         criticalFindingDisclosure: count(critical.length, criticalFindings.length),
+        decisionValidity: decisions,
       };
     }),
     branchDisclosure: count(governance.branches.length, disclosedBranches.length),
@@ -419,6 +552,7 @@ function readableMeaning(content: string): string {
 export function renderKnowledgeReconciliation(report: ReconciliationReport): string {
   return [`Knowledge: ${report.status} (${report.contextId})`,
     ...(report.governance === undefined ? [] : [`Current architecture: ${report.governance.status}`, ...report.governance.reasons]),
+    ...(report.impact === undefined ? [] : [`Impact: ${report.impact.status}; ${report.impact.knownAffectedUnitIds.length} known affected, ${report.impact.possibleFrontierUnitIds.length} possible, ${report.impact.surprises.length} surprises; next: ${report.impact.repairRoute}. Full evidence: --format json.`]),
     ...report.reasons.slice(0, 8),
     ...(report.reasons.length > 8 ? [`${report.reasons.length - 8} additional dependency reasons are available with --format json.`] : []),
   ].join("\n");

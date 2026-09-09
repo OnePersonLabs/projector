@@ -49,6 +49,40 @@ describe("normative contract registry", () => {
     expect(publicSchema).toContain("requiredIndependenceGroup");
   });
 
+  it("keeps full canonical meaning as strict as shorthand intent", () => {
+    const base = { apiVersion: "projector.change-proposal/v1", architecture: null, analysisFacets: ["behavior", "architecture"] };
+    const common = { id: "scenario:future", key: "future", title: "Future behavior", aliases: [], status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "glob", value: "future/**" }, evidence: [] };
+    const steps = [{ role: "trigger", statement: "The user requests it." }, { role: "expected-outcome", statement: "The accepted behavior is available." }];
+    const parse = (kind: string, payload: object) => ChangeProposalSchema.safeParse({ ...base, canonicalMutations: [{ kind, operation: "add", expectedAbsent: true, rationale: "Preserve this future commitment.", payload }] }).success;
+    expect(parse("behavioral-scenario", { ...common, steps })).toBe(true);
+    for (const invalid of [[], [steps[0]], [{ ...steps[0], statement: " " }, steps[1]], [{ ...steps[0], role: "precondition" }, steps[1]]]) expect(parse("behavioral-scenario", { ...common, steps: invalid })).toBe(false);
+    expect(parse("behavioral-scenario", { ...common, title: " ", steps })).toBe(false);
+    expect(parse("requirement", { ...common, id: "requirement:future", statement: " ", origin: [] })).toBe(false);
+    expect(parse("requirement", { ...common, id: "requirement:future", statement: "Retain the future commitment.", origin: [] })).toBe(true);
+  });
+
+  it("accepts exact lineage dispositions and explicit identity-resolution evidence", () => {
+    const hash = `sha256:v1:${"a".repeat(64)}`;
+    const base = { apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["architecture", "behavior"] };
+    const lineage = {
+      kind: "lineage", operation: "add", lineageKind: "replace",
+      sources: [{ id: "requirement:old", kind: "requirement", expectedSemanticHash: hash, expectedDocumentHash: hash }],
+      replacementIds: ["requirement:new"], rationale: "Replace the old responsibility with the accepted boundary.",
+    };
+    const identityResolution = {
+      contextId: "knowledge_context_1", contextHash: hash, outcome: "replace-existing",
+      selectedEntityIds: ["requirement:old"], rationale: "The old identity no longer owns the revised boundary.",
+      newBoundary: { owns: ["new responsibility"], excludes: ["old responsibility"], nearestEntityIds: ["requirement:old"], rationale: "The ownership boundary changed." },
+    };
+    expect(parseChangeProposal({ ...base, canonicalMutations: [lineage], identityResolution })).toMatchObject({ canonicalMutations: [lineage], identityResolution });
+    expect(ChangeProposalSchema.safeParse({ ...base, canonicalMutations: [{ ...lineage, replacementIds: [] }] }).success).toBe(false);
+    expect(ChangeProposalSchema.safeParse({ ...base, canonicalMutations: [{ ...lineage, lineageKind: "delete", replacementIds: ["requirement:new"] }] }).success).toBe(false);
+    expect(ChangeProposalSchema.safeParse({ ...base, canonicalMutations: [lineage], identityResolution: { ...identityResolution, newBoundary: undefined } }).success).toBe(false);
+    const publicSchema = JSON.stringify(exportContractJsonSchemas().ChangeProposal);
+    expect(publicSchema).toContain("lineageKind");
+    expect(publicSchema).toContain("identityResolution");
+  });
+
   it("rejects malformed content hashes", () => {
     expect(ContentHashSchema.safeParse("sha256:v1:abc").success).toBe(false);
     expect(

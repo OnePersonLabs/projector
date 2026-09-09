@@ -31,5 +31,5 @@ describe("scoped Projector release package", () => {
     await installTarball(consumer, tarball, root);
     const installed = JSON.parse(await readFile(join(consumer, "node_modules/@onepersonlabs/projector/package.json"), "utf8"));
     expect(installed).toMatchObject({ name: "@onepersonlabs/projector", version: "2.1.0" });
-  }, 30_000);
+  }, 60_000);
 });

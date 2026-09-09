@@ -4,6 +4,8 @@ import { verifyCanonicalEnvelope, type CanonicalDocumentEnvelope } from "../hash
 import { ContentHashSchema, EntityIdSchema } from "./contracts.js";
 import {
   ArchitectureDecisionSchema,
+  ArchitectureConcernSchema,
+  DeveloperPreferenceSchema,
   AuthorityRecordSchema,
   BehavioralScenarioSchema,
   ConceptSchema,
@@ -32,6 +34,8 @@ export const CanonicalKindSchema = z.enum([
   "semantic-representation-profile",
   "authority-record",
   "architecture-decision",
+  "architecture-concern",
+  "developer-preference",
   "exception",
   "migration",
   "transaction-receipt",
@@ -51,6 +55,8 @@ export const CanonicalDocumentEnvelopeSchema: z.ZodType = z.strictObject({
 }).superRefine((value, context) => {
   const payloadSchemas: Readonly<Record<typeof value.kind, z.ZodType>> = {
     "architecture-decision": ArchitectureDecisionSchema,
+    "architecture-concern": ArchitectureConcernSchema,
+    "developer-preference": DeveloperPreferenceSchema,
     "authority-record": AuthorityRecordSchema,
     "behavioral-scenario": BehavioralScenarioSchema,
     concept: ConceptSchema,

@@ -1,5 +1,5 @@
 import {
-  hashFramedDomain,
+  hashSemantic,
   type AdapterContext,
   type ArchitectureConcern,
   type ArchitectureDecision,
@@ -48,7 +48,7 @@ const option = (key: string, hardConstraintStatus: DecisionOption["hardConstrain
 });
 const preference = (id: string, key: string, preferenceScope: DeveloperPreference["scope"], strength: DeveloperPreference["strength"]): DeveloperPreference => ({
   id, key, scope: preferenceScope, selector: scope("desktop"), strength, statement: key, status: "active", sourceClass: "authored",
-  semanticHash: hashFramedDomain("developer-preference", { id, key, scope: preferenceScope, selector: scope("desktop"), strength, statement: key, status: "active", sourceClass: "authored" }),
+  semanticHash: hashSemantic("developer-preference", { id, key, scope: preferenceScope, selector: scope("desktop"), strength, statement: key, status: "active", sourceClass: "authored" }),
 });
 const adapterContext: AdapterContext = { repositoryRoot: "/repo", stateDigest: closure.boundState.compiledAgainst, config: {}, signal: new AbortController().signal };
 const evaluationPorts = (preferences: readonly DeveloperPreference[] = [], matches: Readonly<Record<string, readonly string[]>> = {}, research?: { verifyOptionSet: ReturnType<typeof vi.fn> }) => ({

@@ -29,7 +29,7 @@ describe("decision CLI composition", () => {
       }));
       const explained = await executeProjector(["explain", selected.id, "--format", "json"], { cwd: root });
       expect(explained.report.decisionExplanation, explained.output).toMatchObject({ reconsidered: true });
-      expect(explained.output).toContain("no retained applicability");
+      expect(explained.output).toContain("lost authenticated applicability or state-binding proof");
       const audited = await executeProjector(["audit", "--decisions", "--format", "json"], { cwd: root });
       expect(audited.exitCode).toBe(2);
       expect(audited.report.decisionAudit.findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "population-unproven" })]));

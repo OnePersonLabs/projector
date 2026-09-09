@@ -10,6 +10,6 @@ describe.skipIf(!enabled)("lifecycle interruption worker", () => {
   it("applies until its parent deliberately terminates this process", async () => {
     const service = await RepositoryChangeLifecycleService.create(repositoryRoot!, { leaseStaleAfterMs: 300 });
     const result = await service.apply(approvalSelector!);
-    expect(result.outcome).toBe("success");
+    expect(result.outcome, JSON.stringify(result)).toBe("success");
   }, 40_000);
 });

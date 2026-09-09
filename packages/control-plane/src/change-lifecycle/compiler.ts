@@ -5,11 +5,14 @@ import {
   BehavioralScenarioSchema,
   ArchitectureDecisionSchema,
   AuthorityRecordSchema,
+  DeveloperPreferenceSchema,
   ConceptSchema,
+  LineageRecordSchema,
   ProjectionLensSchema,
   ArchitectureConcernSchema,
   RelationSchema,
   RequirementSchema,
+  TombstoneSchema,
   canonicalJson,
   deriveEntityId,
   hashFramedDomain,
@@ -33,6 +36,8 @@ import {
   type SelectorExpr,
   type StateQueryDependency,
   type Relation,
+  type LineageRecord,
+  type Tombstone,
 } from "@projector/core";
 import {
   RepresentationCompiler,
@@ -55,6 +60,8 @@ import { observeChangeRepository, type IndependentValidatorObservation } from ".
 import { CHANGE_QUERY_PROGRAM_IDS, calculateRepositoryRelevance, createChangeQueryRegistry, exactIdentityCandidates } from "./query-programs.js";
 import type { KnowledgeContextResult } from "../knowledge/types.js";
 import { KnowledgeGraph } from "../knowledge/graph.js";
+import { validateArchitectureProducts } from "./architecture-products.js";
+import { buildRepositoryImpactSnapshot, predictRepositoryImpact, repositoryImpactProofHash, type RepositoryImpactSnapshot, type RepositoryImpactReport } from "../impact/service.js";
 
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
@@ -74,10 +81,10 @@ export interface SemanticIdentityResolutionEvidence {
 
 export interface CanonicalChangeWrite {
   readonly id: string;
-  readonly kind: "requirement" | "behavioral-scenario" | "concept" | "relation" | "architecture-decision" | "projection-lens" | "authority-record";
+  readonly kind: "requirement" | "behavioral-scenario" | "concept" | "relation" | "lineage" | "tombstone" | "architecture-decision" | "architecture-concern" | "developer-preference" | "projection-lens" | "authority-record";
   readonly path: string;
   readonly before: string | null;
-  readonly after: string;
+  readonly after: string | null;
   readonly envelope: CanonicalDocumentEnvelope;
 }
 
@@ -115,6 +122,7 @@ export interface RepresentationArtifactStore {
 }
 
 export interface CompiledRepositoryChange {
+  readonly derivationImpact: { readonly baseline: RepositoryImpactSnapshot; readonly prediction: RepositoryImpactReport; readonly contentHash: ContentHash };
   readonly executionKind: "canonical-only" | "repository-code";
   readonly proposalHash: ContentHash;
   readonly identityResolutions: readonly SemanticIdentityResolutionEvidence[];
@@ -143,6 +151,7 @@ export interface CompiledRepositoryChange {
 }
 
 export interface RepositoryIntentReview {
+  readonly identityResolution?: ChangeProposal["identityResolution"];
   readonly subjects: readonly {
     readonly id: string;
     readonly kind: "requirement" | "scenario";
@@ -154,10 +163,10 @@ export interface RepositoryIntentReview {
   readonly relations: readonly Relation[];
   readonly canonicalMutations?: readonly {
     readonly id: string;
-    readonly kind: "concept" | "relation" | "architecture-decision" | "projection-lens" | "authority-record";
-    readonly operation: "add" | "revise";
+    readonly kind: CanonicalChangeWrite["kind"];
+    readonly operation: "add" | "revise" | "retire";
     readonly before: Record<string, unknown> | null;
-    readonly after: Record<string, unknown>;
+    readonly after: Record<string, unknown> | null;
     readonly rationale: string;
   }[];
   readonly relatedObligations: readonly { readonly id: string; readonly kind: string; readonly payload: unknown }[];
@@ -309,6 +318,7 @@ async function canonicalWrite(
 ): Promise<CanonicalChangeWrite> {
   const body = { ...payload } as Record<string, unknown>;
   const lifecycle = kind === "relation" ? body.active === true ? "active" : "inactive"
+    : kind === "tombstone" ? "deleted"
     : typeof body.lifecycle === "string" ? body.lifecycle
       : typeof body.status === "string" ? body.status
         : "active";
@@ -324,15 +334,40 @@ async function canonicalWrite(
   };
 }
 
+async function canonicalDelete(
+  repositoryRoot: string,
+  repository: CanonicalFileRepository,
+  document: CanonicalDocumentEnvelope,
+): Promise<CanonicalChangeWrite> {
+  const kind = document.kind as CanonicalChangeWrite["kind"];
+  const absolutePath = repository.pathFor(kind, document.id);
+  const before = await optionalText(absolutePath);
+  if (before === null) throw new Error(`canonical retirement source disappeared: ${document.id}`);
+  return {
+    id: document.id,
+    kind,
+    path: relative(repositoryRoot, absolutePath).replaceAll("\\", "/"),
+    before,
+    after: null,
+    envelope: document,
+  };
+}
+
 const canonicalMutationSchemas = {
+  requirement: RequirementSchema,
+  "behavioral-scenario": BehavioralScenarioSchema,
   concept: ConceptSchema,
   relation: RelationSchema,
   "architecture-decision": ArchitectureDecisionSchema,
+  "architecture-concern": ArchitectureConcernSchema,
+  "developer-preference": DeveloperPreferenceSchema,
   "projection-lens": ProjectionLensSchema,
   "authority-record": AuthorityRecordSchema,
 } as const;
 
-function parsedMutationPayload(mutation: ProposedCanonicalMutation): Record<string, unknown> {
+type PayloadCanonicalMutation = Exclude<ProposedCanonicalMutation, { kind: "lineage" }>;
+
+function parsedMutationPayload(mutation: PayloadCanonicalMutation): Record<string, unknown> {
   const supplied = mutation.payload as Record<string, unknown>;
   const payloadWithNestedHashes = mutation.kind === "projection-lens" ? {
     ...supplied,
@@ -342,17 +377,18 @@ function parsedMutationPayload(mutation: ProposedCanonicalMutation): Record<stri
   const result = canonicalMutationSchemas[mutation.kind].safeParse({
     ...payloadWithNestedHashes,
     semanticHash: placeholder,
-    ...(mutation.kind === "concept" ? { discoveryHash: placeholder } : {}),
+    ...(["concept", "requirement", "behavioral-scenario"].includes(mutation.kind) ? { discoveryHash: placeholder } : {}),
   });
   if (!result.success) throw new Error(`invalid ${mutation.kind} mutation payload: ${result.error.message}`);
   const payload = result.data as Record<string, unknown>;
-  if ((mutation.kind === "concept" || mutation.kind === "relation") && payload.sourceClass !== "authored") {
+  if (["concept", "requirement", "behavioral-scenario", "relation", "architecture-concern", "developer-preference"].includes(mutation.kind) && payload.sourceClass !== "authored") {
     throw new Error(`${mutation.kind} mutations must be explicitly authored; observed or inferred material cannot be promoted`);
   }
+  if (mutation.kind === "developer-preference" && payload.scope !== "project") throw new Error("repository preferences must be explicitly adopted with project scope; local user and organization preferences cannot become shared authority implicitly");
   return payload;
 }
 
-function mutationKey(kind: ProposedCanonicalMutation["kind"], payload: Record<string, unknown>): string {
+function mutationKey(kind: PayloadCanonicalMutation["kind"], payload: Record<string, unknown>): string {
   if (kind === "relation") return `relation:${String(payload.id)}`;
   if (typeof payload.key !== "string" || payload.key.trim() === "") throw new Error(`${kind} mutation payload requires a key`);
   return payload.key;
@@ -363,6 +399,13 @@ function assertEligibleAuthority(record: AuthorityRecord, subjectId: string, lab
   if (record.status !== "approved" && record.status !== "auto-approved") throw new Error(`${label} authority ${record.id} is not approved`);
   if (record.conclusion === "unknown" || record.conclusion === "exception") throw new Error(`${label} authority ${record.id} does not authorize activation`);
   if (record.decidedBy === "system" && record.status !== "auto-approved") throw new Error(`system authority ${record.id} lacks auto-approval`);
+}
+
+function isEligibleAuthority(record: AuthorityRecord): boolean {
+  return (record.status === "approved" || record.status === "auto-approved")
+    && record.conclusion !== "unknown"
+    && record.conclusion !== "exception"
+    && (record.decidedBy !== "system" || record.status === "auto-approved");
 }
 
 function defaultRepresentationArtifacts(): RepresentationArtifactStore {
@@ -409,6 +452,12 @@ export async function compileRepositoryChange(
   }
   const independentValidators = await Promise.all(input.proposal.validation.independentNodeTests.map((path) => observation.independentValidator(path)));
   const canonical = new CanonicalFileRepository(input.repositoryRoot);
+  const retiredEntityIds = new Set(observation.canonical.documents
+    .filter(({ kind }) => kind === "tombstone")
+    .map(({ payload }) => String(payload.entityId)));
+  const assertAdditionIsNotRetired = (kind: "requirement" | "behavioral-scenario" | "concept", id: string): void => {
+    if (retiredEntityIds.has(id)) throw new Error(`${kind} stable ID is retired by an immutable tombstone: ${id}`);
+  };
   const existingRequirements = observation.canonical.documents.filter(({ kind }) => kind === "requirement").map(({ payload }) => RequirementSchema.parse(payload) as Requirement);
   const existingScenarios = observation.canonical.documents.filter(({ kind }) => kind === "behavioral-scenario").map(({ payload }) => BehavioralScenarioSchema.parse(payload) as BehavioralScenario);
   const editedPaths = input.proposal.edits.map(({ path }) => path);
@@ -426,6 +475,7 @@ export async function compileRepositoryChange(
     if (candidates.length === 0 && existingRequirements.some(({ id }) => id === derivedId)) throw new Error(`requirement stable ID is occupied by an unrelated identity: ${derivedId}`);
     const existing = candidates[0];
     const targetId = existing?.id ?? derivedId;
+    if (existing === undefined) assertAdditionIsNotRetired("requirement", targetId);
     const resolution = identityEvidence("requirement", proposed.key, claims, candidates, targetId, observation.canonical.rootDigest);
     const query = queryRegistry.createSpec({ id: `identity:requirement:${resolution.contentHash.slice(-16)}`, programId: CHANGE_QUERY_PROGRAM_IDS.identityExact, input: { kind: "requirement", claims } });
     const priorResult = await queryRegistry.evaluate(query, context);
@@ -449,6 +499,7 @@ export async function compileRepositoryChange(
     if (candidates.length === 0 && existingScenarios.some(({ id }) => id === derivedId)) throw new Error(`scenario stable ID is occupied by an unrelated identity: ${derivedId}`);
     const existing = candidates[0];
     const targetId = existing?.id ?? derivedId;
+    if (existing === undefined) assertAdditionIsNotRetired("behavioral-scenario", targetId);
     const resolution = identityEvidence("scenario", proposed.key, claims, candidates, targetId, observation.canonical.rootDigest);
     const query = queryRegistry.createSpec({ id: `identity:scenario:${resolution.contentHash.slice(-16)}`, programId: CHANGE_QUERY_PROGRAM_IDS.identityExact, input: { kind: "scenario", claims } });
     const priorResult = await queryRegistry.evaluate(query, context);
@@ -468,11 +519,13 @@ export async function compileRepositoryChange(
   const documentsAfter = new Map(observation.canonical.documents.map((document) => [document.id, document]));
   for (const write of canonicalWrites) documentsAfter.set(write.id, write.envelope);
   for (const mutation of input.proposal.canonicalMutations ?? []) {
+    if (mutation.kind === "lineage") continue;
     const payload = parsedMutationPayload(mutation);
     const id = String(payload.id);
     const existing = documentsAfter.get(id);
     if (mutation.operation === "add") {
       if (existing !== undefined) throw new Error(`canonical addition expected ${id} to be absent`);
+      if (mutation.kind === "concept" || mutation.kind === "requirement" || mutation.kind === "behavioral-scenario") assertAdditionIsNotRetired(mutation.kind, id);
       const duplicateKey = [...documentsAfter.values()].find((document) => document.kind === mutation.kind && document.key === mutationKey(mutation.kind, payload));
       if (duplicateKey !== undefined) throw new Error(`${mutation.kind} key is already owned by ${duplicateKey.id}`);
     } else {
@@ -488,26 +541,119 @@ export async function compileRepositoryChange(
     canonicalWrites.push(write);
     documentsAfter.set(id, write.envelope);
     mutationReviews.push({ id, kind: mutation.kind, operation: mutation.operation, before: existing?.payload ?? null, after: write.envelope.payload, rationale: mutation.rationale });
-    operations.push({
-      subjectType: mutation.kind === "architecture-decision" ? "decision" : mutation.kind === "projection-lens" ? "lens" : mutation.kind === "authority-record" ? "other" : mutation.kind,
+    if (mutation.kind === "requirement") operations.push({ subjectType: "requirement", kind: mutation.operation === "add" ? "add" : "modify", requirementId: id, proposedRequirement: RequirementSchema.parse(write.envelope.payload) as Requirement, rationale: mutation.rationale });
+    else if (mutation.kind === "behavioral-scenario") operations.push({ subjectType: "scenario", kind: mutation.operation === "add" ? "add" : "modify", scenarioId: id, proposedScenario: BehavioralScenarioSchema.parse(write.envelope.payload) as BehavioralScenario, rationale: mutation.rationale });
+    else operations.push({
+      subjectType: mutation.kind === "architecture-decision" ? "decision" : mutation.kind === "projection-lens" ? "lens" : mutation.kind === "concept" || mutation.kind === "relation" ? mutation.kind : "other",
       subjectKey: mutationKey(mutation.kind, payload),
       subjectId: id,
       kind: mutation.operation === "add" ? mutation.kind === "projection-lens" ? "adopt-rule" : "add" : "modify",
       payload: { ...write.envelope.payload, revisionRationale: mutation.rationale },
     });
   }
+  for (const mutation of input.proposal.canonicalMutations ?? []) {
+    if (mutation.kind !== "lineage") continue;
+    const sources = mutation.sources.map((source) => {
+      if (canonicalWrites.some(({ id }) => id === source.id)) {
+        throw new Error(`lineage source cannot also be revised in the same proposal: ${source.id}`);
+      }
+      const document = documentsAfter.get(source.id);
+      if (document === undefined || document.kind !== source.kind) {
+        throw new Error(`lineage source is absent or has another kind: ${source.id}`);
+      }
+      if (document.semanticHash !== source.expectedSemanticHash || document.canonicalDocumentHash !== source.expectedDocumentHash) {
+        throw new Error(`lineage source hashes are stale: ${source.id}`);
+      }
+      return document;
+    });
+    const sourceKind = sources[0]!.kind;
+    if (sources.some(({ kind }) => kind !== sourceKind)) throw new Error("lineage sources must have one canonical kind");
+    for (const replacementId of mutation.replacementIds) {
+      const replacement = documentsAfter.get(replacementId);
+      if (replacement === undefined || replacement.kind !== sourceKind) {
+        throw new Error(`lineage replacement is absent or has another kind: ${replacementId}`);
+      }
+    }
+    const fromIds = sources.map(({ id }) => id).sort(compare);
+    const toIds = [...mutation.replacementIds].sort(compare);
+    const lineageId = deriveEntityId("projector.lineage", canonicalJson({
+      kind: mutation.lineageKind,
+      fromIds,
+      toIds,
+      stateDigest: observation.state.canonicalProjectorDigest,
+    }));
+    if (documentsAfter.has(lineageId)) throw new Error(`immutable lineage record already exists: ${lineageId}`);
+    const lineage = LineageRecordSchema.parse({
+      id: lineageId,
+      kind: mutation.lineageKind,
+      fromIds,
+      toIds,
+      reason: mutation.rationale,
+      stateDigest: observation.state.canonicalProjectorDigest,
+    }) as LineageRecord;
+    const lineageWrite = await canonicalWrite(input.repositoryRoot, canonical, "lineage", lineageId, `lineage:${lineageId}`, lineage as unknown as Record<string, unknown>);
+    canonicalWrites.push(lineageWrite);
+    documentsAfter.set(lineageId, lineageWrite.envelope);
+    mutationReviews.push({ id: lineageId, kind: "lineage", operation: "add", before: null, after: lineageWrite.envelope.payload, rationale: mutation.rationale });
+    operations.push({ subjectType: "other", subjectKey: `lineage:${lineageId}`, subjectId: lineageId, kind: "add", payload: lineageWrite.envelope.payload });
+
+    for (const source of sources) {
+      const duplicateTombstone = [...documentsAfter.values()].find((document) => document.kind === "tombstone" && document.payload.entityId === source.id);
+      if (duplicateTombstone !== undefined) throw new Error(`immutable tombstone already exists for ${source.id}`);
+      const tombstoneId = deriveEntityId("projector.tombstone", source.id);
+      if (documentsAfter.has(tombstoneId)) throw new Error(`tombstone stable ID is occupied: ${tombstoneId}`);
+      const tombstone = TombstoneSchema.parse({
+        entityId: source.id,
+        deletedAtRevision: 1,
+        lastSemanticHash: source.semanticHash,
+        replacementIds: toIds,
+        reason: mutation.rationale,
+      }) as Tombstone;
+      const tombstoneWrite = await canonicalWrite(input.repositoryRoot, canonical, "tombstone", tombstoneId, `tombstone:${source.id}`, tombstone as unknown as Record<string, unknown>);
+      const deletionWrite = await canonicalDelete(input.repositoryRoot, canonical, source);
+      canonicalWrites.push(tombstoneWrite, deletionWrite);
+      documentsAfter.set(tombstoneId, tombstoneWrite.envelope);
+      documentsAfter.delete(source.id);
+      mutationReviews.push(
+        { id: tombstoneId, kind: "tombstone", operation: "add", before: null, after: tombstoneWrite.envelope.payload, rationale: mutation.rationale },
+        { id: source.id, kind: source.kind as CanonicalChangeWrite["kind"], operation: "retire", before: source.payload, after: null, rationale: mutation.rationale },
+      );
+      operations.push(
+        { subjectType: "other", subjectKey: `tombstone:${source.id}`, subjectId: tombstoneId, kind: "add", payload: tombstoneWrite.envelope.payload },
+        source.kind === "requirement"
+          ? { subjectType: "requirement", kind: "remove", requirementId: source.id, rationale: mutation.rationale }
+          : source.kind === "behavioral-scenario"
+            ? { subjectType: "scenario", kind: "remove", scenarioId: source.id, rationale: mutation.rationale }
+            : { subjectType: "concept", subjectKey: source.key, subjectId: source.id, kind: "remove", payload: { rationale: mutation.rationale } },
+      );
+    }
+  }
+  const retiredIds = new Set((input.proposal.canonicalMutations ?? []).filter((mutation) => mutation.kind === "lineage").flatMap(({ sources }) => sources.map(({ id }) => id)));
+  for (const mutation of input.proposal.canonicalMutations ?? []) {
+    if (mutation.kind !== "requirement" && mutation.kind !== "behavioral-scenario") continue;
+    const changed = documentsAfter.get(String(mutation.payload.id))!;
+    if (changed.payload.status !== "active") continue;
+    const claims = (document: CanonicalDocumentEnvelope) => new Set([document.key, ...(document.payload.aliases as string[])].map((value) => value.normalize("NFKC").trim().toLocaleLowerCase("en-US")));
+    const selectedClaims = claims(changed);
+    const overlap = [...documentsAfter.values()].find((document) => document.id !== changed.id && document.kind === changed.kind && document.payload.status === "active" && [...claims(document)].some((claim) => selectedClaims.has(claim)));
+    if (overlap !== undefined) throw new Error(`${changed.kind} identity claims are already owned by ${overlap.id}; revise or explicitly retire the existing identity`);
+  }
   const knownAfterIds = new Set([...documentsAfter.keys(), ...observation.analysis.projectionUnits.map(({ id }) => id)]);
-  for (const review of mutationReviews.filter(({ kind }) => kind === "relation")) {
+  for (const relation of [...documentsAfter.values()].filter(({ kind }) => kind === "relation").map(({ payload }) => RelationSchema.parse(payload) as Relation).filter(({ active }) => active)) {
+    if (retiredIds.has(relation.fromId) || retiredIds.has(relation.toId)) throw new Error(`active relation ${relation.id} still references a retired identity`);
+  }
+  for (const review of mutationReviews.filter(({ kind, after }) => kind === "relation" && after !== null)) {
     const relation = RelationSchema.parse(documentsAfter.get(review.id)!.payload) as Relation;
-    if (!knownAfterIds.has(relation.fromId) || !knownAfterIds.has(relation.toId)) throw new Error(`relation ${relation.id} has a dangling endpoint`);
+    if (relation.active && (!knownAfterIds.has(relation.fromId) || !knownAfterIds.has(relation.toId))) throw new Error(`relation ${relation.id} has a dangling endpoint`);
   }
   const authoritiesAfter = [...documentsAfter.values()].filter(({ kind }) => kind === "authority-record").map(({ payload }) => AuthorityRecordSchema.parse(payload) as AuthorityRecord);
   const authorityById = new Map(authoritiesAfter.map((record) => [record.id, record]));
   const decisionsAfter = [...documentsAfter.values()].filter(({ kind }) => kind === "architecture-decision").map(({ payload }) => ArchitectureDecisionSchema.parse(payload) as ArchitectureDecision);
   const lensesAfter = [...documentsAfter.values()].filter(({ kind }) => kind === "projection-lens").map(({ payload }) => ProjectionLensSchema.parse(payload) as ProjectionLens);
+  validateArchitectureProducts([...documentsAfter.values()], now, new Set(canonicalWrites.map(({ id }) => id)));
   if (mutationReviews.length > 0) {
     const decisionConcernIds = new Set(decisionsAfter.map(({ concernId }) => concernId));
-    for (const authority of authoritiesAfter) if (!knownAfterIds.has(authority.subjectId) && !decisionConcernIds.has(authority.subjectId)) {
+    for (const authority of authoritiesAfter.filter(isEligibleAuthority)) if (!knownAfterIds.has(authority.subjectId) && !decisionConcernIds.has(authority.subjectId)) {
       throw new Error(`authority ${authority.id} has a dangling subject ${authority.subjectId}`);
     }
     for (const decision of decisionsAfter.filter(({ lifecycle }) => lifecycle === "active")) {
@@ -527,7 +673,7 @@ export async function compileRepositoryChange(
       }
     }
     for (const [concernId, ids] of activeByConcern) if (ids.length > 1) throw new Error(`concern ${concernId} has multiple active decisions: ${ids.sort(compare).join(", ")}`);
-    for (const governed of [...decisionsAfter, ...lensesAfter]) for (const basis of governed.governanceBasis) {
+    for (const governed of [...decisionsAfter.filter(({ lifecycle }) => lifecycle === "active"), ...lensesAfter.filter(({ status }) => status === "active")]) for (const basis of governed.governanceBasis) {
       const referencedId = basis.kind === "architecture-decision" ? basis.decisionId
         : basis.kind === "hard-constraint" ? basis.conceptId
           : basis.kind === "adopted-standard" ? basis.authorityRecordId
@@ -566,7 +712,7 @@ export async function compileRepositoryChange(
     ...mutationReviews.map(({ id }) => id),
     ...(input.knowledgeContext?.branches.filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct).flatMap(({ closure }) => closure.entries.map(({ entityId }) => entityId)) ?? []),
   ]);
-  const relations = observation.canonical.documents.filter(({ kind }) => kind === "relation").map(({ payload }) => RelationSchema.parse(payload) as Relation).filter(({ active }) => active);
+  const relations = [...documentsAfter.values()].filter(({ kind }) => kind === "relation").map(({ payload }) => RelationSchema.parse(payload) as Relation).filter(({ active }) => active);
   const relatedRelations = new Map<string, Relation>();
   const candidateRelationIds = new Set<string>();
   const commitmentFrontier = new Set<string>();
@@ -590,12 +736,13 @@ export async function compileRepositoryChange(
       }
     }
   }
-  const knownIds = new Set([...observation.canonical.documents.map(({ id }) => id), ...observation.analysis.projectionUnits.map(({ id }) => id), ...identityResolutions.map(({ targetId }) => targetId), ...canonicalWrites.map(({ id }) => id)]);
+  const knownIds = new Set([...documentsAfter.keys(), ...retiredIds, ...observation.analysis.projectionUnits.map(({ id }) => id), ...identityResolutions.map(({ targetId }) => targetId)]);
   const blockingUnknowns = unique([
     ...[...relatedIds].filter((id) => !knownIds.has(id)).map((id) => `related commitment has no current canonical entity or observed projection: ${id}`),
     ...[...commitmentFrontier].map((id) => `conceptual obligation traversal reached its ${maximumCommitments}-entity bound before resolving ${id}`),
   ]);
   const reviewBasis = {
+    ...(input.proposal.identityResolution === undefined ? {} : { identityResolution: input.proposal.identityResolution }),
     subjects: reviewSubjects.sort((a, b) => compare(a.id, b.id)),
     relations: [...relatedRelations.values()].sort((a, b) => compare(a.id, b.id)),
     canonicalMutations: mutationReviews.sort((a, b) => compare(a.id, b.id)),
@@ -628,6 +775,10 @@ export async function compileRepositoryChange(
   const relevanceHash = hashFramedDomain("repository-change-relevance", relevanceValue);
   const relevance: RepositoryRelevanceEvidence = { id: `relevance_${relevanceHash.slice(-32)}`, ...relevanceValue, contentHash: relevanceHash };
   const knowledgeGraph = new KnowledgeGraph(observation);
+  const impactBaseline = buildRepositoryImpactSnapshot(observation, knowledgeGraph);
+  const impactPrediction = await predictRepositoryImpact(impactBaseline, editedPaths, canonicalWrites);
+  const derivationImpact = { baseline: impactBaseline, prediction: impactPrediction, contentHash: repositoryImpactProofHash(impactBaseline, impactPrediction) };
+  if (impactPrediction.blockedUnitIds.length > 0) throw new Error(`active Impact Rules block planning for ${impactPrediction.blockedUnitIds.join(", ")}`);
   const affectedBefore = new Set(relevance.knownAffectedUnitIds);
   const memberships = knowledgeGraph.lenses.filter(({ status }) => status === "active").flatMap(({ id: lensId }) =>
     (knowledgeGraph.lensCompilation?.memberships[lensId] ?? []).filter((unitId) => affectedBefore.has(unitId))
@@ -635,6 +786,7 @@ export async function compileRepositoryChange(
     .sort((a, b) => compare(a.lensId, b.lensId) || compare(a.unitId, b.unitId));
   const governanceBefore = { memberships, contentHash: hashFramedDomain("repository-pre-change-governance", memberships) };
   const valueDependencies = [
+    { kind: "artifact" as const, id: "repository-impact-proof", versionHash: derivationImpact.contentHash, role: "exact observed derivation snapshot and known-delta impact prediction" },
     ...input.proposal.edits.map((edit) => ({ kind: "projection-unit" as const, id: `path:${edit.path}`, versionHash: hashFramedDomain("transform-content", edit.before), role: `exact before content for ${edit.path}` })),
     ...independentValidators.map((validator) => ({ kind: "artifact" as const, id: `independent-validator:${validator.path}`, versionHash: validator.contentHash, role: `Git-base-bound independent validator introduced by ${validator.introductionCommit}` })),
     { kind: "canonical-governance" as const, id: "canonical-root", versionHash: observation.canonical.rootDigest, role: "canonical identity and decision search root" },
@@ -753,7 +905,7 @@ export async function compileRepositoryChange(
       ...input.proposal.scenarios.flatMap(({ steps }) => steps.map(({ statement }) => ({ kind: "behavior" as const, statement, origin: [{ kind: "document" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash, description: "Proposed interpretation; semantic fidelity to the user request is unverified." }], confidence: 1 }))),
       ...mutationReviews.map(({ kind, id, after }) => ({
         kind: (kind === "architecture-decision" || kind === "projection-lens" || kind === "relation" ? "constraint" : "behavior") as "constraint" | "behavior",
-        statement: [after.statement, after.decision, after.purpose, after.rationale, after.name].find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? `${kind} ${id}`,
+        statement: after === null ? `Retire ${kind} ${id}` : [after.statement, after.decision, after.purpose, after.rationale, after.reason, after.name].find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? `${kind} ${id}`,
         origin: [{ kind: "document" as const, locator: `proposal:${proposalHash}`, contentHash: proposalHash, description: "Explicit canonical mutation proposed for approval." }],
         confidence: 1,
       })),
@@ -792,10 +944,10 @@ export async function compileRepositoryChange(
     boundState,
   };
   const factsHash = hashFramedDomain("authenticated-change-compiler-facts", factsValue);
-  const knownAffectedUnitIds = unique([...relevance.knownAffectedUnitIds, ...canonicalWrites.map(({ id }) => id)]);
+  const knownAffectedUnitIds = unique([...relevance.knownAffectedUnitIds, ...impactPrediction.knownAffectedUnitIds, ...canonicalWrites.map(({ id }) => id)]);
   const impactValue = {
     knownAffectedUnitIds,
-    possibleFrontierUnitIds: relevance.possibleFrontierUnitIds,
+    possibleFrontierUnitIds: unique([...relevance.possibleFrontierUnitIds, ...impactPrediction.possibleFrontierUnitIds]),
     unavailableSurfaceIds: relevance.unavailableSurfaceIds,
     reasons: [
       ...relevance.reasons,
@@ -883,6 +1035,7 @@ export async function compileRepositoryChange(
     ].sort((left, right) => compare(left.path, right.path)),
   };
   return {
+    derivationImpact,
     executionKind,
     proposalHash,
     identityResolutions: identityResolutions.sort((left, right) => compare(left.id, right.id)),

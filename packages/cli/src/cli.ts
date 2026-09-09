@@ -5,9 +5,9 @@ import { execFile } from "node:child_process";
 import { watch as watchFileSystem } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { promisify } from "node:util";
-import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type ContentHash, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass, type StateDigest } from "@projector/core";
-import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
-import { createStateBinding } from "@projector/engine";
+import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type ContentHash, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass } from "@projector/core";
+import { analyzeLocalRepository } from "@projector/analyzers";
+
 import { CanonicalFileRepository, SqliteDerivedStore, createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, initializeProjectActivation, inspectProjectActivation, type OperationalExitProof, type OperationalReport, type ReportFormat } from "@projector/runtime";
 import {
   auditArchitectureDecisions,
@@ -18,14 +18,14 @@ import {
   type DecisionOverlapPort,
   type DecisionPopulationPort,
 } from "@projector/engine/architecture";
-import { compileAuthenticatedCoverageSnapshot, REQUIRED_COVERAGE_LANES, type CoverageEvidenceSnapshot, type CoverageLaneEvidence, type RequiredCoverageLaneKey } from "@projector/engine/coverage";
+import { REQUIRED_COVERAGE_LANES } from "@projector/engine/coverage";
 
 import { assertOperationRiskAuthorized, deriveOperationRisk, normalizeExecutionPolicy, type CliPolicyInput, type OperationRiskInput, type SliceCommand } from "./policy.js";
 import { createBuiltRunHostPort } from "./host-cli.js";
 import { createBuiltMcpCliPort } from "./mcp-cli.js";
 import { defaultKnowledgeCliPort, presentKnowledgeContext, presentKnowledgeReconciliation, renderKnowledgeContext, renderKnowledgeReconciliation, type RepositoryKnowledgeCliPort } from "./knowledge-cli.js";
 export type { RepositoryKnowledgeCliPort } from "./knowledge-cli.js";
-import { RepositoryChangeLifecycleService } from "@projector/control-plane";
+import { RepositoryChangeLifecycleService, inspectRepositoryArchitecture, inspectRepositoryCoverage } from "@projector/control-plane";
 export { createHostSessionRecord, hostSessionSelector } from "@projector/integrations";
 import { runDefaultUpgradeWorkflow } from "./upgrade.js";
 export * from "./upgrade.js";
@@ -48,8 +48,8 @@ Commands:
   recover <approval-id>               Recover an interrupted approval
   resume <approval-id>                Recover then resume an approval
   coverage              Report authenticated multi-dimensional coverage
-  complete              Rank the next authenticated completion work
-  cleanup               Resume a trusted cleanup continuation plan
+  complete              Rank completion work; --question-offset <n> opens another page
+  cleanup               Inspect an ordered read-only repair plan
   run <codex|claude> -- <args>  Run a bounded host session
   mcp                   Start the built Projector MCP composition
   watch                 Scan repository changes without executing repository code
@@ -108,7 +108,7 @@ export interface RepositoryLifecycleCliPort {
 }
 
 export type CoverageStrictness = "proven" | "bounded" | "high-confidence" | "partial";
-export interface CoverageCliRequest { readonly scope: string; readonly strictness: CoverageStrictness; readonly budgetTokens?: number; readonly budgetCost?: number; readonly continuationSelector?: string }
+export interface CoverageCliRequest { readonly scope: string; readonly strictness: CoverageStrictness; readonly budgetTokens?: number; readonly budgetCost?: number; readonly continuationSelector?: string; readonly questionOffset?: number }
 export interface CoverageCliReport {
   readonly proofStatement: CoverageSnapshot["proofStatement"];
   readonly approvalRequired: boolean;
@@ -188,7 +188,7 @@ function normalizeScope(raw: string | undefined): string {
   return scope;
 }
 
-const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--continuation", "--session", "--proposal", "--plan-hash", "--entity", "--context", "--request"]);
+const valueFlags = new Set(["--format", "--mode", "--strictness", "--scope", "--budget-tokens", "--budget-cost", "--question-offset", "--continuation", "--session", "--proposal", "--plan-hash", "--entity", "--context", "--request"]);
 const booleanFlags = new Set(["--decisions", "--dry-run", "--audit-only", "--non-interactive", "--clean", "--compact"]);
 function hasBooleanFlag(arguments_: readonly string[], name: string): boolean {
   for (let index = 1; index < arguments_.length; index += 1) {
@@ -284,6 +284,9 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
   const rawScope = optionValue(commandArguments, "--scope");
   const rawBudgetTokens = optionValue(commandArguments, "--budget-tokens");
   const rawBudgetCost = optionValue(commandArguments, "--budget-cost");
+  const rawQuestionOffset = optionValue(commandArguments, "--question-offset");
+  if (rawQuestionOffset !== undefined && command !== "complete" && command !== "cleanup") throw new Error("--question-offset is only valid with complete or cleanup");
+  if (rawQuestionOffset !== undefined && (!/^\d+$/u.test(rawQuestionOffset) || !Number.isSafeInteger(Number(rawQuestionOffset)))) throw new Error("--question-offset must be a nonnegative safe integer");
   if (!coverageCommand && [explicitStrictness, rawScope].some((value) => value !== undefined)) throw new Error("coverage scope and strictness are only valid with coverage, complete, or cleanup");
   if (!coverageCommand && command !== "watch" && [rawBudgetTokens, rawBudgetCost].some((value) => value !== undefined)) throw new Error("budgets are only valid with watch, coverage, complete, or cleanup");
   const strictnessValue = explicitStrictness ?? "bounded";
@@ -308,6 +311,7 @@ function parseCommand(arguments_: readonly string[]): ParsedCommand {
       strictness: strictnessValue,
       ...(budgetTokens === undefined ? {} : { budgetTokens }),
       ...(budgetCost === undefined ? {} : { budgetCost }),
+      ...(rawQuestionOffset === undefined ? {} : { questionOffset: Number(rawQuestionOffset) }),
       ...(continuationSelector === undefined ? {} : { continuationSelector: continuationSelector.trim() }),
     },
     ...(selector === undefined ? {} : { selector }),
@@ -342,7 +346,18 @@ function outputFor(command: SliceCommand, report: unknown, format: ReportFormat)
   if (command === "plan") return renderLifecyclePlan(report);
   if (command === "change") return `change: ${(report as { selector: string }).selector}`;
   if (command === "explain") return (report as { explanation: string }).explanation;
-  if (command === "coverage" || command === "complete" || command === "cleanup") return `${command}: ${(report as CoverageCliReport).proofStatement}`;
+  if (command === "coverage" || command === "complete" || command === "cleanup") {
+    const coverage = report as CoverageCliReport;
+    const completion = coverage.completion as { questionDisclosure: { included: number; total: number; omitted: number; blocking: number }; questionPage?: { offset: number; nextOffset: number | null }; questions: Array<{ id: string; blocking: boolean; affectedCount: number; question: string; reasons: string[] }> } | undefined;
+    if (completion === undefined) return `${command}: ${coverage.proofStatement}`;
+    const lines = [`${command}: ${coverage.proofStatement}`, `Open completion issues: ${completion.questionDisclosure.total}; blocking: ${completion.questionDisclosure.blocking}.`, "Coverage measures observed membership and executable obligations; behavioral satisfaction is not established."];
+    if (command !== "coverage") {
+      lines.push(`${completion.questionDisclosure.included} questions shown; ${completion.questionDisclosure.omitted} omitted.`, ...(command === "cleanup" ? ["Read-only repair plan; no changes executed."] : []));
+      for (const question of completion.questions) lines.push(`${question.blocking ? "BLOCKING" : "NEXT"} ${question.id} (${question.affectedCount} observed files): ${question.question}`, ...question.reasons.map((reason) => `  ${reason}`));
+      if (completion.questionPage?.nextOffset !== undefined && completion.questionPage.nextOffset !== null) lines.push(completion.questionPage.nextOffset === completion.questionPage.offset ? "Increase the token budget to inspect the next question." : `Next page: --question-offset ${completion.questionPage.nextOffset} with the same scope and unchanged evidence.`);
+    }
+    return lines.join("\n");
+  }
   if (command === "run") return (report as { dryRun?: boolean }).dryRun === true ? "run: dry-run" : `run: ${(report as RunHostCliResult).status}`;
   if (command === "mcp") return `mcp: ${(report as { status: string }).status}`;
   if (command === "upgrade") return `upgrade: ${(report as { selector: string }).selector}`;
@@ -350,6 +365,7 @@ function outputFor(command: SliceCommand, report: unknown, format: ReportFormat)
 }
 
 interface IntentReviewValue {
+  readonly identityResolution?: { readonly outcome: string; readonly selectedEntityIds: readonly string[]; readonly rationale: string; readonly newBoundary?: unknown; readonly contextId: string; readonly contextHash: string };
   readonly subjects: readonly {
     readonly id: string;
     readonly kind: "requirement" | "scenario";
@@ -359,6 +375,7 @@ interface IntentReviewValue {
     readonly rationale: string | null;
   }[];
   readonly relatedObligations: readonly { readonly id: string; readonly kind: string; readonly payload: unknown }[];
+  readonly canonicalMutations?: readonly { readonly id: string; readonly kind: string; readonly operation: string; readonly before: unknown; readonly after: unknown; readonly rationale: string }[];
   readonly blockingUnknowns?: readonly string[];
 }
 
@@ -367,11 +384,23 @@ function renderLifecyclePlan(report: unknown): string {
   if (preview.intentReview === undefined) return preview.expectedDiff;
   const review = preview.intentReview;
   const lines = [preview.expectedDiff, "", "Intent review:"];
+  if (review.identityResolution !== undefined) {
+    const choice = review.identityResolution;
+    lines.push(`Identity: ${choice.outcome}`, `  selected: ${choice.selectedEntityIds.join(", ") || "none"}`, `  rationale: ${choice.rationale}`,
+      `  candidate proof: ${choice.contextId} at ${choice.contextHash}`);
+    if (choice.newBoundary !== undefined) lines.push(`  new boundary: ${JSON.stringify(choice.newBoundary)}`);
+  }
   for (const subject of review.subjects) {
     lines.push(`${subject.operation.toUpperCase()} ${subject.kind} ${subject.id}`);
     appendMeaning(lines, "before", subject.kind, subject.before);
     appendMeaning(lines, "after", subject.kind, subject.after);
     lines.push(`  rationale: ${subject.rationale ?? "none provided"}`);
+  }
+  for (const mutation of review.canonicalMutations ?? []) {
+    lines.push(`${mutation.operation.toUpperCase()} ${mutation.kind} ${mutation.id}`,
+      `  before: ${mutation.before === null ? "absent" : JSON.stringify(mutation.before)}`,
+      `  after: ${mutation.after === null ? "retired" : JSON.stringify(mutation.after)}`,
+      `  rationale: ${mutation.rationale}`);
   }
   lines.push("", "Related obligations:");
   if (review.relatedObligations.length === 0) lines.push("- none");
@@ -442,7 +471,7 @@ export async function executeProjector(
   const defaultOperation: OperationRiskInput = parsed.command === "init" || (parsed.command === "context" && policy.allowAutoMutation)
     ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
     : parsed.command === "approve" ? { command: parsed.command, sideEffect: "derived-write", externalWrite: false, canonicalMutation: false }
-    : parsed.command === "apply" || parsed.command === "resume" || parsed.command === "upgrade" || parsed.command === "cleanup" || parsed.command === "run" || parsed.command === "recover" || (parsed.command === "verify" && parsed.clean)
+    : parsed.command === "apply" || parsed.command === "resume" || parsed.command === "upgrade" || parsed.command === "run" || parsed.command === "recover" || (parsed.command === "verify" && parsed.clean)
       ? { command: parsed.command, sideEffect: "workspace-write", externalWrite: false, canonicalMutation: false }
       : { command: parsed.command, sideEffect: "read-only", externalWrite: false, canonicalMutation: false };
   const suppliedOperation = options.governance?.operation;
@@ -490,9 +519,11 @@ export async function executeProjector(
     case "audit": {
       if (parsed.decisions) {
         const architecture = options.architecture ?? defaultArchitecturePort(repositoryRoot); const loaded = await architecture.load();
-        const decisionAudit = await auditArchitectureDecisions(loaded, { overlap: architecture.overlap, population: architecture.population });
-        report = { policy, decisionIds: loaded.decisions.map(({ id }) => id).sort(), decisionAudit };
-        exitCode = decisionAudit.findings.length === 0 ? 0 : 2;
+        const activeDecisions = loaded.decisions.filter(({ lifecycle }) => lifecycle === "active");
+        const decisionAudit = await auditArchitectureDecisions({ ...loaded, decisions: activeDecisions }, { overlap: architecture.overlap, population: architecture.population });
+        const decisionValidity = await Promise.all(activeDecisions.map(({ id }) => architecture.validity(id)));
+        report = { policy, decisionIds: activeDecisions.map(({ id }) => id).sort(), decisionAudit, decisionValidity };
+        exitCode = decisionAudit.findings.length === 0 && !decisionValidity.some((assessment) => assessment === undefined || assessment.blocksCurrentChange) ? 0 : 2;
         break;
       }
       const analysis = await analyzeLocalRepository({ repositoryRoot });
@@ -569,12 +600,6 @@ export async function executeProjector(
     case "coverage":
     case "complete":
     case "cleanup": {
-      if (parsed.command === "cleanup" && !policy.allowAutoMutation) {
-        const dryRunReport = { proofStatement: "partial" as const, boundary: [parsed.coverageRequest.scope], lanes: REQUIRED_COVERAGE_LANES.map((key) => ({ key, observability: "bounded" as const })), unavailableSurfaceIds: [], approvalRequired: false, budgetExhausted: false, continuationPersisted: false };
-        report = { policy, dryRun: true, ...dryRunReport } satisfies CoverageCliReport & { policy: typeof policy; dryRun: true };
-        exitCode = coverageExitCode(parsed.coverageRequest, dryRunReport);
-        break;
-      }
       const coveragePort = options.coverage ?? defaultCoveragePort(repositoryRoot);
       const provider = parsed.command === "coverage" ? coveragePort.coverage : parsed.command === "complete" ? coveragePort.complete : coveragePort.cleanup;
       const coverageReport = await provider(parsed.coverageRequest);
@@ -675,23 +700,13 @@ function defaultRepositoryLifecyclePort(): RepositoryLifecycleCliPort {
 }
 
 function defaultArchitecturePort(repositoryRoot: string): ArchitectureCliPort {
-  const load = async () => { const snapshot = await new CanonicalFileRepository(repositoryRoot).snapshot(); return { decisions: snapshot.documents.filter(({ kind }) => kind === "architecture-decision").map(({ payload }) => payload as unknown as ArchitectureDecision), concerns: [] as ArchitectureConcern[] }; };
+  let observed: ReturnType<typeof inspectRepositoryArchitecture> | undefined;
+  const inspect = () => observed ??= inspectRepositoryArchitecture(repositoryRoot);
   return {
-    load,
-    overlap: { assess: async () => "unknown" },
-    population: { inspect: async () => ({ count: 0, observability: "unavailable" }) },
-    validity: async (decisionId) => {
-      const decision = (await load()).decisions.find(({ id }) => id === decisionId);
-      if (decision === undefined) throw new Error(`architecture decision ${decisionId} is unavailable`);
-      return {
-        decisionId, scope: decision.scope,
-        state: decision.lifecycle === "active" ? "suspect" : "invalid-for-scope",
-        firedTriggers: [], invalidatedAssumptions: [], staleEvidenceIds: [], blocksCurrentChange: true,
-        explanation: decision.lifecycle === "active"
-          ? "The decision is recorded as active. This command has no retained applicability, assumption, or preference proof establishing its validity. Use saved context reconciliation to check bound evidence and executable lens predicates; those checks alone do not establish every decision assumption."
-          : "Canonical decision is no longer active.",
-      };
-    },
+    load: async () => { const result = await inspect(); return { decisions: result.decisions, concerns: result.concerns }; },
+    overlap: { assess: async (left, right) => (await inspect()).overlap.assess(left, right) },
+    population: { inspect: async (decision) => (await inspect()).population.inspect(decision) },
+    validity: async (decisionId) => (await inspect()).validity(decisionId),
   };
 }
 
@@ -727,63 +742,12 @@ async function inspectCanonicalKnowledge(repositoryRoot: string): Promise<{ read
 }
 
 function defaultCoveragePort(repositoryRoot: string): CoverageCliPort {
-  const observe = async (request: CoverageCliRequest): Promise<CoverageCliReport> => compileRepositoryCoverage(repositoryRoot, request);
-  const cleanup = async (request: CoverageCliRequest): Promise<CoverageCliReport> => ({
-    proofStatement: "not-established",
-    boundary: [request.scope],
-    lanes: REQUIRED_COVERAGE_LANES.map((key) => ({ key, observability: "unavailable" as const })),
-    unavailableSurfaceIds: ["cleanup-continuation-adapter"],
-    approvalRequired: false,
-    budgetExhausted: false,
-    continuationPersisted: false,
-  });
-  return { coverage: observe, complete: observe, cleanup };
+  return {
+    coverage: (request) => inspectRepositoryCoverage(repositoryRoot, request, "coverage"),
+    complete: (request) => inspectRepositoryCoverage(repositoryRoot, request, "complete"),
+    cleanup: (request) => inspectRepositoryCoverage(repositoryRoot, request, "cleanup"),
+  };
 }
-
-const normalizedRepositoryPath = (value: string): string => value.replace(/\\/gu, "/").replace(/^\.\//u, "").replace(/\/+$/u, "") || ".";
-function inRequestedScope(path: string, scope: string): boolean {
-  const boundary = normalizedRepositoryPath(scope); const candidate = normalizedRepositoryPath(path);
-  return boundary === "." || candidate === boundary || candidate.startsWith(`${boundary}/`);
-}
-
-function unavailableLane(key: RequiredCoverageLaneKey, reason: string): CoverageLaneEvidence {
-  return { key, applicability: "required", observability: "unavailable", numerator: 0, confidence: 0, assumptions: [], provenAssumptions: [], blindSpots: [reason], staleObservationIds: [] };
-}
-
-function knownLane(key: RequiredCoverageLaneKey, numerator: number, denominator: number, analysis: LocalRepositoryAnalysis): CoverageLaneEvidence {
-  const enumeration = analysis.surface.enumeration;
-  return { key, applicability: "required", observability: enumeration.observability, numerator, denominator, confidence: enumeration.observability === "unavailable" ? 0 : 0.8, assumptions: [...enumeration.assumptions], provenAssumptions: [], blindSpots: [...enumeration.blindSpots], staleObservationIds: [] };
-}
-
-async function compileRepositoryCoverage(repositoryRoot: string, request: CoverageCliRequest): Promise<CoverageCliReport> {
-  const analysis = await analyzeLocalRepository({ repositoryRoot });
-  const artifacts = analysis.artifacts.filter(({ locator }) => inRequestedScope(locator, request.scope));
-  const units = analysis.projectionUnits.filter(({ key }) => inRequestedScope(key, request.scope));
-  const files = analysis.files.filter(({ path }) => inRequestedScope(path, request.scope));
-  const dependencies = analysis.dependencies.filter(({ importerPath }) => inRequestedScope(importerPath, request.scope));
-  const identities = analysis.gitIdentities.filter(({ path }) => inRequestedScope(path, request.scope));
-  const unknownKeys = new Set<RequiredCoverageLaneKey>(["concept-mapping", "lens", "rule-enforceability", "derivation", "validation-evidence", "authority", "architecture-decision", "semantic-identity", "pre-change-relevance"]);
-  const lanes = REQUIRED_COVERAGE_LANES.map((key): CoverageLaneEvidence => {
-    if (key === "inventory") return knownLane(key, artifacts.length, artifacts.length, analysis);
-    if (key === "projection-unit-classification") return knownLane(key, units.length, artifacts.length, analysis);
-    if (key === "relationship") return knownLane(key, dependencies.length, dependencies.length, analysis);
-    if (key === "surface") return knownLane(key, analysis.surface.access === "unavailable" ? 0 : 1, 1, analysis);
-    if (key === "historical-metamorphic") return analysis.git.availability === "unavailable" ? unavailableLane(key, "Git identity/history is unavailable") : knownLane(key, identities.filter(({ availability }) => availability === "available").length, files.length, analysis);
-    if (key === "representation-projection-fidelity") return unavailableLane(key, "authenticated representation projection evidence is not present in local repository analysis");
-    if (key === "change-closure" || key === "planning-surprise") return { key, applicability: "not-applicable", boundaryExclusion: "no semantic change execution is requested by coverage observation", observability: "closed", numerator: 0, denominator: 0, confidence: 1, assumptions: [], provenAssumptions: [], blindSpots: [], staleObservationIds: [] };
-    if (unknownKeys.has(key)) return unavailableLane(key, `local repository analysis does not prove ${key}`);
-    return unavailableLane(key, `local repository composition has no proof adapter for ${key}`);
-  });
-  const analysisDigest = hashFramedDomain("cli-local-coverage-analysis", { surface: analysis.surface, artifacts: artifacts.map(({ id, contentHash }) => ({ id, contentHash })), units: units.map(({ id, membershipHash }) => ({ id, membershipHash })), capabilities: analysis.capabilities, failures: analysis.failures.map(({ analyzerId, capability, scope, affectedClaimKinds }) => ({ analyzerId, capability, scope, affectedClaimKinds })) });
-  const currentState: StateDigest = { gitBase: analysis.git.revision, worktreeDigest: analysisDigest, canonicalProjectorDigest: hashFramedDomain("cli-local-coverage-canonical", []), toolchainDigest: hashFramedDomain("cli-local-coverage-toolchain", analysis.capabilities) };
-  const binding = createStateBinding({ compiledAgainst: currentState, valueDependencies: [{ kind: "adapter", id: "projector.local-repository", versionHash: analysisDigest, role: "authenticated Task14 local repository coverage evidence" }], queryDependencies: [] });
-  const failureIds = analysis.failures.filter(({ scope }) => inRequestedScope(scope, request.scope)).map(({ analyzerId, capability, scope }) => `${analyzerId}:${capability}:${scope}`).sort();
-  const evidence: CoverageEvidenceSnapshot = { boundState: binding, lanes, analyzerFailures: analysis.failures, unknownFrontierIds: [...unknownKeys].map((key) => `coverage:${key}`).sort(), unavailableSurfaceIds: analysis.surface.access === "unavailable" ? [analysis.surface.id] : [], completion: { artifactsClassified: units.length === artifacts.length, semanticMappingsResolved: false, identityDispositionsResolved: false, expectedProjectionsAccounted: false, relevanceNegativeSpaceProven: false, lensesAndRulesOperational: false, externalOwnershipAssigned: analysis.surface.access !== "unavailable", blockerIds: failureIds, unknownUnitIds: units.map(({ id }) => id).sort(), validationIndependenceSatisfied: false, architectureFrontierIds: ["coverage:architecture-decision"] } };
-  const context = { repositoryRoot, stateDigest: currentState, config: {}, signal: new AbortController().signal };
-  const compiled = await compileAuthenticatedCoverageSnapshot({ graphRevision: 0, boundary: [request.scope], binding, currentState, context }, { bindingValidator: { validate: async () => ({ status: "current", currentState, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) }, evidence: { observe: async () => evidence } });
-  return { proofStatement: compiled.snapshot.proofStatement, boundary: compiled.snapshot.boundary, lanes: compiled.snapshot.lanes, unavailableSurfaceIds: compiled.snapshot.unavailableSurfaceIds, approvalRequired: false, budgetExhausted: false, continuationPersisted: false, snapshot: compiled.snapshot, boundState: compiled.boundState, bindingValidation: compiled.bindingValidation, bindingIdentity: compiled.boundState.dependencyDigest, localAnalysis: { artifactCount: artifacts.length, projectionUnitCount: units.length, dependencyCount: dependencies.length, analyzerFailureCount: failureIds.length, analyzerFailures: analysis.failures.filter(({ scope }) => inRequestedScope(scope, request.scope)) } };
-}
-
 export function renderCli(arguments_: readonly string[]): string {
   if (arguments_.length === 0 || arguments_.includes("--help") || arguments_.includes("-h")) {
     return HELP;

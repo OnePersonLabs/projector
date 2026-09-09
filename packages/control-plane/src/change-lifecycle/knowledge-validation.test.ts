@@ -33,7 +33,10 @@ async function repository() {
     id: "rule:boundary", key: "rule:boundary", version: "1", selector, effect: "validate", authorityClass: "active-lens", governanceBasis: base.governanceBasis,
     predicates: [{ kind: "dependency-forbidden", from: selector, to: { op: "atom", field: "package", matcher: "equals", value: "@forbidden/pkg" } }],
     rationale: authority.rationale, evidence: [], conflictPolicy: "error", validatorIds: ["projector.builtin.static-dependency-boundary@1"], transformIds: [], semanticHash: hash,
-  }] };
+  }],
+    validators: [{ id: "projector.builtin.static-dependency-boundary", version: "1", provider: "deterministic-governance", input: { ruleIds: ["rule:boundary"] }, required: true }],
+    expectedProjections: base.expectedProjections.map((projection) => ({ ...projection, expectation: { kind: "predicate-constrained", predicateIds: ["rule:boundary"], validatorIds: ["projector.builtin.static-dependency-boundary@1"] } })),
+  };
   const canonical = new CanonicalFileRepository(root);
   for (const [kind, payload, lifecycle] of [["authority-record", authority, "approved"], ["projection-lens", lens, "active"]] as const) {
     await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id: payload.id, key: payload.key, lifecycle, payload: { ...payload } }));

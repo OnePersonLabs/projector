@@ -5,7 +5,9 @@ import { FileTransactionJournal, GovernedWorktreeRuntime, RepositoryPathService,
 
 import { compileRepositoryChange, type CompiledRepositoryChange } from "./compiler.js";
 import { executeCompiledRepositoryChange } from "./executor.js";
+import { adjudicatedKnowledgeContext, assertIdentityDisposition, captureKnowledgeContextId } from "./identity-adjudication.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
+import type { KnowledgeReconciliationResult } from "../knowledge/types.js";
 import {
   ChangeLifecycleStore,
   type ChangeLifecycleStoreOptions,
@@ -59,6 +61,24 @@ function exactPatchInputHash(compiled: CompiledRepositoryChange): ContentHash {
   return hashFramedDomain("exact-text-patch-input", compiled.exactPatchInput);
 }
 
+function permitsDecisionReconsideration(compiled: CompiledRepositoryChange, governance: KnowledgeReconciliationResult["governance"]): boolean {
+  if (compiled.executionKind !== "canonical-only" || governance.status !== "unknown") return false;
+  const revised = new Set((compiled.intentReview.canonicalMutations ?? []).filter(({ kind, operation }) => operation === "revise" && (kind === "architecture-decision" || kind === "authority-record")).map(({ id }) => id));
+  if (revised.size === 0) return false;
+  const resolvedReasons = new Set<string>();
+  for (const branch of governance.branches) {
+    if (branch.evaluations.some(({ status }) => status !== "conformant")) return false;
+    for (const decision of branch.decisionValidity ?? []) {
+      if (!revised.has(decision.decisionId) && !revised.has(decision.authorityId)) continue;
+      if (decision.assessment.blocksCurrentChange) resolvedReasons.add(decision.assessment.explanation);
+      for (const check of decision.checks) if (check.status === "unknown") resolvedReasons.add(check.reason);
+    }
+  }
+  // Only the exact decision(s) being reconsidered may cross this pre-state gate.
+  // Canonical post-state validation must establish their newly accepted baseline.
+  return resolvedReasons.size > 0 && governance.reasons.every((reason) => resolvedReasons.has(reason));
+}
+
 function approvedCompilation(compiled: CompiledRepositoryChange, capture: LifecycleCaptureRecord): CompiledRepositoryChange {
   if (compiled.proposalHash !== capture.proposalHash || exactPatchInputHash(compiled) !== capture.exactPatchInputHash) {
     throw new Error("lifecycle approval dependencies are stale for the current repository observation");
@@ -106,10 +126,11 @@ export class RepositoryChangeLifecycleService {
 
   async capture(input: CaptureRepositoryChangeInput): Promise<CapturedRepositoryChange> {
     const proposal = parseChangeProposal(input.proposal);
-    const knowledgeContextId = input.knowledgeContextId?.normalize("NFKC").trim();
-    if (input.knowledgeContextId !== undefined && !knowledgeContextId) throw new Error("knowledge context ID must be nonblank");
+    const suppliedId = input.knowledgeContextId?.normalize("NFKC").trim();
+    if (input.knowledgeContextId !== undefined && !suppliedId) throw new Error("knowledge context ID must be nonblank");
+    const knowledgeContextId = await captureKnowledgeContextId(this.repositoryRoot, input.request, proposal, suppliedId);
     const compiled = await this.compile(input.request, proposal, knowledgeContextId);
-    if (knowledgeContextId !== undefined) await this.assertKnowledgeContext(knowledgeContextId, compiled.compiledPlan.plan.boundState.compiledAgainst);
+    if (knowledgeContextId !== undefined) await this.assertKnowledgeContext(knowledgeContextId, compiled, proposal);
     const capture = await this.store.capture({
       request: input.request.normalize("NFKC").trim(),
       proposal,
@@ -127,7 +148,7 @@ export class RepositoryChangeLifecycleService {
     const capture = await this.store.readCapture(selector);
     const proposal = parseChangeProposal(capture.proposal);
     const compiled = await this.compile(capture.request, proposal, capture.knowledgeContextId);
-    if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, compiled.compiledPlan.plan.boundState.compiledAgainst);
+    if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, compiled, proposal);
     const mismatches: string[] = [];
     if (compiled.compiledChange.change.id !== capture.semanticChangeId) mismatches.push("semantic change identity");
     if (compiled.proposalHash !== capture.proposalHash) mismatches.push("proposal hash");
@@ -168,7 +189,7 @@ export class RepositoryChangeLifecycleService {
     if (incomplete.length > 0) throw new Error(`incomplete governed transaction requires recovery before apply: ${incomplete.map(({ entry }) => entry.transactionId).join(", ")}`);
     const proposal = parseChangeProposal(capture.proposal);
     const currentCompilation = await this.compile(capture.request, proposal, capture.knowledgeContextId);
-    if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, currentCompilation.compiledPlan.plan.boundState.compiledAgainst);
+    if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, currentCompilation, proposal);
     const compiled = approvedCompilation(currentCompilation, capture);
     const attempt = await this.store.beginAttempt(approvalRecord.id);
     let result: StateBoundChangeResult;
@@ -274,28 +295,32 @@ export class RepositoryChangeLifecycleService {
   }
 
   private async compile(request: string, proposal: ChangeProposal, contextId?: string): Promise<CompiledRepositoryChange> {
-    const knowledgeContext = contextId === undefined ? undefined : await (await RepositoryKnowledgeService.create(this.repositoryRoot)).read(contextId);
-    return compileRepositoryChange({ repositoryRoot: this.repositoryRoot, request, proposal, now: this.now(), ...(knowledgeContext === undefined ? {} : { knowledgeContext }) });
+    const knowledgeContext = await adjudicatedKnowledgeContext(this.repositoryRoot, proposal, contextId);
+    const compiled = await compileRepositoryChange({ repositoryRoot: this.repositoryRoot, request, proposal, now: this.now(), ...(knowledgeContext === undefined ? {} : { knowledgeContext }) });
+    assertIdentityDisposition(compiled, proposal);
+    return compiled;
   }
 
-  private async assertKnowledgeContext(contextId: string, expectedState: CompiledRepositoryChange["compiledPlan"]["plan"]["boundState"]["compiledAgainst"]): Promise<void> {
+  private async assertKnowledgeContext(contextId: string, compiled: CompiledRepositoryChange, proposal: ChangeProposal): Promise<void> {
     const knowledge = await RepositoryKnowledgeService.create(this.repositoryRoot);
-    const retained = await knowledge.read(contextId);
-    const usableBranches = retained.branches.filter((branch) => !branch.hypothesis && branch.interpretation.direct);
-    if (retained.interpretation.status === "unresolved"
-      || retained.interpretation.candidates.length === 0
-      || usableBranches.length === 0) {
-      throw new Error("knowledge context has no direct, accepted, usable interpretation branch");
-    }
     const reconciliation = await knowledge.reconcile(contextId);
+    const expectedState = compiled.compiledPlan.plan.boundState.compiledAgainst;
     if (canonicalJson(reconciliation.currentState) !== canonicalJson(expectedState)) {
       throw new Error("knowledge context and lifecycle compilation observed different repository states; retry before mutation");
     }
     if (reconciliation.status !== "current" && reconciliation.status !== "rebound") {
       throw new Error(`knowledge context binding is ${reconciliation.status}: ${reconciliation.reasons.join("; ")}`);
     }
-    if (reconciliation.governance.status !== "conformant" && reconciliation.governance.status !== "not-applicable") {
-      throw new Error(`knowledge context governance is ${reconciliation.governance.status}: ${reconciliation.governance.reasons.join("; ")}`);
+    // Candidate discovery is retained for freshness. Only the reviewed selection
+    // supplies governing meaning; unrelated hypothetical branches do not veto it.
+    const selected = compiled.knowledgeContext;
+    const selectedReconciliation = selected !== undefined && selected.id !== contextId ? await knowledge.reconcile(selected.id) : reconciliation;
+    const governance = selectedReconciliation.governance;
+    if (proposal.identityResolution?.selectedEntityIds.length !== 0 && governance.status !== "conformant" && governance.status !== "not-applicable" && !permitsDecisionReconsideration(compiled, governance)) {
+      throw new Error(`knowledge context governance is ${governance.status}: ${governance.reasons.join("; ")}`);
+    }
+    if (canonicalJson(selectedReconciliation.currentState) !== canonicalJson(expectedState)) {
+      throw new Error("selected knowledge and lifecycle compilation observed different repository states; retry before mutation");
     }
   }
 }

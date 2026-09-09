@@ -9,6 +9,10 @@ import {
   type ProcessLaunchRequest,
   type ProcessLauncher,
 } from "./command-executor.js";
+import {
+  createWslBubblewrapCandidate,
+  type WslSandboxOptions,
+} from "./wsl-sandbox-launcher.js";
 
 export interface SandboxBackendCandidate {
   readonly id: string;
@@ -28,6 +32,7 @@ export interface SandboxLauncherOptions {
   readonly platform?: NodeJS.Platform;
   readonly nativeLauncher?: ProcessLauncher;
   readonly fallbackBackends?: readonly SandboxBackendCandidate[];
+  readonly wsl?: WslSandboxOptions | false;
 }
 
 export interface SandboxSelection {
@@ -57,6 +62,9 @@ export async function selectSandboxLauncher(options: SandboxLauncherOptions = {}
   const candidates: SandboxBackendCandidate[] = [];
   const failures: string[] = [];
   if (platform === "linux") candidates.push(createBubblewrapCandidate(nativeLauncher));
+  if (platform === "win32" && options.wsl !== false) {
+    candidates.push(createWslBubblewrapCandidate(options.wsl));
+  }
   candidates.push(...(options.fallbackBackends ?? []));
 
   for (const candidate of candidates) {
@@ -264,11 +272,22 @@ class BubblewrapSandboxLauncher implements ProcessLauncher {
 
     const readRoots = uniqueRoots(request.readRoots);
     const writeRoots = uniqueRoots(request.writeRoots);
+    const overlays = [...(request.readOnlyFileOverlays ?? [])].sort((left, right) => left.target.localeCompare(right.target));
+    const protectedPaths = [...systemReadRoots, request.executable, ...readRoots, ...overlays.map(({ source }) => source)];
+    for (const writeRoot of writeRoots) {
+      const covered = protectedPaths.find((protectedPath) => contains(writeRoot, protectedPath));
+      if (covered !== undefined) {
+        throw new ExecutionRefusedError(
+          "invalid-command",
+          `Writable sandbox root ${writeRoot} contains protected read-only path ${covered}`,
+        );
+      }
+    }
     const args = bubblewrapBaseArguments(request.network);
     appendExecutableRootBinding(args, request.executable, [...readRoots, ...writeRoots]);
     for (const root of readRoots) args.push("--ro-bind", root, root);
     for (const root of writeRoots) args.push("--bind", root, root);
-    for (const overlay of [...(request.readOnlyFileOverlays ?? [])].sort((left, right) => left.target.localeCompare(right.target))) {
+    for (const overlay of overlays) {
       const underReadRoot = readRoots.some((root) => {
         const path = relative(root, overlay.target);
         return path === "" || (!path.startsWith("..") && !isAbsolute(path));
@@ -320,5 +339,6 @@ function uniqueRoots(roots: readonly string[]): string[] {
 }
 
 function contains(root: string, target: string): boolean {
-  return target === root || target.startsWith(`${root}/`);
+  const path = relative(root, target);
+  return path === "" || (!path.startsWith("..") && !isAbsolute(path));
 }

@@ -101,6 +101,34 @@ const launchConfiguredServer = async (): Promise<JsonRpcMessage[]> => {
 };
 
 describe("Projector Codex plugin MCP launch", () => {
+  test("preserves explicit WSL runtime choices through the MCP child without forwarding unrelated environment", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-plugin-env-"));
+    try {
+      const fakeCli = join(root, "cli.mjs");
+      await writeFile(fakeCli, `import {createInterface} from 'node:readline';
+for await (const line of createInterface({input:process.stdin})) {
+ const request=JSON.parse(line);
+ if(request.method==='tools/list') console.log(JSON.stringify({jsonrpc:'2.0',id:request.id,result:{tools:[],observed:{distro:process.env.PROJECTOR_WSL_DISTRO,node:process.env.PROJECTOR_WSL_NODE,unrelated:process.env.PROJECTOR_TEST_SECRET??null}}}));
+}`);
+      const child = spawn(process.execPath, [join(pluginRoot, "scripts/projector-mcp.mjs")], {
+        cwd: pluginRoot, stdio: ["pipe", "pipe", "pipe"],
+        env: { ...process.env, PROJECTOR_CLI: fakeCli, PROJECTOR_WSL_DISTRO: "Chosen-Distro", PROJECTOR_WSL_NODE: "/opt/projector node/node", PROJECTOR_TEST_SECRET: "must-not-forward" },
+      });
+      let stdout = ""; let stderr = "";
+      child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => { stdout += chunk; });
+      child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+      for (const request of [
+        { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } },
+        { jsonrpc: "2.0", method: "notifications/initialized" },
+        { jsonrpc: "2.0", id: 2, method: "tools/list" },
+      ]) child.stdin.write(`${JSON.stringify(request)}\n`);
+      await finishMcpExchange(child, () => stdout.includes('"id":2'), () => `${stdout}\n${stderr}`);
+      const response = stdout.trim().split("\n").map((line) => JSON.parse(line)).find(({ id }) => id === 2);
+      expect(response.result.observed).toEqual({ distro: "Chosen-Distro", node: "/opt/projector node/node", unrelated: null });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   test("handshakes and lists tools from an installed plugin working directory", async () => {
     const messages = await launchConfiguredServer();
     const manifest = JSON.parse(await readFile(resolve(pluginRoot, ".codex-plugin", "plugin.json"), "utf8")) as {

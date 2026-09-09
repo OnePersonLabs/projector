@@ -42,6 +42,16 @@ const modelProposal = () => ({
   ],
 });
 
+async function reviewedModelProposal(root: string) {
+  const candidateProof = await (await RepositoryKnowledgeService.create(root)).context({ request: "Record a clock port and producer ownership independently of greeting behavior." });
+  return { ...modelProposal(), identityResolution: {
+    contextId: candidateProof.id, contextHash: candidateProof.contentHash, outcome: "create-new", selectedEntityIds: [],
+    rationale: "The existing greeting requirement does not own time production.",
+    newBoundary: { owns: ["Clock input and time production"], excludes: ["Greeting presentation"],
+      nearestEntityIds: candidateProof.interpretation.candidates.map(({ entityId }) => entityId), rationale: "Time is a distinct domain boundary." },
+  } };
+}
+
 async function repository(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "projector-lifecycle-service-"));
   await mkdir(join(root, "src"), { recursive: true });
@@ -52,6 +62,9 @@ async function repository(): Promise<string> {
   await writeFile(join(root, "test", "public-contract.test.mjs"), "import assert from 'node:assert/strict'; import { greet } from '../src/index.mjs'; assert.equal(greet(), 'hello');\n");
   const payload: Requirement = { id: "requirement:legacy-greeting", key: "legacy-greeting", title: "Personalized greeting", aliases: ["named-greeting"], statement: "The greeting includes the supplied name.", status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, origin: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder };
   await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload } }));
+  const scenario = proposal().scenarios[0]!;
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id: "scenario:greet-supplied-name", key: scenario.key, lifecycle: "active",
+    payload: { ...scenario, id: "scenario:greet-supplied-name", aliases: [], status: "active", sourceClass: "authored", scope: payload.scope, evidence: [], discoveryHash: placeholder, semanticHash: placeholder } }));
   await exec("git", ["init", "-q"], { cwd: root });
   await exec("git", ["config", "user.email", "projector@example.invalid"], { cwd: root });
   await exec("git", ["config", "user.name", "Projector Test"], { cwd: root });
@@ -70,11 +83,64 @@ function authority(id: string, subjectId: string): AuthorityRecord {
 }
 
 describe("repository change lifecycle service", () => {
+  it("cannot bypass unresolved new meaning by omitting pre-edit context", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      await expect(service.capture({ request: "Introduce a clock port", proposal: modelProposal() })).rejects.toThrow(/Pre-edit meaning is unresolved|newBoundary/u);
+      expect(await readdir(join(root, ".projector", "runtime", "change-lifecycles", "captures")).catch(() => [])).toHaveLength(0);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("does not label a newly introduced scenario as reuse of existing meaning", async () => {
+    const root = await repository();
+    try {
+      const context = await (await RepositoryKnowledgeService.create(root)).context({ request: "Reuse greeting", entities: ["requirement:legacy-greeting"] });
+      const proposed = proposal();
+      proposed.scenarios[0]!.key = "new-greeting-scenario";
+      await expect((await RepositoryChangeLifecycleService.create(root)).capture({ request: "Introduce a new scenario", proposal: { ...proposed,
+        identityResolution: { contextId: context.id, contextHash: context.contentHash, outcome: "reuse-existing", selectedEntityIds: ["requirement:legacy-greeting"], rationale: "Reuse this behavior" } } })).rejects.toThrow(/newBoundary|new durable ownership/u);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("accepts an explicit candidate selection and keeps its rationale in the exact plan", async () => {
+    const root = await repository();
+    try {
+      const knowledge = await RepositoryKnowledgeService.create(root);
+      const candidates = await knowledge.context({ request: "personalized greeting supplied name" });
+      expect(candidates.branches.some(({ hypothesis }) => hypothesis)).toBe(true);
+      const resolution = { contextId: candidates.id, contextHash: candidates.contentHash, outcome: "reuse-existing", selectedEntityIds: ["requirement:legacy-greeting"], rationale: "This requirement already owns personalization; preserve its accepted meaning." };
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Preserve greeting ownership", proposal: { ...proposal(), identityResolution: resolution } });
+      expect(captured.capture.knowledgeContextId).toBe(candidates.id);
+      expect(captured.compiled.knowledgeContext?.branches.some(({ hypothesis, interpretation }) => !hypothesis && interpretation.entityId === "requirement:legacy-greeting")).toBe(true);
+      expect(captured.compiled.intentReview.identityResolution).toEqual(resolution);
+      expect((await service.plan(captured.capture.semanticChangeId)).compiled.planHash).toBe(captured.capture.planHash);
+      await expect(service.capture({ request: "Preserve greeting ownership", proposal: { ...proposal(), identityResolution: { ...resolution, contextHash: placeholder } } })).rejects.toThrow(/candidate proof/u);
+      await expect(service.capture({ request: "Preserve greeting ownership", proposal: { ...proposal(), identityResolution: { ...resolution, selectedEntityIds: ["concept:not-inspected"] } } })).rejects.toThrow(/uninspected candidate/u);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("invalidates an approved new boundary when its inspected candidate knowledge changes", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const proposed = await reviewedModelProposal(root);
+      const captured = await service.capture({ request: "Record new clock ownership", proposal: proposed });
+      await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const canonical = new CanonicalFileRepository(root);
+      const before = (await canonical.read("requirement", "requirement:legacy-greeting"))!;
+      await canonical.write(withCanonicalHashes({ ...before, payload: { ...before.payload, title: "Clock and greeting", statement: "The greeting owns clock production too." } }));
+      await expect(service.plan(captured.capture.semanticChangeId)).rejects.toThrow(/stale|different repository states|candidate/u);
+      expect(await canonical.read("concept", "concept:clock")).toBeUndefined();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("journals and applies a model-only future obligation without a code sandbox or runtime satisfaction claim", async () => {
     const root = await repository();
     try {
       const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-09-09T00:00:00.000Z" });
-      const captured = await service.capture({ request: "Record the clock boundary before implementing it.", proposal: modelProposal() });
+      const captured = await service.capture({ request: "Record the clock boundary before implementing it.", proposal: await reviewedModelProposal(root) });
       expect(captured.compiled.executionKind).toBe("canonical-only");
       const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
       const result = await service.apply(approval.id);
@@ -91,17 +157,77 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("recovers and applies an interrupted lineage transaction with source retirement", async () => {
+    const root = await repository();
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      const source = (await canonical.read("requirement", "requirement:legacy-greeting"))!;
+      await canonical.write(withCanonicalHashes({
+        ...source,
+        id: "requirement:replacement-greeting",
+        key: "replacement-greeting",
+        lifecycle: "active",
+        payload: { ...source.payload, id: "requirement:replacement-greeting", key: "replacement-greeting", aliases: ["current-greeting"] },
+      }));
+      const knowledge = await RepositoryKnowledgeService.create(root);
+      const candidates = await knowledge.context({ request: "named-greeting personalized greeting" });
+      const proposal = {
+        apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [],
+        validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"],
+        identityResolution: {
+          contextId: candidates.id, contextHash: candidates.contentHash, outcome: "replace-existing",
+          selectedEntityIds: [source.id], rationale: "The replacement now owns this meaning.",
+          newBoundary: { owns: ["the current greeting identity"], excludes: ["the retired identity"], nearestEntityIds: [source.id], rationale: "Ownership moved explicitly." },
+        },
+        canonicalMutations: [{
+          kind: "lineage", operation: "add", lineageKind: "replace",
+          sources: [{ id: source.id, kind: "requirement", expectedSemanticHash: source.semanticHash, expectedDocumentHash: source.canonicalDocumentHash }],
+          replacementIds: ["requirement:replacement-greeting"], rationale: "Preserve replacement continuity.",
+        }],
+      };
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Replace the legacy greeting identity.", proposal });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const interruptedStore = await ChangeLifecycleStore.create(root, { newId: () => "lineage-interrupted" });
+      const attempt = await interruptedStore.beginAttempt(approval.id);
+      const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
+      const transaction = await journal.begin({ transactionId: attempt.transactionId, planId: captured.capture.planId, beforeState: captured.capture.stateBinding.compiledAgainst, allowedWriteRoots: captured.capture.plan.boundary });
+      for (const write of captured.compiled.canonicalWrites) {
+        if (write.after === null) await transaction.deleteFile(write.path);
+        else await transaction.writeFile(write.path, write.after);
+      }
+      expect(await canonical.read("requirement", source.id)).toBeUndefined();
+      expect(await service.recover(approval.id)).toEqual([expect.objectContaining({ action: "rolled-back" })]);
+      expect(await canonical.read("requirement", source.id)).toBeDefined();
+      expect((await canonical.snapshot()).documents.some(({ kind }) => kind === "lineage" || kind === "tombstone")).toBe(false);
+
+      const result = await service.apply(approval.id);
+      expect(result.outcome).toBe("success");
+      expect(await canonical.read("requirement", source.id)).toBeUndefined();
+      const finalDocuments = (await canonical.snapshot()).documents;
+      const lineage = finalDocuments.find(({ kind }) => kind === "lineage")!;
+      const tombstone = finalDocuments.find(({ kind }) => kind === "tombstone")!;
+      expect(lineage.payload).toMatchObject({ fromIds: [source.id], toIds: ["requirement:replacement-greeting"] });
+      expect(tombstone.payload).toMatchObject({ entityId: source.id, replacementIds: ["requirement:replacement-greeting"] });
+      expect(result.certificate.changedRequirements).toContain(source.id);
+      expect(result.receipt.changedCanonicalEntityIds).toEqual(expect.arrayContaining([source.id, lineage.id, tombstone.id]));
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("rolls back an interrupted multi-record model mutation and then applies the approved transaction", async () => {
     const root = await repository();
     try {
       const service = await RepositoryChangeLifecycleService.create(root);
-      const captured = await service.capture({ request: "Commit the clock model atomically.", proposal: modelProposal() });
+      const captured = await service.capture({ request: "Commit the clock model atomically.", proposal: await reviewedModelProposal(root) });
       const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
       const interruptedStore = await ChangeLifecycleStore.create(root, { newId: () => "model-interrupted" });
       const attempt = await interruptedStore.beginAttempt(approval.id);
       const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
       const transaction = await journal.begin({ transactionId: attempt.transactionId, planId: captured.capture.planId, beforeState: captured.capture.stateBinding.compiledAgainst, allowedWriteRoots: captured.capture.plan.boundary });
-      for (const write of captured.compiled.canonicalWrites) await transaction.writeFile(write.path, write.after);
+      for (const write of captured.compiled.canonicalWrites) {
+        if (write.after === null) throw new Error("this model-add fixture must not delete a canonical document");
+        await transaction.writeFile(write.path, write.after);
+      }
       expect(await new CanonicalFileRepository(root).read("concept", "concept:clock")).toBeDefined();
       expect(await service.recover(approval.id)).toEqual([expect.objectContaining({ action: "rolled-back" })]);
       expect(await new CanonicalFileRepository(root).read("concept", "concept:clock")).toBeUndefined();
@@ -192,6 +318,13 @@ describe("repository change lifecycle service", () => {
 
         await expect(service.capture({ request: "Let greet accept a name while preserving zero-argument callers.", proposal: proposal(), knowledgeContextId: context.id }))
           .rejects.toThrow(/knowledge context governance is unknown.*referenced authority/iu);
+        if (variant === "rejected") {
+          const payload = modelProposal().canonicalMutations[0]!.payload;
+          await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: payload.id, key: payload.key!, lifecycle: "active", payload: { ...payload, discoveryHash: placeholder, semanticHash: placeholder } }));
+          const unrelated = await (await RepositoryKnowledgeService.create(root)).context({ request: "Inspect clock", entities: [payload.id] });
+          await expect(service.capture({ request: "Change greeting with unrelated supplied knowledge", proposal: proposal(), knowledgeContextId: unrelated.id }))
+            .rejects.toThrow(/knowledge context governance is unknown.*referenced authority/iu);
+        }
       } finally { await rm(root, { recursive: true, force: true }); }
     }
   });
@@ -278,6 +411,12 @@ describe("repository change lifecycle service", () => {
         { validatorId: "projector.repository-post-observation", status: "passed" },
         { validatorId: "node-independent:test/public-contract.test.mjs", status: "passed" },
       ]));
+      expect(captured.capture.stateBinding.valueDependencies?.find(({ id }) => id === "repository-impact-proof")?.versionHash).toBe(captured.compiled.derivationImpact.contentHash);
+      expect(applied.validations.find(({ validatorId }) => validatorId === "projector.repository-post-observation")?.details).toMatchObject({ impact: {
+        baseline: { contentHash: captured.compiled.derivationImpact.baseline.contentHash },
+        status: "changed", surprises: [], candidateRelations: [],
+        current: { contentHash: expect.stringMatching(/^sha256:v1:/u) },
+      } });
       const independent = applied.validations.find(({ validatorId }) => validatorId.startsWith("node-independent:"));
       expect(independent?.details).toMatchObject({
         expectedContentHash: expect.stringMatching(/^sha256:v1:/u),
@@ -289,7 +428,8 @@ describe("repository change lifecycle service", () => {
       expect(independent?.details.expectedContentHash).toBe(independent?.details.afterContentHash);
       expect(independent?.evidenceIds).toHaveLength(1);
       expect(applied.receipt.changedRequirementIds).toHaveLength(0);
-      expect(applied.receipt.changedScenarioIds).toHaveLength(1);
+      // The existing scenario is reused, so the receipt must not claim a meaning edit.
+      expect(applied.receipt.changedScenarioIds).toHaveLength(0);
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("hello ${name}");
       expect((await service.apply(approval.id)).certificateHash).toBe(applied.certificateHash);
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -461,10 +601,16 @@ describe("repository change lifecycle service", () => {
       child = spawn(process.execPath, [vitest, "run", "packages/control-plane/src/change-lifecycle/interruption-worker.test.ts", "--pool=threads", "--maxWorkers=1"], {
         cwd: projectorRoot,
         env: { ...process.env, PROJECTOR_INTERRUPTION_REPOSITORY: root, PROJECTOR_INTERRUPTION_APPROVAL: approval.id },
-        stdio: "ignore",
+        stdio: ["ignore", "pipe", "pipe"],
       });
-
-      const transactionId = await waitForValidatingTransaction(root);
+      let workerOutput = "";
+      const captureOutput = (chunk: Buffer) => { workerOutput = (workerOutput + chunk.toString("utf8")).slice(-8_192); };
+      child.stdout!.on("data", captureOutput);
+      child.stderr!.on("data", captureOutput);
+      const prematureExit = new Promise<never>((_resolve, reject) => child!.once("exit", (code, signal) => {
+        reject(new Error(`interruption worker exited before validation (${code ?? signal}): ${workerOutput}`));
+      }));
+      const transactionId = await Promise.race([waitForValidatingTransaction(root), prematureExit]);
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("hello ${name}");
       child.kill("SIGKILL");
       const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child!.once("exit", (code, signal) => resolve({ code, signal })));

@@ -45,6 +45,20 @@ export interface GovernanceBundleEvaluation {
   readonly contentHash: ContentHash;
 }
 
+/** Authenticated host observations; the engine never executes validator programs. */
+export interface ExternalGovernanceValidatorFinding {
+  readonly unitId: string;
+  readonly validatorId: string;
+  readonly status: "satisfied" | "violated" | "unknown";
+  readonly reason: string;
+  readonly evidenceIds: readonly string[];
+}
+
+export interface GovernanceEvaluationOptions {
+  readonly validatorFindings?: readonly ExternalGovernanceValidatorFinding[];
+  readonly requiredValidatorIds?: readonly string[];
+}
+
 const strings = (values: readonly string[]) => [...new Set(values)].sort();
 const unique = <T>(values: readonly T[]): T[] => [...new Map(values.map(value => [canonicalJson(value), value])).entries()]
   .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, value]) => value);
@@ -76,7 +90,18 @@ function canonicalPath(value: unknown): string | undefined {
 }
 
 /** Evaluates data from an observer. Canonical strings never become executable commands. */
-export function evaluateEffectiveRuleBundle(bundle: EffectiveRuleBundle, observation: GovernanceObservation): GovernanceBundleEvaluation {
+export function evaluateEffectiveRuleBundle(bundle: EffectiveRuleBundle, observation: GovernanceObservation, options: GovernanceEvaluationOptions = {}): GovernanceBundleEvaluation {
+  const validatorFindings = new Map<string, ExternalGovernanceValidatorFinding>();
+  for (const finding of options.validatorFindings ?? []) {
+    if (finding.unitId !== bundle.unitId) continue;
+    if (validatorFindings.has(finding.validatorId)) throw new Error(`duplicate validator observation ${finding.validatorId} for ${bundle.unitId}`);
+    validatorFindings.set(finding.validatorId, finding);
+  }
+  const validatorCheck = (validatorId: string): Check => {
+    const finding = validatorFindings.get(validatorId);
+    return finding === undefined ? check("unknown", `Validator ${validatorId} has no registered evaluator for this rule.`)
+      : check(finding.status, finding.reason, finding.evidenceIds);
+  };
   const subjects = new Map<string, SelectorSubject>();
   for (const subject of observation.subjects) {
     if (subjects.has(subject.id)) throw new Error(`duplicate governance subject ${subject.id}`);
@@ -95,6 +120,7 @@ export function evaluateEffectiveRuleBundle(bundle: EffectiveRuleBundle, observa
     unitIds,
     unitEnumeration: observation.unitEnumeration,
     dependencyEnumerations: [...enumerations.values()].sort((a, b) => a.unitId < b.unitId ? -1 : 1),
+    ...(validatorFindings.size === 0 ? {} : { validatorFindings: unique([...validatorFindings.values()]) }),
   };
   const observationHash = hashFramedDomain("governance-observation", normalized);
   const subject = subjects.get(bundle.unitId);
@@ -107,6 +133,7 @@ export function evaluateEffectiveRuleBundle(bundle: EffectiveRuleBundle, observa
 
   const evaluate = (predicate: NormalizedPredicate): Check => {
     if (subject === undefined) return check("unknown", "The governed unit is not present in the observation.");
+    if (predicate.kind === "validator") return validatorCheck(predicate.validatorId);
     if (predicate.kind === "path-under" || predicate.kind === "path-not-under") {
       const path = canonicalPath(subject.values.path);
       const root = canonicalPath(predicate.root);
@@ -166,8 +193,12 @@ export function evaluateEffectiveRuleBundle(bundle: EffectiveRuleBundle, observa
     for (const validatorId of strings(rule.validatorIds)) {
       const builtin = validatorId === "projector.builtin.static-dependency-boundary@1" && rule.predicates.length > 0
         && rule.predicates.every(predicate => predicate.kind === "dependency-forbidden" || predicate.kind === "dependency-allowed");
-      if (!builtin) add(rule.id, { validatorId }, check("unknown", `Validator ${validatorId} has no registered evaluator for this rule.`));
+      if (!builtin) add(rule.id, { validatorId }, validatorCheck(validatorId));
     }
+  }
+  const referencedValidators = new Set(rules.flatMap((rule) => [...rule.validatorIds, ...rule.predicates.flatMap((predicate) => predicate.kind === "validator" ? [predicate.validatorId] : [])]));
+  for (const validatorId of strings(options.requiredValidatorIds ?? [])) {
+    if (!referencedValidators.has(validatorId)) add(`validator:${validatorId}`, { validatorId }, validatorCheck(validatorId));
   }
   for (const conflict of bundle.conflicts) add(conflict.ruleIds.join(","), conflict, check("violated", conflict.explanation, conflict.evidenceIds));
   const ordered = unique(findings);
