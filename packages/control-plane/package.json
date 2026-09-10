@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./application-evidence": {
+      "types": "./dist/application-evidence/index.d.ts",
+      "default": "./dist/application-evidence/index.js"
     }
   },
   "scripts": {
@@ -18,6 +22,7 @@
     "@projector/analyzers": "workspace:*",
     "@projector/core": "workspace:*",
     "@projector/engine": "workspace:*",
+    "@projector/integrations": "workspace:*",
     "@projector/runtime": "workspace:*",
     "zod": "^4.0.15"
   }

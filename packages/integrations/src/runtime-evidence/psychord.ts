@@ -1,7 +1,7 @@
 import type { ContentHash } from "@projector/core";
 
 export const psychordObservationAdapterId = "psychord.keep-reload-replay" as const;
-export const psychordObservationAdapterVersion = 1 as const;
+export const psychordObservationAdapterVersion = "1" as const;
 
 export type PsychordObservationCase = "no-input" | "keep-reload-replay" | "save-failure";
 
@@ -161,6 +161,7 @@ export interface PsychordObservationResult {
   readonly adapterVersion: typeof psychordObservationAdapterVersion;
   readonly runId: string;
   readonly case: PsychordObservationCase;
+  readonly scenario: PsychordObservationPlan["scenario"];
   readonly operationalStatus: "completed" | "failed" | "cancelled";
   readonly outcome: "passed" | "failed" | "unavailable";
   readonly currentness: "current" | "stale" | "unknown";
@@ -419,6 +420,7 @@ async function observePreparedPsychordApplication(
     adapterVersion: psychordObservationAdapterVersion,
     runId: plan.runId,
     case: plan.case,
+    scenario: plan.scenario,
     operationalStatus,
     outcome,
     currentness,
@@ -460,6 +462,7 @@ function unavailableResult(
     adapterVersion: psychordObservationAdapterVersion,
     runId: plan.runId,
     case: plan.case,
+    scenario: plan.scenario,
     operationalStatus: cancelled ? "cancelled" : "failed",
     outcome: "unavailable",
     currentness: "unknown",
