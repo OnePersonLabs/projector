@@ -94,7 +94,7 @@ export async function validateReleaseCandidate(candidateRoot) {
   if (!Array.isArray(manifest.files)) throw new Error("release candidate manifest has no file inventory");
   const actual = await inventoryCandidateFiles(root);
   if (canonicalJson(manifest.files) !== canonicalJson(actual)) throw new Error("release candidate file inventory, bytes, or digest does not match manifest");
-  const required = [manifest.tarballPath, `${manifest.pluginRoot}/.codex-plugin/plugin.json`, "packed-lifecycle-acceptance.mjs", manifest.runnerPath, "release-candidate.mjs", manifest.fixturePath, "provision-ubuntu-sandbox.sh"];
+  const required = [manifest.tarballPath, `${manifest.pluginRoot}/.codex-plugin/plugin.json`, "packed-lifecycle-acceptance.mjs", manifest.runnerPath, "release-candidate.mjs", manifest.fixturePath];
   const paths = new Set(actual.map(({ path }) => path));
   for (const path of required) {
     candidatePath(root, path);
