@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -22,9 +23,26 @@ async function readBoundedStdin() {
 async function requestSource() {
   if (process.argv.length > 3) throw new Error("usage: projector-operation.mjs [request.json]");
   if (process.argv[2] === undefined) return readBoundedStdin();
-  const bytes = await readFile(resolve(process.argv[2]));
-  if (bytes.length > maximumRequestBytes) throw new Error(`Projector operation request exceeds ${maximumRequestBytes} bytes`);
-  return bytes.toString("utf8");
+  const requestPath = resolve(process.argv[2]);
+  const pathStatus = await lstat(requestPath);
+  if (pathStatus.isSymbolicLink()) throw new Error("Projector operation request must not be a symbolic link");
+  const handle = await open(requestPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const status = await handle.stat();
+    if (!status.isFile()) throw new Error("Projector operation request must be a regular file");
+    if (status.size > maximumRequestBytes) throw new Error(`Projector operation request exceeds ${maximumRequestBytes} bytes`);
+    const bytes = Buffer.allocUnsafe(maximumRequestBytes + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const result = await handle.read(bytes, length, bytes.length - length, null);
+      if (result.bytesRead === 0) break;
+      length += result.bytesRead;
+    }
+    if (length > maximumRequestBytes) throw new Error(`Projector operation request exceeds ${maximumRequestBytes} bytes`);
+    return bytes.subarray(0, length).toString("utf8");
+  } finally {
+    await handle.close();
+  }
 }
 
 async function main() {
