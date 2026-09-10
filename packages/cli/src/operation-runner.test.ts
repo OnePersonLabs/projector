@@ -108,6 +108,19 @@ describe("bounded Projector operation runner", () => {
       registered: false,
       reachable: false,
     });
+    for (const operation of [
+      "change.capture",
+      "change.plan",
+      "change.approve",
+      "change.apply",
+      "change.recover",
+      "change.resume",
+    ] as const) {
+      expect(inactive.operations.find((capability) => capability.operation === operation)).toMatchObject({
+        registered: true,
+        reachable: true,
+      });
+    }
     expect(inactive.observedHostCapabilities).toEqual([
       expect.objectContaining({ capability: "process.cpu-limit-enforcement", available: false }),
       expect.objectContaining({ capability: "process.memory-limit-enforcement", available: false }),
