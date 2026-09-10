@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { hashFramedDomain, type ContentHash } from "@projector/core";
+import { hashFramedDomain, hydrateCanonicalDocumentWire, type ContentHash } from "@projector/core";
 import { parse as parseToml } from "smol-toml";
 import { validateBenchmarkMetrics, type BenchmarkGateResult } from "./benchmark.js";
 import type { SubsystemClosureReceipt } from "./subsystem-closure.js";
@@ -124,16 +124,32 @@ const canonicalSet = (values: readonly string[]) => [...new Set(values)].sort();
 export function evaluateIndependentConformance(observation: IndependentConformanceObservation): { readonly passed: boolean; readonly reasons: readonly string[]; readonly contentHash: ContentHash } {
   const entities = observation.rawDocuments.map(({ path, bytes }) => {
     let parsed: unknown;
-    try { parsed = parseToml(bytes, { integersAsBigInt: "asNeeded" }); }
+    try { parsed = decodeTomlNulls(parseToml(bytes, { integersAsBigInt: "asNeeded" })); }
     catch (error) { throw new Error(`independent raw TOML fixture is malformed at ${path}`, { cause: error }); }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`independent raw TOML fixture does not satisfy canonical semantic schema at ${path}`);
-    const value = parsed as Record<string, unknown>;
-    const semanticHash = value.semanticHash ?? (typeof value.payload === "object" && value.payload !== null && !Array.isArray(value.payload) ? (value.payload as Record<string, unknown>).semanticHash : undefined);
-    if (typeof value.id !== "string" || typeof value.kind !== "string" || typeof semanticHash !== "string") throw new Error(`independent raw TOML fixture does not satisfy canonical semantic schema at ${path}`);
-    return { id: value.id, kind: value.kind, semanticHash };
+    try {
+      const document = hydrateCanonicalDocumentWire(parsed);
+      return { id: document.id, kind: document.kind, semanticHash: document.semanticHash };
+    } catch (error) {
+      throw new Error(`independent raw TOML fixture does not satisfy canonical semantic schema at ${path}`, { cause: error });
+    }
   }).sort((a, b) => a.id.localeCompare(b.id)); const rawIds = canonicalSet(entities.map(({ id }) => id)); const independentSemanticDigest = hashFramedDomain("independent-release-semantics", { schemaId: observation.schemaId, runtimeLane: observation.runtimeLane, entities }); const cleanIds = canonicalSet(observation.clean.entityIds); const incrementalIds = canonicalSet(observation.incremental.entityIds); const changed = new Set(observation.locality.changedEntityIds);
   const reasons = [...(observation.clean.derivedDigest === observation.incremental.derivedDigest ? [] : ["clean and incremental derived observations differ"]), ...(observation.clean.semanticDigest === independentSemanticDigest && observation.incremental.semanticDigest === independentSemanticDigest ? [] : ["derived semantics contradict independent raw fixture interpretation"]), ...(JSON.stringify(cleanIds) === JSON.stringify(rawIds) && JSON.stringify(incrementalIds) === JSON.stringify(rawIds) ? [] : ["derived observations contradict independent raw canonical identities"]), ...(observation.locality.recomputedEntityIds.every((id) => changed.has(id)) ? [] : ["incremental recomputation escaped the changed dependency scope"]), ...(observation.evidenceIds.length > 0 && observation.rawDocuments.length > 0 ? [] : ["independent raw evidence is missing"] )];
   return { passed: reasons.length === 0, reasons, contentHash: hashFramedDomain("independent-release-conformance", observation) };
+}
+
+function decodeTomlNulls(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(decodeTomlNulls);
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value);
+    if (Object.hasOwn(value, "__projector_toml_null")) {
+      if (entries.length !== 1 || (value as Record<string, unknown>).__projector_toml_null !== true) {
+        throw new Error("invalid reserved TOML null marker");
+      }
+      return null;
+    }
+    return Object.fromEntries(entries.map(([key, item]) => [key, decodeTomlNulls(item)]));
+  }
+  return value;
 }
 
 export interface ReleaseDeviation { readonly id: string; readonly severity: "note" | "minor" | "major"; readonly impact: string; readonly evidenceIds: readonly string[]; readonly waivedGateIds: readonly string[] }

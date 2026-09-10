@@ -51,12 +51,24 @@ describe("installed Projector editor schema bundle", () => {
     const requirementPayload = dereference(arm("requirement").properties!.payload!);
     expect(conceptPayload).toMatchObject({
       additionalProperties: false,
-      required: expect.arrayContaining(["id", "key", "kind", "name", "statement", "status"]),
+      required: expect.arrayContaining(["kind", "name", "statement"]),
     });
     expect(requirementPayload).toMatchObject({
       additionalProperties: false,
-      required: expect.arrayContaining(["id", "key", "statement", "origin", "status"]),
+      required: expect.arrayContaining(["statement", "origin"]),
     });
+    for (const payload of [conceptPayload, requirementPayload]) {
+      expect(payload.properties).not.toHaveProperty("id");
+      expect(payload.properties).not.toHaveProperty("key");
+      expect(payload.properties).not.toHaveProperty("status");
+      expect(payload.properties).not.toHaveProperty("semanticHash");
+      expect(payload.properties).not.toHaveProperty("discoveryHash");
+    }
+    for (const candidate of canonical.anyOf) {
+      expect(candidate.properties).not.toHaveProperty("semanticHash");
+      expect(candidate.properties).not.toHaveProperty("discoveryHash");
+      expect(candidate.properties).not.toHaveProperty("canonicalDocumentHash");
+    }
     expect(requirementPayload.properties).not.toHaveProperty("name");
     const objectSchemas: Array<Record<string, unknown>> = [];
     const visit = (value: unknown): void => {

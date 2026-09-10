@@ -58,6 +58,44 @@ describe("CanonicalFileRepository", () => {
     expect(path.replaceAll("\\", "/")).toMatch(/\/model\/concepts\/concept-durable-meaning--[a-f0-9]{64}\.concept\.toml$/u);
     expect(source).toMatch(/^#:schema \.\.\/\.\.\/schemas\/canonical-document-v2\.schema\.json\n/u);
     expect(source).toContain('statement = "Readable meaning."');
+    expect(source).not.toMatch(/^(?:semanticHash|discoveryHash|canonicalDocumentHash) =/mu);
+    expect(source).not.toMatch(/^\[payload\]\n(?:.|\n)*?^(?:id|key|status|semanticHash|discoveryHash) =/mu);
+    expect(await repository.read("concept", "concept:durable-meaning")).toEqual(concept("concept:durable-meaning", "Readable meaning."));
+  });
+
+  test("hydrates ordinary authored statement, lifecycle, and alias edits without manual hash fields", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const before = concept("concept:editable", "Original authored meaning.", "editable");
+    const path = await repository.write(before);
+    const authored = await readFile(path, "utf8");
+
+    await writeFile(path, authored
+      .replace('lifecycle = "active"', 'lifecycle = "deprecated"')
+      .replace('aliases = []', 'aliases = ["human-edited"]')
+      .replace('statement = "Original authored meaning."', 'statement = "Revised outside the lifecycle and observed afresh."'), "utf8");
+
+    const after = await repository.read("concept", "concept:editable");
+    expect(after).toMatchObject({
+      lifecycle: "deprecated",
+      payload: { id: before.id, key: before.key, status: "deprecated", aliases: ["human-edited"], statement: "Revised outside the lifecycle and observed afresh." },
+    });
+    expect(after?.semanticHash).not.toBe(before.semanticHash);
+    expect(after?.discoveryHash).not.toBe(before.discoveryHash);
+    expect(after?.canonicalDocumentHash).not.toBe(before.canonicalDocumentHash);
+  });
+
+  test("reports authored mirror and malformed domain fields through the strict wire owner", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const path = await repository.write(concept("concept:invalid-wire", "Readable meaning.", "invalid-wire"));
+    const source = await readFile(path, "utf8");
+    await writeFile(path, source
+      .replace('lifecycle = "active"', `lifecycle = "active"\ncanonicalDocumentHash = "${zeroHash}"`)
+      .replace("[payload]\n", '[payload]\nid = "concept:forged"\n')
+      .replace('confidence = 1', 'confidence = "certain"'), "utf8");
+
+    await expect(repository.read("concept", "concept:invalid-wire")).rejects.toThrow(/payload.*(?:unrecognized|confidence|expected number)/isu);
   });
 
   test("keeps canonical currentness stable across comments and presentation whitespace", async () => {
@@ -165,7 +203,7 @@ describe("CanonicalFileRepository", () => {
     const repository = new CanonicalFileRepository(root);
     const targetPath = repository.pathFor("concept", "concept-a");
     await mkdir(join(targetPath, ".."), { recursive: true });
-    await writeFile(targetPath, stringifyTomlDocument(concept("concept-b", "protected") as unknown as Record<string, unknown>), "utf8");
+    await writeFile(targetPath, repository.prepareWrite(concept("concept-b", "protected")).contents, "utf8");
     await expect(repository.write(concept("concept-a", "overwrite"))).rejects.toThrow(/owned by concept-b/);
     await expect(repository.delete("concept", "concept-a")).rejects.toThrow(/owned by concept-b/);
     expect((parseTomlDocument(await readFile(targetPath, "utf8")) as { id: string }).id).toBe("concept-b");
@@ -203,16 +241,6 @@ describe("CanonicalFileRepository", () => {
     await repository.write(concept("concept-b", "b", "shared-key"));
 
     await expect(repository.snapshot()).rejects.toThrow(/duplicate canonical key shared-key/);
-  });
-
-  test("rejects a canonical file whose exact document hash was corrupted", async () => {
-    const root = await temporaryRepository();
-    const repository = new CanonicalFileRepository(root);
-    const path = await repository.write(concept("concept-a", "original"));
-    const corrupted = (await readFile(path, "utf8")).replace('lifecycle = "active"', 'lifecycle = "deprecated"');
-    await writeFile(path, corrupted, "utf8");
-
-    await expect(repository.snapshot()).rejects.toThrow(/canonical document hash mismatch/);
   });
 
   test.each([
@@ -259,7 +287,7 @@ describe("CanonicalFileRepository", () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
     await mkdir(join(root, ".projector"), { recursive: true });
-    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\n');
+    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
 
     expect((await repository.snapshot()).documents).toEqual([]);
   });

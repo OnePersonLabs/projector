@@ -15,7 +15,7 @@ export interface ProjectorEditorSchema {
 export function createProjectorEditorSchemaBundle(): readonly ProjectorEditorSchema[] {
   const schemas = exportContractJsonSchemas();
   const selected = [
-    [".projector/schemas/canonical-document-v2.schema.json", tomlEncodingSchema(schemas.CanonicalDocumentEnvelopeByKind)],
+    [".projector/schemas/canonical-document-v2.schema.json", tomlEncodingSchema(schemas.CanonicalDocumentWireByKind)],
     [".projector/schemas/projector-config-v1.schema.json", schemas.PreparedProjectorConfig],
   ] as const;
   return selected.map(([relativePath, schema]) => {
