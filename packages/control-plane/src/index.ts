@@ -28,6 +28,11 @@ export {
   type RepositoryIntentReviewSummary,
 } from "./change-lifecycle/transport.js";
 export { RepositoryKnowledgeService } from "./knowledge/service.js";
+export {
+  KnowledgeApplicationEvidenceAssessmentSchema,
+  type KnowledgeApplicationEvidenceAssessment,
+  type PsychordApplicationEvidenceHost,
+} from "./knowledge/application-evidence.js";
 export { buildRepositoryImpactSnapshot, predictRepositoryImpact, reconcileRepositoryImpact, type RepositoryImpactReport } from "./impact/service.js";
 export { inspectRepositoryArchitecture } from "./knowledge/architecture-inspection.js";
 export type {

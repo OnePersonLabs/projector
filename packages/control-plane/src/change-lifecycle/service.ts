@@ -8,6 +8,7 @@ import { executeCompiledRepositoryChange } from "./executor.js";
 import { adjudicatedKnowledgeContext, assertIdentityDisposition, captureKnowledgeContextId } from "./identity-adjudication.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import type { KnowledgeReconciliationResult } from "../knowledge/types.js";
+import type { PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
 import {
   ChangeLifecycleStore,
   type ChangeLifecycleStoreOptions,
@@ -31,6 +32,7 @@ export interface CapturedRepositoryChange extends PlannedRepositoryChange {}
 
 export interface RepositoryChangeLifecycleServiceOptions extends ChangeLifecycleStoreOptions {
   readonly leaseStaleAfterMs?: number;
+  readonly applicationEvidence?: PsychordApplicationEvidenceHost;
 }
 
 export interface LifecycleRecoveryOutcome {
@@ -108,6 +110,7 @@ function approvedCompilation(compiled: CompiledRepositoryChange, capture: Lifecy
 export class RepositoryChangeLifecycleService {
   private readonly now: () => string;
   private readonly leaseStaleAfterMs: number;
+  private readonly applicationEvidence: PsychordApplicationEvidenceHost | undefined;
 
   private constructor(
     private readonly repositoryRoot: string,
@@ -116,6 +119,7 @@ export class RepositoryChangeLifecycleService {
   ) {
     this.now = options.now ?? (() => new Date().toISOString());
     this.leaseStaleAfterMs = options.leaseStaleAfterMs ?? 30_000;
+    this.applicationEvidence = options.applicationEvidence;
   }
 
   static async create(
@@ -131,7 +135,7 @@ export class RepositoryChangeLifecycleService {
     const proposal = parseChangeProposal(input.proposal);
     const suppliedId = input.knowledgeContextId?.normalize("NFKC").trim();
     if (input.knowledgeContextId !== undefined && !suppliedId) throw new Error("knowledge context ID must be nonblank");
-    const knowledgeContextId = await captureKnowledgeContextId(this.repositoryRoot, input.request, proposal, suppliedId, options.signal);
+    const knowledgeContextId = await captureKnowledgeContextId(this.repositoryRoot, input.request, proposal, suppliedId, options.signal, this.applicationEvidence);
     const compiled = await this.compile(input.request, proposal, knowledgeContextId, options.signal);
     if (knowledgeContextId !== undefined) await this.assertKnowledgeContext(knowledgeContextId, compiled, proposal, options.signal);
     options.signal?.throwIfAborted();
@@ -320,14 +324,14 @@ export class RepositoryChangeLifecycleService {
   }
 
   private async compile(request: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal): Promise<CompiledRepositoryChange> {
-    const knowledgeContext = await adjudicatedKnowledgeContext(this.repositoryRoot, proposal, contextId, signal);
+    const knowledgeContext = await adjudicatedKnowledgeContext(this.repositoryRoot, proposal, contextId, signal, this.applicationEvidence);
     const compiled = await compileRepositoryChange({ repositoryRoot: this.repositoryRoot, request, proposal, now: this.now(), ...(knowledgeContext === undefined ? {} : { knowledgeContext }) }, signal === undefined ? {} : { signal });
     assertIdentityDisposition(compiled, proposal);
     return compiled;
   }
 
   private async assertKnowledgeContext(contextId: string, compiled: CompiledRepositoryChange, proposal: ChangeProposal, signal?: AbortSignal): Promise<void> {
-    const knowledge = await RepositoryKnowledgeService.create(this.repositoryRoot);
+    const knowledge = await RepositoryKnowledgeService.create(this.applicationEvidence === undefined ? this.repositoryRoot : { repositoryRoot: this.repositoryRoot, applicationEvidence: this.applicationEvidence });
     const reconciliation = await knowledge.reconcile(contextId, signal === undefined ? {} : { signal });
     const expectedState = compiled.compiledPlan.plan.boundState.compiledAgainst;
     if (canonicalJson(reconciliation.currentState) !== canonicalJson(expectedState)) {
@@ -341,6 +345,9 @@ export class RepositoryChangeLifecycleService {
     const selected = compiled.knowledgeContext;
     const selectedReconciliation = selected !== undefined && selected.id !== contextId ? await knowledge.reconcile(selected.id, signal === undefined ? {} : { signal }) : reconciliation;
     const governance = selectedReconciliation.governance;
+    if (selectedReconciliation.applicationEvidence.status === "violated" || selectedReconciliation.applicationEvidence.status === "unknown") {
+      throw new Error(`knowledge context application evidence is ${selectedReconciliation.applicationEvidence.status}: ${selectedReconciliation.applicationEvidence.branches.flatMap(({ reasons }) => reasons).join("; ")}`);
+    }
     if (proposal.identityResolution?.selectedEntityIds.length !== 0 && governance.status !== "conformant" && governance.status !== "not-applicable" && !permitsDecisionReconsideration(compiled, governance)) {
       throw new Error(`knowledge context governance is ${governance.status}: ${governance.reasons.join("; ")}`);
     }

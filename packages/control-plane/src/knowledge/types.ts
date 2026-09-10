@@ -23,6 +23,7 @@ import {
 import type { CompiledSemanticContext, GovernanceBundleEvaluation, RelevanceMetrics } from "@projector/engine";
 import { z } from "zod";
 import { RepositoryImpactReferenceSchema, RepositoryImpactReportSchema, type RepositoryImpactReference, type RepositoryImpactReport } from "../impact/service.js";
+import { KnowledgeApplicationEvidenceAssessmentSchema, type KnowledgeApplicationEvidenceAssessment } from "./application-evidence.js";
 
 export const KNOWLEDGE_API_VERSION = "projector.knowledge/v1" as const;
 
@@ -101,6 +102,7 @@ export interface KnowledgeContextBranch {
   readonly lensObligations: readonly KnowledgeLensObligation[];
   readonly decisionValidity?: readonly KnowledgeDecisionValidity[];
   readonly governanceEvaluations?: readonly GovernanceBundleEvaluation[];
+  readonly applicationEvidence: readonly KnowledgeApplicationEvidenceAssessment[];
   readonly sourceFingerprint: ContentHash;
   readonly semanticFingerprint: ContentHash;
   readonly queryFingerprint: ContentHash;
@@ -177,6 +179,10 @@ export interface KnowledgeReconciliationResult {
   readonly discoveryValidation: StateBindingValidation;
   readonly branches: readonly KnowledgeReconciliationBranch[];
   readonly governance: KnowledgeGovernanceReconciliation;
+  readonly applicationEvidence: {
+    readonly status: "satisfied" | "violated" | "unknown" | "not-applicable";
+    readonly branches: readonly { readonly branchId: string; readonly status: "satisfied" | "violated" | "unknown" | "not-applicable"; readonly changed: boolean; readonly reasons: readonly string[] }[];
+  };
   readonly reasons: readonly string[];
   readonly contentHash: ContentHash;
 }
@@ -272,6 +278,7 @@ export const KnowledgeContextBranchSchema = z.strictObject({
   lensObligations: z.array(KnowledgeLensObligationSchema),
   decisionValidity: z.array(KnowledgeDecisionValiditySchema).optional(),
   governanceEvaluations: z.array(governanceEvaluationSchema).optional(),
+  applicationEvidence: z.array(KnowledgeApplicationEvidenceAssessmentSchema),
   sourceFingerprint: ContentHashSchema,
   semanticFingerprint: ContentHashSchema,
   queryFingerprint: ContentHashSchema,
@@ -345,6 +352,10 @@ export const KnowledgeReconciliationResultSchema = z.strictObject({
       reasons: z.array(z.string()),
     })),
     reasons: z.array(z.string()),
+  }),
+  applicationEvidence: z.strictObject({
+    status: z.enum(["satisfied", "violated", "unknown", "not-applicable"]),
+    branches: z.array(z.strictObject({ branchId: z.string(), status: z.enum(["satisfied", "violated", "unknown", "not-applicable"]), changed: z.boolean(), reasons: z.array(z.string()) })),
   }),
   reasons: z.array(z.string()),
   contentHash: ContentHashSchema,

@@ -4,12 +4,14 @@ import { join } from "node:path";
 
 import {
   hashFramedDomain,
+  ContentHashSchema,
   withCanonicalHashes,
   type ArchitectureDecision,
   type AuthorityRecord,
   type Concept,
   type ProjectionLens,
   type Relation,
+  type Requirement,
 } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
@@ -72,6 +74,10 @@ async function writeRelation(root: string, value: Relation): Promise<void> {
   }));
 }
 
+async function writeRequirement(root: string, value: Requirement): Promise<void> {
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id: value.id, key: value.key, lifecycle: value.status, payload: { ...value } }));
+}
+
 function authority(id: string, subjectId: string): AuthorityRecord {
   return {
     id,
@@ -98,7 +104,7 @@ function authority(id: string, subjectId: string): AuthorityRecord {
   };
 }
 
-async function writeCanonical(root: string, kind: "architecture-decision" | "authority-record" | "projection-lens" | "tombstone", id: string, key: string, lifecycle: string, payload: Record<string, unknown>): Promise<void> {
+async function writeCanonical(root: string, kind: "architecture-decision" | "authority-record" | "projection-lens" | "behavioral-scenario" | "tombstone", id: string, key: string, lifecycle: string, payload: Record<string, unknown>): Promise<void> {
   await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key, lifecycle, payload }));
 }
 
@@ -107,6 +113,61 @@ afterEach(async () => {
 });
 
 describe("RepositoryKnowledgeService", () => {
+  it("reruns declared application evidence and exposes changed negative dispositions", async () => {
+    const root = await repository();
+    const evidenceId = "psychord-artifact:test";
+    await writeCanonical(root, "behavioral-scenario", "scenario:keep-reload-replay-owned-moment", "keep-reload-replay-owned-moment", "active", {
+      id: "scenario:keep-reload-replay-owned-moment", key: "keep-reload-replay-owned-moment", title: "Keep, reload, and replay", aliases: [], status: "active", sourceClass: "authored",
+      scope: { op: "all", items: [] }, steps: [{ role: "trigger", statement: "The application is observed." }, { role: "expected-outcome", statement: "The declared assertion is evaluated." }], evidence: [], discoveryHash: hash("scenario:discovery"), semanticHash: hash("scenario"),
+    });
+    const scenarioHash = ContentHashSchema.parse((await new CanonicalFileRepository(root).read("behavioral-scenario", "scenario:keep-reload-replay-owned-moment"))!.payload.semanticHash);
+    await writeRequirement(root, {
+      id: "requirement:psychord-observation", key: "psychord-observation", title: "Observed Psychord behavior", aliases: [],
+      statement: "The accepted application predicate has current supporting behavioral evidence.", status: "active", sourceClass: "authored",
+      scope: { op: "all", items: [] }, origin: [],
+      evidence: [{ evidenceId, stance: "supports", applicationPredicate: {
+        kind: "application-observation", adapter: { id: "psychord.keep-reload-replay", version: "1" },
+        scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenarioHash }, case: "no-input",
+        predicateId: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"], observationRole: "latest",
+      } }, { evidenceId: "foreign-artifact:test", stance: "supports", applicationPredicate: {
+        kind: "application-observation", adapter: { id: "another.application-adapter", version: "1" },
+        scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenarioHash }, case: "no-input",
+        predicateId: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"], observationRole: "latest",
+      } }],
+      discoveryHash: hash("requirement:psychord:discovery"), semanticHash: hash("requirement:psychord:semantic"),
+    });
+    let publication: "missing" | "incomplete" = "missing";
+    const applicationEvidence = {
+      artifacts: {
+        artifactSetId: () => evidenceId,
+        observeAndPublish: async () => ({ status: publication, artifactSetId: evidenceId }),
+        read: async () => ({ status: publication, artifactSetId: evidenceId }),
+      },
+      currentness: { observe: async () => { throw new Error("currentness is not invoked for an unpublished artifact"); } },
+    } as const;
+    const service = await RepositoryKnowledgeService.create({ repositoryRoot: root, applicationEvidence });
+    const retained = await service.context({ request: "inspect", entities: ["requirement:psychord-observation"] });
+    expect(retained.branches[0]!.applicationEvidence).toHaveLength(1);
+    const first = retained.branches[0]!.applicationEvidence[0]!;
+    expect(first).toMatchObject({ status: "assessed", assessment: { fulfillment: { status: "unknown" } } });
+    expect(first.status === "assessed" ? first.dependencies.map(({ id }) => id) : []).toEqual([
+      "application-evidence-scenario:scenario:keep-reload-replay-owned-moment",
+      "requirement:psychord-observation",
+      `application-evidence:${evidenceId}`,
+      `application-evidence-currentness:${evidenceId}`,
+    ]);
+
+    expect((await service.reconcile(retained.id)).applicationEvidence).toMatchObject({ status: "unknown", branches: [{ changed: false }] });
+    publication = "incomplete";
+    expect((await service.reconcile(retained.id)).applicationEvidence).toMatchObject({ status: "unknown", branches: [{ changed: true }] });
+    const canonical = new CanonicalFileRepository(root);
+    const scenario = (await canonical.read("behavioral-scenario", "scenario:keep-reload-replay-owned-moment"))!;
+    await canonical.write(withCanonicalHashes({ ...scenario, payload: { ...scenario.payload, steps: [{ role: "trigger", statement: "The application is observed." }, { role: "expected-outcome", statement: "A revised assertion is evaluated." }] } }));
+    const revised = await service.reconcile(retained.id);
+    expect(revised.applicationEvidence).toMatchObject({ status: "unknown", branches: [{ changed: true }] });
+    expect(revised.applicationEvidence.branches[0]?.reasons).toEqual(expect.arrayContaining([expect.stringMatching(/no longer has semantic hash/iu)]));
+  });
+
   it("directly addresses accepted aliases and follows typed canonical relations", async () => {
     const root = await repository();
     await writeConcept(root, concept("concept:loop", "conceptual-loop", "Projector closes its conceptual loop.", ["loop"]));
