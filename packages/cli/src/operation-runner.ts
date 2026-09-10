@@ -328,7 +328,11 @@ async function executeOperation<TOutput>(
       });
     }
 
-    const operationRequest = createProjectorOperationRequestSchema(operation, handler.inputSchema).parse(request);
+    const operationRequest = parseExactJson(
+      createProjectorOperationRequestSchema(operation, handler.inputSchema),
+      request,
+      `Operation ${operation} request`,
+    );
     const access = await ports.withProjectOperationAccess(operationRequest.repositoryRoot, {
       operation,
       package: packageIdentity,

@@ -416,6 +416,66 @@ describe("bounded Projector operation runner", () => {
     expect(invocations).toBe(1);
   });
 
+  test("refuses owner input coercion, defaults, and transforms before handler invocation", async () => {
+    const root = await packagedRoot();
+    let invocations = 0;
+
+    const coercingRunner = await createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [defineProjectorOperationHandler({
+        operation: "application.observe",
+        inputSchema: z.strictObject({ count: z.coerce.number() }),
+        outputSchema: handlerOutputSchema,
+        execute: async () => {
+          invocations += 1;
+          return { valid: true };
+        },
+      })],
+      ports: ports(),
+    });
+    await expect(coercingRunner.execute(request("application.observe", { count: "7" }))).resolves.toMatchObject({
+      status: "failed",
+      error: { message: expect.stringMatching(/application\.observe request schema transformed.*coerced/iu) },
+    });
+
+    const defaultingRunner = await createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [defineProjectorOperationHandler({
+        operation: "application.observe",
+        inputSchema: z.strictObject({ label: z.string().default("default-label") }),
+        outputSchema: handlerOutputSchema,
+        execute: async () => {
+          invocations += 1;
+          return { valid: true };
+        },
+      })],
+      ports: ports(),
+    });
+    await expect(defaultingRunner.execute(request("application.observe", {}))).resolves.toMatchObject({
+      status: "failed",
+      error: { message: expect.stringMatching(/application\.observe request schema transformed.*defaulted/iu) },
+    });
+
+    const transformingRunner = await createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [defineProjectorOperationHandler({
+        operation: "application.observe",
+        inputSchema: z.strictObject({ label: z.string().transform((value) => value.toUpperCase()) }),
+        outputSchema: handlerOutputSchema,
+        execute: async () => {
+          invocations += 1;
+          return { valid: true };
+        },
+      })],
+      ports: ports(),
+    });
+    await expect(transformingRunner.execute(request("application.observe", { label: "raw-label" }))).resolves.toMatchObject({
+      status: "failed",
+      error: { message: expect.stringMatching(/application\.observe request schema transformed/iu) },
+    });
+    expect(invocations).toBe(0);
+  });
+
   test("keeps registry reachability, readiness, and direct host observations distinct", async () => {
     const root = await packagedRoot();
     const runner = await createProjectorOperationRunner({
