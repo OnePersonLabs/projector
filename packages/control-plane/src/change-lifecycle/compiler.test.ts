@@ -176,7 +176,9 @@ describe("repository change compiler", () => {
       expect(compiled.compiledPlan.packets[0]?.packet.transformId).toBe("canonical-model-write");
       expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).toContain("projector.canonical-model-integrity");
       expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).not.toContain("projector.post-change-knowledge");
-      await new CanonicalFileRepository(root).write(compiled.canonicalWrites[0]!.envelope);
+      const canonical = new CanonicalFileRepository(root);
+      expect(compiled.canonicalWrites[0]!.after).toBe(canonical.prepareWrite(compiled.canonicalWrites[0]!.envelope).contents);
+      await canonical.write(compiled.canonicalWrites[0]!.envelope);
       const current = compiled.canonicalWrites[0]!.envelope;
       const modelConcept = model.canonicalMutations!.find((mutation) => mutation.kind === "concept")!;
       const revision = parseChangeProposal({

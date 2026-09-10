@@ -323,13 +323,13 @@ async function canonicalWrite(
       : typeof body.status === "string" ? body.status
         : "active";
   const envelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key, lifecycle, payload: body });
-  const absolutePath = repository.pathFor(kind, id);
+  const prepared = repository.prepareWrite(envelope);
   return {
     id,
     kind,
-    path: relative(repositoryRoot, absolutePath).replaceAll("\\", "/"),
-    before: await optionalText(absolutePath),
-    after: `${canonicalJson(envelope)}\n`,
+    path: relative(repositoryRoot, prepared.path).replaceAll("\\", "/"),
+    before: await optionalText(prepared.path),
+    after: prepared.contents,
     envelope,
   };
 }
