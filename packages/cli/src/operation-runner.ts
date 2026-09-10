@@ -19,8 +19,29 @@ import {
   type ProjectorOperationError,
   type ProjectorOperationRequestFor,
 } from "@projector/core";
-import type { PreparedProjectInitializationResult } from "@projector/control-plane";
+import {
+  KnowledgeContextResultSchema,
+  KnowledgeReconciliationResultSchema,
+  PreparedProjectInitializationResultSchema,
+  RepositoryCleanupOutputSchema,
+  RepositoryCompletionOutputSchema,
+  RepositoryCoverageOutputSchema,
+  RepositoryKnowledgeService,
+  initializePreparedProject,
+  inspectProjectReadiness,
+  inspectRepositoryCoverage,
+  withProjectOperationAccess,
+  type PreparedProjectInitializationResult,
+} from "@projector/control-plane";
+import {
+  PsychordApplicationObservationPlanSchema,
+  PsychordObserveAndPublishResultSchema,
+  type PsychordObservationArtifactService,
+} from "@projector/integrations/runtime-evidence";
+import { NativeProcessLauncher, OperationalReportSchema } from "@projector/runtime";
 import { z } from "zod";
+
+import { runReadOnlyOperationalVerification } from "./operational-verification.js";
 
 const maximumPackageManifestBytes = 16 * 1024;
 const ordinaryOperationSchema = ProjectorOperationSchema.exclude(["status", "init"]);
@@ -250,6 +271,123 @@ export async function createProjectorOperationRunner<
       return assembleCapabilityDiscovery(packageIdentity, parsedReadiness, handlers, observedHostCapabilities);
     },
   };
+}
+
+export interface BundledProjectorOperationRunnerInput {
+  readonly packagedRoot: string;
+  readonly applicationObservation?: PsychordObservationArtifactService;
+}
+
+/** The installed in-process composition. Every registered result schema remains owned by its service package. */
+export async function createBundledProjectorOperationRunner(input: BundledProjectorOperationRunnerInput) {
+  const handlers: AnyProjectorOperationHandler[] = [
+    defineProjectorOperationHandler({
+      operation: "context",
+      inputSchema: ProjectorOperationInputSchemas.context,
+      outputSchema: KnowledgeContextResultSchema,
+      execute: async ({ repositoryRoot, input }, { signal }) => {
+        const service = await RepositoryKnowledgeService.create(repositoryRoot);
+        return service.context({
+          request: input.request,
+          signal,
+          ...(input.entities === undefined ? {} : { entities: input.entities }),
+          ...(input.namedTargets === undefined ? {} : { namedTargets: input.namedTargets }),
+          ...(input.operation === undefined ? {} : { operation: input.operation }),
+          ...(input.persist === undefined ? {} : { persist: input.persist }),
+          ...(input.policy === undefined ? {} : { policy: {
+            ...(input.policy.maxCandidates === undefined ? {} : { maxCandidates: input.policy.maxCandidates }),
+            ...(input.policy.maxEntries === undefined ? {} : { maxEntries: input.policy.maxEntries }),
+            ...(input.policy.maxDepth === undefined ? {} : { maxDepth: input.policy.maxDepth }),
+            ...(input.policy.maxTraversalCost === undefined ? {} : { maxTraversalCost: input.policy.maxTraversalCost }),
+            ...(input.policy.minimumScore === undefined ? {} : { minimumScore: input.policy.minimumScore }),
+            ...(input.policy.maxContextCost === undefined ? {} : { maxContextCost: input.policy.maxContextCost }),
+          } }),
+        });
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "reconcile",
+      inputSchema: ProjectorOperationInputSchemas.reconcile,
+      outputSchema: KnowledgeReconciliationResultSchema,
+      execute: async ({ repositoryRoot, input }, { signal }) => {
+        const service = await RepositoryKnowledgeService.create(repositoryRoot);
+        return service.reconcile(input.contextId, { signal });
+      },
+    }),
+    coverageHandler("coverage", RepositoryCoverageOutputSchema),
+    coverageHandler("complete", RepositoryCompletionOutputSchema),
+    coverageHandler("cleanup", RepositoryCleanupOutputSchema),
+    defineProjectorOperationHandler({
+      operation: "verify",
+      inputSchema: ProjectorOperationInputSchemas.verify,
+      outputSchema: OperationalReportSchema,
+      execute: async ({ repositoryRoot }, context) => OperationalReportSchema.parse(
+        await runReadOnlyOperationalVerification(repositoryRoot, {
+          signal: context.signal,
+          toolVersion: context.package.version,
+          policy: { preset: "observe", allowMutation: false, allowPersistence: false },
+        }),
+      ),
+    }),
+  ];
+  if (input.applicationObservation !== undefined) {
+    const service = input.applicationObservation;
+    handlers.push(defineProjectorOperationHandler({
+      operation: "application.observe",
+      inputSchema: z.strictObject({ plan: PsychordApplicationObservationPlanSchema }),
+      outputSchema: PsychordObserveAndPublishResultSchema,
+      execute: ({ input: { plan } }, { signal }) => service.observeAndPublish(plan, { signal }),
+    }));
+  }
+
+  const launcherCapabilities = new NativeProcessLauncher().capabilities;
+  return createProjectorOperationRunner({
+    packagedRoot: input.packagedRoot,
+    handlers,
+    ports: {
+      inspectReadiness: inspectProjectReadiness,
+      initializer: {
+        resultSchema: PreparedProjectInitializationResultSchema,
+        execute: initializePreparedProject,
+      },
+      withProjectOperationAccess,
+      observedHostCapabilities: [
+        {
+          capability: "process.cpu-limit-enforcement",
+          available: launcherCapabilities.cpuLimits,
+          evidence: launcherCapabilities.cpuLimits
+            ? "NativeProcessLauncher reports CPU limit enforcement available"
+            : "NativeProcessLauncher reports CPU limit enforcement unavailable and refuses requested CPU limits before spawn",
+        },
+        {
+          capability: "process.memory-limit-enforcement",
+          available: launcherCapabilities.memoryLimits,
+          evidence: launcherCapabilities.memoryLimits
+            ? "NativeProcessLauncher reports memory limit enforcement available"
+            : "NativeProcessLauncher reports memory limit enforcement unavailable and refuses requested memory limits before spawn",
+        },
+      ],
+    },
+  });
+}
+
+function coverageHandler<TOperation extends "coverage" | "complete" | "cleanup", TSchema extends z.ZodType>(
+  operation: TOperation,
+  outputSchema: TSchema,
+): ProjectorOperationHandler<TOperation, (typeof ProjectorOperationInputSchemas)[TOperation], TSchema> {
+  return defineProjectorOperationHandler({
+    operation,
+    inputSchema: ProjectorOperationInputSchemas[operation],
+    outputSchema,
+    execute: async ({ repositoryRoot, input }, { signal }) => outputSchema.parse(
+      await inspectRepositoryCoverage(repositoryRoot, {
+        scope: input.scope ?? ".",
+        ...(input.budgetTokens === undefined ? {} : { budgetTokens: input.budgetTokens }),
+        ...(input.budgetCost === undefined ? {} : { budgetCost: input.budgetCost }),
+        ...(input.questionOffset === undefined ? {} : { questionOffset: input.questionOffset }),
+      }, operation, { signal }),
+    ),
+  });
 }
 
 async function executeOperation<TOutput>(
