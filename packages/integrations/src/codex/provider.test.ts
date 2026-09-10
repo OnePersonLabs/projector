@@ -1,6 +1,7 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { hashFramedDomain, type RiskAssessment, type StructuredModelRequest } from "@projector/core";
 import { describe, expect, it } from "vitest";
@@ -9,6 +10,19 @@ import { CodexExecProviderError, DISABLED_CODEX_EXEC_FEATURES, createCodexExecPr
 
 const risk: RiskAssessment = { class: "R0", inherentOperationRisk: 0, affectedUnitCount: 0, affectedSurfaceCount: 0, publicContractImpact: false, externalImpact: false, dataImpact: false, reversibility: "full", validationStrength: "strong", closureConfidence: "bounded", unresolvedIdentityCount: 0, relevanceFrontierCount: 0, openWorldDependencies: false, unresolvedBlockingConcernCount: 0, suspectDecisionCount: 0, compensationAvailable: true, reasons: [] };
 const request = (): StructuredModelRequest<{ label: string }> => ({ purpose: "classify fixture", role: "classify", programVersion: "1", schemaName: "label", schemaVersion: "1", schema: { type: "object", additionalProperties: false, required: ["label"], properties: { label: { type: "string" } } }, input: { evidence: ["safe"] }, inputHash: hashFramedDomain("structured-model-input", { evidence: ["safe"] }), risk, maxInputTokens: 4_000, maxOutputTokens: 40, maxCost: 1 });
+
+async function waitForExecInvocation(path: string, previousCount: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const lines = (await readFile(path, "utf8").catch(() => "")).trim().split("\n").filter(Boolean);
+    const calls = lines.slice(previousCount).flatMap((line): { args: string[] }[] => {
+      try { return [JSON.parse(line) as { args: string[] }]; } catch { return []; }
+    });
+    if (calls.some(({ args }) => args[0] === "exec" && args[1] === "--ephemeral")) return;
+    await delay(5);
+  }
+  throw new Error("Codex fixture did not enter its cancellable exec invocation");
+}
 
 async function fakeCodex(root: string): Promise<{ executable: string; calls: string; behavior: string; runner?: CodexProcessRunner }> {
   if (process.platform === "win32") {
@@ -93,11 +107,13 @@ describe("Codex CLI ChatGPT-subscription provider", () => {
       await writeFile(fake.behavior, JSON.stringify({ result: "not-json-secret-value" })); await expect(provider().generateStructured(request())).rejects.toMatchObject({ code: "malformed-response" });
       await writeFile(fake.behavior, JSON.stringify({ result: JSON.stringify({ label: "x".repeat(200) }) })); await expect(provider().generateStructured(request())).rejects.toMatchObject({ code: "output-limit" });
       await writeFile(fake.behavior, JSON.stringify({ outputTokens: 41 })); await expect(provider().generateStructured(request())).rejects.toMatchObject({ code: "token-budget" });
-      await writeFile(fake.behavior, JSON.stringify({ hang: true })); const controller = new AbortController(); const cancelled = provider().generateStructured(request(), { signal: controller.signal, timeoutMs: 1_000 }); setTimeout(() => controller.abort(), 20);
+      await writeFile(fake.behavior, JSON.stringify({ hang: true })); const priorCallCount = (await readFile(fake.calls, "utf8")).trim().split("\n").filter(Boolean).length;
+      const controller = new AbortController(); const cancelled = provider().generateStructured(request(), { signal: controller.signal, timeoutMs: 10_000 });
+      await waitForExecInvocation(fake.calls, priorCallCount); controller.abort();
       await expect(cancelled).rejects.toMatchObject({ code: "cancelled" });
       await expect(provider().generateStructured(request(), { timeoutMs: 20 })).rejects.toMatchObject({ code: "timeout" });
     } finally { await rm(root, { recursive: true, force: true }); }
-  });
+  }, 15_000);
 });
 
 it("uses a stable public error type", () => expect(new CodexExecProviderError("unavailable", "no provider")).toMatchObject({ name: "CodexExecProviderError", code: "unavailable" }));
