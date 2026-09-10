@@ -67,6 +67,13 @@ const compare = (left: string, right: string): number => left < right ? -1 : lef
 const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
 const placeholder = hashFramedDomain("repository-change-canonical-placeholder", null);
 
+async function withCancellation<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted();
+  const result = await operation;
+  signal?.throwIfAborted();
+  return result;
+}
+
 export interface SemanticIdentityResolutionEvidence {
   readonly id: string;
   readonly kind: "requirement" | "scenario";
@@ -203,6 +210,7 @@ export interface CompileRepositoryChangeInput {
 
 export interface CompileRepositoryChangeOptions {
   readonly representationArtifacts?: RepresentationArtifactStore;
+  readonly signal?: AbortSignal;
 }
 
 function identityEvidence(
@@ -428,6 +436,7 @@ export async function compileRepositoryChange(
   input: CompileRepositoryChangeInput,
   options: CompileRepositoryChangeOptions = {},
 ): Promise<CompiledRepositoryChange> {
+  options.signal?.throwIfAborted();
   const request = input.request.normalize("NFKC").trim();
   if (request.length === 0 || request.length > 16_384 || request.includes("\0")) throw new Error("natural-language change request must be nonblank bounded UTF-8 text");
   const now = input.now ?? new Date().toISOString();
@@ -439,18 +448,22 @@ export async function compileRepositoryChange(
     if (deferralDurationMs > 366 * 24 * 60 * 60 * 1_000) throw new Error("architecture deferral horizon exceeds one year");
   }
 
-  const observation = await observeChangeRepository(input.repositoryRoot);
+  const observation = await withCancellation(observeChangeRepository(input.repositoryRoot), options.signal);
   const queryRegistry = createChangeQueryRegistry({ observation, now });
   const proposalHash = hashFramedDomain("repository-change-proposal", input.proposal);
-  const context = { repositoryRoot: input.repositoryRoot, stateDigest: observation.state, config: {}, signal: new AbortController().signal };
-  const paths = await RepositoryPathService.create(input.repositoryRoot);
+  const context = { repositoryRoot: input.repositoryRoot, stateDigest: observation.state, config: {}, signal: options.signal ?? new AbortController().signal };
+  const paths = await withCancellation(RepositoryPathService.create(input.repositoryRoot), options.signal);
   for (const edit of input.proposal.edits) {
+    options.signal?.throwIfAborted();
     let actual: string | null;
-    try { actual = await readFile((await paths.resolveRead(edit.path)).realTarget, "utf8"); }
+    try {
+      const resolved = await withCancellation(paths.resolveRead(edit.path), options.signal);
+      actual = await withCancellation(readFile(resolved.realTarget, "utf8"), options.signal);
+    }
     catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") actual = null; else throw error; }
     if (actual !== edit.before) throw new Error(`proposal exact before content is stale: ${edit.path}`);
   }
-  const independentValidators = await Promise.all(input.proposal.validation.independentNodeTests.map((path) => observation.independentValidator(path)));
+  const independentValidators = await withCancellation(Promise.all(input.proposal.validation.independentNodeTests.map((path) => observation.independentValidator(path))), options.signal);
   const canonical = new CanonicalFileRepository(input.repositoryRoot);
   const retiredEntityIds = new Set(observation.canonical.documents
     .filter(({ kind }) => kind === "tombstone")
@@ -478,13 +491,13 @@ export async function compileRepositoryChange(
     if (existing === undefined) assertAdditionIsNotRetired("requirement", targetId);
     const resolution = identityEvidence("requirement", proposed.key, claims, candidates, targetId, observation.canonical.rootDigest);
     const query = queryRegistry.createSpec({ id: `identity:requirement:${resolution.contentHash.slice(-16)}`, programId: CHANGE_QUERY_PROGRAM_IDS.identityExact, input: { kind: "requirement", claims } });
-    const priorResult = await queryRegistry.evaluate(query, context);
+    const priorResult = await withCancellation(queryRegistry.evaluate(query, context), options.signal);
     if (priorResult.resultCount !== candidates.length) throw new Error(`authenticated requirement identity query disagrees with resolved candidates: ${proposed.key}`);
     identityResolutions.push(resolution); identityQueries.push({ query, priorResult, role: "exact requirement key and alias negative-space search" });
     const payload = proposedRequirementPayload(proposed, existing, targetId, proposalHash, editedPaths);
     reviewSubjects.push({ id: targetId, kind: "requirement", operation: existing === undefined ? "add" : proposed.revision === undefined ? "preserve" : "revise", before: existing ?? null, after: payload, rationale: proposed.revision?.rationale ?? null });
     if (existing !== undefined && proposed.revision === undefined) continue;
-    const write = await canonicalWrite(input.repositoryRoot, canonical, "requirement", targetId, payload.key, payload);
+    const write = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, "requirement", targetId, payload.key, payload), options.signal);
     reviewSubjects[reviewSubjects.length - 1] = { ...reviewSubjects.at(-1)!, after: RequirementSchema.parse(write.envelope.payload) as Requirement };
     if (write.before !== write.after) {
       canonicalWrites.push(write);
@@ -502,13 +515,13 @@ export async function compileRepositoryChange(
     if (existing === undefined) assertAdditionIsNotRetired("behavioral-scenario", targetId);
     const resolution = identityEvidence("scenario", proposed.key, claims, candidates, targetId, observation.canonical.rootDigest);
     const query = queryRegistry.createSpec({ id: `identity:scenario:${resolution.contentHash.slice(-16)}`, programId: CHANGE_QUERY_PROGRAM_IDS.identityExact, input: { kind: "scenario", claims } });
-    const priorResult = await queryRegistry.evaluate(query, context);
+    const priorResult = await withCancellation(queryRegistry.evaluate(query, context), options.signal);
     if (priorResult.resultCount !== candidates.length) throw new Error(`authenticated scenario identity query disagrees with resolved candidates: ${proposed.key}`);
     identityResolutions.push(resolution); identityQueries.push({ query, priorResult, role: "exact scenario key and alias negative-space search" });
     const payload = proposedScenarioPayload(proposed, existing, targetId, editedPaths);
     reviewSubjects.push({ id: targetId, kind: "scenario", operation: existing === undefined ? "add" : proposed.revision === undefined ? "preserve" : "revise", before: existing ?? null, after: payload, rationale: proposed.revision?.rationale ?? null });
     if (existing !== undefined && proposed.revision === undefined) continue;
-    const write = await canonicalWrite(input.repositoryRoot, canonical, "behavioral-scenario", targetId, payload.key, payload);
+    const write = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, "behavioral-scenario", targetId, payload.key, payload), options.signal);
     reviewSubjects[reviewSubjects.length - 1] = { ...reviewSubjects.at(-1)!, after: BehavioralScenarioSchema.parse(write.envelope.payload) as BehavioralScenario };
     if (write.before !== write.after) {
       canonicalWrites.push(write);
@@ -534,7 +547,7 @@ export async function compileRepositoryChange(
         throw new Error(`canonical revision target hashes are stale: ${id}`);
       }
     }
-    const write = await canonicalWrite(input.repositoryRoot, canonical, mutation.kind, id, mutationKey(mutation.kind, payload), payload);
+    const write = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, mutation.kind, id, mutationKey(mutation.kind, payload), payload), options.signal);
     if (mutation.operation === "revise" && existing?.canonicalDocumentHash === write.envelope.canonicalDocumentHash) {
       throw new Error(`canonical revision is a no-op: ${id}`);
     }
@@ -591,7 +604,7 @@ export async function compileRepositoryChange(
       reason: mutation.rationale,
       stateDigest: observation.state.canonicalProjectorDigest,
     }) as LineageRecord;
-    const lineageWrite = await canonicalWrite(input.repositoryRoot, canonical, "lineage", lineageId, `lineage:${lineageId}`, lineage as unknown as Record<string, unknown>);
+    const lineageWrite = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, "lineage", lineageId, `lineage:${lineageId}`, lineage as unknown as Record<string, unknown>), options.signal);
     canonicalWrites.push(lineageWrite);
     documentsAfter.set(lineageId, lineageWrite.envelope);
     mutationReviews.push({ id: lineageId, kind: "lineage", operation: "add", before: null, after: lineageWrite.envelope.payload, rationale: mutation.rationale });
@@ -609,8 +622,8 @@ export async function compileRepositoryChange(
         replacementIds: toIds,
         reason: mutation.rationale,
       }) as Tombstone;
-      const tombstoneWrite = await canonicalWrite(input.repositoryRoot, canonical, "tombstone", tombstoneId, `tombstone:${source.id}`, tombstone as unknown as Record<string, unknown>);
-      const deletionWrite = await canonicalDelete(input.repositoryRoot, canonical, source);
+      const tombstoneWrite = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, "tombstone", tombstoneId, `tombstone:${source.id}`, tombstone as unknown as Record<string, unknown>), options.signal);
+      const deletionWrite = await withCancellation(canonicalDelete(input.repositoryRoot, canonical, source), options.signal);
       canonicalWrites.push(tombstoneWrite, deletionWrite);
       documentsAfter.set(tombstoneId, tombstoneWrite.envelope);
       documentsAfter.delete(source.id);
@@ -830,7 +843,7 @@ export async function compileRepositoryChange(
     throw new Error(`repository change compilation requires unavailable analyzer evidence: ${calculatedRelevance.unavailableSurfaceIds.join(", ")}`);
   }
   const relevanceSpec = queryRegistry.createSpec({ id: `relevance:${hashFramedDomain("repository-change-relevance-query-id", editedPaths).slice(-16)}`, programId: CHANGE_QUERY_PROGRAM_IDS.reverseImporters, input: { editedPaths } });
-  const relevancePrior = await queryRegistry.evaluate(relevanceSpec, context);
+  const relevancePrior = await withCancellation(queryRegistry.evaluate(relevanceSpec, context), options.signal);
   const relevanceValue = {
     knownAffectedPaths: calculatedRelevance.knownAffectedPaths,
     knownAffectedUnitIds: calculatedRelevance.knownAffectedUnitIds,
@@ -843,7 +856,7 @@ export async function compileRepositoryChange(
   const relevance: RepositoryRelevanceEvidence = { id: `relevance_${relevanceHash.slice(-32)}`, ...relevanceValue, contentHash: relevanceHash };
   const knowledgeGraph = new KnowledgeGraph(observation);
   const impactBaseline = buildRepositoryImpactSnapshot(observation, knowledgeGraph);
-  const impactPrediction = await predictRepositoryImpact(impactBaseline, editedPaths, canonicalWrites);
+  const impactPrediction = await withCancellation(predictRepositoryImpact(impactBaseline, editedPaths, canonicalWrites), options.signal);
   const derivationImpact = { baseline: impactBaseline, prediction: impactPrediction, contentHash: repositoryImpactProofHash(impactBaseline, impactPrediction) };
   if (impactPrediction.blockedUnitIds.length > 0) throw new Error(`active Impact Rules block planning for ${impactPrediction.blockedUnitIds.join(", ")}`);
   const affectedBefore = new Set(relevance.knownAffectedUnitIds);
@@ -920,7 +933,7 @@ export async function compileRepositoryChange(
         irreversibleCommitments: input.proposal.edits.filter(({ path }) => proposedArchitecture.deferral.forbiddenWritePaths.includes(path)).map(({ path }) => path),
       }),
     };
-    const deferralValidation = await assessDecisionDeferral(decisionDeferral, dispositionAssessmentPort);
+    const deferralValidation = await withCancellation(assessDecisionDeferral(decisionDeferral, dispositionAssessmentPort), options.signal);
     if (!deferralValidation.valid) throw new Error(`architecture deferral is invalid: ${deferralValidation.reasons.join("; ")}`);
     const { semanticHash: _concernHash, ...concernWithoutHash } = discoveredConcern;
     const deferredWithoutHash = { ...concernWithoutHash, status: "deferred" as const, deferral: decisionDeferral };
@@ -946,11 +959,11 @@ export async function compileRepositoryChange(
       contentHash: deferralHash,
     };
   }
-  const preflight = await runArchitecturePreflight({ closure, concerns: governedConcerns, validity: [], overrideAuthorityRecordIds: [], mode: "govern", risk: "R2" }, {
+  const preflight = await withCancellation(runArchitecturePreflight({ closure, concerns: governedConcerns, validity: [], overrideAuthorityRecordIds: [], mode: "govern", risk: "R2" }, {
     authority: { read: async () => undefined },
     deferral: deferralAssessmentPort,
     validity: { verify: async () => false },
-  });
+  }), options.signal);
   if (!preflight.planningAllowed || !preflight.governedCompletion) throw new Error(`architecture preflight blocked: ${preflight.reasons.join("; ")}`);
   if (architectureDeferral !== undefined) {
     const { id: _priorId, contentHash: _priorHash, preflightHash: _priorPreflight, ...evidenceBasis } = architectureDeferral;
@@ -958,7 +971,7 @@ export async function compileRepositoryChange(
     const finalizedHash = hashFramedDomain("repository-change-architecture-deferral", finalizedBasis);
     architectureDeferral = { id: `architecture_deferral_${finalizedHash.slice(-32)}`, ...finalizedBasis, contentHash: finalizedHash };
     const architectureSpec = queryRegistry.createSpec({ id: `architecture-deferral:${architectureDeferral.contentHash.slice(-16)}`, programId: CHANGE_QUERY_PROGRAM_IDS.boundedDeferral, input: { concernId: architectureDeferral.concernId, concernKey: architectureDeferral.concernKey, discoveryHash: discovery.contentHash, deferralId: architectureDeferral.id, validUntil: architectureDeferral.validUntil, forbiddenWritePaths: architectureDeferral.forbiddenWritePaths, editedPaths } });
-    const architecturePrior = await queryRegistry.evaluate(architectureSpec, context);
+    const architecturePrior = await withCancellation(queryRegistry.evaluate(architectureSpec, context), options.signal);
     if (architecturePrior.resultCount !== 1) throw new Error("architecture deferral query did not authenticate a current narrowing disposition");
     architectureQuery = { query: architectureSpec, priorResult: architecturePrior, role: "bounded non-authoritative architecture deferral and reconsideration condition" };
   }
@@ -1044,15 +1057,15 @@ export async function compileRepositoryChange(
       ? [mutatesGovernanceAuthority ? "canonical authority or executable governance mutation is R2" : "canonical meaning mutation is reversible R1", "validation covers canonical integrity and eligible lens compilation; implementation fidelity is not claimed"]
       : ["canonical requirement/scenario mutation requires explicit approval", "bounded local static relevance with an independent Git-base validator"],
   };
-  const compiledChange = await compileSemanticChange({ request, currentState: observation.state, context }, {
+  const compiledChange = await withCancellation(compileSemanticChange({ request, currentState: observation.state, context }, {
     facts: { load: async () => ({ value: factsValue, contentHash: factsHash }) },
     bindingValidator: { validate: async () => ({ status: "current", currentState: observation.state, changedValueDependencyIds: [], changedQueryDependencyIds: [], reasons: [] }) },
     authority: { verify: async ({ subjectHash }) => subjectHash === factsHash },
     architecture: { preflight: async () => { const value = { allowed: preflight.planningAllowed && preflight.governedCompletion, decisionIds: [] as string[] }; return { ...value, contentHash: hashFramedDomain("change-architecture-preflight", value) }; } },
     impact: { compile: async () => ({ value: impactValue, contentHash: hashFramedDomain("authenticated-impact-closure", impactValue) }) },
     risk: { assess: async () => ({ value: risk, contentHash: hashFramedDomain("authenticated-change-risk", risk) }) },
-  });
-  const representation = await compileRepresentation(compiledChange, options.representationArtifacts ?? defaultRepresentationArtifacts());
+  }), options.signal);
+  const representation = await withCancellation(compileRepresentation(compiledChange, options.representationArtifacts ?? defaultRepresentationArtifacts()), options.signal);
   const validatorIds = [
     "exact-text-patch.verify",
     "projector.repository-post-observation",
@@ -1089,11 +1102,11 @@ export async function compileRepositoryChange(
     }],
     completionContract,
   };
-  const compiledPlan = await compileSemanticChangePlan({ changeId: compiledChange.change.id, revision: 1, sourceRunId: `run:${compiledChange.change.id}` }, {
+  const compiledPlan = await withCancellation(compileSemanticChangePlan({ changeId: compiledChange.change.id, revision: 1, sourceRunId: `run:${compiledChange.change.id}` }, {
     changes: { read: async () => ({ value: planningValue, contentHash: hashFramedDomain("authenticated-change-planning-input", planningValue) }) },
     packets: { compile: async () => ({ value: packetValue, contentHash: hashFramedDomain("authenticated-change-packet-proposals", packetValue) }) },
     representations: { compile: async () => representation },
-  });
+  }), options.signal);
   const planHash = executionPlanHash(compiledPlan.plan);
   const exactPatchInput: ExactTextPatchInput = {
     edits: [
