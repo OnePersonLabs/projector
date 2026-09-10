@@ -7,3 +7,5 @@ export * from "./worktrees/index.js";
 export * from "./transforms/index.js";
 export * from "./operations/index.js";
 export * from "./activation/index.js";
+export * from "./access/index.js";
+export * from "./migrations/index.js";

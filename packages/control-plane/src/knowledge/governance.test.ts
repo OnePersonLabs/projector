@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type CanonicalDocumentEnvelope, type Concept, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
-import { CanonicalFileRepository, NativeProcessLauncher, type ProcessLauncher, type ProcessLaunchRequest } from "@projector/runtime";
+import { CanonicalFileRepository, NativeProcessLauncher, parseTomlDocument, stringifyTomlDocument, type ProcessLauncher, type ProcessLaunchRequest } from "@projector/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
@@ -69,7 +69,10 @@ describe("public architectural decision validity", () => {
     const before = firstDecision(await query(service));
     await canonical(root, "concept", { ...subject, statement: "Changed after authority." });
     const file = new CanonicalFileRepository(root).pathFor("authority-record", "authority:boundary");
-    await writeFile(file, `${JSON.stringify(JSON.parse(await readFile(file, "utf8")), null, 4)}\n`);
+    const parsed = parseTomlDocument(await readFile(file, "utf8"), file) as Record<string, unknown>;
+    const encoded = stringifyTomlDocument(parsed, { schemaPath: "../schemas/canonical-document-v2.schema.json" });
+    const [directive, ...body] = encoded.split("\n");
+    await writeFile(file, `${directive}\n# formatting-only authority edit\n${body.join("\n")}`);
     await commit(root);
     const after = firstDecision(await query(service));
     expect(after.baseline.reference).toBe(before.baseline.reference);
