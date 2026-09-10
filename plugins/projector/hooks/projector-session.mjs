@@ -52,11 +52,15 @@ async function main() {
     repositoryRoot: root,
     input: {},
   });
-  if (result.readiness.status !== "ready") return;
   const hookEventName = event.hook_event_name;
-  const additionalContext = hookEventName === "PreToolUse"
-    ? "Projector readiness is ready for this repository. Before host-owned mutation, use scripts/projector-operation.mjs to retrieve or reconcile the relevant context. This hook is advisory; the operation entry owns readiness and access, and its results do not authorize mutation."
-    : "Projector is active and its bundled operation runner is present. Use scripts/projector-operation.mjs with versioned JSON requests. Run status, then context before edits; reconcile retained context before reuse. Results do not authorize mutation.";
+  if (result.readiness.status === "inactive") return;
+  const readinessDetail = [...new Set([result.readiness.reason, result.readiness.recovery?.action, result.action?.reason]
+    .filter((value) => typeof value === "string"))].join("; ").replace(/\s+/gu, " ").slice(0, 96);
+  const additionalContext = result.readiness.status !== "ready"
+    ? `Projector is ${result.readiness.status}${readinessDetail.length === 0 ? "." : `: ${readinessDetail}`}. Run status through scripts/projector-operation.mjs and follow its action. This advisory hook does not authorize the tool call.`
+    : hookEventName === "PreToolUse"
+      ? "Projector is ready. Before mutation, retrieve or reconcile context through scripts/projector-operation.mjs. This advisory hook does not authorize the tool call; the operation entry owns readiness and access."
+      : "Projector is active and its bundled operation runner is present. Use scripts/projector-operation.mjs with versioned JSON requests. Run status, then context before edits; reconcile retained context before reuse. Results do not authorize mutation.";
   process.stdout.write(JSON.stringify({ hookSpecificOutput: {
     hookEventName,
     additionalContext,

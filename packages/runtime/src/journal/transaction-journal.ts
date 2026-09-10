@@ -461,6 +461,7 @@ export class FileTransactionJournal {
       }
       discoveredIds.add(record.entry.transactionId);
       if (record.entry.worktreePath !== this.paths.root) {
+        if (record.entry.phase === "committed" || record.entry.phase === "rolled-back") continue;
         throw new JournalRecoveryRequiredError(`Journal ${name} belongs to a different worktree`);
       }
       discovered.push(record);
