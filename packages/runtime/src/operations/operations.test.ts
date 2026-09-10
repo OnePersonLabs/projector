@@ -35,6 +35,7 @@ describe("operational watch and trust boundary", () => {
   it("strictly parses an authenticated operational report and rejects tampering at every DTO boundary", () => {
     const report = createOperationalReport({ runId: "run:schema", command: "verify", exitProof: proof, evidence, policy: { preset: "govern", rules: [true, null, 3] }, stateDigest: hashFramedDomain("state", "schema"), unavailableFields: [], findings: [{ code: "notice", title: "Observed", severity: "warning", evidenceIds: ["e:1"] }] });
     expect(parseOperationalReport(report)).toEqual(report);
+    expect(() => createOperationalReport({ runId: "run:invalid-policy", command: "verify", exitProof: proof, evidence, policy: undefined, stateDigest: hashFramedDomain("state", "invalid-policy"), unavailableFields: [], findings: [] })).toThrow();
 
     expect(() => parseOperationalReport({ ...report, dtoHash: hashFramedDomain("tampered", report) })).toThrow();
 

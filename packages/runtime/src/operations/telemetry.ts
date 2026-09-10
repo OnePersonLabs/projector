@@ -91,7 +91,7 @@ export function createOperationalReport(input: OperationalReportInput): Operatio
   const hasUnclassifiedError = findings.some(({ severity }) => severity === "error") && !input.exitProof.commandFailed && !input.exitProof.blockingInvalidity && !input.exitProof.approvalRequired && !input.exitProof.incompleteCoverage && !input.exitProof.requiredUnavailable && !input.exitProof.recoveryFailure && !input.exitProof.budgetExhausted;
   const exitProof = { ...input.exitProof, blockingInvalidity: input.exitProof.blockingInvalidity || hasUnclassifiedError };
   const base = redactBeforeBoundary({ version: 1 as const, runId: input.runId, command: input.command, exitCode: deriveOperationalExitCode(exitProof), exitProof, evidence: input.evidence, policy: input.policy, stateDigest: input.stateDigest, unavailableFields: [...new Set(input.unavailableFields)].sort(), findings }) as Omit<OperationalReport, "dtoHash">;
-  return { ...base, dtoHash: hashFramedDomain("operational-report-dto", base) };
+  return parseOperationalReport({ ...base, dtoHash: hashFramedDomain("operational-report-dto", base) });
 }
 export function validateOperationalReport(report: OperationalReport): boolean { return OperationalReportSchema.safeParse(report).success; }
 export function renderOperationalReport(report: OperationalReport, format: ReportFormat): string {
