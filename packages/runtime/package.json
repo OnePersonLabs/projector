@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@projector/core": "workspace:*",
-    "smol-toml": "1.8.0"
+    "smol-toml": "1.8.0",
+    "zod": "^4.0.15"
   }
 }
