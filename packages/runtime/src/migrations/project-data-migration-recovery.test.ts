@@ -6,6 +6,7 @@ import {
   createProjectDataMigrationReceipt,
   CanonicalDocumentEnvelopeSchema,
   hashFramedDomain,
+  hashProjectDataFormatSnapshot,
   hashRootManifest,
   PreparedProjectorConfigSchema,
   withCanonicalHashes,
@@ -79,12 +80,12 @@ async function fixture() {
   return { root, pending, receipts, journal };
 }
 
-function pendingMarker(backup = defaultBackup): PendingProjectDataMigration {
+function pendingMarker(backup = defaultBackup, targetSnapshotHash = hash("3")): PendingProjectDataMigration {
   return {
     apiVersion: "projector.pending-project-data-migration/v1",
     migrationId: "migration:legacy-to-toml",
     sourceSnapshotHash: hash("2"),
-    targetSnapshotHash: hash("3"),
+    targetSnapshotHash,
     manifestHash: hash("1"),
     backup,
     stagingLocation: ".projector/migration-stage",
@@ -104,10 +105,6 @@ async function committedEvidence() {
     location: backupResult.backupLocation,
     manifestHash: backupResult.manifestHash,
   };
-  const marker = pendingMarker(backup);
-  await fixtureValue.pending.create(marker);
-  await fixtureValue.pending.transition(marker, "staged");
-  await fixtureValue.pending.transition(marker, "publishing");
   const canonical = concept();
   const canonicalRepository = new CanonicalFileRepository(fixtureValue.root);
   const preparedCanonical = canonicalRepository.prepareWrite(canonical);
@@ -117,6 +114,29 @@ async function committedEvidence() {
   }]);
   const config = { apiVersion: "projector.config/v1" as const, enabled: true as const, projectorVersion: "2.1.0" };
   const configBytes = stringifyTomlDocument(config, { schemaPath: "schemas/projector-config-v1.schema.json" });
+  const targetSnapshotBody = {
+    apiVersion: "projector.project-data-format-snapshot/v1" as const,
+    packageIdentity: { name: "projector", version: "2.1.0" },
+    preparedConfig: {
+      apiVersion: config.apiVersion,
+      projectorVersion: config.projectorVersion,
+      schemaHash: hashFramedDomain("prepared-projector-config-schema", "v1"),
+    },
+    canonical: {
+      envelopeApiVersion: "projector/v2" as const,
+      schemaBundleHash: hash("a"),
+    },
+    runtimeEvidence: { schemaVersion: "1.0.0", schemaHash: hash("b") },
+    sqlite: { schemaVersion: 1, migrationSetHash: hash("c") },
+  };
+  const targetSnapshot = {
+    ...targetSnapshotBody,
+    snapshotHash: hashProjectDataFormatSnapshot(targetSnapshotBody),
+  };
+  const marker = pendingMarker(backup, targetSnapshot.snapshotHash);
+  await fixtureValue.pending.create(marker);
+  await fixtureValue.pending.transition(marker, "staged");
+  await fixtureValue.pending.transition(marker, "publishing");
   const transaction = await fixtureValue.journal.begin({
     transactionId: marker.migrationId,
     planId: marker.manifestHash,
@@ -145,23 +165,6 @@ async function committedEvidence() {
     outcome: "completed",
     completedAt: "2026-09-10T18:01:00.000Z",
   });
-  const targetSnapshot = {
-    apiVersion: "projector.project-data-format-snapshot/v1" as const,
-    packageIdentity: { name: "projector", version: "2.1.0" },
-    preparedConfig: {
-      apiVersion: config.apiVersion,
-      projectorVersion: config.projectorVersion,
-      semanticHash: hashFramedDomain("prepared-projector-config", config),
-    },
-    canonical: {
-      envelopeApiVersion: "projector/v2" as const,
-      schemaBundleHash: hash("a"),
-      semanticSetHash: canonicalDigest,
-    },
-    runtimeEvidence: { schemaVersion: "1.0.0", semanticHash: hash("b") },
-    sqlite: { schemaVersion: 1, derivationHash: hash("c") },
-    snapshotHash: marker.targetSnapshotHash,
-  };
   const target = {
     observeCurrentTarget: async () => {
       PreparedProjectorConfigSchema.parse(parseTomlDocument(
@@ -178,7 +181,7 @@ async function committedEvidence() {
       }]);
       if (currentDigest !== canonicalDigest) throw new Error("canonical target semantic set is stale");
       await expectMissing(join(fixtureValue.root, ".projector", "config.json"));
-      return targetSnapshot;
+      return { format: targetSnapshot, canonicalRootDigest: currentDigest };
     },
   };
   return {
@@ -186,6 +189,8 @@ async function committedEvidence() {
     marker,
     receipt,
     target,
+    targetSnapshot,
+    canonicalDigest,
     canonicalPath: preparedCanonical.path,
     backupResult,
     now: () => new Date("2026-09-10T18:01:00.000Z"),
@@ -268,6 +273,27 @@ describe("completed project-data migration recovery", () => {
     expect(receiptRead).not.toHaveBeenCalled();
   });
 
+  test("retains Pending when the current format snapshot hash does not authenticate its body", async () => {
+    const evidence = await committedEvidence();
+    const tampered = {
+      ...evidence,
+      target: {
+        observeCurrentTarget: async () => ({
+          format: {
+            ...evidence.targetSnapshot,
+            runtimeEvidence: { ...evidence.targetSnapshot.runtimeEvidence, schemaHash: hash("d") },
+          },
+          canonicalRootDigest: evidence.canonicalDigest,
+        }),
+      },
+    };
+
+    await expect(reconcileCompletedProjectDataMigration(tampered)).resolves.toMatchObject({
+      status: "recovery-required",
+      reason: expect.stringMatching(/snapshot.*hash|invalid/i),
+    });
+    expect((await evidence.pending.read())?.phase).toBe("publishing");
+  });
   test.each([
     ["missing config", ".projector/config.toml", undefined],
     ["stale target", undefined, "stale canonical bytes"],
