@@ -28,6 +28,7 @@ import {
   validateJsonSchemaReferences,
   validateContractRegistry,
   createProjectorOperationResultSchema,
+  createProjectorOperationRequestSchema,
   createProjectDataMigrationReceipt,
   withCanonicalHashes,
   parseChangeProposal,
@@ -231,6 +232,17 @@ describe("normative contract registry", () => {
     expect(ProjectorOperationRequestSchema.safeParse(context).success).toBe(true);
     expect(ProjectorOperationRequestSchema.safeParse({ ...context, input: { ...context.input, compact: true } }).success).toBe(false);
     expect(ProjectorOperationRequestSchema.safeParse({ ...context, operation: "representation.inspect" }).success).toBe(false);
+    expect(ProjectorOperationRequestSchema.safeParse({ ...context, operation: "application.observe" }).success).toBe(false);
+    const applicationRequestSchema = createProjectorOperationRequestSchema("application.observe", z.strictObject({ plan: z.strictObject({ schemaVersion: z.literal("test-application-plan@1"), runId: z.string() }) }));
+    const applicationRequest = { apiVersion: "projector.operation/v1", operation: "application.observe", repositoryRoot: ".", input: { plan: { schemaVersion: "test-application-plan@1", runId: "run:1" } } };
+    expect(applicationRequestSchema.safeParse(applicationRequest).success).toBe(true);
+    expect(applicationRequestSchema.safeParse({ ...applicationRequest, input: { ...applicationRequest.input, selector: "invented" } }).success).toBe(false);
+    const hardenedLooseInput = createProjectorOperationRequestSchema("application.observe", z.looseObject({ plan: z.strictObject({ schemaVersion: z.literal("test-application-plan@1"), runId: z.string() }) }));
+    expect(hardenedLooseInput.safeParse({ ...applicationRequest, input: { ...applicationRequest.input, selector: "invented" } }).success).toBe(false);
+    const refinedInput = createProjectorOperationRequestSchema("application.observe", z.strictObject({ expectedRunId: z.string(), plan: z.strictObject({ runId: z.string() }) }).superRefine(({ expectedRunId, plan }, context) => {
+      if (expectedRunId !== plan.runId) context.addIssue({ code: "custom", message: "run binding mismatch" });
+    }));
+    expect(refinedInput.safeParse({ ...applicationRequest, input: { expectedRunId: "run:other", plan: { runId: "run:1" } } }).success).toBe(false);
 
     const schema = createProjectorOperationResultSchema("context", z.strictObject({ contextId: z.string().min(1) }));
     const base = { apiVersion: "projector.operation-result/v1", operation: "context", package: { name: "projector", version: "2.1.0" }, exitCode: 0, readiness: { status: "ready", package: { name: "projector", version: "2.1.0" } } };
