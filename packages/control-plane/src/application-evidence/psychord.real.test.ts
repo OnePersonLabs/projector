@@ -11,6 +11,7 @@ import {
   createPsychordApplicationObservationPlan,
   createPsychordApplicationObserver,
   createStrictPsychordApplicationObserver,
+  observePsychordEvidenceCurrentness,
   type PsychordCommandRequest,
   type PsychordCommandResult,
   type PsychordCommandRunner,
@@ -20,6 +21,7 @@ import {
 import { expect, it } from "vitest";
 
 import { createDurablePsychordObservationArtifactService } from "./psychord.js";
+import { createPsychordApplicationEvidenceAssessmentService } from "./psychord-assessment.js";
 
 const real = process.env.PROJECTOR_RUN_REAL_PSYCHORD === "1" ? it : it.skip;
 const psychordRoot = process.env.PROJECTOR_PSYCHORD_ROOT ?? "C:/dev/projects/psychord-omega";
@@ -134,6 +136,23 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
     });
     const authenticated = await reopened.read(persisted.artifactSetId);
     if (authenticated.status !== "published") throw new Error(JSON.stringify(authenticated, null, 2));
+    const assessments = createPsychordApplicationEvidenceAssessmentService({
+      artifacts: reopened,
+      currentness: { async observe(currentPlan, { signal: currentnessSignal }) {
+        return await observePsychordEvidenceCurrentness({ commands: runner, plan: currentPlan, environment, signal: currentnessSignal });
+      } },
+    });
+    const assessment = await assessments.assess({
+      schemaVersion: "psychord-application-evidence-assessment-request@1",
+      requirementId: "requirement:keep-owned-moment",
+      scenario: persisted.plan.scenario,
+      case: caseName,
+      predicate: caseName === "keep-reload-replay"
+        ? { id: "predicate:keep-reload-replay", assertionIds: ["explicit-save", "reload-restores-archive", "replay-is-not-player-input", "replay-preserves-persisted-provenance"] }
+        : { id: "predicate:save-failure-preservation", assertionIds: ["save-failure-visible", "save-failure-preserves-archive"] },
+      observations: [{ role: "latest", runId, artifactSetId: persisted.artifactSetId }],
+    }, { signal });
+    expect(assessment).toMatchObject({ fulfillment: { status: "satisfied", selectedArtifactSetId: persisted.artifactSetId }, observations: [{ eligibility: "eligible", reuseCurrentness: { status: "current" } }] });
     const result = persisted.result;
     const output = result.adapter.output;
 

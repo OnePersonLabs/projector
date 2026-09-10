@@ -7,10 +7,12 @@ import type { ContentHash } from "@projector/core";
 import {
   createPsychordApplicationObservationPlan,
   createStrictPsychordApplicationObserver,
+  observePsychordEvidenceCurrentness,
   PsychordObserveAndPublishResultSchema,
   psychordObservationAdapterId,
   psychordObservationAdapterVersion,
   type PsychordApplicationObservationResult,
+  type PsychordApplicationObservationPlan,
   type PsychordApplicationObserver,
   type PsychordObservationPlan,
   type PsychordObservationResult,
@@ -18,6 +20,7 @@ import {
 import { afterEach, expect, it } from "vitest";
 
 import { createDurablePsychordObservationArtifactService } from "./psychord.js";
+import { createPsychordApplicationEvidenceAssessmentService, PsychordApplicationEvidenceAssessmentSchema } from "./psychord-assessment.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -89,6 +92,121 @@ it("is durably incomplete while observation has no terminal result, then publish
     },
   })).toThrow();
   expect(await service.read(service.artifactSetId(plan))).toMatchObject({ status: "published", behavioralEvidence: true });
+
+  const assessmentService = createPsychordApplicationEvidenceAssessmentService({
+    artifacts: service,
+    currentness: { async observe(currentPlan) { return currentnessFor(currentPlan); } },
+  });
+  const assessed = await assessmentService.assess({
+    schemaVersion: "psychord-application-evidence-assessment-request@1",
+    requirementId: "requirement:keep-owned-moment",
+    scenario: plan.scenario,
+    case: "no-input",
+    predicate: { id: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"] },
+    observations: [
+      { role: "prior", runId: plan.runId, artifactSetId: published.artifactSetId },
+      { role: "latest", runId: "later-unavailable", artifactSetId: "psychord-later-unavailable" },
+    ],
+  }, { signal: new AbortController().signal });
+  expect(assessed).toMatchObject({
+    fulfillment: { status: "satisfied", selectedArtifactSetId: published.artifactSetId, preservedPriorPassing: true },
+    observations: [
+      { publicationStatus: "published", eligibility: "eligible" },
+      { publicationStatus: "missing", eligibility: "open" },
+    ],
+  });
+  expect(PsychordApplicationEvidenceAssessmentSchema.parse(assessed)).toEqual(assessed);
+  expect(() => PsychordApplicationEvidenceAssessmentSchema.parse({
+    ...assessed,
+    fulfillment: { ...assessed.fulfillment, status: "unknown", selectedArtifactSetId: undefined },
+  })).toThrow(/fulfillment/u);
+
+  const staleAssessment = createPsychordApplicationEvidenceAssessmentService({
+    artifacts: service,
+    currentness: { async observe(currentPlan) {
+      const current = currentnessFor(currentPlan);
+      return { ...current, status: "stale" as const, repository: { ...current.repository, observedGitHead: "b".repeat(40), status: "stale" as const }, reasons: ["stale: repository Git/worktree binding"] };
+    } },
+  });
+  await expect(staleAssessment.assess({
+    schemaVersion: "psychord-application-evidence-assessment-request@1",
+    requirementId: "requirement:keep-owned-moment",
+    scenario: plan.scenario,
+    case: "no-input",
+    predicate: { id: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"] },
+    observations: [{ role: "prior", runId: plan.runId, artifactSetId: published.artifactSetId }],
+  }, { signal: new AbortController().signal })).resolves.toMatchObject({ fulfillment: { status: "unknown" }, observations: [{ eligibility: "open", reuseCurrentness: { status: "stale" } }] });
+
+  const incompleteBindingAssessment = createPsychordApplicationEvidenceAssessmentService({
+    artifacts: service,
+    currentness: { async observe(currentPlan) {
+      const current = currentnessFor(currentPlan);
+      return { ...current, dependencies: current.dependencies.slice(1) };
+    } },
+  });
+  await expect(incompleteBindingAssessment.assess({
+    schemaVersion: "psychord-application-evidence-assessment-request@1",
+    requirementId: "requirement:keep-owned-moment",
+    scenario: plan.scenario,
+    case: "no-input",
+    predicate: { id: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"] },
+    observations: [{ role: "prior", runId: plan.runId, artifactSetId: published.artifactSetId }],
+  }, { signal: new AbortController().signal })).resolves.toMatchObject({ fulfillment: { status: "unknown" }, observations: [{ eligibility: "open", reuseBinding: "mismatched" }] });
+
+  for (const forgedCurrentness of [
+    (currentPlan: PsychordApplicationObservationPlan) => {
+      const current = currentnessFor(currentPlan);
+      return { ...current, dependencies: current.dependencies.map((dependency, index) => index === 0 ? { ...dependency, observedHash: undefined } : dependency) };
+    },
+    (currentPlan: PsychordApplicationObservationPlan) => {
+      const current = currentnessFor(currentPlan);
+      return { ...current, repository: { ...current.repository, observedGitHead: "b".repeat(40) } };
+    },
+  ]) {
+    const rejectingAssessment = createPsychordApplicationEvidenceAssessmentService({
+      artifacts: service,
+      currentness: { async observe(currentPlan) { return forgedCurrentness(currentPlan); } },
+    });
+    const rejected = await rejectingAssessment.assess({
+      schemaVersion: "psychord-application-evidence-assessment-request@1",
+      requirementId: "requirement:keep-owned-moment",
+      scenario: plan.scenario,
+      case: "no-input",
+      predicate: { id: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"] },
+      observations: [{ role: "prior", runId: plan.runId, artifactSetId: published.artifactSetId }],
+    }, { signal: new AbortController().signal });
+    expect(rejected).toMatchObject({ fulfillment: { status: "unknown" }, observations: [{ eligibility: "open" }] });
+    expect("reuseCurrentness" in rejected.observations[0]!).toBe(false);
+  }
+
+  const cancellation = new AbortController();
+  const cancellingAssessment = createPsychordApplicationEvidenceAssessmentService({
+    artifacts: service,
+    currentness: { async observe(currentPlan, { signal }) {
+      return await observePsychordEvidenceCurrentness({
+        plan: currentPlan,
+        environment: {},
+        signal,
+        commands: { async run(request) {
+          return await new Promise((_, reject) => {
+            const abort = () => reject(request.signal.reason ?? new Error("cancelled"));
+            request.signal.addEventListener("abort", abort, { once: true });
+            if (request.signal.aborted) abort();
+          });
+        } },
+      });
+    } },
+  });
+  const cancelled = cancellingAssessment.assess({
+    schemaVersion: "psychord-application-evidence-assessment-request@1",
+    requirementId: "requirement:keep-owned-moment",
+    scenario: plan.scenario,
+    case: "no-input",
+    predicate: { id: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"] },
+    observations: [{ role: "prior", runId: plan.runId, artifactSetId: published.artifactSetId }],
+  }, { signal: cancellation.signal });
+  cancellation.abort(new Error("assessment cancelled during currentness command"));
+  await expect(cancelled).rejects.toThrow(/assessment cancelled/u);
 });
 
 it("publishes an authenticated terminal unavailable result without treating it as behavioral evidence", async () => {
@@ -115,6 +233,38 @@ it("publishes an authenticated terminal unavailable result without treating it a
     status: "published",
     behavioralEvidence: false,
     result: { operationalStatus: "cancelled", outcome: "unavailable", cleanup: { complete: false } },
+  });
+});
+
+it("projects a current failed observation as violated rather than fulfilled", async () => {
+  const root = await temporaryRoot();
+  const legacyPlan = observationPlan(root, "run-current-failure");
+  const plan = createPsychordApplicationObservationPlan(legacyPlan);
+  const initial = observationResult(legacyPlan);
+  const failed = observationResult(legacyPlan, {
+    outcome: "failed",
+    assertions: initial.assertions.map((assertion) => assertion.id === "no-input-player" ? { ...assertion, passed: false, detail: "player was contaminated" } : assertion),
+  });
+  const artifacts = createDurablePsychordObservationArtifactService({
+    storageRoot: root,
+    observer: createStrictPsychordApplicationObserver({ async observeApplication() { return failed; } }),
+  });
+  const published = await artifacts.observeAndPublish(plan, { signal: new AbortController().signal });
+  if (published.status !== "published") throw new Error("expected failed behavior to be published as historical evidence");
+  const assessments = createPsychordApplicationEvidenceAssessmentService({
+    artifacts,
+    currentness: { async observe(currentPlan) { return currentnessFor(currentPlan); } },
+  });
+  await expect(assessments.assess({
+    schemaVersion: "psychord-application-evidence-assessment-request@1",
+    requirementId: "requirement:keep-owned-moment",
+    scenario: plan.scenario,
+    case: "no-input",
+    predicate: { id: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"] },
+    observations: [{ role: "latest", runId: plan.runId, artifactSetId: published.artifactSetId }],
+  }, { signal: new AbortController().signal })).resolves.toMatchObject({
+    fulfillment: { status: "violated", selectedArtifactSetId: published.artifactSetId, preservedPriorPassing: false },
+    observations: [{ publicationStatus: "published", eligibility: "violated", historical: { outcome: "failed" } }],
   });
 });
 
@@ -384,5 +534,21 @@ function noInputSnapshot() {
     playerNoteCount: 0,
     activeVoiceCount: 0,
     playerEvents: [],
+  };
+}
+
+function currentnessFor(plan: PsychordApplicationObservationPlan) {
+  return {
+    status: "current" as const,
+    repository: {
+      expectedGitHead: plan.adapter.input.repository.gitHead,
+      observedGitHead: plan.adapter.input.repository.gitHead,
+      expectedWorktreeDigest: plan.adapter.input.repository.worktreeDigest,
+      observedWorktreeDigest: plan.adapter.input.repository.worktreeDigest,
+      status: "current" as const,
+    },
+    dependencies: plan.adapter.input.dependencies.map(({ role, locator, contentHash }) => ({ role, locator, expectedHash: contentHash, observedHash: contentHash, status: "current" as const })),
+    buildArtifacts: plan.adapter.input.server.expectedBuildArtifacts.map(({ role, buildLocator, contentHash }) => ({ role, locator: buildLocator, expectedHash: contentHash, observedHash: contentHash, status: "current" as const })),
+    reasons: [],
   };
 }
