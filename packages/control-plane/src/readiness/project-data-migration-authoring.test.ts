@@ -1,8 +1,6 @@
 import {
   hashFramedDomain,
-  hashProjectDataFormatSnapshot,
   type ContentHash,
-  type ProjectDataFormatSnapshot,
 } from "@projector/core";
 import { describe, expect, test } from "vitest";
 
@@ -12,24 +10,22 @@ import {
   createReleaseCandidateProjectDataMigration,
   verifyProjectDataMigrationManifest,
 } from "./project-data-migration-authoring.js";
+import {
+  canonicalOwnerModulePaths,
+  createReleaseCandidateProjectDataFormat,
+  preparedConfigOwnerModulePaths,
+  runtimeEvidenceOwnerModulePaths,
+  type ValidatedReleaseCandidateInventory,
+} from "./project-data-format-owner.js";
 
 const hash = (value: string): ContentHash => hashFramedDomain("migration-authoring-test/v1", value);
 
-function snapshot(version: string, changes: Partial<{
-  canonicalHash: ContentHash;
-  runtimeHash: ContentHash;
-  sqliteVersion: number;
-  sqliteHash: ContentHash;
-}> = {}): ProjectDataFormatSnapshot {
-  const body = {
-    apiVersion: "projector.project-data-format-snapshot/v1" as const,
+function candidate(version: string, extras: readonly { readonly path: string; readonly digest: ContentHash }[] = []): ValidatedReleaseCandidateInventory {
+  const paths = [...new Set([...preparedConfigOwnerModulePaths, ...canonicalOwnerModulePaths, ...runtimeEvidenceOwnerModulePaths])].sort();
+  return {
     packageIdentity: { name: "@onepersonlabs/projector", version },
-    preparedConfig: { apiVersion: "projector.config/v1" as const, projectorVersion: version, schemaHash: hash("config") },
-    canonical: { envelopeApiVersion: "projector/v2" as const, schemaBundleHash: changes.canonicalHash ?? hash("canonical") },
-    runtimeEvidence: { schemaVersion: version, schemaHash: changes.runtimeHash ?? hash("runtime") },
-    sqlite: { schemaVersion: changes.sqliteVersion ?? 1, migrationSetHash: changes.sqliteHash ?? hash("sqlite") },
+    files: [...paths.map((path, index) => ({ path, digest: hash(`owner-${index}`) })), ...extras],
   };
-  return { ...body, snapshotHash: hashProjectDataFormatSnapshot(body) };
 }
 
 const transform = { id: "transform:canonical-v3", relativePath: "migrations/canonical-v3.mjs", contentHash: hash("transform") } as const;
@@ -38,22 +34,29 @@ const validation = { id: "validation:canonical-v3", relativePath: "migrations/va
 
 describe("project-data migration authoring", () => {
   test("seals a version-only release as a no-data-change edge", () => {
-    const source = snapshot("2.1.0");
-    const target = snapshot("2.2.0");
+    const source = createReleaseCandidateProjectDataFormat({ candidate: candidate("2.1.0") });
+    const targetCandidate = candidate("2.2.0");
+    const target = createReleaseCandidateProjectDataFormat({ candidate: targetCandidate });
     expect(compareProjectDataFormats(source, target)).toEqual([]);
     const draft = createProjectDataMigrationDraft({ sourceSnapshot: source, targetSnapshot: target });
     const manifest = createReleaseCandidateProjectDataMigration({
       id: "migration:2.1.0-to-2.2.0",
       draft,
-      candidate: { packageIdentity: target.packageIdentity, files: [] },
+      candidate: targetCandidate,
     });
     expect(manifest).toMatchObject({ kind: "no-data-change", fromVersion: "2.1.0", toVersion: "2.2.0" });
     expect(verifyProjectDataMigrationManifest(manifest)).toEqual(manifest);
   });
 
   test("preserves ordered transforms and validates their candidate bytes", () => {
-    const source = snapshot("2.1.0");
-    const target = snapshot("2.2.0", { canonicalHash: hash("canonical-v3") });
+    const source = createReleaseCandidateProjectDataFormat({ candidate: candidate("2.1.0") });
+    const artifactFiles = [transform, custom, validation].map(({ relativePath: path, contentHash: digest }) => ({ path, digest }));
+    const baseTarget = candidate("2.2.0", artifactFiles);
+    const targetCandidate = {
+      ...baseTarget,
+      files: baseTarget.files.map((file) => file.path === canonicalOwnerModulePaths[0] ? { ...file, digest: hash("canonical-v3") } : file),
+    };
+    const target = createReleaseCandidateProjectDataFormat({ candidate: targetCandidate });
     expect(compareProjectDataFormats(source, target)).toEqual(["canonical"]);
     const draft = createProjectDataMigrationDraft({
       sourceSnapshot: source,
@@ -62,35 +65,46 @@ describe("project-data migration authoring", () => {
       customTransforms: [custom],
       validations: [validation],
     });
-    const files = [transform, custom, validation].map(({ relativePath: path, contentHash: digest }) => ({ path, digest }));
     const manifest = createReleaseCandidateProjectDataMigration({
       id: "migration:2.1.0-to-2.2.0",
       draft,
-      candidate: { packageIdentity: target.packageIdentity, files },
+      candidate: targetCandidate,
     });
     expect(manifest).toMatchObject({ kind: "transform", transforms: [transform, custom], validations: [validation] });
-    expect(() => verifyProjectDataMigrationManifest({ ...manifest, targetSnapshotHash: source.snapshotHash })).toThrow(/manifest hash/iu);
+    expect(() => verifyProjectDataMigrationManifest({ ...manifest, targetSnapshotHash: source.snapshotHash })).toThrow(/manifestHash/u);
     expect(() => createReleaseCandidateProjectDataMigration({
       id: "migration:changed-artifact",
       draft,
-      candidate: { packageIdentity: target.packageIdentity, files: files.slice(1) },
+      candidate: { ...targetCandidate, files: targetCandidate.files.filter((file) => file.path !== transform.relativePath) },
     })).toThrow(/absent or changed/iu);
     expect(() => createReleaseCandidateProjectDataMigration({
       id: "migration:wrong-release",
       draft,
-      candidate: { packageIdentity: { ...target.packageIdentity, version: "2.3.0" }, files },
+      candidate: { ...targetCandidate, packageIdentity: { ...target.packageIdentity, version: "2.3.0" } },
     })).toThrow(/target release/iu);
+    const staleTarget = createReleaseCandidateProjectDataFormat({ candidate: baseTarget });
+    const staleDraft = createProjectDataMigrationDraft({ sourceSnapshot: source, targetSnapshot: staleTarget });
+    expect(() => createReleaseCandidateProjectDataMigration({
+      id: "migration:stale-target",
+      draft: staleDraft,
+      candidate: targetCandidate,
+    })).toThrow(/candidate format.*target snapshot/iu);
   });
 
   test("rejects changed formats without executable transforms and validations", () => {
+    const baseTarget = candidate("2.2.0");
+    const targetCandidate = {
+      ...baseTarget,
+      files: baseTarget.files.map((file) => file.path === canonicalOwnerModulePaths[0] ? { ...file, digest: hash("changed-without-transform") } : file),
+    };
     const draft = createProjectDataMigrationDraft({
-      sourceSnapshot: snapshot("2.1.0"),
-      targetSnapshot: snapshot("2.2.0", { sqliteVersion: 2, sqliteHash: hash("sqlite-v2") }),
+      sourceSnapshot: createReleaseCandidateProjectDataFormat({ candidate: candidate("2.1.0") }),
+      targetSnapshot: createReleaseCandidateProjectDataFormat({ candidate: targetCandidate }),
     });
     expect(() => createReleaseCandidateProjectDataMigration({
       id: "migration:unexecutable",
       draft,
-      candidate: { packageIdentity: draft.targetSnapshot.packageIdentity, files: [] },
+      candidate: targetCandidate,
     })).toThrow(/ordered transforms and validations/iu);
   });
 });
