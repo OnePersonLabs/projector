@@ -271,7 +271,8 @@ describe("bounded Projector operation runner", () => {
     expect(discovery.readiness.status).toBe("inactive");
     expect(discovery.operations.find(({ operation }) => operation === "verify")).toMatchObject({
       registered: true,
-      reachable: false,
+      reachable: true,
+      reason: expect.stringMatching(/readiness is reported separately/iu),
     });
     expect(discovery.operations.find(({ operation }) => operation === "coverage")).toMatchObject({
       registered: false,
