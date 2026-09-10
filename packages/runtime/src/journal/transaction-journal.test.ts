@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -299,6 +299,48 @@ describe("FileTransactionJournal", () => {
 
     expect(await journal.recoverIncomplete()).toEqual([]);
     expect(await readFile(join(root, "sample.txt"), "utf8")).toBe("committed");
+  });
+
+  it("preserves terminal journals copied with a repository without treating them as live recovery work", async () => {
+    const sourceRoot = await mkdtemp(join(tmpdir(), "projector-journal-source-"));
+    const source = await journalFor(sourceRoot);
+    const committed = await source.begin(beginInput("tx-prior-worktree-committed"));
+    await committed.writeFile("sample.txt", "committed");
+    for (const phase of phasesAfterMutation) await committed.transition(phase);
+    await committed.commit();
+    const rolledBack = await source.begin(beginInput("tx-prior-worktree-rolled-back"));
+    await rolledBack.writeFile("rolled-back.txt", "temporary");
+    await rolledBack.rollback();
+
+    const targetRoot = await mkdtemp(join(tmpdir(), "projector-journal-clone-"));
+    const target = await journalFor(targetRoot);
+    const sourceDirectory = join(sourceRoot, ".projector", "runtime", "journal");
+    const targetDirectory = join(targetRoot, ".projector", "runtime", "journal");
+    await mkdir(targetDirectory, { recursive: true });
+    for (const name of await readdir(sourceDirectory)) {
+      await copyFile(join(sourceDirectory, name), join(targetDirectory, name));
+    }
+
+    expect(await target.recoverIncomplete()).toEqual([]);
+    expect(await readdir(targetDirectory)).toHaveLength(2);
+  });
+
+  it("fails closed on nonterminal recovery work copied from another worktree", async () => {
+    const sourceRoot = await mkdtemp(join(tmpdir(), "projector-journal-source-active-"));
+    const source = await journalFor(sourceRoot);
+    const active = await source.begin(beginInput("tx-prior-worktree-active"));
+    await active.writeFile("sample.txt", "uncommitted");
+    const sourceDirectory = join(sourceRoot, ".projector", "runtime", "journal");
+    const [name] = await readdir(sourceDirectory);
+    if (name === undefined) throw new Error("Expected an active source journal");
+
+    const targetRoot = await mkdtemp(join(tmpdir(), "projector-journal-clone-active-"));
+    const target = await journalFor(targetRoot);
+    const targetDirectory = join(targetRoot, ".projector", "runtime", "journal");
+    await mkdir(targetDirectory, { recursive: true });
+    await copyFile(join(sourceDirectory, name), join(targetDirectory, name));
+
+    await expect(target.recoverIncomplete()).rejects.toThrow(/different worktree/i);
   });
 
   it("returns the exact committed journal bytes and their recovery hash", async () => {

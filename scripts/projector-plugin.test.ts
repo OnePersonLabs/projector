@@ -30,7 +30,8 @@ async function installedFixture() {
     " const manifest = JSON.parse(await readFile(join(packagedRoot, 'package.json'), 'utf8'));",
     " return { execute: async (request, options = {}) => {",
     "  const active = await access(join(request.repositoryRoot, '.projector/config.toml')).then(() => true, () => false);",
-    "  const readiness = active ? { status: 'ready', package: { name: manifest.name, version: manifest.version }, observed: { configApiVersion: 'projector.config/v1', preparedProjectorVersion: manifest.version } } : { status: 'inactive', package: { name: manifest.name, version: manifest.version }, reason: 'fixture' };",
+    "  const blocked = await readFile(join(request.repositoryRoot, '.projector/non-ready-status'), 'utf8').then(value => value.trim(), () => undefined);",
+    "  const readiness = blocked ? { status: blocked, package: { name: manifest.name, version: manifest.version }, reason: `${blocked} fixture state`, recovery: { code: 'fixture-active-state', action: `resolve ${blocked} fixture state` } } : active ? { status: 'ready', package: { name: manifest.name, version: manifest.version }, observed: { configApiVersion: 'projector.config/v1', preparedProjectorVersion: manifest.version } } : { status: 'inactive', package: { name: manifest.name, version: manifest.version }, reason: 'fixture' };",
     "  return {",
     "  apiVersion: 'projector.operation-result/v1', operation: request.operation, package: { name: manifest.name, version: manifest.version },",
     "  ...(request.requestId === undefined ? {} : { requestId: request.requestId }), status: 'succeeded', exitCode: 0,",
@@ -142,6 +143,17 @@ describe("Projector lifecycle hooks", () => {
     expect(beforeMutation).toMatchObject({ exitCode: 0, stderr: "" });
     expect(JSON.parse(beforeMutation.stdout)).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: expect.stringContaining("operation entry owns readiness and access") } });
     expect(JSON.parse(beforeMutation.stdout).hookSpecificOutput).not.toHaveProperty("permissionDecision");
+
+    for (const status of ["upgrade-required", "recovery-required", "busy", "unavailable"]) {
+      await writeFile(join(repository, ".projector/non-ready-status"), `${status}\n`);
+      const nonReady = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id: `tool-${status}`, tool_input: { command: "git status" } }));
+      expect(nonReady).toMatchObject({ exitCode: 0, stderr: "" });
+      const output = JSON.parse(nonReady.stdout);
+      expect(output).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: expect.stringMatching(new RegExp(`${status}.*resolve ${status} fixture state`, "iu")) } });
+      expect(output.hookSpecificOutput.additionalContext.length).toBeLessThanOrEqual(256);
+      expect(output.hookSpecificOutput).not.toHaveProperty("permissionDecision");
+    }
+    await rm(join(repository, ".projector/non-ready-status"));
 
     await rm(join(pluginRoot, "runtime/projector/exports/operations.js"));
     await mkdir(join(pluginRoot, "runtime/projector/exports/operations.js"));
