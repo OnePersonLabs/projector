@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, test } from "vitest";
 
+import { PreparedProjectInitializationResultSchema } from "../index.js";
 import {
-  PreparedProjectInitializationResultSchema,
   initializePreparedProject,
   inspectProjectReadiness,
   withProjectOperationAccess,
