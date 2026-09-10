@@ -1,6 +1,6 @@
 # Projector Specification Index
 
-This index routes readers and agents to authoritative modules without requiring full-spec ingestion. It is navigation, not an independent source of requirements.
+This index routes readers and agents to transitional source modules without requiring full-spec ingestion. It introduces no independent requirements. Accepted meaning and executable contract ownership follow the [authority and composition rules](SPEC.md#authority-and-composition).
 
 ## Module map
 
@@ -84,7 +84,7 @@ This index routes readers and agents to authoritative modules without requiring 
 
 ## Semantic lookup
 
-| Concept / question | Canonical definition / primary module | Important consumers |
+| Concept / question | Transitional source / owning module | Important consumers |
 |---|---|---|
 | Concept / stable identity / aliases | [Identity, Concepts, and Relations](02-semantic-kernel/identity-and-relations.md) | relevance, projection units, governance, reconciliation |
 | Requirement / Behavioral Scenario | [Identity, Concepts, and Relations](02-semantic-kernel/identity-and-relations.md) | relevance, change compiler, representations, verification |
