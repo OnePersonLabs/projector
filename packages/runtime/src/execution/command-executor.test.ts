@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -92,6 +92,16 @@ class NoExternalWriteSandboxLauncher extends EchoSandboxLauncher {
 }
 
 describe("StateBoundCommandExecutor", () => {
+  it("executes an exact authorized command through the native host without claiming isolation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-exec-host-"));
+    const paths = await RepositoryPathService.create(root);
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new NativeProcessLauncher());
+    const spec = command({ argv: [process.execPath, "--input-type=module", "--eval", "process.stdout.write('host-ok')"], writeScope: [], sideEffectClass: "none" });
+    const result = await executor.execute(spec, request(spec));
+    expect(result).toMatchObject({ exitCode: 0, signal: null, stdout: "host-ok", stderr: "" });
+    expect(new NativeProcessLauncher().capabilities).toMatchObject({ filesystemIsolation: false, networkIsolation: false, readOnlyFileOverlays: false });
+  });
+
   it("refuses a command whose binding is stale before starting a process", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
@@ -156,7 +166,7 @@ describe("StateBoundCommandExecutor", () => {
     });
   });
 
-  it("fails closed when the launcher lacks an external-write capability", async () => {
+  it("executes an explicitly authorized external write through host permissions", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
     const executor = new StateBoundCommandExecutor(
@@ -168,7 +178,7 @@ describe("StateBoundCommandExecutor", () => {
 
     await expect(
       executor.execute(spec, request(spec, { allowExternalWrites: true })),
-    ).rejects.toMatchObject({ code: "unsupported-isolation" });
+    ).resolves.toMatchObject({ exitCode: 0 });
   });
 
   it("rejects non-finite, fractional, or non-positive resource budgets", async () => {
@@ -257,7 +267,104 @@ describe("NativeProcessLauncher", () => {
       }),
     ).rejects.toBeInstanceOf(ExecutionLimitError);
   });
+
+  it("terminates the owned descendant tree when caller cancellation interrupts execution", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-process-tree-"));
+    const pidFile = join(root, "descendant.pid");
+    const controller = new AbortController();
+    const launcher = new NativeProcessLauncher();
+    const source = [
+      "const {spawn}=require('node:child_process')",
+      "const {writeFileSync}=require('node:fs')",
+      "const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'})",
+      "writeFileSync(process.argv[1],String(child.pid))",
+      "setInterval(()=>{},1000)",
+    ].join(";");
+    const execution = launcher.launch({
+      executable: process.execPath,
+      args: ["-e", source, pidFile],
+      cwd: root,
+      env: {},
+      readRoots: [],
+      writeRoots: [root],
+      network: "allow",
+      timeoutMs: 5_000,
+      maxOutputBytes: 1_024,
+      signal: controller.signal,
+    });
+    let descendantPid: number | undefined;
+    await expect.poll(async () => {
+      try {
+        descendantPid = Number(await readFile(pidFile, "utf8"));
+        return Number.isSafeInteger(descendantPid) && descendantPid > 0;
+      } catch {
+        return false;
+      }
+    }).toBe(true);
+    controller.abort();
+    await expect(execution).rejects.toMatchObject({ limit: "aborted" });
+    await expect.poll(() => processExists(descendantPid!)).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")("blocks interrupted execution when a descendant escapes the owned POSIX process group", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-escaped-process-"));
+    const pidFile = join(root, "escaped.pid");
+    const controller = new AbortController();
+    const source = [
+      "const {spawn}=require('node:child_process')",
+      "const {writeFileSync}=require('node:fs')",
+      "const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'})",
+      "child.unref()",
+      "writeFileSync(process.argv[1],String(child.pid))",
+      "setInterval(()=>{},1000)",
+    ].join(";");
+    const execution = new NativeProcessLauncher().launch({
+      executable: process.execPath,
+      args: ["-e", source, pidFile],
+      cwd: root,
+      env: {},
+      readRoots: [],
+      writeRoots: [root],
+      network: "allow",
+      timeoutMs: 5_000,
+      maxOutputBytes: 1_024,
+      signal: controller.signal,
+    });
+    let escapedPid: number | undefined;
+    try {
+      await expect.poll(async () => {
+        try {
+          escapedPid = Number(await readFile(pidFile, "utf8"));
+          return Number.isSafeInteger(escapedPid) && escapedPid > 0;
+        } catch {
+          return false;
+        }
+      }).toBe(true);
+      controller.abort();
+      await expect(execution).rejects.toMatchObject({
+        limit: "aborted",
+        cleanup: {
+          rootExitObserved: true,
+          processGroupId: expect.any(Number),
+          requested: "posix-process-group-sigkill",
+          status: "unconfirmed",
+        },
+      });
+      expect(processExists(escapedPid!)).toBe(true);
+    } finally {
+      if (escapedPid !== undefined && processExists(escapedPid)) process.kill(escapedPid, "SIGKILL");
+    }
+  });
 });
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 
 function command(overrides: Partial<CommandSpec> = {}): CommandSpec {
   return {
