@@ -4,6 +4,8 @@ import { z } from "zod";
 import {
   ContentHashSchema,
   ChangeProposalSchema,
+  CanonicalDocumentEnvelopeByKindSchema,
+  CanonicalDocumentEnvelopeSchema,
   CommandSpecSchema,
   ConceptSchema,
   EntityIdSchema,
@@ -42,17 +44,50 @@ describe("normative contract registry", () => {
   });
 
   it("represents every exported normative declaration exactly once", () => {
-    expect(Object.keys(contractRegistry)).toHaveLength(156);
+    expect(Object.keys(contractRegistry)).toHaveLength(157);
     expect(validateContractRegistry()).toEqual([]);
   });
 
   it("exports strict JSON Schemas whose references resolve", () => {
     const schemas = exportContractJsonSchemas();
-    expect(Object.keys(schemas)).toHaveLength(147);
+    expect(Object.keys(schemas)).toHaveLength(148);
     expect(validateJsonSchemaReferences(schemas)).toEqual([]);
     for (const schema of Object.values(schemas)) {
       expect(schema).toMatchObject({ $schema: expect.any(String) });
     }
+  });
+
+  it("exports canonical editor validation with exact payload schemas for every kind", () => {
+    const malformedConcept = {
+      apiVersion: "projector/v2",
+      schemaVersion: "2.0.0",
+      kind: "concept",
+      id: "concept:malformed",
+      key: "malformed",
+      lifecycle: "active",
+      payload: { id: "concept:malformed", key: "malformed" },
+      semanticHash: "sha256:v1:" + "0".repeat(64),
+      canonicalDocumentHash: "sha256:v1:" + "1".repeat(64),
+    };
+
+    expect(CanonicalDocumentEnvelopeSchema.safeParse(malformedConcept).success).toBe(false);
+    expect(CanonicalDocumentEnvelopeByKindSchema.safeParse(malformedConcept).success).toBe(false);
+
+    type JsonSchema = { $ref?: string; $defs?: Record<string, JsonSchema>; anyOf?: JsonSchema[]; const?: string; properties?: Record<string, JsonSchema>; required?: string[]; additionalProperties?: boolean };
+    const exported = exportContractJsonSchemas().CanonicalDocumentEnvelopeByKind as JsonSchema;
+    const dereference = (value: JsonSchema): JsonSchema => {
+      if (value.$ref === undefined) return value;
+      const key = value.$ref.match(/^#\/\$defs\/(.+)$/u)?.[1];
+      if (key === undefined || exported.$defs?.[key] === undefined) throw new Error(`unresolved test schema reference ${value.$ref}`);
+      return exported.$defs[key]!;
+    };
+    const conceptArm = exported.anyOf?.find((arm) => dereference(arm.properties!.kind!).const === "concept");
+    const conceptPayload = dereference(conceptArm!.properties!.payload!);
+    expect(conceptPayload).toMatchObject({
+      additionalProperties: false,
+      required: expect.arrayContaining(["id", "key", "kind", "name", "statement", "status"]),
+    });
+    expect(conceptPayload.required!.every((field) => Object.hasOwn(malformedConcept.payload, field))).toBe(false);
   });
 
   it("owns the strict public change proposal contract", () => {
