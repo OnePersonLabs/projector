@@ -40,6 +40,28 @@ export class ExecutionLimitError extends Error {
   }
 }
 
+export class ExecutionCleanupError extends ExecutionLimitError {
+  readonly cleanupError: unknown;
+  readonly cleanup: ProcessCleanupObservation;
+
+  constructor(limitError: ExecutionLimitError, cleanupError: unknown, cleanup: ProcessCleanupObservation) {
+    super(limitError.limit, `${limitError.message}; owned process cleanup could not be confirmed`);
+    this.name = "ExecutionCleanupError";
+    this.cleanupError = cleanupError;
+    this.cleanup = cleanup;
+  }
+}
+
+export interface ProcessCleanupObservation {
+  readonly rootProcessId: number;
+  readonly rootExitObserved: boolean;
+  readonly processGroupId?: number;
+  readonly requested: "posix-process-group-sigkill" | "windows-taskkill-tree";
+  readonly cleanupCommandExitCode?: number | null;
+  readonly status: "reported-complete" | "unconfirmed";
+  readonly reason?: string;
+}
+
 export interface ProcessLauncherCapabilities {
   filesystemIsolation: boolean;
   networkIsolation: boolean;
@@ -214,20 +236,11 @@ export class StateBoundCommandExecutor {
 
   private validateLauncherCapabilities(spec: CommandSpec): void {
     const capabilities = this.launcher.capabilities;
-    if (!capabilities.filesystemIsolation) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot enforce filesystem scopes");
-    }
-    if (spec.network === "deny" && !capabilities.networkIsolation) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot enforce network denial");
-    }
     if (spec.cpuBudgetMs !== undefined && !capabilities.cpuLimits) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot enforce a CPU budget");
+      throw new ExecutionRefusedError("unsupported-isolation", "Host process launcher cannot enforce the requested CPU budget");
     }
     if (spec.memoryBudgetMb !== undefined && !capabilities.memoryLimits) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot enforce a memory budget");
-    }
-    if (spec.sideEffectClass === "external-write" && !capabilities.externalWrites) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot perform authorized external writes");
+      throw new ExecutionRefusedError("unsupported-isolation", "Host process launcher cannot enforce the requested memory budget");
     }
   }
 }
@@ -282,6 +295,7 @@ export class NativeProcessLauncher implements ProcessLauncher {
       const child = spawn(request.executable, request.args, {
         cwd: request.cwd,
         env: request.env,
+        detached: process.platform !== "win32",
         shell: false,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
@@ -290,11 +304,12 @@ export class NativeProcessLauncher implements ProcessLauncher {
       const stderr: Buffer[] = [];
       let outputBytes = 0;
       let limitError: ExecutionLimitError | undefined;
+      let cleanup: Promise<ProcessCleanupObservation> | undefined;
 
       const stopFor = (error: ExecutionLimitError) => {
         if (limitError === undefined) {
           limitError = error;
-          child.kill("SIGKILL");
+          cleanup = terminateOwnedProcessTree(child);
         }
       };
       const capture = (target: Buffer[], chunk: Buffer) => {
@@ -321,10 +336,28 @@ export class NativeProcessLauncher implements ProcessLauncher {
         request.signal.removeEventListener("abort", abort);
         reject(error);
       });
-      child.once("close", (exitCode, signal) => {
+      child.once("close", async (exitCode, signal) => {
         clearTimeout(timeout);
         request.signal.removeEventListener("abort", abort);
         if (limitError !== undefined) {
+          try {
+            if (cleanup === undefined) throw new Error("process limit was recorded without a cleanup attempt");
+            const attempt = await cleanup;
+            const observation: ProcessCleanupObservation = { ...attempt, rootExitObserved: true };
+            if (observation.status === "unconfirmed") {
+              reject(new ExecutionCleanupError(limitError, undefined, observation));
+              return;
+            }
+          } catch (error) {
+            reject(new ExecutionCleanupError(limitError, error, {
+              rootProcessId: child.pid ?? -1,
+              rootExitObserved: true,
+              requested: process.platform === "win32" ? "windows-taskkill-tree" : "posix-process-group-sigkill",
+              status: "unconfirmed",
+              reason: error instanceof Error ? error.message : String(error),
+            }));
+            return;
+          }
           reject(limitError);
           return;
         }
@@ -338,4 +371,47 @@ export class NativeProcessLauncher implements ProcessLauncher {
       });
     });
   }
+}
+
+async function terminateOwnedProcessTree(child: ReturnType<typeof spawn>): Promise<ProcessCleanupObservation> {
+  if (child.pid === undefined) throw new Error("spawned process has no owned process identifier");
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+    return {
+      rootProcessId: child.pid,
+      rootExitObserved: false,
+      processGroupId: child.pid,
+      requested: "posix-process-group-sigkill",
+      status: "unconfirmed",
+      reason: "The owned process group received SIGKILL, but descendants that escaped into another session cannot be confirmed absent.",
+    };
+  }
+  return new Promise<ProcessCleanupObservation>((resolve, reject) => {
+    const cleanup = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+      shell: false,
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    cleanup.once("error", (error) => {
+      child.kill("SIGKILL");
+      reject(error);
+    });
+    cleanup.once("close", (code) => {
+      if (code === 0) resolve({
+        rootProcessId: child.pid!,
+        rootExitObserved: false,
+        requested: "windows-taskkill-tree",
+        cleanupCommandExitCode: code,
+        status: "reported-complete",
+      });
+      else {
+        child.kill("SIGKILL");
+        reject(new Error(`taskkill exited with code ${String(code)}`));
+      }
+    });
+  });
 }

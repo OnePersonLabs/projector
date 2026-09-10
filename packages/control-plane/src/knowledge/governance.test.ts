@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type CanonicalDocumentEnvelope, type Concept, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
-import { CanonicalFileRepository, type ProcessLauncher, type ProcessLaunchRequest } from "@projector/runtime";
+import { CanonicalFileRepository, NativeProcessLauncher, type ProcessLauncher, type ProcessLaunchRequest } from "@projector/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
@@ -169,14 +169,13 @@ describe("public architectural decision validity", () => {
   });
 });
 
-/** Protocol simulation only: OS sandbox isolation is covered by runtime acceptance. */
+/** Protocol simulation under the selected trusted-host contract. */
 function protocolLauncher(calls: ProcessLaunchRequest[]): ProcessLauncher {
-  return { capabilities: { filesystemIsolation: true, networkIsolation: true, readOnlyFileOverlays: true, cpuLimits: false, memoryLimits: false, externalWrites: false }, async launch(request) {
+  return { capabilities: { filesystemIsolation: false, networkIsolation: false, readOnlyFileOverlays: false, cpuLimits: false, memoryLimits: false, externalWrites: false }, async launch(request) {
     calls.push(request);
     expect(request).toMatchObject({ env: {}, readRoots: [request.cwd], writeRoots: [], network: "deny", timeoutMs: 30_000 });
-    const source = await readFile(request.readOnlyFileOverlays![0]!.source, "utf8");
-    expect(request.readOnlyFileOverlays![0]!.target).toBe(join(request.cwd, request.args[0]!));
-    const { stdout, stderr } = await execute(process.execPath, ["--input-type=commonjs", "--eval", source, request.args[1]!], { cwd: request.cwd, env: {}, timeout: request.timeoutMs });
+    expect(request.args[0]).toBe(join(request.cwd, "validators/check.cjs"));
+    const { stdout, stderr } = await execute(process.execPath, [request.args[0]!, request.args[1]!], { cwd: request.cwd, env: {}, timeout: request.timeoutMs });
     return { exitCode: 0, signal: null, stdout, stderr, durationMs: 0 };
   } };
 }
@@ -196,6 +195,60 @@ async function validatorFixture() {
 }
 
 describe("public durable repository validators", () => {
+  it("executes the pinned tracked validator through the native host with explicit trust limits", async () => {
+    const { root } = await validatorFixture();
+    const service = await RepositoryKnowledgeService.create({ repositoryRoot: root, createLauncher: async () => new NativeProcessLauncher() });
+    const inspected = await service.context({ request: "inspect", entities: ["lens:validator"] });
+    expect(inspected.branches[0]?.governanceEvaluations?.[0]?.status).toBe("conformant");
+    expect(JSON.stringify(inspected.branches[0]?.governanceEvaluations?.[0])).toContain("configured host permissions");
+  });
+
+  it("passes caller cancellation into a running native validator and reports unavailable evidence", async () => {
+    const { root, lens } = await validatorFixture();
+    const slow = "setInterval(() => {}, 1000);";
+    await writeFile(join(root, "validators/check.cjs"), slow);
+    await git(root, ["add", "validators/check.cjs"]);
+    await git(root, ["commit", "-qm", "slow validator"]);
+    const oid = await git(root, ["rev-parse", "HEAD:validators/check.cjs"]);
+    const version = `git:${oid}`;
+    await canonical(root, "projection-lens", {
+      ...lens,
+      validators: [{ ...lens.validators[0]!, version }],
+      expectedProjections: lens.expectedProjections.map((projection) => ({
+        ...projection,
+        expectation: { kind: "predicate-constrained", predicateIds: [], validatorIds: [`validator:positive@${version}`] },
+      })),
+    });
+    const controller = new AbortController();
+    const service = await RepositoryKnowledgeService.create({ repositoryRoot: root, createLauncher: async () => new NativeProcessLauncher() });
+    const pending = service.context({ request: "inspect", entities: ["lens:validator"], signal: controller.signal });
+    setTimeout(() => controller.abort(), 20).unref();
+    const inspected = await pending;
+    expect(inspected.branches[0]?.governanceEvaluations?.[0]?.status).toBe("unknown");
+    expect(JSON.stringify(inspected.branches[0]?.governanceEvaluations?.[0])).toContain("aborted");
+  });
+
+  it("rejects validator success when the exact tracked source changes during execution", async () => {
+    const { root, source } = await validatorFixture();
+    const calls: ProcessLaunchRequest[] = [];
+    const launcher = protocolLauncher(calls);
+    const service = await RepositoryKnowledgeService.create({
+      repositoryRoot: root,
+      createLauncher: async () => ({
+        ...launcher,
+        async launch(request) {
+          calls.push(request);
+          await writeFile(join(root, "validators/check.cjs"), `${source}\n// changed while running`);
+          return { exitCode: 0, signal: null, stdout: '{"status":"satisfied","reason":"ok"}', stderr: "", durationMs: 1 };
+        },
+      }),
+    });
+    await expect(service.context({ request: "inspect", entities: ["lens:validator"] })).rejects.toThrow(
+      "Repository changed while custom validators ran",
+    );
+    expect(calls[0]?.args[0]).toBe(join(root, "validators/check.cjs"));
+  });
+
   it("rechecks out-of-band content and new consumers while code drift becomes unknown without execution", async () => {
     const { root, source } = await validatorFixture(); const calls: ProcessLaunchRequest[] = [];
     const service = await RepositoryKnowledgeService.create({ repositoryRoot: root, createLauncher: async () => protocolLauncher(calls) });
