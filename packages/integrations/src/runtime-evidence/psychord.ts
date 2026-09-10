@@ -22,6 +22,7 @@ export interface PsychordObservationPlan {
   };
   readonly dependencies: readonly PsychordDependencyPin[];
   readonly ownedArtifactRoot: string;
+  readonly representativeInput: { readonly code: "KeyA"; readonly holdMs: number };
   readonly server: {
     readonly expectedOrigin: string;
     readonly readinessNonce: string;
@@ -59,13 +60,14 @@ export interface PsychordStoredTraceEvidence {
 
 export type PsychordNoteTraceEvent = {
   readonly eventId: string;
+  readonly ingestSequence: number;
   readonly atMs: number;
   readonly sourceId: string;
   readonly sourceSequence: number;
-  readonly sourceTimestampMs: number;
+  readonly sourceTimestamp: { readonly value: number; readonly clock: "device" | "host-monotonic" | "unknown" } | null;
   readonly pitch: number;
   readonly midiChannel: number;
-  readonly disposition: "player" | "replay";
+  readonly disposition: "accepted";
 } & (
   | { readonly type: "note-on"; readonly velocity: number }
   | { readonly type: "note-off"; readonly releaseVelocity: number }
@@ -291,7 +293,7 @@ async function observePreparedPsychordApplication(
       observations.precondition = await controller.snapshot(signal);
       assertFreshPrecondition(observations.precondition, assert);
       await controller.enableSoundWithGesture(signal);
-      await controller.playKeyboardNote({ code: "KeyA", holdMs: 120 }, signal);
+      await controller.playKeyboardNote(plan.representativeInput, signal);
       observations.postInput = await controller.snapshot(signal);
       assertRepresentativeKeyboardTrace(observations.postInput, assert);
       assert("input-enables-explicit-save", observations.postInput.controls.keep && observations.postInput.controls.clear, "released player input must enable explicit save and clear controls");
@@ -299,6 +301,7 @@ async function observePreparedPsychordApplication(
       observations.postSave = await controller.snapshot(signal);
       const savedStorage = observations.postSave.storage;
       assert("explicit-save", observations.postSave.archiveCount === 1 && savedStorage?.momentCount === 1 && observations.postSave.notice === "Moment kept on this device.", "explicit Keep must publish one locally stored moment before reporting success");
+      assert("saved-trace-provenance", savedStorage !== undefined && hasRepresentativeStoredTrace(savedStorage), "the stored bytes must decode to an ordered keyboard C4 trace with timing, expression, and source provenance");
       await controller.reload(signal);
       observations.postReload = await controller.snapshot(signal);
       assert("reload-restores-archive", savedStorage !== undefined
@@ -334,7 +337,7 @@ async function observePreparedPsychordApplication(
       observations.precondition = await controller.snapshot(signal);
       assertFreshPrecondition(observations.precondition, assert);
       await controller.enableSoundWithGesture(signal);
-      await controller.playKeyboardNote({ code: "KeyA", holdMs: 120 }, signal);
+      await controller.playKeyboardNote(plan.representativeInput, signal);
       observations.postInput = await controller.snapshot(signal);
       assertRepresentativeKeyboardTrace(observations.postInput, assert);
       await controller.keepMoment(signal);
@@ -349,7 +352,7 @@ async function observePreparedPsychordApplication(
         && observations.postReload.storage?.rawContentHash === existingStorage.rawContentHash
         && observations.postReload.storage.rawByteLength === existingStorage.rawByteLength, "save-failure control must reload the existing bytes before injection");
       await controller.enableSoundWithGesture(signal);
-      await controller.playKeyboardNote({ code: "KeyA", holdMs: 120 }, signal);
+      await controller.playKeyboardNote(plan.representativeInput, signal);
       observations.beforeFailedSave = await controller.snapshot(signal);
       assert("failure-control-input", observations.beforeFailedSave.controls.keep, "a second real player trace must be eligible for explicit save before rejection is injected");
       await controller.injectStorageWriteFailure(signal);
@@ -512,18 +515,22 @@ function assertFreshPrecondition(snapshot: PsychordUiSnapshot, assert: (id: stri
 }
 
 function assertRepresentativeKeyboardTrace(snapshot: PsychordUiSnapshot, assert: (id: string, passed: boolean, detail: string) => void): void {
-  const noteOn = snapshot.playerEvents.find((event) => event.type === "note-on" && event.sourceId === "keyboard" && event.pitch === 60);
-  const noteOff = snapshot.playerEvents.find((event) => event.type === "note-off" && event.sourceId === "keyboard" && event.pitch === 60);
   assert("representative-keyboard-input", snapshot.sound === "running"
     && snapshot.activeVoiceCount === 0
-    && noteOn?.disposition === "player"
-    && noteOff?.disposition === "player"
+    && snapshot.playerNoteCount > 0,
+  "KeyA must produce visible player evidence and finish with the key released");
+}
+
+function hasRepresentativeStoredTrace(storage: PsychordStoredTraceEvidence): boolean {
+  const noteOn = storage.noteEvents.find((event) => event.type === "note-on" && event.sourceId === "keyboard" && event.pitch === 60);
+  const noteOff = storage.noteEvents.find((event) => event.type === "note-off" && event.sourceId === "keyboard" && event.pitch === 60);
+  return noteOn?.disposition === "accepted"
+    && noteOff?.disposition === "accepted"
     && noteOn.eventId !== noteOff.eventId
+    && noteOn.ingestSequence < noteOff.ingestSequence
     && noteOn.sourceSequence < noteOff.sourceSequence
-    && noteOn.sourceTimestampMs <= noteOff.sourceTimestampMs
     && noteOn.atMs <= noteOff.atMs
-    && noteOn.midiChannel === noteOff.midiChannel,
-  "KeyA must produce an ordered, released keyboard C4 player trace with timing, expression, and source provenance");
+    && noteOn.midiChannel === noteOff.midiChannel;
 }
 
 function buildArtifactsMatch(expected: readonly PsychordExpectedBuildArtifact[], actual: readonly PsychordArtifactIdentity[]): boolean {
@@ -565,6 +572,9 @@ function validObservationPlan(plan: PsychordObservationPlan): boolean {
       && requestPath.startsWith("/")
       && /^sha256:v1:[a-f0-9]{64}$/u.test(contentHash))
     && plan.ownedArtifactRoot.trim() !== ""
+    && plan.representativeInput.code === "KeyA"
+    && Number.isSafeInteger(plan.representativeInput.holdMs)
+    && plan.representativeInput.holdMs >= 1_000
     && Number.isSafeInteger(plan.limits.timeoutMs)
     && plan.limits.timeoutMs > 0
     && Number.isSafeInteger(plan.limits.cleanupTimeoutMs)
