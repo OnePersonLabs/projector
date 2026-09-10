@@ -216,6 +216,8 @@ async function writeDurableExclusive(path: string, bytes: Uint8Array): Promise<v
     await handle.writeFile(bytes);
     await handle.sync();
   } finally { await handle.close(); }
+  // A durable file body does not make its new directory entry durable.
+  await syncDirectory(dirname(path));
 }
 
 async function syncDirectory(path: string): Promise<void> {
