@@ -134,6 +134,10 @@ export function hashFileTransactionJournalBytes(bytes: Uint8Array): ContentHash 
   return hashFramedDomain("file-transaction-journal-bytes:v1", Buffer.from(bytes).toString("base64"));
 }
 
+export function fileTransactionJournalRelativePath(transactionId: string): string {
+  return `${journalRoot}/${recordFileName(transactionId)}`;
+}
+
 export interface RecoveryResult {
   transactionId: string;
   action: "rolled-back" | "recovery-required";
@@ -702,7 +706,7 @@ export class FileTransactionJournal {
 
   private async recordPath(transactionId: string): Promise<string> {
     await this.ensureJournalRoot();
-    return (await this.paths.resolveWrite(`${journalRoot}/${recordFileName(transactionId)}`)).realTarget;
+    return (await this.paths.resolveWrite(fileTransactionJournalRelativePath(transactionId))).realTarget;
   }
 
   private async ensureParent(path: string, scopes: readonly string[]): Promise<void> {

@@ -23,7 +23,10 @@ import { RepositoryPathService } from "../security/index.js";
 import { PendingProjectDataMigrationStore } from "./pending-project-data-migration.js";
 import { createProjectBackup } from "./project-backup.js";
 import { ProjectDataMigrationReceiptStore } from "./project-data-migration-receipt.js";
-import { reconcileCompletedProjectDataMigration } from "./project-data-migration-recovery.js";
+import {
+  ProjectDataMigrationAccessLostError,
+  reconcileCompletedProjectDataMigration,
+} from "./project-data-migration-recovery.js";
 
 const roots: string[] = [];
 const hash = (digit: string) => `sha256:v1:${digit.repeat(64)}` as ContentHash;
@@ -207,6 +210,39 @@ async function expectMissing(path: string): Promise<void> {
 }
 
 describe("completed project-data migration recovery", () => {
+  test("does not publish a receipt after exclusive access is lost", async () => {
+    const evidence = await committedEvidence();
+    let checks = 0;
+    await expect(reconcileCompletedProjectDataMigration({
+      ...evidence,
+      assertExclusiveAccess: async () => {
+        checks += 1;
+        if (checks === 4) throw new ProjectDataMigrationAccessLostError("lost before receipt");
+      },
+    })).rejects.toThrow(/lost before receipt/iu);
+    expect(await evidence.receipts.read(evidence.marker.migrationId)).toBeUndefined();
+    expect((await evidence.pending.read())?.phase).toBe("publishing");
+  });
+
+  test("does not clear Pending when cancellation arrives after receipt publication", async () => {
+    const evidence = await committedEvidence();
+    const cancellation = new AbortController();
+    await expect(reconcileCompletedProjectDataMigration({
+      ...evidence,
+      signal: cancellation.signal,
+      receipts: {
+        read: (id) => evidence.receipts.read(id),
+        publish: async (receipt) => {
+          const published = await evidence.receipts.publish(receipt);
+          cancellation.abort(new DOMException("cancelled before clear", "AbortError"));
+          return published;
+        },
+      },
+    })).rejects.toThrow(/cancelled before clear/iu);
+    expect(await evidence.receipts.read(evidence.marker.migrationId)).toBeDefined();
+    expect((await evidence.pending.read())?.phase).toBe("publishing");
+  });
+
   test("validates exact committed journal and receipt evidence before clearing Pending", async () => {
     const evidence = await committedEvidence();
 
