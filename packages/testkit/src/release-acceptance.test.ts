@@ -41,11 +41,19 @@ describe("public release acceptance authority", { timeout: 30_000 }, () => {
     const repositoryRoot = await mkdtemp(join(tmpdir(), "projector-traceability-"));
     const testPath = "tests/public.test.ts"; const text = "import { expect, it } from \"vitest\";\nit(\"supported public behavior\", () => { expect(1).toBe(1); });\n";
     try {
-      await mkdir(join(repositoryRoot, "tests")); await writeFile(join(repositoryRoot, testPath), text); await symlink(resolve("node_modules"), join(repositoryRoot, "node_modules"), "dir");
+      await mkdir(join(repositoryRoot, "tests")); await writeFile(join(repositoryRoot, testPath), text.replaceAll("\n", "\r\n")); await symlink(resolve("node_modules"), join(repositoryRoot, "node_modules"), "dir");
       const inventory = deriveAcceptanceInventory(await sources()); const manifest = manifestFor(inventory, hashFramedDomain("traceability-test-source", { path: testPath, text }));
       await expect(verifyTraceabilityManifest(manifest, inventory, { repositoryRoot, reporterOutput: "{\"success\":true}" } as never)).rejects.toThrow(/caller-supplied/iu);
       await expect(verifyTraceabilityManifest(manifest, inventory, { repositoryRoot })).resolves.toMatchObject({ verified: true });
     } finally { await rm(repositoryRoot, { recursive: true, force: true }); }
+  });
+  it("derives the same acceptance inventory across native and Linux line endings", async () => {
+    const source = await sources();
+    const crlf = {
+      scenarios: source.scenarios.map((item) => ({ ...item, text: item.text.replace(/\r\n?/gu, "\n").replaceAll("\n", "\r\n") })),
+      testing: { ...source.testing, text: source.testing.text.replace(/\r\n?/gu, "\n").replaceAll("\n", "\r\n") },
+    };
+    expect(deriveAcceptanceInventory(crlf)).toEqual(deriveAcceptanceInventory(source));
   });
   it("maps trusted host validation and the manual source-severed workflow to exact public tests", async () => { const manifest = JSON.parse(await readFile("release/traceability.json", "utf8")) as TraceabilityManifest; expect(manifest.entries.find(({ title }) => title === "Trusted host validator integrity")).toMatchObject({ publicFacade: "projector/control-plane", testRef: "packages/control-plane/src/knowledge/governance.test.ts#public durable repository validators executes the pinned tracked validator through the native host with explicit trust limits" }); expect(manifest.entries.find(({ title }) => title === "Manual-only source-severed release workflow")).toMatchObject({ publicFacade: "projector", testRef: "scripts/sandbox-release-workflow.test.ts#manual source-severed release workflow has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job" }); });
   it("rejects missing or renamed exact Vitest assertion identities", () => { const result = { status: "passed", assertionResults: [{ fullName: "public facade exact behavior", status: "passed" }] }; expect(() => verifyTraceabilityAssertionIdentity("tests/public.test.ts#public facade exact behavior", result)).not.toThrow(); expect(() => verifyTraceabilityAssertionIdentity("tests/public.test.ts#public facade renamed behavior", result)).toThrow(/exact passing test identity/iu); expect(() => verifyTraceabilityAssertionIdentity("tests/public.test.ts#public facade exact behavior", { ...result, assertionResults: [] })).toThrow(/exact passing test identity/iu); });
