@@ -52,16 +52,16 @@ export async function runReadOnlyOperationalVerification(
     blockingInvalidity: knowledge.findings.length > 0 || analysis.failures.length > 0,
     approvalRequired: false,
     incompleteCoverage: false,
-    requiredUnavailable: analysis.surface.access === "unavailable",
+    requiredUnavailable: true,
     recoveryFailure: false,
     budgetExhausted: false,
     resumable: false,
   };
   const stateDigest = hashFramedDomain("operational-run-state", {
-    repositoryRoot,
     command: "verify",
-    findings,
     canonicalDigest: knowledge.canonicalDigest,
+    artifacts: analysis.artifacts.map(({ id, contentHash }) => ({ id, contentHash })),
+    failures: analysis.failures,
   });
   let gitHead: string | undefined;
   try {
@@ -75,10 +75,8 @@ export async function runReadOnlyOperationalVerification(
   }
   const evidence = {
     ...unavailableOperationalEvidence("not exercised by local operational composition"),
-    configDigest: knowledge.canonicalDigest,
     toolchainDigest: hashFramedDomain("operational-toolchain", options.toolVersion),
     ...(gitHead === undefined ? {} : { gitHead: hashFramedDomain("operational-git-head", gitHead) }),
-    worktreeDigest: stateDigest,
     canonicalDigest: knowledge.canonicalDigest,
     analyzerRecords: analysis.capabilities.map(({ analyzerId, adapterVersion }) => `${analyzerId}@${adapterVersion}`),
     errorRecords: findings.filter(({ severity }) => severity === "error").map(({ code }) => code),
