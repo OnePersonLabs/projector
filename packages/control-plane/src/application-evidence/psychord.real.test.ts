@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 
 import { withCanonicalHashes, type ContentHash, type EvidenceRef, type Requirement } from "@projector/core";
@@ -84,7 +85,7 @@ class FiniteNativeCommandRunner implements PsychordCommandRunner {
   }
 }
 
-for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
+for (const caseName of ["no-input", "keep-reload-replay", "save-failure"] as const) {
   real(`observes the real Psychord ${caseName} flow in owned Windows Chrome`, async () => {
     const runner = new FiniteNativeCommandRunner();
     const environment = commandEnvironment();
@@ -145,10 +146,16 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
           adapter: { id: persisted.plan.adapter.id, version: persisted.plan.adapter.version },
           scenario: persisted.plan.scenario,
           case: caseName,
-          predicateId: caseName === "keep-reload-replay" ? "predicate:keep-reload-replay" : "predicate:save-failure-preservation",
-          assertionIds: caseName === "keep-reload-replay"
-            ? ["explicit-save", "reload-restores-archive", "replay-is-not-player-input", "replay-preserves-persisted-provenance"]
-            : ["save-failure-visible", "save-failure-preserves-archive"],
+          predicateId: caseName === "no-input"
+            ? "predicate:no-input-is-not-player"
+            : caseName === "keep-reload-replay"
+              ? "predicate:keep-reload-replay"
+              : "predicate:save-failure-preservation",
+          assertionIds: caseName === "no-input"
+            ? ["no-input-player"]
+            : caseName === "keep-reload-replay"
+              ? ["explicit-save", "reload-restores-archive", "replay-is-not-player-input", "replay-preserves-persisted-provenance"]
+              : ["save-failure-visible", "save-failure-preserves-archive"],
           observationRole: "latest",
         },
     };
@@ -181,6 +188,60 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
   }, 150_000);
 }
 
+real("reobserves unchanged-HEAD dirty source, controller, and missing build bytes in an isolated Psychord clone", async () => {
+  const runner = new FiniteNativeCommandRunner();
+  const environment = commandEnvironment();
+  const signal = AbortSignal.timeout(60_000);
+  const parent = await mkdtemp(join(tmpdir(), "projector-psychord-currentness-real-"));
+  const root = join(parent, "psychord");
+  try {
+    const clone = await runner.run({ executable: "git", args: ["clone", "--quiet", "--no-hardlinks", psychordRoot, root], cwd: parent, env: environment, timeoutMs: 20_000, maxOutputBytes: 65_536, signal });
+    expect(clone).toMatchObject({ exitCode: 0, signal: null });
+    await cp(join(psychordRoot, "dist"), join(root, "dist"), { recursive: true });
+    const controllerLocator = "task-evidence-controller.ts";
+    await writeFile(join(root, controllerLocator), await readFile(hostFile));
+    const runId = `psychord-real-currentness-${randomUUID()}`;
+    const head = (await runner.run({ executable: "git", args: ["rev-parse", "HEAD"], cwd: root, env: environment, timeoutMs: 5_000, maxOutputBytes: 4_096, signal })).stdout.trim();
+    const base: PsychordObservationPlan = {
+      runId,
+      case: "no-input",
+      scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: JSON.parse(await readFile(join(root, ".projector/model/scenarios/9c1e2ad3d203e2c2b9a840364f70b786f86c48bdf5f58883f4bd82d80a827083.scenario.json"), "utf8")).semanticHash as ContentHash },
+      repository: { root, gitHead: head, worktreeDigest: sha256(Buffer.alloc(0)) },
+      dependencies: await dependencyPins(root, controllerLocator),
+      ownedArtifactRoot: join(root, ".projector/runtime/application-evidence", runId),
+      representativeInput: { code: "KeyA", holdMs: 1_500 },
+      server: { expectedOrigin: "http://127.0.0.1:43123", readinessNonce: randomUUID(), readinessPath: "/.projector-ready", applicationPath: "/", expectedBuildArtifacts: await expectedBuildArtifacts(root) },
+      limits: { timeoutMs: 30_000, cleanupTimeoutMs: 5_000, maximumOutputBytes: 262_144, maximumDiagnosticBytes: 65_536 },
+    };
+    const plan = createPsychordApplicationObservationPlan({ ...base, repository: { ...base.repository, worktreeDigest: await capturePsychordWorktreeDigest(runner, base, environment, signal) } });
+    const observe = () => observePsychordEvidenceCurrentness({ commands: runner, plan, environment, signal });
+    await expect(observe()).resolves.toMatchObject({ status: "current", repository: { observedGitHead: head, status: "current" } });
+
+    const sourcePath = join(root, "src/ui/App.tsx");
+    const source = await readFile(sourcePath);
+    await writeFile(sourcePath, Buffer.concat([source, Buffer.from("\n// relevant unchanged-HEAD evidence edit\n")]));
+    const dirty = await observe();
+    expect(dirty).toMatchObject({ status: "stale", repository: { observedGitHead: head, status: "stale" } });
+    expect(dirty.dependencies).toContainEqual(expect.objectContaining({ role: "source", locator: "src/ui/App.tsx", status: "stale" }));
+    await writeFile(sourcePath, source);
+
+    await writeFile(join(root, controllerLocator), "export const changedController = true;\n");
+    const changedController = await observe();
+    expect(changedController).toMatchObject({ status: "stale", repository: { observedGitHead: head, status: "stale" } });
+    expect(changedController.dependencies).toContainEqual(expect.objectContaining({ role: "controller", locator: controllerLocator, status: "stale" }));
+
+    const documentPath = join(root, "dist/index.html");
+    const missingPath = join(root, "dist/index.html.missing");
+    await rename(documentPath, missingPath);
+    const missing = await observe();
+    expect(missing).toMatchObject({ status: "unknown" });
+    expect(missing.buildArtifacts).toContainEqual(expect.objectContaining({ role: "application-document", locator: "dist/index.html", status: "unavailable" }));
+    await rename(missingPath, documentPath);
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+}, 90_000);
+
 function realAssessmentRequest(plan: PsychordApplicationObservationPlan, evidence: EvidenceRef) {
   const payload: Requirement = {
     id: "requirement:keep-owned-moment",
@@ -208,20 +269,20 @@ function realAssessmentRequest(plan: PsychordApplicationObservationPlan, evidenc
   };
 }
 
-async function dependencyPins(): Promise<readonly PsychordDependencyPin[]> {
+async function dependencyPins(root = psychordRoot, controllerLocator = hostFile): Promise<readonly PsychordDependencyPin[]> {
   const entries: readonly [PsychordDependencyPin["role"], string][] = [
     ["source", "src/ui/App.tsx"], ["source", "src/ui/PianoKeyboard.tsx"], ["source", "src/application/session-controller.ts"], ["source", "src/platform/moments.ts"],
-    ["lockfile", "pnpm-lock.yaml"], ["build-config", "vite.config.ts"], ["controller", hostFile], ["helper", protocolFile], ["helper", contractFile], ["helper", artifactServiceFile], ["helper", compositionFile], ["helper", testFile], ["fixture", "src/platform/moments.ts"],
+    ["lockfile", "pnpm-lock.yaml"], ["build-config", "vite.config.ts"], ["controller", controllerLocator], ["helper", protocolFile], ["helper", contractFile], ["helper", artifactServiceFile], ["helper", compositionFile], ["helper", testFile], ["fixture", "src/platform/moments.ts"],
     ["toolchain", nodeExecutable], ["toolchain", pnpmCli], ["toolchain", agentBrowserExecutable], ["toolchain", chromeExecutable],
   ];
-  return await Promise.all(entries.map(async ([role, locator]) => ({ role, locator, contentHash: sha256(await readFile(locator.includes(":") ? locator : join(psychordRoot, locator))) })));
+  return await Promise.all(entries.map(async ([role, locator]) => ({ role, locator, contentHash: sha256(await readFile(locator.includes(":") ? locator : join(root, locator))) })));
 }
 
-async function expectedBuildArtifacts(): Promise<PsychordObservationPlan["server"]["expectedBuildArtifacts"]> {
-  const dist = join(psychordRoot, "dist");
+async function expectedBuildArtifacts(root = psychordRoot): Promise<PsychordObservationPlan["server"]["expectedBuildArtifacts"]> {
+  const dist = join(root, "dist");
   const files = await walk(dist);
   return await Promise.all(files.map(async (file) => {
-    const locator = relative(psychordRoot, file).replaceAll("\\", "/");
+    const locator = relative(root, file).replaceAll("\\", "/");
     const requestPath = basename(file) === "index.html" ? "/" : `/${relative(dist, file).replaceAll("\\", "/")}`;
     return { role: basename(file) === "index.html" ? "application-document" : `asset:${requestPath}`, buildLocator: locator, requestPath, contentHash: sha256(await readFile(file)) };
   }));
