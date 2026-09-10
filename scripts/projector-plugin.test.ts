@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -79,6 +79,23 @@ describe("Projector installed operation entry", () => {
     expect(malformed.exitCode).toBe(2);
     expect(malformed.stdout).toBe("");
     expect(malformed.stderr).not.toBe("");
+  });
+
+  test("bounds request files and rejects non-regular or linked inputs", async () => {
+    const { root, pluginRoot } = await installedFixture();
+    const oversized = join(root, "oversized.json");
+    await writeFile(oversized, Buffer.alloc(8 * 1024 * 1024 + 1, 0x20));
+    await expect(runOperation(pluginRoot, undefined, [oversized])).resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringMatching(/exceeds/iu) });
+
+    const directory = join(root, "request-directory");
+    await mkdir(directory);
+    await expect(runOperation(pluginRoot, undefined, [directory])).resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringMatching(/regular file|directory/iu) });
+
+    const request = join(root, "request.json");
+    const linked = join(root, "linked-request.json");
+    await writeFile(request, '{}\n');
+    await symlink(request, linked, "file");
+    await expect(runOperation(pluginRoot, undefined, [linked])).resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringMatching(/symbolic|link|too many levels/iu) });
   });
 
   test("removes the replaced MCP and CLI-wrapper plugin surfaces", async () => {
