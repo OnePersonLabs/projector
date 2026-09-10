@@ -3,7 +3,12 @@ import { constants } from "node:fs";
 import { link, lstat, mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { exportContractJsonSchemas } from "@projector/core";
+import {
+  CanonicalDocumentWireSchemasByKind,
+  type CanonicalKind,
+  exportContractJsonSchemas,
+} from "@projector/core";
+import { z } from "zod";
 
 import { RepositoryPathService } from "../security/repository-path.js";
 
@@ -15,7 +20,15 @@ export interface ProjectorEditorSchema {
 export function createProjectorEditorSchemaBundle(): readonly ProjectorEditorSchema[] {
   const schemas = exportContractJsonSchemas();
   const selected = [
-    [".projector/schemas/canonical-document-v2.schema.json", tomlEncodingSchema(schemas.CanonicalDocumentWireByKind)],
+    ...Object.entries(CanonicalDocumentWireSchemasByKind).map(([kind, schema]) => [
+      `.projector/schemas/canonical-${kind}-v2.schema.json`,
+      tomlEncodingSchema(z.toJSONSchema(schema, {
+        target: "draft-2020-12",
+        reused: "ref",
+        cycles: "ref",
+        io: "input",
+      })),
+    ] as const),
     [".projector/schemas/projector-config-v1.schema.json", taploDraft4Schema(schemas.PreparedProjectorConfig)],
   ] as const;
   return selected.map(([relativePath, schema]) => {
@@ -100,6 +113,7 @@ function tomlEncodingSchema(schema: unknown): unknown {
   const encoded = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
   transformNullSchemas(encoded);
   convertToTaploDraft4(encoded, true);
+  assertTaploDraft4Schema(encoded);
   const objectSchemas = Array.isArray(encoded.anyOf) ? encoded.anyOf : [encoded];
   if (objectSchemas.length === 0 || objectSchemas.some((candidate) => {
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) return true;
@@ -118,6 +132,7 @@ const gitArtifactLocatorPattern = "^git:(?:[a-f0-9]{40}|[a-f0-9]{64}):(?!\\/)(?!
 function taploDraft4Schema(schema: unknown): unknown {
   const encoded = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
   convertToTaploDraft4(encoded, true);
+  assertTaploDraft4Schema(encoded);
   return encoded;
 }
 
@@ -146,7 +161,7 @@ function convertToTaploDraft4(value: unknown, root = false): void {
   } else if (schema.pattern === gitArtifactLocatorPattern) {
     const prefix = "git:(?:[a-f0-9]{40}|[a-f0-9]{64}):";
     replacePatternWithAllOf(schema, [
-      { pattern: `^${prefix}[^/\\\\](?:[^\\\\]*[^/\\\\])?$` },
+      { pattern: `^${prefix}[^/\\\\\r\n  ](?:[^\\\\\r\n  ]*[^/\\\\\r\n  ])?$` },
       { not: { pattern: `^${prefix}[A-Za-z]:` } },
       { not: { pattern: "//" } },
       { not: { pattern: `(?:^${prefix}|/)(?:\\.|\\.\\.)(?:/|$)` } },
@@ -157,6 +172,8 @@ function convertToTaploDraft4(value: unknown, root = false): void {
     schema.enum = [schema.const];
     delete schema.const;
   }
+  // Draft 4's impossible schema preserves strictness while Taplo can attach an unknown-field error to that field.
+  if (schema.additionalProperties === false) schema.additionalProperties = { not: {} };
   if (schema.propertyNames !== undefined) {
     const expected = { not: { const: reservedTomlNullKey } };
     const expectedStringNames = { allOf: [{ type: "string" }, expected] };
@@ -168,6 +185,48 @@ function convertToTaploDraft4(value: unknown, root = false): void {
     schema.not = { required: [reservedTomlNullKey] };
   }
   for (const item of Object.values(schema)) convertToTaploDraft4(item);
+}
+
+const taploDraft4Keywords = new Set([
+  "$ref", "$schema", "additionalItems", "additionalProperties", "allOf", "anyOf", "default",
+  "definitions", "dependencies", "description", "enum", "exclusiveMaximum", "exclusiveMinimum",
+  "format", "id", "items", "maxItems", "maxLength", "maxProperties", "maximum", "minItems",
+  "minLength", "minProperties", "minimum", "multipleOf", "not", "oneOf", "pattern",
+  "patternProperties", "properties", "required", "title", "type", "uniqueItems",
+]);
+
+/** Refuses to label a future schema Draft 4 when Taplo could silently ignore its semantics. */
+function assertTaploDraft4Schema(value: unknown, location = "#"): void {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return;
+  const schema = value as Record<string, unknown>;
+  for (const key of Object.keys(schema)) {
+    if (!taploDraft4Keywords.has(key)) throw new Error(`Editor schema contains unsupported Draft 4 keyword ${key} at ${location}`);
+  }
+  for (const keyword of ["additionalItems", "additionalProperties", "items", "not"] as const) {
+    const child = schema[keyword];
+    if (child !== undefined && typeof child === "object" && child !== null && !Array.isArray(child)) {
+      assertTaploDraft4Schema(child, `${location}/${keyword}`);
+    }
+  }
+  if (Array.isArray(schema.items)) {
+    schema.items.forEach((child, index) => assertTaploDraft4Schema(child, `${location}/items/${index}`));
+  }
+  for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
+    const children = schema[keyword];
+    if (Array.isArray(children)) children.forEach((child, index) => assertTaploDraft4Schema(child, `${location}/${keyword}/${index}`));
+  }
+  for (const keyword of ["definitions", "dependencies", "patternProperties", "properties"] as const) {
+    const children = schema[keyword];
+    if (children === null || typeof children !== "object" || Array.isArray(children)) continue;
+    for (const [name, child] of Object.entries(children)) {
+      if (keyword === "dependencies" && Array.isArray(child)) continue;
+      assertTaploDraft4Schema(child, `${location}/${keyword}/${name}`);
+    }
+  }
+}
+
+export function canonicalEditorSchemaRelativePath(kind: CanonicalKind): string {
+  return `.projector/schemas/canonical-${kind}-v2.schema.json`;
 }
 
 function replacePatternWithAllOf(schema: Record<string, unknown>, constraints: readonly Record<string, unknown>[]): void {

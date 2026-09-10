@@ -56,7 +56,7 @@ describe("CanonicalFileRepository", () => {
     const source = await readFile(path, "utf8");
 
     expect(path.replaceAll("\\", "/")).toMatch(/\/model\/concepts\/concept-durable-meaning--[a-f0-9]{64}\.concept\.toml$/u);
-    expect(source).toMatch(/^#:schema \.\.\/\.\.\/schemas\/canonical-document-v2\.schema\.json\n/u);
+    expect(source).toMatch(/^#:schema \.\.\/\.\.\/schemas\/canonical-concept-v2\.schema\.json\n/u);
     expect(source).toContain('statement = "Readable meaning."');
     expect(source).not.toMatch(/^(?:semanticHash|discoveryHash|canonicalDocumentHash) =/mu);
     expect(source).not.toMatch(/^\[payload\]\n(?:.|\n)*?^(?:id|key|status|semanticHash|discoveryHash) =/mu);
