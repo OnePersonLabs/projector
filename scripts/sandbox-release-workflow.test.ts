@@ -17,7 +17,6 @@ const topLevelChildren = (source: string, key: string): string[] => {
 describe("manual source-severed release workflow", () => {
   it("has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job", async () => {
     const workflow = await readFile(".github/workflows/projector-operations.yml", "utf8");
-    const provisioning = await readFile(".github/scripts/provision-ubuntu-sandbox.sh", "utf8");
     const packedLifecycle = await readFile("scripts/packed-lifecycle-acceptance.mjs", "utf8");
 
     expect(topLevelChildren(workflow, "on")).toEqual(["workflow_dispatch"]);
@@ -36,12 +35,10 @@ describe("manual source-severed release workflow", () => {
     expect(acceptanceJob).toContain("needs: build-candidate");
     expect(acceptanceJob).toContain("actions/download-artifact@v4");
     expect(acceptanceJob).not.toContain("actions/checkout");
-    expect(acceptanceJob.indexOf("bash candidate/provision-ubuntu-sandbox.sh")).toBeLessThan(acceptanceJob.indexOf("node candidate/source-severed-release-acceptance.mjs candidate"));
+    expect(acceptanceJob).toContain("ubuntu-24.04");
+    expect(acceptanceJob).toContain("windows-2025");
+    expect(acceptanceJob).not.toContain("provision-ubuntu-sandbox");
     expect(acceptanceJob).toContain("actions/upload-artifact@v4");
-    expect(provisioning).toContain('restriction_before="$(sysctl -n "$restriction_key")"');
-    expect(provisioning).toContain('restriction_after="$(sysctl -n "$restriction_key")"');
-    expect(provisioning).toContain('if [[ "$restriction_after" != "$restriction_before" ]]');
-    expect(provisioning).not.toMatch(/sysctl\s+(?:-w|--write)/u);
-    expect(packedLifecycle).not.toMatch(/"sudo"|"unshare"|"nsenter"|namespaceProcessId|namespace keeper/iu);
+    expect(packedLifecycle).not.toMatch(/bwrap|bubblewrap|"sudo"|"unshare"|"nsenter"|namespaceProcessId|namespace keeper/iu);
   });
 });
