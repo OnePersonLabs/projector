@@ -86,6 +86,7 @@ async function fixture() {
 function pendingMarker(backup = defaultBackup, targetSnapshotHash = hash("3")): PendingProjectDataMigration {
   return {
     apiVersion: "projector.pending-project-data-migration/v1",
+    attemptId: "migration-attempt:legacy-to-toml:001",
     migrationId: "migration:legacy-to-toml",
     sourceSnapshotHash: hash("2"),
     targetSnapshotHash,
@@ -141,7 +142,7 @@ async function committedEvidence() {
   await fixtureValue.pending.transition(marker, "staged");
   await fixtureValue.pending.transition(marker, "publishing");
   const transaction = await fixtureValue.journal.begin({
-    transactionId: marker.migrationId,
+    transactionId: marker.attemptId,
     planId: marker.manifestHash,
     beforeState,
     intendedAfterCanonicalDigest: canonicalDigest,
@@ -155,9 +156,10 @@ async function committedEvidence() {
     await transaction.transition(phase);
   }
   await transaction.commit();
-  const exact = await fixtureValue.journal.readExact(marker.migrationId);
+  const exact = await fixtureValue.journal.readExact(marker.attemptId);
   const receipt = createProjectDataMigrationReceipt({
     apiVersion: "projector.project-data-migration-receipt/v1",
+    attemptId: marker.attemptId,
     migrationId: marker.migrationId,
     manifestHash: marker.manifestHash,
     sourceSnapshotHash: marker.sourceSnapshotHash,
@@ -220,7 +222,7 @@ describe("completed project-data migration recovery", () => {
         if (checks === 4) throw new ProjectDataMigrationAccessLostError("lost before receipt");
       },
     })).rejects.toThrow(/lost before receipt/iu);
-    expect(await evidence.receipts.read(evidence.marker.migrationId)).toBeUndefined();
+    expect(await evidence.receipts.read(evidence.marker.attemptId)).toBeUndefined();
     expect((await evidence.pending.read())?.phase).toBe("publishing");
   });
 
@@ -239,7 +241,7 @@ describe("completed project-data migration recovery", () => {
         },
       },
     })).rejects.toThrow(/cancelled before clear/iu);
-    expect(await evidence.receipts.read(evidence.marker.migrationId)).toBeDefined();
+    expect(await evidence.receipts.read(evidence.marker.attemptId)).toBeDefined();
     expect((await evidence.pending.read())?.phase).toBe("publishing");
   });
 
@@ -248,12 +250,13 @@ describe("completed project-data migration recovery", () => {
 
     await expect(reconcileCompletedProjectDataMigration(evidence)).resolves.toEqual({
       status: "reconciled",
+      attemptId: evidence.marker.attemptId,
       migrationId: evidence.marker.migrationId,
       receiptHash: evidence.receipt.receiptHash,
       journalHash: evidence.receipt.journalHash,
     });
     expect(await evidence.pending.read()).toBeUndefined();
-    expect(await evidence.receipts.read(evidence.marker.migrationId)).toEqual(evidence.receipt);
+    expect(await evidence.receipts.read(evidence.marker.attemptId)).toEqual(evidence.receipt);
     expect((await readFile(evidence.backupResult.backupPath)).byteLength).toBeGreaterThan(0);
   });
 
@@ -289,7 +292,7 @@ describe("completed project-data migration recovery", () => {
       status: "recovery-required",
       reason: expect.stringMatching(/crash before Pending clear/i),
     });
-    expect(await evidence.receipts.read(evidence.marker.migrationId)).toEqual(evidence.receipt);
+    expect(await evidence.receipts.read(evidence.marker.attemptId)).toEqual(evidence.receipt);
     expect((await evidence.pending.read())?.phase).toBe("publishing");
 
     await expect(reconcileCompletedProjectDataMigration(evidence)).resolves.toMatchObject({ status: "reconciled" });

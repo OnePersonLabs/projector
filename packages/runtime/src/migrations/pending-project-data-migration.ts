@@ -15,6 +15,7 @@ export const pendingProjectDataMigrationRelativePath = ".projector/pending-proje
 const maximumMarkerBytes = 64 * 1024;
 
 export interface PendingMigrationBinding {
+  attemptId: string;
   migrationId: string;
   manifestHash: ContentHash;
 }
@@ -187,7 +188,11 @@ function parseMarker(bytes: Buffer): PendingProjectDataMigration {
 }
 
 function assertBinding(marker: PendingProjectDataMigration, binding: PendingMigrationBinding): void {
-  if (marker.migrationId !== binding.migrationId || marker.manifestHash !== binding.manifestHash) {
+  if (
+    marker.attemptId !== binding.attemptId ||
+    marker.migrationId !== binding.migrationId ||
+    marker.manifestHash !== binding.manifestHash
+  ) {
     throw new PendingMigrationPersistenceError("Pending migration identity does not match the requested migration and manifest");
   }
 }

@@ -327,7 +327,7 @@ export class FileTransactionJournal {
       if (input.pendingMigration.phase !== "backed-up") {
         throw new TypeError("A migration journal must bind the backed-up Pending marker before effects");
       }
-      if (input.pendingMigration.migrationId !== input.transactionId) {
+      if (input.pendingMigration.attemptId !== input.transactionId) {
         throw new TypeError("A migration transaction ID must equal its unique Pending migration attempt ID");
       }
       if (input.pendingMigration.manifestHash !== input.planId) {

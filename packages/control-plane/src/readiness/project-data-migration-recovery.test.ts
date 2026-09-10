@@ -54,10 +54,18 @@ describe("prepared project-data migration recovery service", () => {
     await expect(service.recover(fixture.root, {
       requestId: "recovery-request",
       processId: process.pid,
-    })).resolves.toMatchObject({ status: "reconciled", migrationId: fixture.marker.migrationId });
+    })).resolves.toMatchObject({
+      status: "reconciled",
+      attemptId: fixture.marker.attemptId,
+      migrationId: fixture.marker.migrationId,
+    });
     expect(await fixture.pending.read()).toBeUndefined();
-    expect(await new ProjectDataMigrationReceiptStore(fixture.root).read(fixture.marker.migrationId))
-      .toMatchObject({ migrationId: fixture.marker.migrationId, journalId: fixture.marker.migrationId });
+    expect(await new ProjectDataMigrationReceiptStore(fixture.root).read(fixture.marker.attemptId))
+      .toMatchObject({
+        attemptId: fixture.marker.attemptId,
+        migrationId: fixture.marker.migrationId,
+        journalId: fixture.marker.attemptId,
+      });
   });
 
   test("retains Pending when an untouched SQLite byte changes", async () => {
@@ -147,7 +155,8 @@ async function committedFixture() {
   const targetFormat = createReleaseCandidateProjectDataFormat({ candidate });
   const marker: PendingProjectDataMigration = {
     apiVersion: "projector.pending-project-data-migration/v1",
-    migrationId: "migration:real-recovery-attempt",
+    attemptId: "migration-attempt:real-recovery:001",
+    migrationId: "migration:legacy-to-toml",
     sourceSnapshotHash: hash("1"),
     targetSnapshotHash: targetFormat.snapshotHash,
     manifestHash: hash("2"),
@@ -162,7 +171,7 @@ async function committedFixture() {
   await pending.transition(marker, "publishing");
   const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
   const transaction = await journal.begin({
-    transactionId: marker.migrationId,
+    transactionId: marker.attemptId,
     planId: marker.manifestHash,
     beforeState,
     intendedAfterCanonicalDigest: hashRootManifest([{

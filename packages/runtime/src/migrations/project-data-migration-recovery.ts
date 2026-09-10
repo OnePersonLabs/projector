@@ -19,7 +19,7 @@ export interface PendingProjectDataMigrationRecoveryPort {
 }
 
 export interface ProjectDataMigrationReceiptRecoveryPort {
-  read(migrationId: string): Promise<ProjectDataMigrationReceipt | undefined>;
+  read(attemptId: string): Promise<ProjectDataMigrationReceipt | undefined>;
   publish(receipt: ProjectDataMigrationReceipt): Promise<ProjectDataMigrationReceipt>;
 }
 
@@ -49,11 +49,12 @@ export type CompletedProjectDataMigrationRecoveryResult =
   | { status: "no-pending" }
   | {
       status: "reconciled";
+      attemptId: string;
       migrationId: string;
       receiptHash: ContentHash;
       journalHash: ContentHash;
     }
-  | { status: "recovery-required"; migrationId?: string; reason: string };
+  | { status: "recovery-required"; attemptId?: string; migrationId?: string; reason: string };
 
 export async function reconcileCompletedProjectDataMigration(
   ports: CompletedProjectDataMigrationRecoveryPorts,
@@ -69,6 +70,7 @@ export async function reconcileCompletedProjectDataMigration(
   if (pending.phase !== "publishing") {
     return {
       status: "recovery-required",
+      attemptId: pending.attemptId,
       migrationId: pending.migrationId,
       reason: `Pending migration remains in ${pending.phase}; completed publication cannot be inferred`,
     };
@@ -76,29 +78,29 @@ export async function reconcileCompletedProjectDataMigration(
 
   try {
     await assertExclusive(ports);
-    let receipt = await ports.receipts.read(pending.migrationId);
+    let receipt = await ports.receipts.read(pending.attemptId);
     if (receipt !== undefined) {
       const mismatch = receiptMismatch(pending, receipt);
       if (mismatch !== undefined) return required(pending, mismatch);
     }
-    const durableJournal = await ports.journal.ensureRecordDurable(pending.migrationId);
+    const durableJournal = await ports.journal.ensureRecordDurable(pending.attemptId);
     await assertExclusive(ports);
-    const exactJournal = await ports.journal.inspectRecordedAfterState(pending.migrationId);
+    const exactJournal = await ports.journal.inspectRecordedAfterState(pending.attemptId);
     if (durableJournal.contentHash !== exactJournal.contentHash) {
       return required(pending, "Migration journal changed after its durable publication was confirmed");
     }
     if (exactJournal.record.entry.phase !== "committed") {
       return required(
         pending,
-        `Migration journal ${pending.migrationId} is ${exactJournal.record.entry.phase}, not committed`,
+        `Migration journal ${pending.attemptId} is ${exactJournal.record.entry.phase}, not committed`,
       );
     }
     if (receipt !== undefined && exactJournal.contentHash !== receipt.journalHash) {
       return required(pending, "Migration receipt journal hash does not match the exact committed journal bytes");
     }
     if (
-      (receipt !== undefined && receipt.journalId !== pending.migrationId) ||
-      exactJournal.record.entry.transactionId !== pending.migrationId ||
+      (receipt !== undefined && receipt.journalId !== pending.attemptId) ||
+      exactJournal.record.entry.transactionId !== pending.attemptId ||
       exactJournal.record.entry.planId !== pending.manifestHash ||
       exactJournal.record.pendingMigration === undefined ||
       !samePendingBinding(exactJournal.record.pendingMigration, pending)
@@ -128,11 +130,12 @@ export async function reconcileCompletedProjectDataMigration(
       await assertExclusive(ports);
       receipt = await ports.receipts.publish(createProjectDataMigrationReceipt({
         apiVersion: projectDataMigrationReceiptApiVersion,
+        attemptId: pending.attemptId,
         migrationId: pending.migrationId,
         manifestHash: pending.manifestHash,
         sourceSnapshotHash: pending.sourceSnapshotHash,
         targetSnapshotHash: pending.targetSnapshotHash,
-        journalId: pending.migrationId,
+        journalId: pending.attemptId,
         journalHash: exactJournal.contentHash,
         backup: pending.backup,
         outcome: "completed",
@@ -144,6 +147,7 @@ export async function reconcileCompletedProjectDataMigration(
     await ports.pending.clearAfterReceiptPublication(pending);
     return {
       status: "reconciled",
+      attemptId: pending.attemptId,
       migrationId: pending.migrationId,
       receiptHash: receipt.receiptHash,
       journalHash: receipt.journalHash,
@@ -190,7 +194,8 @@ function receiptMismatch(
 ): string | undefined {
   if (
     receipt.migrationId !== pending.migrationId ||
-    receipt.journalId !== pending.migrationId ||
+    receipt.attemptId !== pending.attemptId ||
+    receipt.journalId !== pending.attemptId ||
     receipt.manifestHash !== pending.manifestHash ||
     receipt.sourceSnapshotHash !== pending.sourceSnapshotHash ||
     receipt.targetSnapshotHash !== pending.targetSnapshotHash
@@ -210,6 +215,7 @@ function receiptMismatch(
 
 function samePendingBinding(left: PendingProjectDataMigration, right: PendingProjectDataMigration): boolean {
   return (
+    left.attemptId === right.attemptId &&
     left.migrationId === right.migrationId &&
     left.manifestHash === right.manifestHash &&
     left.sourceSnapshotHash === right.sourceSnapshotHash &&
@@ -227,7 +233,7 @@ function required(
   pending: PendingProjectDataMigration,
   reason: string,
 ): CompletedProjectDataMigrationRecoveryResult {
-  return { status: "recovery-required", migrationId: pending.migrationId, reason };
+  return { status: "recovery-required", attemptId: pending.attemptId, migrationId: pending.migrationId, reason };
 }
 
 function message(error: unknown): string {

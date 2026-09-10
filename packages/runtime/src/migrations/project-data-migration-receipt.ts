@@ -26,13 +26,13 @@ export class ProjectDataMigrationReceiptStore {
     this.projectorRoot = join(this.repositoryRoot, ".projector");
   }
 
-  pathFor(migrationId: string): string {
-    const identityHash = createHash("sha256").update(migrationId, "utf8").digest("hex");
+  pathFor(attemptId: string): string {
+    const identityHash = createHash("sha256").update(attemptId, "utf8").digest("hex");
     return join(this.projectorRoot, `project-data-migration-receipt--${identityHash}.json`);
   }
 
-  async read(migrationId: string): Promise<ProjectDataMigrationReceipt | undefined> {
-    const bytes = await readBoundedRegularFile(this.pathFor(migrationId));
+  async read(attemptId: string): Promise<ProjectDataMigrationReceipt | undefined> {
+    const bytes = await readBoundedRegularFile(this.pathFor(attemptId));
     return bytes === undefined ? undefined : parseReceipt(bytes);
   }
 
@@ -41,7 +41,7 @@ export class ProjectDataMigrationReceiptStore {
     await assertRegularDirectory(this.repositoryRoot, "Repository root");
     await assertRegularDirectory(this.projectorRoot, "Projector directory");
     const bytes = receiptBytes(valid);
-    const target = this.pathFor(valid.migrationId);
+    const target = this.pathFor(valid.attemptId);
     const temporary = join(this.projectorRoot, `.migration-receipt.${randomUUID()}.tmp`);
     await writeDurableNewFile(temporary, bytes);
     try {
