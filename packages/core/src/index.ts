@@ -13,3 +13,4 @@ export * from "./schemas/change-proposal.js";
 export * from "./schemas/project-config.js";
 export * from "./schemas/operations.js";
 export * from "./schemas/project-data-migration.js";
+export * from "./schemas/application-observation.js";
