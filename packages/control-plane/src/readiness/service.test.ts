@@ -71,9 +71,8 @@ describe("project readiness metadata inspection", () => {
 
   test("requires recovery without claiming an absent marker-declared backup is verified", async () => {
     const root = await repository();
-    await mkdir(join(root, ".projector", "runtime", "migrations"), { recursive: true });
     await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
-    await writeFile(join(root, ".projector", "runtime", "migrations", "pending.json"), JSON.stringify({
+    await writeFile(join(root, ".projector", "pending-project-data-migration.json"), JSON.stringify({
       apiVersion: "projector.pending-project-data-migration/v1",
       migrationId: "migration:prepared-data",
       sourceSnapshotHash: `sha256:v1:${"1".repeat(64)}`,
@@ -93,7 +92,7 @@ describe("project readiness metadata inspection", () => {
       status: "recovery-required",
       recovery: {
         code: "project-data-migration-pending",
-        location: ".projector/runtime/migrations/pending.json",
+        location: ".projector/pending-project-data-migration.json",
         action: expect.stringMatching(/migration:prepared-data.*marker-declared backup backup:prepared-data.*codex-data-relative:projector\/backups\/published\/backup-prepared-data.*verify its existence.*manifest hash/iu),
       },
     });
@@ -103,8 +102,7 @@ describe("project readiness metadata inspection", () => {
 
   test("preserves an unrecognized pending marker and refuses automated recovery", async () => {
     const root = await repository();
-    await mkdir(join(root, ".projector", "runtime", "migrations"), { recursive: true });
-    const pendingPath = join(root, ".projector", "runtime", "migrations", "pending.json");
+    const pendingPath = join(root, ".projector", "pending-project-data-migration.json");
     await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     await writeFile(pendingPath, "{unrecognized");
 
@@ -112,7 +110,7 @@ describe("project readiness metadata inspection", () => {
       status: "unavailable",
       recovery: {
         code: "project-data-migration-unrecognized",
-        location: ".projector/runtime/migrations/pending.json",
+        location: ".projector/pending-project-data-migration.json",
         action: expect.stringMatching(/preserve.*inspect/iu),
       },
     });
