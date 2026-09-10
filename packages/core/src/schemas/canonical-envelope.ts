@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { verifyCanonicalEnvelope, withCanonicalHashes, type CanonicalDocumentEnvelope } from "../hashing/canonical-envelope.js";
+import { FixedCanonicalLifecycleByKind, verifyCanonicalEnvelope, withCanonicalHashes, type CanonicalDocumentEnvelope } from "../hashing/canonical-envelope.js";
 import { ContentHashSchema, EntityIdSchema } from "./contracts.js";
 import { applicationEvidenceBindingIssues } from "./application-evidence-binding.js";
 import {
@@ -161,12 +161,23 @@ function canonicalDocumentWireSchemaForKind<const TKind extends CanonicalKind>(k
     kind: z.literal(kind),
     id: EntityIdSchema,
     key: z.string().min(1),
-    lifecycle: z.string().min(1),
+    lifecycle: canonicalWireLifecycleSchema(kind, payload, mirrors),
     payload: z.strictObject(authoredPayloadShape),
   }).superRefine((value, context) => {
     const result = CanonicalDocumentEnvelopeSchemasByKind[kind].safeParse(hydrateParsedCanonicalDocumentWire(value as unknown as CanonicalDocumentWire));
     if (!result.success) for (const issue of result.error.issues) context.addIssue({ code: "custom", path: issue.path, message: issue.message });
   });
+}
+
+function canonicalWireLifecycleSchema(
+  kind: CanonicalKind,
+  payload: z.ZodObject,
+  mirrors: (typeof canonicalPayloadMirrorFields)[CanonicalKind],
+): z.ZodType {
+  if (mirrors.lifecycle === "status" || mirrors.lifecycle === "lifecycle") return payload.shape[mirrors.lifecycle] as z.ZodType;
+  if (mirrors.lifecycle === "active") return z.enum(["active", "inactive"]);
+  const fixed = FixedCanonicalLifecycleByKind[kind as keyof typeof FixedCanonicalLifecycleByKind];
+  return fixed === undefined ? z.string().min(1) : z.literal(fixed);
 }
 
 /** Strict authored form. Envelope hashes and exact root payload mirrors are hydrated by core. */

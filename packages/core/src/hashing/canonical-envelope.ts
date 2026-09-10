@@ -19,6 +19,14 @@ export type UnhashedCanonicalDocument<TPayload extends Record<string, unknown>> 
   "semanticHash" | "discoveryHash" | "canonicalDocumentHash"
 >;
 
+/** Canonical kinds whose envelope lifecycle is derived without a payload mirror. */
+export const FixedCanonicalLifecycleByKind = Object.freeze({
+  lineage: "active",
+  rule: "active",
+  tombstone: "deleted",
+  "transaction-receipt": "committed",
+} as const);
+
 export function withCanonicalHashes<TPayload extends Record<string, unknown>>(
   document: UnhashedCanonicalDocument<TPayload>,
 ): CanonicalDocumentEnvelope<TPayload> {
@@ -68,10 +76,7 @@ export function verifyCanonicalEnvelope(document: CanonicalDocumentEnvelope): st
       ? document.payload.status
       : document.kind === "relation" && typeof document.payload.active === "boolean"
         ? document.payload.active ? "active" : "inactive"
-        : document.kind === "lineage" || document.kind === "rule" ? "active"
-          : document.kind === "tombstone" ? "deleted"
-            : document.kind === "transaction-receipt" ? "committed"
-              : undefined;
+        : FixedCanonicalLifecycleByKind[document.kind as keyof typeof FixedCanonicalLifecycleByKind];
   if (payloadLifecycle !== undefined && payloadLifecycle !== document.lifecycle) {
     errors.push("envelope lifecycle must match payload lifecycle");
   }
