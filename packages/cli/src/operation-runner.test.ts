@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   createProjectorOperationRunner,
   defineProjectorOperationHandler,
+  OperationCapabilityDiscoverySchema,
   type OperationRunnerPorts,
   type OrdinaryProjectorOperation,
   type ProjectorOperationHandler,
@@ -207,9 +208,39 @@ describe("bounded Projector operation runner", () => {
     await expect(runner.execute(request("verify"))).resolves.toMatchObject({
       status: "cancelled",
       exitCode: 6,
-      error: { code: "operation-cancelled" },
+      error: { code: "operation-access-lost" },
     });
     expect(receivedSignal).toBe(accessController.signal);
+  });
+
+  test("classifies a non-AbortError access-signal loss as cancelled access", async () => {
+    const root = await packagedRoot();
+    const accessController = new AbortController();
+    const runner = await createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [handler("verify", async () => {
+        accessController.abort(new Error("operation access heartbeat failed"));
+        throw new Error("handler observed lost access");
+      })],
+      ports: ports({
+        withProjectOperationAccess: async (_repositoryRoot, input, callback) => ({
+          readiness: ready(input.package) as ProjectReadiness & { status: "ready" },
+          value: await callback({
+            readiness: ready(input.package) as ProjectReadiness & { status: "ready" },
+            signal: accessController.signal,
+          }),
+        }),
+      }),
+    });
+
+    await expect(runner.execute(request("verify"))).resolves.toMatchObject({
+      status: "cancelled",
+      exitCode: 6,
+      error: {
+        code: "operation-access-lost",
+        message: expect.stringMatching(/access was lost.*heartbeat failed/iu),
+      },
+    });
   });
 
   test("rejects undeclared handler output instead of silently stripping it", async () => {
@@ -223,6 +254,80 @@ describe("bounded Projector operation runner", () => {
     await expect(runner.execute(request("verify"))).resolves.toMatchObject({
       status: "failed",
       error: { code: "operation-failed", message: expect.stringMatching(/unrecognized key/iu) },
+    });
+  });
+
+  test("rejects stripping by a default object schema", async () => {
+    const root = await packagedRoot();
+    const outputSchema = z.object({ valid: z.boolean() });
+    const strippingHandler = defineProjectorOperationHandler({
+      operation: "verify",
+      outputSchema,
+      execute: async () => ({ valid: true, undeclared: "would be stripped" }),
+    });
+    const runner = await createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [strippingHandler],
+      ports: ports(),
+    });
+
+    await expect(runner.execute(request("verify"))).resolves.toMatchObject({
+      status: "failed",
+      error: { message: expect.stringMatching(/transformed.*stripped.*coerced/iu) },
+    });
+  });
+
+  test("rejects schema coercion even when the coerced value would validate", async () => {
+    const root = await packagedRoot();
+    const outputSchema = z.strictObject({ count: z.coerce.number() });
+    const coercingHandler = defineProjectorOperationHandler({
+      operation: "verify",
+      outputSchema,
+      execute: async () => ({ count: "7" }) as never,
+    });
+    const runner = await createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [coercingHandler],
+      ports: ports(),
+    });
+
+    await expect(runner.execute(request("verify"))).resolves.toMatchObject({
+      status: "failed",
+      error: { message: expect.stringMatching(/transformed.*coerced/iu) },
+    });
+  });
+
+  test("rejects initializer stripping and non-JSON handler values", async () => {
+    const root = await packagedRoot();
+    const initializerResultSchema = z.object({ readiness: ProjectReadinessSchema, created: z.boolean() });
+    const initializerRunner = await createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [],
+      ports: ports({
+        initializer: {
+          resultSchema: initializerResultSchema,
+          execute: async () => ({ readiness: ready({ name: "@projector/cli", version: "7.4.2" }), created: true, extra: true }),
+        },
+      }),
+    });
+    await expect(initializerRunner.execute(request("init"))).resolves.toMatchObject({
+      status: "failed",
+      error: { message: expect.stringMatching(/initializer result schema transformed/iu) },
+    });
+
+    const nonJsonSchema = z.any();
+    const nonJsonRunner = await createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [defineProjectorOperationHandler({
+        operation: "verify",
+        outputSchema: nonJsonSchema,
+        execute: async () => new Date("2026-09-10T00:00:00.000Z"),
+      })],
+      ports: ports(),
+    });
+    await expect(nonJsonRunner.execute(request("verify"))).resolves.toMatchObject({
+      status: "failed",
+      error: { message: expect.stringMatching(/not a plain JSON object/iu) },
     });
   });
 
@@ -283,6 +388,26 @@ describe("bounded Projector operation runner", () => {
       available: true,
       evidence: "Direct host probe returned success",
     }]);
+
+    const duplicatedOperations = discovery.operations.map((item) => ({ ...item }));
+    duplicatedOperations[duplicatedOperations.length - 1] = { ...duplicatedOperations[0]! };
+    expect(OperationCapabilityDiscoverySchema.safeParse({ ...discovery, operations: duplicatedOperations })).toMatchObject({
+      success: false,
+    });
+  });
+
+  test("rejects duplicate or conflicting observed host capability keys", async () => {
+    const root = await packagedRoot();
+    await expect(createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [],
+      ports: ports({
+        observedHostCapabilities: [
+          { capability: "process-tree-observation", available: true, evidence: "probe A" },
+          { capability: "process-tree-observation", available: false, evidence: "probe B" },
+        ],
+      }),
+    })).rejects.toThrow(/duplicate or conflicting host capability/iu);
   });
 
   test("derives exact identity from the supplied package manifest", async () => {

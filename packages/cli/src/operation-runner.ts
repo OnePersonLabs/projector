@@ -7,6 +7,7 @@ import {
   ProjectReadinessSchema,
   ProjectorOperationRequestSchema,
   ProjectorOperationSchema,
+  canonicalJson,
   createProjectorOperationResultSchema,
   projectorOperationResultApiVersion,
   type PackageIdentity,
@@ -155,6 +156,18 @@ const hostCapabilityObservationSchema = z.strictObject({
   available: z.boolean(),
   evidence: z.string().min(1).max(4_096),
 });
+const hostCapabilityObservationsSchema = z.array(hostCapabilityObservationSchema).superRefine((observations, context) => {
+  const capabilities = new Set<string>();
+  for (const observation of observations) {
+    if (capabilities.has(observation.capability)) {
+      context.addIssue({
+        code: "custom",
+        message: `Duplicate or conflicting host capability observation: ${observation.capability}`,
+      });
+    }
+    capabilities.add(observation.capability);
+  }
+});
 const operationCapabilitySchema = z.strictObject({
   operation: ProjectorOperationSchema,
   registered: z.boolean(),
@@ -164,8 +177,21 @@ const operationCapabilitySchema = z.strictObject({
 export const OperationCapabilityDiscoverySchema = z.strictObject({
   package: PackageIdentitySchema,
   readiness: ProjectReadinessSchema,
-  operations: z.array(operationCapabilitySchema).length(ProjectorOperationSchema.options.length),
-  observedHostCapabilities: z.array(hostCapabilityObservationSchema),
+  operations: z.array(operationCapabilitySchema).length(ProjectorOperationSchema.options.length).superRefine((operations, context) => {
+    const observed = new Set<ProjectorOperation>();
+    for (const item of operations) {
+      if (observed.has(item.operation)) {
+        context.addIssue({ code: "custom", message: `Duplicate operation capability: ${item.operation}` });
+      }
+      observed.add(item.operation);
+    }
+    for (const operation of ProjectorOperationSchema.options) {
+      if (!observed.has(operation)) {
+        context.addIssue({ code: "custom", message: `Missing operation capability: ${operation}` });
+      }
+    }
+  }),
+  observedHostCapabilities: hostCapabilityObservationsSchema,
 });
 
 type HandlerOutput<THandlers extends readonly AnyProjectorOperationHandler[]> = z.output<THandlers[number]["outputSchema"]>;
@@ -183,7 +209,7 @@ export async function createProjectorOperationRunner<
   type RunnerOutput = OperationCapabilityDiscovery | z.output<TInitializerResultSchema> | HandlerOutput<THandlers>;
   const packageIdentity = await readPackageIdentity(input.packagedRoot);
   const handlers = buildRegistry(input.handlers);
-  const observedHostCapabilities = z.array(hostCapabilityObservationSchema).parse(input.ports.observedHostCapabilities);
+  const observedHostCapabilities = parseHostCapabilityObservations(input.ports.observedHostCapabilities);
 
   return {
     package: packageIdentity,
@@ -212,6 +238,7 @@ async function executeOperation<TOutput>(
   ports: OperationRunnerPorts,
 ): Promise<ProjectorOperationExecutionResult<TOutput>> {
   let observedReadiness: ProjectReadiness | undefined;
+  let accessSignal: AbortSignal | undefined;
   const base = {
     apiVersion: projectorOperationResultApiVersion,
     operation: request.operation,
@@ -237,10 +264,11 @@ async function executeOperation<TOutput>(
       });
     }
     if (request.operation === "init") {
-      const initialized = ports.initializer.resultSchema.parse(await ports.initializer.execute(request.repositoryRoot, {
+      const rawInitialized = await ports.initializer.execute(request.repositoryRoot, {
         package: packageIdentity,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-      }));
+      });
+      const initialized = parseExactJson(ports.initializer.resultSchema, rawInitialized, "Initializer result");
       const readiness = ProjectReadinessSchema.parse(initialized.readiness);
       observedReadiness = readiness;
       if (readiness.status !== "ready") return readinessResult<TOutput>(request.operation, base, readiness, ports.initializer.resultSchema);
@@ -281,6 +309,7 @@ async function executeOperation<TOutput>(
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     }, async ({ readiness, signal }) => {
       observedReadiness = readiness;
+      accessSignal = signal;
       throwIfAborted(signal);
       const output = await handler.execute(request, {
         package: packageIdentity,
@@ -289,7 +318,7 @@ async function executeOperation<TOutput>(
         environment: options.environment ?? {},
       });
       throwIfAborted(signal);
-      return handler.outputSchema.parse(output);
+      return parseExactJson(handler.outputSchema, output, `Operation ${operation} output`);
     });
     if (access.readiness.status !== "ready") {
       return readinessResult<TOutput>(operation, base, ProjectReadinessSchema.parse(access.readiness), handler.outputSchema);
@@ -302,21 +331,24 @@ async function executeOperation<TOutput>(
       output: access.value,
     });
   } catch (error) {
-    const readiness = observedReadiness ?? unobservedReadiness(packageIdentity, isCancellation(error, options.signal));
+    const cancellation = cancellationKind(error, options.signal, accessSignal);
+    const readiness = observedReadiness ?? unobservedReadiness(packageIdentity, cancellation !== undefined);
     const outputSchema = request.operation === "status"
       ? OperationCapabilityDiscoverySchema
       : request.operation === "init"
         ? ports.initializer.resultSchema
         : handlers.get(request.operation)?.outputSchema ?? z.never();
-    const cancelled = isCancellation(error, options.signal);
+    const cancelled = cancellation !== undefined;
     return validatedExecutionResult<TOutput>(createProjectorOperationResultSchema(request.operation, outputSchema), {
       ...base,
       status: cancelled ? "cancelled" : "failed",
       exitCode: 6,
       readiness,
       error: {
-        code: cancelled ? "operation-cancelled" : "operation-failed",
-        message: cancelled ? "Projector operation was cancelled" : message(error),
+        code: cancellation === "access" ? "operation-access-lost" : cancelled ? "operation-cancelled" : "operation-failed",
+        message: cancellation === "access"
+          ? `Project operation access was lost: ${message(accessSignal?.reason ?? error)}`
+          : cancelled ? "Projector operation was cancelled" : message(error),
         retriable: false,
       },
     });
@@ -352,6 +384,66 @@ function readinessResult<TOutput>(
 
 function validatedExecutionResult<TOutput>(schema: z.ZodType, input: unknown): ProjectorOperationExecutionResult<TOutput> {
   return schema.parse(input) as ProjectorOperationExecutionResult<TOutput>;
+}
+
+function parseExactJson<TSchema extends z.ZodType>(schema: TSchema, raw: unknown, owner: string): z.output<TSchema> {
+  const rawCanonical = exactCanonicalJson(raw, `${owner} raw value`);
+  const parsed = schema.parse(raw);
+  const parsedCanonical = exactCanonicalJson(parsed, `${owner} parsed value`);
+  if (rawCanonical !== parsedCanonical) {
+    throw new Error(`${owner} schema transformed, stripped, defaulted, or coerced the returned value`);
+  }
+  return parsed;
+}
+
+function exactCanonicalJson(value: unknown, owner: string): string {
+  assertJsonValue(value, owner, new Set<object>());
+  return canonicalJson(value);
+}
+
+function assertJsonValue(value: unknown, path: string, seen: Set<object>): void {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError(`${path} contains a non-finite number`);
+    return;
+  }
+  if (typeof value !== "object") throw new TypeError(`${path} contains a non-JSON ${typeof value} value`);
+  if (seen.has(value)) throw new TypeError(`${path} contains a cycle`);
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const ownNames = Object.getOwnPropertyNames(value);
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) throw new TypeError(`${path} contains a sparse array hole at ${index}`);
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+          throw new TypeError(`${path}[${index}] is not an enumerable JSON data property`);
+        }
+        assertJsonValue(descriptor.value, `${path}[${index}]`, seen);
+      }
+      if (ownNames.some((name) => name !== "length" && !/^(0|[1-9]\d*)$/u.test(name))) {
+        throw new TypeError(`${path} contains non-JSON array properties`);
+      }
+    } else {
+      const prototype = Object.getPrototypeOf(value) as object | null;
+      if (prototype !== Object.prototype && prototype !== null) throw new TypeError(`${path} is not a plain JSON object`);
+      for (const key of Object.getOwnPropertyNames(value)) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+          throw new TypeError(`${path}.${key} is not an enumerable JSON data property`);
+        }
+        if (descriptor.value === undefined) throw new TypeError(`${path}.${key} is undefined`);
+        assertJsonValue(descriptor.value, `${path}.${key}`, seen);
+      }
+    }
+    if (Object.getOwnPropertySymbols(value).length > 0) throw new TypeError(`${path} contains symbol keys`);
+  } finally {
+    seen.delete(value);
+  }
+}
+
+function parseHostCapabilityObservations(input: readonly HostCapabilityObservation[]): HostCapabilityObservation[] {
+  return hostCapabilityObservationsSchema.parse(input);
 }
 
 function mapReadiness(operation: ProjectorOperation, readiness: ProjectReadiness) {
@@ -471,8 +563,15 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted === true) throw signal.reason ?? new DOMException("The operation was aborted", "AbortError");
 }
 
-function isCancellation(error: unknown, signal: AbortSignal | undefined): boolean {
-  return signal?.aborted === true || (error instanceof Error && error.name === "AbortError");
+function cancellationKind(
+  error: unknown,
+  callerSignal: AbortSignal | undefined,
+  accessSignal: AbortSignal | undefined,
+): "caller" | "access" | undefined {
+  if (callerSignal?.aborted === true) return "caller";
+  if (accessSignal?.aborted === true) return "access";
+  if (error instanceof Error && error.name === "AbortError") return "caller";
+  return undefined;
 }
 
 function message(error: unknown): string {
