@@ -24,7 +24,7 @@ describe("scoped Projector release package", () => {
     expect(Object.fromEntries(Object.entries(manifest.dependencies).filter(([name]) => name.startsWith("@projector/")))).toEqual(Object.fromEntries(
       ["core", "analyzers", "engine", "runtime", "integrations", "control-plane", "testkit"].map((name) => [`@projector/${name}`, "2.1.0"]),
     ));
-    expect(Object.keys(manifest.exports)).toEqual([".", "./cli", "./core", "./analyzers", "./engine", "./engine/architecture", "./engine/coverage", "./engine/modernization", "./runtime", "./integrations", "./integrations/surfaces", "./integrations/models", "./integrations/codex", "./control-plane", "./testkit"]);
+    expect(Object.keys(manifest.exports)).toEqual([".", "./cli", "./operations", "./core", "./analyzers", "./engine", "./engine/architecture", "./engine/coverage", "./engine/modernization", "./runtime", "./integrations", "./integrations/surfaces", "./integrations/models", "./integrations/codex", "./control-plane", "./testkit"]);
     expect(await readFile(tarball)).not.toHaveLength(0);
 
     const consumer = join(root, "ordinary consumer");

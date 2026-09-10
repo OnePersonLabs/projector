@@ -243,7 +243,7 @@ try {
   const tracked = (await exec("git", ["ls-files", "-z", ".projector"], { cwd: cloneFixture })).stdout.split("\0").filter(Boolean);
   assert.equal((await exec("git", ["rev-parse", "HEAD"], { cwd: cloneFixture })).stdout.trim(), (await exec("git", ["rev-parse", "HEAD"], { cwd: fixture })).stdout.trim(), "Clone must retain the exact committed tree.");
   for (const directory of ["model", "lenses", "decisions", "authorities"]) assert(tracked.some(file => file.startsWith(`.projector/${directory}/`)), `Clone must carry ${directory}.`);
-  assert(tracked.includes(".projector/config.json"));
+  assert(tracked.includes(".projector/config.toml"));
   // Git may convert checkout line endings on Windows. The committed tree above
   // remains exact; canonical JSON must preserve every accepted field and hash.
   for (const relative of tracked.filter(file => file.endsWith(".json"))) assert.deepEqual(JSON.parse(await readFile(path.join(cloneFixture, relative), "utf8")), JSON.parse(await readFile(path.join(fixture, relative), "utf8")), `Clone must preserve accepted canonical content: ${relative}`);

@@ -6,7 +6,6 @@
     "name": "Projector contributors"
   },
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Projector",
     "shortDescription": "Retain engineering meaning across changes.",
