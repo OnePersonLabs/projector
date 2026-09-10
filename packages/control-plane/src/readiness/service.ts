@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import {
   LegacyUnversionedProjectorConfigSchema,
   PackageIdentitySchema,
+  PendingProjectDataMigrationSchema,
   PreparedProjectorConfigSchema,
   ProjectReadinessSchema,
   ProjectorOperationSchema,
@@ -29,6 +30,7 @@ import { comparePackageVersions } from "./version-order.js";
 
 const legacyConfigPath = join(".projector", "config.json");
 const preparedConfigPath = join(".projector", "config.toml");
+const pendingMigrationPath = join(".projector", "runtime", "migrations", "pending.json");
 const maximumConfigBytes = 16 * 1024;
 
 export interface ReadinessInspectionInput {
@@ -95,11 +97,15 @@ export async function inspectProjectReadiness(
   } catch (error) {
     return readiness(input.package, "unavailable", `Projector repository root is unavailable: ${message(error)}`);
   }
-  const [legacy, prepared] = await Promise.all([
+  const [legacy, prepared, pending] = await Promise.all([
     readRepositoryMetadata(paths, legacyConfigPath.replaceAll("\\", "/")),
     readRepositoryMetadata(paths, preparedConfigPath.replaceAll("\\", "/")),
+    readRepositoryMetadata(paths, pendingMigrationPath.replaceAll("\\", "/")),
   ]);
   throwIfAborted(input.signal);
+
+  const pendingReadiness = inspectPendingMigration(pending, input.package);
+  if (pendingReadiness !== undefined) return pendingReadiness;
 
   if (legacy.status === "missing" && prepared.status === "missing") {
     return readiness(input.package, "inactive", "Projector is not active in this repository");
@@ -112,6 +118,45 @@ export async function inspectProjectReadiness(
   if (legacy.status === "present") return inspectLegacyConfig(legacy.source, input.package);
   if (prepared.status === "present") return inspectPreparedConfig(prepared.source, input.package, join(repositoryRoot, preparedConfigPath));
   return readiness(input.package, "unavailable", "Projector configuration metadata could not be classified");
+}
+
+function inspectPendingMigration(metadata: MetadataRead, packageIdentity: PackageIdentity): ProjectReadiness | undefined {
+  const location = pendingMigrationPath.replaceAll("\\", "/");
+  if (metadata.status === "missing") return undefined;
+  if (metadata.status === "unsafe") return unrecognizedPendingMigration(packageIdentity, location, metadata.reason);
+  let value: unknown;
+  try {
+    value = parseCanonicalJson(metadata.source);
+  } catch (error) {
+    return unrecognizedPendingMigration(packageIdentity, location, `Pending migration marker is malformed: ${message(error)}`);
+  }
+  const result = PendingProjectDataMigrationSchema.safeParse(value);
+  if (!result.success) {
+    return unrecognizedPendingMigration(packageIdentity, location, `Pending migration marker is invalid: ${result.error.message}`);
+  }
+  return ProjectReadinessSchema.parse({
+    status: "recovery-required",
+    package: packageIdentity,
+    reason: `Project data migration ${result.data.migrationId} is interrupted in phase ${result.data.phase}`,
+    recovery: {
+      code: "project-data-migration-pending",
+      location,
+      action: `Recover migration ${result.data.migrationId} from recognized bytes; verified backup ${result.data.backup.id} remains at ${result.data.backup.location.path}`,
+    },
+  });
+}
+
+function unrecognizedPendingMigration(packageIdentity: PackageIdentity, location: string, reason: string): ProjectReadiness {
+  return ProjectReadinessSchema.parse({
+    status: "unavailable",
+    package: packageIdentity,
+    reason,
+    recovery: {
+      code: "project-data-migration-unrecognized",
+      location,
+      action: "Preserve and inspect the unrecognized pending migration marker; automated recovery is refused",
+    },
+  });
 }
 
 export async function withProjectOperationAccess<T>(
