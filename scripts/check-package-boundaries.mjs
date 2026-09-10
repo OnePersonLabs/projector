@@ -153,6 +153,7 @@ async function main() {
     ...validateCuratedExports(controlPlaneFacade, [
       "CompletionQuestion",
       "CompletionQuestionSchema",
+      "DurableRepresentationArtifact",
       "KnowledgeContextRequest",
       "KnowledgeContextResult",
       "KnowledgeContextResultSchema",
@@ -193,6 +194,10 @@ async function main() {
       "RepositoryIntentReviewSummary",
       "RepositoryIntentReviewSummarySchema",
       "RepositoryKnowledgeService",
+      "RepositoryRepresentationArtifactStore",
+      "RepositoryRepresentationInspectionService",
+      "RepresentationInspectionOutput",
+      "RepresentationInspectionOutputSchema",
       "StateBoundChangeResultSchema",
       "ValidatedReleaseCandidateInventory",
       "buildRepositoryImpactSnapshot",

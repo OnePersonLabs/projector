@@ -81,3 +81,12 @@ export {
   verifyProjectDataMigrationManifest,
   type ProjectDataFormatDimension,
 } from "./readiness/project-data-migration-authoring.js";
+export {
+  RepositoryRepresentationArtifactStore,
+  type DurableRepresentationArtifact,
+} from "./representation/artifact-store.js";
+export {
+  RepositoryRepresentationInspectionService,
+  RepresentationInspectionOutputSchema,
+  type RepresentationInspectionOutput,
+} from "./representation/service.js";

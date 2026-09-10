@@ -33,6 +33,7 @@ import {
   type ProposedScenario,
   type ProposedCanonicalMutation,
   type ProjectionLens,
+  type RepresentationProjection,
   type SelectorExpr,
   type StateQueryDependency,
   type Relation,
@@ -152,6 +153,8 @@ export interface CompiledRepositoryChange {
     readonly contentHash: ContentHash;
     readonly preservationHash: ContentHash;
   };
+  /** Full compiler-owned fidelity evidence retained for durable public inspection. */
+  readonly representationDetails: RepresentationProjection;
   readonly compiledPlan: CompiledSemanticChangePlan;
   readonly planHash: ContentHash;
   readonly exactPatchInput: ExactTextPatchInput;
@@ -429,7 +432,10 @@ async function compileRepresentation(change: CompiledSemanticChange, artifacts: 
     utility: { profileId: "projector.instruction-cost@1", measure: ({ source, candidate, profileOverheadTokens }) => ({ netInstructionEfficiency: tokenizer.measure(source.statements.map(({ text }) => text).join("\n")) - tokenizer.measure(candidate) - profileOverheadTokens, evidence: "deterministic total instruction payload cost including profile overhead" }) },
   });
   const { projection } = await compiler.compileBest({ source: canonicalRepresentationSourceFromSemanticChange(change.change), binding: change.boundState, requestedProfileKey: "agent-compact@1" });
-  return { projectionId: projection.id, profileId: projection.profileId, profileVersion: projection.profileVersion, contentHash: projection.contentHash, preservationHash: projection.preservation.semanticHash };
+  return {
+    reference: { projectionId: projection.id, profileId: projection.profileId, profileVersion: projection.profileVersion, contentHash: projection.contentHash, preservationHash: projection.preservation.semanticHash },
+    projection,
+  };
 }
 
 export async function compileRepositoryChange(
@@ -1107,7 +1113,7 @@ export async function compileRepositoryChange(
   const compiledPlan = await withCancellation(compileSemanticChangePlan({ changeId: compiledChange.change.id, revision: 1, sourceRunId: `run:${compiledChange.change.id}` }, {
     changes: { read: async () => ({ value: planningValue, contentHash: hashFramedDomain("authenticated-change-planning-input", planningValue) }) },
     packets: { compile: async () => ({ value: packetValue, contentHash: hashFramedDomain("authenticated-change-packet-proposals", packetValue) }) },
-    representations: { compile: async () => representation },
+    representations: { compile: async () => representation.reference },
   }), options.signal);
   const planHash = executionPlanHash(compiledPlan.plan);
   const exactPatchInput: ExactTextPatchInput = {
@@ -1130,7 +1136,8 @@ export async function compileRepositoryChange(
     independentValidators,
     baselineObservation: baselineObservation(observation),
     compiledChange,
-    representation,
+    representation: representation.reference,
+    representationDetails: representation.projection,
     compiledPlan,
     planHash,
     exactPatchInput,
