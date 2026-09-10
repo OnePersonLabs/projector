@@ -208,7 +208,7 @@ export class RepositoryKnowledgeService {
       const closureIds = compilation.closure.entries.map(({ entityId }) => entityId);
       const decisionEvidence = await assessKnowledgeDecisions(graph, graph.relevantDecisions(new Set(closureIds)), operation, adapterContext);
       const decisionIds = decisionEvidence.decisions.map(({ decisionId }) => decisionId);
-      const applicationEvidence = await assessKnowledgeApplicationEvidence({ observation, requirementIds: closureIds, signal: adapterContext.signal, ...(this.host.applicationEvidence === undefined ? {} : { host: this.host.applicationEvidence }) });
+      const applicationEvidence = await assessKnowledgeApplicationEvidence({ observation, ownerIds: closureIds, signal: adapterContext.signal, ...(this.host.applicationEvidence === undefined ? {} : { host: this.host.applicationEvidence }) });
       const closure = rebindClosure(compilation.closure, graph, [identity.dependency, ...collectedQueries, ...decisionEvidence.dependencies], decisionIds, applicationEvidenceDependencies(applicationEvidence));
       const baseContext = await compileContext(closure, graph, { maxCost: selectedPolicy.maxContextCost });
       const contextUnknowns = unique([...baseContext.unknowns, ...graph.authorityUnknowns(closureIds), ...graph.topologyUnknowns(closureIds), ...decisionEvidence.decisions.flatMap(({ checks }) => checks.filter(({ status }) => status === "unknown").map(({ reason }) => reason)), ...applicationEvidence.flatMap((item) => item.status === "unavailable" ? [item.reason] : [])]);

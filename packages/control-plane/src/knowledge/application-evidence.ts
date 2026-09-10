@@ -29,8 +29,7 @@ export interface PsychordApplicationEvidenceHost {
 
 const unavailable = z.strictObject({
   status: z.literal("unavailable"),
-  requirementId: z.string().min(1),
-  requirementDocumentHash: ContentHashSchema,
+  owner: z.strictObject({ kind: z.enum(["requirement", "behavioral-scenario"]), id: z.string().min(1), canonicalDocumentHash: ContentHashSchema }),
   binding: ApplicationEvidencePredicateBindingSchema,
   evidenceIds: z.array(z.string().min(1)).min(1),
   dependencies: z.array(StateValueDependencyRefSchema),
@@ -39,15 +38,14 @@ const unavailable = z.strictObject({
 });
 const assessed = z.strictObject({
   status: z.literal("assessed"),
-  requirementId: z.string().min(1),
-  requirementDocumentHash: ContentHashSchema,
+  owner: z.strictObject({ kind: z.enum(["requirement", "behavioral-scenario"]), id: z.string().min(1), canonicalDocumentHash: ContentHashSchema }),
   binding: ApplicationEvidencePredicateBindingSchema,
   evidenceIds: z.array(z.string().min(1)).min(1),
   assessment: PsychordApplicationEvidenceAssessmentSchema,
   dependencies: z.array(StateValueDependencyRefSchema),
   contentHash: ContentHashSchema,
 });
-type AssessmentBase = { readonly requirementId: string; readonly requirementDocumentHash: ContentHash; readonly binding: ApplicationEvidencePredicateBinding; readonly evidenceIds: readonly string[]; readonly dependencies: readonly StateValueDependencyRef[]; readonly contentHash: ContentHash };
+type AssessmentBase = { readonly owner: { readonly kind: "requirement" | "behavioral-scenario"; readonly id: string; readonly canonicalDocumentHash: ContentHash }; readonly binding: ApplicationEvidencePredicateBinding; readonly evidenceIds: readonly string[]; readonly dependencies: readonly StateValueDependencyRef[]; readonly contentHash: ContentHash };
 export type KnowledgeApplicationEvidenceAssessment =
   | (AssessmentBase & { readonly status: "unavailable"; readonly reason: string })
   | (AssessmentBase & { readonly status: "assessed"; readonly assessment: PsychordApplicationEvidenceAssessment });
@@ -55,7 +53,7 @@ export const KnowledgeApplicationEvidenceAssessmentSchema = z.discriminatedUnion
 
 export async function assessKnowledgeApplicationEvidence(input: {
   readonly observation: ChangeRepositoryObservation;
-  readonly requirementIds: readonly string[];
+  readonly ownerIds: readonly string[];
   readonly signal: AbortSignal;
   readonly host?: PsychordApplicationEvidenceHost;
 }): Promise<readonly KnowledgeApplicationEvidenceAssessment[]> {
@@ -69,12 +67,14 @@ export async function assessKnowledgeApplicationEvidence(input: {
     currentness: input.host.currentness,
   });
   const results: KnowledgeApplicationEvidenceAssessment[] = [];
-  for (const envelope of input.observation.canonical.documents.filter(({ kind, id }) => kind === "requirement" && input.requirementIds.includes(id))) {
+  for (const envelope of input.observation.canonical.documents.filter(({ kind, id }) => (kind === "requirement" || kind === "behavioral-scenario") && input.ownerIds.includes(id))) {
+    if (envelope.kind !== "requirement" && envelope.kind !== "behavioral-scenario") continue;
     const groups = applicationGroups(envelope);
     for (const group of groups) {
       input.signal.throwIfAborted();
       const scenario = scenarioDisposition(input.observation, group.binding);
-      const base = { requirementId: envelope.id, requirementDocumentHash: envelope.canonicalDocumentHash, binding: group.binding, evidenceIds: group.evidenceIds, dependencies: [scenario.dependency] };
+      const owner: AssessmentBase["owner"] = { kind: envelope.kind, id: envelope.id, canonicalDocumentHash: envelope.canonicalDocumentHash };
+      const base = { owner, binding: group.binding, evidenceIds: group.evidenceIds, dependencies: [scenario.dependency] };
       if (scenario.status !== "matched") {
         results.push(withHash({ status: "unavailable" as const, ...base, reason: scenario.reason }));
         continue;
@@ -85,8 +85,8 @@ export async function assessKnowledgeApplicationEvidence(input: {
       }
       try {
         const assessment = PsychordApplicationEvidenceAssessmentSchema.parse(await service.assess({
-          schemaVersion: "psychord-application-evidence-assessment-request@3",
-          requirement: { id: envelope.id, canonicalDocumentHash: envelope.canonicalDocumentHash },
+          schemaVersion: "psychord-application-evidence-assessment-request@4",
+          owner: base.owner,
           evidenceIds: group.evidenceIds,
         }, { signal: input.signal })) as PsychordApplicationEvidenceAssessment;
         input.signal.throwIfAborted();
@@ -113,9 +113,9 @@ export function applicationEvidenceDependencies(items: readonly KnowledgeApplica
   return items.flatMap((item) => item.dependencies as StateValueDependencyRef[]);
 }
 
-export function assessmentKey(item: Pick<KnowledgeApplicationEvidenceAssessment, "requirementId" | "binding">): string {
+export function assessmentKey(item: Pick<KnowledgeApplicationEvidenceAssessment, "owner" | "binding">): string {
   const binding = item.binding;
-  return canonicalJson([item.requirementId, binding.adapter.id, binding.adapter.version, binding.scenario, binding.case, binding.predicateId, binding.assertionIds]);
+  return canonicalJson([item.owner.kind, item.owner.id, binding.adapter.id, binding.adapter.version, binding.scenario, binding.case, binding.predicateId, binding.assertionIds]);
 }
 
 function applicationGroups(envelope: CanonicalDocumentEnvelope) {

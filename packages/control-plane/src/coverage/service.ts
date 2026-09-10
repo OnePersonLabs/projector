@@ -64,7 +64,7 @@ export async function inspectRepositoryCoverage(repositoryRoot: string, request:
   const ruleFindings = evaluations.flatMap(({ evaluation }) => evaluation.findings);
   const identityOwners = new Set(questions.filter(({ kind }) => kind === "identity-overlap").flatMap(({ ownerIds }) => ownerIds));
   const scopedIntent = intent.filter(({ id }) => request.scope === "." || graph.implementationBindings(id).some((member) => unitIds.has(String(member.id))));
-  const applicationEvidenceAssessments = await assessKnowledgeApplicationEvidence({ observation, requirementIds: scopedIntent.filter(({ kind }) => kind === "requirement").map(({ id }) => id), signal, ...(options.applicationEvidence === undefined ? {} : { host: options.applicationEvidence }) });
+  const applicationEvidenceAssessments = await assessKnowledgeApplicationEvidence({ observation, ownerIds: scopedIntent.filter(({ kind }) => kind === "requirement" || kind === "scenario").map(({ id }) => id), signal, ...(options.applicationEvidence === undefined ? {} : { host: options.applicationEvidence }) });
   signal.throwIfAborted();
   const applicationEvidenceStatus = applicationEvidenceDisposition(applicationEvidenceAssessments);
   const applicationEvidenceReasons = applicationEvidenceAssessments.flatMap((item) => item.status === "unavailable" ? [item.reason] : item.assessment.fulfillment.status === "satisfied" ? [] : [item.assessment.fulfillment.reason]);

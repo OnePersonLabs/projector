@@ -16,7 +16,7 @@ const binding = {
 
 describe("knowledge application evidence projection", () => {
   it("keeps exact scenario and assertion revisions in separate assessment identities", () => {
-    const base = { requirementId: "requirement:psychord", binding };
+    const base = { owner: { kind: "requirement" as const, id: "requirement:psychord", canonicalDocumentHash: hash }, binding };
     expect(assessmentKey(base)).not.toBe(assessmentKey({ ...base, binding: { ...binding, scenario: { ...binding.scenario, semanticHash: hashFramedDomain("application-evidence-helper-test", "revision") } } }));
     expect(assessmentKey(base)).not.toBe(assessmentKey({ ...base, binding: { ...binding, assertionIds: ["revised-assertion"] } }));
   });

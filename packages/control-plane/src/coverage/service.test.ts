@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hashFramedDomain, withCanonicalHashes, type AuthorityRecord, type CanonicalDocumentEnvelope, type ProjectionLens } from "@projector/core";
+import { hashFramedDomain, hashSemantic, withCanonicalHashes, type AuthorityRecord, type CanonicalDocumentEnvelope, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
@@ -53,17 +53,13 @@ describe("observed progressive coverage", () => {
     const root = await mkdtemp(join(tmpdir(), "projector-coverage-application-evidence-"));
     const evidenceId = "psychord-artifact:coverage";
     try {
-      await canonical(root, "behavioral-scenario", { id: "scenario:keep-reload-replay-owned-moment", key: "keep-reload-replay-owned-moment", title: "Keep, reload, and replay", aliases: [], status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, steps: [{ role: "trigger", statement: "The application is observed." }, { role: "expected-outcome", statement: "The declared assertion is evaluated." }], evidence: [], discoveryHash: hashFramedDomain("coverage-test", "scenario-discovery"), semanticHash: hashFramedDomain("coverage-test", "scenario") });
-      const scenarioHash = String((await new CanonicalFileRepository(root).read("behavioral-scenario", "scenario:keep-reload-replay-owned-moment"))!.payload.semanticHash);
-      await canonical(root, "requirement", {
-        id: "requirement:psychord-coverage", key: "psychord-coverage", title: "Observed Psychord behavior", aliases: [],
-        statement: "The declared Psychord predicate has current supporting evidence.", status: "active", sourceClass: "authored",
-        scope: { op: "all", items: [] }, origin: [], evidence: [{ evidenceId, stance: "supports", applicationPredicate: {
+      const scenarioBase = { id: "scenario:keep-reload-replay-owned-moment", key: "keep-reload-replay-owned-moment", title: "Keep, reload, and replay", aliases: [], status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, steps: [{ role: "trigger", statement: "The application is observed." }, { role: "expected-outcome", statement: "The declared assertion is evaluated." }], origin: [] };
+      const scenarioHash = hashSemantic("behavioral-scenario", scenarioBase);
+      await canonical(root, "behavioral-scenario", { ...scenarioBase, evidence: [{ evidenceId, stance: "supports", applicationPredicate: {
           kind: "application-observation", adapter: { id: "psychord.keep-reload-replay", version: "1" },
           scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenarioHash }, case: "no-input",
           predicateId: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"], observationRole: "latest",
-        } }], discoveryHash: hashFramedDomain("coverage-test", "discovery"),
-      });
+        } }], discoveryHash: hashFramedDomain("coverage-test", "scenario-discovery"), semanticHash: scenarioHash });
       const applicationEvidence = {
         artifacts: { artifactSetId: () => evidenceId, observeAndPublish: async () => ({ status: "missing" as const, artifactSetId: evidenceId }), read: async () => ({ status: "missing" as const, artifactSetId: evidenceId }) },
         currentness: { observe: async () => { throw new Error("currentness is not invoked for missing evidence"); } },
@@ -71,7 +67,7 @@ describe("observed progressive coverage", () => {
       const result = await inspectRepositoryCoverage(root, { scope: "." }, "coverage", { applicationEvidence });
       expect(result.applicationEvidence).toMatchObject({ status: "unknown", assessments: [{ status: "assessed", assessment: { fulfillment: { status: "unknown" } } }] });
       expect(result.boundState.valueDependencies.map(({ id }) => id)).toEqual(expect.arrayContaining([
-        "requirement:psychord-coverage", `application-evidence:${evidenceId}`, `application-evidence-currentness:${evidenceId}`,
+        "scenario:keep-reload-replay-owned-moment", `application-evidence:${evidenceId}`, `application-evidence-currentness:${evidenceId}`,
       ]));
       expect(result.lanes.find(({ key }) => key === "validation-evidence")).toMatchObject({ numerator: 0, denominator: 1 });
       expect(result.applicationEvidence.assessments[0]?.contentHash).toMatch(/^sha256:v1:/u);
