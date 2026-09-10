@@ -211,7 +211,7 @@ export class RepositoryKnowledgeService {
       const applicationEvidence = await assessKnowledgeApplicationEvidence({ observation, ownerIds: closureIds, signal: adapterContext.signal, ...(this.host.applicationEvidence === undefined ? {} : { host: this.host.applicationEvidence }) });
       const closure = rebindClosure(compilation.closure, graph, [identity.dependency, ...collectedQueries, ...decisionEvidence.dependencies], decisionIds, applicationEvidenceDependencies(applicationEvidence));
       const baseContext = await compileContext(closure, graph, { maxCost: selectedPolicy.maxContextCost });
-      const contextUnknowns = unique([...baseContext.unknowns, ...graph.authorityUnknowns(closureIds), ...graph.topologyUnknowns(closureIds), ...decisionEvidence.decisions.flatMap(({ checks }) => checks.filter(({ status }) => status === "unknown").map(({ reason }) => reason)), ...applicationEvidence.flatMap((item) => item.status === "unavailable" ? [item.reason] : [])]);
+      const contextUnknowns = unique([...baseContext.unknowns, ...graph.authorityUnknowns(closureIds), ...graph.topologyUnknowns(closureIds), ...graph.realizationUnknowns(closureIds), ...decisionEvidence.decisions.flatMap(({ checks }) => checks.filter(({ status }) => status === "unknown").map(({ reason }) => reason)), ...applicationEvidence.flatMap((item) => item.status === "unavailable" ? [item.reason] : [])]);
       const contextBasis = {
         sourceClosureId: baseContext.sourceClosureId,
         items: baseContext.items,

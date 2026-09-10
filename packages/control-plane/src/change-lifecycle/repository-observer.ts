@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
 import { hashFramedDomain, type ContentHash, type StateDigest } from "@projector/core";
 import { CanonicalFileRepository, RepositoryPathService, type CanonicalSnapshot } from "@projector/runtime";
+import { compileCanonicalRealizations, type CanonicalRealizationObservation } from "../knowledge/realizations.js";
 
 const execFileAsync = promisify(execFile);
 const operationalPrefix = ".projector/";
@@ -82,6 +83,7 @@ export interface IndependentValidatorObservation {
 export interface ChangeRepositoryObservation {
   readonly repositoryRoot: string;
   readonly analysis: LocalRepositoryAnalysis;
+  readonly realizations: readonly CanonicalRealizationObservation[];
   readonly canonical: CanonicalSnapshot;
   readonly state: StateDigest;
   independentValidator(path: string): Promise<IndependentValidatorObservation>;
@@ -93,11 +95,14 @@ export async function observeChangeRepository(repositoryRoot: string): Promise<C
     new CanonicalFileRepository(repositoryRoot).snapshot(),
     RepositoryPathService.create(repositoryRoot),
   ]);
-  const analysis = filterOperationalAnalysis(rawAnalysis);
+  const filtered = filterOperationalAnalysis(rawAnalysis);
+  const realizations = compileCanonicalRealizations(filtered, canonical);
+  const analysis = { ...filtered, projectionUnits: [...realizations.units] };
   const state = stateFrom(analysis, canonical);
   return {
     repositoryRoot,
     analysis,
+    realizations: realizations.observations,
     canonical,
     state,
     async independentValidator(path) {

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { hashSemantic, withCanonicalHashes, type AuthorityRecord } from "@projector/core";
+import { hashFramedDomain, hashSemantic, withCanonicalHashes, type AuthorityRecord } from "@projector/core";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
@@ -105,9 +105,10 @@ describe("public architectural products", () => {
       const beforeRequirement = (await files.read("requirement", requirement.id))!;
       expect(beforeRequirement.payload.scope).toEqual(futureScope);
       const beforeScenario = (await files.read("behavioral-scenario", scenario.id))!;
+      const realization = { selector: scope, origin: { kind: "content" as const, locator: "test:future-export-realization", contentHash: hashFramedDomain("architecture-products-realization-origin", "accepted future export implementation") } };
       const revisions = [beforeRequirement, beforeScenario].map((before) => {
         const { semanticHash: _semanticHash, discoveryHash: _discoveryHash, ...payload } = before.payload;
-        return { kind: before.kind, operation: "revise", expectedSemanticHash: before.semanticHash, expectedDocumentHash: before.canonicalDocumentHash, payload: { ...payload, scope }, rationale: "The accepted capability now belongs to the existing source surface; its behavior is preserved." };
+        return { kind: before.kind, operation: "revise", expectedSemanticHash: before.semanticHash, expectedDocumentHash: before.canonicalDocumentHash, payload: { ...payload, scope, realizations: [realization] }, rationale: "The accepted capability now belongs to the existing source surface; its behavior is preserved." };
       });
       const next = await lifecycle.capture({ request: "Bind the preserved export capability to its implementation surface", proposal: proposal(revisions) });
       const nextApproval = await lifecycle.approve(next.capture.semanticChangeId, next.capture.planHash);
@@ -116,7 +117,7 @@ describe("public architectural products", () => {
       expect(result.receipt.changedRequirementIds).toContain(requirement.id);
       expect(result.receipt.changedScenarioIds).toContain(scenario.id);
       const after = (await files.read("requirement", requirement.id))!;
-      expect(after.payload).toMatchObject({ statement: requirement.statement, origin: requirement.origin, scope });
+      expect(after.payload).toMatchObject({ statement: requirement.statement, origin: requirement.origin, scope, realizations: [realization] });
       expect(after.semanticHash).not.toBe(beforeRequirement.semanticHash);
       expect((await files.read("behavioral-scenario", scenario.id))!.payload.steps).toEqual(scenario.steps);
       const knowledge = await RepositoryKnowledgeService.create(root);

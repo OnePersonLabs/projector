@@ -376,6 +376,12 @@ export class KnowledgeGraph implements ContextSourcePort {
     return this.uncertainTopologyImporters().map(({ path, uncertainty }) => `runtime dependency target remains unknown in ${path}: ${uncertainty.join("; ")}`);
   }
 
+  realizationUnknowns(entityIds: readonly string[]): string[] {
+    const ids = new Set(entityIds);
+    return this.observation.realizations.filter(({ entityId, status }) => ids.has(entityId) && status !== "matched")
+      .map(({ entityId, bindingIndex, reason }) => `realization ${entityId}[${bindingIndex}]: ${reason}`).sort(compare);
+  }
+
   sourceHash(entityId: string): ContentHash | undefined {
     const entity = this.entitiesById.get(entityId);
     if (entity !== undefined) return entity.envelope.canonicalDocumentHash;
@@ -539,7 +545,14 @@ export class KnowledgeGraph implements ContextSourcePort {
     } });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.identity, version: "1", kind: "semantic-identity-search", normalizeInput: (input) => ({ request: String(input.request ?? "").normalize("NFKC").trim(), addressed: unique(Array.isArray(input.addressed) ? input.addressed.map(String).map((item) => item.normalize("NFKC").trim()).filter(Boolean) : []), namedTargets: unique(Array.isArray(input.namedTargets) ? input.namedTargets.map(String).map((item) => item.replaceAll("\\", "/").normalize("NFKC").trim()).filter(Boolean) : []) }), evaluate: ({ input }) => ({ results: mergeCandidates([...this.search(input.request as string, input.addressed as string[], Number.MAX_SAFE_INTEGER), ...this.resolveNamedTargets(input.namedTargets as string[])]).map((item) => ({ id: item.entityId, ...item })), observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: ["canonical-identity-discovery", "canonical-lineage", "canonical-tombstones", "projection-unit-membership", ...((input.namedTargets as string[]).map((target) => `path:${target}`))] }) });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.relations, version: "1", kind: "relation-neighborhood", normalizeInput: (input) => ({ subjectId: String(input.subjectId ?? "") }), evaluate: ({ input }) => ({ results: this.relations.filter(({ fromId, toId }) => fromId === input.subjectId || toId === input.subjectId).map(({ id, fromId, toId, type, semanticHash }) => ({ id, fromId, toId, type, semanticHash })), observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: ["canonical-relations", `entity:${String(input.subjectId)}`] }) });
-    this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.implementation, version: "1", kind: "implementation-binding", normalizeInput: (input) => ({ subjectId: String(input.subjectId ?? "") }), evaluate: ({ input }) => ({ results: this.implementationBindings(String(input.subjectId)), observability: this.observation.analysis.surface.enumeration.observability, assumptions: this.observation.analysis.surface.enumeration.assumptions, unavailableLanes: this.failureLanes(["projector.filesystem-local"]), dependencyKeys: ["canonical-scopes", "projection-unit-membership", `entity:${String(input.subjectId)}`] }) });
+    this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.implementation, version: "2", kind: "implementation-binding", normalizeInput: (input) => ({ subjectId: String(input.subjectId ?? "") }), evaluate: ({ input }) => {
+      const subjectId = String(input.subjectId);
+      const unavailable = this.observation.realizations.filter(({ entityId, status }) => entityId === subjectId && (status === "unsupported" || status === "unavailable"));
+      return { results: this.implementationBindings(subjectId), observability: unavailable.length === 0 ? this.observation.analysis.surface.enumeration.observability : "unavailable",
+        assumptions: this.observation.analysis.surface.enumeration.assumptions,
+        unavailableLanes: [...this.failureLanes(["projector.filesystem-local"]), ...unavailable.map(({ bindingIndex, reason }) => `canonical-realization:${subjectId}:${bindingIndex}:${reason}`)],
+        dependencyKeys: ["canonical-realizations", "canonical-scopes", "projection-unit-membership", `entity:${subjectId}`] };
+    } });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.topology, version: "3", kind: "package-dependency", normalizeInput: (input) => ({ unitId: String(input.unitId ?? "") }), evaluate: ({ input }) => {
       const unitId = String(input.unitId);
       const boundary = this.topologyObservationBoundary(unitId);
@@ -612,6 +625,7 @@ export class KnowledgeGraph implements ContextSourcePort {
   private computeImplementationBindings(subjectId: string): Array<Record<string, unknown>> {
     const direct = this.units.filter((unit) => unit.conceptIds.includes(subjectId) || unit.requirementIds.includes(subjectId) || unit.scenarioIds.includes(subjectId)).map(({ id }) => ({ id, reason: "typed projection-unit semantic binding" }));
     const entity = this.entitiesById.get(subjectId);
+    if (entity?.kind === "concept" || entity?.kind === "requirement" || entity?.kind === "scenario") return direct;
     // Preferences influence future options. They do not implicitly govern code or
     // reactivate decisions that retain an earlier preference snapshot.
     if (entity?.kind === "developer-preference") return direct;

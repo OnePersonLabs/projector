@@ -108,7 +108,7 @@ describe("observed progressive coverage", () => {
       expect(questions[0]!.reasons.join(" ")).toContain("Membership alone does not prove these outcomes");
       await writeFile(join(root, "unrelated.txt"), "unrelated change");
       expect((await inspectRepositoryCoverage(root, { scope: "." }, "complete")).completion.questions.find(({ id }) => id === questions[0]!.id)).toEqual(questions[0]);
-      await canonical(root, "behavioral-scenario", { ...scenario, scope });
+      await canonical(root, "behavioral-scenario", { ...scenario, scope, realizations: [{ selector: scope, origin: { kind: "content", locator: "fixture:future-export-owner", contentHash: hash } }] });
       const realizedMembership = await inspectRepositoryCoverage(root, { scope: "." }, "complete");
       expect(realizedMembership.completion.questions.some(({ kind }) => kind === "unrealized-scenario")).toBe(false);
       expect(realizedMembership.proofStatement).toBe("not-established");
