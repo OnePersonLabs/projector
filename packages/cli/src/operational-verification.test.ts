@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { validateOperationalReport } from "@projector/runtime";
 import { afterEach, describe, expect, test } from "vitest";
@@ -8,12 +10,42 @@ import { afterEach, describe, expect, test } from "vitest";
 import { runReadOnlyOperationalVerification } from "./operational-verification.js";
 
 const roots: string[] = [];
+const execFileAsync = promisify(execFile);
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => rm(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 20,
+  })));
 });
 
 describe("read-only operational verification", () => {
+  test("binds owner coverage evidence and remains unavailable when required lanes retain blind spots", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-operation-verify-ready-"));
+    roots.push(root);
+    await writeFile(join(root, "package.json"), '{"name":"fixture","version":"1.0.0"}\n');
+    await execFileAsync("git", ["init", root]);
+    await execFileAsync("git", ["-C", root, "add", "package.json"]);
+    await execFileAsync("git", ["-C", root, "-c", "user.name=Projector Test", "-c", "user.email=test@projector.invalid", "commit", "-m", "fixture"]);
+
+    const report = await runReadOnlyOperationalVerification(root, {
+      signal: new AbortController().signal,
+      toolVersion: "2.1.0-test",
+      policy: { preset: "observe", allowMutation: false, allowPersistence: false },
+    });
+
+    expect(report.exitCode).toBe(5);
+    expect(report.exitProof).toMatchObject({ blockingInvalidity: false, requiredUnavailable: true });
+    expect(report.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "verification-evidence-unavailable", title: expect.stringMatching(/blind spots|dynamic module resolution/iu) }),
+    ]));
+    expect(report.evidence.graphRecords).toHaveLength(1);
+    expect(report.evidence.decisionRecords).toHaveLength(2);
+    expect(report.evidence.validationRecords).toHaveLength(3);
+  });
+
   test("returns an authenticated report and exposes unavailable semantic proof", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-operation-verify-"));
     roots.push(root);
@@ -35,7 +67,7 @@ describe("read-only operational verification", () => {
         configDigest: { unavailable: expect.any(String) },
         worktreeDigest: { unavailable: expect.any(String) },
       },
-      unavailableFields: expect.arrayContaining(["architecturalConformance", "decisionValidity"]),
+      unavailableFields: expect.arrayContaining(["modelRecords", "snapshotRecords", "transformRecords"]),
     });
 
     await writeFile(join(root, "observed.ts"), "export const observed = 1;\n");
