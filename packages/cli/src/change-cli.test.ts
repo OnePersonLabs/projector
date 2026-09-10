@@ -142,7 +142,7 @@ describe("change/plan/apply CLI composition", () => {
       const environment = { ...process.env, GIT_AUTHOR_EMAIL: "lifecycle-test@projector.invalid", GIT_AUTHOR_NAME: "Lifecycle Test", GIT_COMMITTER_EMAIL: "lifecycle-test@projector.invalid", GIT_COMMITTER_NAME: "Lifecycle Test", GIT_CONFIG_GLOBAL: join(repositoryRoot, ".no-gitconfig"), GIT_CONFIG_NOSYSTEM: "1" };
       await executeFile("git", ["init", "--quiet", "--initial-branch=main"], { cwd: repositoryRoot, env: environment });
       await mkdir(join(repositoryRoot, ".projector"));
-      await writeFile(join(repositoryRoot, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      await writeFile(join(repositoryRoot, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
       await executeFile("git", ["add", "--all"], { cwd: repositoryRoot, env: environment });
       await executeFile("git", ["commit", "--quiet", "--no-gpg-sign", "-m", "initial"], { cwd: repositoryRoot, env: environment });
 

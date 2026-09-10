@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { inspectProjectActivation } from "@projector/runtime";
 
 import { executeProjector } from "./cli.js";
 import { createBuiltMcpCliPort } from "./mcp-cli.js";
@@ -65,14 +66,17 @@ describe("explicit Projector project activation", () => {
     expect(analyze).not.toHaveBeenCalled();
 
     await mkdir(join(root, ".projector"));
-    await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+    await writeFile(
+      join(root, ".projector", "config.toml"),
+      'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n',
+    );
     const enabledStatus = await mcp.transport.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "projector.status", arguments: {} } });
     expect(enabledStatus).toMatchObject({ result: { structuredContent: { status: "ok" } } });
     expect(analyze).toHaveBeenCalledWith({ repositoryRoot: root });
     await mcp.transport.handle({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "projector.context", arguments: { request: "Inspect enabled meaning" } } });
     expect(knowledge.context).toHaveBeenCalledWith(expect.objectContaining({ repositoryRoot: root, request: "Inspect enabled meaning" }));
 
-    await writeFile(join(root, ".projector", "config.json"), "{\n");
+    await writeFile(join(root, ".projector", "config.toml"), "apiVersion = [\n");
     const malformedStatus = await mcp.transport.handle({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "projector.status", arguments: {} } });
     expect(malformedStatus).toMatchObject({ result: { structuredContent: { status: "not-enabled", reason: expect.stringMatching(/malformed/iu) } } });
     expect(analyze).toHaveBeenCalledTimes(1);
@@ -92,11 +96,15 @@ describe("explicit Projector project activation", () => {
     const root = await gitRepository();
     const dry = await executeProjector(["init", "--dry-run"], { cwd: root });
     expect(dry.report).toMatchObject({ initialized: false, dryRun: true });
-    await expect(access(join(root, ".projector", "config.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(root, ".projector", "config.toml"))).rejects.toMatchObject({ code: "ENOENT" });
 
     const initialized = await executeProjector(["init", "--format", "json"], { cwd: root });
     expect(initialized).toMatchObject({ exitCode: 0, report: { initialized: true, projectEnabled: true } });
-    expect(JSON.parse(await readFile(join(root, ".projector", "config.json"), "utf8"))).toEqual({ apiVersion: "projector.config/v1", enabled: true });
+    expect(await inspectProjectActivation(root)).toMatchObject({
+      status: "enabled",
+      configPath: ".projector/config.toml",
+      config: { apiVersion: "projector.config/v1", enabled: true, projectorVersion: "2.1.0" },
+    });
     await expect(executeProjector(["audit"], { cwd: root })).resolves.not.toMatchObject({ exitCode: 5 });
   });
 
@@ -119,17 +127,17 @@ describe("explicit Projector project activation", () => {
   });
 
   it.each([
-    ["malformed", "{\n"],
-    ["unsupported", '{"apiVersion":"projector.config/v999","enabled":true}\n'],
-    ["extra keys", '{"apiVersion":"projector.config/v1","enabled":true,"implicit":true}\n'],
+    ["malformed", "apiVersion = [\n"],
+    ["unsupported", 'apiVersion = "projector.config/v999"\nenabled = true\nprojectorVersion = "2.1.0"\n'],
+    ["extra keys", 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\nimplicit = true\n'],
   ])("fails closed for %s config and init does not overwrite it", async (_label, contents) => {
     const root = await gitRepository();
     await mkdir(join(root, ".projector"));
-    await writeFile(join(root, ".projector", "config.json"), contents);
+    await writeFile(join(root, ".projector", "config.toml"), contents);
 
     await expect(executeProjector(["audit"], { cwd: root })).resolves.toMatchObject({ exitCode: 5, report: { projectEnabled: false } });
     await expect(executeProjector(["init"], { cwd: root })).rejects.toThrow(/config|activation|enabled/iu);
-    expect(await readFile(join(root, ".projector", "config.json"), "utf8")).toBe(contents);
+    expect(await readFile(join(root, ".projector", "config.toml"), "utf8")).toBe(contents);
   });
 
   it("rejects a symlinked activation marker without writing outside the repository", async () => {

@@ -35,7 +35,7 @@ describe("upgrade CLI composition", () => {
     try {
       await executeFile("git", ["init", "--quiet"], { cwd: root });
       await mkdir(join(root, ".projector"));
-      await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
       const result = await executeProjector(["upgrade"], { cwd: root });
       expect(result).toMatchObject({ exitCode: 0, report: { kind: "upgrade-candidate", pipeline: "modernization-task16", applied: false, persisted: true, selector: expect.stringMatching(/^upgrade:execution_plan_/u) } });
       const run = vi.fn(); const dryRun = await executeProjector(["upgrade", "--dry-run"], { cwd: root, upgrade: { run } });

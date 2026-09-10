@@ -67,7 +67,7 @@ describe("projector run host boundary", () => {
   it("resolves an authenticated built session and detects a fake host's committed-clean write", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-host-"));
     try {
-      await exec("git", ["init", "-q", root]); await mkdir(join(root, ".projector")); await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n'); await writeFile(join(root, "tracked.txt"), "before\n"); await exec("git", ["-C", root, "add", "."]); await exec("git", ["-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "initial"]);
+      await exec("git", ["init", "-q", root]); await mkdir(join(root, ".projector")); await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n'); await writeFile(join(root, "tracked.txt"), "before\n"); await exec("git", ["-C", root, "add", "."]); await exec("git", ["-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "initial"]);
       const head = (await exec("git", ["-C", root, "rev-parse", "HEAD"])).stdout.trim(); const state: StateDigest = { gitBase: head, worktreeDigest: hashFramedDomain("fixture", "w"), canonicalProjectorDigest: hashFramedDomain("fixture", "c"), toolchainDigest: hashFramedDomain("fixture", "t") };
       const binding: StateBinding = { compiledAgainst: state, valueDependencies: [], queryDependencies: [], dependencyDigest: hashFramedDomain("state-binding-dependencies", { valueDependencies: [], queryDependencies: [] }) };
       const plan = { id: "plan:host", revision: 1, boundState: binding } as unknown as ExecutionPlan;

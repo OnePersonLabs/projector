@@ -13,7 +13,6 @@ import {
   assertSupportedCanonicalVersions,
   currentSqliteSchemaVersion,
   executePacketPlan,
-  initializeProjectActivation,
   inspectProjectActivation,
 } from "./index.js";
 
@@ -30,7 +29,6 @@ describe("runtime public entrypoint", () => {
     expect(currentSqliteSchemaVersion).toBe(1);
     expect(executePacketPlan).toBeTypeOf("function");
     expect(inspectProjectActivation).toBeTypeOf("function");
-    expect(initializeProjectActivation).toBeTypeOf("function");
     expect(createProjectBackup).toBeTypeOf("function");
     expect(hashProjectBackupManifest).toBeTypeOf("function");
   });

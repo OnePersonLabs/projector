@@ -35,7 +35,7 @@ describe("coverage/complete/cleanup CLI composition", () => {
     try {
       await git("git", ["init", "-q", root]);
       await mkdir(join(root, ".projector/runtime"), { recursive: true }); await mkdir(join(root, "src")); await mkdir(join(root, "other"));
-      await writeFile(join(root, ".projector/config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      await writeFile(join(root, ".projector/config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
       await writeFile(join(root, "src/owned.mjs"), "export const owned = true;\n");
       await writeFile(join(root, "src/unmapped.mjs"), "export const unmapped = true;\n");
       await writeFile(join(root, "other/unrelated.mjs"), "export const unrelated = true;\n");
@@ -112,7 +112,7 @@ describe("coverage/complete/cleanup CLI composition", () => {
     try {
       await mkdir(join(repositoryRoot, ".git"));
       await mkdir(join(repositoryRoot, ".projector"));
-      await writeFile(join(repositoryRoot, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      await writeFile(join(repositoryRoot, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
       await writeFile(join(repositoryRoot, "package.json"), JSON.stringify({ name: "fixture", scripts: { check: "node src/check.js" } }));
       await writeFile(join(repositoryRoot, "bad.json"), "{\"broken\":");
       const first = await executeProjector(["coverage", "--format", "json"], { cwd: repositoryRoot });
@@ -140,7 +140,7 @@ describe("coverage/complete/cleanup CLI composition", () => {
     try {
       await mkdir(join(repositoryRoot, ".git"));
       await mkdir(join(repositoryRoot, ".projector"));
-      await writeFile(join(repositoryRoot, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      await writeFile(join(repositoryRoot, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
       await writeFile(join(repositoryRoot, "valid.toml"), "name = \"fixture\"\n");
       await writeFile(join(repositoryRoot, "duplicate.yaml"), "name: first\nname: second\n");
       const result = await executeProjector(["coverage"], { cwd: repositoryRoot });
