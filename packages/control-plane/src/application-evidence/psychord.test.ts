@@ -22,6 +22,7 @@ import { afterEach, expect, it } from "vitest";
 import { createDurablePsychordObservationArtifactService } from "./psychord.js";
 import {
   createPsychordApplicationEvidenceAssessmentService as createStateBoundPsychordApplicationEvidenceAssessmentService,
+  psychordApplicationEvidenceDependencies,
   PsychordApplicationEvidenceAssessmentSchema,
 } from "./psychord-assessment.js";
 
@@ -102,9 +103,15 @@ it("is durably incomplete while observation has no terminal result, then publish
     artifacts: service,
     currentness: { async observe(currentPlan) { return currentnessFor(currentPlan); } },
   });
+  const laterLegacyPlan = observationPlan(root, "run-later-failure");
+  const laterPlan = createPsychordApplicationObservationPlan(laterLegacyPlan);
+  const laterArtifactSetId = service.artifactSetId(laterPlan);
+  const assessmentEvidence = [
+    evidenceReference(plan, published.artifactSetId, "prior"),
+    evidenceReference(laterPlan, laterArtifactSetId, "latest"),
+  ];
   const assessed = await assessmentService.assess(assessmentRequest(plan, [
-      evidenceReference(plan, published.artifactSetId, "prior"),
-      evidenceReference(plan, "psychord-later-unavailable", "latest"),
+      ...assessmentEvidence,
   ]), { signal: new AbortController().signal });
   expect(assessed).toMatchObject({
     fulfillment: { status: "satisfied", selectedArtifactSetId: published.artifactSetId, preservedPriorPassing: true },
@@ -114,6 +121,56 @@ it("is durably incomplete while observation has no terminal result, then publish
     ],
   });
   expect(PsychordApplicationEvidenceAssessmentSchema.parse(assessed)).toEqual(assessed);
+  expect(psychordApplicationEvidenceDependencies(assessed)).toEqual([
+    expect.objectContaining({ kind: "canonical-entity", id: assessed.requirement.id, versionHash: assessed.requirement.canonicalDocumentHash }),
+    expect.objectContaining({ kind: "artifact", id: `application-evidence:${published.artifactSetId}` }),
+    expect.objectContaining({ kind: "external-snapshot", id: `application-evidence-currentness:${published.artifactSetId}` }),
+    expect.objectContaining({ kind: "artifact", id: `application-evidence:${laterArtifactSetId}` }),
+    expect.objectContaining({ kind: "external-snapshot", id: `application-evidence-currentness:${laterArtifactSetId}` }),
+  ]);
+  const beforeLatestDependency = psychordApplicationEvidenceDependencies(assessed)
+    .find(({ id }) => id === `application-evidence:${laterArtifactSetId}`)!;
+  const passingLater = observationResult(laterLegacyPlan);
+  const failedLater = observationResult(laterLegacyPlan, {
+    outcome: "failed",
+    assertions: passingLater.assertions.map((assertion) => assertion.id === "no-input-player"
+      ? { ...assertion, passed: false, detail: "later player stream was contaminated" }
+      : assertion),
+  });
+  const laterService = createDurablePsychordObservationArtifactService({
+    storageRoot: root,
+    observer: createStrictPsychordApplicationObserver({ async observeApplication() { return failedLater; } }),
+  });
+  await expect(laterService.observeAndPublish(laterPlan, { signal: new AbortController().signal })).resolves.toMatchObject({ status: "published" });
+  const afterLatestAppeared = await assessmentService.assess(assessmentRequest(plan, assessmentEvidence), { signal: new AbortController().signal });
+  expect(afterLatestAppeared).toMatchObject({ fulfillment: { status: "violated", selectedArtifactSetId: laterArtifactSetId } });
+  expect(psychordApplicationEvidenceDependencies(afterLatestAppeared)
+    .find(({ id }) => id === `application-evidence:${laterArtifactSetId}`)!.versionHash).not.toBe(beforeLatestDependency.versionHash);
+
+  const unavailableCurrentnessService = createPsychordApplicationEvidenceAssessmentService({
+    artifacts: service,
+    currentness: { async observe() { throw new Error("currentness source unavailable"); } },
+  });
+  const currentnessEvidence = [evidenceReference(plan, published.artifactSetId, "latest")];
+  const unavailableCurrentness = await unavailableCurrentnessService.assess(assessmentRequest(plan, currentnessEvidence), { signal: new AbortController().signal });
+  const availableCurrentness = await assessmentService.assess(assessmentRequest(plan, currentnessEvidence), { signal: new AbortController().signal });
+  expect(unavailableCurrentness).toMatchObject({ fulfillment: { status: "unknown" } });
+  expect(availableCurrentness).toMatchObject({ fulfillment: { status: "satisfied" } });
+  const currentnessDependencyId = `application-evidence-currentness:${published.artifactSetId}`;
+  expect(psychordApplicationEvidenceDependencies(unavailableCurrentness).find(({ id }) => id === currentnessDependencyId)!.versionHash)
+    .not.toBe(psychordApplicationEvidenceDependencies(availableCurrentness).find(({ id }) => id === currentnessDependencyId)!.versionHash);
+  expect(() => PsychordApplicationEvidenceAssessmentSchema.parse({
+    ...assessed,
+    observations: assessed.observations.map((observation, index) => index === 0
+      ? { ...observation, historical: { ...observation.historical!, publicationHash: hash("forged-publication") } }
+      : observation),
+  })).toThrow(/publication hash/u);
+  expect(() => PsychordApplicationEvidenceAssessmentSchema.parse({
+    ...assessed,
+    observations: assessed.observations.map((observation, index) => index === 0
+      ? { ...observation, reuseCurrentnessHash: hash("forged-currentness") }
+      : observation),
+  })).toThrow(/currentness hash/u);
   await expect(assessmentService.assess(assessmentRequest(plan, [
     evidenceReference(plan, published.artifactSetId, "prior", "predicate:unrelated-meaning"),
   ]), { signal: new AbortController().signal })).rejects.toThrow(/canonical Psychord scenario assertion mapping/u);
