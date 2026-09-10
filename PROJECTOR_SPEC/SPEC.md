@@ -1,9 +1,10 @@
 # Projector: Projection-Driven Development
 
-## Authoritative Implementation Specification
+## Transitional Implementation Specification
 
 **Version:** 2.0.0  
-**Status:** Normative implementation handoff  
+**Status:** Transitional source evidence
+
 **Date:** 2026-08-07  
 **Product:** Projector  
 **Method:** Projection-Driven Development (PDD)  
@@ -17,13 +18,13 @@
 
 ## Authority and composition
 
-This modular specification is the authoritative implementation contract.
+This modular specification retains source evidence for canonical ingestion and the checks that still consume it during the transition. Accepted product meaning lives in typed `.projector/model/` records. Architectural authority lives in `.projector/lenses/`, `.projector/decisions/`, and `.projector/authorities/`. Exact executable contracts and their generated schemas are owned by `packages/core/`.
 
 - `SPEC.md` defines product identity, specification-composition rules, the global causal loop, and progressive-disclosure routes.
-- The Markdown modules listed in `spec.manifest.json` contain authoritative subsystem requirements and contracts.
-- `INDEX.md` is a navigation/index projection. It MUST NOT introduce semantics absent from authoritative modules.
+- The Markdown modules listed in `spec.manifest.json` retain subsystem commitments and contract descriptions for explicit acceptance, revision, or justified supersession.
+- `INDEX.md` is a navigation/index projection. It MUST NOT introduce independent semantics.
 - No module may silently redefine a canonical contract owned by another module. Cross-module references use the canonical definition rather than copying it.
-- If a concise root summary appears less specific than a subsystem requirement, the subsystem requirement governs. A true contradiction is a specification defect and MUST be resolved rather than handled by undocumented precedence.
+- A concise root summary does not discard more specific subsystem conditions. Resolve contradictions against user intent, accepted canonical meaning, and current evidence, preserving provenance. Neither the last edited file nor current implementation establishes authority.
 
 The specification uses the same architecture it requires from Projector. Canonical knowledge is independently addressable, and explicit links/indexes route cross-cutting relevance. No implementation task should require the full specification when a bounded module set is sufficient.
 
