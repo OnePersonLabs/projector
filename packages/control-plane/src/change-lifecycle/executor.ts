@@ -185,11 +185,11 @@ class JournalExecutionAdapter implements TransformMutationPort, ChangeTransactio
   }
 }
 
-function validationPath(validatorId: string): { path: string; independenceGroup: string; authorSource: string } | undefined {
+function validationPath(validatorId: string): { path: string; independenceGroup: string; authorSource: string; source: "git-base" | "approved-edit" } | undefined {
   const independent = "node-independent:";
   const supplemental = "node-supplemental:";
-  if (validatorId.startsWith(independent)) return { path: validatorId.slice(independent.length), independenceGroup: `git-base:${validatorId.slice(independent.length)}`, authorSource: "tracked-git-base" };
-  if (validatorId.startsWith(supplemental)) return { path: validatorId.slice(supplemental.length), independenceGroup: `proposal:${validatorId.slice(supplemental.length)}`, authorSource: "authenticated-proposal" };
+  if (validatorId.startsWith(independent)) return { path: validatorId.slice(independent.length), independenceGroup: `git-base:${validatorId.slice(independent.length)}`, authorSource: "tracked-git-base", source: "git-base" };
+  if (validatorId.startsWith(supplemental)) return { path: validatorId.slice(supplemental.length), independenceGroup: `proposal:${validatorId.slice(supplemental.length)}`, authorSource: "authenticated-proposal", source: "approved-edit" };
   return undefined;
 }
 
@@ -359,6 +359,7 @@ async function runNodeValidators(
   paths: RepositoryPathService,
   validatorIds: readonly string[],
   independentValidators: CompiledRepositoryChange["independentValidators"],
+  approvedEdits: CompiledRepositoryChange["exactPatchInput"]["edits"],
   signal: AbortSignal,
   now: () => string,
   runWhileOwned: <T>(operation: () => Promise<T>) => Promise<T>,
@@ -368,7 +369,12 @@ async function runNodeValidators(
     const validator = validationPath(validatorId);
     if (validator === undefined) continue;
     const startedAt = now();
-    const expected = independentValidators.find(({ path }) => path === validator.path)?.contentHash;
+    const approvedEdit = approvedEdits.find(({ path }) => path === validator.path);
+    const expected = validator.source === "git-base"
+      ? independentValidators.find(({ path }) => path === validator.path)?.contentHash
+      : approvedEdit?.after === null || approvedEdit?.after === undefined
+        ? undefined
+        : hashFramedDomain("transform-content", approvedEdit.after);
     const contentPath = (await paths.resolveRead(validator.path)).realTarget;
     const beforeContentHash = hashFramedDomain("transform-content", await readFile(contentPath, "utf8"));
     const identityEvidenceId = `evidence_${hashFramedDomain("validator-execution-identity", {
@@ -424,7 +430,7 @@ async function runNodeValidators(
         beforeContentHash,
         afterContentHash,
         executedContentHash: expected ?? beforeContentHash,
-        executionSource: "exact-live-tracked-validator",
+        executionSource: validator.source === "git-base" ? "exact-live-tracked-validator" : "exact-live-approved-validator",
         exactResolvedPath: contentPath,
         observedResult: { exitCode: execution.exitCode, signal: execution.signal, stdout: execution.stdout, stderr: execution.stderr },
         enforcedBounds: { timeoutMs: 30_000, maxOutputBytes: 256 * 1_024, callerCancellation: true },
@@ -509,6 +515,7 @@ export async function executeCompiledRepositoryChange(
         paths,
         capsule.requiredValidations,
         input.compiled.independentValidators,
+        input.compiled.exactPatchInput.edits,
         context.signal,
         now,
         (operation) => transaction.runWhileOwned(operation),

@@ -441,6 +441,41 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("executes a supplemental validator from its exact approved post-edit bytes", async () => {
+    const root = await repository();
+    try {
+      const supplementalPath = "test/named-greeting.test.mjs";
+      const supplementalSource = "import assert from 'node:assert/strict'; import { greet } from '../src/index.mjs'; assert.equal(greet('Ada'), 'hello Ada');\n";
+      const baseProposal = proposal();
+      const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
+      const captured = await service.capture({
+        request: "Let greet accept a name and verify the new behavior with an approved supplemental test.",
+        proposal: {
+          ...baseProposal,
+          edits: [...baseProposal.edits, { path: supplementalPath, before: null, after: supplementalSource }],
+          validation: { ...baseProposal.validation, supplementalNodeTests: [supplementalPath] },
+        },
+      });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+
+      const applied = await service.apply(approval.id);
+
+      expect(applied.outcome, applied.reasons.join("; ")).toBe("success");
+      const supplemental = applied.validations.find(({ validatorId }) => validatorId === `node-supplemental:${supplementalPath}`);
+      expect(supplemental).toMatchObject({
+        status: "passed",
+        authorSource: "authenticated-proposal",
+        details: {
+          expectedContentHash: hashFramedDomain("transform-content", supplementalSource),
+          beforeContentHash: hashFramedDomain("transform-content", supplementalSource),
+          afterContentHash: hashFramedDomain("transform-content", supplementalSource),
+          executedContentHash: hashFramedDomain("transform-content", supplementalSource),
+          executionSource: "exact-live-approved-validator",
+        },
+      });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("rolls back the journaled packet when the independent host validator fails", async () => {
     const root = await repository();
     try {
