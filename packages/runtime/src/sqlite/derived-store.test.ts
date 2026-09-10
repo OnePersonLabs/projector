@@ -532,4 +532,19 @@ describe("SQLite derived canonical index", () => {
     raw.close();
     expect(() => inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).toThrow(/entities.*canonical/i);
   });
+
+  test("rejects SQLite schema objects outside the released migration set", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const snapshot = await canonical.snapshot();
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    store.close();
+    const raw = new DatabaseSync(path);
+    raw.exec("CREATE TABLE unexpected_runtime_data(value TEXT) STRICT");
+    raw.close();
+    expect(() => inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).toThrow(/schema.*migration set/i);
+  });
 });
