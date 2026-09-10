@@ -14,8 +14,10 @@ import {
 import { dirname, join, posix } from "node:path";
 
 import {
+  PendingProjectDataMigrationSchema,
   hashFramedDomain,
   type ContentHash,
+  type PendingProjectDataMigration,
   type StateDigest,
   type TransactionJournalEntry,
   type TransactionPhase,
@@ -62,6 +64,7 @@ export interface BeginTransactionInput {
   beforeState: StateDigest;
   intendedAfterCanonicalDigest?: ContentHash;
   allowedWriteRoots: string[];
+  pendingMigration?: PendingProjectDataMigration;
 }
 
 interface MissingSnapshot {
@@ -113,6 +116,7 @@ export interface DurableTransactionRecord {
   operations: FileJournalOperation[];
   checkpoints: JournalCheckpoint[];
   compensations: CompensationRecord[];
+  pendingMigration?: PendingProjectDataMigration;
 }
 
 export interface ExactFileTransactionJournalRecord {
@@ -314,6 +318,18 @@ export class FileTransactionJournal {
     if (input.transactionId.length === 0 || input.planId.length === 0 || input.allowedWriteRoots.length === 0) {
       throw new TypeError("A transaction requires IDs and at least one write root");
     }
+    if (input.pendingMigration !== undefined) {
+      PendingProjectDataMigrationSchema.parse(input.pendingMigration);
+      if (input.pendingMigration.phase !== "backed-up") {
+        throw new TypeError("A migration journal must bind the backed-up Pending marker before effects");
+      }
+      if (input.pendingMigration.migrationId !== input.transactionId) {
+        throw new TypeError("A migration transaction ID must equal its unique Pending migration attempt ID");
+      }
+      if (input.pendingMigration.manifestHash !== input.planId) {
+        throw new TypeError("A migration transaction plan ID must equal its Pending manifest hash");
+      }
+    }
     await this.ensureJournalRoot();
     const now = this.timestamp();
     const record: DurableTransactionRecord = {
@@ -336,6 +352,7 @@ export class FileTransactionJournal {
       operations: [],
       checkpoints: [],
       compensations: [],
+      ...(input.pendingMigration === undefined ? {} : { pendingMigration: input.pendingMigration }),
     };
     await this.persist(record, true);
     this.inject("after-phase:prepared");
@@ -799,6 +816,10 @@ function isRecord(value: unknown): value is DurableTransactionRecord {
     record.checkpoints.every(isCheckpoint) &&
     Array.isArray(record.compensations) &&
     record.compensations.every(isCompensation) &&
+    (record.pendingMigration === undefined || (
+      PendingProjectDataMigrationSchema.safeParse(record.pendingMigration).success &&
+      record.pendingMigration.phase === "backed-up"
+    )) &&
     hasConsistentRecordIndexes(record as DurableTransactionRecord)
   );
 }

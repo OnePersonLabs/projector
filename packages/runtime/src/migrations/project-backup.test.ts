@@ -58,6 +58,7 @@ describe("project migration backup archive", () => {
       await mkdir(join(target, ".."), { recursive: true });
       await writeFile(target, bytes);
     }
+    const syncDirectory = vi.fn(async () => undefined);
 
     const result = await createProjectBackup(
       { repositoryRoot, codexDataRoot },
@@ -65,6 +66,7 @@ describe("project migration backup archive", () => {
         createBackupId: () => "backup-001",
         createTemporaryId: () => "temp-001",
         now: () => new Date("2026-09-10T17:00:00.000Z"),
+        syncDirectory,
       },
     );
 
@@ -76,6 +78,8 @@ describe("project migration backup archive", () => {
     expect(decoded.manifest).toEqual(result.manifest);
     expect(result.manifestHash).toBe(hashProjectBackupManifest(decoded.manifestBytes));
     expect(result.archiveHash).toBe(hashProjectBackupArchive(archiveBytes));
+    expect(syncDirectory).toHaveBeenNthCalledWith(1, codexDataRoot);
+    expect(syncDirectory).toHaveBeenNthCalledWith(2, codexDataRoot);
     for (const [path, bytes] of files) expect(decoded.files.get(`.projector/${path}`)).toEqual(bytes);
   });
 
