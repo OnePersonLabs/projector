@@ -131,6 +131,9 @@ describe("normative contract registry", () => {
     expect(revised.semanticHash).not.toBe(envelope.semanticHash);
     expect(revised.canonicalDocumentHash).not.toBe(envelope.canonicalDocumentHash);
     expect(CanonicalDocumentWireByKindSchema.safeParse({ ...wire, payload: { ...wire.payload, id: envelope.id } }).success).toBe(false);
+    expect(() => hydrateCanonicalDocumentWire({ ...wire, payload: { ...wire.payload, hidden: true } })).toThrow(/hidden/iu);
+    try { hydrateCanonicalDocumentWire({ ...wire, payload: { ...wire.payload, hidden: true } }); }
+    catch (error) { expect(String(error)).not.toContain("architecture-decision"); }
 
     const exported = JSON.stringify(exportContractJsonSchemas().CanonicalDocumentWireByKind);
     expect(exported).toContain('"concept"');
