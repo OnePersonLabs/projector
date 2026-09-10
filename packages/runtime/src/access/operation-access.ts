@@ -52,7 +52,7 @@ const counterFileName = "next-ticket";
 const mutexDirectoryName = "mutex";
 const pollIntervalMs = 10;
 const abandonedMutexAfterMs = 30_000;
-const abandonedClaimAfterMs = 5_000;
+const abandonedClaimAfterMs = 30_000;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export async function withProjectOperationAccess<T>(
@@ -64,16 +64,16 @@ export async function withProjectOperationAccess<T>(
   throwIfAborted(options.signal);
   const accessPath = await prepareAccessDirectory(root);
   const claim = await enqueue(accessPath, options);
+  const integrity = new AbortController();
+  const heartbeat = startHeartbeat(accessPath, claim, integrity);
   let acquired = false;
   try {
-    await waitToAcquire(accessPath, claim, options.signal);
-    acquired = true;
-    const integrity = new AbortController();
-    const heartbeat = startHeartbeat(accessPath, claim, integrity);
-    const signal = options.signal === undefined
-      ? integrity.signal
-      : AbortSignal.any([options.signal, integrity.signal]);
     try {
+      await waitToAcquire(accessPath, claim, options.signal);
+      acquired = true;
+      const signal = options.signal === undefined
+        ? integrity.signal
+        : AbortSignal.any([options.signal, integrity.signal]);
       return await operation({ signal });
     } finally {
       await heartbeat.stop();
@@ -183,7 +183,9 @@ function startHeartbeat(
 async function refreshHeartbeat(accessPath: string, claim: AccessClaim): Promise<void> {
   await withMutex(accessPath, undefined, async () => {
     const state = await readAccessState(accessPath);
-    const persisted = state.holders.find((candidate) => candidate.requestId === claim.requestId);
+    const holder = state.holders.find((candidate) => candidate.requestId === claim.requestId);
+    const request = state.requests.find((candidate) => candidate.requestId === claim.requestId);
+    const persisted = holder ?? request;
     if (persisted === undefined || !sameClaim(persisted, claim)) {
       throw corrupt(`Operation access claim ${claim.requestId} is missing or changed during heartbeat`);
     }
@@ -191,7 +193,7 @@ async function refreshHeartbeat(accessPath: string, claim: AccessClaim): Promise
     const heartbeatAt = new Date(Math.max(Date.now(), previousTime + 1)).toISOString();
     const refreshed: AccessClaim = { ...claim, heartbeatAt };
     await writeAtomic(
-      join(accessPath, holdersDirectoryName),
+      join(accessPath, holder === undefined ? requestsDirectoryName : holdersDirectoryName),
       `${claim.requestId}.json`,
       `${JSON.stringify(refreshed)}\n`,
     );

@@ -139,6 +139,27 @@ describe("withProjectOperationAccess", () => {
     });
   });
 
+  it("heartbeats a queued request while it waits behind an exclusive holder", async () => {
+    const root = await readyProject();
+    const controller = new AbortController();
+
+    await withProjectOperationAccess(root, { operation: "migration", mode: "exclusive" }, async () => {
+      const waiting = withProjectOperationAccess(
+        root,
+        { operation: "inspect", mode: "shared", signal: controller.signal },
+        async () => undefined,
+      );
+      await waitForRequestCount(root, 1);
+      const requests = join(root, ".projector", "runtime", "operation-access", "requests");
+      const [name] = await readdir(requests);
+      const claimPath = join(requests, name!);
+      const initial = JSON.parse(await readFile(claimPath, "utf8")) as { heartbeatAt: string };
+      await waitForHeartbeatAfter(claimPath, initial.heartbeatAt);
+      controller.abort(new Error("test complete"));
+      await expect(waiting).rejects.toMatchObject({ code: "access-aborted" });
+    });
+  });
+
   it("releases access in finally when the operation throws", async () => {
     const root = await readyProject();
     const failure = new Error("operation failed");
