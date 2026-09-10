@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rename, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -497,9 +497,10 @@ describe("SQLite derived canonical index", () => {
     await rebuildDerivedStore(canonical, store);
     store.close();
 
-    expect(inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).toEqual({
+    await expect(inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).resolves.toEqual({
       status: "valid",
       schemaVersion: 1,
+      migrationSetHash: sqliteMigrationSetHash,
       canonicalRootDigest: snapshot.rootDigest,
       documentCount: 1,
     });
@@ -507,14 +508,14 @@ describe("SQLite derived canonical index", () => {
     const raw = new DatabaseSync(path);
     raw.exec("UPDATE canonical_documents SET semantic_hash = 'sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'");
     raw.close();
-    expect(() => inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).toThrow(/corrupt|mismatch/i);
+    await expect(inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).rejects.toThrow(/corrupt|mismatch/i);
   });
 
   test("reports an absent derived store without creating it", async () => {
     const root = await temporaryRepository();
     await mkdir(join(root, ".projector"));
     const path = join(root, ".projector", "state.db");
-    expect(inspectExistingSqliteDerivedState(path, zeroHash)).toEqual({ status: "absent" });
+    await expect(inspectExistingSqliteDerivedState(path, zeroHash)).resolves.toEqual({ status: "absent" });
     expect(await readdir(join(root, ".projector"))).toEqual([]);
   });
 
@@ -530,7 +531,7 @@ describe("SQLite derived canonical index", () => {
     const raw = new DatabaseSync(path);
     raw.exec("UPDATE entities SET status = 'retired'");
     raw.close();
-    expect(() => inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).toThrow(/entities.*canonical/i);
+    await expect(inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).rejects.toThrow(/entities.*canonical/i);
   });
 
   test("rejects SQLite schema objects outside the released migration set", async () => {
@@ -545,6 +546,80 @@ describe("SQLite derived canonical index", () => {
     const raw = new DatabaseSync(path);
     raw.exec("CREATE TABLE unexpected_runtime_data(value TEXT) STRICT");
     raw.close();
-    expect(() => inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).toThrow(/schema.*migration set/i);
+    await expect(inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).rejects.toThrow(/schema.*migration set/i);
+  });
+
+  test("binds the copied bytes to the pre-observed opened file identity", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const snapshot = await canonical.snapshot();
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    store.close();
+    const original = `${path}.original`;
+
+    await expect(inspectExistingSqliteDerivedState(path, snapshot.rootDigest, {
+      afterSourcePreflight: async () => {
+        await rename(path, original);
+        await symlink(original, path, "file");
+      },
+    })).rejects.toThrow(/identity|changed during inspection|non-symlink/i);
+  });
+
+  test("refuses oversized files and hot rollback journals before opening SQLite", async () => {
+    const root = await temporaryRepository();
+    await mkdir(join(root, ".projector"));
+    const path = join(root, ".projector", "state.db");
+    await writeFile(path, "");
+    await truncate(path, 256 * 1024 * 1024 + 1);
+    await expect(inspectExistingSqliteDerivedState(path, zeroHash)).rejects.toThrow(/bounded.*inspection limit/i);
+
+    await truncate(path, 0);
+    await writeFile(`${path}-journal`, "pending rollback");
+    await expect(inspectExistingSqliteDerivedState(path, zeroHash)).rejects.toThrow(/rollback-journal/i);
+  });
+
+  test("bounds table rows before materializing inspection results", async () => {
+    const root = await temporaryRepository();
+    await mkdir(join(root, ".projector"));
+    const path = join(root, ".projector", "state.db");
+    const database = new DatabaseSync(path);
+    database.exec(`
+      PRAGMA journal_mode = DELETE;
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY) STRICT;
+      INSERT INTO schema_migrations VALUES (1);
+      CREATE TABLE graph_state (singleton INTEGER PRIMARY KEY, revision INTEGER NOT NULL, canonical_root_digest TEXT) STRICT;
+      INSERT INTO graph_state VALUES (1, 1, '${zeroHash}');
+      CREATE TABLE canonical_documents (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, canonical_key TEXT NOT NULL UNIQUE, lifecycle TEXT NOT NULL,
+        semantic_hash TEXT NOT NULL, discovery_hash TEXT, canonical_document_hash TEXT NOT NULL,
+        document_json TEXT NOT NULL, indexed_revision INTEGER NOT NULL
+      ) STRICT;
+      WITH RECURSIVE rows(value) AS (
+        VALUES(1) UNION ALL SELECT value + 1 FROM rows WHERE value < 250001
+      )
+      INSERT INTO canonical_documents
+      SELECT 'id-' || value, 'concept', 'key-' || value, 'active', '${zeroHash}', NULL, '${zeroHash}', '{}', 1 FROM rows;
+    `);
+    database.close();
+
+    await expect(inspectExistingSqliteDerivedState(path, zeroHash)).rejects.toThrow(/canonical_documents exceeds bounded row limit/i);
+  });
+
+  test("rejects negative graph revisions from the copied database", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const snapshot = await canonical.snapshot();
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    store.close();
+    const raw = new DatabaseSync(path);
+    raw.exec("UPDATE graph_state SET revision = -1");
+    raw.close();
+    await expect(inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).rejects.toThrow(/graph revision is invalid/i);
   });
 });
