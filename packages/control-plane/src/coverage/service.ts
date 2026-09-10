@@ -6,6 +6,7 @@ import { KnowledgeGraph } from "../knowledge/graph.js";
 import { assessKnowledgeDecisions } from "../knowledge/governance.js";
 import { KnowledgeValidatorRun } from "../knowledge/validators.js";
 import { deriveCompletionQuestions } from "./issues.js";
+import { parseRepositoryCoverageResult, type RepositoryCoverageMode, type RepositoryCoverageResult } from "./transport.js";
 
 export interface RepositoryCoverageRequest {
   readonly scope: string;
@@ -19,7 +20,7 @@ const inside = (path: string, scope: string): boolean => scope === "." || path =
 const unavailable = (key: RequiredCoverageLaneKey, reason: string): CoverageLaneEvidence => ({ key, applicability: "required", observability: "unavailable", numerator: 0, confidence: 0, assumptions: [], provenAssumptions: [], blindSpots: [reason], staleObservationIds: [] });
 
 /** Current observations, never an answer ledger or a completion percentage for behavior. */
-export async function inspectRepositoryCoverage(repositoryRoot: string, request: RepositoryCoverageRequest, mode: "coverage" | "complete" | "cleanup" = "coverage", options: { readonly signal?: AbortSignal } = {}) {
+export async function inspectRepositoryCoverage(repositoryRoot: string, request: RepositoryCoverageRequest, mode: RepositoryCoverageMode = "coverage", options: { readonly signal?: AbortSignal } = {}): Promise<RepositoryCoverageResult> {
   const signal = options.signal ?? new AbortController().signal;
   signal.throwIfAborted();
   const questionOffset = request.questionOffset ?? 0;
@@ -99,7 +100,7 @@ export async function inspectRepositoryCoverage(repositoryRoot: string, request:
   const nextQuestionOffset = questionOffset + selectedQuestions.length < questions.length ? questionOffset + selectedQuestions.length : null;
   const disclosure = { total: questions.length, included: selectedQuestions.length, omitted: questions.length - selectedQuestions.length, blocking: questions.filter(({ blocking }) => blocking).length };
   const unsupportedContinuation = request.continuationSelector !== undefined;
-  return { proofStatement: compiled.snapshot.proofStatement, boundary: compiled.snapshot.boundary, lanes: compiled.snapshot.lanes, unavailableSurfaceIds: [...compiled.snapshot.unavailableSurfaceIds, ...(unsupportedContinuation ? ["cleanup-continuation-execution"] : [])], approvalRequired: false,
+  return parseRepositoryCoverageResult(mode, { proofStatement: compiled.snapshot.proofStatement, boundary: compiled.snapshot.boundary, lanes: compiled.snapshot.lanes, unavailableSurfaceIds: [...compiled.snapshot.unavailableSurfaceIds, ...(unsupportedContinuation ? ["cleanup-continuation-execution"] : [])], approvalRequired: false,
     budgetExhausted: request.budgetTokens !== undefined && selectedQuestions.length < questionPage.length, continuationPersisted: false,
     snapshot: compiled.snapshot, boundState: compiled.boundState, bindingValidation: compiled.bindingValidation, bindingIdentity: compiled.boundState.dependencyDigest,
     localAnalysis: { artifactCount: artifacts.length, projectionUnitCount: units.length, dependencyCount: dependencies.length, analyzerFailureCount: failureIds.length, analyzerFailures },
@@ -107,5 +108,5 @@ export async function inspectRepositoryCoverage(repositoryRoot: string, request:
       questionPage: { offset: questionOffset, nextOffset: nextQuestionOffset, note: "Use --question-offset with nextOffset against unchanged evidence. If the token budget admits no question, increase it before continuing. Repository changes recompute ranking; no pagination state is persisted." },
       ranking: "Blocking obligations first, then unrealized accepted behavior before unmapped file groups; within each class, descending affected-file count and stable question identity.",
       limits: ["No behavioral satisfaction is inferred from file membership.", "No external, derivation, metamorphic or representation proof is synthesized.", "Questions are derived from canonical state; no answer ledger or continuation execution is created.", ...(request.budgetTokens === undefined ? [] : ["Token budget bounds question disclosure using an explicit four-characters-per-token estimate; it does not limit repository observation or report metadata."]), ...(request.budgetCost === undefined ? [] : ["Monetary cost estimation is unavailable; this command performs local observation and cannot enforce a monetary budget."])],
-      estimatedQuestionTokens, ...(mode === "cleanup" ? { repairPlan: selectedQuestions.map((question, index) => ({ order: index + 1, questionId: question.id, evidenceHash: question.evidenceHash, resolution: question.resolution })), execution: "not-performed" } : {}) } };
+      estimatedQuestionTokens, ...(mode === "cleanup" ? { repairPlan: selectedQuestions.map((question, index) => ({ order: index + 1, questionId: question.id, evidenceHash: question.evidenceHash, resolution: question.resolution })), execution: "not-performed" } : {}) } });
 }
