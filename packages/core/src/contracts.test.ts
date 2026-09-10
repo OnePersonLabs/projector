@@ -6,6 +6,7 @@ import {
   ChangeProposalSchema,
   CanonicalDocumentEnvelopeByKindSchema,
   CanonicalDocumentEnvelopeSchema,
+  CanonicalDocumentWireByKindSchema,
   BehavioralScenarioSchema,
   CommandSpecSchema,
   ConceptSchema,
@@ -40,6 +41,8 @@ import {
   parseProjectorConfig,
   hashSemantic,
   withCanonicalHashes,
+  hydrateCanonicalDocumentWire,
+  toCanonicalDocumentWire,
   parseChangeProposal,
   type ContentHash,
   type ProjectDataMigrationManifestInput,
@@ -66,13 +69,13 @@ describe("normative contract registry", () => {
   });
 
   it("represents every exported normative declaration exactly once", () => {
-    expect(Object.keys(contractRegistry)).toHaveLength(166);
+    expect(Object.keys(contractRegistry)).toHaveLength(167);
     expect(validateContractRegistry()).toEqual([]);
   });
 
   it("exports strict JSON Schemas whose references resolve", () => {
     const schemas = exportContractJsonSchemas();
-    expect(Object.keys(schemas)).toHaveLength(157);
+    expect(Object.keys(schemas)).toHaveLength(158);
     expect(validateJsonSchemaReferences(schemas)).toEqual([]);
     for (const schema of Object.values(schemas)) {
       expect(schema).toMatchObject({ $schema: expect.any(String) });
@@ -110,6 +113,28 @@ describe("normative contract registry", () => {
       required: expect.arrayContaining(["id", "key", "kind", "name", "statement", "status"]),
     });
     expect(conceptPayload.required!.every((field) => Object.hasOwn(malformedConcept.payload, field))).toBe(false);
+  });
+
+  it("owns a strict authored wire form and derives exact payload mirrors and hashes", () => {
+    const payload = { id: "concept:wire", key: "wire", kind: "contract", name: "Wire", aliases: ["authored"], statement: "Authors edit one source of truth.", status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [], discoveryHash: `sha256:v1:${"0".repeat(64)}`, semanticHash: `sha256:v1:${"0".repeat(64)}` };
+    const envelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: payload.id, key: payload.key, lifecycle: payload.status, payload });
+    const wire = toCanonicalDocumentWire(envelope) as { lifecycle: string; payload: Record<string, unknown> };
+    expect(wire.payload).not.toHaveProperty("id");
+    expect(wire.payload).not.toHaveProperty("key");
+    expect(wire.payload).not.toHaveProperty("status");
+    expect(wire.payload).not.toHaveProperty("semanticHash");
+    expect(wire.payload).not.toHaveProperty("discoveryHash");
+    expect(hydrateCanonicalDocumentWire(wire)).toEqual(envelope);
+
+    const revised = hydrateCanonicalDocumentWire({ ...wire, lifecycle: "deprecated", payload: { ...wire.payload, statement: "Authors revise one source of truth." } });
+    expect(revised.payload).toMatchObject({ id: envelope.id, key: envelope.key, status: "deprecated" });
+    expect(revised.semanticHash).not.toBe(envelope.semanticHash);
+    expect(revised.canonicalDocumentHash).not.toBe(envelope.canonicalDocumentHash);
+    expect(CanonicalDocumentWireByKindSchema.safeParse({ ...wire, payload: { ...wire.payload, id: envelope.id } }).success).toBe(false);
+
+    const exported = JSON.stringify(exportContractJsonSchemas().CanonicalDocumentWireByKind);
+    expect(exported).toContain('"concept"');
+    expect(exported).not.toContain('"canonicalDocumentHash"');
   });
 
   it("owns the strict public change proposal contract", () => {

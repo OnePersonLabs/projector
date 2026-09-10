@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { verifyCanonicalEnvelope, type CanonicalDocumentEnvelope } from "../hashing/canonical-envelope.js";
+import { verifyCanonicalEnvelope, withCanonicalHashes, type CanonicalDocumentEnvelope } from "../hashing/canonical-envelope.js";
 import { ContentHashSchema, EntityIdSchema } from "./contracts.js";
 import { applicationEvidenceBindingIssues } from "./application-evidence-binding.js";
 import {
@@ -122,3 +122,117 @@ const canonicalDocumentEnvelopeSchemas = Object.values(CanonicalDocumentEnvelope
 
 /** Serialized/editor authority whose union arms retain each canonical kind's exact payload schema. */
 export const CanonicalDocumentEnvelopeByKindSchema: z.ZodType = z.union(canonicalDocumentEnvelopeSchemas);
+
+const canonicalPayloadMirrorFields: Readonly<Record<CanonicalKind, Readonly<{
+  id: boolean;
+  key: boolean;
+  lifecycle?: "status" | "lifecycle" | "active";
+  semanticHash: boolean;
+  discoveryHash: boolean;
+}>>> = Object.freeze(Object.fromEntries(CanonicalKindSchema.options.map((kind) => {
+  const payload = unwrapObjectSchema(CanonicalPayloadSchemas[kind]);
+  const fields = payload.shape;
+  return [kind, Object.freeze({
+    id: Object.hasOwn(fields, "id"),
+    key: Object.hasOwn(fields, "key"),
+    ...(Object.hasOwn(fields, "lifecycle") ? { lifecycle: "lifecycle" as const }
+      : Object.hasOwn(fields, "status") ? { lifecycle: "status" as const }
+        : Object.hasOwn(fields, "active") ? { lifecycle: "active" as const }
+          : {}),
+    semanticHash: Object.hasOwn(fields, "semanticHash"),
+    discoveryHash: Object.hasOwn(fields, "discoveryHash"),
+  })];
+})) as Readonly<Record<CanonicalKind, Readonly<{ id: boolean; key: boolean; lifecycle?: "status" | "lifecycle" | "active"; semanticHash: boolean; discoveryHash: boolean }>>>);
+
+function canonicalDocumentWireSchemaForKind<const TKind extends CanonicalKind>(kind: TKind) {
+  const payload = unwrapObjectSchema(CanonicalPayloadSchemas[kind]);
+  const mirrors = canonicalPayloadMirrorFields[kind];
+  const omitted = Object.fromEntries([
+    ...(mirrors.id ? ["id"] : []),
+    ...(mirrors.key ? ["key"] : []),
+    ...(mirrors.lifecycle === undefined ? [] : [mirrors.lifecycle]),
+    ...(mirrors.semanticHash ? ["semanticHash"] : []),
+    ...(mirrors.discoveryHash ? ["discoveryHash"] : []),
+  ].map((field) => [field, true])) as Record<string, true>;
+  const authoredPayloadShape = Object.fromEntries(Object.entries(payload.shape).filter(([field]) => omitted[field] !== true));
+  return z.strictObject({
+    apiVersion: z.string().min(1),
+    schemaVersion: z.string().min(1),
+    kind: z.literal(kind),
+    id: EntityIdSchema,
+    key: z.string().min(1),
+    lifecycle: z.string().min(1),
+    payload: z.strictObject(authoredPayloadShape),
+  }).superRefine((value, context) => {
+    const result = CanonicalDocumentEnvelopeSchemasByKind[kind].safeParse(hydrateParsedCanonicalDocumentWire(value as unknown as CanonicalDocumentWireShape));
+    if (!result.success) for (const issue of result.error.issues) context.addIssue({ code: "custom", path: issue.path, message: issue.message });
+  });
+}
+
+/** Strict authored form. Envelope hashes and exact root payload mirrors are hydrated by core. */
+export const CanonicalDocumentWireSchemasByKind = Object.freeze(Object.fromEntries(
+  CanonicalKindSchema.options.map((kind) => [kind, canonicalDocumentWireSchemaForKind(kind)]),
+) as Readonly<Record<CanonicalKind, ReturnType<typeof canonicalDocumentWireSchemaForKind>>>);
+
+const canonicalDocumentWireSchemas = Object.values(CanonicalDocumentWireSchemasByKind) as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]];
+export const CanonicalDocumentWireByKindSchema: z.ZodType = z.union(canonicalDocumentWireSchemas);
+export type CanonicalDocumentWire = z.infer<typeof CanonicalDocumentWireByKindSchema>;
+
+export function hydrateCanonicalDocumentWire(unparsed: unknown): CanonicalDocumentEnvelope {
+  const wire = CanonicalDocumentWireByKindSchema.parse(unparsed) as CanonicalDocumentWireShape;
+  const hydrated = hydrateParsedCanonicalDocumentWire(wire);
+  return CanonicalDocumentEnvelopeSchemasByKind[wire.kind].parse(hydrated) as CanonicalDocumentEnvelope;
+}
+
+type CanonicalDocumentWireShape = Record<string, unknown> & { kind: CanonicalKind; payload: Record<string, unknown> };
+
+function hydrateParsedCanonicalDocumentWire(wire: CanonicalDocumentWireShape): CanonicalDocumentEnvelope {
+  const mirrors = canonicalPayloadMirrorFields[wire.kind];
+  const payload = {
+    ...wire.payload,
+    ...(mirrors.id ? { id: wire.id } : {}),
+    ...(mirrors.key ? { key: wire.key } : {}),
+    ...(mirrors.lifecycle === "lifecycle" ? { lifecycle: wire.lifecycle }
+      : mirrors.lifecycle === "status" ? { status: wire.lifecycle }
+        : mirrors.lifecycle === "active" ? { active: wire.lifecycle === "active" }
+          : {}),
+    ...(mirrors.semanticHash ? { semanticHash: "sha256:v1:placeholder" } : {}),
+    ...(mirrors.discoveryHash ? { discoveryHash: "sha256:v1:placeholder" } : {}),
+  };
+  return withCanonicalHashes({
+    apiVersion: wire.apiVersion as string,
+    schemaVersion: wire.schemaVersion as string,
+    kind: wire.kind,
+    id: wire.id as string,
+    key: wire.key as string,
+    lifecycle: wire.lifecycle as string,
+    payload,
+  });
+}
+
+export function toCanonicalDocumentWire(unparsed: unknown): CanonicalDocumentWire {
+  const envelope = CanonicalDocumentEnvelopeByKindSchema.parse(unparsed) as Record<string, unknown> & { kind: CanonicalKind; payload: Record<string, unknown> };
+  const mirrors = canonicalPayloadMirrorFields[envelope.kind];
+  const payload = { ...envelope.payload };
+  if (mirrors.id) delete payload.id;
+  if (mirrors.key) delete payload.key;
+  if (mirrors.lifecycle !== undefined) delete payload[mirrors.lifecycle];
+  if (mirrors.semanticHash) delete payload.semanticHash;
+  if (mirrors.discoveryHash) delete payload.discoveryHash;
+  return CanonicalDocumentWireSchemasByKind[envelope.kind].parse({
+    apiVersion: envelope.apiVersion,
+    schemaVersion: envelope.schemaVersion,
+    kind: envelope.kind,
+    id: envelope.id,
+    key: envelope.key,
+    lifecycle: envelope.lifecycle,
+    payload,
+  }) as CanonicalDocumentWire;
+}
+
+function unwrapObjectSchema(schema: z.ZodType): z.ZodObject {
+  const candidate = schema as z.ZodType & { unwrap?: () => z.ZodType };
+  const unwrapped = candidate.unwrap?.() ?? candidate;
+  if (!(unwrapped instanceof z.ZodObject)) throw new Error("canonical payload schema must resolve to an object");
+  return unwrapped;
+}
