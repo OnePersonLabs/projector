@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { promisify } from "node:util";
 
-import { AuthorityRecordSchema, CanonicalDocumentEnvelopeSchema, ContentHashSchema, canonicalJson, normalizeRepositoryRelativePath, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type AuthorityReconsiderTrigger, type CanonicalDocumentEnvelope } from "@projector/core";
+import { AuthorityRecordSchema, ContentHashSchema, canonicalJson, hydrateCanonicalDocumentWire, normalizeRepositoryRelativePath, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type AuthorityReconsiderTrigger, type CanonicalDocumentEnvelope } from "@projector/core";
 import { evaluateSelector, type StateBoundChangeResult } from "@projector/engine";
 import { CanonicalFileRepository, RepositoryPathService, assertSupportedCanonicalVersions, parseTomlDocument } from "@projector/runtime";
 import { z } from "zod";
@@ -167,9 +167,9 @@ export class DecisionBaselineReader {
   private async readGit(decision: ArchitectureDecision, authority: AuthorityRecord): Promise<DecisionBaselineEvidence> {
     try {
       const parse = (text: string, sourcePath: string): CanonicalDocumentEnvelope => {
-        const result = CanonicalDocumentEnvelopeSchema.safeParse(parseTomlDocument(text, sourcePath));
-        if (!result.success) throw new Error(`invalid tracked canonical document at ${sourcePath}: ${result.error.message}`);
-        const record = result.data as CanonicalDocumentEnvelope;
+        let record: CanonicalDocumentEnvelope;
+        try { record = hydrateCanonicalDocumentWire(parseTomlDocument(text, sourcePath)); }
+        catch (error) { throw new Error(`invalid tracked canonical document at ${sourcePath}: ${error instanceof Error ? error.message : String(error)}`); }
         assertSupportedCanonicalVersions(record, ` at ${sourcePath}`);
         return record;
       };
