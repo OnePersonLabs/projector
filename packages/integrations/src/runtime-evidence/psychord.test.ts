@@ -67,6 +67,7 @@ const preparedAttempt = (controller: PsychordBrowserController, runId = "run:no-
     { kind: "server-process", handle: "pid:101", runId },
     { kind: "browser-context", handle: "browser:one", runId },
   ],
+  browserCommands: [],
   controller,
   async observeCurrentness() {
     return {

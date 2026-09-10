@@ -5,8 +5,17 @@ import { isAbsolute, resolve, sep } from "node:path";
 
 import { hashFramedDomain, type ContentHash } from "@projector/core";
 
+import {
+  agentBrowserArgvHash,
+  createAgentBrowserProtocolRunner,
+  parseAgentBrowserProtocolPayload,
+  validateAgentBrowserSessionBinding,
+  type AgentBrowserProtocolRunner,
+} from "./agent-browser-protocol.js";
+
 import type {
   PsychordArtifactIdentity,
+  PsychordBrowserCommandEvidence,
   PsychordBrowserController,
   PsychordCleanupObservation,
   PsychordCurrentnessObservation,
@@ -48,12 +57,14 @@ export interface PsychordAgentBrowserHostConfiguration {
     readonly chromeExecutable: string;
     readonly namespace: string;
     readonly session: string;
+    readonly stdioDrainTimeoutMs: number;
   };
   readonly commandEnvironment: Readonly<Record<string, string>>;
 }
 
 export interface PsychordAgentBrowserHostDependencies {
   readonly commands: PsychordCommandRunner;
+  readonly agentBrowserCommands?: AgentBrowserProtocolRunner;
   readonly configuration: PsychordAgentBrowserHostConfiguration;
 }
 
@@ -62,15 +73,15 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
     async prepare(plan, { signal }) {
       const diagnostics: string[] = [];
       const resources: { kind: "server-process" | "browser-context"; handle: string; runId: string }[] = [];
+      const browserCommands: PsychordBrowserCommandEvidence[] = [];
       let server: Server | undefined;
-      let browserOpened = false;
-      const browser = new AgentBrowserCommandClient(dependencies, plan);
+      const browser = new AgentBrowserCommandClient(dependencies, plan, browserCommands);
       const cleanup = async (cleanupSignal: AbortSignal): Promise<PsychordCleanupObservation> => {
         const observations: PsychordCleanupObservation["resources"][number][] = [];
-        if (browserOpened) {
+        if (browser.sessionMayExist) {
           try {
             const result = await browser.command(["close"], cleanupSignal);
-            const payload = parseAgentBrowserResult(result.stdout);
+            const payload = parseAgentBrowserProtocolPayload(result.stdout);
             const closed = payload.success === true && isRecord(payload.data) && payload.data.closed === true;
             observations.push({ kind: "browser-context", handle: browser.handle, outcome: closed ? "released" : "failed" });
             if (!closed) diagnostics.push("agent-browser close did not confirm the owned session was closed");
@@ -120,10 +131,10 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
         resources.push({ kind: "server-process", handle: serverHandle(plan), runId: plan.runId });
         const readiness = await fetchReadiness(plan, signal);
         const servedArtifacts = await fetchServedArtifacts(plan, signal);
-        const opened = parseAgentBrowserResult((await browser.command(["open", resolvePlanUrl(plan, plan.server.applicationPath)], signal)).stdout);
-        if (opened.success !== true) throw new Error("agent-browser did not report successful navigation");
-        browserOpened = true;
+        browser.markSessionMayExist();
         resources.push({ kind: "browser-context", handle: browser.handle, runId: plan.runId });
+        const opened = parseAgentBrowserProtocolPayload((await browser.command(["open", resolvePlanUrl(plan, plan.server.applicationPath)], signal)).stdout);
+        if (opened.success !== true) throw new Error("agent-browser did not report successful navigation");
         await browser.assertSessionBinding(signal);
         const freshStorage = await browser.readFreshStorage(signal);
         const attempt: PsychordPreparedAttempt = {
@@ -134,6 +145,7 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
           servedArtifacts,
           browserContext: { id: browser.handle, freshStorage },
           ownedResources: resources,
+          browserCommands,
           controller: browser,
           observeCurrentness: async (currentnessSignal) => await observeCurrentness(dependencies.commands, plan, dependencies.configuration.commandEnvironment, currentnessSignal),
           collectDiagnostics: async (diagnosticSignal) => await browser.collectDiagnostics(diagnosticSignal),
@@ -142,11 +154,16 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
         return { status: "prepared", attempt };
       } catch (error) {
         diagnostics.push(errorMessage(error));
-        const cleanupObservation = await cleanup(signal);
+        const cleanupDeadline = new AbortController();
+        const cleanupTimeout = setTimeout(() => cleanupDeadline.abort(new Error(`Psychord host cleanup exceeded ${plan.limits.cleanupTimeoutMs}ms`)), plan.limits.cleanupTimeoutMs);
+        let cleanupObservation: PsychordCleanupObservation;
+        try { cleanupObservation = await cleanup(cleanupDeadline.signal); }
+        finally { clearTimeout(cleanupTimeout); }
         return {
           status: "unavailable",
           diagnostics,
           ownedResources: resources,
+          browserCommands,
           cleanup: cleanupObservation,
           ...(!cleanupObservation.complete ? { recovery: { code: "psychord-host-cleanup-unproved", action: "recover only the recorded server and browser handles for this run" } } : {}),
         };
@@ -158,8 +175,13 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
 class AgentBrowserCommandClient implements PsychordBrowserController {
   readonly handle: string;
   readonly #baseArgs: readonly string[];
+  #sessionMayExist = false;
 
-  constructor(private readonly dependencies: PsychordAgentBrowserHostDependencies, private readonly plan: PsychordObservationPlan) {
+  constructor(
+    private readonly dependencies: PsychordAgentBrowserHostDependencies,
+    private readonly plan: PsychordObservationPlan,
+    private readonly evidence: PsychordBrowserCommandEvidence[],
+  ) {
     const browser = dependencies.configuration.agentBrowser;
     this.handle = `agent-browser:${browser.namespace}:${browser.session}`;
     this.#baseArgs = [
@@ -172,29 +194,37 @@ class AgentBrowserCommandClient implements PsychordBrowserController {
     ];
   }
 
+  get sessionMayExist(): boolean { return this.#sessionMayExist; }
+  markSessionMayExist(): void { this.#sessionMayExist = true; }
+
   async command(args: readonly string[], signal: AbortSignal): Promise<PsychordCommandResult> {
-    return await runChecked(this.dependencies.commands, {
-      executable: this.dependencies.configuration.agentBrowser.executable,
-      args: [...this.#baseArgs, ...args],
+    const executable = this.dependencies.configuration.agentBrowser.executable;
+    const argv = [...this.#baseArgs, ...args];
+    const result = await (this.dependencies.agentBrowserCommands ?? createAgentBrowserProtocolRunner()).run({
+      executable,
+      args: argv,
       cwd: this.plan.repository.root,
       env: this.dependencies.configuration.commandEnvironment,
       timeoutMs: this.plan.limits.timeoutMs,
       maxOutputBytes: this.plan.limits.maximumOutputBytes,
+      stdioDrainTimeoutMs: this.dependencies.configuration.agentBrowser.stdioDrainTimeoutMs,
       signal,
     });
+    this.evidence.push({
+      argvHash: agentBrowserArgvHash(executable, argv),
+      exitCode: result.exitCode,
+      signal: result.signal,
+      durationMs: result.durationMs,
+      ...result.completion,
+    });
+    if (result.exitCode !== 0 || result.signal !== null) throw new Error(`agent-browser failed (${result.exitCode ?? result.signal}): ${result.stderr.trim()}`);
+    return result;
   }
 
   async assertSessionBinding(signal: AbortSignal): Promise<void> {
-    const payload = parseAgentBrowserResult((await this.command(["session", "info"], signal)).stdout);
-    const data = payload.data;
-    const runtime = isRecord(data) && isRecord(data.runtime) ? data.runtime : undefined;
+    const payload = parseAgentBrowserProtocolPayload((await this.command(["session", "info"], signal)).stdout);
     const configured = this.dependencies.configuration.agentBrowser;
-    if (payload.success !== true || !isRecord(data) || data.active !== true
-      || data.namespace !== configured.namespace || data.session !== configured.session
-      || data.version !== configured.expectedVersion || runtime?.engine !== "chrome"
-      || runtime.restoreStatus !== "not_configured") {
-      throw new Error("agent-browser session identity, engine, version, or fresh-state routing did not match the plan");
-    }
+    validateAgentBrowserSessionBinding(payload, { namespace: configured.namespace, session: configured.session, version: configured.expectedVersion });
   }
 
   async readFreshStorage(signal: AbortSignal): Promise<boolean> {
@@ -260,7 +290,7 @@ class AgentBrowserCommandClient implements PsychordBrowserController {
 
   private async evaluate(script: string, signal: AbortSignal): Promise<unknown> {
     const encoded = Buffer.from(script, "utf8").toString("base64");
-    const payload = parseAgentBrowserResult((await this.command(["eval", "-b", encoded], signal)).stdout);
+    const payload = parseAgentBrowserProtocolPayload((await this.command(["eval", "-b", encoded], signal)).stdout);
     if (payload.success !== true || !isRecord(payload.data) || !("result" in payload.data)) throw new Error("agent-browser evaluation failed");
     return payload.data.result;
   }
@@ -372,16 +402,11 @@ function validateHostConfiguration(configuration: PsychordAgentBrowserHostConfig
   if (process.platform !== "win32" || !isAbsolute(configuration.agentBrowser.executable) || !isAbsolute(configuration.agentBrowser.chromeExecutable)
     || !safeIdentity.test(configuration.agentBrowser.namespace) || !safeIdentity.test(configuration.agentBrowser.session)
     || configuration.agentBrowser.namespace === "default" || configuration.agentBrowser.session === "default"
+    || !Number.isSafeInteger(configuration.agentBrowser.stdioDrainTimeoutMs) || configuration.agentBrowser.stdioDrainTimeoutMs < 0
     || !plan.dependencies.some(({ locator }) => resolveDependency(plan, locator) === resolve(configuration.agentBrowser.executable))
     || !plan.dependencies.some(({ locator }) => resolveDependency(plan, locator) === resolve(configuration.agentBrowser.chromeExecutable))) {
     throw new Error("Psychord Windows Chrome host configuration is invalid or not pinned by the plan");
   }
-}
-
-function parseAgentBrowserResult(stdout: string): Record<string, unknown> {
-  const payload: unknown = JSON.parse(stdout);
-  if (!isRecord(payload)) throw new Error("agent-browser output was not a JSON object");
-  return payload;
 }
 
 function decodeStoredTrace(raw: string): PsychordStoredTraceEvidence {
