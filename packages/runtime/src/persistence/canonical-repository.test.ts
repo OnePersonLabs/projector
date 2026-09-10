@@ -84,6 +84,16 @@ describe("CanonicalFileRepository", () => {
     expect(await readFile(publishedPath, "utf8")).toBe(prepared.contents);
   });
 
+  test("orders canonical bytes by the typed contract rather than caller property insertion", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const document = concept("concept:ordered", "Stable field order.");
+    const reversed = Object.fromEntries(Object.entries(document).reverse()) as unknown as CanonicalDocumentEnvelope;
+    (reversed as unknown as { payload: unknown }).payload = Object.fromEntries(Object.entries(document.payload).reverse());
+
+    expect(repository.prepareWrite(reversed)).toEqual(repository.prepareWrite(document));
+  });
+
   test("updates one canonical entity without rewriting an unrelated entity", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);

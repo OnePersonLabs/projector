@@ -5,6 +5,7 @@ import { dirname, join, relative } from "node:path";
 
 import {
   CanonicalDocumentEnvelopeSchema,
+  CanonicalDocumentEnvelopeSchemasByKind,
   parseProjectorConfig,
   hashRootManifest,
   type CanonicalDocumentEnvelope,
@@ -196,16 +197,17 @@ export class CanonicalFileRepository {
   }
 
   prepareWrite(document: CanonicalDocumentEnvelope): PreparedCanonicalWrite {
-    const result = CanonicalDocumentEnvelopeSchema.safeParse(document);
-    if (!result.success) throw new Error(`invalid canonical document: ${result.error.message}`);
-    assertSupportedCanonicalVersions(document);
     const kind = document.kind as SupportedCanonicalKind;
     if (!(kind in kindLocations)) throw new Error(`unsupported canonical kind: ${document.kind}`);
-    const path = this.pathFor(kind, document.id);
+    const result = CanonicalDocumentEnvelopeSchemasByKind[kind].safeParse(document);
+    if (!result.success) throw new Error(`invalid canonical document: ${result.error.message}`);
+    const normalized = result.data as CanonicalDocumentEnvelope;
+    assertSupportedCanonicalVersions(normalized);
+    const path = this.pathFor(kind, normalized.id);
     const schemaPath = relative(dirname(path), join(this.canonicalRoot, "schemas", "canonical-document-v2.schema.json")).replaceAll("\\", "/");
     return {
       path,
-      contents: stringifyTomlDocument(document as unknown as Record<string, unknown>, { schemaPath }),
+      contents: stringifyTomlDocument(normalized as unknown as Record<string, unknown>, { schemaPath }),
     };
   }
 
