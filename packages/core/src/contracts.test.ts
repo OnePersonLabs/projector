@@ -7,6 +7,7 @@ import {
   CanonicalDocumentEnvelopeByKindSchema,
   CanonicalDocumentEnvelopeSchema,
   CanonicalDocumentWireByKindSchema,
+  CanonicalDocumentWireSchemasByKind,
   BehavioralScenarioSchema,
   CommandSpecSchema,
   ConceptSchema,
@@ -138,6 +139,15 @@ describe("normative contract registry", () => {
     const exported = JSON.stringify(exportContractJsonSchemas().CanonicalDocumentWireByKind);
     expect(exported).toContain('"concept"');
     expect(exported).not.toContain('"canonicalDocumentHash"');
+
+    const lifecycleSchema = (kind: "requirement" | "relation" | "lineage") =>
+      (z.toJSONSchema(CanonicalDocumentWireSchemasByKind[kind]) as unknown as { properties: { lifecycle: unknown } }).properties.lifecycle;
+    expect(lifecycleSchema("requirement")).toMatchObject({ anyOf: expect.arrayContaining([
+      expect.objectContaining({ const: "active" }),
+      expect.objectContaining({ const: "superseded" }),
+    ]) });
+    expect(lifecycleSchema("relation")).toMatchObject({ enum: ["active", "inactive"] });
+    expect(lifecycleSchema("lineage")).toMatchObject({ const: "active" });
   });
 
   it("owns the strict public change proposal contract", () => {
