@@ -23,6 +23,21 @@ describe("TOML document codec", () => {
     expect(parseTomlDocument(encoded, "durable-meaning.concept.toml")).toEqual(value);
   });
 
+  test("wraps long prose without changing its parsed meaning and leaves concise metadata compact", () => {
+    const statement = "Report finite observed coverage populations and distinguish mapping from fulfillment. Preserve accepted capabilities before implementation exists. Rank concrete unresolved obligations using observed effect and blocking status.";
+    const value = {
+      id: "requirement:evidence-bound-completion",
+      title: "Expose remaining design obligations progressively",
+      payload: { statement },
+    };
+
+    const encoded = stringifyTomlDocument(value);
+
+    expect(encoded).toContain('title = "Expose remaining design obligations progressively"');
+    expect(encoded).toMatch(/statement = """[^\n]+\\\r?\n  /u);
+    expect(parseTomlDocument(encoded)).toEqual(value);
+  });
+
   test("treats comments and presentation whitespace as non-semantic", () => {
     const first = parseTomlDocument('id = "concept:one"\ncount = 2\n');
     const second = parseTomlDocument('# editor note\nid="concept:one" # inline\ncount = 2\n');
