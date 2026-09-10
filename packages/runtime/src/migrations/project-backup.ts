@@ -3,6 +3,8 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile, rename } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
+import { PortableRelativePathSchema, hashFramedDomain, type ContentHash } from "@projector/core";
+
 export interface ProjectBackupInput {
   repositoryRoot: string;
   codexDataRoot: string;
@@ -25,7 +27,9 @@ export interface ProjectBackupManifest {
 export interface ProjectBackupResult {
   backupId: string;
   backupPath: string;
+  backupLocation: { readonly kind: "codex-data-relative"; readonly path: string };
   manifest: ProjectBackupManifest;
+  manifestHash: ContentHash;
 }
 
 export interface ProjectBackupDependencies {
@@ -124,7 +128,16 @@ export async function createProjectBackup(
     await rename(stagePath, backupPath);
     await syncDirectory(publishedRoot);
     await syncDirectory(stagingRoot);
-    return { backupId, backupPath, manifest };
+    return {
+      backupId,
+      backupPath,
+      backupLocation: {
+        kind: "codex-data-relative",
+        path: relative(codexDataRoot, backupPath).replaceAll("\\", "/"),
+      },
+      manifest,
+      manifestHash: hashProjectBackupManifest(manifestBytes),
+    };
   } catch (error) {
     if (error instanceof ProjectBackupError) {
       if (error.recoveryPath === undefined) {
@@ -137,6 +150,10 @@ export async function createProjectBackup(
       stagePath,
     );
   }
+}
+
+export function hashProjectBackupManifest(bytes: Uint8Array): ContentHash {
+  return hashFramedDomain("project-data-backup-manifest-bytes", Buffer.from(bytes).toString("base64"));
 }
 
 interface SnapshotFile { path: string; length: number; sha256: string }
@@ -248,7 +265,7 @@ function containedPath(root: string, target: string, label: string): string {
 }
 
 function assertBackupId(value: string): void {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value) || value === "." || value === "..") {
+  if (!/^[a-z0-9][a-z0-9._-]{0,127}$/u.test(value) || !PortableRelativePathSchema.safeParse(value).success) {
     throw new TypeError(`Invalid backup identifier: ${value}`);
   }
 }
