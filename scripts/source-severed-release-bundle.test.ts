@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { createReleaseCandidateProjectDataFormat } from "../packages/control-plane/src/index.js";
 
 import { buildSourceSeveredReleaseBundle } from "./build-source-severed-release-bundle.mjs";
 import { validateReleaseCandidate } from "./release-candidate.mjs";
@@ -38,6 +39,16 @@ describe("source-severed release candidate", () => {
     ]));
     expect(manifest.files.map(({ path }: { path: string }) => path)).not.toContain("provision-ubuntu-sandbox.sh");
     expect(validated.files).toHaveLength(manifest.files.length);
+    const format = createReleaseCandidateProjectDataFormat({
+      candidate: {
+        packageIdentity: { name: validated.manifest.release.name, version: validated.manifest.release.version },
+        files: validated.files.map(({ path, digest }) => ({ path, digest })),
+      },
+    });
+    expect(format).toMatchObject({
+      packageIdentity: { name: manifest.release.name, version: manifest.release.version },
+      snapshotHash: expect.stringMatching(/^sha256:v1:/u),
+    });
 
     const repository = join(root, "source checkout absent");
     await mkdir(repository);
