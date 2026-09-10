@@ -25,6 +25,7 @@ import {
   stringifyTomlDocument,
   withProjectOperationAccess as withRuntimeOperationAccess,
 } from "@projector/runtime";
+import { z } from "zod";
 
 import { comparePackageVersions } from "./version-order.js";
 
@@ -44,10 +45,12 @@ export type ProjectOperationAccessResult<T> =
   | { readonly readiness: ReadyProjectReadiness; readonly value: T }
   | { readonly readiness: ProjectReadiness; readonly value?: never };
 
-export interface PreparedProjectInitializationResult {
-  readonly readiness: ProjectReadiness;
-  readonly created: boolean;
-}
+export const PreparedProjectInitializationResultSchema = z.strictObject({
+  readiness: ProjectReadinessSchema,
+  created: z.boolean(),
+});
+
+export type PreparedProjectInitializationResult = z.infer<typeof PreparedProjectInitializationResultSchema>;
 
 export async function initializePreparedProject(
   repositoryRoot: string,

@@ -4,7 +4,12 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, test } from "vitest";
 
-import { initializePreparedProject, inspectProjectReadiness, withProjectOperationAccess } from "./service.js";
+import {
+  PreparedProjectInitializationResultSchema,
+  initializePreparedProject,
+  inspectProjectReadiness,
+  withProjectOperationAccess,
+} from "./service.js";
 
 const roots: string[] = [];
 const packageIdentity = { name: "projector", version: "2.1.0" } as const;
@@ -21,6 +26,16 @@ afterEach(async () => {
 });
 
 describe("project readiness metadata inspection", () => {
+  test("serializes only a strict initialized-project readiness result", async () => {
+    const root = await repository();
+    const value = {
+      readiness: await inspectProjectReadiness(root, { operation: "init", package: packageIdentity }),
+      created: false,
+    };
+    expect(PreparedProjectInitializationResultSchema.parse(value)).toEqual(value);
+    expect(() => PreparedProjectInitializationResultSchema.parse({ ...value, extra: true })).toThrow();
+  });
+
   test("reports an inactive repository without creating Projector state", async () => {
     const root = await repository();
     const readiness = await inspectProjectReadiness(root, { operation: "status", package: packageIdentity });
