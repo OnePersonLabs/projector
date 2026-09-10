@@ -5,7 +5,7 @@ import type { KnowledgeDecisionValidity } from "../knowledge/types.js";
 
 export interface CompletionQuestion {
   readonly id: string;
-  readonly kind: "governance" | "unmapped-group" | "unrealized-requirement" | "unrealized-scenario" | "identity-overlap" | "architecture-concern";
+  readonly kind: "governance" | "unmapped-group" | "unrealized-requirement" | "unrealized-scenario" | "realization-binding" | "identity-overlap" | "architecture-concern";
   readonly blocking: boolean;
   readonly ownerIds: readonly string[];
   readonly affectedCount: number;
@@ -60,6 +60,11 @@ export function deriveCompletionQuestions(input: {
   for (const decision of input.decisions.filter(({ assessment }) => assessment.blocksCurrentChange)) add("governance", [decision.authorityId, decision.decisionId], members(decision.decisionId), true,
     `Should ${decision.decisionId} be reaffirmed or revised against its current evidence?`, [decision.assessment.explanation, ...decision.checks.filter(({ status }) => status === "fired" || status === "unknown").map(({ reason }) => reason)], decision);
   const meanings = graph.entities.filter(({ kind, accepted, payload }) => accepted && ["concept", "requirement", "scenario"].includes(kind) && "status" in payload && payload.status === "active");
+  for (const entity of meanings) {
+    const failed = graph.observation.realizations.filter(({ entityId, status }) => entityId === entity.id && status !== "matched");
+    if (failed.length > 0 && (input.includeUnrealized || members(entity.id).length > 0)) add("realization-binding", [entity.id], members(entity.id), false,
+      `Which observed implementation should the declared realizations of ${entity.key} identify?`, failed.map(({ bindingIndex, reason }) => `Realization ${bindingIndex}: ${reason}`), failed);
+  }
   const mapped = new Set(meanings.flatMap(({ id }) => members(id)));
   const groups = new Map<string, string[]>();
   for (const unit of graph.units.filter(({ id }) => unitIds.has(id) && !mapped.has(id))) {

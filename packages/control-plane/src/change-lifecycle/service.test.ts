@@ -382,8 +382,9 @@ describe("repository change lifecycle service", () => {
           const payload = modelProposal().canonicalMutations[0]!.payload;
           await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: payload.id, key: payload.key!, lifecycle: "active", payload: { ...payload, discoveryHash: placeholder, semanticHash: placeholder } }));
           const unrelated = await (await RepositoryKnowledgeService.create(root)).context({ request: "Inspect clock", entities: [payload.id] });
-          await expect(service.capture({ request: "Change greeting with unrelated supplied knowledge", proposal: proposal(), knowledgeContextId: unrelated.id }))
-            .rejects.toThrow(/knowledge context governance is unknown.*referenced authority/iu);
+          expect(JSON.stringify(unrelated)).not.toContain(decision.id);
+          const accepted = await service.capture({ request: "Change greeting with unrelated supplied knowledge", proposal: proposal(), knowledgeContextId: unrelated.id });
+          expect(accepted.compiled.knowledgeContext?.branches.flatMap((branch) => (branch.decisionValidity ?? []).map(({ decisionId }) => decisionId))).not.toContain(decision.id);
         }
       } finally { await rm(root, { recursive: true, force: true }); }
     }
