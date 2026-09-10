@@ -1,5 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
+import { hashFramedDomain } from "@projector/core";
+
 export const currentSqliteSchemaVersion = 1;
 
 const migrationOne = `
@@ -67,6 +69,10 @@ const migrationOne = `
   ) STRICT;
   INSERT INTO graph_state(singleton, revision, canonical_root_digest) VALUES (1, 0, NULL);
 `;
+
+export const sqliteMigrationSetHash = hashFramedDomain("projector-sqlite-migration-set:v1", [
+  { version: 1, sql: migrationOne },
+]);
 
 export function migrateSqlite(database: DatabaseSync): void {
   database.exec("BEGIN IMMEDIATE");

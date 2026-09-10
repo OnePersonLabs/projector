@@ -8,7 +8,7 @@ import { hashRootManifest, withCanonicalHashes, type CanonicalDocumentEnvelope }
 import { afterEach, describe, expect, test } from "vitest";
 
 import { CanonicalFileRepository } from "../persistence/index.js";
-import { inspectExistingSqliteDerivedState, rebuildDerivedStore, SqliteDerivedStore } from "./index.js";
+import { inspectExistingSqliteDerivedState, rebuildDerivedStore, SqliteDerivedStore, sqliteMigrationSetHash } from "./index.js";
 
 const temporaryRoots: string[] = [];
 const zeroHash = `sha256:v1:${"0".repeat(64)}` as const;
@@ -196,6 +196,9 @@ afterEach(async () => {
 });
 
 describe("SQLite derived canonical index", () => {
+  test("exports the exact release-owned SQLite migration-set identity", () => {
+    expect(sqliteMigrationSetHash).toBe("sha256:v1:79d0df10c52f8e077b9ee2bf694ba896c700315890c6b5fe47671dadb4987181");
+  });
   test("canonical concepts, requirements, scenarios, relations, rules, lenses, exceptions, and migrations rebuild equivalently after state.db deletion", async () => {
     const root = await temporaryRepository();
     const canonical = new CanonicalFileRepository(root);
