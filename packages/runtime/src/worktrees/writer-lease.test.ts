@@ -83,6 +83,25 @@ describe("WriterLeaseManager", () => {
     await lease.release();
   });
 
+  it("rejects invalid migration owners and cannot override generated lease metadata", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-lease-"));
+    const manager = await leaseManager(root);
+    const valid = {
+      sessionId: "recovery-request-1",
+      processId: 42,
+      migrationId: "attempt:legacy-to-toml:001",
+      manifestHash: hash,
+      targetSnapshotHash: hash,
+      backupManifestHash: hash,
+    };
+    await expect(manager.acquireMigrationRecovery({ ...valid, processId: 0 })).rejects.toThrow(/process/i);
+    await expect(manager.acquireMigrationRecovery({ ...valid, processId: " " })).rejects.toThrow(/process/i);
+    await expect(manager.acquireMigrationRecovery({ ...valid, leaseId: "caller-chosen" } as typeof valid))
+      .rejects.toThrow(/keys|fields/i);
+    await expect(stat(join(root, ".projector", "runtime", "writer-lease.lock")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("recovers a stale lease but the displaced owner cannot release the replacement", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-lease-"));
     let now = new Date("2026-08-07T12:00:00.000Z");
