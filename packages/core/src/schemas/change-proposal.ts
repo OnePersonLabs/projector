@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { EvidenceRef } from "../domain/contracts.js";
+import "../hashing/builtin-profiles.js";
+import { hashSemantic } from "../hashing/projections.js";
 
 import { ArchitectureConcernSchema, ArchitectureDecisionSchema, AuthorityRecordSchema, BehavioralScenarioSchema, ConceptSchema, DeveloperPreferenceSchema, ImpactRuleSchema, ProjectionLensSchema, RelationSchema, RequirementSchema, RuleSchema } from "./generated-contracts.js";
 import { applicationEvidenceBindingIssues } from "./application-evidence-binding.js";
@@ -162,7 +164,11 @@ export const ChangeProposalSchema = z.object({
       continue;
     }
     const id = typeof mutation.payload.id === "string" ? mutation.payload.id : undefined;
-    if (mutation.kind === "requirement") for (const issue of applicationEvidenceBindingIssues((mutation.payload as { evidence: EvidenceRef[] }).evidence)) context.addIssue({ code: "custom", path: ["canonicalMutations", mutationIndex, "payload", "evidence", issue.index, "applicationPredicate", "observationRole"], message: issue.message });
+    if (mutation.kind === "requirement" || mutation.kind === "behavioral-scenario") for (const issue of applicationEvidenceBindingIssues((mutation.payload as { evidence: EvidenceRef[] }).evidence)) context.addIssue({ code: "custom", path: ["canonicalMutations", mutationIndex, "payload", "evidence", issue.index, "applicationPredicate", "observationRole"], message: issue.message });
+    if (mutation.kind === "behavioral-scenario") {
+      const derivedSemanticHash = hashSemantic("behavioral-scenario", mutation.payload);
+      for (const [evidenceIndex, reference] of (mutation.payload as { id: string; evidence: EvidenceRef[] }).evidence.entries()) if (reference.applicationPredicate !== undefined && (reference.applicationPredicate.scenario.id !== mutation.payload.id || reference.applicationPredicate.scenario.semanticHash !== derivedSemanticHash)) context.addIssue({ code: "custom", path: ["canonicalMutations", mutationIndex, "payload", "evidence", evidenceIndex, "applicationPredicate", "scenario"], message: "scenario-owned application evidence must bind the owning scenario identity and derived semantic hash" });
+    }
     if (id === undefined || id.trim().length === 0) context.addIssue({ code: "custom", message: `${mutation.kind} mutation payload requires an id` });
     else {
       const claim = `${mutation.kind}:${id}`;

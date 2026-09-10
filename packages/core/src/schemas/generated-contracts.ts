@@ -314,6 +314,9 @@ export const BehavioralScenarioSchema: z.ZodType = z.lazy(() => strictObject({
   "evidence": z.array(EvidenceRefSchema),
   "discoveryHash": ContentHashSchema,
   "semanticHash": ContentHashSchema
+}).superRefine((value, context) => {
+  for (const issue of applicationEvidenceBindingIssues(value.evidence as EvidenceRef[])) context.addIssue({ code: "custom", path: ["evidence", issue.index, "applicationPredicate", "observationRole"], message: issue.message });
+  for (const [index, reference] of (value.evidence as EvidenceRef[]).entries()) if (reference.applicationPredicate !== undefined && (reference.applicationPredicate.scenario.id !== value.id || reference.applicationPredicate.scenario.semanticHash !== value.semanticHash)) context.addIssue({ code: "custom", path: ["evidence", index, "applicationPredicate", "scenario"], message: "scenario-owned application evidence must bind the owning scenario identity and semantic hash" });
 }));
 
 export const RepresentationTargetSchema: z.ZodType = z.lazy(() => z.union([z.literal("human-technical"), z.literal("behavior-spec"), z.literal("agent-context"), z.literal("machine-invariant")]));

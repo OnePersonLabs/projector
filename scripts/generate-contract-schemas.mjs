@@ -143,6 +143,12 @@ function enhancedSchemaExpression(name, node) {
   for (const issue of applicationEvidenceBindingIssues(value.evidence as EvidenceRef[])) context.addIssue({ code: "custom", path: ["evidence", issue.index, "applicationPredicate", "observationRole"], message: issue.message });
 })`;
   }
+  if (name === "BehavioralScenario") {
+    return `${base}.superRefine((value, context) => {
+  for (const issue of applicationEvidenceBindingIssues(value.evidence as EvidenceRef[])) context.addIssue({ code: "custom", path: ["evidence", issue.index, "applicationPredicate", "observationRole"], message: issue.message });
+  for (const [index, reference] of (value.evidence as EvidenceRef[]).entries()) if (reference.applicationPredicate !== undefined && (reference.applicationPredicate.scenario.id !== value.id || reference.applicationPredicate.scenario.semanticHash !== value.semanticHash)) context.addIssue({ code: "custom", path: ["evidence", index, "applicationPredicate", "scenario"], message: "scenario-owned application evidence must bind the owning scenario identity and semantic hash" });
+})`;
+  }
   if (name === "RequirementDelta" || name === "BehavioralScenarioDelta") {
     const idField = name === "RequirementDelta" ? "requirementId" : "scenarioId";
     const proposedField = name === "RequirementDelta" ? "proposedRequirement" : "proposedScenario";
