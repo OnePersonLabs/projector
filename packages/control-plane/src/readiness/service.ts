@@ -18,6 +18,7 @@ import {
 } from "@projector/core";
 import {
   OperationAccessError,
+  recoverAbandonedProjectOperationAccess,
   RepositoryPathService,
   initializeProjectLocalIgnore,
   installProjectorEditorSchemaBundle,
@@ -173,6 +174,9 @@ export async function withProjectOperationAccess<T>(
   const initial = await inspectProjectReadiness(repositoryRoot, input);
   if (initial.status !== "ready") return { readiness: initial };
   try {
+    if (input.operation === "change.recover") {
+      await recoverAbandonedProjectOperationAccess(repositoryRoot, input.signal);
+    }
     return await withRuntimeOperationAccess(
       repositoryRoot,
       { operation: input.operation, mode: "shared", ...(input.signal === undefined ? {} : { signal: input.signal }) },

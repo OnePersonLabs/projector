@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { OperationAccessError, withProjectOperationAccess } from "./operation-access.js";
+import { OperationAccessError, recoverAbandonedProjectOperationAccess, withProjectOperationAccess } from "./operation-access.js";
 
 const accessModuleUrl = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "operation-access.ts")).href;
 const childProcesses = new Set<ChildProcess>();
@@ -205,6 +205,46 @@ describe("withProjectOperationAccess", () => {
     await expect(fileExists(claimPath)).resolves.toBe(false);
   });
 
+  it("removes only expired claims from processes that have exited", async () => {
+    const root = await readyProject();
+    await withProjectOperationAccess(root, { operation: "initialize-access", mode: "shared" }, async () => undefined);
+    const access = join(root, ".projector", "runtime", "operation-access");
+    const requestId = "00000000-0000-4000-8000-000000000001";
+    const exited = spawn(process.execPath, ["--eval", ""]);
+    const exitedProcessId = exited.pid!;
+    await new Promise<void>((resolve) => exited.once("exit", () => resolve()));
+    await writeClaim(join(access, "holders", `${requestId}.json`), {
+      requestId,
+      ticket: 2,
+      operation: "interrupted-apply",
+      mode: "exclusive",
+    }, "2000-01-01T00:00:00.000Z", exitedProcessId);
+    await writeFile(join(access, "next-ticket"), "2\n");
+
+    await expect(recoverAbandonedProjectOperationAccess(root)).resolves.toEqual({ removedClaimIds: [requestId] });
+    await expect(readdir(join(access, "holders"))).resolves.toEqual([]);
+    await expect(withProjectOperationAccess(root, { operation: "recover", mode: "shared" }, async () => "reachable"))
+      .resolves.toBe("reachable");
+  });
+
+  it("refuses to remove an expired claim while its recorded process is alive", async () => {
+    const root = await readyProject();
+    await withProjectOperationAccess(root, { operation: "initialize-access", mode: "shared" }, async () => undefined);
+    const access = join(root, ".projector", "runtime", "operation-access");
+    const requestId = "00000000-0000-4000-8000-000000000002";
+    const claimPath = join(access, "holders", `${requestId}.json`);
+    await writeClaim(claimPath, {
+      requestId,
+      ticket: 2,
+      operation: "slow-live-operation",
+      mode: "exclusive",
+    }, "2000-01-01T00:00:00.000Z", process.pid);
+    await writeFile(join(access, "next-ticket"), "2\n");
+
+    await expect(recoverAbandonedProjectOperationAccess(root)).rejects.toThrow(/still alive/iu);
+    await expect(fileExists(claimPath)).resolves.toBe(true);
+  });
+
   it("does not initialize an unprepared project", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-access-unready-"));
 
@@ -300,11 +340,12 @@ async function writeClaim(
   path: string,
   claim: { requestId: string; ticket: number; operation: string; mode: "shared" | "exclusive" },
   timestamp = "2026-09-10T12:00:00.000Z",
+  processId = 42,
 ): Promise<void> {
   await writeFile(path, `${JSON.stringify({
     version: 1,
     ...claim,
-    processId: 42,
+    processId,
     createdAt: timestamp,
     heartbeatAt: timestamp,
   })}\n`);

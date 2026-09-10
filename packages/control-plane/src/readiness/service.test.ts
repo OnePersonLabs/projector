@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -198,6 +199,34 @@ describe("project readiness metadata inspection", () => {
       },
     });
     expect("value" in result).toBe(false);
+  });
+
+  test("lets explicit lifecycle recovery reclaim an expired claim from its exited process", async () => {
+    const root = await repository();
+    await initializePreparedProject(root, { package: packageIdentity });
+    await withProjectOperationAccess(root, { operation: "context", package: packageIdentity }, async () => undefined);
+    const access = join(root, ".projector", "runtime", "operation-access");
+    const requestId = "00000000-0000-4000-8000-000000000003";
+    const exited = spawn(process.execPath, ["--eval", ""]);
+    const exitedProcessId = exited.pid!;
+    await new Promise<void>((resolve) => exited.once("exit", () => resolve()));
+    const timestamp = "2000-01-01T00:00:00.000Z";
+    await writeFile(join(access, "holders", `${requestId}.json`), `${JSON.stringify({
+      version: 1,
+      requestId,
+      ticket: 2,
+      operation: "change.apply",
+      mode: "shared",
+      processId: exitedProcessId,
+      createdAt: timestamp,
+      heartbeatAt: timestamp,
+    })}\n`);
+    await writeFile(join(access, "next-ticket"), "2\n");
+
+    const result = await withProjectOperationAccess(root, { operation: "change.recover", package: packageIdentity }, async () => "reached");
+
+    expect(result).toMatchObject({ readiness: { status: "ready" }, value: "reached" });
+    expect(await readdir(join(access, "holders"))).toEqual([]);
   });
 
   test("initializes schemas before publishing prepared configuration and is idempotent", async () => {
