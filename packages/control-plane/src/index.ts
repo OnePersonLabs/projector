@@ -13,6 +13,7 @@ export type {
 export { inspectRepositoryCoverage, type RepositoryCoverageRequest } from "./coverage/service.js";
 export type { CompletionQuestion } from "./coverage/issues.js";
 export {
+  PreparedProjectInitializationResultSchema,
   initializePreparedProject,
   inspectProjectReadiness,
   withProjectOperationAccess,
