@@ -28,9 +28,25 @@ describe("read-only operational verification", () => {
     expect(validateOperationalReport(report)).toBe(true);
     expect(report).toMatchObject({
       command: "verify",
+      exitCode: 5,
+      exitProof: { requiredUnavailable: true },
       policy: { preset: "observe", allowMutation: false, allowPersistence: false },
+      evidence: {
+        configDigest: { unavailable: expect.any(String) },
+        worktreeDigest: { unavailable: expect.any(String) },
+      },
       unavailableFields: expect.arrayContaining(["architecturalConformance", "decisionValidity"]),
     });
+
+    await writeFile(join(root, "observed.ts"), "export const observed = 1;\n");
+    const changed = await runReadOnlyOperationalVerification(root, {
+      signal: new AbortController().signal,
+      toolVersion: "2.1.0-test",
+      policy: { preset: "observe", allowMutation: false, allowPersistence: false },
+    });
+    expect(changed.stateDigest).not.toBe(report.stateDigest);
+    expect(changed.evidence.configDigest).toEqual(report.evidence.configDigest);
+    expect(changed.evidence.worktreeDigest).toEqual(report.evidence.worktreeDigest);
   });
 
   test("reports malformed canonical input as blocking without mutating it", async () => {
