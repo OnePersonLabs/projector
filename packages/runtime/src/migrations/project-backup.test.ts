@@ -9,6 +9,7 @@ import {
   createProjectBackup,
   hashProjectBackupArchive,
   hashProjectBackupManifest,
+  verifyProjectBackup,
   type ProjectBackupManifest,
 } from "./project-backup.js";
 
@@ -191,5 +192,62 @@ describe("project migration backup archive", () => {
     await expect(createProjectBackup(collision, { createBackupId: () => "collision" }))
       .rejects.toThrow(ProjectBackupError);
     expect(await readFile(destination, "utf8")).toBe("foreign bytes");
+  });
+
+  test("authenticates a recorded backup reference without mutating the archive", async () => {
+    const input = await fixture();
+    await writeFile(join(input.repositoryRoot, ".projector", "config.toml"), "source\n");
+    const created = await createProjectBackup(input, {
+      createBackupId: () => "verify-001",
+      createTemporaryId: () => "temp-001",
+    });
+    const before = await readFile(created.backupPath);
+
+    const verified = await verifyProjectBackup({
+      codexDataRoot: input.codexDataRoot,
+      backup: {
+        id: created.backupId,
+        location: created.backupLocation,
+        manifestHash: created.manifestHash,
+      },
+    });
+
+    expect(verified).toEqual(created);
+    expect(await readFile(created.backupPath)).toEqual(before);
+  });
+
+  test("rejects missing, tampered, and mismatched recorded backup evidence", async () => {
+    const input = await fixture();
+    await writeFile(join(input.repositoryRoot, ".projector", "config.toml"), "source\n");
+    const created = await createProjectBackup(input, {
+      createBackupId: () => "verify-002",
+      createTemporaryId: () => "temp-001",
+    });
+    const backup = {
+      id: created.backupId,
+      location: created.backupLocation,
+      manifestHash: created.manifestHash,
+    } as const;
+
+    await expect(verifyProjectBackup({
+      codexDataRoot: input.codexDataRoot,
+      backup: { ...backup, manifestHash: `sha256:v1:${"0".repeat(64)}` },
+    })).rejects.toThrow(/manifest hash/i);
+    await expect(verifyProjectBackup({
+      codexDataRoot: input.codexDataRoot,
+      backup: { ...backup, location: { kind: "codex-data-relative", path: "other.pba" } },
+    })).rejects.toThrow(/location/i);
+
+    await writeFile(created.backupPath, Buffer.concat([await readFile(created.backupPath), Buffer.from("tampered")]));
+    await expect(verifyProjectBackup({ codexDataRoot: input.codexDataRoot, backup }))
+      .rejects.toThrow(/trailing|missing|archive/i);
+    await rm(created.backupPath);
+    await expect(verifyProjectBackup({ codexDataRoot: input.codexDataRoot, backup }))
+      .rejects.toThrow(/backup/i);
+    const outside = join(input.codexDataRoot, "outside.pba");
+    await writeFile(outside, "foreign bytes");
+    await symlink(outside, created.backupPath, "file");
+    await expect(verifyProjectBackup({ codexDataRoot: input.codexDataRoot, backup }))
+      .rejects.toThrow(/symbolic link/i);
   });
 });

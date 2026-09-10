@@ -9,6 +9,7 @@ import {
   hashFramedDomain,
   parseCanonicalJson,
   type ContentHash,
+  type PendingProjectDataMigration,
 } from "@projector/core";
 
 const archiveMagic = Buffer.from("PROJECTOR-BACKUP-ARCHIVE-V1\n");
@@ -33,6 +34,10 @@ export interface ProjectBackupResult {
   manifest: ProjectBackupManifest;
   manifestHash: ContentHash;
   archiveHash: ContentHash;
+}
+export interface VerifyProjectBackupInput {
+  codexDataRoot: string;
+  backup: PendingProjectDataMigration["backup"];
 }
 export type ProjectBackupCrashPoint = "before-namespace-publish" | "after-namespace-publish";
 export interface ProjectBackupDependencies {
@@ -164,6 +169,39 @@ export function hashProjectBackupManifest(bytes: Uint8Array): ContentHash {
 }
 export function hashProjectBackupArchive(bytes: Uint8Array): ContentHash {
   return contentHash(createHash("sha256").update(bytes).digest("hex"));
+}
+
+export async function verifyProjectBackup(input: VerifyProjectBackupInput): Promise<ProjectBackupResult> {
+  const codexDataRoot = resolveRequiredPath(input.codexDataRoot, "Codex data root");
+  await assertRegularDirectory(codexDataRoot, "Codex data root");
+  assertBackupId(input.backup.id);
+  if (input.backup.location.kind !== "codex-data-relative") {
+    throw new ProjectBackupError("Recorded backup location kind is unsupported");
+  }
+  const expectedLocation = `projector-backup-${input.backup.id}.pba`;
+  if (input.backup.location.path !== expectedLocation) {
+    throw new ProjectBackupError("Recorded backup location does not match its backup identity");
+  }
+  const backupPath = containedPath(
+    codexDataRoot,
+    join(codexDataRoot, ...input.backup.location.path.split("/")),
+    "recorded backup archive",
+  );
+  let inspection: ArchiveInspection;
+  try {
+    inspection = await inspectArchive(backupPath, input.backup.id);
+  } catch (error) {
+    throw new ProjectBackupError(
+      `Recorded backup archive could not be authenticated: ${errorMessage(error)}`,
+      backupPath,
+      { cause: error },
+    );
+  }
+  const manifestHash = hashProjectBackupManifest(inspection.manifestBytes);
+  if (manifestHash !== input.backup.manifestHash) {
+    throw new ProjectBackupError("Recorded backup manifest hash does not match the exact archive manifest", backupPath);
+  }
+  return resultFromInspection(backupPath, codexDataRoot, inspection);
 }
 
 interface SnapshotFile { path: string; length: number; sha256: string }
