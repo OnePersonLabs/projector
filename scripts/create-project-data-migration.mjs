@@ -1,5 +1,5 @@
 import { lstat, open, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -53,18 +53,35 @@ async function readStrictJsonFile(path, label) {
 
 async function writeImmutable(path, bytes) {
   try {
-    const file = await open(path, "wx");
+    const file = await open(path, "wx", 0o600);
     try {
       await file.writeFile(bytes, "utf8");
       await file.sync();
     } finally {
       await file.close();
     }
+    await syncDirectoryIfSupported(dirname(resolve(path)));
   } catch (error) {
     if (error?.code !== "EEXIST") throw error;
-    const existing = await readFile(path, "utf8");
-    if (existing !== bytes) throw new Error(`Refusing to replace an existing migration manifest with different bytes: ${path}`);
+    const metadata = await lstat(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error(`Existing migration manifest is not a regular file: ${path}`);
+    const file = await open(path, "r+");
+    try {
+      if (await file.readFile("utf8") !== bytes) throw new Error(`Refusing to replace an existing migration manifest with different bytes: ${path}`);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await syncDirectoryIfSupported(dirname(resolve(path)));
   }
+}
+
+async function syncDirectoryIfSupported(path) {
+  const directory = await open(path, "r");
+  try { await directory.sync(); }
+  catch (error) {
+    if (!["EINVAL", "ENOTSUP", "EPERM"].includes(error?.code)) throw error;
+  } finally { await directory.close(); }
 }
 
 function parseArguments(argv) {
