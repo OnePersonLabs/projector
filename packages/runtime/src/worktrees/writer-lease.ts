@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { StateBindingSchema, StateDigestSchema, type StateBinding, type StateDigest } from "@projector/core";
+import { ContentHashSchema, StateBindingSchema, StateDigestSchema, type ContentHash, type StateBinding, type StateDigest } from "@projector/core";
 
 import type { RepositoryPathService } from "../security/index.js";
 
@@ -36,6 +36,31 @@ export interface WriterLeaseRecord extends WriterLeaseOwner {
   staleAfterMs: number;
   compiledAgainstSnapshot: StateDigest;
 }
+
+export interface MigrationRecoveryWriterLeaseOwner {
+  sessionId: string;
+  processId: number | string;
+  migrationId: string;
+  manifestHash: ContentHash;
+  targetSnapshotHash: ContentHash;
+  backupManifestHash: ContentHash;
+}
+
+export interface MigrationRecoveryWriterLeaseRecord extends MigrationRecoveryWriterLeaseOwner {
+  version: 2;
+  ownerKind: "migration-recovery";
+  leaseId: string;
+  acquiredAt: string;
+  heartbeatAt: string;
+  expiresAt: string;
+  staleAfterMs: number;
+}
+
+type ActiveWriterLeaseRecord = WriterLeaseRecord | MigrationRecoveryWriterLeaseRecord;
+type WriterLeasePersistenceFields = Pick<
+  ActiveWriterLeaseRecord,
+  "leaseId" | "acquiredAt" | "heartbeatAt" | "expiresAt" | "staleAfterMs"
+>;
 
 export interface WriterLeaseOptions {
   staleAfterMs: number;
@@ -71,6 +96,30 @@ export class WriterLeaseHandle {
   }
 }
 
+export class MigrationRecoveryWriterLeaseHandle {
+  private released = false;
+
+  constructor(
+    private readonly manager: WriterLeaseManager,
+    readonly record: MigrationRecoveryWriterLeaseRecord,
+  ) {}
+
+  async heartbeat(): Promise<void> {
+    this.assertNotReleased();
+    await this.manager.heartbeat(this.record.leaseId);
+  }
+
+  async release(): Promise<void> {
+    this.assertNotReleased();
+    await this.manager.release(this.record.leaseId);
+    this.released = true;
+  }
+
+  private assertNotReleased(): void {
+    if (this.released) throw lostLease(this.record.leaseId);
+  }
+}
+
 export class WriterLeaseManager {
   private readonly staleAfterMs: number;
   private readonly now: () => Date;
@@ -87,9 +136,31 @@ export class WriterLeaseManager {
   }
 
   async acquire(owner: WriterLeaseOwner): Promise<WriterLeaseHandle> {
-    if (owner.sessionId.length === 0 || String(owner.processId).length === 0) {
-      throw new TypeError("A writer lease requires process and session identity");
-    }
+    assertOwnerIdentity(owner);
+    const record = await this.acquireRecord((base) => ({
+      ...base,
+      sessionId: owner.sessionId,
+      processId: owner.processId,
+      version: 1,
+      stateBinding: owner.stateBinding,
+      compiledAgainstSnapshot: owner.stateBinding.compiledAgainst,
+    }));
+    if (record.version !== 1) throw new Error("Internal writer lease kind mismatch");
+    return new WriterLeaseHandle(this, record);
+  }
+
+  async acquireMigrationRecovery(owner: MigrationRecoveryWriterLeaseOwner): Promise<MigrationRecoveryWriterLeaseHandle> {
+    assertOwnerIdentity(owner);
+    if (!/^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(owner.migrationId)) throw new TypeError("Invalid migration recovery identity");
+    for (const value of [owner.manifestHash, owner.targetSnapshotHash, owner.backupManifestHash]) ContentHashSchema.parse(value);
+    const record = await this.acquireRecord((base) => ({ ...base, ...owner, version: 2, ownerKind: "migration-recovery" }));
+    if (record.version !== 2) throw new Error("Internal writer lease kind mismatch");
+    return new MigrationRecoveryWriterLeaseHandle(this, record);
+  }
+
+  private async acquireRecord(
+    createRecord: (base: WriterLeasePersistenceFields) => ActiveWriterLeaseRecord,
+  ): Promise<ActiveWriterLeaseRecord> {
     const runtime = await this.ensureRuntimeDirectory();
     const activePath = join(runtime, activeLeaseName);
 
@@ -98,18 +169,13 @@ export class WriterLeaseManager {
         await mkdir(activePath);
         const acquired = this.now();
         const expires = new Date(acquired.getTime() + this.staleAfterMs);
-        const record: WriterLeaseRecord = {
-          version: 1,
+        const record = createRecord({
           leaseId: randomUUID(),
-          sessionId: owner.sessionId,
-          processId: owner.processId,
           acquiredAt: acquired.toISOString(),
           heartbeatAt: acquired.toISOString(),
           expiresAt: expires.toISOString(),
           staleAfterMs: this.staleAfterMs,
-          stateBinding: owner.stateBinding,
-          compiledAgainstSnapshot: owner.stateBinding.compiledAgainst,
-        };
+        });
         try {
           await writeDurableNewFile(join(activePath, "owner.json"), `${JSON.stringify(record)}\n`);
           await writeDurableNewFile(join(activePath, "heartbeat"), `${record.leaseId}\n`);
@@ -122,7 +188,7 @@ export class WriterLeaseManager {
           }
           await syncDirectory(activePath);
           await syncDirectory(runtime);
-          return new WriterLeaseHandle(this, record);
+          return record;
         } catch (error) {
           await rm(activePath, { recursive: true, force: true });
           throw error;
@@ -190,7 +256,7 @@ export class WriterLeaseManager {
   }
 
   private async assertOwned(leaseId: string): Promise<void> {
-    let record: WriterLeaseRecord;
+    let record: ActiveWriterLeaseRecord;
     try {
       record = await this.readActiveRecord();
     } catch (error) {
@@ -200,7 +266,7 @@ export class WriterLeaseManager {
     if (record.leaseId !== leaseId) throw lostLease(leaseId);
   }
 
-  private async readActiveRecord(): Promise<WriterLeaseRecord> {
+  private async readActiveRecord(): Promise<ActiveWriterLeaseRecord> {
     try {
       return await readLeaseRecord(await this.activeChild("owner.json"));
     } catch (error) {
@@ -228,7 +294,7 @@ export class WriterLeaseManager {
   }
 }
 
-async function readLeaseRecord(path: string): Promise<WriterLeaseRecord> {
+async function readLeaseRecord(path: string): Promise<ActiveWriterLeaseRecord> {
   try {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
     if (!isLeaseRecord(parsed)) throw new Error("Invalid lease record");
@@ -238,11 +304,10 @@ async function readLeaseRecord(path: string): Promise<WriterLeaseRecord> {
   }
 }
 
-function isLeaseRecord(value: unknown): value is WriterLeaseRecord {
+function isLeaseRecord(value: unknown): value is ActiveWriterLeaseRecord {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<WriterLeaseRecord>;
-  return (
-    candidate.version === 1 &&
+  const candidate = value as Record<string, unknown>;
+  const common =
     typeof candidate.leaseId === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(candidate.leaseId) &&
     typeof candidate.sessionId === "string" &&
@@ -254,11 +319,21 @@ function isLeaseRecord(value: unknown): value is WriterLeaseRecord {
     candidate.staleAfterMs > 0 &&
     isIsoDate(candidate.acquiredAt) &&
     isIsoDate(candidate.heartbeatAt) &&
-    isIsoDate(candidate.expiresAt) &&
-    StateBindingSchema.safeParse(candidate.stateBinding).success &&
+    isIsoDate(candidate.expiresAt);
+  if (!common) return false;
+  if (candidate.version === 1) return StateBindingSchema.safeParse(candidate.stateBinding).success &&
     StateDigestSchema.safeParse(candidate.compiledAgainstSnapshot).success &&
-    JSON.stringify(candidate.stateBinding?.compiledAgainst) === JSON.stringify(candidate.compiledAgainstSnapshot)
-  );
+    JSON.stringify((candidate.stateBinding as { compiledAgainst?: unknown } | undefined)?.compiledAgainst) === JSON.stringify(candidate.compiledAgainstSnapshot);
+  return candidate.version === 2 && candidate.ownerKind === "migration-recovery" &&
+    typeof candidate.migrationId === "string" && /^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(candidate.migrationId) &&
+    ContentHashSchema.safeParse(candidate.manifestHash).success && ContentHashSchema.safeParse(candidate.targetSnapshotHash).success &&
+    ContentHashSchema.safeParse(candidate.backupManifestHash).success;
+}
+
+function assertOwnerIdentity(owner: { sessionId: string; processId: number | string }): void {
+  if (owner.sessionId.length === 0 || String(owner.processId).length === 0) {
+    throw new TypeError("A writer lease requires process and session identity");
+  }
 }
 
 function isIsoDate(value: unknown): value is string {

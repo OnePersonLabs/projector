@@ -53,6 +53,36 @@ describe("WriterLeaseManager", () => {
     await lease.release();
   });
 
+  it("records migration recovery ownership without fabricating repository state", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-lease-"));
+    const manager = await leaseManager(root);
+    const lease = await manager.acquireMigrationRecovery({
+      sessionId: "recovery-request-1",
+      processId: 42,
+      migrationId: "attempt:legacy-to-toml:001",
+      manifestHash: hash,
+      targetSnapshotHash: hash,
+      backupManifestHash: hash,
+    });
+
+    const record = JSON.parse(
+      await readFile(join(root, ".projector", "runtime", "writer-lease.lock", "owner.json"), "utf8"),
+    );
+    expect(record).toMatchObject({
+      version: 2,
+      ownerKind: "migration-recovery",
+      sessionId: "recovery-request-1",
+      migrationId: "attempt:legacy-to-toml:001",
+      manifestHash: hash,
+      targetSnapshotHash: hash,
+      backupManifestHash: hash,
+    });
+    expect(record).not.toHaveProperty("stateBinding");
+    expect(record).not.toHaveProperty("compiledAgainstSnapshot");
+    await expect(manager.acquire(owner("ordinary-writer"))).rejects.toMatchObject({ code: "lease-held" });
+    await lease.release();
+  });
+
   it("recovers a stale lease but the displaced owner cannot release the replacement", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-lease-"));
     let now = new Date("2026-08-07T12:00:00.000Z");
