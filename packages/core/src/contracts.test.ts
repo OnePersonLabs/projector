@@ -13,6 +13,7 @@ import {
   LineageRecordSchema,
   LegacyUnversionedProjectorConfigSchema,
   PreparedProjectorConfigSchema,
+  ProjectorConfigSchema,
   PendingProjectDataMigrationSchema,
   ProjectDataFormatSnapshotSchema,
   ProjectDataMigrationDraftSchema,
@@ -32,6 +33,7 @@ import {
   createProjectorOperationRequestSchema,
   createProjectDataMigrationReceipt,
   applicationEvidenceBindingIssues,
+  parseProjectorConfig,
   withCanonicalHashes,
   parseChangeProposal,
   type ContentHash,
@@ -280,6 +282,10 @@ describe("normative contract registry", () => {
     expect(LegacyUnversionedProjectorConfigSchema.safeParse(legacy).success).toBe(true);
     expect(LegacyUnversionedProjectorConfigSchema.safeParse(prepared).success).toBe(false);
     expect(PreparedProjectorConfigSchema.safeParse(prepared).success).toBe(true);
+    expect(ProjectorConfigSchema.safeParse(prepared).success).toBe(true);
+    expect(ProjectorConfigSchema.safeParse(legacy).success).toBe(false);
+    expect(parseProjectorConfig(prepared)).toEqual(prepared);
+    expect(() => parseProjectorConfig(legacy)).toThrow();
     expect(PreparedProjectorConfigSchema.safeParse({ ...prepared, projectorVersion: "2.1.0-0.alpha+build.7" }).success).toBe(true);
     for (const projectorVersion of ["2.1", "02.1.0", "2.1.0-01", "latest"]) {
       expect(PreparedProjectorConfigSchema.safeParse({ ...prepared, projectorVersion }).success).toBe(false);

@@ -15,18 +15,13 @@ export const PreparedProjectorConfigSchema = z.object({
   projectorVersion: PackageVersionSchema,
 }).strict();
 
-// Transitional alias for current readers. Task 6A switches readers and writers
-// atomically after Projector's own configuration has been staged and verified.
-export const ProjectorConfigSchema = LegacyUnversionedProjectorConfigSchema;
+// The public configuration contract is the prepared, version-bound format.
+// Legacy input remains available only through its explicitly named migration schema.
+export const ProjectorConfigSchema = PreparedProjectorConfigSchema;
 
 export type ProjectorConfig = z.infer<typeof ProjectorConfigSchema>;
 export type LegacyUnversionedProjectorConfig = z.infer<typeof LegacyUnversionedProjectorConfigSchema>;
 export type PreparedProjectorConfig = z.infer<typeof PreparedProjectorConfigSchema>;
-
-export const defaultProjectorConfig: ProjectorConfig = Object.freeze({
-  apiVersion: projectorConfigApiVersion,
-  enabled: true,
-});
 
 export function parseProjectorConfig(value: unknown): ProjectorConfig {
   return ProjectorConfigSchema.parse(value);
