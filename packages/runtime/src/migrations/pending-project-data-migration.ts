@@ -47,6 +47,7 @@ export class PendingProjectDataMigrationStore {
     if (valid.phase !== "backed-up") {
       throw new PendingMigrationPersistenceError("A new pending migration marker must begin in backed-up phase");
     }
+    await syncDirectory(this.repositoryRoot);
     const bytes = markerBytes(valid);
     const directory = await this.ensureParent();
     const temporary = join(directory, `.pending.${randomUUID()}.tmp`);
@@ -82,6 +83,7 @@ export class PendingProjectDataMigrationStore {
     if (nextPhase(marker.phase) !== phase) {
       throw new PendingMigrationPersistenceError(`Invalid pending migration transition from ${marker.phase} to ${phase}`);
     }
+    await syncDirectory(dirname(this.markerPath));
     const next = PendingProjectDataMigrationSchema.parse({ ...marker, phase });
     const directory = dirname(this.markerPath);
     const temporary = join(directory, `.pending.${randomUUID()}.tmp`);
@@ -108,6 +110,7 @@ export class PendingProjectDataMigrationStore {
         `Pending migration marker can be cleared only from publishing, not ${marker.phase}`,
       );
     }
+    await syncDirectory(dirname(this.markerPath));
     const current = await this.readRaw();
     if (current === undefined || !current.equals(bytes)) {
       throw new PendingMigrationPersistenceError("Pending migration marker changed before exact-bound clear");
@@ -160,6 +163,16 @@ export class PendingMigrationPersistenceError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PendingMigrationPersistenceError";
+  }
+}
+
+export class PendingMigrationDurabilityUnavailableError extends PendingMigrationPersistenceError {
+  constructor(path: string, cause: NodeJS.ErrnoException) {
+    super(
+      `Pending migration publication is unavailable because directory-entry durability cannot be confirmed at ${path}: ` +
+      `${cause.code ?? cause.message}`,
+    );
+    this.name = "PendingMigrationDurabilityUnavailableError";
   }
 }
 
@@ -221,7 +234,10 @@ async function syncDirectory(path: string): Promise<void> {
   const handle = await open(path, "r");
   try { await handle.sync(); }
   catch (error) {
-    if (!hasCode(error, "EINVAL") && !hasCode(error, "ENOTSUP") && !hasCode(error, "EPERM")) throw error;
+    if (hasCode(error, "EINVAL") || hasCode(error, "ENOTSUP") || hasCode(error, "EPERM")) {
+      throw new PendingMigrationDurabilityUnavailableError(path, error);
+    }
+    throw error;
   } finally { await handle.close(); }
 }
 
