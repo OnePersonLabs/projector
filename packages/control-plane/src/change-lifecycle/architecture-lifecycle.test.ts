@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { hashSemantic, type AuthorityRecord } from "@projector/core";
+import { hashSemantic, withCanonicalHashes, type AuthorityRecord } from "@projector/core";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
@@ -11,6 +11,7 @@ import { inspectRepositoryArchitecture } from "../knowledge/architecture-inspect
 import { RepositoryChangeLifecycleService } from "./service.js";
 
 const exec = promisify(execFile);
+const placeholder = hashSemantic("requirement", {});
 const scope = { op: "atom", field: "path", matcher: "glob", value: "src/**" } as const;
 const constraint = { id: "concept:boundary", key: "boundary", kind: "constraint", name: "Domain boundary", aliases: [], statement: "All domain behavior remains in src.", status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [] };
 const preference = { id: "preference:simple", key: "simple", scope: "project", selector: scope, strength: "prefer", statement: "Prefer simple infrastructure.", status: "active", sourceClass: "authored" };
@@ -31,6 +32,65 @@ async function repository() {
 }
 
 describe("public architectural products", () => {
+  it("requires relevant decision reconsideration and accepts an explicit same-transaction reaffirmation", async () => {
+    const root = await repository();
+    try {
+      const files = new CanonicalFileRepository(root);
+      const requirement = { id: "requirement:boundary", key: "boundary-requirement", title: "Domain location", aliases: [], statement: "Domain behavior stays in src.", status: "active", sourceClass: "authored", scope, origin: [], evidence: [], semanticHash: placeholder, discoveryHash: placeholder };
+      const baselineAuthority = { ...authority, reconsiderWhen: [{ type: "requirement-changed", subjectId: requirement.id }] as const };
+      const records = [
+        ["concept", constraint, "active"],
+        ["developer-preference", preference, "active"],
+        ["requirement", requirement, "active"],
+        ["architecture-concern", concern, "resolved"],
+        ["architecture-decision", decision, "active"],
+        ["authority-record", baselineAuthority, "approved"],
+      ] as const;
+      for (const [kind, payload, lifecycle] of records) {
+        const hashedPayload = kind === "concept" || kind === "requirement"
+          ? { ...payload, discoveryHash: placeholder, semanticHash: placeholder }
+          : { ...payload, semanticHash: placeholder };
+        await files.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id: payload.id, key: payload.key, lifecycle, payload: hashedPayload }));
+      }
+      await exec("git", ["add", ".projector"], { cwd: root });
+      await exec("git", ["commit", "-qm", "tracked architecture baseline"], { cwd: root });
+
+      const beforeRequirement = (await files.read("requirement", requirement.id))!;
+      const { semanticHash: _requirementSemanticHash, discoveryHash: _requirementDiscoveryHash, ...requirementPayload } = beforeRequirement.payload;
+      const revisedRequirement = {
+        kind: "requirement", operation: "revise", expectedSemanticHash: beforeRequirement.semanticHash, expectedDocumentHash: beforeRequirement.canonicalDocumentHash,
+        payload: { ...requirementPayload, statement: "Domain behavior and adapters stay in src." }, rationale: "Expand the accepted boundary requirement.",
+      };
+      const lifecycle = await RepositoryChangeLifecycleService.create(root);
+      const blockedCapture = await lifecycle.capture({ request: "Expand the boundary requirement without reconsidering its decision.", proposal: proposal([revisedRequirement]) });
+      expect(blockedCapture.compiled.compiledPlan.plan.completionCriteria.requiredValidators).toContain("projector.canonical-decision-baselines");
+      const blockedApproval = await lifecycle.approve(blockedCapture.capture.semanticChangeId, blockedCapture.capture.planHash);
+      const blocked = await lifecycle.apply(blockedApproval.id);
+      expect(blocked.outcome).toBe("partial");
+      expect(blocked.reasons).toContain("required validation projector.canonical-decision-baselines blocked");
+      expect(blocked.validations).toEqual(expect.arrayContaining([expect.objectContaining({
+        validatorId: "projector.canonical-decision-baselines", status: "blocked",
+        details: expect.objectContaining({ decisionValidity: expect.arrayContaining([expect.objectContaining({ decisionId: decision.id, assessment: expect.objectContaining({ blocksCurrentChange: true }) })]) }),
+      })]));
+      expect((await files.read("requirement", requirement.id))!.canonicalDocumentHash).toBe(beforeRequirement.canonicalDocumentHash);
+
+      const beforeAuthority = (await files.read("authority-record", baselineAuthority.id))!;
+      const { semanticHash: _authoritySemanticHash, discoveryHash: _authorityDiscoveryHash, ...authorityPayload } = beforeAuthority.payload;
+      const reaffirmed = await lifecycle.capture({ request: "Expand the requirement and explicitly reaffirm the governing decision under the new observation.", proposal: proposal([
+        revisedRequirement,
+        {
+          kind: "authority-record", operation: "revise", expectedSemanticHash: beforeAuthority.semanticHash, expectedDocumentHash: beforeAuthority.canonicalDocumentHash,
+          payload: { ...authorityPayload, rationale: "Reaffirm the accepted boundary after reviewing the expanded requirement." }, rationale: "Capture the reviewed trigger observation in this same transaction.",
+        },
+      ]) });
+      const reaffirmedApproval = await lifecycle.approve(reaffirmed.capture.semanticChangeId, reaffirmed.capture.planHash);
+      const accepted = await lifecycle.apply(reaffirmedApproval.id);
+      expect(accepted.outcome, accepted.reasons.join("; ")).toBe("success");
+      expect(accepted.validations).toEqual(expect.arrayContaining([expect.objectContaining({ validatorId: "projector.canonical-decision-baselines", status: "passed" })]));
+      expect((await files.read("requirement", requirement.id))!.payload.statement).toContain("and adapters");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("preserves an unrealized requirement and scenario, then revises their implementation scope without replacing their identities", async () => {
     const root = await repository();
     try {

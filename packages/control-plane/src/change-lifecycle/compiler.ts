@@ -1069,7 +1069,9 @@ export async function compileRepositoryChange(
   const validatorIds = [
     "exact-text-patch.verify",
     "projector.repository-post-observation",
-    ...(executionKind === "canonical-only" ? ["projector.canonical-model-integrity"] : ["projector.post-change-knowledge"]),
+    ...(executionKind === "canonical-only"
+      ? ["projector.canonical-model-integrity", "projector.canonical-decision-baselines"]
+      : ["projector.post-change-knowledge"]),
     ...independentValidators.map(({ path }) => `node-independent:${path}`),
     ...input.proposal.validation.supplementalNodeTests.map((path) => `node-supplemental:${path}`),
   ];
