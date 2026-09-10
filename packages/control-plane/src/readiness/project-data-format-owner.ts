@@ -31,6 +31,7 @@ export const preparedConfigOwnerModulePaths = Object.freeze([
   `${coreRoot}/schemas/change-proposal.js`,
   `${coreRoot}/schemas/contracts.js`,
   `${coreRoot}/schemas/generated-contracts.js`,
+  `${coreRoot}/schemas/registry.js`,
   `${coreRoot}/schemas/operations.js`,
   `${coreRoot}/schemas/project-config.js`,
 ] as const);
@@ -44,6 +45,7 @@ export const canonicalOwnerModulePaths = Object.freeze([
   `${coreRoot}/schemas/canonical-envelope.js`,
   `${coreRoot}/schemas/contracts.js`,
   `${coreRoot}/schemas/generated-contracts.js`,
+  `${coreRoot}/schemas/registry.js`,
   `${runtimeRoot}/persistence/canonical-repository.js`,
   `${runtimeRoot}/persistence/project-schema-bundle.js`,
   `${runtimeRoot}/persistence/toml-codec.js`,

@@ -12,7 +12,7 @@ import {
 import * as generated from "./generated-contracts.js";
 import { getHashProfile } from "../hashing/projections.js";
 import { ChangeProposalSchema } from "./change-proposal.js";
-import { CanonicalDocumentEnvelopeByKindSchema, CanonicalDocumentEnvelopeSchema } from "./canonical-envelope.js";
+import { CanonicalDocumentEnvelopeByKindSchema, CanonicalDocumentEnvelopeSchema, CanonicalDocumentWireByKindSchema } from "./canonical-envelope.js";
 import { PreparedProjectorConfigSchema } from "./project-config.js";
 import {
   PendingProjectDataMigrationSchema,
@@ -57,6 +57,7 @@ export const normativeContractNames = [
   "ChangeProposal",
   "CanonicalDocumentEnvelope",
   "CanonicalDocumentEnvelopeByKind",
+  "CanonicalDocumentWireByKind",
   "CommandSpec",
   "CompletionContract",
   "Concept",
@@ -240,6 +241,7 @@ const schemaExports: Record<string, z.ZodType> = {
   ChangeProposalSchema,
   CanonicalDocumentEnvelopeSchema,
   CanonicalDocumentEnvelopeByKindSchema,
+  CanonicalDocumentWireByKindSchema,
   PreparedProjectorConfigSchema,
   PendingProjectDataMigrationSchema,
   ProjectDataFormatSnapshotSchema,

@@ -36,6 +36,16 @@ describe("release candidate project-data format owner", () => {
       candidate: { ...candidate, files: [...candidate.files, candidate.files[0]!] },
     })).toThrow(/repeats/iu);
   });
+
+  test("changes canonical format identity when the authored-wire registry owner changes", () => {
+    const candidate = inventory();
+    const initial = createReleaseCandidateProjectDataFormat({ candidate });
+    const registryPath = canonicalOwnerModulePaths.find((path) => path.endsWith("/schemas/registry.js"))!;
+    const changed = createReleaseCandidateProjectDataFormat({
+      candidate: { ...candidate, files: candidate.files.map((file) => file.path === registryPath ? { ...file, digest: hash("f") } : file) },
+    });
+    expect(changed.canonical.schemaBundleHash).not.toBe(initial.canonical.schemaBundleHash);
+  });
 });
 
 function inventory(): ValidatedReleaseCandidateInventory {
