@@ -707,39 +707,106 @@ export async function compileRepositoryChange(
   }
   if (executionKind === "canonical-only" && canonicalWrites.length === 0) throw new Error("canonical-only proposal produces no model change");
   canonicalWrites.sort((left, right) => compare(left.path, right.path));
-  const relatedIds = new Set([
+  const contextIds = input.knowledgeContext?.branches
+    .filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)
+    .flatMap(({ closure }) => closure.entries.map(({ entityId }) => entityId)) ?? [];
+  const requiredContextIds = input.knowledgeContext?.branches
+    .filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)
+    .flatMap(({ closure }) => closure.entries.filter(({ requiredForPlanning }) => requiredForPlanning).map(({ entityId }) => entityId)) ?? [];
+  const contextRootIds = input.knowledgeContext?.branches
+    .filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)
+    .map(({ interpretation }) => interpretation.entityId) ?? [];
+  const relationMutationEndpointIds = mutationReviews
+    .filter(({ kind }) => kind === "relation")
+    .flatMap(({ before, after }) => [before, after])
+    .filter((payload): payload is Record<string, unknown> => payload !== null)
+    .flatMap((payload) => {
+      const relation = RelationSchema.parse(payload) as Relation;
+      return [relation.fromId, relation.toId];
+    });
+  const semanticRootIds = unique([
     ...identityResolutions.map(({ targetId }) => targetId),
-    ...mutationReviews.map(({ id }) => id),
-    ...(input.knowledgeContext?.branches.filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct).flatMap(({ closure }) => closure.entries.map(({ entityId }) => entityId)) ?? []),
-  ]);
-  const relations = [...documentsAfter.values()].filter(({ kind }) => kind === "relation").map(({ payload }) => RelationSchema.parse(payload) as Relation).filter(({ active }) => active);
+    ...mutationReviews.filter(({ kind }) => kind !== "relation").map(({ id }) => id),
+    ...relationMutationEndpointIds,
+    ...contextRootIds,
+  ]).sort(compare);
+  // Context entries also carry implementation manifestations such as projection units.
+  // Keep them available to review without turning them into conceptual traversal roots.
+  const relatedIds = new Set(contextIds);
+  const relations = [...documentsAfter.values()]
+    .filter(({ kind }) => kind === "relation")
+    .map(({ payload }) => RelationSchema.parse(payload) as Relation)
+    .filter(({ active }) => active)
+    .sort((left, right) => compare(left.id, right.id));
   const relatedRelations = new Map<string, Relation>();
   const candidateRelationIds = new Set<string>();
   const commitmentFrontier = new Set<string>();
+  const unresolvedCommitmentIds = new Set<string>();
   const maximumCommitments = 128;
-  // Dependencies require both prerequisite and dependent impact review. Ownership,
-  // realization, scenario, and governance edges expand from subject to obligation.
+  // True semantic roots start two independent directed traversals. Prerequisite
+  // discoveries never become dependent roots (and vice versa), which prevents two
+  // subjects that share one prerequisite from recruiting each other as siblings.
+  // Ownership, realization, scenario, and governance edges expand only forward.
   // Descriptive edges (documents, observes, variants, etc.) do not impose obligations.
   const dependencyRelations = new Set(["requires", "depends-on", "constrains"]);
   const forwardRelations = new Set(["owns", "has-requirement", "realizes", "demonstrated-by", "governed-by"]);
-  let widened = true;
-  while (widened) {
-    widened = false;
-    for (const relation of relations) {
-      if (!dependencyRelations.has(relation.type) && !forwardRelations.has(relation.type)) continue;
-      if (!relatedIds.has(relation.fromId) && !(dependencyRelations.has(relation.type) && relatedIds.has(relation.toId))) continue;
-      if (relation.sourceClass === "inferred") { candidateRelationIds.add(relation.id); continue; }
-      relatedRelations.set(relation.id, relation);
-      for (const id of [relation.fromId, relation.toId]) if (!relatedIds.has(id)) {
-        if (relatedIds.size >= maximumCommitments) { commitmentFrontier.add(id); continue; }
-        relatedIds.add(id); widened = true;
+  const canonicalObligationIds = new Set([...documentsAfter.values()].filter(({ kind }) => kind !== "relation").map(({ id }) => id));
+  const observedProjectionIds = new Set(observation.analysis.projectionUnits.map(({ id }) => id));
+  const countedObligationIds = new Set<string>();
+  const prerequisiteQueue: string[] = [];
+  const dependentQueue: string[] = [];
+  const prerequisiteVisited = new Set<string>();
+  const dependentVisited = new Set<string>();
+  for (const id of requiredContextIds) {
+    if (!canonicalObligationIds.has(id) && !observedProjectionIds.has(id)) unresolvedCommitmentIds.add(id);
+  }
+  const enqueue = (id: string, direction: "prerequisite" | "dependent"): void => {
+    relatedIds.add(id);
+    if (!canonicalObligationIds.has(id)) {
+      if (!observedProjectionIds.has(id)) unresolvedCommitmentIds.add(id);
+      return;
+    }
+    if (!countedObligationIds.has(id)) {
+      if (countedObligationIds.size >= maximumCommitments) { commitmentFrontier.add(id); return; }
+      countedObligationIds.add(id);
+    }
+    const enqueueDirection = (nextDirection: "prerequisite" | "dependent"): void => {
+      const visited = nextDirection === "prerequisite" ? prerequisiteVisited : dependentVisited;
+      const queue = nextDirection === "prerequisite" ? prerequisiteQueue : dependentQueue;
+      if (!visited.has(id)) { visited.add(id); queue.push(id); }
+    };
+    enqueueDirection(direction);
+    // A dependent is itself impacted, so retain its own forward prerequisites and
+    // governance. Those discoveries remain prerequisite-only and cannot recruit
+    // other dependents that happen to share them.
+    if (direction === "dependent") enqueueDirection("prerequisite");
+  };
+  for (const id of semanticRootIds) {
+    enqueue(id, "prerequisite");
+    enqueue(id, "dependent");
+  }
+  const traverse = (queue: string[], direction: "prerequisite" | "dependent"): void => {
+    for (let offset = 0; offset < queue.length; offset += 1) {
+      const currentId = queue[offset]!;
+      for (const relation of relations) {
+        const dependency = dependencyRelations.has(relation.type);
+        const forward = forwardRelations.has(relation.type);
+        let nextId: string | undefined;
+        if (direction === "prerequisite" && (dependency || forward) && relation.fromId === currentId) nextId = relation.toId;
+        if (direction === "dependent" && dependency && relation.toId === currentId) nextId = relation.fromId;
+        if (nextId === undefined) continue;
+        if (relation.sourceClass === "inferred") { candidateRelationIds.add(relation.id); continue; }
+        relatedRelations.set(relation.id, relation);
+        enqueue(nextId, direction);
       }
     }
-  }
+  };
+  traverse(dependentQueue, "dependent");
+  traverse(prerequisiteQueue, "prerequisite");
   const knownIds = new Set([...documentsAfter.keys(), ...retiredIds, ...observation.analysis.projectionUnits.map(({ id }) => id), ...identityResolutions.map(({ targetId }) => targetId)]);
   const blockingUnknowns = unique([
-    ...[...relatedIds].filter((id) => !knownIds.has(id)).map((id) => `related commitment has no current canonical entity or observed projection: ${id}`),
-    ...[...commitmentFrontier].map((id) => `conceptual obligation traversal reached its ${maximumCommitments}-entity bound before resolving ${id}`),
+    ...[...unresolvedCommitmentIds].filter((id) => !knownIds.has(id)).sort(compare).map((id) => `related commitment has no current canonical entity or observed projection: ${id}`),
+    ...[...commitmentFrontier].sort(compare).map((id) => `conceptual obligation traversal reached its ${maximumCommitments}-entity bound before resolving ${id}`),
   ]);
   const reviewBasis = {
     ...(input.proposal.identityResolution === undefined ? {} : { identityResolution: input.proposal.identityResolution }),

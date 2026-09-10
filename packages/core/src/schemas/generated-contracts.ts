@@ -1289,7 +1289,7 @@ export const CommandSpecSchema: z.ZodType = z.lazy(() => strictObject({
   "cwd": z.string(),
   "readScope": z.array(z.string()),
   "writeScope": z.array(z.string()),
-  "network": z.union([z.literal("deny"), z.literal("allow")]),
+  "requiresNetwork": z.boolean(),
   "environmentKeys": z.array(z.string()),
   "sideEffectClass": z.union([z.literal("none"), z.literal("read-only"), z.literal("workspace-write"), z.literal("external-write")]),
   "timeoutMs": z.number().finite(),

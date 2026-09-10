@@ -10,6 +10,7 @@ import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
 import { compileRepositoryChange } from "./compiler.js";
+import type { KnowledgeContextResult } from "../knowledge/types.js";
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "placeholder");
@@ -82,6 +83,53 @@ async function existingScenario(root: string): Promise<void> {
     steps: proposal().scenarios[0]!.steps.map((step) => ({ ...step })), evidence: [], discoveryHash: placeholder, semanticHash: placeholder,
   };
   await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload } }));
+}
+
+async function existingRelation(root: string, id: string, fromId: string, toId: string, type: "requires" | "depends-on" | "constrains" | "owns" = "requires"): Promise<void> {
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({
+    apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id, key: `relation:${id}`, lifecycle: "active",
+    payload: { id, fromId, toId, type, sourceClass: "authored", active: true, confidence: 1, evidence: [], semanticHash: placeholder },
+  }));
+}
+
+function directKnowledgeContext(
+  rootEntityIds: readonly string[],
+  closureEntityIds: readonly string[] = rootEntityIds,
+  requiredEntityIds: readonly string[] = rootEntityIds,
+): KnowledgeContextResult {
+  return {
+    id: "knowledge-context:test",
+    contentHash: hashFramedDomain("knowledge-context-test", { rootEntityIds, closureEntityIds }),
+    requestOptions: { entities: rootEntityIds, namedTargets: [], operation: "change", policy: {} },
+    unknowns: [],
+    branches: rootEntityIds.map((entityId) => ({
+      hypothesis: false,
+      interpretation: { entityId, entityKind: "requirement", score: 1, direct: true, signals: ["id"], explanation: `Explicit canonical address ${entityId}.`, continuityFromIds: [] },
+      closure: {
+        seeds: [{ kind: "semantic-entity", subjectId: entityId, reason: "explicit canonical address", confidence: 1 }],
+        entries: closureEntityIds.map((closureEntityId) => ({
+          entityId: closureEntityId,
+          band: closureEntityId === entityId ? "direct" : "governing",
+          score: closureEntityId === entityId ? 1 : 0.9,
+          requiredForPlanning: requiredEntityIds.includes(closureEntityId),
+          reasons: [{ kind: closureEntityId === entityId ? "identity-match" : "depends-on", fromId: entityId, weight: 1, provenance: "declared", confidence: 1, explanation: "test context closure", evidenceIds: [] }],
+        })),
+      },
+    })),
+  } as unknown as KnowledgeContextResult;
+}
+
+function requirementRevisionProposal(document: Awaited<ReturnType<CanonicalFileRepository["read"]>>): ChangeProposal {
+  if (document?.kind !== "requirement") throw new Error("test requires a canonical requirement");
+  const { discoveryHash: _discoveryHash, semanticHash: _semanticHash, ...payload } = document.payload;
+  return parseChangeProposal({
+    apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [],
+    validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"],
+    canonicalMutations: [{
+      kind: "requirement", operation: "revise", expectedSemanticHash: document.semanticHash, expectedDocumentHash: document.canonicalDocumentHash,
+      rationale: "Clarify the canonical requirement without implementation edits.", payload: { ...payload, statement: `${String(payload.statement)} Clarified.` },
+    }],
+  });
 }
 
 async function repository(): Promise<string> {
@@ -505,6 +553,126 @@ describe("repository change compiler", () => {
       expect(compiled.intentReview.relations.map(({ id }) => id)).toEqual(["relation:owned"]);
       expect(compiled.intentReview.relatedObligations.map(({ id }) => id)).toContain("requirement:owned");
       expect(compiled.intentReview.blockingUnknowns).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("keeps prerequisite and dependent traversal directional across shared prerequisites and cycles", async () => {
+    const root = await repository();
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      const existing = (await canonical.snapshot()).documents.find(({ id }) => id === "requirement:legacy-greeting")!;
+      for (const [id, key] of [["requirement:shared", "shared"], ["requirement:sibling", "sibling"], ["requirement:transitive", "transitive"], ["requirement:dependent", "dependent"], ["requirement:dependent-prerequisite", "dependent-prerequisite"], ["requirement:prerequisite-sibling", "prerequisite-sibling"]] as const) {
+        await existingRequirement(root, id, key, []);
+      }
+      await existingRelation(root, "relation:root-shared", existing.id, "requirement:shared");
+      await existingRelation(root, "relation:sibling-shared", "requirement:sibling", "requirement:shared");
+      await existingRelation(root, "relation:shared-transitive", "requirement:shared", "requirement:transitive");
+      await existingRelation(root, "relation:transitive-shared", "requirement:transitive", "requirement:shared");
+      await existingRelation(root, "relation:dependent-root", "requirement:dependent", existing.id);
+      await existingRelation(root, "relation:dependent-prerequisite", "requirement:dependent", "requirement:dependent-prerequisite");
+      await existingRelation(root, "relation:prerequisite-sibling", "requirement:prerequisite-sibling", "requirement:dependent-prerequisite");
+
+      const revised = parseChangeProposal({ ...proposal(), requirements: [{ ...proposal().requirements[0], statement: "The greeting includes the supplied name and preserves its case.",
+        revision: { id: existing.id, expectedSemanticHash: existing.payload.semanticHash, rationale: "Clarify the existing requirement." } }] });
+      const fromRoot = await compileRepositoryChange({
+        repositoryRoot: root,
+        request: "Clarify the greeting requirement.",
+        proposal: revised,
+        knowledgeContext: directKnowledgeContext([existing.id], [existing.id, "requirement:shared"], [existing.id, "requirement:shared"]),
+      });
+      expect(fromRoot.intentReview.relatedObligations.map(({ id }) => id)).toEqual([
+        "requirement:dependent", "requirement:dependent-prerequisite", "requirement:legacy-greeting", "requirement:shared", "requirement:transitive",
+      ]);
+      expect(fromRoot.intentReview.relations.map(({ id }) => id)).toEqual([
+        "relation:dependent-prerequisite", "relation:dependent-root", "relation:root-shared", "relation:shared-transitive", "relation:transitive-shared",
+      ]);
+
+      const shared = (await canonical.snapshot()).documents.find(({ id }) => id === "requirement:shared")!;
+      const sharedProposal = parseChangeProposal({ ...proposal(), requirements: [{ key: "shared", title: "Personalized greeting", aliases: [], statement: "The greeting includes the supplied name and preserves its case.",
+        revision: { id: shared.id, expectedSemanticHash: shared.payload.semanticHash, rationale: "Clarify the shared prerequisite." } }] });
+      const fromShared = await compileRepositoryChange({ repositoryRoot: root, request: "Clarify the shared prerequisite.", proposal: sharedProposal });
+      expect(fromShared.intentReview.relatedObligations.map(({ id }) => id)).toEqual([
+        "requirement:dependent", "requirement:dependent-prerequisite", "requirement:legacy-greeting", "requirement:shared", "requirement:sibling", "requirement:transitive",
+      ]);
+      expect(fromShared.intentReview.blockingUnknowns).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("does not spend the conceptual-obligation bound on projection context entries", async () => {
+    const root = await repository();
+    try {
+      await existingRequirement(root, "requirement:shared", "shared", []);
+      await existingRelation(root, "relation:root-shared", "requirement:legacy-greeting", "requirement:shared");
+      const projections = Array.from({ length: 160 }, (_, index) => `projector-projection-unit_${String(index).padStart(3, "0")}`);
+      const modelOnly = requirementRevisionProposal(await new CanonicalFileRepository(root).read("requirement", "requirement:legacy-greeting"));
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Implement greeting.", proposal: modelOnly, knowledgeContext: directKnowledgeContext(["requirement:legacy-greeting"], ["requirement:legacy-greeting", ...projections]) });
+      expect(compiled.intentReview.relatedObligations.map(({ id }) => id)).toEqual([
+        "requirement:legacy-greeting", "requirement:shared",
+      ]);
+      expect(compiled.intentReview.blockingUnknowns).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("blocks a required context obligation that has no canonical or observed entity", async () => {
+    const root = await repository();
+    try {
+      const modelOnly = requirementRevisionProposal(await new CanonicalFileRepository(root).read("requirement", "requirement:legacy-greeting"));
+      await expect(compileRepositoryChange({
+        repositoryRoot: root,
+        request: "Implement greeting.",
+        proposal: modelOnly,
+        knowledgeContext: directKnowledgeContext(
+          ["requirement:legacy-greeting"],
+          ["requirement:legacy-greeting", "requirement:missing-governing-obligation"],
+          ["requirement:legacy-greeting", "requirement:missing-governing-obligation"],
+        ),
+      })).rejects.toThrow(/unresolved conceptual obligations.*requirement:missing-governing-obligation/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("seeds both former and new endpoints when a dependency relation changes", async () => {
+    const root = await repository();
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      for (const [id, key] of [["requirement:former", "former"], ["requirement:replacement", "replacement"], ["requirement:former-dependent", "former-dependent"]] as const) {
+        await existingRequirement(root, id, key, []);
+      }
+      await existingRelation(root, "relation:root-target", "requirement:legacy-greeting", "requirement:former");
+      await existingRelation(root, "relation:former-dependent", "requirement:former-dependent", "requirement:former");
+      const relation = await canonical.read("relation", "relation:root-target");
+      if (relation?.kind !== "relation") throw new Error("test requires a canonical relation");
+      const { semanticHash: _semanticHash, ...payload } = relation.payload;
+      const changedRelation = parseChangeProposal({
+        apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [],
+        validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"],
+        canonicalMutations: [{
+          kind: "relation", operation: "revise", expectedSemanticHash: relation.semanticHash, expectedDocumentHash: relation.canonicalDocumentHash,
+          rationale: "Move the requirement dependency to its accepted replacement.", payload: { ...payload, toId: "requirement:replacement" },
+        }],
+      });
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Move the greeting dependency.", proposal: changedRelation });
+      expect(compiled.intentReview.relatedObligations.map(({ id }) => id)).toEqual([
+        "requirement:former", "requirement:former-dependent", "requirement:legacy-greeting", "requirement:replacement",
+      ]);
+      expect(compiled.intentReview.relations.map(({ id }) => id)).toEqual([
+        "relation:former-dependent", "relation:root-target",
+      ]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("reports a deterministic frontier when directed canonical obligations exceed the bound", async () => {
+    const root = await repository();
+    try {
+      let fromId = "requirement:legacy-greeting";
+      for (let index = 1; index <= 128; index += 1) {
+        const toId = `requirement:chain-${String(index).padStart(3, "0")}`;
+        await existingRequirement(root, toId, `chain-${String(index).padStart(3, "0")}`, []);
+        await existingRelation(root, `relation:chain-${String(index).padStart(3, "0")}`, fromId, toId);
+        fromId = toId;
+      }
+      const oneSemanticRoot = requirementRevisionProposal(await new CanonicalFileRepository(root).read("requirement", "requirement:legacy-greeting"));
+      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Implement greeting.", proposal: oneSemanticRoot }))
+        .rejects.toThrow(/conceptual obligation traversal reached its 128-entity bound before resolving requirement:chain-128/iu);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

@@ -8,6 +8,7 @@ import { deriveAcceptanceInventory, PACKED_LIFECYCLE_OBLIGATION_IDS, traceabilit
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const execute = promisify(execFile);
+const portableText = (text) => text.replace(/\r\n?/gu, "\n");
 const scenarioPaths = ["PROJECTOR_SPEC/12-delivery/acceptance-core.md", "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md", "PROJECTOR_SPEC/12-delivery/acceptance-representation.md", "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md"];
 const testingPath = "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md";
 const packedArtifactIds = ["packed-held-out-lifecycle", "packed-held-out-lifecycle-transcript"];
@@ -44,7 +45,7 @@ export function buildTraceabilityManifest(inventory, authority, sourceTexts) {
     const { publicFacade, testRef } = resolveTraceabilityAuthority(item, authority); const [path] = testRef.split("#", 1); const text = sourceTexts.get(path);
     if (typeof text !== "string") throw new Error(`traceability test source is missing: ${path}`);
     const requiredArtifactIds = PACKED_LIFECYCLE_OBLIGATION_IDS.has(item.id) ? packedArtifactIds : undefined;
-    const entry = { ...item, publicFacade, testRef, testSourceDigest: hashFramedDomain("traceability-test-source", { path, text }), ...(requiredArtifactIds === undefined ? {} : { requiredArtifactIds }) };
+    const entry = { ...item, publicFacade, testRef, testSourceDigest: hashFramedDomain("traceability-test-source", { path, text: portableText(text) }), ...(requiredArtifactIds === undefined ? {} : { requiredArtifactIds }) };
     entries.push({ ...entry, mappingHash: traceabilityEntryHash(entry) });
   }
   return { version: 2, entries, inventoryHash: traceabilityInventoryHash(inventory) };

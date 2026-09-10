@@ -114,20 +114,20 @@ Have an implementation packet generate both code and tests that agree with the s
 Expected: same-packet tests cannot satisfy an R2+ independent-validation requirement. Completion blocks on the independent contradiction.
 
 
-## Capability-proven sandbox isolation
+## Trusted host validator integrity
 
-Install a sandbox executable. First, deny its required namespace or network control. Then enable a backend that can prove the complete isolation challenge. Also configure a fallback that omits one required proof field.
+Run a pinned tracked validator through the native host on Windows and direct WSL. Exercise a denied host launch, a failing validator, a changed source before execution, source drift during execution, caller cancellation, timeout, and output exhaustion.
 
-Expected: installation and advertised capabilities do not authorize execution. Projector rejects the denied primary backend and the incomplete fallback. It selects only a backend whose own live evidence proves readable and read-only input, writable declared output, invisible undeclared paths, and denied network access. If no backend proves all controls, Projector returns `unsupported-isolation` before it starts the sandbox-required validator command.
+Expected: Projector launches only the exact resolved source whose bytes match the compiled Git/content identity. It rechecks those bytes afterward and enforces time, output, and cancellation bounds. It records the observed result and host assumptions separately. Denied launch and every failed, changed, interrupted, or cleanup-unconfirmed case cannot establish conformance. No output claims filesystem confinement, network denial, immutable overlays, or hostile same-user protection.
 
 
-## Manual-only sandbox release workflow
+## Manual-only source-severed release workflow
 
-Inspect the repository release workflow and run its sandbox lane on the pinned Ubuntu runner.
+Inspect the repository release workflow and run its source-severed lane on the pinned Ubuntu runner.
 
-Expected: `workflow_dispatch` is the only trigger. A build job provisions the pinned sandbox without disabling Ubuntu's global user-namespace restriction. It proves filesystem and network isolation before dogfooding, verification, artifact checks, and creation of one authenticated candidate.
+Expected: `workflow_dispatch` is the only trigger. A build job performs dogfooding, verification, artifact checks, and creation of one authenticated candidate without requiring a Projector sandbox backend.
 
-A fresh job with no checkout downloads that candidate and provisions the sandbox. It installs the exact tarball and plugin and runs packed acceptance. It uploads the exact tested artifacts and evidence. The traceability manifest binds this scenario to an observed public test.
+A fresh job with no checkout downloads that candidate and provisions its isolated release-test harness. It installs the exact tarball and plugin and runs packed acceptance. Harness isolation is evidence about source severance, not a Projector runtime guarantee. The job uploads the exact tested artifacts and evidence. The traceability manifest binds this scenario to an observed public test.
 
 
 ## Operational MCP advertisement

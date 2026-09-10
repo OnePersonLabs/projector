@@ -86,13 +86,13 @@ Merge/rebase conflicts in canonical governance state MUST block Govern/Autonomou
 
 The public lifecycle is `change` to `plan` to `approve` to `apply`. `change` captures the request and strict proposal. `plan` reauthenticates the capture and emits one immutable plan hash plus preview. `approve` requires the exact human-presented plan hash and persists a plan/capsule-bound approval. `apply` accepts only that approval identity. General permission, a change selector, or a similar hash MUST NOT substitute for exact approval.
 
-Before a mutation, Projector MUST select a capability-proven sandbox and capture immutable validator projections. If isolation or immutable overlays are unavailable, Projector MUST stop before it takes the writer lease or starts the journal. It MUST NOT run a validator natively.
+Projector MUST run validators through the host's configured permissions. It MUST preserve the compiled Git/content identity and resolve the exact live tracked path. It MUST compare the bytes before and after execution and discard success when identity changes. A denied host launch, failed check, timeout, cancellation, or unconfirmed cleanup MUST leave validation unavailable or failed. Projector MUST NOT report filesystem confinement, network denial, immutable overlays, or hostile same-user protection.
 
 Each apply attempt MUST have a durable unique identity and transaction identity. The writer lease heartbeat MUST remain active from transaction start through every mutation, validation, checkpoint, commit, or rollback. The coordinator MUST reassert lease ownership at each authoritative transition.
 
 After mutation, Projector MUST authenticate a new repository observation. It MUST compare predicted and observed paths, canonical entities, unit states, and analyzer failures. Unexpected paths, canonical identities, or failures become Planning Surprises or unknowns and MUST block success. Claimed transform output is not observed-impact evidence.
 
-Projector MUST run each independent validator from immutable Git-base bytes overlaid at its original repository path. The validator runs against the proposed repository state with read-only source identity. Projector MUST record expected, before, after, and executed content hashes plus the selected sandbox evidence.
+Projector MUST run each independent validator from its exact resolved live tracked path only when its bytes match the compiled Git-base content identity. Projector MUST record expected, before, after, and executed content hashes, the exact resolved path, observed process result, enforced time/output/cancellation bounds, and host assumptions. These checks do not prevent malicious same-user changes between observations.
 
 Before commit, Projector MUST persist one authenticated prepared-success record that binds the after-state observation, validations, certificate, receipt, and journal checkpoint. It then checkpoints the journal, commits the transaction, and publishes artifacts. Recovery MAY finalize a committed journal only when that journal binds the authenticated prepared-success identity. A committed journal without that proof enters `recovery-required`.
 

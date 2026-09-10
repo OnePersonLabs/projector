@@ -18,7 +18,7 @@ export type ExecutionRefusalCode =
   | "network-refused"
   | "scope-refused"
   | "stale-binding"
-  | "unsupported-isolation";
+  | "unsupported-resource-limit";
 
 export class ExecutionRefusedError extends Error {
   readonly code: ExecutionRefusalCode;
@@ -40,18 +40,31 @@ export class ExecutionLimitError extends Error {
   }
 }
 
-export interface ProcessLauncherCapabilities {
-  filesystemIsolation: boolean;
-  networkIsolation: boolean;
-  cpuLimits: boolean;
-  memoryLimits: boolean;
-  externalWrites: boolean;
-  readOnlyFileOverlays: boolean;
+export class ExecutionCleanupError extends ExecutionLimitError {
+  readonly cleanupError: unknown;
+  readonly cleanup: ProcessCleanupObservation;
+
+  constructor(limitError: ExecutionLimitError, cleanupError: unknown, cleanup: ProcessCleanupObservation) {
+    super(limitError.limit, `${limitError.message}; owned process cleanup could not be confirmed`);
+    this.name = "ExecutionCleanupError";
+    this.cleanupError = cleanupError;
+    this.cleanup = cleanup;
+  }
 }
 
-export interface ReadOnlyFileOverlay {
-  readonly source: string;
-  readonly target: string;
+export interface ProcessCleanupObservation {
+  readonly rootProcessId: number;
+  readonly rootExitObserved: boolean;
+  readonly processGroupId?: number;
+  readonly requested: "posix-process-group-sigkill" | "windows-taskkill-tree";
+  readonly cleanupCommandExitCode?: number | null;
+  readonly status: "reported-complete" | "unconfirmed";
+  readonly reason?: string;
+}
+
+export interface ProcessLauncherCapabilities {
+  cpuLimits: boolean;
+  memoryLimits: boolean;
 }
 
 export interface ProcessLaunchRequest {
@@ -59,10 +72,6 @@ export interface ProcessLaunchRequest {
   args: string[];
   cwd: string;
   env: Record<string, string>;
-  readRoots: string[];
-  writeRoots: string[];
-  readOnlyFileOverlays?: ReadOnlyFileOverlay[];
-  network: "deny" | "allow";
   timeoutMs: number;
   cpuBudgetMs?: number;
   memoryBudgetMb?: number;
@@ -77,6 +86,31 @@ export interface ProcessExecutionResult {
   stderr: string;
   durationMs: number;
 }
+
+export interface HostExecutionAssumptions {
+  readonly permissions: "configured-host";
+  readonly filesystemConfinement: false;
+  readonly networkDenial: false;
+  readonly hostileSameUserProtection: false;
+}
+
+export interface StateBoundCommandExecutionResult extends ProcessExecutionResult {
+  readonly authorization: {
+    readonly commandId: string;
+    readonly readScope: readonly string[];
+    readonly writeScope: readonly string[];
+    readonly requiresNetwork: boolean;
+    readonly sideEffectClass: CommandSpec["sideEffectClass"];
+  };
+  readonly hostAssumptions: HostExecutionAssumptions;
+}
+
+export const configuredHostAssumptions: HostExecutionAssumptions = {
+  permissions: "configured-host",
+  filesystemConfinement: false,
+  networkDenial: false,
+  hostileSameUserProtection: false,
+};
 
 export interface ProcessLauncher {
   readonly capabilities: ProcessLauncherCapabilities;
@@ -107,7 +141,7 @@ export class StateBoundCommandExecutor {
   async execute(
     spec: CommandSpec,
     authorization: CommandExecutionAuthorization,
-  ): Promise<ProcessExecutionResult> {
+  ): Promise<StateBoundCommandExecutionResult> {
     this.validateDeclaration(spec, authorization);
 
     const context: AdapterContext = {
@@ -132,18 +166,16 @@ export class StateBoundCommandExecutor {
     }
 
     let cwd: Awaited<ReturnType<RepositoryPathService["resolveScopedRead"]>>;
-    let readRoots: string[];
-    let writeRoots: string[];
     try {
       cwd = await this.paths.resolveScopedRead(spec.cwd, spec.readScope);
       await this.paths.resolveScopedRead(spec.cwd, authorization.allowedReadRoots);
-      readRoots = await Promise.all(
+      await Promise.all(
         spec.readScope.map(async (scope) => {
           const resolved = await this.paths.resolveScopedRead(scope, authorization.allowedReadRoots);
           return resolved.realTarget;
         }),
       );
-      writeRoots = await Promise.all(
+      await Promise.all(
         spec.writeScope.map(async (scope) => {
           const resolved = await this.paths.resolveScopedWrite(scope, authorization.allowedWriteRoots);
           return resolved.realTarget;
@@ -167,20 +199,28 @@ export class StateBoundCommandExecutor {
     if (executable === undefined) {
       throw new ExecutionRefusedError("invalid-command", `Command ${spec.id} has no executable`);
     }
-    return this.launcher.launch({
+    const observed = await this.launcher.launch({
       executable,
       args: spec.argv.slice(1),
       cwd: cwd.realTarget,
       env,
-      readRoots,
-      writeRoots,
-      network: spec.network,
       timeoutMs: spec.timeoutMs,
       ...(spec.cpuBudgetMs === undefined ? {} : { cpuBudgetMs: spec.cpuBudgetMs }),
       ...(spec.memoryBudgetMb === undefined ? {} : { memoryBudgetMb: spec.memoryBudgetMb }),
       maxOutputBytes: authorization.maxOutputBytes,
       signal: authorization.signal,
     });
+    return {
+      ...observed,
+      authorization: {
+        commandId: spec.id,
+        readScope: [...spec.readScope],
+        writeScope: [...spec.writeScope],
+        requiresNetwork: spec.requiresNetwork,
+        sideEffectClass: spec.sideEffectClass,
+      },
+      hostAssumptions: configuredHostAssumptions,
+    };
   }
 
   private validateDeclaration(spec: CommandSpec, authorization: CommandExecutionAuthorization): void {
@@ -204,7 +244,7 @@ export class StateBoundCommandExecutor {
     if ((spec.sideEffectClass === "none" || spec.sideEffectClass === "read-only") && spec.writeScope.length > 0) {
       throw new ExecutionRefusedError("scope-refused", `Read-only command ${spec.id} declares write scope`);
     }
-    if (spec.network === "allow" && !authorization.allowNetwork) {
+    if (spec.requiresNetwork && !authorization.allowNetwork) {
       throw new ExecutionRefusedError("network-refused", `Command ${spec.id} has no network grant`);
     }
     if (spec.sideEffectClass === "external-write" && !authorization.allowExternalWrites) {
@@ -214,20 +254,11 @@ export class StateBoundCommandExecutor {
 
   private validateLauncherCapabilities(spec: CommandSpec): void {
     const capabilities = this.launcher.capabilities;
-    if (!capabilities.filesystemIsolation) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot enforce filesystem scopes");
-    }
-    if (spec.network === "deny" && !capabilities.networkIsolation) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot enforce network denial");
-    }
     if (spec.cpuBudgetMs !== undefined && !capabilities.cpuLimits) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot enforce a CPU budget");
+      throw new ExecutionRefusedError("unsupported-resource-limit", "Host process launcher cannot enforce the requested CPU budget");
     }
     if (spec.memoryBudgetMb !== undefined && !capabilities.memoryLimits) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot enforce a memory budget");
-    }
-    if (spec.sideEffectClass === "external-write" && !capabilities.externalWrites) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Process launcher cannot perform authorized external writes");
+      throw new ExecutionRefusedError("unsupported-resource-limit", "Host process launcher cannot enforce the requested memory budget");
     }
   }
 }
@@ -239,7 +270,7 @@ function sameCommand(left: CommandSpec, right: CommandSpec): boolean {
     left.cwd === right.cwd &&
     sameStrings(left.readScope, right.readScope) &&
     sameStrings(left.writeScope, right.writeScope) &&
-    left.network === right.network &&
+    left.requiresNetwork === right.requiresNetwork &&
     sameStrings(left.environmentKeys, right.environmentKeys) &&
     left.sideEffectClass === right.sideEffectClass &&
     Object.is(left.timeoutMs, right.timeoutMs) &&
@@ -268,12 +299,8 @@ function sameState(left: StateDigest, right: StateDigest): boolean {
 
 export class NativeProcessLauncher implements ProcessLauncher {
   readonly capabilities: ProcessLauncherCapabilities = {
-    filesystemIsolation: false,
-    networkIsolation: false,
     cpuLimits: false,
     memoryLimits: false,
-    externalWrites: false,
-    readOnlyFileOverlays: false,
   };
 
   launch(request: ProcessLaunchRequest): Promise<ProcessExecutionResult> {
@@ -282,6 +309,7 @@ export class NativeProcessLauncher implements ProcessLauncher {
       const child = spawn(request.executable, request.args, {
         cwd: request.cwd,
         env: request.env,
+        detached: process.platform !== "win32",
         shell: false,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
@@ -290,11 +318,12 @@ export class NativeProcessLauncher implements ProcessLauncher {
       const stderr: Buffer[] = [];
       let outputBytes = 0;
       let limitError: ExecutionLimitError | undefined;
+      let cleanup: Promise<ProcessCleanupObservation> | undefined;
 
       const stopFor = (error: ExecutionLimitError) => {
         if (limitError === undefined) {
           limitError = error;
-          child.kill("SIGKILL");
+          cleanup = terminateOwnedProcessTree(child);
         }
       };
       const capture = (target: Buffer[], chunk: Buffer) => {
@@ -321,10 +350,28 @@ export class NativeProcessLauncher implements ProcessLauncher {
         request.signal.removeEventListener("abort", abort);
         reject(error);
       });
-      child.once("close", (exitCode, signal) => {
+      child.once("close", async (exitCode, signal) => {
         clearTimeout(timeout);
         request.signal.removeEventListener("abort", abort);
         if (limitError !== undefined) {
+          try {
+            if (cleanup === undefined) throw new Error("process limit was recorded without a cleanup attempt");
+            const attempt = await cleanup;
+            const observation: ProcessCleanupObservation = { ...attempt, rootExitObserved: true };
+            if (observation.status === "unconfirmed") {
+              reject(new ExecutionCleanupError(limitError, undefined, observation));
+              return;
+            }
+          } catch (error) {
+            reject(new ExecutionCleanupError(limitError, error, {
+              rootProcessId: child.pid ?? -1,
+              rootExitObserved: true,
+              requested: process.platform === "win32" ? "windows-taskkill-tree" : "posix-process-group-sigkill",
+              status: "unconfirmed",
+              reason: error instanceof Error ? error.message : String(error),
+            }));
+            return;
+          }
           reject(limitError);
           return;
         }
@@ -338,4 +385,47 @@ export class NativeProcessLauncher implements ProcessLauncher {
       });
     });
   }
+}
+
+async function terminateOwnedProcessTree(child: ReturnType<typeof spawn>): Promise<ProcessCleanupObservation> {
+  if (child.pid === undefined) throw new Error("spawned process has no owned process identifier");
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+    return {
+      rootProcessId: child.pid,
+      rootExitObserved: false,
+      processGroupId: child.pid,
+      requested: "posix-process-group-sigkill",
+      status: "unconfirmed",
+      reason: "The owned process group received SIGKILL, but descendants that escaped into another session cannot be confirmed absent.",
+    };
+  }
+  return new Promise<ProcessCleanupObservation>((resolve, reject) => {
+    const cleanup = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+      shell: false,
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    cleanup.once("error", (error) => {
+      child.kill("SIGKILL");
+      reject(error);
+    });
+    cleanup.once("close", (code) => {
+      if (code === 0) resolve({
+        rootProcessId: child.pid!,
+        rootExitObserved: false,
+        requested: "windows-taskkill-tree",
+        cleanupCommandExitCode: code,
+        status: "reported-complete",
+      });
+      else {
+        child.kill("SIGKILL");
+        reject(new Error(`taskkill exited with code ${String(code)}`));
+      }
+    });
+  });
 }

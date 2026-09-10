@@ -53,7 +53,7 @@ function launchChild() {
   env: {
     HOME: process.env.HOME ?? "",
     PATH: process.env.PATH ?? "",
-    ...Object.fromEntries(["PROJECTOR_WSL_DISTRO", "PROJECTOR_WSL_NODE", "SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR"].flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]]])),
+    ...Object.fromEntries(["SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR"].flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]]])),
     ...(configuredCli === undefined ? {} : { PROJECTOR_CLI: configuredCli }),
     PROJECTOR_ROOT: repositoryRoot,
   },

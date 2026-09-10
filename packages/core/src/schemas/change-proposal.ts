@@ -137,6 +137,10 @@ export const ChangeProposalSchema = z.object({
   const edited = proposal.edits.map(({ path }) => path);
   if (new Set(edited).size !== edited.length) context.addIssue({ code: "custom", message: "proposal has duplicate edit paths" });
   if (proposal.validation.independentNodeTests.some((path) => edited.includes(path))) context.addIssue({ code: "custom", message: "independent Node tests cannot be edited" });
+  const editsByPath = new Map(proposal.edits.map((edit) => [edit.path, edit]));
+  for (const path of proposal.validation.supplementalNodeTests) {
+    if (editsByPath.get(path)?.after == null) context.addIssue({ code: "custom", path: ["validation", "supplementalNodeTests"], message: `supplemental Node test must be supplied by a nondeleted exact edit: ${path}` });
+  }
   if ((proposal.architecture?.deferral.forbiddenWritePaths ?? []).some((path) => edited.includes(path))) context.addIssue({ code: "custom", message: "architecture deferral forbidden write paths overlap proposed edits" });
   const hasModelMutation = proposal.requirements.length > 0 || proposal.scenarios.length > 0 || (proposal.canonicalMutations?.length ?? 0) > 0;
   if (proposal.edits.length === 0 && !hasModelMutation) context.addIssue({ code: "custom", message: "proposal must contain a code edit or canonical semantic mutation" });

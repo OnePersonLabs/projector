@@ -22,18 +22,21 @@ const PACKED_LIFECYCLE_ARTIFACT_IDS = Object.freeze(["packed-held-out-lifecycle"
 const execute = promisify(execFile);
 
 const slug = (value: string) => value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
-const sourceDigest = (path: string, text: string) => hashFramedDomain("acceptance-authoritative-source", { path, text });
+const portableText = (text: string) => text.replace(/\r\n?/gu, "\n");
+const sourceDigest = (path: string, text: string) => hashFramedDomain("acceptance-authoritative-source", { path, text: portableText(text) });
 function inventoryItem(stratum: AcceptanceStratum, ordinal: number, title: string, source: AcceptanceSource): AcceptanceInventoryItem { return { id: `${stratum}:${String(ordinal).padStart(2, "0")}:${slug(title)}`, stratum, ordinal, title, sourcePath: source.path, sourceDigest: sourceDigest(source.path, source.text) }; }
 
 export function deriveAcceptanceInventory(input: { readonly scenarios: readonly AcceptanceSource[]; readonly testing: AcceptanceSource }): readonly AcceptanceInventoryItem[] {
   let scenarioOrdinal = 0;
-  const scenarios = input.scenarios.flatMap((source) => [...source.text.matchAll(/^## (.+)$/gmu)].map((match) => match[1]!).filter((title) => !/^Relevance and Semantic Identity Acceptance Scenarios$/u.test(title)).map((title) => inventoryItem("scenario", ++scenarioOrdinal, title, source)));
-  const propertySection = /## Property-based tests\s+Mandatory properties include:\s+([\s\S]*?)\n## /u.exec(input.testing.text)?.[1];
+  const scenarioSources = input.scenarios.map((source) => ({ ...source, text: portableText(source.text) }));
+  const testing = { ...input.testing, text: portableText(input.testing.text) };
+  const scenarios = scenarioSources.flatMap((source) => [...source.text.matchAll(/^## (.+)$/gmu)].map((match) => match[1]!).filter((title) => !/^Relevance and Semantic Identity Acceptance Scenarios$/u.test(title)).map((title) => inventoryItem("scenario", ++scenarioOrdinal, title, source)));
+  const propertySection = /## Property-based tests\s+Mandatory properties include:\s+([\s\S]*?)\n## /u.exec(testing.text)?.[1];
   if (propertySection === undefined) throw new Error("authoritative property inventory is missing");
-  const properties = [...propertySection.matchAll(/^- (.+)$/gmu)].map((match) => match[1]!).map((title, index) => inventoryItem("property", index + 1, title, input.testing));
-  const adversarySection = /## Anti-self-deception tests\s+Mandatory adversarial classes:\s+([\s\S]*?)\n## /u.exec(input.testing.text)?.[1];
+  const properties = [...propertySection.matchAll(/^- (.+)$/gmu)].map((match) => match[1]!).map((title, index) => inventoryItem("property", index + 1, title, testing));
+  const adversarySection = /## Anti-self-deception tests\s+Mandatory adversarial classes:\s+([\s\S]*?)\n## /u.exec(testing.text)?.[1];
   if (adversarySection === undefined) throw new Error("authoritative adversary inventory is missing");
-  const adversaries = [...adversarySection.matchAll(/^\d+\. (.+)$/gmu)].map((match) => match[1]!).map((title, index) => inventoryItem("adversary", index + 1, title, input.testing));
+  const adversaries = [...adversarySection.matchAll(/^\d+\. (.+)$/gmu)].map((match) => match[1]!).map((title, index) => inventoryItem("adversary", index + 1, title, testing));
   if (scenarios.length !== 63 || properties.length !== 27 || adversaries.length !== 33) throw new Error(`authoritative acceptance inventory mismatch: ${scenarios.length}/63 scenarios, ${properties.length}/27 properties, ${adversaries.length}/33 adversaries`);
   return Object.freeze([...scenarios, ...properties, ...adversaries]);
 }
@@ -109,7 +112,7 @@ export async function verifyTraceabilityManifest(manifest: TraceabilityManifest,
     verifyTraceabilityAssertionIdentity(entry.testRef, result ?? {});
     const path = resolve(root, relativePath); if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error(`traceability test escapes repository: ${relativePath}`);
     let text = sourceCache.get(relativePath); if (text === undefined) { try { text = await readFile(path, "utf8"); } catch { throw new Error(`traceability test does not exist: ${relativePath}`); } sourceCache.set(relativePath, text); }
-    if (hashFramedDomain("traceability-test-source", { path: relativePath, text }) !== entry.testSourceDigest) throw new Error(`traceability test source or exact identity is stale: ${entry.testRef}`);
+    if (hashFramedDomain("traceability-test-source", { path: relativePath, text: portableText(text) }) !== entry.testSourceDigest) throw new Error(`traceability test source or exact identity is stale: ${entry.testRef}`);
   }
   const runEvidenceHash = hashFramedDomain("vitest-json-reporter-output", reporterOutput); const body = { inventoryHash: manifest.inventoryHash, runEvidenceHash, entries: manifest.entries.map(({ mappingHash }) => mappingHash) };
   return Object.freeze({ verified: true, inventoryHash: manifest.inventoryHash, runEvidenceHash, rawOutput: reporterOutput, contentHash: hashFramedDomain("verified-traceability", body) });

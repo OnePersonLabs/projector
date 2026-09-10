@@ -16,6 +16,8 @@ import { CanonicalFileRepository } from "@projector/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { RepositoryKnowledgeService } from "./service.js";
+import { KnowledgeGraph } from "./graph.js";
+import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
 
 const roots: string[] = [];
 const hash = (label: string) => hashFramedDomain("knowledge-test", label);
@@ -336,6 +338,14 @@ describe("RepositoryKnowledgeService", () => {
     await writeCanonical(root, "authority-record", authorityRecord.id, authorityRecord.key, authorityRecord.status, { ...authorityRecord });
     await writeCanonical(root, "architecture-decision", decision.id, decision.key, decision.lifecycle, { ...decision });
     const retained = await (await RepositoryKnowledgeService.create(root)).context({ request: "inspect scope", entities: [decision.id] });
+    const graph = new KnowledgeGraph(await observeChangeRepository(root));
+    const originalBindings = graph.implementationBindings(decision.id);
+    expect(originalBindings).toHaveLength(1);
+    const callerBindings = graph.implementationBindings(decision.id);
+    callerBindings[0]!.id = "caller-changed";
+    callerBindings.push({ id: "caller-added" });
+    expect(graph.implementationBindings(decision.id)).toEqual(originalBindings);
+    expect(graph.implementationBindings("decision:unrelated")).toEqual([]);
 
     await writeFile(join(root, "unrelated.ts"), "export const unrelated = 2;\n", "utf8");
     expect((await (await RepositoryKnowledgeService.create(root)).reconcile(retained.id)).status).toBe("rebound");
@@ -344,6 +354,9 @@ describe("RepositoryKnowledgeService", () => {
     const changed = await (await RepositoryKnowledgeService.create(root)).reconcile(retained.id);
     expect(changed.status).toBe("stale");
     expect(changed.branches[0]?.validation.changedQueryDependencyIds).toContain(`knowledge-implementation:${decision.id}`);
+    const currentGraph = new KnowledgeGraph(await observeChangeRepository(root));
+    expect(currentGraph.implementationBindings(decision.id)).toHaveLength(2);
+    expect(graph.implementationBindings(decision.id)).toEqual(originalBindings);
   });
 
   it("places only an applicable active lens and its obligations inside the bounded branch", async () => {

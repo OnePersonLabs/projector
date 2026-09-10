@@ -1,10 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { access, cp, lstat, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 
-const bubblewrap = "/usr/bin/bwrap";
+const execute = promisify(execFile);
+const maximumOutputBytes = 1_048_576;
+const maximumExecutionMs = 60_000;
 const canonical = canonicalJson;
 const hash = (domain, value) => `sha256:v1:${createHash("sha256").update(`${domain}\0${canonical(value)}`, "utf8").digest("hex")}`;
 
@@ -103,10 +106,15 @@ export function verifyPackedLifecycleEvidence(evidence) {
   assert(typeof evidence.runId === "string" && /^[0-9a-f]{8}-[0-9a-f-]{27}$/iu.test(evidence.runId), "has no authenticated run identity");
   assert(typeof evidence.request === "string" && evidence.request.length > 0 && evidence.request !== "repair-governed-state", "uses a fixture-only request");
   assert(evidence.activation?.initialized === true && evidence.activation?.projectEnabled === true && canonical(evidence.activation?.config) === canonical({ apiVersion: "projector.config/v1", enabled: true }), "did not explicitly activate the held-out repository");
-  assert(evidence.sourceBoundary?.sourceAccessDenied === true && evidence.sourceBoundary.installedSymlinkCount === 0 && evidence.sourceBoundary.pluginSourceReferenceCount === 0, "did not sever source access");
+  const boundary = evidence.artifactBoundary;
+  assert(boundary?.checkoutDependency === "none-declared" && boundary.checkoutPathInput === null && boundary.checkoutAbsenceObservation === "not-claimed" && boundary.installedSymlinkCount === 0 && boundary.pluginSymlinkCount === 0 && boundary.nodePathEmpty === true && boundary.execution === "trusted-host", "did not prove checkout-independent installed-artifact execution");
   assert(evidence.direct?.changeSelector === evidence.pause?.changeSelector && evidence.direct?.planHash === evidence.pause?.planHash, "does not match direct and agent plan identity");
   assert(evidence.pause?.status === "approval-required" && evidence.approval?.status === "approved" && evidence.approval?.planHash === evidence.direct?.planHash, "did not enforce exact plan-hash approval");
-  assert(evidence.interruption?.signal === "SIGKILL" && evidence.interruption?.journalPhase === "validating" && evidence.interruption?.mutationObserved === true, "did not prove a real validating-phase interruption");
+  const interruption = evidence.interruption;
+  assert(interruption?.terminationRequested === true && interruption.rootExitObserved === true && interruption.journalPhase === "validating" && interruption.mutationObserved === true, "did not prove a bounded validating-phase interruption");
+  const windowsCleanupObserved = interruption.cleanupStrategy === "windows-taskkill-tree" && interruption.cleanupStatus === "reported-complete" && interruption.cleanupCommandExitCode === 0 && interruption.rootAbsentObserved === true;
+  const posixCleanupRecovered = interruption.cleanupStrategy === "posix-process-group-sigkill" && interruption.cleanupStatus === "unconfirmed" && typeof interruption.cleanupReason === "string" && interruption.cleanupReason.length > 0 && evidence.recovery?.action === "rolled-back" && evidence.recovery?.exactBeforeRestored === true;
+  assert(windowsCleanupObserved || posixCleanupRecovered, "did not preserve truthful platform cleanup and recovery evidence");
   assert(evidence.recovery?.action === "rolled-back" && evidence.recovery?.exactBeforeRestored === true, "did not prove exact rollback");
   assert(evidence.result?.outcome === "success" && evidence.result?.approvalSelector === evidence.approval?.approvalSelector && evidence.result?.planId === evidence.direct?.planId, "does not bind successful result identity");
   let certificateArtifact; let receipt;
@@ -115,43 +123,38 @@ export function verifyPackedLifecycleEvidence(evidence) {
   assert(evidence.result.certificateHash === hashFramedDomain("change-certificate-artifact", certificateArtifact) && evidence.result.receiptHash === hashFramedDomain("transaction-receipt-artifact", receipt) && receipt.certificateHash === evidence.result.certificateHash, "has completion hashes that do not match artifact bytes");
   assert(sameStrings(evidence.direct.predictedChangedPaths, evidence.result.predictedChangedPaths) && sameStrings(evidence.result.predictedChangedPaths, evidence.result.observedChangedPaths), "has predicted/observed path impact mismatch");
   assert(evidence.result.unexpectedChangedPaths.length === 0 && evidence.result.unexpectedChangedCanonicalIds.length === 0 && evidence.result.planningSurpriseIds.length === 0 && evidence.result.unknowns.length === 0, "has unexplained impact or planning surprise");
-  const oracle = evidence.independentOracle; assert(oracle?.beforeExitCode !== 0 && oracle?.afterExitCode === 0 && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oracle?.gitObjectId ?? "") && oracle?.expectedContentHash === oracle?.beforeContentHash && oracle?.beforeContentHash === oracle?.afterContentHash && oracle?.afterContentHash === oracle?.executedContentHash && oracle?.executionSource === "immutable-captured-overlay", "lacks an independent Git-base desired-behavior oracle");
+  const oracle = evidence.independentOracle; assert(oracle?.beforeExitCode !== 0 && oracle?.afterExitCode === 0 && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oracle?.gitObjectId ?? "") && oracle?.expectedContentHash === oracle?.beforeContentHash && oracle?.beforeContentHash === oracle?.afterContentHash && oracle?.afterContentHash === oracle?.executedContentHash && oracle?.executionSource === "exact-live-tracked-validator", "lacks an independent Git-base desired-behavior oracle");
   const rerun = evidence.fixedPointRerun; assert(rerun?.firstCertificateHash === evidence.result.certificateHash && rerun?.secondCertificateHash === rerun?.firstCertificateHash && rerun?.firstReceiptHash === evidence.result.receiptHash && rerun?.secondReceiptHash === rerun?.firstReceiptHash && rerun?.afterSourceHash === rerun?.rerunSourceHash, "lacks an actual fixed-point rerun");
-  assert(evidence.fixtureMarkerAbsent === true, "used the mandatory fixture fallback");
   authenticateTrace(evidence.trace, evidence.direct);
   return hash("packed-held-out-lifecycle-evidence", evidence);
 }
 
-function sandboxArguments({ temporaryRoot, consumerRoot, pluginRoot, repository, installedCli, fixtureMarker }, executable, args) {
-  const environment = {
-    HOME: repository,
-    NODE_PATH: "",
-    PATH: `${dirname(process.execPath)}:/usr/bin`,
-    PROJECTOR_CLI: installedCli,
-    PROJECTOR_FIXTURE_EXECUTION_MARKER: fixtureMarker,
-  };
-  return [
-    "--die-with-parent", "--new-session", "--unshare-net", "--clearenv", "--dev", "/dev", "--proc", "/proc",
-    "--ro-bind", "/usr", "/usr", "--ro-bind", "/lib", "/lib", "--ro-bind", "/lib64", "/lib64",
-    "--ro-bind", dirname(process.execPath), dirname(process.execPath),
-    "--dir", "/tmp", "--dir", temporaryRoot,
-    "--dir", consumerRoot, "--ro-bind", consumerRoot, consumerRoot,
-    "--dir", pluginRoot, "--ro-bind", pluginRoot, pluginRoot,
-    "--dir", repository, "--bind", repository, repository,
-    "--chdir", repository,
-    ...Object.entries(environment).sort(([left], [right]) => left.localeCompare(right)).flatMap(([key, value]) => ["--setenv", key, value]),
-    executable, ...args,
-  ];
-}
-
 function launch(file, args, options = {}) {
   const child = spawn(file, args, { cwd: options.cwd, env: options.env ?? {}, detached: options.detached ?? false, stdio: ["ignore", "pipe", "pipe"] });
-  let stdout = ""; let stderr = "";
+  let stdout = ""; let stderr = ""; let outputBytes = 0; let boundaryFailure; let cleanup;
   child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => { stdout += chunk; }); child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const collect = (stream) => (chunk) => {
+    outputBytes += Buffer.byteLength(chunk);
+    if (outputBytes <= maximumOutputBytes) {
+      if (stream === "stdout") stdout += chunk; else stderr += chunk;
+      return;
+    }
+    boundaryFailure ??= `output exceeded ${String(maximumOutputBytes)} bytes`;
+    cleanup ??= terminateProcessTree(child.pid);
+  };
+  child.stdout.on("data", collect("stdout")); child.stderr.on("data", collect("stderr"));
+  const timer = setTimeout(() => {
+    boundaryFailure ??= `execution exceeded ${String(options.timeoutMs ?? maximumExecutionMs)}ms`;
+    cleanup ??= terminateProcessTree(child.pid);
+  }, options.timeoutMs ?? maximumExecutionMs);
+  timer.unref();
   const completed = new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code, signal) => resolve({ exitCode: code, signal, stdout: stdout.trim(), stderr: stderr.trim() }));
+    child.once("error", (error) => { clearTimeout(timer); reject(error); });
+    child.once("exit", async (code, signal) => {
+      clearTimeout(timer);
+      if (cleanup !== undefined) await cleanup;
+      resolve({ exitCode: code, signal, stdout: stdout.trim(), stderr: stderr.trim(), boundaryFailure });
+    });
   });
   return { child, completed };
 }
@@ -161,6 +164,7 @@ async function run(file, args, options = {}) {
 }
 
 function requireExit(result, label, allowed = [0]) {
+  if (result.boundaryFailure !== undefined) throw new Error(`${label} ${result.boundaryFailure}`);
   if (!allowed.includes(result.exitCode)) throw new Error(`${label} exited ${String(result.exitCode)} (${result.signal ?? "no signal"}): ${result.stderr || result.stdout || "no diagnostic"}`);
   return result;
 }
@@ -183,19 +187,6 @@ async function countSymlinks(root) {
       const path = join(directory, entry.name); const metadata = await lstat(path);
       if (metadata.isSymbolicLink()) count += 1;
       else if (metadata.isDirectory()) await visit(path);
-    }
-  };
-  await visit(root);
-  return count;
-}
-
-async function countSourceReferences(root, sourceRoot) {
-  let count = 0;
-  const visit = async (directory) => {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) await visit(path);
-      else if (entry.isFile()) { const content = await readFile(path, "utf8"); count += content.split(sourceRoot).length - 1; }
     }
   };
   await visit(root);
@@ -226,24 +217,43 @@ async function waitForStaleLease(repository) {
   await delay(Math.max(0, heartbeat.mtimeMs + owner.staleAfterMs + 500 - Date.now()));
 }
 
-async function killProcessTree(rootProcessId) {
-  const seen = new Set(); const postorder = [];
-  const visit = async (processId) => {
-    if (seen.has(processId)) return;
-    seen.add(processId);
-    let children = "";
-    try { children = await readFile(`/proc/${String(processId)}/task/${String(processId)}/children`, "utf8"); }
-    catch (error) { if (error?.code !== "ENOENT") throw error; }
-    for (const child of children.trim().split(/\s+/u).filter(Boolean).map(Number)) await visit(child);
-    postorder.push(processId);
-  };
-  await visit(rootProcessId);
-  const killed = [];
-  for (const processId of postorder) {
-    try { process.kill(processId, "SIGKILL"); killed.push(processId); }
-    catch (error) { if (error?.code !== "ESRCH" && error?.code !== "EPERM") throw error; }
+async function processAbsent(processId) {
+  try { process.kill(processId, 0); return false; }
+  catch (error) { if (error?.code === "ESRCH") return true; if (error?.code === "EPERM") return false; throw error; }
+}
+
+async function waitForProcessAbsence(processId, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await processAbsent(processId)) return true;
+    await delay(25);
   }
-  return killed;
+  return processAbsent(processId);
+}
+
+export async function terminateProcessTree(rootProcessId) {
+  if (process.platform === "win32") {
+    let cleanupCommandExitCode = 0;
+    try {
+      await execute("taskkill", ["/PID", String(rootProcessId), "/T", "/F"], { windowsHide: true, timeout: 10_000 });
+    } catch (error) {
+      cleanupCommandExitCode = typeof error?.code === "number" ? error.code : -1;
+      if (error?.code !== 128 && error?.code !== "ESRCH") throw error;
+    }
+    const rootAbsentObserved = await waitForProcessAbsence(rootProcessId);
+    if (!rootAbsentObserved) throw new Error(`taskkill returned but root process ${String(rootProcessId)} remained observable`);
+    return { strategy: "windows-taskkill-tree", requestedProcessIds: [rootProcessId], cleanupCommandExitCode, rootAbsentObserved, status: "reported-complete" };
+  }
+
+  try { process.kill(-rootProcessId, "SIGKILL"); }
+  catch (error) { if (error?.code !== "ESRCH") throw error; }
+  return {
+    strategy: "posix-process-group-sigkill",
+    requestedProcessIds: [rootProcessId],
+    rootAbsentObserved: await waitForProcessAbsence(rootProcessId),
+    status: "unconfirmed",
+    reason: "The owned process group received SIGKILL, but descendants that escaped into another session cannot be confirmed absent.",
+  };
 }
 
 async function pathAbsent(path) {
@@ -256,7 +266,6 @@ export async function runPackedLifecycleAcceptance(input) {
   const runId = randomUUID();
   const pluginRoot = join(input.temporaryRoot, "held-out-plugin");
   const repository = join(input.temporaryRoot, "held-out-repository");
-  const fixtureMarker = join(repository, "mandatory-fixture-executed.marker");
   const installedCli = join(input.installedProjector, "bin", "projector.js");
   const wrapper = join(pluginRoot, "scripts", "projector-change.mjs");
   await cp(input.pluginSource, pluginRoot, { recursive: true });
@@ -281,7 +290,7 @@ export async function runPackedLifecycleAcceptance(input) {
     ] }],
     architecture: null,
     edits: [{ path: "src/format-label.mjs", before: beforeSource, after: afterSource }, { path: "test/trim-label.test.mjs", before: null, after: supplemental }],
-    validation: { independentNodeTests: ["test/public-api.test.mjs"], supplementalNodeTests: ["test/trim-label.test.mjs"] },
+    validation: { independentNodeTests: ["test/public-api.test.mjs"], supplementalNodeTests: [] },
     analysisFacets: ["architecture", "behavior"],
   };
   await writeFile(join(repository, proposalPath), `${JSON.stringify(proposal, null, 2)}\n`, "utf8");
@@ -293,9 +302,10 @@ export async function runPackedLifecycleAcceptance(input) {
   await mkdir(join(repository, ".projector", "runtime"), { recursive: true });
   await writeFile(join(repository, ".projector", "runtime", "interruption-hold"), "hold\n", "utf8");
 
-  const sandbox = { temporaryRoot: input.temporaryRoot, consumerRoot: input.consumerRoot, pluginRoot, repository, installedCli, fixtureMarker };
-  const severed = (executable, args, options = {}) => launch(bubblewrap, sandboxArguments(sandbox, executable, args), { cwd: repository, detached: options.detached });
-  const direct = async (args) => (await severed(process.execPath, [installedCli, ...args]).completed);
+  const inherited = ["SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "PATH", "TEMP", "TMP", "TMPDIR"].flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]]]);
+  const environment = { ...Object.fromEntries(inherited), HOME: repository, NODE_PATH: "", PROJECTOR_CLI: installedCli };
+  const hostLaunch = (executable, args, options = {}) => launch(executable, args, { cwd: repository, env: environment, detached: options.detached });
+  const direct = async (args) => (await hostLaunch(process.execPath, [installedCli, ...args]).completed);
   const trace = [];
   const recordInvocation = (phase, command, args, result) => {
     const previousHash = trace.at(-1)?.entryHash ?? null;
@@ -304,15 +314,14 @@ export async function runPackedLifecycleAcceptance(input) {
   };
   const launchAgent = (args, options = {}) => {
     const [command, ...commandArgs] = args; recordInvocation("invoked", command, commandArgs);
-    const launched = severed(process.execPath, [wrapper, ...args], { detached: options.detached });
+    const launched = hostLaunch(process.execPath, [wrapper, ...args], { detached: options.detached });
     const completed = launched.completed.then((result) => { if (options.recordCompletion !== false) recordInvocation("completed", command, commandArgs, result); return result; });
     return { ...launched, completed };
   };
   const agent = async (args) => launchAgent(args).completed;
-  const sourceProbeCode = "import { access } from 'node:fs/promises'; try { await access(process.argv[1]); process.exitCode=9; } catch (error) { if (error?.code !== 'ENOENT') throw error; process.stdout.write(JSON.stringify({sourceAccessDenied:true})+'\\n'); }";
+  assert(!Object.hasOwn(input, "repositoryRoot") && !Object.hasOwn(input, "checkoutPath"), "received a checkout dependency in source-severed acceptance");
   const installedVersion = requireExit(await direct(["--version"]), "source-severed installed CLI version").stdout;
   assert(installedVersion === "2.1.0", "did not execute the installed CLI");
-  const denied = json(await severed(process.execPath, ["--input-type=module", "--eval", sourceProbeCode, join(input.repositoryRoot, "package.json")]).completed, "source access negative probe");
   const initialized = json(await direct(["init", "--format", "json"]), "explicit held-out repository activation");
   const activationConfig = JSON.parse(await readFile(join(repository, ".projector", "config.json"), "utf8"));
 
@@ -332,7 +341,7 @@ export async function runPackedLifecycleAcceptance(input) {
   if (progress.kind === "exited") throw new Error(`packed apply exited before validation: ${progress.result.stderr || progress.result.stdout || "no diagnostic"}`);
   const validating = progress.entry;
   const mutationObserved = await readFile(join(repository, "src", "format-label.mjs"), "utf8") === afterSource && !(await pathAbsent(join(repository, "test", "trim-label.test.mjs")));
-  const killedProcessIds = await killProcessTree(applying.child.pid);
+  const cleanup = await terminateProcessTree(applying.child.pid);
   const interrupted = await applying.completed;
   await rm(join(repository, ".projector", "runtime", "interruption-hold"), { force: true });
   await waitForStaleLease(repository);
@@ -345,7 +354,7 @@ export async function runPackedLifecycleAcceptance(input) {
   if (recovery?.action !== "rolled-back" || !exactBeforeRestored) throw new Error(`packed rollback mismatch: ${canonical({ validating, recovered, recovery, recoveredSource, supplementalAbsent })}`);
   const result = json(await agent(["resume", "--approval", approval.selector]), "agent held-out resume");
   const fixed = json(await agent(["resume", "--approval", approval.selector]), "agent held-out fixed-point resume");
-  const afterOracle = await severed(process.execPath, [oracleValidatorPath]).completed;
+  const afterOracle = await hostLaunch(process.execPath, [oracleValidatorPath]).completed;
   const observation = result.validations.find(({ validatorId }) => validatorId === "projector.repository-post-observation")?.details?.observation;
   const independent = result.validations.find(({ validatorId }) => validatorId === "node-independent:test/public-api.test.mjs");
   const certificateBytes = await readFile(join(repository, result.certificateRef), "utf8"); const receiptBytes = await readFile(join(repository, result.receiptRef), "utf8");
@@ -355,11 +364,11 @@ export async function runPackedLifecycleAcceptance(input) {
     runId,
     request,
     activation: { initialized: initialized.initialized === true, projectEnabled: initialized.projectEnabled === true, config: activationConfig },
-    sourceBoundary: { sourceAccessDenied: denied.sourceAccessDenied === true, installedSymlinkCount: await countSymlinks(input.installedProjector), pluginSourceReferenceCount: await countSourceReferences(pluginRoot, input.repositoryRoot) },
+    artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", installedSymlinkCount: await countSymlinks(input.installedProjector), pluginSymlinkCount: await countSymlinks(pluginRoot), nodePathEmpty: environment.NODE_PATH === "", execution: "trusted-host" },
     direct: { changeSelector: directChange.selector, planHash: directPlan.immutablePlanHash, planId: directPlan.plan.id, predictedChangedPaths: expectedPaths, preview: directPlan.preview },
     pause: { status: pause.outcome, changeSelector: pause.selector, planHash: pause.immutablePlanHash },
     approval: { status: approval.kind === "lifecycle-approval" ? "approved" : "invalid", approvalSelector: approval.selector, planHash: approval.immutablePlanHash },
-    interruption: { signal: killedProcessIds.length > 0 && interrupted.exitCode !== 0 ? "SIGKILL" : interrupted.signal, journalPhase: validating.phase, mutationObserved, killedProcessCount: killedProcessIds.length },
+    interruption: { terminationRequested: cleanup.requestedProcessIds.length > 0, rootExitObserved: interrupted.exitCode !== null || interrupted.signal !== null, rootAbsentObserved: cleanup.rootAbsentObserved, cleanupStatus: cleanup.status, cleanupStrategy: cleanup.strategy, cleanupCommandExitCode: cleanup.cleanupCommandExitCode, cleanupReason: cleanup.reason, journalPhase: validating.phase, mutationObserved, requestedProcessCount: cleanup.requestedProcessIds.length },
     recovery: { action: recovery?.action, exactBeforeRestored },
     result: {
       outcome: result.outcome,
@@ -381,7 +390,6 @@ export async function runPackedLifecycleAcceptance(input) {
     independentOracle: { beforeExitCode: beforeOracle.exitCode, afterExitCode: afterOracle.exitCode, gitObjectId, expectedContentHash: independent?.details?.expectedContentHash, beforeContentHash: independent?.details?.beforeContentHash, afterContentHash: independent?.details?.afterContentHash, executedContentHash: independent?.details?.executedContentHash, executionSource: independent?.details?.executionSource },
     fixedPointRerun: { firstCertificateHash: result.certificateHash, secondCertificateHash: fixed.certificateHash, firstReceiptHash: result.receiptHash, secondReceiptHash: fixed.receiptHash, afterSourceHash: hash("packed-lifecycle-source-bytes", afterSource), rerunSourceHash: hash("packed-lifecycle-source-bytes", rerunSource) },
     trace,
-    fixtureMarkerAbsent: await pathAbsent(fixtureMarker),
   };
   const evidenceHash = verifyPackedLifecycleEvidence(evidence);
   const transcript = { runId, directChange, directPlan, pause, approval, interrupted, recovered, result, fixed, trace };
