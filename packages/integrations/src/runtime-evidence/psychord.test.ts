@@ -26,6 +26,7 @@ const plan = (caseName: PsychordObservationPlan["case"]): PsychordObservationPla
     { role: "toolchain", locator: "node:24.19.0", contentHash: hash("toolchain") },
   ],
   ownedArtifactRoot: "C:/work/psychord/.projector/runtime/application-evidence/run",
+  representativeInput: { code: "KeyA", holdMs: 1_200 },
   server: {
     expectedOrigin: "http://127.0.0.1:43123",
     readinessNonce: "nonce:one",
@@ -149,8 +150,8 @@ describe("Psychord application observation", () => {
       rawByteLength: 1_458,
       momentCount: 1,
       noteEvents: [
-        { type: "note-on" as const, eventId: "event:1", atMs: 0, sourceId: "keyboard", sourceSequence: 1, sourceTimestampMs: 100, pitch: 60, midiChannel: 0, disposition: "player" as const, velocity: 0.72 },
-        { type: "note-off" as const, eventId: "event:2", atMs: 120, sourceId: "keyboard", sourceSequence: 2, sourceTimestampMs: 220, pitch: 60, midiChannel: 0, disposition: "player" as const, releaseVelocity: 0 },
+        { type: "note-on" as const, eventId: "event:1", ingestSequence: 1, atMs: 0, sourceId: "keyboard", sourceSequence: 1, sourceTimestamp: { value: 100, clock: "host-monotonic" as const }, pitch: 60, midiChannel: 0, disposition: "accepted" as const, velocity: 0.72 },
+        { type: "note-off" as const, eventId: "event:2", ingestSequence: 2, atMs: 120, sourceId: "keyboard", sourceSequence: 2, sourceTimestamp: { value: 220, clock: "host-monotonic" as const }, pitch: 60, midiChannel: 0, disposition: "accepted" as const, releaseVelocity: 0 },
       ],
     };
     const empty = { sound: "disabled" as const, controls: { listen: false, keep: false, clear: false }, archiveCount: 0, replay: "idle" as const, playerNoteCount: 0, activeVoiceCount: 0, playerEvents: [] };
@@ -169,7 +170,7 @@ describe("Psychord application observation", () => {
     expect(result).toMatchObject({ operationalStatus: "completed", outcome: "passed", currentness: "current" });
     expect(controller.actions).toEqual([
       "enable-sound",
-      "play:KeyA:120",
+      "play:KeyA:1200",
       "keep",
       "reload",
       "enable-sound",
@@ -189,8 +190,8 @@ describe("Psychord application observation", () => {
       rawByteLength: 1_371,
       momentCount: 1,
       noteEvents: [
-        { type: "note-on" as const, eventId: "event:1", atMs: 0, sourceId: "keyboard", sourceSequence: 1, sourceTimestampMs: 100, pitch: 60, midiChannel: 0, disposition: "player" as const, velocity: 0.72 },
-        { type: "note-off" as const, eventId: "event:2", atMs: 120, sourceId: "keyboard", sourceSequence: 2, sourceTimestampMs: 220, pitch: 60, midiChannel: 0, disposition: "player" as const, releaseVelocity: 0 },
+        { type: "note-on" as const, eventId: "event:1", ingestSequence: 1, atMs: 0, sourceId: "keyboard", sourceSequence: 1, sourceTimestamp: { value: 100, clock: "host-monotonic" as const }, pitch: 60, midiChannel: 0, disposition: "accepted" as const, velocity: 0.72 },
+        { type: "note-off" as const, eventId: "event:2", ingestSequence: 2, atMs: 120, sourceId: "keyboard", sourceSequence: 2, sourceTimestamp: { value: 220, clock: "host-monotonic" as const }, pitch: 60, midiChannel: 0, disposition: "accepted" as const, releaseVelocity: 0 },
       ],
     };
     const empty = { sound: "disabled" as const, controls: { listen: false, keep: false, clear: false }, archiveCount: 0, replay: "idle" as const, playerNoteCount: 0, activeVoiceCount: 0, playerEvents: [] };
@@ -209,7 +210,7 @@ describe("Psychord application observation", () => {
 
     expect(result).toMatchObject({ operationalStatus: "completed", outcome: "passed", currentness: "current" });
     expect(controller.actions).toEqual([
-      "enable-sound", "play:KeyA:120", "keep", "reload", "enable-sound", "play:KeyA:120", "inject-save-failure", "keep",
+      "enable-sound", "play:KeyA:1200", "keep", "reload", "enable-sound", "play:KeyA:1200", "inject-save-failure", "keep",
     ]);
     expect(result.observations.afterFailedSave).toMatchObject({
       archiveCount: 1,
