@@ -36,14 +36,14 @@ For non-trivial changes Projector SHOULD evaluate WHAT/WHY and WHERE/WHAT-ELSE a
 
 ```mermaid
 flowchart TD
-    U[User request] --> IA[Intent analyst<br/>WHAT / WHY]
-    U --> IS[Relevance scout<br/>WHERE / WHAT-ELSE]
-    IA --> R[Semantic identity resolution]
+    U["User request"] --> IA["Intent analyst<br/>WHAT / WHY"]
+    U --> IS["Relevance scout<br/>WHERE / WHAT-ELSE"]
+    IA --> R["Semantic identity resolution"]
     IS --> R
-    R --> C[Bounded Relevance Closure]
-    C --> B[Behavior / requirement delta]
-    B --> A[Architecture preflight]
-    A --> I[Impact closure]
+    R --> C["Bounded Relevance Closure"]
+    C --> B["Behavior / requirement delta"]
+    B --> A["Architecture preflight"]
+    A --> I["Impact closure"]
 ```
 
 The Relevance Scout MAY inspect repository structure, semantic indexes, event/contract topology, tests, architecture decisions, and implementation bindings. It MUST NOT convert implementation precedent into behavioral intent or prematurely select a solution.

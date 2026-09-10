@@ -1,42 +1,36 @@
 # Projector assimilation design
 
-**Recommendation:** close Projector's existing conceptual loop with real application evidence, state-bound contributions and continuation, scoped correction, and later-change evaluation. Keep one canonical authority model and one accepted mutation lifecycle.
+**Recommendation:** finish the existing host-native Projector direction, connect one real Psychord Omega scenario to honest evidence, preserve useful preparation/continuation through the existing lifecycle, and prove specification-absent self-development before the remake handoff.
 
-This is the complete investigation/design package for all 11 files in `.temp/ingest-2026-09-09-01`. The files were fingerprinted and fully inspected; important claims were checked against primary sources and actual Projector public paths. No product code, accepted model, historical spec or donor file was changed.
+Revised 2026-09-10. This is a plan, not implementation. The [wrap-up plan](../../.temp/projector-wrap-up-plan-2026-09-09.md) controls delivery: one bundled JavaScript runner over existing TypeScript services, safe readiness/upgrades, retirement of MCP/standalone CLI and mandatory WSL bridge/sandbox, canonical ingestion and eventual `PROJECTOR_SPEC` deletion. Host execution retains state/source/approval/journal invariants without claiming OS/network confinement.
 
-## Read the proposed outcome
+This is a temporary assimilation workspace. Tasks 2.2/4.7 finish the named host-execution revisions; there is no deferred attachment initiative. Task 13.1 removes this campaign after useful meaning/evidence has proper owners, required patches are applied and operation no longer depends on it.
 
-1. [Integrated vision](VISION.md): what Projector becomes, realistic examples, every architectural level, exclusions and delivery order.
-2. [Shared design](DESIGN.md): ownership, trust, contracts, alternatives, state, recovery, migration and risks.
-3. [Selected real application pilot](APPLICATION-PILOT.md): Psychord's existing C-major triad Recognition path and concrete isolated collection design.
-4. [Evidence and donor dispositions](EVIDENCE.md): what was retained, already present, rejected or deferred, and why.
+## Read the design
 
-## Review individual changes
+- [Vision](VISION.md): intended product and architecture coverage.
+- [Shared design](DESIGN.md): ownership, trusted-host evidence, continuation, correction and recovery.
+- [Application pilot](APPLICATION-PILOT.md): real Omega keyboard C4 -> release -> Keep -> reload archive -> Listen, with replay excluded from player history.
+- [Evidence and all-source dispositions](EVIDENCE.md): the useful mechanisms and their limits across all 11 donors.
+- [Canonical deltas](CANONICAL-DELTAS.md) and [implementation order](IMPLEMENTATION-ORDER.md): owning change batches through spec-absent self-development and the final bounded remake handoff.
 
-Each proposal contains the what/why, user stories, exact spec-delta references, design and a numbered implementation task table with completion evidence.
+## Review the four bounded proposals
 
-| Proposal | Outcome |
+| Proposal | Selected result |
 |---|---|
-| [P1 Application evidence](proposals/P1-application-evidence.md) | Acceptance can cite the actual affected application behavior and its limits |
-| [P2 Contributions and continuation](proposals/P2-contributions-and-continuation.md) | Agents and fresh sessions can reuse checked work and join exact edits without speculative approval |
-| [P3 Correction and governance](proposals/P3-correction-and-governance.md) | Failures reach the right code, oracle, tool, context or architectural owner |
-| [P4 Longitudinal evaluation](proposals/P4-longitudinal-evaluation.md) | Later changes test preservation and total cost rather than merely today's passing tests |
+| [P1 Application evidence](proposals/P1-application-evidence.md) | Actual DOM/storage/trace tied to the owned build, endpoint and controller, with honest capability limits |
+| [P2 Preparation and continuation](proposals/P2-contributions-and-continuation.md) | Host-native preparation, coordinator-owned exact proposal, saved context/representation and lifecycle recovery |
+| [P3 Scoped correction](proposals/P3-correction-and-governance.md) | A real host investigate/propose/fix/verify/reconcile loop using existing observations and authority |
+| [P4 Later-change survival](proposals/P4-longitudinal-evaluation.md) | Relevant currentness/regression cases and lightweight actual costs in existing tests/reports |
 
-The proposals are slices of one design. They are not one change request per source file.
+No contribution envelope/importer, classifier/incident queue, Docker isolation project or mandatory trajectory benchmark is selected. Broader economic comparisons remain optional future research.
 
-## Inspect exact proposed changes
+Current [expanded adversarial review](review-wrap-up/REVIEW.md) and [fresh-session implementation prompt](../../.temp/projector-wrap-up-handoff-2026-09-10.md) cover the integrated execution plan.
 
-- [Combined PROJECTOR_SPEC patch](spec-deltas/PROJECTOR_SPEC.patch), with [individual patches and machine-readable manifest](spec-deltas/).
-- [Canonical meaning/architecture deltas](CANONICAL-DELTAS.md), preserving existing identities and provenance. Historical prose is not current acceptance authority.
-- [Integrated implementation order](IMPLEMENTATION-ORDER.md), connecting the concrete tasks across all four proposals.
-- [Spec applicability and copied-tree verification](receipts/spec-verification.md).
-- [Independent review and closure](research/W6-review.md).
-- [Final verification receipt](receipts/final-verification.md).
+## Patches and evidence status
 
-The patch is unapplied. Canonical changes are proposed text, not active JSON envelopes. The Docker/application profile and comparative experiments are selected implementation work, not completed or economically proven capabilities.
+[Exact historical-spec patches](spec-deltas/) are unapplied planning artifacts. Rebase and recheck them after earlier owning plan changes touch their targets; apply corresponding canonical/spec/status deltas at the end of each implemented and verified change in the same completion batch. Typed contracts generate schemas; historical Markdown supplies transitional evidence and acceptance-inventory inputs.
 
-## Evidence archive
+[Research](research/), [source fingerprints](source-inventory.json), [coverage](coverage.json) and [receipts](receipts/) retain investigation provenance. Earlier reviews/receipts assess their exact earlier files, including the superseded pilot; they do not certify this revision or product behavior. [STATE.md](STATE.md) records coordinator checkpoints.
 
-[W1 empirical papers](research/W1-empirical.md), [W2 workflows/domain agents](research/W2-workflows.md), [W3 source integrity/critical claims](research/W3-critical.md), [W4 recipient architecture](research/W4-recipient.md), [source fingerprints](source-inventory.json), [coverage index](coverage.json), [pilot fingerprints](pilot-source-inventory.json).
-
-Campaign state and recovery instructions: [STATE.md](STATE.md). The campaign artifacts are design evidence; they are not a new Projector runtime workflow store.
+No product code, application code, canonical meaning or donor bytes are changed by this design revision. The next execution endpoint is a working, self-developing Projector and a concrete Psychord remake handoff, not the full remake itself.

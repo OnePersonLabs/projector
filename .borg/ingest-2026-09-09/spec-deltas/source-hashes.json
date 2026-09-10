@@ -29,7 +29,7 @@
   },
   {
     "path": "PROJECTOR_SPEC/02-semantic-kernel/conceptual-architecture.md",
-    "sha256": "159b0b0277aea603e9a50b5ed8711ea80bcc1ba3dbaea5b03c7ecd6132b98f64"
+    "sha256": "2b8bf44275fa1960c208ffbea62f7ef6cfffd6e82fd5fe63abef76a845fcadb1"
   },
   {
     "path": "PROJECTOR_SPEC/02-semantic-kernel/identity-and-relations.md",
@@ -37,7 +37,7 @@
   },
   {
     "path": "PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md",
-    "sha256": "8849f22f1513690b66b4cfaac7739b6efa91c06a080abe4165e86725cb5a105f"
+    "sha256": "6f1f05b7e6d325eafab768eca290f623f5b4845aa724008a93550f391e3ee4a0"
   },
   {
     "path": "PROJECTOR_SPEC/02-semantic-kernel/representation-contracts.md",
@@ -73,7 +73,7 @@
   },
   {
     "path": "PROJECTOR_SPEC/03-knowledge/relevance-and-change-cognition.md",
-    "sha256": "7630d0d66c3c9eea8affd2dbf17adf2bdc24bb076f7536edeb4164ba698728fa"
+    "sha256": "265472c8de902ddf9cd6df3ec03516c6fbb943e1e110597af294fc7fcd368962"
   },
   {
     "path": "PROJECTOR_SPEC/03-knowledge/risk-and-execution-policy.md",
@@ -137,7 +137,7 @@
   },
   {
     "path": "PROJECTOR_SPEC/09-evolution/persistence-and-observation.md",
-    "sha256": "eaac5866dcce28cfefe9f21dc566dcaabe6916be9f66f010c40e3e4431a0f69c"
+    "sha256": "1568f46f183614239f05cdcea8251b4cd087feb74736bd714cfbc742c1d89028"
   },
   {
     "path": "PROJECTOR_SPEC/10-operation/cli-modes-and-security.md",

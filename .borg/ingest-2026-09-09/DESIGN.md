@@ -1,155 +1,112 @@
-# Design: one conceptual control plane, evidence through the whole change
+# Design: one conceptual control plane through the active host
 
-Proposed architecture. Read [VISION.md](VISION.md) first. This document plays the role of a shared OpenSpec-style design artifact: context, goals/non-goals, choices, alternatives, contracts, risks, migration and unresolved implementation questions. Individual proposal files contain their own design and tasks.
+Proposed design, revised 2026-09-10. The [wrap-up plan](../../.temp/projector-wrap-up-plan-2026-09-09.md) controls execution. This document defines the assimilation's ownership, evidence, continuation, recovery and validation choices. It is planning evidence, not canonical acceptance or a delivered capability.
 
-## Context and architectural fault lines
+## Receiving architecture and selected interface
 
-The accepted model already asks for isolated application evidence and explicitly says that generic browser authentication and provisioning remain unrealized. `KnowledgeValidatorRun` in `packages/control-plane/src/knowledge/validators.ts` executes a tracked, pinned repository-node validator in an isolated, read-only, network-denied process. Its small satisfied/violated/unknown protocol is useful for repository predicates; it does not establish a browser session's identity or the application state a screenshot depicts.
+Projector already has typed meaning, scoped context/reconciliation, executable lenses, pinned validator sources, exact change review, journals and recovery. The public repository lifecycle currently accepts one mutation packet. An exported multi-packet coordinator or model provider does not establish a working public scheduler; the actual caller/consumer matters.
 
-`RepositoryChangeLifecycleService` and `executeCompiledRepositoryChange` own the supported repository mutation/recovery route. Both restrict it to one mutation packet. `executePacketPlan` is a separate internal kernel; its existence does not supply a public multi-agent orchestration service. Its current public-adjacent caller is upgrade execution, while the default upgrade produces no candidate.
+Use one bundled JavaScript runner calling existing TypeScript services directly. Skills express host work and concise procedures; hooks provide supported early readiness checks; every operation also enforces readiness. Retire obsolete MCP registrations, standalone CLI delivery, wrapper chains and mandatory WSL sandbox/bridge machinery in their owning changes after moving real consumers. Preserve required data-upgrade/recovery compatibility and accepted rationale, not dead API names.
 
-`createBuiltRunHostPort` is a weaker route: it reconstructs currentness largely from saved state plus HEAD, reports features optimistically and uses a limited parser-oriented reconciliation. This design cannot use its `completed` result as admission or completion proof. Its repair is necessary before elevating the wrapper's assurance, independently of whether host dispatch becomes a product feature.
-
-The generated contract/schema and historical-spec checks are another seam. `PROJECTOR_SPEC` still supplies historical contract input and release traceability; runtime schemas are generated from the domain declarations. Updating prose alone cannot deliver a contract. Conversely, the historical document's self-description as authoritative does not supersede the current typed model or repository instructions.
-
-## Goals and non-goals
-
-Goals: bind behavioral claims to a real observed state; preserve useful work across session loss and independent agents; make disagreements actionable at the right owner; evaluate changes over time; keep every new mechanism native and removable if its cost exceeds its benefit.
-
-Non-goals: a replacement coding host, unrestricted execution graph DSL, a hosted orchestrator, automatic policy promotion, arbitrary remote mutations, universal semantic equivalence, an LLM training system, or a mandatory new workflow database. General partial-commit multi-packet execution remains a future capability, not silently removed from historical design; this assimilation does not need it to preserve the donor value.
-
-## Ownership and dependency direction
+The active host owns reasoning, tool choice, optional delegation and process execution under its configured permissions. Projector retains legitimate change authority, exact approved bytes, source/state/version checks, pinned validator identity, bounded output/time, cancellation and journaled recovery. These checks establish their specific integrity properties; they do not claim process confinement.
 
 ```mermaid
 flowchart TD
-    H[Host agent and optional subagents] --> CLI[CLI and operational MCP handlers]
-    CLI --> CP[Control plane: context, capture, evidence, correction]
-    CP --> E[Engine: binding, eligibility, governance, impact]
-    CP --> A[Analyzers: repository observations]
-    CP --> I[Integrations: application collector and host adapters]
-    CP --> R[Runtime: isolated resources, artifacts, transaction]
-    E --> C[Core contracts and ports]
+    H["Active host and optional workers"] --> S["Skills and supported hooks"]
+    S --> J["One bundled JavaScript runner"]
+    J --> CP["Existing TypeScript control-plane services"]
+    CP --> E["Engine: binding, eligibility, governance, impact"]
+    CP --> A["Analyzers: repository observations"]
+    CP --> I["Integrations: concrete application collector"]
+    CP --> R["Runtime: owned resources, artifacts, journal"]
+    E --> C["Core typed contracts and ports"]
     A --> C
     I --> C
     R --> C
-    CP --> C
-    CP --> M[Canonical meaning and architecture via existing lifecycle]
-    R --> O[Local operational evidence]
+    CP --> M["Canonical meaning via existing lifecycle"]
 ```
 
-No new package is required. Add modules only at an existing responsibility boundary. The engine decides eligibility from values passed through ports; it never starts a browser. Integrations implement domain collection without importing control-plane internals. Runtime owns processes and files without deciding whether a requirement is met. The control plane composes the result and retains the sole accepted mutation route.
+No new package is required. The engine evaluates supplied facts without starting a browser. Runtime owns files/processes without deciding product meaning. The collector records observations; existing evidence/validation/completion consumers interpret the declared claim. Accepted architecture changes use concerns, decisions, authorities and their real consequences.
 
-The model specifies what must hold. The collector records what happened. A pinned validator interprets observations under a declared contract. The engine checks freshness, provenance and policy. An accepted decision authorizes a new constraint. These owners must not become a circular self-confirmation loop.
+## D1 -- Concrete host-controlled application evidence
 
-## D1 -- Separate application evidence from repository validation
+The first collector targets the actual Psychord Omega C4/save/reload/archive/replay path in [APPLICATION-PILOT.md](APPLICATION-PILOT.md). Its existing concepts supply meaning; a narrow scenario must be accepted through that repository's canonical lifecycle before implementation. Existing fake-port tests are valuable but do not establish DOM, actual storage, reload or browser input behavior.
 
-A run uses a concrete, versioned application adapter. Its declarative profile names setup, fixture inputs, the scenario/test controller, capability requirements, resource limits, collection, cleanup and evidence limits. It uses existing tools behind that adapter; no universal provisioning language is required.
+The host prepares an identifiable source/build snapshot, freezes the built bytes by custody, starts an owned Node static server bound to loopback on an allocated port, and starts a separately pinned Playwright controller/browser process with fresh context/profile. The controller uses actual UI input. A run nonce, exact endpoint and hashes of served/loaded bytes bind the page to the snapshot. The host retains controller artifacts outside the served app tree, records source/build/tool/controller/configuration identity, and bounds output, runtime and cleanup.
 
-Retain the current repository-node validator contract. An application requiring a server and browser cannot silently change `network: deny` into host network access. The strong collection lane requires a private application environment with proven process/filesystem/network boundaries. App and test browser may communicate inside that environment; neither obtains host-network access. This is an explicit new capability profile with a probe and decision, not an inference from browser-context isolation. If the platform cannot demonstrate it, report unavailable for that strong lane.
+This is a trusted workspace/host model. Custody means the runner retains and checks the chosen bytes; it is not an immutable mount. Separate controller process and browser state reduce accidental coupling, not same-user attack power. No protection from a malicious application/host, network denial, invisible paths, read-only mounts or descendant containment is claimed. Report capabilities that the actual host cannot support as unavailable. Do not create a Docker, replacement sandbox or platform-escape project.
 
-Existing host browser tools may still supply supporting observations when authorized. Label the weaker identity/isolation and independence properties. They cannot be upgraded to strong evidence by attaching a screenshot hash or an agent assertion. A manual observation does not gain a controlled-execution certificate.
+A useful minimal run record ties existing evidence/artifact references to the scenario, tested snapshot, controller and observed setup/cleanup. Reuse `Evidence`, `ValidationResult`, `StateBinding`, `CompletionContract`, derivation inputs and current artifact storage. Add a narrowly typed field only when the real collector/consumer cannot express a necessary fact. Do not create a universal environment-profile language or another pass/fail authority.
 
-The selected first workload is Psychord's existing deterministic C-major triad Recognition scenario through its web internal runtime. The selected optional execution profile uses Docker Engine Linux containers, with separate app and immutable Playwright-controller containers supervised by trusted Projector runtime. [APPLICATION-PILOT.md](APPLICATION-PILOT.md) pins the source evidence, exact scope, container/network/process separation, collector trust root and negative controls. A deterministic fixture can establish the protocol first, but cannot stand in for this application acceptance. Audio/device/learning outcomes remain outside this initial DOM/runtime-evidence claim and retain their future obligations.
+Preserve these dimensions separately:
 
-Alternatives rejected: an all-purpose environment manager before one workload; running arbitrary repository commands as 'observation'; browser contexts treated as OS isolation; accepting a user-supplied artifact as an authenticated run. These approaches obscure either cost or trust.
+| Fact | Meaning |
+|---|---|
+| Setup/run outcome | Started, failed, interrupted, completed or unavailable under actual host capabilities |
+| Observed behavior | The concrete assertions passed, failed or remain unknown |
+| Currentness | Required source/build/controller/configuration/scenario dependencies remain valid or changed |
+| Evidence integrity | Stored bytes and their recorded association remain intact under the trusted-host assumption |
+| Claim limits | Browser DOM/storage/trace evidence does not prove acoustic output, physical MIDI, latency or learning |
 
-## D2 -- Store observations once; derive claims separately
+A screenshot, HEAD hash, timestamp or plausible URL alone cannot establish which build ran. If a collector's readable input cone is broad, bind that broader dependency population or report uncertainty. A relevant uncommitted edit, changed empty-query membership, modified controller or different served asset invalidates reuse; an unrelated change may preserve it when the actual dependency proof permits.
 
-Proposed internal data responsibilities (names are design names, not implemented API promises):
+## D2 -- Host preparation, one coordinator, one exact proposal
 
-| Value | Required content | Owner and persistence |
-|---|---|---|
-| Application run request | Scenario IDs and semantic hashes, context/binding, adapter profile/version, fixture and build inputs, resource policy, required oracle and timeout | Control plane; immutable runtime request |
-| Run manifest | Run/attempt identity, actual source/build digest including dirty content, toolchain/adapter/test-controller hashes, start/end, private endpoint identity, fixture/environment identity, observed capabilities, setup/cleanup outcomes | Runtime and collector; local artifact plus authenticated manifest |
-| Observation artifact | Content hash, type/size, locator, collection method, run association, redaction/retention and causal origin | Runtime artifact ownership; no raw secrets in canonical records |
-| Validation result | Existing evidence lane/assurance/independence metadata plus refs to manifest/artifacts and concrete assertions | Validator output admitted by control plane |
-| Eligibility result | Current/stale/unavailable, passed/failed/unknown, supported claim scope, blind spots, dependencies and reasons | Engine derivation; recomputed as needed |
+Use existing host agents only when independent work is useful. Give each a bounded objective, relevant accepted context, ownership and a concrete result. The host may retain notes or candidate edits for continuation. These are advisory working material, not approval-bearing evidence and not a new Projector workflow store.
 
-Reuse `Evidence`, `ValidationResult`, `StateBinding`, `CompletionContract`, derivation inputs and artifact references. Add a narrowly typed run binding where those contracts cannot express the new responsibility; do not create a second pass/fail authority. A result has separate currentness, behavioral outcome and assurance dimensions. A valid old failure stays a historical failure after becoming stale. A new pass does not erase that earlier observation.
+One coordinator reconciles the saved context, reviews governing meaning, resolves shared contracts/overlapping edits and assembles the final exact proposal. Disjoint files do not prove semantic independence. Missing information that prevents a correct proposal stays a blocker or explicit unresolved condition; worker completion does not settle it. Submit the exact result through existing capture/plan/approval/apply/recovery services exposed by the shared runner. A changed final proposal or bound dependency follows the existing recapture/currentness rules.
 
-The collector must bind the controller bytes, actual launched application/build, configuration, fixture data, capability evidence and artifacts. The trusted host supervisor creates and inspects the actual engine objects, imports controller output over its own channel, and writes/authenticates the manifest outside both candidate containers. App code cannot write controller output, its process state, the manifest store or authentication material. Merely signing app-supplied hashes is insufficient. A timestamp, URL or HEAD commit alone is insufficient. Pin relevant loaded inputs; if a controller can read all repository content, its validity scope is correspondingly broad until a narrower access contract exists. Do not claim precise invalidation merely by listing guessed dependencies.
+The contribution envelope, importer and attachment protocol are rejected. Existing exact proposal/validator binding and authenticated transaction recovery supply the safeguards needed by this workflow. Changing a worker note grants no authority; changing approved implementation or required validator inputs must fail the relevant identity/currentness checks. Missing notes must not prevent safe historical recovery. Tasks 4, 7A and 8.4 verify those existing guarantees through the retained runner.
 
-Eligibility uses the observed run's dependency closure, scenario/validator contracts and declared expiry/event conditions. Missing artifacts, toolchain or configuration changes, fixture changes and changed empty-query membership can all invalidate a claim. An unrelated root change can preserve it when the closed dependency evidence supports that decision. Structural equality cannot skip behavioral checks whose relevant inputs changed.
+## D3 -- Durable representation and continuation from existing state
 
-A process crash before evidence finalization leaves an interrupted run, retains bounded diagnostics, and cleans only resources authenticated as belonging to that run. Crashing after finalization may publish the existing manifest idempotently. Repeating a command cannot pretend the old live application still exists. An application run is never an undoable external business transaction.
+Reuse saved contexts, representation artifacts, captures, approvals, attempts, journals and current observations. Improve their bounded human/agent presentation where a real fresh-session task exposes a gap. Show the relevant accepted meaning, why selected work remains current, changed/unknown dependencies, incomplete transaction state, remaining obligations and supported next action. Preserve omission counts and expansion routes.
 
-## D3 -- Bind contributions before joining exact edits
+Ordinary conceptual inspection needs no invented approval. Plan-bound instruction inspection must work before approval to support review. Actual execution requires exact plan/revision/capsule/kernel/text association, the appropriate authority, live dependency checks and actual delivery to its intended consumer. Report integrity, freshness, semantic fidelity, authorization and delivery separately. Delivery does not establish understanding or compliance.
 
-The first delivery uses host-native agents for parallel investigation and isolated candidate preparation. It does not approve unknown future code. Each contribution carries:
+The legacy built host-dispatch path drops instructions, assumes capabilities and refreshes only HEAD; it must not be carried forward as a completion proof. Trace a real consumer. If none needs dispatch, retire the path while preserving active-host purpose. If one does, repair its actual delivery, currentness, capability observation and exact path handling through the existing services. Do not repair unused machinery merely to retain an obsolete CLI mode.
 
-- a content-derived work-contract ID, objective and expected result schema;
-- the saved Projector context ID plus exact value/query bindings and disclosed unknowns;
-- producer/attempt identity, actual input/result hashes and predecessor-result references;
-- read/effect classification, candidate edit paths, semantic owners and unresolved conflicts;
-- evidence provenance, validation claims and a complete/partial/failed result status that describes the contribution only.
+Recover an incomplete controlled transaction before new mutation. A committed attempt with authenticated prepared-success evidence is finalized once; a note saying unfinished cannot rerun it. Missing advisory notes cannot block safe rollback or legitimate historical publication. Missing prepared-success proof cannot be fabricated. Historical success and current requirement fulfillment remain different facts.
 
-Before capture these are host-owned files, with no Projector completion or mutation authority. A new contribution cannot be inserted into an immutable existing capture. The current semantic-change identity depends on the exact proposal and bound state. Therefore capture imports the frozen contribution bytes, checks their schemas/bindings and joins them into one exact proposal. Immutable evidence attachments are stored under the resulting existing lifecycle identity. A changed contribution or joined edit requires a new capture and approval; an explicit predecessor reference can preserve lineage without making the old capture mutable.
+## D4 -- Exercise scoped correction with the host
 
-The versioned strict proposal must include a canonical contribution binding: hashes of the complete versioned envelopes (including producer/provenance, required/optional status, unresolved conditions and omissions), their work/input/result/predecessor hashes and the join-contract/result digest. That binding contributes to `proposalHash`, the existing intent/SemanticChange identity derivation, and an explicit approved-plan input-evidence digest. Store attachments alone are insufficient. Capture freezes the referenced bytes before computing these identities. Plan, approve and new apply reauthenticate every required attachment and manifest against that bound digest. Equal edits and equal repository state with different admitted evidence must produce a different capture/plan; an old approval must be unusable. Old proposal profiles retain their existing hash semantics.
+Use the deterministic failure categories and evidence already present in observations: setup/capability failure, stale or missing evidence, failed assertion, parser/validator failure, recovery required and relevant planning surprise. The host investigates the material discrepancy, proposes a correction to the right owner, executes the accepted change, validates and reconciles. A suggested repair route alone is not closure.
 
-Recovery follows the already authenticated approval/attempt/journal/prepared-success chain. A missing contribution artifact cannot by itself prevent safe rollback or idempotent publication of an already authenticated historical committed result. Recovery cannot fabricate missing prepared-success proof or make fresh effects while required evidence is absent. Report reduced current evidence availability separately from the historical transaction's state; revalidate restored evidence before a new apply or current completion claim.
+| Observed case | Discriminating work and possible owner |
+|---|---|
+| Saved success appears after storage rejects a write | Exercise the real failed write and inspect UI/storage; repair application persistence feedback |
+| An old page passes the assertions | Compare actual served bytes/endpoint; repair collection identity and retain failed evidence |
+| Replay creates player notes | Compare captured trace, replay indicators and recent-playing state; repair provenance boundary |
+| Contributors choose incompatible contracts | Reconcile accepted meaning and current inputs; coordinator revises the final proposal |
+| A valid implementation fails an architectural predicate | Check independent behavior and intended scope; revise or retire the faulty rule through existing authority |
 
-This resolves the identity cycle: a work-contract/content identity is not a second SemanticChange identity, and there is no managed pre-proposal workflow store. The host can resume pre-capture preparation from its files and a reconciled saved context. Projector's supported continuation view begins with saved context or an actual capture, and reports which evidence is unavailable if pre-capture files were not retained.
+Use the smallest check that can change the repair decision. No classifier service, incident queue or automatic policy-promotion loop is needed. Promote a reusable rule only for a concrete recurring producer, observed recurrence or specific safety invariant; inspect intentional variants and counterevidence. Broad recurrence guards still need their applicable authorization. Deleting needless policy can be the correct repair.
 
-The join checks required results, schemas, predecessor hashes, semantic ownership, write conflicts, current query/value dependencies and applicable governing meaning. It does not equate disjoint paths with independence: two files may implement one API or contradict the same scenario. Unresolved contract conflicts require one coordinator decision and recapture. A model can assist that decision; its merged prose is not the authenticated join proof.
+## D5 -- Later-change survival and actual costs
 
-Candidate edits are still proposed bytes. Their tests and worker success reports are supporting evidence until the combined diff is independently observed and validated through the existing lifecycle. Mutation remains serial under its writer lease. Do not route joined work through `executePacketPlan` just because it accepts packet-shaped inputs.
+Extend relevant existing tests and reports with real later-change/currentness cases: a dirty dependency at unchanged HEAD, an unrelated edit, a new matching consumer, a modified controller, a fresh session after interrupted publication, and a subsequent application change that must preserve earlier behavior. Paired perturbations must have independently correct expectations; merely producing different outputs proves nothing.
 
-## D4 -- Continuation is a current view, not a completion flag
+Record observed deterministic time, context/artifact size, retries, human repair and available model/tool usage while exercising these paths. Unknown prices or missing labor data remain unknown. There is no required trajectory driver, three-chain benchmark, paid-model comparison or live-model economics release gate. Larger matched/held-out comparisons remain optional future research if a claim or unresolved design choice warrants them. Static code metrics are diagnostics, not a universal maintainability score.
 
-Derive a bounded continuation from the context, captures, approvals, attempts, journals, admitted contribution attachments, evidence and current observations. Show accepted meaning, usable results, invalidated inputs, incomplete/recovery-required mutation, remaining relevant obligations and the next supported action. Include total/included/omitted counts and direct expansion routes.
+## Storage, migration and specification retirement
 
-Recovery of a transaction precedes new mutation. A host restart, agent label or fresh model does not reset authority. A recorded 'done' flag cannot remove a requirement. Stale pre-capture reasoning calls for renewed inspection; committed-but-unpublished mutation calls for idempotent publication; a behavioral failure calls for correction. They are different states.
+Canonical records own accepted meaning throughout. Typed contracts own exact machine shapes and generate schemas. `PROJECTOR_SPEC` is transitional historical evidence and an input to existing acceptance inventories; it is not the source of contract-schema generation. Account for live consumers separately from inert provenance.
 
-Sequential operation is the default. Parallelize only materially independent preparation with an explicit join; cap retries and resource use. The host can choose role names and models. No obligatory analyst/critic/reviewer roster is compiled into product behavior.
+Follow the wrap-up plan's readiness and data-upgrade design: version checks before loaders and inside operations, verified external backups, staging, checksummed migration chains, recoverable publication, and preservation of intervening user edits. A new evidence field needs a persisted-format change only if the real owner requires it. Do not reinterpret old screenshots or receipts as stronger evidence, regenerate old approval identities or migrate historical success into current fulfillment.
 
-## D5 -- Correct the owner implicated by evidence
+Each owning implemented/verified change finishes with aligned canonical meaning, affected historical sections, generated contracts and capability descriptions in the same completion batch. Preparatory scenario acceptance can be a separate canonical-only verified batch. Rebase the exact unapplied patches when earlier changes overlap; never apply stale prose merely because an old apply check passed.
 
-Extend existing Planning Surprises, concerns, completion questions and repair routes with failure evidence references. A derived diagnosis states the discrepancy, affected accepted obligation, causal hypothesis, alternative explanations, discriminating check and candidate correction owner. Hypotheses remain inferred.
+Accept useful meaning and migrate consumers in earlier coherent units. Task 2.1 reserves two actual continuation/currentness increments for implementation in the source-absent Task 10.8 candidate, using fresh sessions and the installed runner. Both new behavior and prior obligations must pass before retirement. Close P2 at 7A.6 and P4 at 10.9. Final cutover tests the exact staged tree, including deletions and new records; a HEAD clone cannot supply that pre-commit evidence. Revalidate affected self-development evidence when final dependencies change, commit only the tested/reviewed tree, and verify an actual final-commit clone. End with a concrete Psychord remake handoff. The full remake is outside this bounded plan.
 
-Examples of different owners:
+## Risks and first checks
 
-| Observed discrepancy | Candidate cause | Appropriate next action |
-|---|---|---|
-| Cancellation fails only after retries | Missing transition behavior or contract change | Exercise both cases; revise implementation or accepted meaning as justified |
-| Browser check never reaches application | Setup/capability failure | Fix adapter/environment; keep behavior unknown |
-| Two agents choose incompatible payloads | Missing shared contract or stale contribution | Resolve contract, refresh affected contributions, recapture |
-| Repeated fixes copy one workaround | Faulty tool/API usage, template or abstraction | Inspect producer, compare conventional API, correct the producer if it is causal |
-| A lens rejects another valid implementation | Overbroad scope or faulty architectural premise | Revise/retire the lens through accepted decision; preserve historical reason |
+| Risk | Required next evidence |
+|---|---|
+| Wrong application instance or bytes | Wrong-build/endpoint control must fail before accepting a real scenario result |
+| Test contamination or leaked resources | Fresh context/profile plus successful, failed and interrupted process/port cleanup; preserve unrelated resources |
+| UI-only oracle misses provenance | Observe actual stored player trace and empty post-reload recent-playing state before/after replay; supplement with the existing controller tests |
+| Trusted-host integrity is overstated | Capability/result wording must disclose same-user trust and absent OS/network confinement |
+| New bookkeeping outweighs useful work | Exercise coordinator preparation and fresh continuation using existing artifacts; add machinery only for a demonstrated gap |
+| Retirement drops purpose with machinery | Trace retained behavior to installed consumers and validate spec-absent self-development before final handoff |
 
-Do not make 'root cause' a mandatory grand investigation for every typo. Use the smallest discriminating check whose outcome changes the repair. Do not discard a valid patch merely because an agent produced it. Do not automatically add a regression guard: require a concrete active producer, observed recurrence, or a specific security/data-loss/release invariant, with repository-wide guards separately authorized.
-
-A selected rule must carry scope, independent counterexamples, intentional variants, costs, causal origin and reconsideration conditions through the existing concern/decision/authority products. Shadow results measure where the proposed rule fails. Existing code frequency, copies, same-lens output and metrics cannot authorize enforcement. A repair that removes needless policy is a successful outcome.
-
-## D6 -- Measure future utility without making measurement a new bottleneck
-
-Use current testkit/benchmark/reporting seams. Keep live-model trials opt-in and budgeted. Register task sequence, initial repository, models/tools, budget, grading contract and perturbations before an evaluated run sees them. Hold later requirements back from the coding agent, not from the evaluator. After revealing a requirement, make both arms work from their own accumulated state.
-
-Compare a capable ordinary agent with Projector under matched conditions. Include both task success and preservation of earlier obligations. Record setup, retries, evidence collection, model/context use, deterministic time, human review and semantic maintenance. Missing prices or labor measurements are unavailable components, never zero cost. Report counts and paired differences; repeated tasks in one repository are not independent samples.
-
-Paired perturbations are local semantic probes, not evidence of a new model-training theory. Change a condition that should change the answer (retry failure versus deliberate cancellation) and one that should not (unrelated docs or renaming with preserved identity). Freeze grading before inspecting candidate output. A test written from the same mistaken assumption is not an independent lane.
-
-Do not collapse correctness, evolution effort and code diagnostics into a universal 'slop score'. Treat metric versions, extraction failures, model judgements and endogenous traces explicitly. A failed later task is an outcome; its cause needs a replay/intervention or remains a hypothesis. Use ablations only for decisions that the basic comparison cannot resolve.
-
-## Storage and migration
-
-Accepted semantic revisions remain fine-grained canonical records, with stable IDs and retained origin. No report or spec patch in this campaign changes those records. [CANONICAL-DELTAS.md](CANONICAL-DELTAS.md) describes proposed acceptance transactions.
-
-Operational run manifests and contribution attachments live under existing Projector runtime ownership, outside canonical snapshots. Artifact indexes are rebuildable; historical observations are not reconstructible from current code. Preserve that distinction on clone, export, deletion and expiry. Never migrate old screenshots or booleans into authenticated passes. Old lifecycle records stay readable; missing new evidence yields legacy/unavailable assurance, and existing approvals are never widened by migration.
-
-Version added contracts and runtime readers. Test old capture reading and rejected mismatched versions. Write new attachments atomically before referencing them; refuse partial or hash-mismatched attachments. Do not regenerate old plan hashes, overwrite approval identity, or reinterpret old certificates under a stronger policy. A typed runtime-store version increment must specify when re-capture is necessary.
-
-Historical `PROJECTOR_SPEC` receives the concrete unapplied patch in this package. It makes its authority status honest, incorporates the new behavior at its owning modules, and leaves historical delivery plans intact as history. Implementation must then update domain types, generated runtime schemas, checks and public adapters together. Generated code is not hand-edited and historical plans are not revived.
-
-## Main risks and resolving experiments
-
-| Risk | First discriminating experiment | Consequence if it fails |
-|---|---|---|
-| Collector cannot prove which build ran | Run stale build, dirty-source edit and substituted artifact trials | Keep supporting/unavailable lane; redesign collection before strong claims |
-| Private browser/app boundary cannot be enforced on a supported platform | Capability probe and escape/cleanup fixture with that platform's actual processes | Platform-specific unavailable result; no host-network fallback |
-| Contribution bookkeeping costs more than rereading | Two-agent contribution/join and fresh-session comparison including preparation | Simplify to context-bound attachments and manual join; do not build scheduler |
-| Failure feedback creates policy debt | Correct a reproduced failure and an intentional variant; count added/removed obligations | Keep advisory route or retire the proposed rule |
-| Better tests merely encode evaluator's premise | Held-out behavioral pair and independent controller review | Lower assurance and replace oracle before evaluating benefit |
-| Architecture still grows despite passing current tasks | Later-change matched trajectory with semantic maintenance included | Reconsider the responsible mechanism; do not hide loss in an aggregate score |
-
-No external technology choice or claimed economic advantage is resolved merely by this design. Selected donor mechanisms, proposed proofs and executed design checks are separated in [EVIDENCE.md](EVIDENCE.md).
+No application run, implementation or economic result is claimed by this document. Evidence and source limits remain in [EVIDENCE.md](EVIDENCE.md).

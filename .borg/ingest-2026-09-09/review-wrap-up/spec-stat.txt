@@ -1,0 +1,22 @@
+.../02-semantic-kernel/conceptual-architecture.md  |    4 ++
+ .../02-semantic-kernel/reference-implementation.md |    8 ++++
+ .../03-knowledge/evidence-and-authority.md         |    6 +++
+ .../06-reconciliation/coverage-and-completion.md   |    6 +++
+ .../09-evolution/application-evidence.md           |   43 ++++++++++++++++++++
+ .../09-evolution/persistence-and-observation.md    |    6 +++
+ PROJECTOR_SPEC/INDEX.md                            |    3 +
+ PROJECTOR_SPEC/SPEC.md                             |   21 ++++++----
+ PROJECTOR_SPEC/spec.manifest.json                  |    8 ++++
+ .../05-projections/execution-capsules.md           |    8 ++++
+ PROJECTOR_SPEC/07-change/plans.md                  |    6 +++
+ .../07-change/transactions-and-certificates.md     |    8 ++++
+ PROJECTOR_SPEC/08-agents/hosts-and-mcp.md          |    8 ++++
+ .../08-agents/orchestration-and-models.md          |    6 +++
+ .../architecture-concerns-and-validity.md          |    8 ++++
+ PROJECTOR_SPEC/04-governance/lenses.md             |    6 +++
+ .../reconciliation-and-divergence.md               |    9 ++++
+ .../historical-evaluation-and-research.md          |    6 +++
+ .../10-operation/observability-and-reporting.md    |    6 +++
+ .../benchmarks-and-redesign-criteria.md            |    8 ++++
+ .../testing-and-adversarial-evaluation.md          |   10 +++++
+ 21 files changed, 184 insertions(+), 10 deletions(-)

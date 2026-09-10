@@ -142,10 +142,10 @@ Core tests MUST use fake/recorded providers. Live-model evaluation is opt-in and
 
 ---
 
-## Optional scheduling and bounded joins
+## Optional host orchestration
 
-Logical roles describe responsibilities, not a mandatory process/model roster. A loop is a graph pattern. A graph may be sequential. Use deterministic operations and existing host tools first. Parallelize preparation only when the work is materially independent and an explicit join handles dependencies and conflicts.
+Logical roles describe responsibilities, not a mandatory process/model roster. Use existing host tools and deterministic operations first. Parallelize materially independent preparation with explicit ownership, a bounded deliverable, and a coordinator who resolves shared contracts.
 
-Bound retries, cost, cancellation and required/optional results. A missing required result cannot disappear inside a convincing merge. A fresh agent or different model is not automatically independent evidence when it shares the same oracle or selected context.
+Reuse useful context and agents. Bound retries, time, cost, and required results. A missing result cannot disappear inside a convincing summary. A fresh reviewer is not independent evidence when it shares the same mistaken oracle.
 
-Domain specialization belongs in the narrowest useful tool, adapter, context or existing lens. It does not require a custom recursive agent runtime, universal shell/filesystem access, or a new durable memory service. Model routing claims require task-matched outcome and complete escalation/retry cost evidence. Lower price per token is insufficient.
+Domain specialization belongs in the narrowest useful tool, adapter, context, or existing lens. It does not require a recursive runtime, graph database, or durable memory service. One agent and one concrete change remain valid.

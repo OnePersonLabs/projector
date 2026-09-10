@@ -75,17 +75,17 @@ Canonical migrations are previewable and deterministic. Failed migrations leave 
 
 ```mermaid
 flowchart TD
-    A[Inventory] --> B[Deterministic indexing]
-    B --> C[Structural clustering]
-    C --> D[Relationship extraction]
-    D --> E[Semantic classifications]
-    E --> F[Pattern Candidates]
-    F --> G[Authority evaluation]
-    G --> H[Historical/metamorphic checks]
-    H --> I[Candidate/shadow lenses]
-    I --> J[Coverage + proof boundary]
-    J --> K[Divergence report]
-    K --> L[Cleanup plan]
+    A["Inventory"] --> B["Deterministic indexing"]
+    B --> C["Structural clustering"]
+    C --> D["Relationship extraction"]
+    D --> E["Semantic classifications"]
+    E --> F["Pattern Candidates"]
+    F --> G["Authority evaluation"]
+    G --> H["Historical/metamorphic checks"]
+    H --> I["Candidate/shadow lenses"]
+    I --> J["Coverage + proof boundary"]
+    J --> K["Divergence report"]
+    K --> L["Cleanup plan"]
 ```
 
 ## Analyzer contract

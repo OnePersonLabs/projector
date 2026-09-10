@@ -6,65 +6,57 @@ diff --git a/PROJECTOR_SPEC/05-projections/execution-capsules.md b/PROJECTOR_SPE
  
  ---
 +
-+## Bound contributions and readable handoffs
++## Readable work and exact execution instructions
 +
-+A host MAY use saved context to prepare read-only investigations or isolated candidate edits. A contribution contract MUST identify the objective, result schema/version, exact context, value/query dependencies, and required/optional predecessors. It MUST also identify producer attempt, output/evidence references, effect scope, semantic owners, unresolved conditions, and omissions.
++Host agents may prepare bounded investigations and candidate edits using saved context. Their notes name the objective, relied-on context, outputs, unresolved conditions, and evidence limits. Notes are advisory and do not authorize mutation or prove validation ran.
 +
-+Candidate preparation is not accepted mutation. Do not force a read-only contribution through a mutation packet that requires write selectors. Context isolation does not establish process, credential, or causal-evidence isolation. A worker's complete status describes only its contribution.
++Ordinary conceptual reading needs no mutation approval. Exact plan-bound instruction inspection must work before approval to support review. Execution requires current dependencies, the appropriate authority, and actual delivery of the selected instructions. Keep integrity, currentness, semantic fidelity, authorization, and delivery distinct.
 +
-+The returned summary MUST preserve required conditions, evidence references and unknowns. A short handoff does not permit dropping governing meaning. A one-agent contribution is valid. No fixed role roster or fan-out is required.
++Reuse existing representation and lifecycle artifacts across session reset. Preserve required conditions, provenance, omission counts, and drill-down routes. Do not add a competing handoff renderer or progress authority.
 diff --git a/PROJECTOR_SPEC/07-change/plans.md b/PROJECTOR_SPEC/07-change/plans.md
 --- a/PROJECTOR_SPEC/07-change/plans.md
 +++ b/PROJECTOR_SPEC/07-change/plans.md
-@@ -52,4 +52,12 @@
+@@ -52,4 +52,10 @@
  
  ---
  
-+## Contributions before capture and current continuation
++## Host preparation and current continuation
  
-+Before an exact proposal exists, the host owns its candidate files. A saved context and content-derived work contract may identify that preparation without creating another SemanticChange or managed workflow store. Missing pre-capture files are unavailable evidence, not proof that preparation completed.
++The host owns candidate notes and files before exact capture. The coordinator resolves shared contracts and observes the combined result before submitting one concrete proposal. Disjoint paths and worker success do not prove semantic compatibility. Missing required investigation remains explicit.
 +
-+Capture imports frozen contributions and joins them into an exact proposal. The strict versioned proposal includes complete contribution-envelope hashes and the join contract/result digest. These contribute to proposal and SemanticChange identity and the approved plan input-evidence digest. Equal edits/state with different admitted evidence MUST produce different capture/plan identities.
++The existing proposal, plan, approval, and currentness contracts govern accepted mutation. Reconcile saved value/query dependencies before reuse, including relevant dirty edits and changed empty-query membership. Refresh affected reasoning without discarding independently current work.
 +
-+Required predecessor absence, hash/version mismatch, stale value/query input, and unresolved shared-contract conflict prevent readiness. Optional omission remains visible. Disjoint paths alone do not establish semantic independence. Changed joined content requires a new capture and approval. A predecessor-capture link is provenance only.
-+
-+Continuation is derived from current context and authenticated lifecycle evidence. Carry forward useful work only while its bindings hold. Recover prior transactions before new mutation. Native pre-capture scheduling, automatic semantic merge and general partial multi-packet commits remain future capabilities, not assumptions of this bounded contribution path.
++Derive bounded continuation from saved context, plans, approvals, attempts, recovery state, and current evidence. Report missing local artifacts as unavailable. No new contribution importer, approval hash profile, scheduler, or mutable completion store is required for this host-owned workflow.
 diff --git a/PROJECTOR_SPEC/07-change/transactions-and-certificates.md b/PROJECTOR_SPEC/07-change/transactions-and-certificates.md
 --- a/PROJECTOR_SPEC/07-change/transactions-and-certificates.md
 +++ b/PROJECTOR_SPEC/07-change/transactions-and-certificates.md
-@@ -168,3 +168,15 @@
+@@ -168,3 +168,11 @@
  Every applied plan MUST produce a certificate, including a failed/partially applied plan. Failure produces a failure certificate with last durable checkpoint and recovery state. Certificates are ignored by default but MUST remain exportable, content-addressable, and linkable from receipts and Git commits.
  
  ---
 +
-+## Immutable contribution admission
++## Concrete capture after independent preparation
 +
-+The first public contribution path retains one accepted mutation packet through the repository lifecycle. Parallel host research/candidate production occurs before capture. It MUST NOT invoke a second packet executor or approve unknown future edits.
++Host-native parallel preparation precedes exact capture. The coordinator resolves conflicts and submits final concrete edits through the existing one-packet repository lifecycle. Do not approve unknown future work or invoke a second packet executor.
 +
-+Capture freezes imported bytes, verifies envelope/result schemas, value/query currentness, predecessor outcomes, semantic ownership, conflicts and relevant governance, then compiles one exact proposal. Worker reports and same-packet tests remain evidence claims until the combined diff is independently observed and validated.
++Worker notes remain advisory. They cannot substitute for required observed validation or broaden approval. Combined edits require their own current observation, governing checks, exact plan, and valid approval.
 +
-+Hash complete versioned envelopes, including producer/provenance, required/optional status, unresolved conditions and omissions. Bind the canonical envelope set and join contract/result digests into the strict proposal hash and existing intent/SemanticChange derivation. Bind an explicit plan input-evidence digest into approval. Store-only attachment metadata is insufficient. Preserve old proposal profiles and hash domains.
-+
-+Plan, approve and new apply MUST authenticate required immutable attachments against that bound digest. Same edits and repository state with changed admitted evidence require a different capture/plan and cannot reuse approval. Missing or substituted evidence blocks new acceptance/effects that require it.
-+
-+Recovery follows the already authenticated approval/attempt/journal/prepared-success chain. Missing candidate attachments alone MUST NOT obstruct safe rollback or idempotent publication of an already authenticated historical committed result. Missing prepared-success proof cannot be fabricated. Recovery MUST NOT rerun committed effects or create a fresh completion claim to compensate for lost evidence. Report current evidence availability separately from historical transaction state.
++Recover previous mutation from authenticated approval, attempt, journal, and prepared-success evidence. Missing preparation notes cannot obstruct safe rollback or idempotent publication of a committed authenticated result. Missing prepared-success proof cannot be fabricated. Recovery must not rerun committed effects.
 diff --git a/PROJECTOR_SPEC/08-agents/hosts-and-mcp.md b/PROJECTOR_SPEC/08-agents/hosts-and-mcp.md
 --- a/PROJECTOR_SPEC/08-agents/hosts-and-mcp.md
 +++ b/PROJECTOR_SPEC/08-agents/hosts-and-mcp.md
-@@ -145,3 +145,13 @@
+@@ -145,3 +145,11 @@
  Read-only tools do not require mutation capabilities but still respect secret/context policy.
  
  ---
 +
-+## Capability and completion honesty
++## Supported host composition and completion
 +
-+Distinguish declared tools, registered production handlers, capability-proven host integration and actually exercised workflows. Do not advertise every catalog entry as callable. Probe required features rather than reporting them true because an executable exists.
++The skills-and-scripts direction uses one shared JavaScript runner over existing TypeScript services. Retire obsolete MCP/standalone-CLI delivery and wrapper chains as their real consumers move. Do not keep shims solely to preserve obsolete names.
 +
-+Before admitting host contributions or effects, observe actual repository content and validate value/query dependencies. Git HEAD and porcelain status alone do not detect changed bytes in an already dirty file. Saved or synthetic canonical/toolchain digests are not current-state evidence.
++Observe actual repository content and value/query dependencies before reuse or effects. Git HEAD and porcelain status alone cannot detect changed bytes in an already dirty file. Capability discovery must describe implemented and actually available operations.
 +
-+A zero process exit, allowed path set, parser check or fixed-point status is not independent semantic completion. The public host wrapper MUST report only its supported assurance and route accepted repository mutation through the existing lifecycle. Do not use its weaker completion result as a contribution-join or application-evidence certificate.
-+
-+Use existing host subagents/tools before duplicating their runtime. Host-produced candidate files remain untrusted until frozen and admitted by the contribution-aware capture path. Generated instructions remain bounded projections of the same contracts.
++Process exit, parser checks, and host success text do not establish semantic fulfillment. Repair a legacy dispatch path only for a required supported consumer. Otherwise retire it after preserving active-host behavior. Current context, required behavioral evidence, and the existing lifecycle determine their respective claims.
 diff --git a/PROJECTOR_SPEC/08-agents/orchestration-and-models.md b/PROJECTOR_SPEC/08-agents/orchestration-and-models.md
 --- a/PROJECTOR_SPEC/08-agents/orchestration-and-models.md
 +++ b/PROJECTOR_SPEC/08-agents/orchestration-and-models.md
@@ -72,10 +64,10 @@ diff --git a/PROJECTOR_SPEC/08-agents/orchestration-and-models.md b/PROJECTOR_SP
  
  ---
  
-+## Optional scheduling and bounded joins
++## Optional host orchestration
  
-+Logical roles describe responsibilities, not a mandatory process/model roster. A loop is a graph pattern. A graph may be sequential. Use deterministic operations and existing host tools first. Parallelize preparation only when the work is materially independent and an explicit join handles dependencies and conflicts.
++Logical roles describe responsibilities, not a mandatory process/model roster. Use existing host tools and deterministic operations first. Parallelize materially independent preparation with explicit ownership, a bounded deliverable, and a coordinator who resolves shared contracts.
 +
-+Bound retries, cost, cancellation and required/optional results. A missing required result cannot disappear inside a convincing merge. A fresh agent or different model is not automatically independent evidence when it shares the same oracle or selected context.
++Reuse useful context and agents. Bound retries, time, cost, and required results. A missing result cannot disappear inside a convincing summary. A fresh reviewer is not independent evidence when it shares the same mistaken oracle.
 +
-+Domain specialization belongs in the narrowest useful tool, adapter, context or existing lens. It does not require a custom recursive agent runtime, universal shell/filesystem access, or a new durable memory service. Model routing claims require task-matched outcome and complete escalation/retry cost evidence. Lower price per token is insufficient.
++Domain specialization belongs in the narrowest useful tool, adapter, context, or existing lens. It does not require a recursive runtime, graph database, or durable memory service. One agent and one concrete change remain valid.

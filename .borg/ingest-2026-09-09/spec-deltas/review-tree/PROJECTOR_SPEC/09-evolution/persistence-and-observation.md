@@ -75,17 +75,17 @@ Canonical migrations are previewable and deterministic. Failed migrations leave 
 
 ```mermaid
 flowchart TD
-    A[Inventory] --> B[Deterministic indexing]
-    B --> C[Structural clustering]
-    C --> D[Relationship extraction]
-    D --> E[Semantic classifications]
-    E --> F[Pattern Candidates]
-    F --> G[Authority evaluation]
-    G --> H[Historical/metamorphic checks]
-    H --> I[Candidate/shadow lenses]
-    I --> J[Coverage + proof boundary]
-    J --> K[Divergence report]
-    K --> L[Cleanup plan]
+    A["Inventory"] --> B["Deterministic indexing"]
+    B --> C["Structural clustering"]
+    C --> D["Relationship extraction"]
+    D --> E["Semantic classifications"]
+    E --> F["Pattern Candidates"]
+    F --> G["Authority evaluation"]
+    G --> H["Historical/metamorphic checks"]
+    H --> I["Candidate/shadow lenses"]
+    I --> J["Coverage + proof boundary"]
+    J --> K["Divergence report"]
+    K --> L["Cleanup plan"]
 ```
 
 ## Analyzer contract
@@ -152,7 +152,7 @@ Model-context construction removes sensitive values before serialization. It is 
 
 ## Operational artifacts and historical observations
 
-Application run manifests and contribution attachments are immutable operational evidence under existing runtime ownership. Their indexes are rebuildable. The historical external observations themselves are not reconstructible from current source. Missing uncopied artifacts after cloning remain unavailable.
+Application run manifests and existing lifecycle artifacts are versioned operational evidence under current runtime ownership. Their indexes are rebuildable. The historical external observations themselves are not reconstructible from current source. Missing uncopied artifacts after cloning remain unavailable.
 
 Version new runtime contracts and preserve old capture readers and hash semantics. Never migrate screenshots or pass flags into authenticated successful runs. Write attachments atomically before referencing them. Validate size, hash, ownership and version when admitting them. Preserve failed and interrupted observations within declared retention limits.
 

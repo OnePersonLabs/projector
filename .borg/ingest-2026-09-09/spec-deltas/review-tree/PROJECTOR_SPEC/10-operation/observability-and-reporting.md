@@ -99,8 +99,8 @@ Every report finding answers:
 
 ## Trajectory outcomes and complete cost
 
-Longitudinal reports bind task/arm/checkpoint/attempt identities, source snapshots, model/tool/adapter versions, reveal schedule, grading contract and raw output references. Record newly requested behavior, prior regressions, setup errors, timeouts, unavailable capabilities and abandoned attempts separately.
+Optional comparative reports bind task/arm/checkpoint/attempt identities, source snapshots, model/tool/adapter versions, reveal schedule, grading contract and raw output references. Record newly requested behavior, prior regressions, setup errors, timeouts, unavailable capabilities and abandoned attempts separately.
 
-Cost records distinguish setup, retrieval/context, model and tool use, deterministic work, evidence collection, human review/repair and canonical maintenance. Preserve actual units and pricing provenance. Missing costs are unavailable. A context reduction or low token price is not a measured total-cost advantage.
+Required self-hosting receipts record actual outcomes and bounded observed costs using existing reporting. No new telemetry platform is required. Cost records distinguish setup, retrieval/context, model and tool use, deterministic work, evidence collection, human review/repair and canonical maintenance. Preserve actual units and pricing provenance. Missing costs are unavailable. A context reduction or low token price is not a measured total-cost advantage.
 
 Every diagnostic metric identifies its tool/version, population/denominator, extraction failures and causal origin. Report counts and paired differences with uncertainty. Checkpoints from one repository are not independent samples. A judge's causal label remains a hypothesis without adequate intervention evidence. Do not omit unsuccessful trajectories or count same-lens artifacts as independent authority support.

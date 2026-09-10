@@ -1,0 +1,217 @@
+{
+  "donors": {
+    "count": 11,
+    "mismatches": []
+  },
+  "originalSpec": {
+    "count": 46,
+    "mismatches": []
+  },
+  "omegaInputs": {
+    "count": 15,
+    "mismatches": []
+  },
+  "patches": {
+    "componentsEqualCombined": true,
+    "manifestPathsMatch": true,
+    "pathCount": 21,
+    "proposedHashMismatches": []
+  },
+  "projectorHead": {
+    "exitCode": 0,
+    "output": "3a8e064624f7e4120728db86aacb643233dfd71d",
+    "error": ""
+  },
+  "projectorStatus": {
+    "exitCode": 0,
+    "output": "M .borg/ingest-2026-09-09/APPLICATION-PILOT.md\n M .borg/ingest-2026-09-09/CANONICAL-DELTAS.md\n M .borg/ingest-2026-09-09/DESIGN.md\n M .borg/ingest-2026-09-09/EVIDENCE.md\n M .borg/ingest-2026-09-09/IMPLEMENTATION-ORDER.md\n M .borg/ingest-2026-09-09/README.md\n M .borg/ingest-2026-09-09/STATE.md\n M .borg/ingest-2026-09-09/VISION.md\n M .borg/ingest-2026-09-09/proposals/P1-application-evidence.md\n M .borg/ingest-2026-09-09/proposals/P2-contributions-and-continuation.md\n M .borg/ingest-2026-09-09/proposals/P4-longitudinal-evaluation.md\n M .borg/ingest-2026-09-09/receipts/final-verification.md\n M .borg/ingest-2026-09-09/receipts/spec-verification.md\n M .borg/ingest-2026-09-09/spec-deltas/P1.patch\n M .borg/ingest-2026-09-09/spec-deltas/P2.patch\n M .borg/ingest-2026-09-09/spec-deltas/P4.patch\n M .borg/ingest-2026-09-09/spec-deltas/PROJECTOR_SPEC.patch\n M .borg/ingest-2026-09-09/spec-deltas/README.md\n M .borg/ingest-2026-09-09/spec-deltas/build_patches.py\n M .borg/ingest-2026-09-09/spec-deltas/change-manifest.json\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/02-semantic-kernel/conceptual-architecture.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/03-knowledge/evidence-and-authority.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/05-projections/execution-capsules.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/07-change/plans.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/07-change/transactions-and-certificates.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/08-agents/hosts-and-mcp.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/08-agents/orchestration-and-models.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/09-evolution/application-evidence.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/09-evolution/persistence-and-observation.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/10-operation/observability-and-reporting.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/INDEX.md\n M .borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/SPEC.md\n?? .borg/ingest-2026-09-09/pilot-omega-source-inventory.json\n?? .borg/ingest-2026-09-09/review-wrap-up/REVIEW.md\n?? .borg/ingest-2026-09-09/review-wrap-up/VERIFICATION.md\n?? .borg/ingest-2026-09-09/review-wrap-up/integrity.json\n?? .borg/ingest-2026-09-09/review-wrap-up/reconcile-summary.json\n?? .borg/ingest-2026-09-09/review-wrap-up/reconcile.json\n?? .borg/ingest-2026-09-09/review-wrap-up/settlement-checks.json\n?? .borg/ingest-2026-09-09/review-wrap-up/settlement-host-reconcile.json\n?? .borg/ingest-2026-09-09/review-wrap-up/settlement-plan-reconcile.json\n?? .borg/ingest-2026-09-09/review-wrap-up/spec-apply-checks.json\n?? .borg/ingest-2026-09-09/review-wrap-up/spec-check.txt\n?? .borg/ingest-2026-09-09/review-wrap-up/spec-engine-check.json\n?? .borg/ingest-2026-09-09/review-wrap-up/spec-stat.txt",
+    "error": ""
+  },
+  "diffCheck": {
+    "exitCode": 0,
+    "output": "",
+    "error": "warning: in the working copy of '.borg/ingest-2026-09-09/APPLICATION-PILOT.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/CANONICAL-DELTAS.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/DESIGN.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/EVIDENCE.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/IMPLEMENTATION-ORDER.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/README.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/STATE.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/VISION.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/proposals/P1-application-evidence.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/proposals/P2-contributions-and-continuation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/proposals/P4-longitudinal-evaluation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/receipts/final-verification.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/receipts/spec-verification.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/P1.patch', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/P2.patch', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/P3.patch', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/P4.patch', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/PROJECTOR_SPEC.patch', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/README.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/build_patches.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/02-semantic-kernel/conceptual-architecture.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/03-knowledge/architecture-concerns-and-validity.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/03-knowledge/evidence-and-authority.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/04-governance/lenses.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/05-projections/execution-capsules.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/06-reconciliation/coverage-and-completion.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/06-reconciliation/reconciliation-and-divergence.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/07-change/plans.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/07-change/transactions-and-certificates.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/08-agents/hosts-and-mcp.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/08-agents/orchestration-and-models.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/09-evolution/application-evidence.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/09-evolution/historical-evaluation-and-research.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/09-evolution/persistence-and-observation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/10-operation/observability-and-reporting.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/11-validation/benchmarks-and-redesign-criteria.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/INDEX.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/SPEC.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/spec.manifest.json', LF will be replaced by CRLF the next time Git touches it"
+  },
+  "omegaHead": {
+    "exitCode": 0,
+    "output": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "error": ""
+  },
+  "omegaStatus": {
+    "exitCode": 0,
+    "output": "",
+    "error": ""
+  },
+  "reviewedFileHashes": [
+    {
+      "path": ".temp\\projector-wrap-up-plan-2026-09-09.md",
+      "sha256": "caa4b4e15c761de8fe6b10960c7ca5a6b1597f46128d88125e69c680bd785b8e"
+    },
+    {
+      "path": ".temp\\projector-wrap-up-handoff-2026-09-10.md",
+      "sha256": "33f7bf0bfe60884a6992a837a0917f2753e5ff85d6a09e93946368252463f2b6"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\VISION.md",
+      "sha256": "6f432f72c37a8a3680b0dbc98cbd610c1621674cd32d616d6167dbb7768b8661"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\DESIGN.md",
+      "sha256": "0dfcd18e8d9c31eb574bf9e21c1d1dddf01f6bf425e46c395a923e1a19934129"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\CANONICAL-DELTAS.md",
+      "sha256": "9fac3a59afc9c0a7f5c70b9d5a789c6fd88a806a29caca866e4a7ba58352afe3"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\IMPLEMENTATION-ORDER.md",
+      "sha256": "c3d55c02362055c73008a230e6fec8a3c7a9d21db97efadd549bf37baca79d07"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\APPLICATION-PILOT.md",
+      "sha256": "4c8dd5fedd1e94a4a2aac90956ba46d6ccfa916c159f386f04258f982963ce19"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\EVIDENCE.md",
+      "sha256": "fe4aa93097036777383a823de86a43b530c2d4efb91a49d00226722f37df7177"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\README.md",
+      "sha256": "da71411a6e6415d7e0f7f87ced744226fa26ff5f9f6669d85b7c39cfaf544cba"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P1-application-evidence.md",
+      "sha256": "06361239444ce4f197eae1e1ce6433a07c075cf678b75e4283c44466471f967a"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P2-contributions-and-continuation.md",
+      "sha256": "a9a4d853528bb075ad726f9e73477ce0d82b4dad77ed4b07fd267e137c32a19d"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P3-correction-and-governance.md",
+      "sha256": "e9c8cf3e0a25f08ff51f94f8c088454353a971fdbad075d371e0240ca6a261d3"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P4-longitudinal-evaluation.md",
+      "sha256": "25f5eeb74f2dc97f2fa1e740ff65a8a5836206211fddbcb5254dc09580f330c3"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\spec-deltas\\README.md",
+      "sha256": "aa29df3562a24d61e8ff188cf5b7c227fa10de66d44d89a00536ce7cd39e09ef"
+    }
+  ],
+  "tasks": {
+    "openCheckboxes": 120,
+    "duplicateIds": [],
+    "completedCheckboxes": 0,
+    "deltaApplications": {
+      "7.7": true,
+      "7A.6": true,
+      "7B.6": true,
+      "10.9": true
+    }
+  },
+  "links": {
+    "localLinks": 118,
+    "missing": [],
+    "scope": "Active documents, current receipts and STATE; filesystem existence, not remote reachability or all fragments"
+  },
+  "passed": true,
+  "trackedDesignDiff": {
+    "exitCode": 0,
+    "output": ".borg/ingest-2026-09-09/APPLICATION-PILOT.md\n.borg/ingest-2026-09-09/CANONICAL-DELTAS.md\n.borg/ingest-2026-09-09/DESIGN.md\n.borg/ingest-2026-09-09/EVIDENCE.md\n.borg/ingest-2026-09-09/IMPLEMENTATION-ORDER.md\n.borg/ingest-2026-09-09/README.md\n.borg/ingest-2026-09-09/STATE.md\n.borg/ingest-2026-09-09/VISION.md\n.borg/ingest-2026-09-09/proposals/P1-application-evidence.md\n.borg/ingest-2026-09-09/proposals/P2-contributions-and-continuation.md\n.borg/ingest-2026-09-09/proposals/P4-longitudinal-evaluation.md\n.borg/ingest-2026-09-09/receipts/final-verification.md\n.borg/ingest-2026-09-09/receipts/spec-verification.md\n.borg/ingest-2026-09-09/spec-deltas/P1.patch\n.borg/ingest-2026-09-09/spec-deltas/P2.patch\n.borg/ingest-2026-09-09/spec-deltas/P4.patch\n.borg/ingest-2026-09-09/spec-deltas/PROJECTOR_SPEC.patch\n.borg/ingest-2026-09-09/spec-deltas/README.md\n.borg/ingest-2026-09-09/spec-deltas/build_patches.py\n.borg/ingest-2026-09-09/spec-deltas/change-manifest.json\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/02-semantic-kernel/conceptual-architecture.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/03-knowledge/evidence-and-authority.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/05-projections/execution-capsules.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/07-change/plans.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/07-change/transactions-and-certificates.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/08-agents/hosts-and-mcp.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/08-agents/orchestration-and-models.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/09-evolution/application-evidence.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/09-evolution/persistence-and-observation.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/10-operation/observability-and-reporting.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/INDEX.md\n.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/SPEC.md",
+    "error": "warning: in the working copy of '.borg/ingest-2026-09-09/APPLICATION-PILOT.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/CANONICAL-DELTAS.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/DESIGN.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/EVIDENCE.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/IMPLEMENTATION-ORDER.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/README.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/STATE.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/VISION.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/proposals/P1-application-evidence.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/proposals/P2-contributions-and-continuation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/proposals/P4-longitudinal-evaluation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/receipts/final-verification.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/receipts/spec-verification.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/P1.patch', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/P2.patch', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/P4.patch', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/PROJECTOR_SPEC.patch', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/README.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/build_patches.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/02-semantic-kernel/conceptual-architecture.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/03-knowledge/evidence-and-authority.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/05-projections/execution-capsules.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/07-change/plans.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/07-change/transactions-and-certificates.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/08-agents/hosts-and-mcp.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/08-agents/orchestration-and-models.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/09-evolution/application-evidence.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/09-evolution/persistence-and-observation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/10-operation/observability-and-reporting.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/INDEX.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of '.borg/ingest-2026-09-09/spec-deltas/review-tree/PROJECTOR_SPEC/SPEC.md', LF will be replaced by CRLF the next time Git touches it"
+  },
+  "productDiffFromInitialBaseline": {
+    "exitCode": 0,
+    "output": "",
+    "error": ""
+  },
+  "concurrentCommitProductDiff": {
+    "exitCode": 0,
+    "output": "",
+    "error": ""
+  },
+  "concurrentHeadNote": "HEAD advanced during review to 3a8e064624f7e4120728db86aacb643233dfd71d with .borg artifacts only. Coordinator made no commit and preserved it. Tracked design changes are expected.",
+  "finalClosureLinks": {
+    "missing": []
+  },
+  "settlementReviewedFiles": [
+    {
+      "path": ".temp\\projector-wrap-up-plan-2026-09-09.md",
+      "sha256": "caa4b4e15c761de8fe6b10960c7ca5a6b1597f46128d88125e69c680bd785b8e"
+    },
+    {
+      "path": ".temp\\projector-wrap-up-handoff-2026-09-10.md",
+      "sha256": "33f7bf0bfe60884a6992a837a0917f2753e5ff85d6a09e93946368252463f2b6"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\VISION.md",
+      "sha256": "6f432f72c37a8a3680b0dbc98cbd610c1621674cd32d616d6167dbb7768b8661"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\DESIGN.md",
+      "sha256": "0dfcd18e8d9c31eb574bf9e21c1d1dddf01f6bf425e46c395a923e1a19934129"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\CANONICAL-DELTAS.md",
+      "sha256": "9fac3a59afc9c0a7f5c70b9d5a789c6fd88a806a29caca866e4a7ba58352afe3"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\IMPLEMENTATION-ORDER.md",
+      "sha256": "c3d55c02362055c73008a230e6fec8a3c7a9d21db97efadd549bf37baca79d07"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\APPLICATION-PILOT.md",
+      "sha256": "4c8dd5fedd1e94a4a2aac90956ba46d6ccfa916c159f386f04258f982963ce19"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\EVIDENCE.md",
+      "sha256": "fe4aa93097036777383a823de86a43b530c2d4efb91a49d00226722f37df7177"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\README.md",
+      "sha256": "da71411a6e6415d7e0f7f87ced744226fa26ff5f9f6669d85b7c39cfaf544cba"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P1-application-evidence.md",
+      "sha256": "06361239444ce4f197eae1e1ce6433a07c075cf678b75e4283c44466471f967a"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P2-contributions-and-continuation.md",
+      "sha256": "a9a4d853528bb075ad726f9e73477ce0d82b4dad77ed4b07fd267e137c32a19d"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P3-correction-and-governance.md",
+      "sha256": "e9c8cf3e0a25f08ff51f94f8c088454353a971fdbad075d371e0240ca6a261d3"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P4-longitudinal-evaluation.md",
+      "sha256": "25f5eeb74f2dc97f2fa1e740ff65a8a5836206211fddbcb5254dc09580f330c3"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\spec-deltas\\README.md",
+      "sha256": "aa29df3562a24d61e8ff188cf5b7c227fa10de66d44d89a00536ce7cd39e09ef"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\STATE.md",
+      "sha256": "f62ac018ffe6d56d63ad6cc2a73d58f817812e8ed7f6e77d255d7876d2e7a893"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\review-wrap-up\\REVIEW.md",
+      "sha256": "adbac589dca7b3fd0c903fce3153126b0790b0c8c1deb20a1c7d8dae0ca25688"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\review-wrap-up\\VERIFICATION.md",
+      "sha256": "140b42fa9ab6783ec0f087648a7e8b71f897429fdd2c8098bcc749ce61e7c32c"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\receipts\\final-verification.md",
+      "sha256": "d0082c12356a4f9f5284d517f0f662f28c52231bd36ea38478f9733be86165b0"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\receipts\\spec-verification.md",
+      "sha256": "192b3c5f4b3004345862e901a58e358486f1f2eea24119c388f4259486555896"
+    }
+  ]
+}

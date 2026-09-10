@@ -173,6 +173,6 @@ The stages MUST remain distinct even when the same run performs both.
 
 Distinguish four questions: who collected the observation, what behavior it records, whether its dependencies remain current, and what assurance the collection supports. A content hash answers none of those questions without its producer and binding contract.
 
-Admitted runtime evidence MUST bind the actual application/build, scenario, controller dependency cone, fixtures/configuration, toolchain, adapter and demonstrated capabilities. The trusted supervisor owns the manifest outside candidate execution. Candidate application output MUST NOT choose its own provenance, independence, or assurance.
+Admitted runtime evidence MUST bind the actual application/build, scenario, controller dependency cone, fixtures/configuration, toolchain, adapter and demonstrated capabilities. The host controller owns the manifest outside page state under an explicit trusted-workspace assumption. Candidate application output MUST NOT choose its own provenance, independence, or assurance. Host custody alone does not defeat same-user tampering.
 
 Source separation does not establish oracle correctness. A pinned test may still encode a mistaken interpretation. Shared generated tests, copied examples, and same-lens artifacts remain correlated evidence. Preserve contradictions and historical failed observations when later collection is unavailable.

@@ -1,0 +1,92 @@
+[
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "AGENTS.md",
+    "sha256": "eef776e36e701d9c58c2106554ccd8d2028bff13e00f1eb7227068fd3573876b"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "package.json",
+    "sha256": "1d434ff255ffea5d614997c366ceb5d0c0242d95643abdb762df7e67dbf1494c"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "pnpm-lock.yaml",
+    "sha256": "085555cc05d5ae308012c1cedda17c80d0356b1121ba2217a405fec5914488bc"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "src/ui/App.tsx",
+    "sha256": "f598a2774d9b497509fcbadb66f5bcd0fc1fdc249d70e03945a89145f5f7608e"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "src/ui/PianoKeyboard.tsx",
+    "sha256": "fe8543d855a7114460501f6c1c5bfa675d908f159562f21bb640eeb4ae1b1a24"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "src/ui/PitchField.tsx",
+    "sha256": "50f6132644fde1c7510f34dd8b2ad5d8442fd01bf7012da523203d9015694625"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "src/ui/main.tsx",
+    "sha256": "48be79ffac1485984aff1556455a4ef24b5b20013dc93d522295b7555f277cc3"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "src/application/session-controller.ts",
+    "sha256": "051a669c2952453bde9fe8f368c524ae8c784e4657a2c68902a9d161280ccab6"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "src/platform/moments.ts",
+    "sha256": "72f98cdb8d19a4b66a11ded5f5b487d231331f611c163f287857849acfd62ecb"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": "tests/acceptance.test.ts",
+    "sha256": "e8e49bd11ae64b969ed217992be7dc9f1aeb881a9e89bdceb13006aa8f9e56a5"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": ".projector/model/concepts/589c67d912dd830467e0e5c8a0098c03ff8902014a283b6a9db48237a06d999f.concept.json",
+    "sha256": "d66b86a8c9d8ae915142365a2db158023b729e286e54ebeae8204c9945bf9a4a"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": ".projector/model/concepts/5d55cf0315981df4654b74c587099196c415dc3267f4044fe8bc4ebca9399715.concept.json",
+    "sha256": "1b55ca1313ee3faeee57887d7cb1049f25c82bd79721a833d87b22f785855c4c"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": ".projector/model/concepts/6eeaa85bd3f4704c95329052dbac319a809fcecef5812f4aca0c788364c803ae.concept.json",
+    "sha256": "1dc3c2b30a20963bc2fa147222976489f1e01aa78530006d191f837dab6be50c"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": ".projector/model/concepts/83303a53e737d60457b8633026f45af8d65eb7ae8141d33838c075af104b5fd0.concept.json",
+    "sha256": "c0b79f862bf115fc8c5c681d8c184564ae72617f35d62897d41760cf838dd5c1"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord-omega",
+    "revision": "e3ed1c8ff30f4fb2b997b187dd4fe03d6af91c5f",
+    "path": ".projector/model/concepts/8aba5e77e423bd1d8e9f8e94f23291e7044c4aa4780f6b962f71373ef164fdba.concept.json",
+    "sha256": "0df9a268d288c8096c22dd64b373b0e00919695971935b23f0cdfec29e36df14"
+  }
+]

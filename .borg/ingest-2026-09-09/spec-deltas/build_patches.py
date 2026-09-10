@@ -37,22 +37,22 @@ def replace_once(text, old, new):
     return text.replace(old, new, 1)
 
 def root_spec(before):
-    before = replace_once(before, '## Authoritative Implementation Specification', '## Historical implementation design and contract input')
-    before = replace_once(before, '**Status:** Normative implementation handoff', '**Status:** Historical design and legacy contract input. Current acceptance is in typed Projector records')
+    before = replace_once(before, '## Authoritative Implementation Specification', '## Historical implementation design and acceptance evidence')
+    before = replace_once(before, '**Status:** Normative implementation handoff  ', '**Status:** Historical design and transitional acceptance input. Current acceptance is in typed Projector records')
     start = before.index('## Authority and composition\n')
     end = before.index('\n---', start)
     return before[:start] + '''## Authority and composition
 
 Accepted product meaning lives in typed `.projector/model/` records. Executable architecture lives in `.projector/lenses/`, `.projector/decisions/`, and `.projector/authorities/`. Those records remain claims to check against user intent and current evidence.
 
-`PROJECTOR_SPEC` preserves historical design, rationale, and legacy contract-generation input. Its older normative wording does not establish current acceptance or implementation. Proposed revisions require explicit acceptance through the current conceptual model and architecture lifecycle.
+`PROJECTOR_SPEC` preserves historical design, rationale, and transitional acceptance-inventory input. Its older normative wording does not establish current acceptance or implementation. Proposed revisions require explicit acceptance through the current conceptual model and architecture lifecycle.
 
 - `SPEC.md` records product identity, composition, the causal loop, and disclosure routes.
-- Modules in `spec.manifest.json` own their historical subsystem contracts. Keep each exported contract in one owning module.
+- Modules in `spec.manifest.json` record their historical subsystem design. Typed contracts own executable machine shapes and schema generation.
 - `INDEX.md` is navigation. It introduces no independent requirement.
 - Resolve contradictions explicitly and preserve provenance. Neither a summary nor a stored status proves implementation.
 - Preserve unrealized commitments when implementing a bounded slice. Historical delivery plans are not the current work queue.
-- Changes to historical contract input require coordinated domain/schema/generator validation. Editing prose alone does not change the accepted model or executable behavior.
+- Changes to acceptance inputs require coordinated canonical/test-inventory validation. Editing prose alone does not change the accepted model or executable behavior.
 
 The application-evidence, contribution, correction, and longitudinal-evaluation contracts describe one conceptual control loop. They add no parallel requirement, progress, or approval store.
 ''' + before[end:]
@@ -60,7 +60,7 @@ The application-evidence, contribution, correction, and longitudinal-evaluation 
 change('P1', 'SPEC.md', root_spec)
 
 def index_spec(before):
-    before = replace_once(before, 'This index routes readers and agents to authoritative modules without requiring full-spec ingestion. It is navigation, not an independent source of requirements.', 'This index routes readers to historical design and legacy contract-input modules. Accepted meaning and executable architecture live in typed `.projector/` records. This index creates no independent requirements or implementation claims.')
+    before = replace_once(before, 'This index routes readers and agents to authoritative modules without requiring full-spec ingestion. It is navigation, not an independent source of requirements.', 'This index routes readers to historical design and transitional acceptance-input modules. Accepted meaning and executable architecture live in typed `.projector/` records. This index creates no independent requirements or implementation claims.')
     anchor = '- [Persistence and Observation](09-evolution/persistence-and-observation.md)'
     at = before.index('\n', before.index(anchor))
     return before[:at] + '\n- [Application Evidence](09-evolution/application-evidence.md) -- concrete application runs, collector trust, scenario binding, evidence admission, and recovery.' + before[at:]
@@ -77,86 +77,70 @@ def manifest_spec(before):
     return json.dumps(value, indent=2, ensure_ascii=False) + '\n'
 
 change('P1', 'spec.manifest.json', manifest_spec)
-change('P1', '09-evolution/application-evidence.md', lambda _: '''# Application Evidence
+change('P1', '09-evolution/application-evidence.md', lambda _: """# Application Evidence
 
 ## Purpose and ownership
 
-Application evidence connects an accepted Behavioral Scenario to an actual application run. It supplies observations for the existing validation and completion contracts. It creates no new authority plane or pass-status store.
+Application evidence connects accepted behavior to an actual run through the shared JavaScript operation runner. It supplies observations for existing validation and completion contracts. It creates no new authority plane or pass-status store.
 
-The first concrete workload is the existing Psychord web-internal C-major triad Recognition path. Its controller checks Harmony triad/major, Technique chord gesture, and PitchEar chord-quality evidence through the real shared runtime. A no-injection control and a broken-finalization variant distinguish a useful oracle from a success-shaped display. This initial claim excludes acoustic output, physical MIDI, device latency, and human musical learning. Those obligations remain visible.
+The first workload is Psychord-omega's keyboard performance, local moment saving, reload, and replay. Existing personal-archive, replay-provenance, player-authorship, local-privacy, and first-musical-minute concepts own its purpose. Accept a specific scenario before execution. Replay must not add player events. Saving failure must remain visible and preserve earlier data. Acoustic output, physical MIDI, device latency, and musical learning remain outside this initial claim.
 
-Core owns portable contracts. The engine evaluates evidence eligibility through ports. Integrations own the concrete application/controller adapter. Runtime owns isolated resources and immutable artifacts. The control plane composes admission, currentness, validation, coverage, and lifecycle consumers.
+Core owns portable contracts. The engine evaluates supplied evidence through ports. Integrations own the application/controller adapter. Runtime owns ordinary host processes and artifacts. The control plane composes admission, currentness, validation, coverage, and lifecycle consumers.
 
 ## Run and evidence contract
 
-A run request MUST identify accepted scenario IDs/hashes, bound context, adapter/profile version, and actual source or build inputs. It MUST also identify fixture/configuration, controller dependencies, resource policy, required oracle, and limits.
+A run request MUST identify scenario IDs/hashes, bound context, adapter/profile version, and actual source/build inputs. It MUST identify fixture/configuration, controller/helper dependencies, toolchain, required oracle, limits, and expected assurance.
 
-A runtime-owned manifest MUST record run/attempt, launched build/container identities, engine/toolchain, and observed capabilities. It MUST also record setup/readiness/cleanup outcomes, collection interval, artifact references, and incomplete evidence. Artifact references MUST bind content hash, type, size, collection method, causal origin, and retention policy.
+A host-owned manifest MUST record run/attempt, actual served-build and endpoint identity, setup/readiness/cleanup outcomes, and collection interval. Artifact references bind content, type, size, collection method, origin, and retention. Use existing Evidence, ValidationResult, StateBinding, and CompletionContract contracts where they already express these responsibilities.
 
-Keep operational status, behavioral outcome, currentness, and assurance separate. Successful setup or process exit does not prove behavior. A failed assertion is a behavioral failure. Missing setup capability is unavailable evidence. A historical failure remains a historical failure after its inputs become stale.
+Keep operational status, behavioral outcome, currentness, and assurance separate. Successful setup or process exit does not prove behavior. Missing setup capability is unavailable evidence. A historical failure remains a historical failure after its inputs become stale.
 
-Use the existing Evidence, ValidationResult, StateBinding, CompletionContract, and derivation contracts. Add a narrow typed run binding where needed. A screenshot, URL, timestamp, or Git HEAD alone MUST NOT establish a current application claim. A validator entry-file hash does not prove its entire dependency cone.
+A screenshot, URL, timestamp, or Git HEAD alone MUST NOT establish a current application claim. A validator entry-file hash does not prove its transitive dependency cone. Broad observable inputs require broad dependency binding or an explicit unknown result.
 
-## Concrete private application profile
+## Host-controlled collection
 
-The initial optional profile uses Docker Engine Linux containers and a separate Playwright controller. The trusted Projector supervisor runs outside the build, app, and controller containers. The existing network-denied repository-node validator and WSL bubblewrap route remain unchanged. Docker is not required for the semantic engine or ordinary repository lifecycle.
+Use the host's configured permissions. The initial adapter prepares a pinned build, starts an owned loopback static server on an allocated port, and drives a pinned browser controller. Do not reuse an existing server. Bind served resource bytes and the controller's endpoint/run observations to the prepared build. Use fresh browser storage and retain controller diagnostics outside page state.
 
-The profile MUST validate a local engine endpoint. Remote engine contexts are unsupported initially. It MUST pin compatible images, browser/controller dependencies, source snapshot, internal build mode, assets, fixtures, and configuration. Dependency acquisition is a separate authorized preparation step. Evidence collection MUST NOT silently fetch missing dependencies.
+This lane assumes a trusted workspace and host. Separate processes, browser contexts, nonce checks, and hashes do not establish adversarial confinement or authenticated independence. Same-user code can tamper with collection. Do not claim host-network denial, read-only mounts, immutable overlays, or descendant containment without actual enforcement. This adapter satisfies only its accepted host-observed application scenario. It MUST NOT report confinement or device-level obligations as fulfilled by these observations.
 
-Build scripts run in a disposable container without controller inputs, host credentials, daemon access, or evidence-store access. Serve the actual frozen internal build from the app container. Disable reuse of existing or externally selected application servers. Preserve the distinction between internal Dev Workbench artifacts and production artifacts.
+Freeze reviewed oracle inputs independently of candidate edits and validate their identity at use. A before/after hash cannot prove hostile code never changed and restored bytes. Source independence does not prove oracle correctness. Candidate app output cannot select its own assurance.
 
-Use a private internal network with isolated gateway mode for enabled address families. Do not publish ports, attach a default external network, expose a host gateway, or mount a daemon socket. Internal-network mode alone does not prove denial of gateway-host services. Capability probes MUST verify host-service, external-address, and DNS escape denial.
+Host permissions govern execution. This application adapter does not recreate a mandatory Projector sandbox, WSL bridge, Docker service, general provisioning language, or separate mutation executor.
 
-The controller MUST have a separate filesystem/process namespace, non-root browser sandbox, explicit seccomp policy, private bounded shared memory, and resource limits. Do not use privileged mode, host IPC, or extra administrator capabilities. The app MUST NOT access controller output, process state, manifests, or supervisor authentication material. The controller MUST NOT expose an automation/debug listener to the app.
+## Admission, failure, and recovery
 
-The supervisor creates and inspects exact engine object identities and reads controller results through its own attached channel. It imports bounded artifacts from controller-owned storage and writes the manifest outside candidate containers. App stdout is application evidence, not controller protocol. Hashing or signing app-supplied manifest fields alone is insufficient authentication.
+Admit observations only at their demonstrated assurance and current dependency scope. Required lifecycle evidence must be declared in the concrete plan. Ordinary host observations do not gain controlled-execution certificates.
 
-The engine/VM and supervisor are explicit trusted computing base. Unsupported isolation or collection capabilities produce unavailable evidence. The profile MUST NOT fall back to a developer browser/server or broaden the existing validator policy.
+Keep setup failure, unavailable capability, failed assertion, stale evidence, and incomplete cleanup distinct. Preserve bounded failure artifacts. Stop or clean only resources identified as owned by this attempt. Interruption cannot authorize killing another server or replaying external user effects.
 
-## Admission and freshness
+A finalized manifest may be published idempotently. An interrupted run remains interrupted unless actual evidence completes it. Missing artifacts after a clone are unavailable, not recreated historical successes.
 
-The control plane admits only supervisor-owned run records with validated contract, artifact integrity, actual instance/controller identity, observed capability evidence, and current dependencies. Host-provided screenshots or diagnostics MAY support investigation at a separately declared assurance. They MUST NOT become strong evidence merely through hashing or a claimed independence label.
+## Verification and migration
 
-Bind the actual observable input population. If a controller can read the whole repository, use that wider validity boundary unless a narrower enforced dependency contract exists. Reevaluate changed source/build, scenario, controller/helpers, fixture/configuration, toolchain, adapter, capability, and relevant query membership. Unchanged structure does not waive required behavioral checks.
+Exercise the actual keyboard/save/reload/replay path and no-input, save-failure, wrong-build, stale-controller, and interrupted-cleanup controls. Fake-port domain tests supplement the browser result. Test units, thresholds, and device claims only where accepted meaning and actual instrumentation support them.
 
-Coverage MUST keep mapping distinct from behavioral fulfillment. A required missing, stale, failed, or unavailable evidence lane prevents its completion claim. Preserve unaffected evidence only when the dependency proof supports reuse. Report omissions and expansion routes explicitly.
-
-## Lifecycle and recovery
-
-Observation is no-exec by default. Application setup and collection require an explicit declared action policy. A controlled plan includes its actual required collector/capability inputs before approval. The existing mutation coordinator, writer lease, independent validation, journal, and prepared-success protocol remain the only accepted repository write route.
-
-Collection after ordinary host edits MAY supply useful evidence. It does not issue a controlled-execution certificate for those edits. A transaction certificate describes only its concrete state, supported behavior, and modeled boundary.
-
-Interrupted runs retain bounded diagnostics and explicit incomplete state. Cleanup acts only on authenticated owned engine object IDs, never names or identifiers supplied by the app. Missing ownership proof requires an explicit recovery result. Finalized manifests publish idempotently. An old run record does not imply an old live service still exists.
-
-Store raw logs, traces, screenshots, and run manifests locally under existing runtime ownership. A clone can recover accepted meaning and adapter configuration, but cannot recreate uncopied observations. Legacy screenshots and flags remain legacy evidence. Migration MUST NOT manufacture authenticated passes or rewrite old approvals/certificates.
-
-## Required survival cases
-
-Verify stale/substituted builds, changed controller dependencies, tampered artifacts, fake app-supplied controller output, and controller-output/process access. Also verify host/network escape, stale endpoints, missing assets, no-injection and broken-finalization behavior, and interruption before/after finalization. The declared profile must verify owned-resource cleanup.
-
-These checks establish only the tested profile and scenario. They do not prove a correct oracle, a trustworthy compromised engine/kernel, every device capability, or economic advantage.
-''')
+Version new runtime shapes through the existing migration system. Preserve old evidence and approval interpretation. Never upgrade legacy screenshots or pass flags into authenticated observations. Apply this transitional spec delta after the owning implementation and checks complete, before final canonical parity and spec retirement.
+""")
 
 append('P1', '02-semantic-kernel/conceptual-architecture.md', '''## Behavioral evidence in the existing planes
 
 Accepted scenarios in the Intent plane define the claim. Lenses and validation contracts define required checks. A concrete application run is an observed Surface, and its collected results enter the observed shadow with provenance and currentness. The engine evaluates eligibility. The control plane reconciles it against accepted obligations.
 
-Application manifests, contribution graphs, and continuation views are derived operational artifacts. They MUST NOT become a fourth authority plane. A collector records observations. A validator evaluates a bounded claim. An accepted decision authorizes governance. No one of these roles may manufacture independent support for itself.
+Application manifests and continuation views are derived operational artifacts. They MUST NOT become a fourth authority plane. A collector records observations. A validator evaluates a bounded claim. An accepted decision authorizes governance. No one of these roles may manufacture independent support for itself.
 ''')
-append('P1', '02-semantic-kernel/reference-implementation.md', '''## Application evidence composition
+append('P1', '02-semantic-kernel/reference-implementation.md', """## Application evidence composition
 
-The control plane owns application-evidence admission, currentness, lifecycle integration, and coverage views. Integrations implement the concrete scenario/controller adapter. Runtime owns isolated processes, resources, immutable artifact custody, and cleanup. Core owns portable contracts. Engine logic operates only on injected values and ports.
+The control plane owns evidence admission, currentness, lifecycle integration, and coverage. Integrations implement the scenario/controller adapter. Runtime owns host processes, artifact custody, and cleanup. Core owns portable contracts. Engine logic operates on injected values and ports.
 
-The initial optional application profile uses a local Docker Engine with separate application and Playwright-controller containers. It does not replace the existing WSL/bubblewrap repository validator or require a daemon for normal semantic operation. A missing profile capability is unavailable, not implicit permission to use host resources.
+Skills and the shared operation runner compose existing services. The first application adapter uses host-controlled build/server/browser processes and explicit trusted-workspace assurance. It introduces no mandatory container daemon or custom confinement backend. Unavailable capabilities remain unavailable.
 
-Use the existing packages. Split a package only for an actual release, security, performance, or dependency-isolation need. Do not import browser/process/engine-client implementations into core or engine, or create a second repository executor to support contribution-shaped inputs.
-''')
+Use existing packages. Do not import browser or process implementations into core or engine. Preserve one accepted repository mutation lifecycle and remove obsolete transport consumers through their owning implementation changes.
+""")
 append('P1', '03-knowledge/evidence-and-authority.md', '''## Collected application evidence
 
 Distinguish four questions: who collected the observation, what behavior it records, whether its dependencies remain current, and what assurance the collection supports. A content hash answers none of those questions without its producer and binding contract.
 
-Admitted runtime evidence MUST bind the actual application/build, scenario, controller dependency cone, fixtures/configuration, toolchain, adapter and demonstrated capabilities. The trusted supervisor owns the manifest outside candidate execution. Candidate application output MUST NOT choose its own provenance, independence, or assurance.
+Admitted runtime evidence MUST bind the actual application/build, scenario, controller dependency cone, fixtures/configuration, toolchain, adapter and demonstrated capabilities. The host controller owns the manifest outside page state under an explicit trusted-workspace assumption. Candidate application output MUST NOT choose its own provenance, independence, or assurance. Host custody alone does not defeat same-user tampering.
 
 Source separation does not establish oracle correctness. A pinned test may still encode a mistaken interpretation. Shared generated tests, copied examples, and same-lens artifacts remain correlated evidence. Preserve contradictions and historical failed observations when later collection is unavailable.
 ''')
@@ -170,61 +154,54 @@ An unavailable browser/audio/device lane remains an explicit unrealized obligati
 ''')
 append('P1', '09-evolution/persistence-and-observation.md', '''## Operational artifacts and historical observations
 
-Application run manifests and contribution attachments are immutable operational evidence under existing runtime ownership. Their indexes are rebuildable. The historical external observations themselves are not reconstructible from current source. Missing uncopied artifacts after cloning remain unavailable.
+Application run manifests and existing lifecycle artifacts are versioned operational evidence under current runtime ownership. Their indexes are rebuildable. The historical external observations themselves are not reconstructible from current source. Missing uncopied artifacts after cloning remain unavailable.
 
 Version new runtime contracts and preserve old capture readers and hash semantics. Never migrate screenshots or pass flags into authenticated successful runs. Write attachments atomically before referencing them. Validate size, hash, ownership and version when admitting them. Preserve failed and interrupted observations within declared retention limits.
 
 Retaining a historical observation does not keep it current. Reevaluate its actual dependency and capability inputs before reuse. A current source snapshot or cache rebuild cannot manufacture a missing past run.
 ''')
 
-append('P2', '05-projections/execution-capsules.md', '''## Bound contributions and readable handoffs
+append('P2', '05-projections/execution-capsules.md', """## Readable work and exact execution instructions
 
-A host MAY use saved context to prepare read-only investigations or isolated candidate edits. A contribution contract MUST identify the objective, result schema/version, exact context, value/query dependencies, and required/optional predecessors. It MUST also identify producer attempt, output/evidence references, effect scope, semantic owners, unresolved conditions, and omissions.
+Host agents may prepare bounded investigations and candidate edits using saved context. Their notes name the objective, relied-on context, outputs, unresolved conditions, and evidence limits. Notes are advisory and do not authorize mutation or prove validation ran.
 
-Candidate preparation is not accepted mutation. Do not force a read-only contribution through a mutation packet that requires write selectors. Context isolation does not establish process, credential, or causal-evidence isolation. A worker's complete status describes only its contribution.
+Ordinary conceptual reading needs no mutation approval. Exact plan-bound instruction inspection must work before approval to support review. Execution requires current dependencies, the appropriate authority, and actual delivery of the selected instructions. Keep integrity, currentness, semantic fidelity, authorization, and delivery distinct.
 
-The returned summary MUST preserve required conditions, evidence references and unknowns. A short handoff does not permit dropping governing meaning. A one-agent contribution is valid. No fixed role roster or fan-out is required.
-''')
-append('P2', '07-change/plans.md', '''## Contributions before capture and current continuation
+Reuse existing representation and lifecycle artifacts across session reset. Preserve required conditions, provenance, omission counts, and drill-down routes. Do not add a competing handoff renderer or progress authority.
+""")
+append('P2', '07-change/plans.md', """## Host preparation and current continuation
 
-Before an exact proposal exists, the host owns its candidate files. A saved context and content-derived work contract may identify that preparation without creating another SemanticChange or managed workflow store. Missing pre-capture files are unavailable evidence, not proof that preparation completed.
+The host owns candidate notes and files before exact capture. The coordinator resolves shared contracts and observes the combined result before submitting one concrete proposal. Disjoint paths and worker success do not prove semantic compatibility. Missing required investigation remains explicit.
 
-Capture imports frozen contributions and joins them into an exact proposal. The strict versioned proposal includes complete contribution-envelope hashes and the join contract/result digest. These contribute to proposal and SemanticChange identity and the approved plan input-evidence digest. Equal edits/state with different admitted evidence MUST produce different capture/plan identities.
+The existing proposal, plan, approval, and currentness contracts govern accepted mutation. Reconcile saved value/query dependencies before reuse, including relevant dirty edits and changed empty-query membership. Refresh affected reasoning without discarding independently current work.
 
-Required predecessor absence, hash/version mismatch, stale value/query input, and unresolved shared-contract conflict prevent readiness. Optional omission remains visible. Disjoint paths alone do not establish semantic independence. Changed joined content requires a new capture and approval. A predecessor-capture link is provenance only.
+Derive bounded continuation from saved context, plans, approvals, attempts, recovery state, and current evidence. Report missing local artifacts as unavailable. No new contribution importer, approval hash profile, scheduler, or mutable completion store is required for this host-owned workflow.
+""")
+append('P2', '07-change/transactions-and-certificates.md', """## Concrete capture after independent preparation
 
-Continuation is derived from current context and authenticated lifecycle evidence. Carry forward useful work only while its bindings hold. Recover prior transactions before new mutation. Native pre-capture scheduling, automatic semantic merge and general partial multi-packet commits remain future capabilities, not assumptions of this bounded contribution path.
-''')
-append('P2', '07-change/transactions-and-certificates.md', '''## Immutable contribution admission
+Host-native parallel preparation precedes exact capture. The coordinator resolves conflicts and submits final concrete edits through the existing one-packet repository lifecycle. Do not approve unknown future work or invoke a second packet executor.
 
-The first public contribution path retains one accepted mutation packet through the repository lifecycle. Parallel host research/candidate production occurs before capture. It MUST NOT invoke a second packet executor or approve unknown future edits.
+Worker notes remain advisory. They cannot substitute for required observed validation or broaden approval. Combined edits require their own current observation, governing checks, exact plan, and valid approval.
 
-Capture freezes imported bytes, verifies envelope/result schemas, value/query currentness, predecessor outcomes, semantic ownership, conflicts and relevant governance, then compiles one exact proposal. Worker reports and same-packet tests remain evidence claims until the combined diff is independently observed and validated.
+Recover previous mutation from authenticated approval, attempt, journal, and prepared-success evidence. Missing preparation notes cannot obstruct safe rollback or idempotent publication of a committed authenticated result. Missing prepared-success proof cannot be fabricated. Recovery must not rerun committed effects.
 
-Hash complete versioned envelopes, including producer/provenance, required/optional status, unresolved conditions and omissions. Bind the canonical envelope set and join contract/result digests into the strict proposal hash and existing intent/SemanticChange derivation. Bind an explicit plan input-evidence digest into approval. Store-only attachment metadata is insufficient. Preserve old proposal profiles and hash domains.
+""")
+append('P2', '08-agents/orchestration-and-models.md', """## Optional host orchestration
 
-Plan, approve and new apply MUST authenticate required immutable attachments against that bound digest. Same edits and repository state with changed admitted evidence require a different capture/plan and cannot reuse approval. Missing or substituted evidence blocks new acceptance/effects that require it.
+Logical roles describe responsibilities, not a mandatory process/model roster. Use existing host tools and deterministic operations first. Parallelize materially independent preparation with explicit ownership, a bounded deliverable, and a coordinator who resolves shared contracts.
 
-Recovery follows the already authenticated approval/attempt/journal/prepared-success chain. Missing candidate attachments alone MUST NOT obstruct safe rollback or idempotent publication of an already authenticated historical committed result. Missing prepared-success proof cannot be fabricated. Recovery MUST NOT rerun committed effects or create a fresh completion claim to compensate for lost evidence. Report current evidence availability separately from historical transaction state.
-''')
-append('P2', '08-agents/orchestration-and-models.md', '''## Optional scheduling and bounded joins
+Reuse useful context and agents. Bound retries, time, cost, and required results. A missing result cannot disappear inside a convincing summary. A fresh reviewer is not independent evidence when it shares the same mistaken oracle.
 
-Logical roles describe responsibilities, not a mandatory process/model roster. A loop is a graph pattern. A graph may be sequential. Use deterministic operations and existing host tools first. Parallelize preparation only when the work is materially independent and an explicit join handles dependencies and conflicts.
+Domain specialization belongs in the narrowest useful tool, adapter, context, or existing lens. It does not require a recursive runtime, graph database, or durable memory service. One agent and one concrete change remain valid.
+""")
+append('P2', '08-agents/hosts-and-mcp.md', """## Supported host composition and completion
 
-Bound retries, cost, cancellation and required/optional results. A missing required result cannot disappear inside a convincing merge. A fresh agent or different model is not automatically independent evidence when it shares the same oracle or selected context.
+The skills-and-scripts direction uses one shared JavaScript runner over existing TypeScript services. Retire obsolete MCP/standalone-CLI delivery and wrapper chains as their real consumers move. Do not keep shims solely to preserve obsolete names.
 
-Domain specialization belongs in the narrowest useful tool, adapter, context or existing lens. It does not require a custom recursive agent runtime, universal shell/filesystem access, or a new durable memory service. Model routing claims require task-matched outcome and complete escalation/retry cost evidence. Lower price per token is insufficient.
-''')
-append('P2', '08-agents/hosts-and-mcp.md', '''## Capability and completion honesty
+Observe actual repository content and value/query dependencies before reuse or effects. Git HEAD and porcelain status alone cannot detect changed bytes in an already dirty file. Capability discovery must describe implemented and actually available operations.
 
-Distinguish declared tools, registered production handlers, capability-proven host integration and actually exercised workflows. Do not advertise every catalog entry as callable. Probe required features rather than reporting them true because an executable exists.
-
-Before admitting host contributions or effects, observe actual repository content and validate value/query dependencies. Git HEAD and porcelain status alone do not detect changed bytes in an already dirty file. Saved or synthetic canonical/toolchain digests are not current-state evidence.
-
-A zero process exit, allowed path set, parser check or fixed-point status is not independent semantic completion. The public host wrapper MUST report only its supported assurance and route accepted repository mutation through the existing lifecycle. Do not use its weaker completion result as a contribution-join or application-evidence certificate.
-
-Use existing host subagents/tools before duplicating their runtime. Host-produced candidate files remain untrusted until frozen and admitted by the contribution-aware capture path. Generated instructions remain bounded projections of the same contracts.
-''')
+Process exit, parser checks, and host success text do not establish semantic fulfillment. Repair a legacy dispatch path only for a required supported consumer. Otherwise retire it after preserving active-host behavior. Current context, required behavioral evidence, and the existing lifecycle determine their respective claims.
+""")
 
 append('P3', '03-knowledge/architecture-concerns-and-validity.md', '''## Observed counterexamples and correction scope
 
@@ -261,15 +238,15 @@ Use these probes for a concrete correction or shadow-lens decision. Do not infer
 An LLM diagnosis, co-change correlation or static score may suggest a cause. Replay or intervene on the smallest material factor before reporting a causal effect. Otherwise retain the hypothesis and counterevidence. Generalize a correction only when its recurrence or invariant and scope justify the additional enforcement.
 ''')
 
-append('P4', '11-validation/testing-and-adversarial-evaluation.md', '''## Matched longitudinal evaluation
+append('P4', '11-validation/testing-and-adversarial-evaluation.md', '''## Later-change acceptance and optional comparison
 
-Evaluate short sequences of real changes from matched initial states. Both arms receive the same task information, tools, model versions and resource policy at each checkpoint. A capable ordinary-agent baseline may use search, tests, concise notes and selective subagents. The Projector arm includes semantic setup and maintenance costs.
+For a comparative claim, evaluate short sequences of real changes from matched initial states. Both arms receive the same task information, tools, model versions and resource policy at each checkpoint. A capable ordinary-agent baseline may use search, tests, concise notes and selective subagents. The Projector arm includes semantic setup and maintenance costs.
 
 Preserve each arm's accumulated code and restart the agent between changes. Withhold later requirements until the same reveal in both arms. Grade the new behavior and prior regressions separately using predeclared, separately sourced oracles. Do not leak a future requirement into only one arm's initial conceptual model.
 
 Include a relevant dependency change under unchanged HEAD, new empty-query membership, validator drift, an unrelated-edit control and a real answer-changing condition. Keep failed, timed-out, unavailable and aborted attempts in the report with their actual costs. Rerun only under a declared policy that preserves the initial result.
 
-Use a small multi-chain pilot to test feasibility, not population-level superiority. Repeat or expand when stochastic uncertainty could change the decision. Use targeted ablations or replayed interventions only for a material remaining attribution question. Default automated checks remain model-free. Live trials are opt-in and budgeted.
+Required self-hosting acceptance executes a real Projector change and a subsequent affected change in fresh sessions with the historical spec absent. Use existing tests and public operations. A general trajectory driver or multi-repository study is not required. Comparative live trials are separate, opt-in, and budgeted.
 ''')
 append('P4', '11-validation/benchmarks-and-redesign-criteria.md', '''## Scope of thresholds and comparative claims
 
@@ -283,9 +260,9 @@ Useful delivery requires appropriate behavioral verification. Broad comparative 
 ''')
 append('P4', '10-operation/observability-and-reporting.md', '''## Trajectory outcomes and complete cost
 
-Longitudinal reports bind task/arm/checkpoint/attempt identities, source snapshots, model/tool/adapter versions, reveal schedule, grading contract and raw output references. Record newly requested behavior, prior regressions, setup errors, timeouts, unavailable capabilities and abandoned attempts separately.
+Optional comparative reports bind task/arm/checkpoint/attempt identities, source snapshots, model/tool/adapter versions, reveal schedule, grading contract and raw output references. Record newly requested behavior, prior regressions, setup errors, timeouts, unavailable capabilities and abandoned attempts separately.
 
-Cost records distinguish setup, retrieval/context, model and tool use, deterministic work, evidence collection, human review/repair and canonical maintenance. Preserve actual units and pricing provenance. Missing costs are unavailable. A context reduction or low token price is not a measured total-cost advantage.
+Required self-hosting receipts record actual outcomes and bounded observed costs using existing reporting. No new telemetry platform is required. Cost records distinguish setup, retrieval/context, model and tool use, deterministic work, evidence collection, human review/repair and canonical maintenance. Preserve actual units and pricing provenance. Missing costs are unavailable. A context reduction or low token price is not a measured total-cost advantage.
 
 Every diagnostic metric identifies its tool/version, population/denominator, extraction failures and causal origin. Report counts and paired differences with uncertainty. Checkpoints from one repository are not independent samples. A judge's causal label remains a hypothesis without adequate intervention evidence. Do not omit unsuccessful trajectories or count same-lens artifacts as independent authority support.
 ''')

@@ -1,9 +1,9 @@
 # Projector: Projection-Driven Development
 
-## Historical implementation design and contract input
+## Historical implementation design and acceptance evidence
 
 **Version:** 2.0.0  
-**Status:** Historical design and legacy contract input. Current acceptance is in typed Projector records  
+**Status:** Historical design and transitional acceptance input. Current acceptance is in typed Projector records
 **Date:** 2026-08-07  
 **Product:** Projector  
 **Method:** Projection-Driven Development (PDD)  
@@ -19,14 +19,14 @@
 
 Accepted product meaning lives in typed `.projector/model/` records. Executable architecture lives in `.projector/lenses/`, `.projector/decisions/`, and `.projector/authorities/`. Those records remain claims to check against user intent and current evidence.
 
-`PROJECTOR_SPEC` preserves historical design, rationale, and legacy contract-generation input. Its older normative wording does not establish current acceptance or implementation. Proposed revisions require explicit acceptance through the current conceptual model and architecture lifecycle.
+`PROJECTOR_SPEC` preserves historical design, rationale, and transitional acceptance-inventory input. Its older normative wording does not establish current acceptance or implementation. Proposed revisions require explicit acceptance through the current conceptual model and architecture lifecycle.
 
 - `SPEC.md` records product identity, composition, the causal loop, and disclosure routes.
-- Modules in `spec.manifest.json` own their historical subsystem contracts. Keep each exported contract in one owning module.
+- Modules in `spec.manifest.json` record their historical subsystem design. Typed contracts own executable machine shapes and schema generation.
 - `INDEX.md` is navigation. It introduces no independent requirement.
 - Resolve contradictions explicitly and preserve provenance. Neither a summary nor a stored status proves implementation.
 - Preserve unrealized commitments when implementing a bounded slice. Historical delivery plans are not the current work queue.
-- Changes to historical contract input require coordinated domain/schema/generator validation. Editing prose alone does not change the accepted model or executable behavior.
+- Changes to acceptance inputs require coordinated canonical/test-inventory validation. Editing prose alone does not change the accepted model or executable behavior.
 
 The application-evidence, contribution, correction, and longitudinal-evaluation contracts describe one conceptual control loop. They add no parallel requirement, progress, or approval store.
 

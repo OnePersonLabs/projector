@@ -7,9 +7,9 @@ diff --git a/PROJECTOR_SPEC/10-operation/observability-and-reporting.md b/PROJEC
  
 +## Trajectory outcomes and complete cost
  
-+Longitudinal reports bind task/arm/checkpoint/attempt identities, source snapshots, model/tool/adapter versions, reveal schedule, grading contract and raw output references. Record newly requested behavior, prior regressions, setup errors, timeouts, unavailable capabilities and abandoned attempts separately.
++Optional comparative reports bind task/arm/checkpoint/attempt identities, source snapshots, model/tool/adapter versions, reveal schedule, grading contract and raw output references. Record newly requested behavior, prior regressions, setup errors, timeouts, unavailable capabilities and abandoned attempts separately.
 +
-+Cost records distinguish setup, retrieval/context, model and tool use, deterministic work, evidence collection, human review/repair and canonical maintenance. Preserve actual units and pricing provenance. Missing costs are unavailable. A context reduction or low token price is not a measured total-cost advantage.
++Required self-hosting receipts record actual outcomes and bounded observed costs using existing reporting. No new telemetry platform is required. Cost records distinguish setup, retrieval/context, model and tool use, deterministic work, evidence collection, human review/repair and canonical maintenance. Preserve actual units and pricing provenance. Missing costs are unavailable. A context reduction or low token price is not a measured total-cost advantage.
 +
 +Every diagnostic metric identifies its tool/version, population/denominator, extraction failures and causal origin. Report counts and paired differences with uncertainty. Checkpoints from one repository are not independent samples. A judge's causal label remains a hypothesis without adequate intervention evidence. Do not omit unsuccessful trajectories or count same-lens artifacts as independent authority support.
 diff --git a/PROJECTOR_SPEC/11-validation/benchmarks-and-redesign-criteria.md b/PROJECTOR_SPEC/11-validation/benchmarks-and-redesign-criteria.md
@@ -36,12 +36,12 @@ diff --git a/PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md 
  
  ---
 +
-+## Matched longitudinal evaluation
++## Later-change acceptance and optional comparison
 +
-+Evaluate short sequences of real changes from matched initial states. Both arms receive the same task information, tools, model versions and resource policy at each checkpoint. A capable ordinary-agent baseline may use search, tests, concise notes and selective subagents. The Projector arm includes semantic setup and maintenance costs.
++For a comparative claim, evaluate short sequences of real changes from matched initial states. Both arms receive the same task information, tools, model versions and resource policy at each checkpoint. A capable ordinary-agent baseline may use search, tests, concise notes and selective subagents. The Projector arm includes semantic setup and maintenance costs.
 +
 +Preserve each arm's accumulated code and restart the agent between changes. Withhold later requirements until the same reveal in both arms. Grade the new behavior and prior regressions separately using predeclared, separately sourced oracles. Do not leak a future requirement into only one arm's initial conceptual model.
 +
 +Include a relevant dependency change under unchanged HEAD, new empty-query membership, validator drift, an unrelated-edit control and a real answer-changing condition. Keep failed, timed-out, unavailable and aborted attempts in the report with their actual costs. Rerun only under a declared policy that preserves the initial result.
 +
-+Use a small multi-chain pilot to test feasibility, not population-level superiority. Repeat or expand when stochastic uncertainty could change the decision. Use targeted ablations or replayed interventions only for a material remaining attribution question. Default automated checks remain model-free. Live trials are opt-in and budgeted.
++Required self-hosting acceptance executes a real Projector change and a subsequent affected change in fresh sessions with the historical spec absent. Use existing tests and public operations. A general trajectory driver or multi-repository study is not required. Comparative live trials are separate, opt-in, and budgeted.

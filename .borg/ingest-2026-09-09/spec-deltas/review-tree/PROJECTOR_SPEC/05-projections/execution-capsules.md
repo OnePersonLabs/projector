@@ -89,10 +89,10 @@ A root snapshot change with an unchanged dependency set MAY be rebound without r
 
 ---
 
-## Bound contributions and readable handoffs
+## Readable work and exact execution instructions
 
-A host MAY use saved context to prepare read-only investigations or isolated candidate edits. A contribution contract MUST identify the objective, result schema/version, exact context, value/query dependencies, and required/optional predecessors. It MUST also identify producer attempt, output/evidence references, effect scope, semantic owners, unresolved conditions, and omissions.
+Host agents may prepare bounded investigations and candidate edits using saved context. Their notes name the objective, relied-on context, outputs, unresolved conditions, and evidence limits. Notes are advisory and do not authorize mutation or prove validation ran.
 
-Candidate preparation is not accepted mutation. Do not force a read-only contribution through a mutation packet that requires write selectors. Context isolation does not establish process, credential, or causal-evidence isolation. A worker's complete status describes only its contribution.
+Ordinary conceptual reading needs no mutation approval. Exact plan-bound instruction inspection must work before approval to support review. Execution requires current dependencies, the appropriate authority, and actual delivery of the selected instructions. Keep integrity, currentness, semantic fidelity, authorization, and delivery distinct.
 
-The returned summary MUST preserve required conditions, evidence references and unknowns. A short handoff does not permit dropping governing meaning. A one-agent contribution is valid. No fixed role roster or fan-out is required.
+Reuse existing representation and lifecycle artifacts across session reset. Preserve required conditions, provenance, omission counts, and drill-down routes. Do not add a competing handoff renderer or progress authority.

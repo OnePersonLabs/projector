@@ -6,12 +6,12 @@ The semantic engine depends on ports, not concrete analyzer, runtime, host, prov
 
 ```mermaid
 flowchart LR
-    CLI[CLI / composition root] --> ENG[Engine]
-    CLI --> ANA[Analyzer implementations]
-    CLI --> RUN[Runtime implementations]
-    CLI --> INT[Host / MCP / provider integrations]
+    CLI["CLI / composition root"] --> ENG["Engine"]
+    CLI --> ANA["Analyzer implementations"]
+    CLI --> RUN["Runtime implementations"]
+    CLI --> INT["Host / MCP / provider integrations"]
 
-    ENG --> CORE[Core domain + ports]
+    ENG --> CORE["Core domain + ports"]
     ANA --> CORE
     RUN --> CORE
     INT --> CORE
@@ -19,7 +19,7 @@ flowchart LR
     ANA -. injected ports .-> ENG
     RUN -. injected ports .-> ENG
     INT -. injected ports .-> ENG
-    STORE[(SQLite implementation)] --> CORE
+    STORE[("SQLite implementation")] --> CORE
     CLI --> STORE
 ```
 
@@ -152,8 +152,8 @@ Do not require:
 
 ## Application evidence composition
 
-The control plane owns application-evidence admission, currentness, lifecycle integration, and coverage views. Integrations implement the concrete scenario/controller adapter. Runtime owns isolated processes, resources, immutable artifact custody, and cleanup. Core owns portable contracts. Engine logic operates only on injected values and ports.
+The control plane owns evidence admission, currentness, lifecycle integration, and coverage. Integrations implement the scenario/controller adapter. Runtime owns host processes, artifact custody, and cleanup. Core owns portable contracts. Engine logic operates on injected values and ports.
 
-The initial optional application profile uses a local Docker Engine with separate application and Playwright-controller containers. It does not replace the existing WSL/bubblewrap repository validator or require a daemon for normal semantic operation. A missing profile capability is unavailable, not implicit permission to use host resources.
+Skills and the shared operation runner compose existing services. The first application adapter uses host-controlled build/server/browser processes and explicit trusted-workspace assurance. It introduces no mandatory container daemon or custom confinement backend. Unavailable capabilities remain unavailable.
 
-Use the existing packages. Split a package only for an actual release, security, performance, or dependency-isolation need. Do not import browser/process/engine-client implementations into core or engine, or create a second repository executor to support contribution-shaped inputs.
+Use existing packages. Do not import browser or process implementations into core or engine. Preserve one accepted repository mutation lifecycle and remove obsolete transport consumers through their owning implementation changes.
