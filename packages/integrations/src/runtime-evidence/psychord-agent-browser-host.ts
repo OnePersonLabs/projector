@@ -50,7 +50,10 @@ export interface PsychordCommandRunner {
 }
 
 export interface PsychordAgentBrowserHostConfiguration {
-  readonly build: { readonly executable: string; readonly args: readonly string[] };
+  readonly build: {
+    readonly nodeExecutable: string;
+    readonly pnpmCli: string;
+  };
   readonly agentBrowser: {
     readonly executable: string;
     readonly expectedVersion: "0.31.1";
@@ -117,8 +120,8 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
           throw new Error("agent-browser version did not match the plan-bound host configuration");
         }
         await runChecked(dependencies.commands, {
-          executable: dependencies.configuration.build.executable,
-          args: dependencies.configuration.build.args,
+          executable: dependencies.configuration.build.nodeExecutable,
+          args: [dependencies.configuration.build.pnpmCli, "run", "build"],
           cwd: plan.repository.root,
           env: dependencies.configuration.commandEnvironment,
           timeoutMs: plan.limits.timeoutMs,
@@ -399,14 +402,23 @@ async function runChecked(runner: PsychordCommandRunner, request: PsychordComman
 
 function validateHostConfiguration(configuration: PsychordAgentBrowserHostConfiguration, plan: PsychordObservationPlan): void {
   const safeIdentity = /^[a-zA-Z0-9._-]+$/u;
-  if (process.platform !== "win32" || !isAbsolute(configuration.agentBrowser.executable) || !isAbsolute(configuration.agentBrowser.chromeExecutable)
+  if (process.platform !== "win32"
+    || !isAbsolute(configuration.build.nodeExecutable) || !isAbsolute(configuration.build.pnpmCli)
+    || !isAbsolute(configuration.agentBrowser.executable) || !isAbsolute(configuration.agentBrowser.chromeExecutable)
     || !safeIdentity.test(configuration.agentBrowser.namespace) || !safeIdentity.test(configuration.agentBrowser.session)
     || configuration.agentBrowser.namespace === "default" || configuration.agentBrowser.session === "default"
     || !Number.isSafeInteger(configuration.agentBrowser.stdioDrainTimeoutMs) || configuration.agentBrowser.stdioDrainTimeoutMs < 0
-    || !plan.dependencies.some(({ locator }) => resolveDependency(plan, locator) === resolve(configuration.agentBrowser.executable))
-    || !plan.dependencies.some(({ locator }) => resolveDependency(plan, locator) === resolve(configuration.agentBrowser.chromeExecutable))) {
+    || !isPinnedToolchain(plan, configuration.build.nodeExecutable)
+    || !isPinnedToolchain(plan, configuration.build.pnpmCli)
+    || !isPinnedToolchain(plan, configuration.agentBrowser.executable)
+    || !isPinnedToolchain(plan, configuration.agentBrowser.chromeExecutable)) {
     throw new Error("Psychord Windows Chrome host configuration is invalid or not pinned by the plan");
   }
+}
+
+function isPinnedToolchain(plan: PsychordObservationPlan, executable: string): boolean {
+  const expected = resolve(executable);
+  return plan.dependencies.some(({ role, locator }) => role === "toolchain" && resolveDependency(plan, locator) === expected);
 }
 
 function decodeStoredTrace(raw: string): PsychordStoredTraceEvidence {

@@ -89,7 +89,7 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
       scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenario.semanticHash },
       repository: { root: psychordRoot, gitHead: "", worktreeDigest: sha256(Buffer.alloc(0)) },
       dependencies,
-      ownedArtifactRoot: join(psychordRoot, ".projector/runtime/application-evidence", runId),
+      ownedArtifactRoot: join(psychordRoot, ".projector/runtime/application-evidence"),
       representativeInput: { code: "KeyA", holdMs: 1_500 },
       server: {
         expectedOrigin: `http://127.0.0.1:${port}`,
@@ -106,7 +106,7 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
     const host = createPsychordAgentBrowserHost({
       commands: runner,
       configuration: {
-        build: { executable: nodeExecutable, args: [pnpmCli, "build"] },
+        build: { nodeExecutable, pnpmCli },
         agentBrowser: { executable: agentBrowserExecutable, expectedVersion: "0.31.1", chromeExecutable, namespace: `projector-${runId}`, session: runId, stdioDrainTimeoutMs: 250 },
         commandEnvironment: environment,
       },
