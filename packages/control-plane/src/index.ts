@@ -73,3 +73,11 @@ export {
   runtimeEvidenceOwnerModulePaths,
   type ValidatedReleaseCandidateInventory,
 } from "./readiness/project-data-format-owner.js";
+export {
+  compareProjectDataFormats,
+  createProjectDataMigrationDraft,
+  createReleaseCandidateProjectDataMigration,
+  projectDataFormatDimensions,
+  verifyProjectDataMigrationManifest,
+  type ProjectDataFormatDimension,
+} from "./readiness/project-data-migration-authoring.js";
