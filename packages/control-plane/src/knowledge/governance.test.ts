@@ -70,7 +70,7 @@ describe("public architectural decision validity", () => {
     await canonical(root, "concept", { ...subject, statement: "Changed after authority." });
     const file = new CanonicalFileRepository(root).pathFor("authority-record", "authority:boundary");
     const parsed = parseTomlDocument(await readFile(file, "utf8"), file) as Record<string, unknown>;
-    const encoded = stringifyTomlDocument(parsed, { schemaPath: "../schemas/canonical-document-v2.schema.json" });
+    const encoded = stringifyTomlDocument(parsed, { schemaPath: "../schemas/canonical-authority-record-v2.schema.json" });
     const [directive, ...body] = encoded.split("\n");
     await writeFile(file, `${directive}\n# formatting-only authority edit\n${body.join("\n")}`);
     await commit(root);
