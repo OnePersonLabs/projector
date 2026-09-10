@@ -41,6 +41,8 @@ export interface CompletedProjectDataMigrationRecoveryPorts {
   journal: ProjectDataMigrationJournalRecoveryPort;
   target: ProjectDataMigrationTargetRecoveryPort;
   now?: () => Date;
+  signal?: AbortSignal;
+  assertExclusiveAccess?: () => Promise<void>;
 }
 
 export type CompletedProjectDataMigrationRecoveryResult =
@@ -56,6 +58,7 @@ export type CompletedProjectDataMigrationRecoveryResult =
 export async function reconcileCompletedProjectDataMigration(
   ports: CompletedProjectDataMigrationRecoveryPorts,
 ): Promise<CompletedProjectDataMigrationRecoveryResult> {
+  throwIfAborted(ports.signal);
   let pending: PendingProjectDataMigration | undefined;
   try {
     pending = await ports.pending.read();
@@ -72,12 +75,14 @@ export async function reconcileCompletedProjectDataMigration(
   }
 
   try {
+    await assertExclusive(ports);
     let receipt = await ports.receipts.read(pending.migrationId);
     if (receipt !== undefined) {
       const mismatch = receiptMismatch(pending, receipt);
       if (mismatch !== undefined) return required(pending, mismatch);
     }
     const durableJournal = await ports.journal.ensureRecordDurable(pending.migrationId);
+    await assertExclusive(ports);
     const exactJournal = await ports.journal.inspectRecordedAfterState(pending.migrationId);
     if (durableJournal.contentHash !== exactJournal.contentHash) {
       return required(pending, "Migration journal changed after its durable publication was confirmed");
@@ -110,6 +115,7 @@ export async function reconcileCompletedProjectDataMigration(
       return required(pending, "Committed migration journal does not publish prepared config as its final operation");
     }
     const target = await ports.target.observeCurrentTarget(pending);
+    await assertExclusive(ports);
     const format = ProjectDataFormatSnapshotSchema.parse(target.format);
     if (format.snapshotHash !== pending.targetSnapshotHash) {
       return required(pending, "Current validated format snapshot does not match the Pending target snapshot");
@@ -119,6 +125,7 @@ export async function reconcileCompletedProjectDataMigration(
     }
 
     if (receipt === undefined) {
+      await assertExclusive(ports);
       receipt = await ports.receipts.publish(createProjectDataMigrationReceipt({
         apiVersion: projectDataMigrationReceiptApiVersion,
         migrationId: pending.migrationId,
@@ -133,6 +140,7 @@ export async function reconcileCompletedProjectDataMigration(
       }));
     }
 
+    await assertExclusive(ports);
     await ports.pending.clearAfterReceiptPublication(pending);
     return {
       status: "reconciled",
@@ -141,8 +149,32 @@ export async function reconcileCompletedProjectDataMigration(
       journalHash: receipt.journalHash,
     };
   } catch (error) {
+    if (isAbortOrAccessLoss(error)) throw error;
     return required(pending, `Completed migration evidence could not be reconciled: ${message(error)}`);
   }
+}
+
+export class ProjectDataMigrationAccessLostError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ProjectDataMigrationAccessLostError";
+  }
+}
+
+async function assertExclusive(ports: CompletedProjectDataMigrationRecoveryPorts): Promise<void> {
+  throwIfAborted(ports.signal);
+  await ports.assertExclusiveAccess?.();
+  throwIfAborted(ports.signal);
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+}
+
+function isAbortOrAccessLoss(error: unknown): boolean {
+  return error instanceof ProjectDataMigrationAccessLostError ||
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError");
 }
 
 function hasConfigLastPublication(record: ExactFileTransactionJournalState["record"]): boolean {

@@ -17,6 +17,17 @@ afterEach(() => {
 });
 
 describe("withProjectOperationAccess", () => {
+  it("identifies the exact machine-owned files for a held claim", async () => {
+    const root = await readyProject();
+    await withProjectOperationAccess(root, { operation: "migration", mode: "exclusive" }, async (access) => {
+      expect(access.ownedRelativePaths).toHaveLength(2);
+      expect(access.ownedRelativePaths).toContain(".projector/runtime/operation-access/next-ticket");
+      const holder = access.ownedRelativePaths.find((path) => path.includes("/holders/"));
+      expect(holder).toMatch(/^\.projector\/runtime\/operation-access\/holders\/[0-9a-f-]+\.json$/u);
+      expect(await readFile(join(root, ...holder!.split("/")), "utf8")).toContain('"mode":"exclusive"');
+    });
+  });
+
   it("allows shared access across processes", async () => {
     const root = await readyProject();
 

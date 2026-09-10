@@ -62,3 +62,14 @@ export {
   type ReadinessInspectionInput,
   type ReadyProjectReadiness,
 } from "./readiness/service.js";
+export {
+  createPreparedProjectDataMigrationRecoveryService,
+  type PreparedProjectDataMigrationRecoveryService,
+} from "./readiness/project-data-migration-recovery.js";
+export {
+  canonicalOwnerModulePaths,
+  createReleaseCandidateProjectDataFormat,
+  preparedConfigOwnerModulePaths,
+  runtimeEvidenceOwnerModulePaths,
+  type ValidatedReleaseCandidateInventory,
+} from "./readiness/project-data-format-owner.js";

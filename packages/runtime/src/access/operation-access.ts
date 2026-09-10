@@ -13,6 +13,10 @@ export interface ProjectOperationAccessOptions {
 
 export interface ProjectOperationAccess {
   readonly signal: AbortSignal;
+  /** Exact machine-owned files mutated by this access claim while it is held. */
+  readonly ownedRelativePaths: readonly string[];
+  /** Revalidates that this exact claim still owns its holder record. */
+  assertOwned(): Promise<void>;
 }
 
 export type OperationAccessErrorCode = "project-not-ready" | "access-corrupt" | "access-aborted";
@@ -74,7 +78,14 @@ export async function withProjectOperationAccess<T>(
       const signal = options.signal === undefined
         ? integrity.signal
         : AbortSignal.any([options.signal, integrity.signal]);
-      return await operation({ signal });
+      return await operation({
+        signal,
+        ownedRelativePaths: [
+          ".projector/runtime/operation-access/next-ticket",
+          `.projector/runtime/operation-access/holders/${claim.requestId}.json`,
+        ],
+        assertOwned: async () => { await refreshHeartbeat(accessPath, claim); },
+      });
     } finally {
       await heartbeat.stop();
     }
