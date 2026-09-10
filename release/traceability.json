@@ -190,8 +190,8 @@
       "sourceDigest": "sha256:v1:ed2734bd064f5bfc8f2f24d2e44fef7c100a2059bb21101e65ff23185d6eea1a",
       "publicFacade": "projector/control-plane",
       "testRef": "packages/control-plane/src/knowledge/governance.test.ts#public durable repository validators executes the pinned tracked validator through the native host with explicit trust limits",
-      "testSourceDigest": "sha256:v1:255c64c3d7fbb815194c7065825a064131327d9c8b06e2547a8a62829eac38dc",
-      "mappingHash": "sha256:v1:d286187ec733e5632699d3f0093f970d7561f4ed5d2f0a444f4f0224882ccf58"
+      "testSourceDigest": "sha256:v1:670c9f84d120b4330bf635fe2798ac423381e1dc48e5f65ecef596885e61ec4d",
+      "mappingHash": "sha256:v1:e9eadafaacbb60fc0c25b834229768d54b9d2433e14bc430a0208f19d6d32dfd"
     },
     {
       "id": "scenario:17:manual-only-source-severed-release-workflow",
@@ -578,8 +578,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository updates one canonical entity without rewriting an unrelated entity",
-      "testSourceDigest": "sha256:v1:6db3ed6c2943f10356f2a0036022abee8a2f1a214f4da545e05d77aafb52eb19",
-      "mappingHash": "sha256:v1:b38107f1bb0bc00a2ae597ca4dc1977f679fa6190e065ca9a63c2f00c31b1714"
+      "testSourceDigest": "sha256:v1:98191f5bf9425e874812465f6b89085462acf07b36a35f2a4d2d16f08a51eb7c",
+      "mappingHash": "sha256:v1:83be3aad1407980aeb7f2291eebb6bab729448ca588a128dd452a780d079dbc6"
     },
     {
       "id": "scenario:49:semantic-storage-path-does-not-define-meaning",
@@ -590,8 +590,8 @@
       "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository derives the same root from document identity regardless of write order or storage path",
-      "testSourceDigest": "sha256:v1:6db3ed6c2943f10356f2a0036022abee8a2f1a214f4da545e05d77aafb52eb19",
-      "mappingHash": "sha256:v1:05f6092aca5605d2fe399365c8625723a9e966d523c7b06cca8cfe3adc5d7aa2"
+      "testSourceDigest": "sha256:v1:98191f5bf9425e874812465f6b89085462acf07b36a35f2a4d2d16f08a51eb7c",
+      "mappingHash": "sha256:v1:3ece357d0b1a8194f6651c9e5365089f62f062e64e8631511f5e1205c8320834"
     },
     {
       "id": "scenario:50:analysis-facets-compose-without-methodology-lock-in",
@@ -782,8 +782,8 @@
       "sourceDigest": "sha256:v1:0440c7219a414710294c5ff852fc84314c563dbed22a60292952beace6de30e5",
       "publicFacade": "projector/engine",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository derives the same root from document identity regardless of write order or storage path",
-      "testSourceDigest": "sha256:v1:6db3ed6c2943f10356f2a0036022abee8a2f1a214f4da545e05d77aafb52eb19",
-      "mappingHash": "sha256:v1:349d5711b12bacc5eda476fef59061819a566a541fc0efebfd903087a475f577"
+      "testSourceDigest": "sha256:v1:98191f5bf9425e874812465f6b89085462acf07b36a35f2a4d2d16f08a51eb7c",
+      "mappingHash": "sha256:v1:a1209025567123c78529d1f826e3711bd006b3b1b11053cf69ceb888cdc8d230"
     },
     {
       "id": "property:03:unrelated-canonical-worktree-changes-do-not-invalidate-a-statebinding-whose-value-dependencies-and-query-result-fingerprints-remain-unchanged",
