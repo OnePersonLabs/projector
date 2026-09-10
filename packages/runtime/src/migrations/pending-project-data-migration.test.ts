@@ -46,7 +46,7 @@ function canonicalBytes(value: PendingProjectDataMigration): string {
   return `${canonicalJson(value)}\n`;
 }
 
-describe("pending project-data migration persistence", () => {
+describe.skipIf(process.platform === "win32")("pending project-data migration persistence", () => {
   test("creates canonical bytes exclusively and accepts only exact-byte idempotence", async () => {
     const { repositoryRoot, markerPath } = await fixture();
     const store = new PendingProjectDataMigrationStore(repositoryRoot);
@@ -124,3 +124,14 @@ describe("pending project-data migration persistence", () => {
     expect(await readFile(outside, "utf8")).toBe(canonicalBytes(marker()));
   });
 });
+
+test.runIf(process.platform === "win32")(
+  "refuses pending publication before mutation when directory-entry durability is unavailable",
+  async () => {
+    const { repositoryRoot, markerPath } = await fixture();
+    const store = new PendingProjectDataMigrationStore(repositoryRoot);
+
+    await expect(store.create(marker())).rejects.toThrow(/durability cannot be confirmed/i);
+    await expect(readFile(markerPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
