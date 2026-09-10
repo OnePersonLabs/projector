@@ -1,5 +1,5 @@
-// Generated from the authoritative exported declarations in PROJECTOR_SPEC.
-// Runtime schemas live in ../schemas/contracts.ts; this file is the TypeScript contract authority.
+// This file is the TypeScript contract authority.
+// Runtime schemas live in ../schemas/contracts.ts and generated-contracts.ts.
 
 export type ConcernMateriality = "blocking-now" | "material-soon" | "deferable";
 

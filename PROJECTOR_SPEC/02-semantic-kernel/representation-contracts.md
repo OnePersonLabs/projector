@@ -80,6 +80,9 @@ export interface RepresentationTokenAccounting {
   profileOverheadTokens?: number;
   estimatedNetTokens?: number;
   tokenizerProfileId?: string;
+  estimatedNetInstructionEfficiency?: number;
+  utilityProfileId?: string;
+  utilityEvidence?: string;
 }
 
 export interface RepresentationProjection {
@@ -164,5 +167,4 @@ The repository MUST contain a machine-readable registry of exported normative sc
 - no implementation phase is allowed to invent a missing normative type ad hoc.
 
 ---
-
 
