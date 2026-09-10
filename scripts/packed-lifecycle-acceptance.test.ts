@@ -49,11 +49,11 @@ function evidence() {
     runId: "01234567-89ab-4def-8123-456789abcdef",
     request: "Trim surrounding label whitespace while preserving existing callers.",
     activation: { initialized: true, projectEnabled: true, config: { apiVersion: "projector.config/v1", enabled: true } },
-    sourceBoundary: { sourceAccessDenied: true, installedSymlinkCount: 0, pluginSourceReferenceCount: 0 },
+    artifactBoundary: { checkoutInputAbsent: true, checkoutPathAbsent: true, installedSymlinkCount: 0, pluginSymlinkCount: 0, nodePathEmpty: true, execution: "trusted-host" },
     direct: { changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan", planId: "plan_abc", predictedChangedPaths: ["src/format-label.mjs", "test/trim-label.test.mjs"] },
     pause: { status: "approval-required", changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan" },
     approval: { status: "approved", approvalSelector: "lifecycle_approval_abc", planHash: "sha256:v1:plan" },
-    interruption: { signal: "SIGKILL", journalPhase: "validating", mutationObserved: true },
+    interruption: { terminationRequested: true, rootExitObserved: true, cleanupCompleted: true, journalPhase: "validating", mutationObserved: true },
     recovery: { action: "rolled-back", exactBeforeRestored: true },
     result: {
       outcome: "success", approvalSelector: "lifecycle_approval_abc", planId: "plan_abc",
@@ -66,7 +66,6 @@ function evidence() {
     independentOracle: { beforeExitCode: 1, afterExitCode: 0, gitObjectId: "a".repeat(40), expectedContentHash: "validator-hash", beforeContentHash: "validator-hash", afterContentHash: "validator-hash", executedContentHash: "validator-hash", executionSource: "exact-live-tracked-validator" },
     fixedPointRerun: { firstCertificateHash: certificateHash, secondCertificateHash: certificateHash, firstReceiptHash: receiptHash, secondReceiptHash: receiptHash, afterSourceHash: sourceHash, rerunSourceHash: sourceHash },
     trace: trace(),
-    fixtureMarkerAbsent: true,
   };
 }
 
@@ -82,6 +81,15 @@ describe("packed held-out lifecycle evidence", () => {
     const surprise = evidence();
     surprise.result.observedChangedPaths.push("src/unapproved.mjs");
     expect(() => verifyPackedLifecycleEvidence(surprise)).toThrow(/impact|path/iu);
+  });
+
+  it("rejects source-presence claims and incomplete interrupted-process cleanup", () => {
+    const checkoutPresent = evidence(); checkoutPresent.artifactBoundary.checkoutPathAbsent = false;
+    expect(() => verifyPackedLifecycleEvidence(checkoutPresent)).toThrow(/source|checkout|artifact/iu);
+    const inheritedSource = evidence(); inheritedSource.artifactBoundary.nodePathEmpty = false;
+    expect(() => verifyPackedLifecycleEvidence(inheritedSource)).toThrow(/NODE_PATH|source|artifact/iu);
+    const incompleteCleanup = evidence(); incompleteCleanup.interruption.cleanupCompleted = false;
+    expect(() => verifyPackedLifecycleEvidence(incompleteCleanup)).toThrow(/cleanup|interruption/iu);
   });
 
   it("recomputes completion hashes and derives oracle/fixed-point outcomes instead of trusting flags", () => {

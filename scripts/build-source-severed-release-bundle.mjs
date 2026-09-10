@@ -28,7 +28,6 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot) {
       ["scripts/npm-command.mjs", "npm-command.mjs"],
       ["scripts/release-candidate.mjs", "release-candidate.mjs"],
       ["release/fixtures/held-out-change.json", "fixtures/held-out-change.json"],
-      [".github/scripts/provision-ubuntu-sandbox.sh", "provision-ubuntu-sandbox.sh"],
     ]) await cp(join(repositoryRoot, source), join(candidateRoot, target));
 
     const [{ stdout: packedManifestSource }, { stdout: sourceRevision }] = await Promise.all([

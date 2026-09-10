@@ -14,7 +14,7 @@ const execute = promisify(execFile);
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 describe("source-severed release candidate", () => {
-  it("authenticates the exact scoped tarball, plugin, runner, fixture, and provisioning inputs", async () => {
+  it("authenticates the exact scoped tarball, plugin, runner, and fixture inputs", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-release-candidate-test-")); roots.push(root);
     const candidate = join(root, "release-candidate");
     const built = await buildSourceSeveredReleaseBundle(candidate);
@@ -33,8 +33,8 @@ describe("source-severed release candidate", () => {
       "npm-command.mjs",
       "release-candidate.mjs",
       "fixtures/held-out-change.json",
-      "provision-ubuntu-sandbox.sh",
     ]));
+    expect(manifest.files.map(({ path }: { path: string }) => path)).not.toContain("provision-ubuntu-sandbox.sh");
     expect(validated.files).toHaveLength(manifest.files.length);
 
     const repository = join(root, "source checkout absent");

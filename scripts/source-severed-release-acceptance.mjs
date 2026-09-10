@@ -49,7 +49,6 @@ export async function runSourceSeveredReleaseAcceptance(candidateRoot) {
     await installTarball(consumer, tarball, temporary);
     const installedProjector = join(consumer, "node_modules/@onepersonlabs/projector");
     const packed = await runPackedLifecycleAcceptance({
-      repositoryRoot: join(temporary, "source-checkout-not-present"),
       temporaryRoot: join(temporary, "acceptance"),
       consumerRoot: consumer,
       installedProjector,
