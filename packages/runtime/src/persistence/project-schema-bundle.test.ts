@@ -19,34 +19,35 @@ describe("installed Projector editor schema bundle", () => {
     ]);
     for (const item of bundle) {
       const schema = JSON.parse(item.contents) as Record<string, unknown>;
-      expect(schema.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
+      expect(schema.$schema).toBe("http://json-schema.org/draft-04/schema#");
       expect(item.contents.endsWith("\n")).toBe(true);
     }
     const canonical = JSON.parse(bundle[0]!.contents) as {
       anyOf: Array<{ properties: Record<string, unknown> }>;
-      $defs: Record<string, unknown>;
+      definitions: Record<string, unknown>;
     };
     expect(canonical.anyOf).toHaveLength(16);
-    expect(JSON.stringify(canonical.$defs)).toContain('\"__projector_toml_null\":{\"const\":true}');
-    expect(JSON.stringify(canonical.$defs)).not.toContain('\"type\":\"null\"');
+    expect(JSON.stringify(canonical.definitions)).toContain('\"__projector_toml_null\":{\"enum\":[true]}');
+    expect(JSON.stringify(canonical.definitions)).not.toContain('\"type\":\"null\"');
 
     type JsonSchema = {
       $ref?: string;
       const?: string;
+      enum?: unknown[];
       properties?: Record<string, JsonSchema>;
       required?: string[];
       additionalProperties?: boolean;
     };
     const dereference = (value: JsonSchema): JsonSchema => {
       if (value.$ref === undefined) return value;
-      const key = value.$ref.match(/^#\/\$defs\/(.+)$/u)?.[1];
-      const target = key === undefined ? undefined : canonical.$defs[key];
+      const key = value.$ref.match(/^#\/definitions\/(.+)$/u)?.[1];
+      const target = key === undefined ? undefined : canonical.definitions[key];
       if (target === undefined) throw new Error(`unresolved test schema reference ${value.$ref}`);
       return target as JsonSchema;
     };
     const arm = (kind: string): JsonSchema => canonical.anyOf
       .map((candidate) => candidate as JsonSchema)
-      .find((candidate) => dereference(candidate.properties!.kind!).const === kind)!;
+      .find((candidate) => (dereference(candidate.properties!.kind!) as { enum?: unknown[] }).enum?.[0] === kind)!;
     const conceptPayload = dereference(arm("concept").properties!.payload!);
     const requirementPayload = dereference(arm("requirement").properties!.payload!);
     expect(conceptPayload).toMatchObject({
@@ -88,8 +89,16 @@ describe("installed Projector editor schema bundle", () => {
       expect(schema).toMatchObject({ required: ["__projector_toml_null"], additionalProperties: false });
     }
     for (const schema of objectSchemas.filter((candidate) => !nullWireSchemas.includes(candidate))) {
-      expect(JSON.stringify(schema.propertyNames)).toContain('\"not\":{\"const\":\"__projector_toml_null\"}');
+      expect(schema.not).toEqual({ required: ["__projector_toml_null"] });
     }
+    const serialized = JSON.stringify(canonical);
+    expect(serialized).not.toContain('"$defs"');
+    expect(serialized).not.toContain('"const"');
+    expect(serialized).not.toContain('"propertyNames"');
+    expect(serialized).not.toContain("#/$defs/");
+    expect(serialized).not.toContain("(?!");
+    expect(serialized).toContain("#/definitions/");
+    expect(serialized).toContain("\\\\x00");
   });
 
   test("installs exact deterministic bytes without creating or overwriting editor configuration", async () => {
