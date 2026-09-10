@@ -6,12 +6,12 @@ The semantic engine depends on ports, not concrete analyzer, runtime, host, prov
 
 ```mermaid
 flowchart LR
-    CLI[CLI / composition root] --> ENG[Engine]
-    CLI --> ANA[Analyzer implementations]
-    CLI --> RUN[Runtime implementations]
-    CLI --> INT[Host / MCP / provider integrations]
+    CLI["CLI / composition root"] --> ENG["Engine"]
+    CLI --> ANA["Analyzer implementations"]
+    CLI --> RUN["Runtime implementations"]
+    CLI --> INT["Host / MCP / provider integrations"]
 
-    ENG --> CORE[Core domain + ports]
+    ENG --> CORE["Core domain + ports"]
     ANA --> CORE
     RUN --> CORE
     INT --> CORE
@@ -19,7 +19,7 @@ flowchart LR
     ANA -. injected ports .-> ENG
     RUN -. injected ports .-> ENG
     INT -. injected ports .-> ENG
-    STORE[(SQLite implementation)] --> CORE
+    STORE[("SQLite implementation")] --> CORE
     CLI --> STORE
 ```
 

@@ -6,10 +6,10 @@ Projector has three semantic planes, one observed shadow, and a stratified gover
 
 ```mermaid
 flowchart TD
-    I[Intent plane<br/>capabilities, requirements, scenarios, concepts, invariants, decisions] --> L
-    L[Lens plane<br/>selectors, rules, projection expectations] --> S
-    S[Surface plane<br/>code, tests, docs, CI, external systems] --> O
-    O[Observed shadow graph] --> R[Reconciliation]
+    I["Intent plane<br/>capabilities, requirements, scenarios, concepts, invariants, decisions"] --> L
+    L["Lens plane<br/>selectors, rules, projection expectations"] --> S
+    S["Surface plane<br/>code, tests, docs, CI, external systems"] --> O
+    O["Observed shadow graph"] --> R["Reconciliation"]
     I --> R
     L --> R
 ```
@@ -92,14 +92,14 @@ Architecture decisions live in the Intent plane and compile consequences into th
 
 ```mermaid
 flowchart TD
-    R[Requirement / constraint delta] --> C[Concern discovery]
-    C --> V[Existing decision validity]
-    V --> F[Decision frontier]
-    F --> E[Evidence + current research when required]
-    E --> P[Preference-aware option evaluation]
-    P --> D[Accepted / deferred / contested decision]
-    D --> G[Rules, lenses, Impact Rules, constraints, migrations]
-    G --> I[Implementation planning]
+    R["Requirement / constraint delta"] --> C["Concern discovery"]
+    C --> V["Existing decision validity"]
+    V --> F["Decision frontier"]
+    F --> E["Evidence + current research when required"]
+    E --> P["Preference-aware option evaluation"]
+    P --> D["Accepted / deferred / contested decision"]
+    D --> G["Rules, lenses, Impact Rules, constraints, migrations"]
+    G --> I["Implementation planning"]
 ```
 
 The lifecycle MUST be scope-aware. Adding a mobile target may make a web-only decision suspect for mobile. The change MUST NOT invalidate the decision for the existing web scope.
@@ -110,19 +110,19 @@ Projector's semantic planes describe authority and manifestation. Change-time co
 
 ```mermaid
 flowchart TD
-    U[User intent] --> IA[Intent analysis: WHAT / WHY]
-    U --> IS[Relevance scout: WHERE / WHAT-ELSE]
-    IA --> IR[Semantic identity resolution]
+    U["User intent"] --> IA["Intent analysis: WHAT / WHY"]
+    U --> IS["Relevance scout: WHERE / WHAT-ELSE"]
+    IA --> IR["Semantic identity resolution"]
     IS --> IR
-    IR --> RC[Bounded Relevance Closure]
-    RC --> BD[Requirement / scenario / constraint delta]
-    BD --> AP[Architecture preflight]
-    AP --> IC[Impact closure]
-    IC --> EC[Execution Capsules]
-    EC --> IM[Implementation]
-    IM --> RI[Reverse impact discovery]
-    RI --> PC[Predicted vs observed comparison]
-    PC --> REC[Reconciliation]
+    IR --> RC["Bounded Relevance Closure"]
+    RC --> BD["Requirement / scenario / constraint delta"]
+    BD --> AP["Architecture preflight"]
+    AP --> IC["Impact closure"]
+    IC --> EC["Execution Capsules"]
+    EC --> IM["Implementation"]
+    IM --> RI["Reverse impact discovery"]
+    RI --> PC["Predicted vs observed comparison"]
+    PC --> REC["Reconciliation"]
 ```
 
 **Relevance Closure** answers which existing knowledge may materially affect correct interpretation/planning of a proposed change. **Impact Closure** answers what an already-known semantic delta affects. The former may include confidence-ranked exploratory edges to prevent omission. The latter governs mutation/completion and therefore uses Projector's stronger proof/observability semantics.
@@ -147,14 +147,14 @@ Representation is a compilation concern between canonical semantics/governance a
 
 ```mermaid
 flowchart LR
-    C[Canonical intent + governance] --> K[Normalized semantic kernel]
-    K --> H[Human technical projection]
-    K --> A[Agent compact-context projection]
-    K --> M[Machine-invariant projection]
-    H --> S[Surface / consumer]
+    C["Canonical intent + governance"] --> K["Normalized semantic kernel"]
+    K --> H["Human technical projection"]
+    K --> A["Agent compact-context projection"]
+    K --> M["Machine-invariant projection"]
+    H --> S["Surface / consumer"]
     A --> S
     M --> S
-    C --> R[Reconciliation]
+    C --> R["Reconciliation"]
     H --> R
     A --> R
     M --> R
@@ -178,4 +178,4 @@ Reference profiles MAY borrow controlled-technical-English discipline and aggres
 
 Accepted scenarios in the Intent plane define the claim. Lenses and validation contracts define required checks. A concrete application run is an observed Surface, and its collected results enter the observed shadow with provenance and currentness. The engine evaluates eligibility. The control plane reconciles it against accepted obligations.
 
-Application manifests, contribution graphs, and continuation views are derived operational artifacts. They MUST NOT become a fourth authority plane. A collector records observations. A validator evaluates a bounded claim. An accepted decision authorizes governance. No one of these roles may manufacture independent support for itself.
+Application manifests and continuation views are derived operational artifacts. They MUST NOT become a fourth authority plane. A collector records observations. A validator evaluates a bounded claim. An accepted decision authorizes governance. No one of these roles may manufacture independent support for itself.

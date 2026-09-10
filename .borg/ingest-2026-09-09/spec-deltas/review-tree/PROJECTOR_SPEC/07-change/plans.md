@@ -52,12 +52,10 @@ The first release does not need automatic semantic Git conflict resolution. Cano
 
 ---
 
-## Contributions before capture and current continuation
+## Host preparation and current continuation
 
-Before an exact proposal exists, the host owns its candidate files. A saved context and content-derived work contract may identify that preparation without creating another SemanticChange or managed workflow store. Missing pre-capture files are unavailable evidence, not proof that preparation completed.
+The host owns candidate notes and files before exact capture. The coordinator resolves shared contracts and observes the combined result before submitting one concrete proposal. Disjoint paths and worker success do not prove semantic compatibility. Missing required investigation remains explicit.
 
-Capture imports frozen contributions and joins them into an exact proposal. The strict versioned proposal includes complete contribution-envelope hashes and the join contract/result digest. These contribute to proposal and SemanticChange identity and the approved plan input-evidence digest. Equal edits/state with different admitted evidence MUST produce different capture/plan identities.
+The existing proposal, plan, approval, and currentness contracts govern accepted mutation. Reconcile saved value/query dependencies before reuse, including relevant dirty edits and changed empty-query membership. Refresh affected reasoning without discarding independently current work.
 
-Required predecessor absence, hash/version mismatch, stale value/query input, and unresolved shared-contract conflict prevent readiness. Optional omission remains visible. Disjoint paths alone do not establish semantic independence. Changed joined content requires a new capture and approval. A predecessor-capture link is provenance only.
-
-Continuation is derived from current context and authenticated lifecycle evidence. Carry forward useful work only while its bindings hold. Recover prior transactions before new mutation. Native pre-capture scheduling, automatic semantic merge and general partial multi-packet commits remain future capabilities, not assumptions of this bounded contribution path.
+Derive bounded continuation from saved context, plans, approvals, attempts, recovery state, and current evidence. Report missing local artifacts as unavailable. No new contribution importer, approval hash profile, scheduler, or mutable completion store is required for this host-owned workflow.

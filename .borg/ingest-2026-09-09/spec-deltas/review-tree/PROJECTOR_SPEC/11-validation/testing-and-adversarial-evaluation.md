@@ -160,12 +160,12 @@ Live-model/provider evaluation is opt-in, budgeted, reproducible at the input/pr
 
 ---
 
-## Matched longitudinal evaluation
+## Later-change acceptance and optional comparison
 
-Evaluate short sequences of real changes from matched initial states. Both arms receive the same task information, tools, model versions and resource policy at each checkpoint. A capable ordinary-agent baseline may use search, tests, concise notes and selective subagents. The Projector arm includes semantic setup and maintenance costs.
+For a comparative claim, evaluate short sequences of real changes from matched initial states. Both arms receive the same task information, tools, model versions and resource policy at each checkpoint. A capable ordinary-agent baseline may use search, tests, concise notes and selective subagents. The Projector arm includes semantic setup and maintenance costs.
 
 Preserve each arm's accumulated code and restart the agent between changes. Withhold later requirements until the same reveal in both arms. Grade the new behavior and prior regressions separately using predeclared, separately sourced oracles. Do not leak a future requirement into only one arm's initial conceptual model.
 
 Include a relevant dependency change under unchanged HEAD, new empty-query membership, validator drift, an unrelated-edit control and a real answer-changing condition. Keep failed, timed-out, unavailable and aborted attempts in the report with their actual costs. Rerun only under a declared policy that preserves the initial result.
 
-Use a small multi-chain pilot to test feasibility, not population-level superiority. Repeat or expand when stochastic uncertainty could change the decision. Use targeted ablations or replayed interventions only for a material remaining attribution question. Default automated checks remain model-free. Live trials are opt-in and budgeted.
+Required self-hosting acceptance executes a real Projector change and a subsequent affected change in fresh sessions with the historical spec absent. Use existing tests and public operations. A general trajectory driver or multi-repository study is not required. Comparative live trials are separate, opt-in, and budgeted.

@@ -1,5 +1,7 @@
 # Historical-spec changeset verification
 
+Historical checkpoint 4 receipt. The proposal was subsequently simplified and integrated into the wrap-up plan. Current checks and verdict are in [integration verification](../review-wrap-up/VERIFICATION.md) and [review closure](../review-wrap-up/REVIEW.md). These earlier results do not certify the revised files.
+
 Endpoint: design only. Commands ran in `C:/dev/projects/projector` on 2026-09-10. Actual `PROJECTOR_SPEC`, product code and canonical records remain unchanged.
 
 1. `python -X utf8 .borg/ingest-2026-09-09/spec-deltas/build_patches.py`: exit 0. Source hash preconditions passed. Produced 21 file deltas with exclusive ownership: P1=9, P2=5, P3=4, P4=3. One new module; no deleted module or directory.

@@ -1,6 +1,6 @@
 # P2 -- Resume checked work through the existing lifecycle
 
-Proposed, simplified after viability review. Implementation owner: wrap-up Task 7A plus shared representation Task 8.4. Typed contribution import/join, new approval hash profiles and a new contribution requirement are removed from this release.
+Proposed, simplified after viability review. Implementation owner: wrap-up Task 7A plus shared representation Task 8.4. Typed contribution import/join, new approval hash profiles and a new contribution requirement are removed from this release. Task 2.1 reserves the continuation/currentness implementation pair for the source-absent 10.8 exercise; close 7A.6 after that evidence and before 10.9.
 
 ## What and why
 
@@ -22,8 +22,6 @@ Use existing saved contexts, value/query bindings, representation artifacts, pro
 Ordinary conceptual reading requires no mutation approval. Plan-bound instruction inspection must work before approval for review, while actual execution needs current dependencies, exact artifact delivery and the proper authority. Preserve integrity/currentness/fidelity/authorization/delivery as separate facts. Wrap-up Task 8.4 owns these shared semantics; do not build a competing handoff renderer.
 
 Repair the legacy dispatch path only if a supported consumer needs it. Otherwise retire it, including its optimistic capability and HEAD-only completion claims, after preserving active-host behavior. New shared-runner operations use real repository observation and existing services, not a port of weak dispatch shortcuts.
-
-The earlier complete-envelope hashing design remains a conditional engineering constraint: if future evidence attachments themselves become approval-bearing inputs, their complete content must participate in the approved identity without breaking historical recovery. That is not a current requirement to implement the attachment system. Reopen only on an observed unsupported workflow and compare its cost with this simpler route.
 
 ## How and completion evidence
 

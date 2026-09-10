@@ -1,5 +1,7 @@
 # Final verification of the design package
 
+Historical checkpoint 4 receipt. The proposal was subsequently simplified and integrated into the wrap-up plan. Current checks and verdict are in [integration verification](../review-wrap-up/VERIFICATION.md) and [review closure](../review-wrap-up/REVIEW.md). These earlier results do not certify the revised files.
+
 Date: 2026-09-10. Endpoint: investigation, synthesis, proposed changesets and implementation design. No product implementation, canonical acceptance, donor deletion or publication is claimed.
 
 ## Sources and repository state

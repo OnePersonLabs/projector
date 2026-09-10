@@ -169,14 +169,10 @@ Every applied plan MUST produce a certificate, including a failed/partially appl
 
 ---
 
-## Immutable contribution admission
+## Concrete capture after independent preparation
 
-The first public contribution path retains one accepted mutation packet through the repository lifecycle. Parallel host research/candidate production occurs before capture. It MUST NOT invoke a second packet executor or approve unknown future edits.
+Host-native parallel preparation precedes exact capture. The coordinator resolves conflicts and submits final concrete edits through the existing one-packet repository lifecycle. Do not approve unknown future work or invoke a second packet executor.
 
-Capture freezes imported bytes, verifies envelope/result schemas, value/query currentness, predecessor outcomes, semantic ownership, conflicts and relevant governance, then compiles one exact proposal. Worker reports and same-packet tests remain evidence claims until the combined diff is independently observed and validated.
+Worker notes remain advisory. They cannot substitute for required observed validation or broaden approval. Combined edits require their own current observation, governing checks, exact plan, and valid approval.
 
-Hash complete versioned envelopes, including producer/provenance, required/optional status, unresolved conditions and omissions. Bind the canonical envelope set and join contract/result digests into the strict proposal hash and existing intent/SemanticChange derivation. Bind an explicit plan input-evidence digest into approval. Store-only attachment metadata is insufficient. Preserve old proposal profiles and hash domains.
-
-Plan, approve and new apply MUST authenticate required immutable attachments against that bound digest. Same edits and repository state with changed admitted evidence require a different capture/plan and cannot reuse approval. Missing or substituted evidence blocks new acceptance/effects that require it.
-
-Recovery follows the already authenticated approval/attempt/journal/prepared-success chain. Missing candidate attachments alone MUST NOT obstruct safe rollback or idempotent publication of an already authenticated historical committed result. Missing prepared-success proof cannot be fabricated. Recovery MUST NOT rerun committed effects or create a fresh completion claim to compensate for lost evidence. Report current evidence availability separately from historical transaction state.
+Recover previous mutation from authenticated approval, attempt, journal, and prepared-success evidence. Missing preparation notes cannot obstruct safe rollback or idempotent publication of a committed authenticated result. Missing prepared-success proof cannot be fabricated. Recovery must not rerun committed effects.

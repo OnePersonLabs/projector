@@ -146,12 +146,10 @@ Read-only tools do not require mutation capabilities but still respect secret/co
 
 ---
 
-## Capability and completion honesty
+## Supported host composition and completion
 
-Distinguish declared tools, registered production handlers, capability-proven host integration and actually exercised workflows. Do not advertise every catalog entry as callable. Probe required features rather than reporting them true because an executable exists.
+The skills-and-scripts direction uses one shared JavaScript runner over existing TypeScript services. Retire obsolete MCP/standalone-CLI delivery and wrapper chains as their real consumers move. Do not keep shims solely to preserve obsolete names.
 
-Before admitting host contributions or effects, observe actual repository content and validate value/query dependencies. Git HEAD and porcelain status alone do not detect changed bytes in an already dirty file. Saved or synthetic canonical/toolchain digests are not current-state evidence.
+Observe actual repository content and value/query dependencies before reuse or effects. Git HEAD and porcelain status alone cannot detect changed bytes in an already dirty file. Capability discovery must describe implemented and actually available operations.
 
-A zero process exit, allowed path set, parser check or fixed-point status is not independent semantic completion. The public host wrapper MUST report only its supported assurance and route accepted repository mutation through the existing lifecycle. Do not use its weaker completion result as a contribution-join or application-evidence certificate.
-
-Use existing host subagents/tools before duplicating their runtime. Host-produced candidate files remain untrusted until frozen and admitted by the contribution-aware capture path. Generated instructions remain bounded projections of the same contracts.
+Process exit, parser checks, and host success text do not establish semantic fulfillment. Repair a legacy dispatch path only for a required supported consumer. Otherwise retire it after preserving active-host behavior. Current context, required behavioral evidence, and the existing lifecycle determine their respective claims.

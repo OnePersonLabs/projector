@@ -1,0 +1,61 @@
+# Adversarial Review: assimilation integrated into the Projector wrap-up plan
+
+## Verdict
+
+`ACCEPT` for the completed plan/design endpoint. The expanded review rejected the previous design where it conflicted with the wrap-up direction or added unproved machinery. Repairs are complete. A fresh independent verification/platform/end-to-end pass confirmed no credible unresolved finding at any severity in its scope; the authority/consumer perspective closed its findings. Root resolved the value/scope findings and verified artifact consistency. Actual product behavior, migration safety, semantic parity and economic advantage still require the plan's implementation evidence.
+
+Boundary: original W6 design acceptance at Projector `043a7c3`, expanded to the existing wrap-up plan, actual spec consumers and the requested self-development/retirement endpoint. [Pinned input and hashes](baseline.json); [original plan](baseline-plan.md). Root owns integration. Read-only authority/dependency and value/simplification perspectives were supplied by recipient and critical; design_review supplies the fresh verification/platform/plan pass. A separate worker propagates settled design decisions to supporting documents without editing the plan or review verdict.
+
+## Coverage
+
+- Authority: typed `.projector/model`, lenses, decisions and authorities; executable `packages/core/src/domain/contracts.ts`; state-bound proposal/plan/approval and transaction recovery. Historical Markdown is evidence, not current acceptance.
+- Upstream/downstream: skills/hooks and wrapper/CLI/MCP transitions, runtime validation and caller cancellation, readiness before strict loaders, migration/lease/recovery, context/representation/coverage consumers, real application controller and the installed runner.
+- Retirement producers/consumers: `scripts/check-spec-human-technical.mjs` and test; `generate-release-artifacts.mjs` and test; `run-release-acceptance.mjs`; testkit release acceptance and subsystem closure; traceability-authority and generated release inventories; package verification; `.github/workflows/projector-operations.yml`; AGENTS and packaged instructions. Current schema/plugin-schema generation reads TypeScript core, not historical Markdown.
+- Verification: source-grounded consumer inventory, exact spec-patch applicability/copied-tree checks, plan/proposal/spec/task/link consistency, meaningful future installed Windows/direct-WSL scenarios, migration and interruption negatives, semantic parity, source-absent real self-change plus subsequent fresh-session change.
+- Exclusions: no product code, accepted model, historical spec, installed plugin, Psychord application or user data is modified in this planning task. No paid trial or economic result is claimed. Full Psychord reconstruction is outside this bounded Projector wrap-up; a concrete ready-to-remake handoff is required.
+
+## Findings and repairs
+
+| ID | Severity and verified basis | Consequence | Required repair and current disposition |
+|---|---|---|---|
+| R1 | High: earlier P1.3/P2.6 retained CLI/MCP/sandbox and introduced Docker, contradicting existing wrap-up 3.4/4.1/4.6 | Implemented machinery would be retired by another phase; misleading assurance and avoidable infrastructure | Revised P1--P4, shared design and exact patches use the shared runner/host execution. First pilot is actual Psychord-omega. Same-user trust limits remain explicit. Closed by the fresh integrated review. |
+| R2 | Medium: P2 required new envelope/import/join/hash-profile/recovery machinery without an observed unsupported workflow; current compiler hashes final proposal (`compiler.ts:444,900`) | Additional schemas, migrations and approval complexity without demonstrated value | Removed release requirement and importer tasks. Existing exact capture, reconciled contexts, coordinator integration and continuation own the workflow. Future approval-bearing evidence must still bind full identity if actually introduced. |
+| R3 | Medium: P3 classifier and P4 three-chain driver were assigned before demonstrated need | Optional diagnosis/research became product scope and delayed useful delivery | Removed generic classifier/benchmark products. Require one actual correction and real later-change/currentness acceptance through current seams. Comparative economics remains explicit unproved future work. |
+| R4 | High: `scripts/run-release-acceptance.mjs:103-104` hashes fixed authority success/failure strings and asserts severed rejection | Renaming the source would preserve false evidence of closure | Task 9.3 requires observed positive authority/fidelity and an actually severed-authority failure through supported behavior, with other closure stages audited for the same defect. Implementation remains future. |
+| R5 | High: prior Tasks 8.5/12 could pass by planning a later change or running a fixture, without actual source-absent self-development | Deletion could leave Projector unable to guide its next real change | Tasks 10.8 and 12 require meaningful self-change plus a subsequent affected change, fresh sessions, installed public path, real currentness/recovery and final dependency-bound confirmation. |
+| R6 | Medium: `contracts.ts:1` and `AGENTS.md:9` conflict with `generate-contract-schemas.mjs:4-6`; release inventory identities depend on heading order | Authority drift or lost stable acceptance identity after source removal | Tasks 1/2/9 resolve contract drift, canonical identities and full acceptance conditions; patches no longer call Markdown the schema source. |
+| R7 | Medium: old final cutover bundled remaining ingestion and consumers into one commit, and separate cleanup kept plan incomplete | Unnecessarily large commit and readiness tied to optional housekeeping | Top policy stages coherent units. Ingest/migrate consumers earlier, then a small atomic deletion/switch. Task 13's existing exact-list confirmation is separate from product readiness. |
+| R9 | Medium: final gate did not reserve actual self-development work early | A late gate could demand invented scope or already-completed work | Task 2.1 reserves 7A.2/7A.5 implementation for 10.8, with explicit service/consumer prerequisites and P2 then P4 delta closure. Supporting order/design/canonical/evidence text is aligned. |
+| R10 | High: a pre-commit ordinary HEAD clone omits staged cutover edits | Tests could exercise the wrong tree while deletion appears reviewed | Task 12 exports and binds the exact staged tree, prohibits clone approval transfer, requires final tree equality and actual-final-commit smoke checks. |
+| R11 | Medium: new readiness locks cannot alone fence an actual old writer | Automatic upgrade could race legacy code already running | Tasks 5.4/5.8 require real old-runner/process tests and exclusion/quiescence before promotion, preserving original data if exclusion is unavailable. |
+| R8 | Medium: baseline patches had no reliable application point after earlier source changes | Premature spec claims, failed hunks or duplicate combined/component application | Explicit per-change application tasks, reviewed rebasing against actual implementation, canonical agreement, and all required deltas settled before retirement. |
+
+One perspective proposed adding a full Psychord rebuild to the wrap-up. Root rejected that expansion: the user's stated purpose is to put the completed Projector plan into action with a remake, while the existing plan deliberately separates the full rebuild. Task 12.5 instead requires an executable next-slice handoff, accepted meaning recovery and data-preservation decisions. This is an explicit scope interpretation, not a missing implementation silently called complete.
+
+## Acceptance conditions
+
+1. Fresh independent review confirms all credible findings, including lower-severity coherence issues, are fixed or rejected with concrete evidence.
+2. Final exact patches and supporting documents agree with the simplified proposal and integration order, and fast artifact checks pass.
+3. The final report clearly separates reviewed plan quality from unexecuted platform, behavioral and economic claims.
+
+## Final remediation and independent closure
+
+The fresh verification perspective required three further repairs: reserve real implementation work before the self-development gate, materialize the exact staged candidate rather than cloning HEAD, and test actual old-runner exclusion during upgrade. It also found stale ordering in supporting design/order/canonical/evidence documents. Root repaired the full affected set. The final independent pass confirmed no credible unresolved finding at any severity, while explicitly leaving empirical implementation risks to their named tasks.
+
+The authority/consumer perspective separately closed its original findings in Tasks 8--12, meaningful authority negatives, stable acceptance identities, self-development and old-runner disposition. No required verification surface remains unnamed at this plan endpoint. The suggestion to add a full Psychord rebuild was resolved through the explicit bounded endpoint and concrete next-slice handoff above.
+
+Checkpoint 5 artifact checks passed: five apply checks, both spec checkers with zero blocking findings, exact component/manifest/hash consistency, 105 local links, 118 distinct open task IDs and four explicit delta-application owners. A final whitespace defect in generated status prose was corrected and the affected patch/spec/diff checks rerun. [Verification receipt](VERIFICATION.md).
+
+HEAD advanced externally to `3a8e064624f7e4120728db86aacb643233dfd71d`, adding `.borg` artifacts only. The coordinator preserved that commit and made no commit. Product source/canonical/actual spec bytes remain unchanged from `043a7c3`; tracked design changes are expected. The saved context's open topology absence proof is disclosed in the plan/handoff, not used as complete impact proof or misreported as a violated predicate.
+
+Ranked next action: execute Task 1 and settle current contracts; deliver coherent verified units and their spec deltas; implement the reserved source-absent two-change workflow; complete exact-tree parity/cutover and the Psychord remake handoff. No plan repair remains outstanding.
+
+## Checkpoint 6: finite host execution and campaign retirement
+
+Verdict: **ACCEPT**, design amendment only. Review boundary: the eight-file before-image in `.temp/wrap-up-settlement-before.json`, generated P1/P2 deltas, and affected README/verification/plan guidance. Prior unrelated design work remains covered by checkpoint 5.
+
+The user identified a missing concrete owner for stronger stored requirements and an unjustified future attachment initiative. Recipient inspection traced seven canonical records plus runtime, compiler, knowledge-validator, coverage and packaging consumers. The plan now accepts the selected policy at 2.2 and requires implemented, installed and spec-synchronized closure at 4.7. Existing proposal/validator identity and authenticated recovery remain required; no attachment feature is deferred. Tasks 12.1/12.3 preserve needed assimilation value and prove operation without the workspace; 13.1 removes the accounted campaign, updates live links and verifies before committing.
+
+Independent review covered canonical revision feasibility and final record consistency, authority scope, upstream compiler/validator and downstream capability/recovery consumers, platform evidence, spec/task agreement, preservation, deletion scope and commit order. Product implementation, application execution and new sandbox benchmarking were excluded because this amendment changes only design artifacts.
+
+Resolved findings: (1) two inherited paragraphs called all cleanup optional despite required 13.1; corrected across the order map and plan; (2) a residual conditional importer sentence and generated contribution-graph term survived rejection of the initiative; removed from source and regenerated deltas; (3) mechanical spec checking rejected a new prose semicolon; corrected and rechecked. Fresh independent review confirmed no credible unresolved finding at any severity in this amendment. Required implementation proof remains in the numbered tasks. [Current verification](VERIFICATION.md).

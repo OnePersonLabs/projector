@@ -1,6 +1,6 @@
 # Projector Specification Index
 
-This index routes readers to historical design and legacy contract-input modules. Accepted meaning and executable architecture live in typed `.projector/` records. This index creates no independent requirements or implementation claims.
+This index routes readers to historical design and transitional acceptance-input modules. Accepted meaning and executable architecture live in typed `.projector/` records. This index creates no independent requirements or implementation claims.
 
 ## Module map
 
