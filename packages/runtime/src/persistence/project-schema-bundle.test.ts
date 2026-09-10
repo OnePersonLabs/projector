@@ -23,12 +23,41 @@ describe("installed Projector editor schema bundle", () => {
       expect(item.contents.endsWith("\n")).toBe(true);
     }
     const canonical = JSON.parse(bundle[0]!.contents) as {
-      properties: Record<string, unknown>;
+      anyOf: Array<{ properties: Record<string, unknown> }>;
       $defs: Record<string, unknown>;
     };
-    expect(canonical.properties.__projector_null_paths).toBeUndefined();
+    expect(canonical.anyOf).toHaveLength(16);
     expect(JSON.stringify(canonical.$defs)).toContain('\"__projector_toml_null\":{\"const\":true}');
     expect(JSON.stringify(canonical.$defs)).not.toContain('\"type\":\"null\"');
+
+    type JsonSchema = {
+      $ref?: string;
+      const?: string;
+      properties?: Record<string, JsonSchema>;
+      required?: string[];
+      additionalProperties?: boolean;
+    };
+    const dereference = (value: JsonSchema): JsonSchema => {
+      if (value.$ref === undefined) return value;
+      const key = value.$ref.match(/^#\/\$defs\/(.+)$/u)?.[1];
+      const target = key === undefined ? undefined : canonical.$defs[key];
+      if (target === undefined) throw new Error(`unresolved test schema reference ${value.$ref}`);
+      return target as JsonSchema;
+    };
+    const arm = (kind: string): JsonSchema => canonical.anyOf
+      .map((candidate) => candidate as JsonSchema)
+      .find((candidate) => dereference(candidate.properties!.kind!).const === kind)!;
+    const conceptPayload = dereference(arm("concept").properties!.payload!);
+    const requirementPayload = dereference(arm("requirement").properties!.payload!);
+    expect(conceptPayload).toMatchObject({
+      additionalProperties: false,
+      required: expect.arrayContaining(["id", "key", "kind", "name", "statement", "status"]),
+    });
+    expect(requirementPayload).toMatchObject({
+      additionalProperties: false,
+      required: expect.arrayContaining(["id", "key", "statement", "origin", "status"]),
+    });
+    expect(requirementPayload.properties).not.toHaveProperty("name");
     const objectSchemas: Array<Record<string, unknown>> = [];
     const visit = (value: unknown): void => {
       if (value === null || typeof value !== "object") return;
@@ -38,9 +67,15 @@ describe("installed Projector editor schema bundle", () => {
       for (const child of Object.values(value)) visit(child);
     };
     visit(canonical);
-    const [nullWireSchema] = objectSchemas.filter((schema) => (JSON.stringify(schema.properties) ?? "").includes("__projector_toml_null"));
-    expect(nullWireSchema).toMatchObject({ required: ["__projector_toml_null"], additionalProperties: false });
-    for (const schema of objectSchemas.filter((candidate) => candidate !== nullWireSchema)) {
+    const nullWireSchemas = objectSchemas.filter((schema) => {
+      const properties = schema.properties;
+      return properties !== null && typeof properties === "object" && Object.hasOwn(properties, "__projector_toml_null");
+    });
+    expect(nullWireSchemas.length).toBeGreaterThan(0);
+    for (const schema of nullWireSchemas) {
+      expect(schema).toMatchObject({ required: ["__projector_toml_null"], additionalProperties: false });
+    }
+    for (const schema of objectSchemas.filter((candidate) => !nullWireSchemas.includes(candidate))) {
       expect(JSON.stringify(schema.propertyNames)).toContain('\"not\":{\"const\":\"__projector_toml_null\"}');
     }
   });

@@ -15,7 +15,7 @@ export interface ProjectorEditorSchema {
 export function createProjectorEditorSchemaBundle(): readonly ProjectorEditorSchema[] {
   const schemas = exportContractJsonSchemas();
   const selected = [
-    [".projector/schemas/canonical-document-v2.schema.json", tomlEncodingSchema(schemas.CanonicalDocumentEnvelope)],
+    [".projector/schemas/canonical-document-v2.schema.json", tomlEncodingSchema(schemas.CanonicalDocumentEnvelopeByKind)],
     [".projector/schemas/projector-config-v1.schema.json", schemas.PreparedProjectorConfig],
   ] as const;
   return selected.map(([relativePath, schema]) => {
@@ -69,9 +69,13 @@ export async function installProjectorEditorSchemaBundle(repositoryRoot: string)
 function tomlEncodingSchema(schema: unknown): unknown {
   const encoded = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
   transformNullSchemas(encoded);
-  const properties = encoded.properties;
-  if (properties === null || typeof properties !== "object" || Array.isArray(properties)) {
-    throw new Error("Canonical document schema must expose object properties");
+  const objectSchemas = Array.isArray(encoded.anyOf) ? encoded.anyOf : [encoded];
+  if (objectSchemas.length === 0 || objectSchemas.some((candidate) => {
+    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) return true;
+    const properties = (candidate as Record<string, unknown>).properties;
+    return properties === null || typeof properties !== "object" || Array.isArray(properties);
+  })) {
+    throw new Error("Canonical document schema must expose strict object alternatives");
   }
   return encoded;
 }
