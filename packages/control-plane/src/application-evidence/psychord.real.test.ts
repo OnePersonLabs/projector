@@ -8,10 +8,7 @@ import { basename, join, relative } from "node:path";
 import { canonicalDocumentEnvelopeSchemaForKind, withCanonicalHashes, type BehavioralScenario, type ContentHash, type EvidenceRef } from "@projector/core";
 import {
   capturePsychordWorktreeDigest,
-  createPsychordAgentBrowserHost,
   createPsychordApplicationObservationPlan,
-  createPsychordApplicationObserver,
-  createStrictPsychordApplicationObserver,
   observePsychordEvidenceCurrentness,
   type PsychordCommandRequest,
   type PsychordCommandResult,
@@ -22,7 +19,10 @@ import {
 } from "@projector/integrations/runtime-evidence";
 import { expect, it } from "vitest";
 
-import { createDurablePsychordObservationArtifactService } from "./psychord.js";
+import {
+  createDurablePsychordAgentBrowserObservationArtifactService,
+  createDurablePsychordObservationArtifactService,
+} from "./psychord.js";
 import { createPsychordApplicationEvidenceAssessmentService, type PsychordScenarioEnvelope } from "./psychord-assessment.js";
 
 const real = process.env.PROJECTOR_RUN_REAL_PSYCHORD === "1" ? it : it.skip;
@@ -116,19 +116,15 @@ for (const caseName of ["no-input", "keep-reload-replay", "save-failure"] as con
     const head = (await runner.run({ executable: "git", args: ["rev-parse", "HEAD"], cwd: psychordRoot, env: environment, timeoutMs: 5_000, maxOutputBytes: 4_096, signal })).stdout.trim();
     const repository = { ...plan.repository, gitHead: head, worktreeDigest: await capturePsychordWorktreeDigest(runner, plan, environment, signal) };
     const boundPlan = { ...plan, repository };
-    const host = createPsychordAgentBrowserHost({
+    await mkdir(boundPlan.ownedArtifactRoot, { recursive: true });
+    const artifactService = createDurablePsychordAgentBrowserObservationArtifactService({
+      storageRoot: boundPlan.ownedArtifactRoot,
       commands: runner,
       configuration: {
         build: { executable: nodeExecutable, args: [pnpmCli, "build"] },
         agentBrowser: { executable: agentBrowserExecutable, expectedVersion: "0.31.1", chromeExecutable, namespace: `projector-${runId}`, session: runId, stdioDrainTimeoutMs: 250 },
         commandEnvironment: environment,
       },
-    });
-
-    await mkdir(boundPlan.ownedArtifactRoot, { recursive: true });
-    const artifactService = createDurablePsychordObservationArtifactService({
-      storageRoot: boundPlan.ownedArtifactRoot,
-      observer: createStrictPsychordApplicationObserver(createPsychordApplicationObserver(host)),
     });
     const persisted = await artifactService.observeAndPublish(createPsychordApplicationObservationPlan(boundPlan), { signal });
     if (persisted.status !== "published") throw new Error(JSON.stringify(persisted, null, 2));

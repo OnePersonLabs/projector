@@ -1,6 +1,10 @@
 import {
+  createPsychordAgentBrowserHost,
+  createPsychordApplicationObserver,
   createPsychordObservationArtifactService,
+  createStrictPsychordApplicationObserver,
   validatePsychordObservationArtifactManifest,
+  type PsychordAgentBrowserHostDependencies,
   type PsychordArtifactSetStorePort,
   type PsychordObservationArtifactManifest,
   type PsychordObservationArtifactService,
@@ -28,4 +32,28 @@ export function createDurablePsychordObservationArtifactService(input: {
     async read(artifactSetId) { return await durable.read(artifactSetId); },
   };
   return createPsychordObservationArtifactService({ artifactStore, observer: input.observer });
+}
+
+export type DurablePsychordAgentBrowserObservationServiceInput =
+  PsychordAgentBrowserHostDependencies & {
+    readonly storageRoot: string;
+  };
+
+/**
+ * Composes the production Windows Chrome host with authenticated durable
+ * publication. The configured storage root must be the exact
+ * `plan.adapter.input.ownedArtifactRoot` used by every submitted plan.
+ */
+export function createDurablePsychordAgentBrowserObservationArtifactService(
+  input: DurablePsychordAgentBrowserObservationServiceInput,
+): PsychordObservationArtifactService {
+  const host = createPsychordAgentBrowserHost({
+    commands: input.commands,
+    ...(input.agentBrowserCommands === undefined ? {} : { agentBrowserCommands: input.agentBrowserCommands }),
+    configuration: input.configuration,
+  });
+  return createDurablePsychordObservationArtifactService({
+    storageRoot: input.storageRoot,
+    observer: createStrictPsychordApplicationObserver(createPsychordApplicationObserver(host)),
+  });
 }
