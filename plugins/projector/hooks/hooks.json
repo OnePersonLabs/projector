@@ -12,6 +12,19 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/projector-session.mjs\"",
+            "statusMessage": "Checking Projector readiness",
+            "additionalContextLimit": 256
+          }
+        ]
+      }
     ]
   }
 }
