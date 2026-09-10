@@ -154,13 +154,17 @@ describe("packed held-out lifecycle evidence", () => {
     expect(verifyPackedLifecycleEvidence(forgedFlag)).toMatch(/^sha256:v1:/u);
 
     const missingNegative = evidence();
-    missingNegative.trace.splice(4, 2);
+    const rejectedInvocationIndex = missingNegative.trace.findIndex((entry) => entry.phase === "invoked" && entry.operation === "change.approve" && entry.input.planHash === "sha256:v1:substituted");
+    expect(rejectedInvocationIndex).toBeGreaterThanOrEqual(0);
+    missingNegative.trace.splice(rejectedInvocationIndex, 2);
     rechain(missingNegative.trace);
     expect(() => verifyPackedLifecycleEvidence(missingNegative)).toThrow(/substituted|approval trace|interrupted invocation/iu);
 
     const falseNegative = evidence();
-    falseNegative.trace[5].exitCode = 0;
-    falseNegative.trace[5].diagnostic = "";
+    const rejectedCompletion = falseNegative.trace.find((entry) => entry.phase === "completed" && entry.operation === "change.approve" && entry.input.planHash === "sha256:v1:substituted");
+    if (rejectedCompletion === undefined) throw new Error("fixture has no substituted approval completion");
+    rejectedCompletion.exitCode = 0;
+    rejectedCompletion.diagnostic = "";
     rechain(falseNegative.trace);
     expect(() => verifyPackedLifecycleEvidence(falseNegative)).toThrow(/substituted|approval trace/iu);
   });
