@@ -117,7 +117,7 @@ export interface CoverageCliReport {
   readonly boundary: readonly string[];
   readonly lanes: readonly { readonly key: string; readonly observability: ObservabilityClass }[];
   readonly unavailableSurfaceIds: readonly string[];
-  readonly [key: string]: unknown;
+  readonly completion?: unknown;
 }
 export interface CoverageCliPort {
   readonly coverage: (request: CoverageCliRequest) => Promise<CoverageCliReport>;
