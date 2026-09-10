@@ -16,6 +16,10 @@ export async function assertProjectDataMigrationReleaseReady(input) {
   const draftPath = join(input.repositoryRoot, "release/project-data-migration-draft.json");
   try { await access(draftPath); throw new Error("release candidate cannot contain a pending project-data migration draft"); }
   catch (error) { if (error?.code !== "ENOENT") throw error; }
+  if (input.allowActiveSeal !== true) {
+    try { await access(`${draftPath}.sealing`); throw new Error("release candidate cannot contain an unfinished project-data migration seal"); }
+    catch (error) { if (error?.code !== "ENOENT") throw error; }
+  }
   const source = ProjectDataFormatSnapshotSchema.parse(await readCanonical(baselinePath, "released project-data format baseline"));
   const target = createReleaseCandidateProjectDataFormat({ candidate: { packageIdentity: input.packageIdentity, files: input.files } });
   const order = comparePackageVersions(source.packageIdentity.version, target.packageIdentity.version);

@@ -1,4 +1,4 @@
-import { lstat, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -55,6 +55,14 @@ export async function createRepositoryProjectDataMigration(options = {}) {
   const draftPath = options.draftPath ?? join(root, "release/project-data-migration-draft.json");
   const migrationsRoot = options.migrationsRoot ?? join(root, "release/project-data-migrations");
   const candidateRoot = options.candidateRoot ?? join(root, ".temp/release-candidate");
+  const sealingDraftPath = `${draftPath}.sealing`;
+  try {
+    await lstat(draftPath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    try { await rename(sealingDraftPath, draftPath); await syncDirectoryIfSupported(dirname(draftPath)); }
+    catch (recoveryError) { if (recoveryError?.code !== "ENOENT") throw recoveryError; }
+  }
   const sourceSnapshot = ProjectDataFormatSnapshotSchema.parse(await readStrictJsonFile(sourcePath, "released format snapshot"));
   const authored = await (options.readReleaseIdentity ?? readAuthoredReleaseIdentity)(root);
   const selection = selectProjectDataMigrationReleaseVersion(authored.version, sourceSnapshot.packageIdentity.version);
@@ -95,9 +103,17 @@ export async function createRepositoryProjectDataMigration(options = {}) {
   const chain = ProjectDataMigrationChainSchema.parse({ apiVersion: "projector.data-migration-chain/v1", manifests: [...prior, result.manifest] });
   const chainPath = join(migrationsRoot, `chain-through-${selection.version}.json`);
   await writeImmutable(chainPath, `${canonicalJson(chain)}\n`);
-  await rm(draftPath);
+  await rename(draftPath, sealingDraftPath);
   await syncDirectoryIfSupported(dirname(draftPath));
-  await buildCandidate(candidateRoot);
+  try {
+    await buildCandidate(candidateRoot, { allowActiveProjectDataMigrationSeal: true });
+    await rm(sealingDraftPath);
+    await syncDirectoryIfSupported(dirname(draftPath));
+  } catch (error) {
+    await rename(sealingDraftPath, draftPath);
+    await syncDirectoryIfSupported(dirname(draftPath));
+    throw error;
+  }
   return { status: "sealed", version: selection.version, manifest: result.manifest, outputPath: result.outputPath, chainPath: resolve(chainPath) };
 }
 
