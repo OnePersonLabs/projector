@@ -102,7 +102,7 @@ export async function verifyTraceabilityManifest(manifest: TraceabilityManifest,
   let report: { success?: unknown; numTotalTests?: unknown; numPassedTests?: unknown; numFailedTests?: unknown; testResults?: unknown }; try { report = JSON.parse(reporterOutput) as typeof report; } catch { throw new Error("authoritative Vitest JSON reporter output is invalid"); }
   if (report.success !== true || !Number.isSafeInteger(report.numTotalTests) || !Number.isSafeInteger(report.numPassedTests) || Number(report.numPassedTests) < new Set(manifest.entries.map(({ testRef }) => testRef)).size || report.numFailedTests !== 0 || !Array.isArray(report.testResults) || report.testResults.length === 0) throw new Error("traceability Vitest reporter contains failed or incomplete run evidence");
   const results = report.testResults as { name?: unknown; status?: unknown; assertionResults?: unknown }[];
-  const facades = new Set(["projector", "projector/cli", "projector/core", "projector/analyzers", "projector/engine", "projector/engine/architecture", "projector/engine/coverage", "projector/engine/modernization", "projector/runtime", "projector/integrations", "projector/integrations/surfaces", "projector/testkit"]);
+  const facades = new Set(["projector", "projector/cli", "projector/core", "projector/analyzers", "projector/engine", "projector/engine/architecture", "projector/engine/coverage", "projector/engine/modernization", "projector/runtime", "projector/integrations", "projector/integrations/surfaces", "projector/control-plane", "projector/testkit"]);
   const sourceCache = new Map<string, string>();
   for (const entry of manifest.entries) {
     const [relativePath, exactTestIdentity] = entry.testRef.split("#", 2);
