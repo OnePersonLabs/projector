@@ -4,10 +4,11 @@ import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promi
 import { dirname, join, relative } from "node:path";
 
 import {
-  CanonicalDocumentEnvelopeSchema,
   CanonicalDocumentEnvelopeSchemasByKind,
+  hydrateCanonicalDocumentWire,
   parseProjectorConfig,
   hashRootManifest,
+  toCanonicalDocumentWire,
   type CanonicalDocumentEnvelope,
   type ContentHash,
   type RootManifestEntry,
@@ -116,11 +117,12 @@ function parseEnvelope(source: string, path: string): CanonicalDocumentEnvelope 
   } catch (error) {
     throw new Error(`invalid canonical TOML at ${path}`, { cause: error });
   }
-  const result = CanonicalDocumentEnvelopeSchema.safeParse(parsed);
-  if (!result.success) {
-    throw new Error(`invalid canonical document at ${path}: ${result.error.message}`);
+  let document: CanonicalDocumentEnvelope;
+  try {
+    document = hydrateCanonicalDocumentWire(parsed);
+  } catch (error) {
+    throw new Error(`invalid canonical document at ${path}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
-  const document = result.data as CanonicalDocumentEnvelope;
   assertSupportedCanonicalVersions(document, ` at ${path}`);
   return document;
 }
@@ -242,7 +244,7 @@ export class CanonicalFileRepository {
     const schemaPath = relative(dirname(path), join(this.canonicalRoot, "schemas", "canonical-document-v2.schema.json")).replaceAll("\\", "/");
     return {
       path,
-      contents: stringifyTomlDocument(normalized as unknown as Record<string, unknown>, { schemaPath }),
+      contents: stringifyTomlDocument(toCanonicalDocumentWire(normalized) as unknown as Record<string, unknown>, { schemaPath }),
     };
   }
 

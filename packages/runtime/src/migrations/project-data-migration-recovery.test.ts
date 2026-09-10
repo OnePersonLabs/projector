@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import {
   createProjectDataMigrationReceipt,
-  CanonicalDocumentEnvelopeSchema,
+  hydrateCanonicalDocumentWire,
   hashFramedDomain,
   hashProjectDataFormatSnapshot,
   hashRootManifest,
@@ -176,10 +176,10 @@ async function committedEvidence() {
         await readFile(join(fixtureValue.root, ".projector", "config.toml"), "utf8"),
         ".projector/config.toml",
       ));
-      const currentCanonical = CanonicalDocumentEnvelopeSchema.parse(parseTomlDocument(
+      const currentCanonical = hydrateCanonicalDocumentWire(parseTomlDocument(
         await readFile(preparedCanonical.path, "utf8"),
         preparedCanonical.path,
-      )) as CanonicalDocumentEnvelope;
+      ));
       const currentDigest = hashRootManifest([{
         entityId: currentCanonical.id,
         canonicalDocumentHash: currentCanonical.canonicalDocumentHash,
