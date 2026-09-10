@@ -16,7 +16,7 @@ export function createProjectorEditorSchemaBundle(): readonly ProjectorEditorSch
   const schemas = exportContractJsonSchemas();
   const selected = [
     [".projector/schemas/canonical-document-v2.schema.json", tomlEncodingSchema(schemas.CanonicalDocumentWireByKind)],
-    [".projector/schemas/projector-config-v1.schema.json", schemas.PreparedProjectorConfig],
+    [".projector/schemas/projector-config-v1.schema.json", taploDraft4Schema(schemas.PreparedProjectorConfig)],
   ] as const;
   return selected.map(([relativePath, schema]) => {
     if (schema === undefined) throw new Error(`Core contract registry does not export the schema for ${relativePath}`);
@@ -99,6 +99,7 @@ async function syncDirectory(path: string): Promise<void> {
 function tomlEncodingSchema(schema: unknown): unknown {
   const encoded = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
   transformNullSchemas(encoded);
+  convertToTaploDraft4(encoded, true);
   const objectSchemas = Array.isArray(encoded.anyOf) ? encoded.anyOf : [encoded];
   if (objectSchemas.length === 0 || objectSchemas.some((candidate) => {
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) return true;
@@ -110,21 +111,86 @@ function tomlEncodingSchema(schema: unknown): unknown {
   return encoded;
 }
 
+const reservedTomlNullKey = "__projector_toml_null";
+const portableRelativePathPattern = "^(?!\\s)(?!.*\\s$)(?!\\.$)(?!\\.\\.$)[^\\\\/\\0]+$";
+const gitArtifactLocatorPattern = "^git:(?:[a-f0-9]{40}|[a-f0-9]{64}):(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\/\\/)(?!(?:\\.|\\.\\.)(?:\\/|$))(?!.*\\/(?:\\.|\\.\\.)(?:\\/|$))[^/](?:.*[^/])?$";
+
+function taploDraft4Schema(schema: unknown): unknown {
+  const encoded = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
+  convertToTaploDraft4(encoded, true);
+  return encoded;
+}
+
+/** Taplo validates local editor schemas using JSON Schema Draft 4. */
+function convertToTaploDraft4(value: unknown, root = false): void {
+  if (value === null || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) convertToTaploDraft4(item);
+    return;
+  }
+  const schema = value as Record<string, unknown>;
+  if (root) schema.$schema = "http://json-schema.org/draft-04/schema#";
+  if (schema.$defs !== undefined) {
+    if (schema.definitions !== undefined) throw new Error("Canonical document schema defines both $defs and definitions");
+    schema.definitions = schema.$defs;
+    delete schema.$defs;
+  }
+  if (typeof schema.$ref === "string") schema.$ref = schema.$ref.replace(/^#\/\$defs\//u, "#/definitions/");
+  if (schema.pattern === portableRelativePathPattern) {
+    replacePatternWithAllOf(schema, [
+      { pattern: "^[^\\s\\\\/\\x00]" },
+      { pattern: "[^\\s\\\\/\\x00]$" },
+      { pattern: "^[^\\\\/\\x00]+$" },
+      { not: { enum: [".", ".."] } },
+    ]);
+  } else if (schema.pattern === gitArtifactLocatorPattern) {
+    const prefix = "git:(?:[a-f0-9]{40}|[a-f0-9]{64}):";
+    replacePatternWithAllOf(schema, [
+      { pattern: `^${prefix}[^/\\\\](?:[^\\\\]*[^/\\\\])?$` },
+      { not: { pattern: `^${prefix}[A-Za-z]:` } },
+      { not: { pattern: "//" } },
+      { not: { pattern: `(?:^${prefix}|/)(?:\\.|\\.\\.)(?:/|$)` } },
+    ]);
+  }
+  if (Object.hasOwn(schema, "const")) {
+    if (schema.enum !== undefined) throw new Error("Canonical document schema defines both const and enum");
+    schema.enum = [schema.const];
+    delete schema.const;
+  }
+  if (schema.propertyNames !== undefined) {
+    const expected = { not: { const: reservedTomlNullKey } };
+    const expectedStringNames = { allOf: [{ type: "string" }, expected] };
+    const propertyNames = JSON.stringify(schema.propertyNames);
+    if ((propertyNames !== JSON.stringify(expected) && propertyNames !== JSON.stringify(expectedStringNames)) || schema.not !== undefined) {
+      throw new Error(`Canonical document schema contains an unsupported property-name constraint: ${propertyNames}`);
+    }
+    delete schema.propertyNames;
+    schema.not = { required: [reservedTomlNullKey] };
+  }
+  for (const item of Object.values(schema)) convertToTaploDraft4(item);
+}
+
+function replacePatternWithAllOf(schema: Record<string, unknown>, constraints: readonly Record<string, unknown>[]): void {
+  if (schema.allOf !== undefined) throw new Error(`Canonical document schema combines an unsupported pattern with allOf: ${String(schema.pattern)}`);
+  delete schema.pattern;
+  schema.allOf = constraints;
+}
+
 function transformNullSchemas(value: unknown): void {
   if (value === null || typeof value !== "object") return;
   if (!Array.isArray(value) && (value as Record<string, unknown>).type === "null") {
     for (const key of Object.keys(value)) delete (value as Record<string, unknown>)[key];
     Object.assign(value, {
       type: "object",
-      properties: { __projector_toml_null: { const: true } },
-      required: ["__projector_toml_null"],
+      properties: { [reservedTomlNullKey]: { const: true } },
+      required: [reservedTomlNullKey],
       additionalProperties: false,
     });
     return;
   }
   if (!Array.isArray(value) && (value as Record<string, unknown>).type === "object") {
     const objectSchema = value as Record<string, unknown>;
-    const reservedNameRule = { not: { const: "__projector_toml_null" } };
+    const reservedNameRule = { not: { const: reservedTomlNullKey } };
     objectSchema.propertyNames = objectSchema.propertyNames === undefined
       ? reservedNameRule
       : { allOf: [objectSchema.propertyNames, reservedNameRule] };
