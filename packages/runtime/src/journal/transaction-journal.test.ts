@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { RepositoryPathService } from "../security/index.js";
 import {
   FileTransactionJournal,
+  hashFileTransactionJournalBytes,
   InvalidJournalTransitionError,
   JournalRecoveryRequiredError,
   type JournalCrashPoint,
@@ -298,6 +299,23 @@ describe("FileTransactionJournal", () => {
 
     expect(await journal.recoverIncomplete()).toEqual([]);
     expect(await readFile(join(root, "sample.txt"), "utf8")).toBe("committed");
+  });
+
+  it("returns the exact committed journal bytes and their recovery hash", async () => {
+    const { root, journal } = await harness();
+    const transaction = await journal.begin(beginInput("tx-exact-committed"));
+    await transaction.writeFile("sample.txt", "committed");
+    for (const phase of phasesAfterMutation) await transaction.transition(phase);
+    await transaction.commit();
+
+    const exact = await journal.readExact("tx-exact-committed");
+    const [recordName] = await readdir(join(root, ".projector", "runtime", "journal"));
+    if (recordName === undefined) throw new Error("committed journal record was not persisted");
+    const persisted = await readFile(join(root, ".projector", "runtime", "journal", recordName));
+
+    expect(exact.record.entry.phase).toBe("committed");
+    expect(exact.bytes.equals(persisted)).toBe(true);
+    expect(exact.contentHash).toBe(hashFileTransactionJournalBytes(persisted));
   });
 
   it("keeps a committed record immutable when metadata mutators are called", async () => {

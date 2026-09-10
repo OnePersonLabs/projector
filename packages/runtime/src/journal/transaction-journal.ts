@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import {
   chmod,
   link,
@@ -12,11 +13,18 @@ import {
 } from "node:fs/promises";
 import { dirname, join, posix } from "node:path";
 
-import type { ContentHash, StateDigest, TransactionJournalEntry, TransactionPhase } from "@projector/core";
+import {
+  hashFramedDomain,
+  type ContentHash,
+  type StateDigest,
+  type TransactionJournalEntry,
+  type TransactionPhase,
+} from "@projector/core";
 
 import type { RepositoryPathService } from "../security/index.js";
 
 const journalRoot = ".projector/runtime/journal";
+const maximumJournalBytes = 64 * 1024 * 1024;
 const transientWindowsRenameCodes = new Set(["EACCES", "EBUSY", "EPERM"]);
 
 async function publishJournalRecord(source: string, destination: string, renameRecord: typeof rename, platform: NodeJS.Platform): Promise<void> {
@@ -104,6 +112,16 @@ export interface DurableTransactionRecord {
   operations: FileJournalOperation[];
   checkpoints: JournalCheckpoint[];
   compensations: CompensationRecord[];
+}
+
+export interface ExactFileTransactionJournalRecord {
+  record: DurableTransactionRecord;
+  bytes: Buffer;
+  contentHash: ContentHash;
+}
+
+export function hashFileTransactionJournalBytes(bytes: Uint8Array): ContentHash {
+  return hashFramedDomain("file-transaction-journal-bytes:v1", Buffer.from(bytes).toString("base64"));
 }
 
 export interface RecoveryResult {
@@ -319,12 +337,17 @@ export class FileTransactionJournal {
   }
 
   async read(transactionId: string): Promise<DurableTransactionRecord> {
+    return (await this.readExact(transactionId)).record;
+  }
+
+  async readExact(transactionId: string): Promise<ExactFileTransactionJournalRecord> {
     const path = await this.recordPath(transactionId);
-    const record = parseRecord(await readFile(path, "utf8"));
+    const bytes = await readBoundedRegularFile(path, maximumJournalBytes);
+    const record = parseRecord(bytes.toString("utf8"));
     if (record.entry.transactionId !== transactionId || record.entry.worktreePath !== this.paths.root) {
       throw new JournalRecoveryRequiredError("Journal identity or worktree binding does not match its path");
     }
-    return record;
+    return { record, bytes, contentHash: hashFileTransactionJournalBytes(bytes) };
   }
 
   async recoverIncomplete(options: RecoveryOptions = {}): Promise<RecoveryResult[]> {
@@ -650,6 +673,31 @@ const allowedTransitions: Record<TransactionPhase, readonly TransactionPhase[]> 
 
 function recordFileName(transactionId: string): string {
   return `${createHash("sha256").update(transactionId).digest("hex")}.json`;
+}
+
+async function readBoundedRegularFile(path: string, maximumBytes: number): Promise<Buffer> {
+  const before = await lstat(path);
+  if (!before.isFile() || before.isSymbolicLink()) {
+    throw new JournalRecoveryRequiredError(`Journal path is not a regular file: ${path}`);
+  }
+  if (before.size > maximumBytes) {
+    throw new JournalRecoveryRequiredError(`Journal record exceeds ${maximumBytes} bytes: ${path}`);
+  }
+  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile() || opened.size !== before.size) {
+      throw new JournalRecoveryRequiredError(`Journal record changed while it was opened: ${path}`);
+    }
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    if (bytes.length !== opened.size || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs) {
+      throw new JournalRecoveryRequiredError(`Journal record changed while it was read: ${path}`);
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
 }
 
 function sameSnapshot(left: PathSnapshot, right: PathSnapshot): boolean {
