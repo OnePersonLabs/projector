@@ -375,14 +375,31 @@ async function runNodeValidators(
       : approvedEdit?.after === null || approvedEdit?.after === undefined
         ? undefined
         : hashFramedDomain("transform-content", approvedEdit.after);
+    if (expected === undefined) {
+      results.push({
+        validatorId,
+        status: "blocked",
+        summary: `Host validator source is not bound to authenticated executable bytes: ${validator.path}`,
+        evidenceIds: [`evidence_${hashFramedDomain("validator-execution-identity", { validatorId, expectedContentHash: null }).slice(-32)}`],
+        evidenceLane: "test",
+        independenceGroup: validator.independenceGroup,
+        assurance: "strong",
+        authorSource: validator.authorSource,
+        sideEffectClass: "none",
+        details: { expectedContentHash: null },
+        startedAt,
+        completedAt: now(),
+      });
+      continue;
+    }
     const contentPath = (await paths.resolveRead(validator.path)).realTarget;
     const beforeContentHash = hashFramedDomain("transform-content", await readFile(contentPath, "utf8"));
     const identityEvidenceId = `evidence_${hashFramedDomain("validator-execution-identity", {
       validatorId,
-      expectedContentHash: expected ?? beforeContentHash,
+      expectedContentHash: expected,
       beforeContentHash,
     }).slice(-32)}`;
-    if (expected === undefined || beforeContentHash !== expected) {
+    if (beforeContentHash !== expected) {
       results.push({
         validatorId,
         status: "blocked",
@@ -409,7 +426,7 @@ async function runNodeValidators(
       signal,
     }));
     const afterContentHash = hashFramedDomain("transform-content", await readFile(contentPath, "utf8"));
-    const identityCurrent = afterContentHash === beforeContentHash && (expected === undefined || afterContentHash === expected);
+    const identityCurrent = afterContentHash === beforeContentHash && afterContentHash === expected;
     const passed = execution.exitCode === 0 && identityCurrent;
     results.push({
       validatorId,
@@ -426,10 +443,10 @@ async function runNodeValidators(
       authorSource: validator.authorSource,
       sideEffectClass: "none",
       details: {
-        expectedContentHash: expected ?? beforeContentHash,
+        expectedContentHash: expected,
         beforeContentHash,
         afterContentHash,
-        executedContentHash: expected ?? beforeContentHash,
+        executedContentHash: expected,
         executionSource: validator.source === "git-base" ? "exact-live-tracked-validator" : "exact-live-approved-validator",
         exactResolvedPath: contentPath,
         observedResult: { exitCode: execution.exitCode, signal: execution.signal, stdout: execution.stdout, stderr: execution.stderr },

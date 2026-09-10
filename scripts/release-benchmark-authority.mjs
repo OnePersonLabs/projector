@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { analyzeLocalRepository } from "../packages/analyzers/dist/index.js";
-import { hashFramedDomain } from "../packages/core/dist/index.js";
-import { BENCHMARK_GATE_REGISTRY, benchmarkGatePassed, deriveBenchmarkCorpusMeasurement, validateBenchmarkMetrics, verifyBenchmarkTestReport } from "../packages/testkit/dist/benchmark.js";
+import { analyzeLocalRepository } from "@projector/analyzers";
+import { hashFramedDomain } from "@projector/core";
+import { BENCHMARK_GATE_REGISTRY, benchmarkGatePassed, deriveBenchmarkCorpusMeasurement, validateBenchmarkMetrics, verifyBenchmarkTestReport } from "@projector/testkit";
 import { runProductionBenchmarkCaseCorpora } from "./release-benchmark-experiments.mjs";
 
 const execute = promisify(execFile);

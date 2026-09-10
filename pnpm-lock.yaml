@@ -8,6 +8,15 @@ importers:
 
   .:
     devDependencies:
+      '@projector/analyzers':
+        specifier: workspace:*
+        version: link:packages/analyzers
+      '@projector/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@projector/testkit':
+        specifier: workspace:*
+        version: link:packages/testkit
       '@types/node':
         specifier: ^24.2.1
         version: 24.13.3

@@ -107,10 +107,14 @@ export function verifyPackedLifecycleEvidence(evidence) {
   assert(typeof evidence.request === "string" && evidence.request.length > 0 && evidence.request !== "repair-governed-state", "uses a fixture-only request");
   assert(evidence.activation?.initialized === true && evidence.activation?.projectEnabled === true && canonical(evidence.activation?.config) === canonical({ apiVersion: "projector.config/v1", enabled: true }), "did not explicitly activate the held-out repository");
   const boundary = evidence.artifactBoundary;
-  assert(boundary?.checkoutInputAbsent === true && boundary.checkoutPathAbsent === true && boundary.installedSymlinkCount === 0 && boundary.pluginSymlinkCount === 0 && boundary.nodePathEmpty === true && boundary.execution === "trusted-host", "did not prove source-absent installed-artifact execution");
+  assert(boundary?.checkoutDependency === "none-declared" && boundary.checkoutPathInput === null && boundary.checkoutAbsenceObservation === "not-claimed" && boundary.installedSymlinkCount === 0 && boundary.pluginSymlinkCount === 0 && boundary.nodePathEmpty === true && boundary.execution === "trusted-host", "did not prove checkout-independent installed-artifact execution");
   assert(evidence.direct?.changeSelector === evidence.pause?.changeSelector && evidence.direct?.planHash === evidence.pause?.planHash, "does not match direct and agent plan identity");
   assert(evidence.pause?.status === "approval-required" && evidence.approval?.status === "approved" && evidence.approval?.planHash === evidence.direct?.planHash, "did not enforce exact plan-hash approval");
-  assert(evidence.interruption?.terminationRequested === true && evidence.interruption?.rootExitObserved === true && evidence.interruption?.cleanupCompleted === true && evidence.interruption?.journalPhase === "validating" && evidence.interruption?.mutationObserved === true, "did not prove a bounded validating-phase interruption and cleanup");
+  const interruption = evidence.interruption;
+  assert(interruption?.terminationRequested === true && interruption.rootExitObserved === true && interruption.journalPhase === "validating" && interruption.mutationObserved === true, "did not prove a bounded validating-phase interruption");
+  const windowsCleanupObserved = interruption.cleanupStrategy === "windows-taskkill-tree" && interruption.cleanupStatus === "reported-complete" && interruption.cleanupCommandExitCode === 0 && interruption.rootAbsentObserved === true;
+  const posixCleanupRecovered = interruption.cleanupStrategy === "posix-process-group-sigkill" && interruption.cleanupStatus === "unconfirmed" && typeof interruption.cleanupReason === "string" && interruption.cleanupReason.length > 0 && evidence.recovery?.action === "rolled-back" && evidence.recovery?.exactBeforeRestored === true;
+  assert(windowsCleanupObserved || posixCleanupRecovered, "did not preserve truthful platform cleanup and recovery evidence");
   assert(evidence.recovery?.action === "rolled-back" && evidence.recovery?.exactBeforeRestored === true, "did not prove exact rollback");
   assert(evidence.result?.outcome === "success" && evidence.result?.approvalSelector === evidence.approval?.approvalSelector && evidence.result?.planId === evidence.direct?.planId, "does not bind successful result identity");
   let certificateArtifact; let receipt;
@@ -213,32 +217,43 @@ async function waitForStaleLease(repository) {
   await delay(Math.max(0, heartbeat.mtimeMs + owner.staleAfterMs + 500 - Date.now()));
 }
 
-async function terminateProcessTree(rootProcessId) {
+async function processAbsent(processId) {
+  try { process.kill(processId, 0); return false; }
+  catch (error) { if (error?.code === "ESRCH") return true; if (error?.code === "EPERM") return false; throw error; }
+}
+
+async function waitForProcessAbsence(processId, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await processAbsent(processId)) return true;
+    await delay(25);
+  }
+  return processAbsent(processId);
+}
+
+export async function terminateProcessTree(rootProcessId) {
   if (process.platform === "win32") {
+    let cleanupCommandExitCode = 0;
     try {
       await execute("taskkill", ["/PID", String(rootProcessId), "/T", "/F"], { windowsHide: true, timeout: 10_000 });
     } catch (error) {
+      cleanupCommandExitCode = typeof error?.code === "number" ? error.code : -1;
       if (error?.code !== 128 && error?.code !== "ESRCH") throw error;
     }
-    return { strategy: "windows-taskkill-tree", requestedProcessIds: [rootProcessId], completed: true };
+    const rootAbsentObserved = await waitForProcessAbsence(rootProcessId);
+    if (!rootAbsentObserved) throw new Error(`taskkill returned but root process ${String(rootProcessId)} remained observable`);
+    return { strategy: "windows-taskkill-tree", requestedProcessIds: [rootProcessId], cleanupCommandExitCode, rootAbsentObserved, status: "reported-complete" };
   }
 
-  const { stdout } = await execute("ps", ["-e", "-o", "pid=", "-o", "ppid="], { encoding: "utf8", timeout: 10_000 });
-  const children = new Map();
-  for (const line of stdout.split(/\r?\n/u)) {
-    const [processId, parentId] = line.trim().split(/\s+/u).map(Number);
-    if (!Number.isInteger(processId) || !Number.isInteger(parentId)) continue;
-    const siblings = children.get(parentId) ?? [];
-    siblings.push(processId); children.set(parentId, siblings);
-  }
-  const postorder = [];
-  const visit = (processId) => { for (const child of children.get(processId) ?? []) visit(child); postorder.push(processId); };
-  visit(rootProcessId);
-  for (const processId of postorder) {
-    try { process.kill(processId, "SIGKILL"); }
-    catch (error) { if (error?.code !== "ESRCH") throw error; }
-  }
-  return { strategy: "posix-process-tree", requestedProcessIds: postorder, completed: true };
+  try { process.kill(-rootProcessId, "SIGKILL"); }
+  catch (error) { if (error?.code !== "ESRCH") throw error; }
+  return {
+    strategy: "posix-process-group-sigkill",
+    requestedProcessIds: [rootProcessId],
+    rootAbsentObserved: await waitForProcessAbsence(rootProcessId),
+    status: "unconfirmed",
+    reason: "The owned process group received SIGKILL, but descendants that escaped into another session cannot be confirmed absent.",
+  };
 }
 
 async function pathAbsent(path) {
@@ -304,11 +319,9 @@ export async function runPackedLifecycleAcceptance(input) {
     return { ...launched, completed };
   };
   const agent = async (args) => launchAgent(args).completed;
-  const absentCheckout = join(input.temporaryRoot, "source-checkout-not-present");
-  const sourceProbeCode = "import { access } from 'node:fs/promises'; try { await access(process.argv[1]); process.exitCode=9; } catch (error) { if (error?.code !== 'ENOENT') throw error; process.stdout.write(JSON.stringify({checkoutPathAbsent:true})+'\\n'); }";
+  assert(!Object.hasOwn(input, "repositoryRoot") && !Object.hasOwn(input, "checkoutPath"), "received a checkout dependency in source-severed acceptance");
   const installedVersion = requireExit(await direct(["--version"]), "source-severed installed CLI version").stdout;
   assert(installedVersion === "2.1.0", "did not execute the installed CLI");
-  const absent = json(await hostLaunch(process.execPath, ["--input-type=module", "--eval", sourceProbeCode, join(absentCheckout, "package.json")]).completed, "source absence probe");
   const initialized = json(await direct(["init", "--format", "json"]), "explicit held-out repository activation");
   const activationConfig = JSON.parse(await readFile(join(repository, ".projector", "config.json"), "utf8"));
 
@@ -351,11 +364,11 @@ export async function runPackedLifecycleAcceptance(input) {
     runId,
     request,
     activation: { initialized: initialized.initialized === true, projectEnabled: initialized.projectEnabled === true, config: activationConfig },
-    artifactBoundary: { checkoutInputAbsent: !Object.hasOwn(input, "repositoryRoot"), checkoutPathAbsent: absent.checkoutPathAbsent === true && await pathAbsent(absentCheckout), installedSymlinkCount: await countSymlinks(input.installedProjector), pluginSymlinkCount: await countSymlinks(pluginRoot), nodePathEmpty: environment.NODE_PATH === "", execution: "trusted-host" },
+    artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", installedSymlinkCount: await countSymlinks(input.installedProjector), pluginSymlinkCount: await countSymlinks(pluginRoot), nodePathEmpty: environment.NODE_PATH === "", execution: "trusted-host" },
     direct: { changeSelector: directChange.selector, planHash: directPlan.immutablePlanHash, planId: directPlan.plan.id, predictedChangedPaths: expectedPaths, preview: directPlan.preview },
     pause: { status: pause.outcome, changeSelector: pause.selector, planHash: pause.immutablePlanHash },
     approval: { status: approval.kind === "lifecycle-approval" ? "approved" : "invalid", approvalSelector: approval.selector, planHash: approval.immutablePlanHash },
-    interruption: { terminationRequested: cleanup.requestedProcessIds.length > 0, rootExitObserved: interrupted.exitCode !== null || interrupted.signal !== null, cleanupCompleted: cleanup.completed, cleanupStrategy: cleanup.strategy, journalPhase: validating.phase, mutationObserved, killedProcessCount: cleanup.requestedProcessIds.length },
+    interruption: { terminationRequested: cleanup.requestedProcessIds.length > 0, rootExitObserved: interrupted.exitCode !== null || interrupted.signal !== null, rootAbsentObserved: cleanup.rootAbsentObserved, cleanupStatus: cleanup.status, cleanupStrategy: cleanup.strategy, cleanupCommandExitCode: cleanup.cleanupCommandExitCode, cleanupReason: cleanup.reason, journalPhase: validating.phase, mutationObserved, requestedProcessCount: cleanup.requestedProcessIds.length },
     recovery: { action: recovery?.action, exactBeforeRestored },
     result: {
       outcome: result.outcome,
