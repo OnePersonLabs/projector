@@ -26,6 +26,7 @@ import type {
   PsychordStoredTraceEvidence,
   PsychordUiSnapshot,
 } from "./psychord.js";
+import { listenOnPlannedLoopback } from "./psychord-loopback-server.js";
 
 export interface PsychordCommandRequest {
   readonly executable: string;
@@ -132,8 +133,13 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
         });
         const buildArtifacts = await readExpectedArtifacts(plan);
         server = createOwnedServer(plan, buildArtifacts);
-        await listen(server, plan, signal);
-        serverOwned = true;
+        try {
+          await listenOnPlannedLoopback(server, plan, signal);
+          serverOwned = true;
+        } catch (error) {
+          serverOwned = server.listening;
+          throw error;
+        }
         resources.push({ kind: "server-process", handle: serverHandle(plan), runId: plan.runId });
         const readiness = await fetchReadiness(plan, signal);
         const servedArtifacts = await fetchServedArtifacts(plan, signal);
@@ -334,20 +340,6 @@ function createOwnedServer(plan: PsychordObservationPlan, artifacts: readonly Ps
       response.writeHead(200, { "content-type": contentType(entry.expected.buildLocator), "content-length": body.byteLength, "cache-control": "no-store" });
       response.end(body);
     } catch { response.writeHead(500); response.end(); }
-  });
-}
-
-async function listen(server: Server, plan: PsychordObservationPlan, signal: AbortSignal): Promise<void> {
-  const origin = new URL(plan.server.expectedOrigin);
-  await new Promise<void>((resolvePromise, reject) => {
-    const abort = (): void => { server.close(); reject(signal.reason ?? new Error("server start aborted")); };
-    signal.addEventListener("abort", abort, { once: true });
-    server.once("error", reject);
-    server.listen(Number(origin.port), origin.hostname, () => {
-      signal.removeEventListener("abort", abort);
-      server.removeListener("error", reject);
-      resolvePromise();
-    });
   });
 }
 
