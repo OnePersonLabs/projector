@@ -170,14 +170,70 @@ describe("durable artifact set publication", () => {
     await paused;
 
     const finalizer = new DurableArtifactSetStore(storageRoot, strictManifest);
-    const published = await finalizer.finalize({ artifactSetId: "interleaved", manifestBytes: manifest([]) });
+    await expect(finalizer.finalize({ artifactSetId: "interleaved", manifestBytes: manifest([]) }))
+      .rejects.toThrow(/active or interrupted temporary files/i);
     admitLateWrite?.();
 
-    await expect(late).rejects.toMatchObject({ code: "ENOENT" });
-    expect(published.blobs.size).toBe(0);
-    await expect(readFile(join(storageRoot, "published", "interleaved", "blobs", "late.txt")))
-      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(late).resolves.toBeUndefined();
+    const published = await finalizer.finalize({
+      artifactSetId: "interleaved",
+      manifestBytes: manifest([{ path: "late.txt", bytes: Buffer.from("late") }]),
+    });
+    expect(published.blobs.get("late.txt")).toEqual(Buffer.from("late"));
     expect(await finalizer.read("interleaved")).toMatchObject({ status: "published" });
+  });
+
+  test("rolls interrupted invalid finalizing sets back for exact correction", async () => {
+    for (const fixture of [
+      { id: "missing", staged: [] as Array<{ path: string; bytes: Buffer }>, interrupted: [{ path: "result.txt", bytes: Buffer.from("expected") }], corrected: [{ path: "result.txt", bytes: Buffer.from("expected") }] },
+      { id: "undeclared", staged: [{ path: "extra.txt", bytes: Buffer.from("extra") }], interrupted: [], corrected: [{ path: "extra.txt", bytes: Buffer.from("extra") }] },
+      { id: "hash", staged: [{ path: "result.txt", bytes: Buffer.from("actual") }], interrupted: [{ path: "result.txt", bytes: Buffer.from("expected") }], corrected: [{ path: "result.txt", bytes: Buffer.from("actual") }] },
+    ]) {
+      const { root, store } = await temporaryStore();
+      await store.begin({ artifactSetId: fixture.id });
+      for (const blob of fixture.staged) await store.stageBlob({ artifactSetId: fixture.id, ...blob });
+      await rename(join(root, "staging", fixture.id), join(root, "finalizing", fixture.id));
+      const interruptedManifest = manifest(fixture.interrupted);
+      await writeFile(join(root, "finalizing", fixture.id, "manifest.bin"), interruptedManifest);
+
+      expect(await store.read(fixture.id)).toMatchObject({ status: "integrity-failed" });
+      await expect(store.finalize({ artifactSetId: fixture.id, manifestBytes: interruptedManifest })).rejects.toThrow();
+      expect(await store.read(fixture.id)).toEqual({ status: "incomplete", artifactSetId: fixture.id });
+      if (fixture.id === "missing") {
+        await store.stageBlob({ artifactSetId: fixture.id, ...fixture.corrected[0]! });
+      }
+      const published = await store.finalize({ artifactSetId: fixture.id, manifestBytes: manifest(fixture.corrected) });
+      expect(published.status).toBe("published");
+    }
+  });
+
+  test("preserves an unsafe finalizing set as integrity-failed for explicit recovery", async () => {
+    const { root, store } = await temporaryStore();
+    await store.begin({ artifactSetId: "unsafe-finalizing" });
+    await rename(join(root, "staging", "unsafe-finalizing"), join(root, "finalizing", "unsafe-finalizing"));
+    const manifestBytes = manifest([]);
+    await writeFile(join(root, "finalizing", "unsafe-finalizing", "manifest.bin"), manifestBytes);
+    await writeFile(join(root, "finalizing", "unsafe-finalizing", "forged.txt"), "forged");
+
+    await expect(store.finalize({ artifactSetId: "unsafe-finalizing", manifestBytes })).rejects.toThrow(/unexpected entry/i);
+    expect(await store.read("unsafe-finalizing")).toMatchObject({ status: "integrity-failed" });
+    await expect(readFile(join(root, "finalizing", "unsafe-finalizing", "forged.txt"))).resolves.toBeDefined();
+  });
+
+  test("reports the exact recovery route for an interrupted sibling temporary file", async () => {
+    const { root, store } = await temporaryStore();
+    await store.begin({ artifactSetId: "temp-recovery" });
+    const temporaryDirectory = join(root, "temporary", "temp-recovery");
+    await mkdir(temporaryDirectory);
+    const temporary = join(temporaryDirectory, ".artifact-00000000-0000-4000-8000-000000000001.tmp");
+    await writeFile(temporary, "interrupted");
+
+    await expect(store.finalize({ artifactSetId: "temp-recovery", manifestBytes: manifest([]) }))
+      .rejects.toThrow(new RegExp(temporary.replaceAll("\\", "\\\\"), "u"));
+    expect(await store.read("temp-recovery")).toEqual({ status: "incomplete", artifactSetId: "temp-recovery" });
+    await rm(temporary);
+    await expect(store.finalize({ artifactSetId: "temp-recovery", manifestBytes: manifest([]) }))
+      .resolves.toMatchObject({ status: "published" });
   });
 
   test("rejects cross-platform aliases for artifact IDs and blob paths", async () => {
