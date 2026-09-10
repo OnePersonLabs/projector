@@ -164,7 +164,7 @@ function canonicalDocumentWireSchemaForKind<const TKind extends CanonicalKind>(k
     lifecycle: z.string().min(1),
     payload: z.strictObject(authoredPayloadShape),
   }).superRefine((value, context) => {
-    const result = CanonicalDocumentEnvelopeSchemasByKind[kind].safeParse(hydrateParsedCanonicalDocumentWire(value as unknown as CanonicalDocumentWireShape));
+    const result = CanonicalDocumentEnvelopeSchemasByKind[kind].safeParse(hydrateParsedCanonicalDocumentWire(value as unknown as CanonicalDocumentWire));
     if (!result.success) for (const issue of result.error.issues) context.addIssue({ code: "custom", path: issue.path, message: issue.message });
   });
 }
@@ -175,18 +175,24 @@ export const CanonicalDocumentWireSchemasByKind = Object.freeze(Object.fromEntri
 ) as Readonly<Record<CanonicalKind, ReturnType<typeof canonicalDocumentWireSchemaForKind>>>);
 
 const canonicalDocumentWireSchemas = Object.values(CanonicalDocumentWireSchemasByKind) as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]];
-export const CanonicalDocumentWireByKindSchema: z.ZodType = z.union(canonicalDocumentWireSchemas);
-export type CanonicalDocumentWire = z.infer<typeof CanonicalDocumentWireByKindSchema>;
+export interface CanonicalDocumentWire<TPayload extends Record<string, unknown> = Record<string, unknown>> {
+  readonly apiVersion: string;
+  readonly schemaVersion: string;
+  readonly kind: CanonicalKind;
+  readonly id: string;
+  readonly key: string;
+  readonly lifecycle: string;
+  readonly payload: TPayload;
+}
+export const CanonicalDocumentWireByKindSchema: z.ZodType<CanonicalDocumentWire> = z.union(canonicalDocumentWireSchemas) as z.ZodType<CanonicalDocumentWire>;
 
 export function hydrateCanonicalDocumentWire(unparsed: unknown): CanonicalDocumentEnvelope {
-  const wire = CanonicalDocumentWireByKindSchema.parse(unparsed) as CanonicalDocumentWireShape;
+  const wire = CanonicalDocumentWireByKindSchema.parse(unparsed);
   const hydrated = hydrateParsedCanonicalDocumentWire(wire);
   return CanonicalDocumentEnvelopeSchemasByKind[wire.kind].parse(hydrated) as CanonicalDocumentEnvelope;
 }
 
-type CanonicalDocumentWireShape = Record<string, unknown> & { kind: CanonicalKind; payload: Record<string, unknown> };
-
-function hydrateParsedCanonicalDocumentWire(wire: CanonicalDocumentWireShape): CanonicalDocumentEnvelope {
+function hydrateParsedCanonicalDocumentWire(wire: CanonicalDocumentWire): CanonicalDocumentEnvelope {
   const mirrors = canonicalPayloadMirrorFields[wire.kind];
   const payload = {
     ...wire.payload,
