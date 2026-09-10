@@ -31,6 +31,7 @@ const nodeExecutable = process.env.PROJECTOR_NODE_EXECUTABLE ?? "C:/Users/zethj/
 const pnpmCli = process.env.PROJECTOR_PNPM_CLI ?? "C:/Users/zethj/AppData/Roaming/npm/node_modules/pnpm/bin/pnpm.cjs";
 const agentBrowserExecutable = process.env.PROJECTOR_AGENT_BROWSER_EXECUTABLE ?? "C:/Users/zethj/AppData/Roaming/npm/node_modules/agent-browser/bin/agent-browser-win32-x64.exe";
 const chromeExecutable = process.env.PROJECTOR_CHROME_EXECUTABLE ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const applicationEvidenceRoot = join(psychordRoot, ".projector/runtime/application-evidence");
 const integrationsEvidenceRoot = join(import.meta.dirname, "../../../integrations/src/runtime-evidence");
 const hostFile = join(integrationsEvidenceRoot, "psychord-agent-browser-host.ts");
 const protocolFile = join(integrationsEvidenceRoot, "agent-browser-protocol.ts");
@@ -102,7 +103,7 @@ for (const caseName of ["no-input", "keep-reload-replay", "save-failure"] as con
       scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenario.semanticHash },
       repository: { root: psychordRoot, gitHead: "", worktreeDigest: sha256(Buffer.alloc(0)) },
       dependencies,
-      ownedArtifactRoot: join(psychordRoot, ".projector/runtime/application-evidence", runId),
+      ownedArtifactRoot: applicationEvidenceRoot,
       representativeInput: { code: "KeyA", holdMs: 1_500 },
       server: {
         expectedOrigin: `http://127.0.0.1:${port}`,
@@ -121,7 +122,7 @@ for (const caseName of ["no-input", "keep-reload-replay", "save-failure"] as con
       storageRoot: boundPlan.ownedArtifactRoot,
       commands: runner,
       configuration: {
-        build: { executable: nodeExecutable, args: [pnpmCli, "build"] },
+        build: { nodeExecutable, pnpmCli },
         agentBrowser: { executable: agentBrowserExecutable, expectedVersion: "0.31.1", chromeExecutable, namespace: `projector-${runId}`, session: runId, stdioDrainTimeoutMs: 250 },
         commandEnvironment: environment,
       },
@@ -204,7 +205,7 @@ real("reobserves unchanged-HEAD dirty source, controller, and missing build byte
       scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: JSON.parse(await readFile(join(root, ".projector/model/scenarios/9c1e2ad3d203e2c2b9a840364f70b786f86c48bdf5f58883f4bd82d80a827083.scenario.json"), "utf8")).semanticHash as ContentHash },
       repository: { root, gitHead: head, worktreeDigest: sha256(Buffer.alloc(0)) },
       dependencies: await dependencyPins(root, controllerLocator),
-      ownedArtifactRoot: join(root, ".projector/runtime/application-evidence", runId),
+      ownedArtifactRoot: join(root, ".projector/runtime/application-evidence"),
       representativeInput: { code: "KeyA", holdMs: 1_500 },
       server: { expectedOrigin: "http://127.0.0.1:43123", readinessNonce: randomUUID(), readinessPath: "/.projector-ready", applicationPath: "/", expectedBuildArtifacts: await expectedBuildArtifacts(root) },
       limits: { timeoutMs: 30_000, cleanupTimeoutMs: 5_000, maximumOutputBytes: 262_144, maximumDiagnosticBytes: 65_536 },
