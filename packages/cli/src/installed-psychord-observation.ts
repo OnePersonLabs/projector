@@ -12,7 +12,10 @@ import { NativeProcessLauncher } from "@projector/runtime";
 
 const maximumToolManifestBytes = 64 * 1024;
 const expectedAgentBrowserVersion = "0.31.1" as const;
-const inheritedCommandEnvironmentKeys = ["SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "PATH", "TEMP", "TMP", "TMPDIR"] as const;
+const inheritedCommandEnvironmentKeys = [
+  "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "PATH", "Path",
+  "TEMP", "TMP", "TMPDIR", "USERPROFILE", "LOCALAPPDATA", "APPDATA",
+] as const;
 
 export interface InstalledPsychordObservationFactoryInput {
   readonly repositoryRoot: string;
