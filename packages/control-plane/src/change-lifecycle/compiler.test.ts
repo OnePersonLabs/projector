@@ -223,6 +223,7 @@ describe("repository change compiler", () => {
       expect(compiled.intentReview.canonicalMutations).toEqual([expect.objectContaining({ id: "concept:clock", operation: "add" })]);
       expect(compiled.compiledPlan.packets[0]?.packet.transformId).toBe("canonical-model-write");
       expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).toContain("projector.canonical-model-integrity");
+      expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).toContain("projector.canonical-decision-baselines");
       expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).not.toContain("projector.post-change-knowledge");
       const canonical = new CanonicalFileRepository(root);
       expect(compiled.canonicalWrites[0]!.after).toBe(canonical.prepareWrite(compiled.canonicalWrites[0]!.envelope).contents);
