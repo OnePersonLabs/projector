@@ -187,7 +187,8 @@ export interface CanonicalDocumentWire<TPayload extends Record<string, unknown> 
 export const CanonicalDocumentWireByKindSchema: z.ZodType<CanonicalDocumentWire> = z.union(canonicalDocumentWireSchemas) as z.ZodType<CanonicalDocumentWire>;
 
 export function hydrateCanonicalDocumentWire(unparsed: unknown): CanonicalDocumentEnvelope {
-  const wire = CanonicalDocumentWireByKindSchema.parse(unparsed);
+  const kind = z.strictObject({ kind: CanonicalKindSchema }).loose().parse(unparsed).kind;
+  const wire = CanonicalDocumentWireSchemasByKind[kind].parse(unparsed) as CanonicalDocumentWire;
   const hydrated = hydrateParsedCanonicalDocumentWire(wire);
   return CanonicalDocumentEnvelopeSchemasByKind[wire.kind].parse(hydrated) as CanonicalDocumentEnvelope;
 }
@@ -217,7 +218,8 @@ function hydrateParsedCanonicalDocumentWire(wire: CanonicalDocumentWire): Canoni
 }
 
 export function toCanonicalDocumentWire(unparsed: unknown): CanonicalDocumentWire {
-  const envelope = CanonicalDocumentEnvelopeByKindSchema.parse(unparsed) as Record<string, unknown> & { kind: CanonicalKind; payload: Record<string, unknown> };
+  const kind = z.strictObject({ kind: CanonicalKindSchema }).loose().parse(unparsed).kind;
+  const envelope = CanonicalDocumentEnvelopeSchemasByKind[kind].parse(unparsed) as Record<string, unknown> & { kind: CanonicalKind; payload: Record<string, unknown> };
   const mirrors = canonicalPayloadMirrorFields[envelope.kind];
   const payload = { ...envelope.payload };
   if (mirrors.id) delete payload.id;
