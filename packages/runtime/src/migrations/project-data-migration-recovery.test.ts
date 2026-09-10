@@ -1,9 +1,15 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   createProjectDataMigrationReceipt,
+  CanonicalDocumentEnvelopeSchema,
+  hashFramedDomain,
+  hashRootManifest,
+  PreparedProjectorConfigSchema,
+  withCanonicalHashes,
+  type CanonicalDocumentEnvelope,
   type ContentHash,
   type PendingProjectDataMigration,
   type StateDigest,
@@ -11,14 +17,16 @@ import {
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { FileTransactionJournal } from "../journal/index.js";
+import { CanonicalFileRepository, parseTomlDocument, stringifyTomlDocument } from "../persistence/index.js";
 import { RepositoryPathService } from "../security/index.js";
 import { PendingProjectDataMigrationStore } from "./pending-project-data-migration.js";
+import { createProjectBackup } from "./project-backup.js";
 import { ProjectDataMigrationReceiptStore } from "./project-data-migration-receipt.js";
 import { reconcileCompletedProjectDataMigration } from "./project-data-migration-recovery.js";
 
 const roots: string[] = [];
 const hash = (digit: string) => `sha256:v1:${digit.repeat(64)}` as ContentHash;
-const backup = {
+const defaultBackup = {
   id: "backup:legacy-to-toml",
   location: { kind: "codex-data-relative" as const, path: "projector-backup-legacy-to-toml.pba" },
   manifestHash: hash("5"),
@@ -29,6 +37,33 @@ const beforeState: StateDigest = {
   canonicalProjectorDigest: hash("7"),
   toolchainDigest: hash("8"),
 };
+const zeroHash = hash("0");
+
+function concept(): CanonicalDocumentEnvelope {
+  return withCanonicalHashes({
+    apiVersion: "projector/v2",
+    schemaVersion: "2.0.0",
+    kind: "concept",
+    id: "concept:migrated",
+    key: "concept:migrated",
+    lifecycle: "active",
+    payload: {
+      id: "concept:migrated",
+      key: "concept:migrated",
+      kind: "behavior",
+      name: "Migrated",
+      aliases: [],
+      statement: "Readable migrated meaning.",
+      status: "active",
+      sourceClass: "authored",
+      confidence: 1,
+      tags: [],
+      evidence: [],
+      discoveryHash: zeroHash,
+      semanticHash: zeroHash,
+    },
+  });
+}
 
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
@@ -36,13 +71,15 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "projector-migration-recovery-"));
   roots.push(root);
   await mkdir(join(root, ".projector"));
+  await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+  await mkdir(join(root, "codex-data"));
   const pending = new PendingProjectDataMigrationStore(root);
   const receipts = new ProjectDataMigrationReceiptStore(root);
   const journal = new FileTransactionJournal(await RepositoryPathService.create(root));
   return { root, pending, receipts, journal };
 }
 
-function pendingMarker(): PendingProjectDataMigration {
+function pendingMarker(backup = defaultBackup): PendingProjectDataMigration {
   return {
     apiVersion: "projector.pending-project-data-migration/v1",
     migrationId: "migration:legacy-to-toml",
@@ -58,22 +95,44 @@ function pendingMarker(): PendingProjectDataMigration {
 
 async function committedEvidence() {
   const fixtureValue = await fixture();
-  const marker = pendingMarker();
+  const backupResult = await createProjectBackup(
+    { repositoryRoot: fixtureValue.root, codexDataRoot: join(fixtureValue.root, "codex-data") },
+    { createBackupId: () => "legacy-to-toml", createTemporaryId: () => "legacy-to-toml-temp" },
+  );
+  const backup = {
+    id: backupResult.backupId,
+    location: backupResult.backupLocation,
+    manifestHash: backupResult.manifestHash,
+  };
+  const marker = pendingMarker(backup);
   await fixtureValue.pending.create(marker);
   await fixtureValue.pending.transition(marker, "staged");
   await fixtureValue.pending.transition(marker, "publishing");
+  const canonical = concept();
+  const canonicalRepository = new CanonicalFileRepository(fixtureValue.root);
+  const preparedCanonical = canonicalRepository.prepareWrite(canonical);
+  const canonicalDigest = hashRootManifest([{
+    entityId: canonical.id,
+    canonicalDocumentHash: canonical.canonicalDocumentHash,
+  }]);
+  const config = { apiVersion: "projector.config/v1" as const, enabled: true as const, projectorVersion: "2.1.0" };
+  const configBytes = stringifyTomlDocument(config, { schemaPath: "schemas/projector-config-v1.schema.json" });
   const transaction = await fixtureValue.journal.begin({
-    transactionId: "journal:legacy-to-toml",
-    planId: "plan:migration:legacy-to-toml",
+    transactionId: marker.migrationId,
+    planId: marker.manifestHash,
     beforeState,
-    intendedAfterCanonicalDigest: marker.targetSnapshotHash,
+    intendedAfterCanonicalDigest: canonicalDigest,
     allowedWriteRoots: [".projector"],
+    pendingMigration: marker,
   });
-  for (const phase of ["workspace-mutating", "workspace-staged", "validating", "canonical-staging", "committing"] as const) {
+  await transaction.writeFile(preparedCanonical.path.slice(fixtureValue.root.length + 1).replaceAll("\\", "/"), preparedCanonical.contents);
+  await transaction.deleteFile(".projector/config.json");
+  await transaction.writeFile(".projector/config.toml", configBytes);
+  for (const phase of ["workspace-staged", "validating", "canonical-staging", "committing"] as const) {
     await transaction.transition(phase);
   }
   await transaction.commit();
-  const exact = await fixtureValue.journal.readExact("journal:legacy-to-toml");
+  const exact = await fixtureValue.journal.readExact(marker.migrationId);
   const receipt = createProjectDataMigrationReceipt({
     apiVersion: "projector.project-data-migration-receipt/v1",
     migrationId: marker.migrationId,
@@ -86,13 +145,65 @@ async function committedEvidence() {
     outcome: "completed",
     completedAt: "2026-09-10T18:01:00.000Z",
   });
-  return { ...fixtureValue, marker, receipt };
+  const targetSnapshot = {
+    apiVersion: "projector.project-data-format-snapshot/v1" as const,
+    packageIdentity: { name: "projector", version: "2.1.0" },
+    preparedConfig: {
+      apiVersion: config.apiVersion,
+      projectorVersion: config.projectorVersion,
+      semanticHash: hashFramedDomain("prepared-projector-config", config),
+    },
+    canonical: {
+      envelopeApiVersion: "projector/v2" as const,
+      schemaBundleHash: hash("a"),
+      semanticSetHash: canonicalDigest,
+    },
+    runtimeEvidence: { schemaVersion: "1.0.0", semanticHash: hash("b") },
+    sqlite: { schemaVersion: 1, derivationHash: hash("c") },
+    snapshotHash: marker.targetSnapshotHash,
+  };
+  const target = {
+    observeCurrentTarget: async () => {
+      PreparedProjectorConfigSchema.parse(parseTomlDocument(
+        await readFile(join(fixtureValue.root, ".projector", "config.toml"), "utf8"),
+        ".projector/config.toml",
+      ));
+      const currentCanonical = CanonicalDocumentEnvelopeSchema.parse(parseTomlDocument(
+        await readFile(preparedCanonical.path, "utf8"),
+        preparedCanonical.path,
+      )) as CanonicalDocumentEnvelope;
+      const currentDigest = hashRootManifest([{
+        entityId: currentCanonical.id,
+        canonicalDocumentHash: currentCanonical.canonicalDocumentHash,
+      }]);
+      if (currentDigest !== canonicalDigest) throw new Error("canonical target semantic set is stale");
+      await expectMissing(join(fixtureValue.root, ".projector", "config.json"));
+      return targetSnapshot;
+    },
+  };
+  return {
+    ...fixtureValue,
+    marker,
+    receipt,
+    target,
+    canonicalPath: preparedCanonical.path,
+    backupResult,
+    now: () => new Date("2026-09-10T18:01:00.000Z"),
+  };
+}
+
+async function expectMissing(path: string): Promise<void> {
+  try { await readFile(path); }
+  catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+    throw error;
+  }
+  throw new Error(`retired migration path remains present: ${path}`);
 }
 
 describe("completed project-data migration recovery", () => {
   test("validates exact committed journal and receipt evidence before clearing Pending", async () => {
     const evidence = await committedEvidence();
-    await evidence.receipts.publish(evidence.receipt);
 
     await expect(reconcileCompletedProjectDataMigration(evidence)).resolves.toEqual({
       status: "reconciled",
@@ -101,6 +212,8 @@ describe("completed project-data migration recovery", () => {
       journalHash: evidence.receipt.journalHash,
     });
     expect(await evidence.pending.read()).toBeUndefined();
+    expect(await evidence.receipts.read(evidence.marker.migrationId)).toEqual(evidence.receipt);
+    expect((await readFile(evidence.backupResult.backupPath)).byteLength).toBeGreaterThan(0);
   });
 
   test("retains Pending when the receipt does not bind the exact committed journal bytes", async () => {
@@ -121,15 +234,53 @@ describe("completed project-data migration recovery", () => {
     expect((await evidence.pending.read())?.phase).toBe("publishing");
   });
 
+  test("resumes after receipt publication is interrupted before Pending clear", async () => {
+    const evidence = await committedEvidence();
+    const interrupted = {
+      ...evidence,
+      pending: {
+        read: () => evidence.pending.read(),
+        clearAfterReceiptPublication: async () => { throw new Error("crash before Pending clear"); },
+      },
+    };
+
+    await expect(reconcileCompletedProjectDataMigration(interrupted)).resolves.toMatchObject({
+      status: "recovery-required",
+      reason: expect.stringMatching(/crash before Pending clear/i),
+    });
+    expect(await evidence.receipts.read(evidence.marker.migrationId)).toEqual(evidence.receipt);
+    expect((await evidence.pending.read())?.phase).toBe("publishing");
+
+    await expect(reconcileCompletedProjectDataMigration(evidence)).resolves.toMatchObject({ status: "reconciled" });
+    expect(await evidence.pending.read()).toBeUndefined();
+  });
+
   test("does not consult historical receipts after Pending is absent", async () => {
     const receiptRead = vi.fn(() => Promise.reject(new Error("must not read historical receipt")));
     const result = await reconcileCompletedProjectDataMigration({
       pending: { read: async () => undefined, clearAfterReceiptPublication: vi.fn() },
-      receipts: { read: receiptRead },
-      journal: { readExact: vi.fn() },
+      receipts: { read: receiptRead, publish: vi.fn() },
+      journal: { ensureRecordDurable: vi.fn(), inspectRecordedAfterState: vi.fn() },
+      target: { observeCurrentTarget: vi.fn() },
     });
 
     expect(result).toEqual({ status: "no-pending" });
     expect(receiptRead).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["missing config", ".projector/config.toml", undefined],
+    ["stale target", undefined, "stale canonical bytes"],
+  ] as const)("retains Pending when the current target has %s", async (_label, removedPath, replacement) => {
+    const evidence = await committedEvidence();
+    await evidence.receipts.publish(evidence.receipt);
+    if (removedPath !== undefined) await rm(join(evidence.root, ...removedPath.split("/")));
+    if (replacement !== undefined) await writeFile(evidence.canonicalPath, replacement);
+
+    await expect(reconcileCompletedProjectDataMigration(evidence)).resolves.toMatchObject({
+      status: "recovery-required",
+      migrationId: evidence.marker.migrationId,
+    });
+    expect((await evidence.pending.read())?.phase).toBe("publishing");
   });
 });

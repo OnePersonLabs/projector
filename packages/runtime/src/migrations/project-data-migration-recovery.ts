@@ -1,10 +1,16 @@
 import type {
   ContentHash,
   PendingProjectDataMigration,
+  ProjectDataFormatSnapshot,
   ProjectDataMigrationReceipt,
 } from "@projector/core";
+import {
+  ProjectDataFormatSnapshotSchema,
+  createProjectDataMigrationReceipt,
+  projectDataMigrationReceiptApiVersion,
+} from "@projector/core";
 
-import type { ExactFileTransactionJournalRecord } from "../journal/index.js";
+import type { ExactFileTransactionJournalRecord, ExactFileTransactionJournalState } from "../journal/index.js";
 import type { PendingMigrationBinding } from "./pending-project-data-migration.js";
 
 export interface PendingProjectDataMigrationRecoveryPort {
@@ -14,16 +20,24 @@ export interface PendingProjectDataMigrationRecoveryPort {
 
 export interface ProjectDataMigrationReceiptRecoveryPort {
   read(migrationId: string): Promise<ProjectDataMigrationReceipt | undefined>;
+  publish(receipt: ProjectDataMigrationReceipt): Promise<ProjectDataMigrationReceipt>;
 }
 
 export interface ProjectDataMigrationJournalRecoveryPort {
-  readExact(transactionId: string): Promise<ExactFileTransactionJournalRecord>;
+  ensureRecordDurable(transactionId: string): Promise<ExactFileTransactionJournalRecord>;
+  inspectRecordedAfterState(transactionId: string): Promise<ExactFileTransactionJournalState>;
+}
+
+export interface ProjectDataMigrationTargetRecoveryPort {
+  observeCurrentTarget(pending: PendingProjectDataMigration): Promise<ProjectDataFormatSnapshot>;
 }
 
 export interface CompletedProjectDataMigrationRecoveryPorts {
   pending: PendingProjectDataMigrationRecoveryPort;
   receipts: ProjectDataMigrationReceiptRecoveryPort;
   journal: ProjectDataMigrationJournalRecoveryPort;
+  target: ProjectDataMigrationTargetRecoveryPort;
+  now?: () => Date;
 }
 
 export type CompletedProjectDataMigrationRecoveryResult =
@@ -55,22 +69,64 @@ export async function reconcileCompletedProjectDataMigration(
   }
 
   try {
-    const receipt = await ports.receipts.read(pending.migrationId);
-    if (receipt === undefined) {
-      return required(pending, "The matching terminal migration receipt has not been published");
+    let receipt = await ports.receipts.read(pending.migrationId);
+    if (receipt !== undefined) {
+      const mismatch = receiptMismatch(pending, receipt);
+      if (mismatch !== undefined) return required(pending, mismatch);
     }
-    const mismatch = receiptMismatch(pending, receipt);
-    if (mismatch !== undefined) return required(pending, mismatch);
-
-    const exactJournal = await ports.journal.readExact(receipt.journalId);
+    const durableJournal = await ports.journal.ensureRecordDurable(pending.migrationId);
+    const exactJournal = await ports.journal.inspectRecordedAfterState(pending.migrationId);
+    if (durableJournal.contentHash !== exactJournal.contentHash) {
+      return required(pending, "Migration journal changed after its durable publication was confirmed");
+    }
     if (exactJournal.record.entry.phase !== "committed") {
       return required(
         pending,
-        `Migration journal ${receipt.journalId} is ${exactJournal.record.entry.phase}, not committed`,
+        `Migration journal ${pending.migrationId} is ${exactJournal.record.entry.phase}, not committed`,
       );
     }
-    if (exactJournal.contentHash !== receipt.journalHash) {
+    if (receipt !== undefined && exactJournal.contentHash !== receipt.journalHash) {
       return required(pending, "Migration receipt journal hash does not match the exact committed journal bytes");
+    }
+    if (
+      (receipt !== undefined && receipt.journalId !== pending.migrationId) ||
+      exactJournal.record.entry.transactionId !== pending.migrationId ||
+      exactJournal.record.entry.planId !== pending.manifestHash ||
+      exactJournal.record.pendingMigration === undefined ||
+      !samePendingBinding(exactJournal.record.pendingMigration, pending)
+    ) {
+      return required(pending, "Committed journal does not bind the exact Pending migration attempt");
+    }
+    if (!exactJournal.matchesRecordedAfterState) {
+      return required(
+        pending,
+        `Current migration target differs from the committed journal at: ${exactJournal.mismatchedPaths.join(", ")}`,
+      );
+    }
+    if (!hasConfigLastPublication(exactJournal.record)) {
+      return required(pending, "Committed migration journal does not publish prepared config as its final operation");
+    }
+    const target = ProjectDataFormatSnapshotSchema.parse(await ports.target.observeCurrentTarget(pending));
+    if (target.snapshotHash !== pending.targetSnapshotHash) {
+      return required(pending, "Current validated format snapshot does not match the Pending target snapshot");
+    }
+    if (exactJournal.record.entry.intendedAfterCanonicalDigest !== target.canonical.semanticSetHash) {
+      return required(pending, "Committed journal does not bind the current validated canonical target");
+    }
+
+    if (receipt === undefined) {
+      receipt = await ports.receipts.publish(createProjectDataMigrationReceipt({
+        apiVersion: projectDataMigrationReceiptApiVersion,
+        migrationId: pending.migrationId,
+        manifestHash: pending.manifestHash,
+        sourceSnapshotHash: pending.sourceSnapshotHash,
+        targetSnapshotHash: pending.targetSnapshotHash,
+        journalId: pending.migrationId,
+        journalHash: exactJournal.contentHash,
+        backup: pending.backup,
+        outcome: "completed",
+        completedAt: (ports.now ?? (() => new Date()))().toISOString(),
+      }));
     }
 
     await ports.pending.clearAfterReceiptPublication(pending);
@@ -85,12 +141,20 @@ export async function reconcileCompletedProjectDataMigration(
   }
 }
 
+function hasConfigLastPublication(record: ExactFileTransactionJournalState["record"]): boolean {
+  const operation = record.operations.at(-1);
+  if (operation?.kind !== "write-file" || operation.status !== "applied" || operation.changes.length !== 1) return false;
+  const [change] = operation.changes;
+  return change?.path === ".projector/config.toml" && change.after.kind === "file";
+}
+
 function receiptMismatch(
   pending: PendingProjectDataMigration,
   receipt: ProjectDataMigrationReceipt,
 ): string | undefined {
   if (
     receipt.migrationId !== pending.migrationId ||
+    receipt.journalId !== pending.migrationId ||
     receipt.manifestHash !== pending.manifestHash ||
     receipt.sourceSnapshotHash !== pending.sourceSnapshotHash ||
     receipt.targetSnapshotHash !== pending.targetSnapshotHash
@@ -106,6 +170,21 @@ function receiptMismatch(
     return "Terminal migration receipt does not bind the Pending migration backup evidence";
   }
   return undefined;
+}
+
+function samePendingBinding(left: PendingProjectDataMigration, right: PendingProjectDataMigration): boolean {
+  return (
+    left.migrationId === right.migrationId &&
+    left.manifestHash === right.manifestHash &&
+    left.sourceSnapshotHash === right.sourceSnapshotHash &&
+    left.targetSnapshotHash === right.targetSnapshotHash &&
+    left.stagingLocation === right.stagingLocation &&
+    left.createdAt === right.createdAt &&
+    left.backup.id === right.backup.id &&
+    left.backup.manifestHash === right.backup.manifestHash &&
+    left.backup.location.kind === right.backup.location.kind &&
+    left.backup.location.path === right.backup.location.path
+  );
 }
 
 function required(
