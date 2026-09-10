@@ -27,6 +27,7 @@ async function fixture(): Promise<{ repositoryRoot: string; markerPath: string }
 function marker(phase: PendingProjectDataMigration["phase"] = "backed-up"): PendingProjectDataMigration {
   return {
     apiVersion: "projector.pending-project-data-migration/v1",
+    attemptId: "migration-attempt:2.1.0:2.2.0:001",
     migrationId: "migration:2.1.0:2.2.0",
     sourceSnapshotHash: hashA,
     targetSnapshotHash: hashB,
@@ -67,13 +68,15 @@ describe("pending project-data migration persistence", () => {
     const { repositoryRoot } = await fixture();
     const store = new PendingProjectDataMigrationStore(repositoryRoot);
     await store.create(marker());
-    const binding = { migrationId: marker().migrationId, manifestHash: hashA };
+    const binding = { attemptId: marker().attemptId, migrationId: marker().migrationId, manifestHash: hashA };
 
     expect((await store.transition(binding, "staged")).phase).toBe("staged");
     expect((await store.transition(binding, "staged")).phase).toBe("staged");
     expect((await store.transition(binding, "publishing")).phase).toBe("publishing");
     await expect(store.transition(binding, "backed-up")).rejects.toThrow(/transition/i);
     await expect(store.transition({ ...binding, manifestHash: hashB }, "publishing")).rejects.toThrow(/identity/i);
+    await expect(store.transition({ ...binding, attemptId: "migration-attempt:2.1.0:2.2.0:002" }, "publishing"))
+      .rejects.toThrow(/identity/i);
   });
 
   test("leaves the prior durable phase readable when replacement is interrupted before publication", async () => {
@@ -84,7 +87,11 @@ describe("pending project-data migration persistence", () => {
       crash: () => { throw new Error("simulated interruption"); },
     });
 
-    await expect(interrupted.transition({ migrationId: marker().migrationId, manifestHash: hashA }, "staged"))
+    await expect(interrupted.transition({
+      attemptId: marker().attemptId,
+      migrationId: marker().migrationId,
+      manifestHash: hashA,
+    }, "staged"))
       .rejects.toThrow(/simulated interruption/i);
     expect(await readFile(markerPath, "utf8")).toBe(canonicalBytes(marker()));
     expect(await new PendingProjectDataMigrationStore(repositoryRoot).read()).toEqual(marker());
@@ -100,7 +107,11 @@ describe("pending project-data migration persistence", () => {
       },
     });
 
-    await expect(interrupted.transition({ migrationId: marker().migrationId, manifestHash: hashA }, "staged"))
+    await expect(interrupted.transition({
+      attemptId: marker().attemptId,
+      migrationId: marker().migrationId,
+      manifestHash: hashA,
+    }, "staged"))
       .rejects.toThrow(/simulated post-publication interruption/i);
     await expect(new PendingProjectDataMigrationStore(repositoryRoot).read()).resolves.toEqual(marker("staged"));
   });
@@ -109,7 +120,7 @@ describe("pending project-data migration persistence", () => {
     const { repositoryRoot, markerPath } = await fixture();
     const store = new PendingProjectDataMigrationStore(repositoryRoot);
     await store.create(marker());
-    const binding = { migrationId: marker().migrationId, manifestHash: hashA };
+    const binding = { attemptId: marker().attemptId, migrationId: marker().migrationId, manifestHash: hashA };
     await store.transition(binding, "staged");
     await store.transition(binding, "publishing");
 

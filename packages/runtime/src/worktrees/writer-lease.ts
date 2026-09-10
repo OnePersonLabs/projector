@@ -40,6 +40,7 @@ export interface WriterLeaseRecord extends WriterLeaseOwner {
 export interface MigrationRecoveryWriterLeaseOwner {
   sessionId: string;
   processId: number | string;
+  attemptId: string;
   migrationId: string;
   manifestHash: ContentHash;
   targetSnapshotHash: ContentHash;
@@ -152,8 +153,9 @@ export class WriterLeaseManager {
   async acquireMigrationRecovery(owner: MigrationRecoveryWriterLeaseOwner): Promise<MigrationRecoveryWriterLeaseHandle> {
     assertOwnerIdentity(owner);
     assertExactKeys(owner as unknown as Record<string, unknown>, [
-      "backupManifestHash", "manifestHash", "migrationId", "processId", "sessionId", "targetSnapshotHash",
+      "attemptId", "backupManifestHash", "manifestHash", "migrationId", "processId", "sessionId", "targetSnapshotHash",
     ]);
+    if (!/^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(owner.attemptId)) throw new TypeError("Invalid migration recovery attempt identity");
     if (!/^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(owner.migrationId)) throw new TypeError("Invalid migration recovery identity");
     for (const value of [owner.manifestHash, owner.targetSnapshotHash, owner.backupManifestHash]) ContentHashSchema.parse(value);
     const record = await this.acquireRecord((base) => ({
@@ -162,6 +164,7 @@ export class WriterLeaseManager {
       ownerKind: "migration-recovery",
       sessionId: owner.sessionId,
       processId: owner.processId,
+      attemptId: owner.attemptId,
       migrationId: owner.migrationId,
       manifestHash: owner.manifestHash,
       targetSnapshotHash: owner.targetSnapshotHash,
@@ -339,6 +342,7 @@ function isLeaseRecord(value: unknown): value is ActiveWriterLeaseRecord {
     StateDigestSchema.safeParse(candidate.compiledAgainstSnapshot).success &&
     JSON.stringify((candidate.stateBinding as { compiledAgainst?: unknown } | undefined)?.compiledAgainst) === JSON.stringify(candidate.compiledAgainstSnapshot);
   return candidate.version === 2 && candidate.ownerKind === "migration-recovery" &&
+    typeof candidate.attemptId === "string" && /^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(candidate.attemptId) &&
     typeof candidate.migrationId === "string" && /^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(candidate.migrationId) &&
     ContentHashSchema.safeParse(candidate.manifestHash).success && ContentHashSchema.safeParse(candidate.targetSnapshotHash).success &&
     ContentHashSchema.safeParse(candidate.backupManifestHash).success;

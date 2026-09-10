@@ -64,6 +64,7 @@ export function createPreparedProjectDataMigrationRecoveryService(input: {
             .acquireMigrationRecovery({
               sessionId: request.requestId,
               processId: request.processId,
+              attemptId: pending.attemptId,
               migrationId: pending.migrationId,
               manifestHash: pending.manifestHash,
               targetSnapshotHash: pending.targetSnapshotHash,
@@ -87,15 +88,15 @@ export function createPreparedProjectDataMigrationRecoveryService(input: {
             const backup = await verifyProjectBackup({ codexDataRoot: input.codexDataRoot, backup: pending.backup });
             await assertOwnership();
             const journal = new FileTransactionJournal(paths);
-            const exactJournal = await journal.ensureRecordDurable(pending.migrationId);
+            const exactJournal = await journal.ensureRecordDurable(pending.attemptId);
             const receipts = new ProjectDataMigrationReceiptStore(repositoryRoot);
             const operationalPaths = [
               ...access.ownedRelativePaths,
               ".projector/runtime/writer-lease.lock/owner.json",
               ".projector/runtime/writer-lease.lock/heartbeat",
               pendingProjectDataMigrationRelativePath,
-              fileTransactionJournalRelativePath(pending.migrationId),
-              relative(repositoryRoot, receipts.pathFor(pending.migrationId)).replaceAll("\\", "/"),
+              fileTransactionJournalRelativePath(pending.attemptId),
+              relative(repositoryRoot, receipts.pathFor(pending.attemptId)).replaceAll("\\", "/"),
             ];
             const retained = await verifyRetainedProjectDataTarget({
               repositoryRoot,
