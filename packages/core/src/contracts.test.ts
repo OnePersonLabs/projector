@@ -12,6 +12,12 @@ import {
   LineageRecordSchema,
   LegacyUnversionedProjectorConfigSchema,
   PreparedProjectorConfigSchema,
+  PendingProjectDataMigrationSchema,
+  ProjectDataFormatSnapshotSchema,
+  ProjectDataMigrationDraftSchema,
+  ProjectDataMigrationChainSchema,
+  ProjectDataMigrationManifestSchema,
+  PortableRelativePathSchema,
   ProjectorOperationRequestSchema,
   RealizationBindingSchema,
   RequirementDeltaSchema,
@@ -26,13 +32,13 @@ import {
 
 describe("normative contract registry", () => {
   it("represents every exported normative declaration exactly once", () => {
-    expect(Object.keys(contractRegistry)).toHaveLength(157);
+    expect(Object.keys(contractRegistry)).toHaveLength(164);
     expect(validateContractRegistry()).toEqual([]);
   });
 
   it("exports strict JSON Schemas whose references resolve", () => {
     const schemas = exportContractJsonSchemas();
-    expect(Object.keys(schemas)).toHaveLength(148);
+    expect(Object.keys(schemas)).toHaveLength(155);
     expect(validateJsonSchemaReferences(schemas)).toEqual([]);
     for (const schema of Object.values(schemas)) {
       expect(schema).toMatchObject({ $schema: expect.any(String) });
@@ -216,6 +222,73 @@ describe("normative contract registry", () => {
     expect(PreparedProjectorConfigSchema.safeParse({ ...prepared, projectorVersion: "2.1.0-0.alpha+build.7" }).success).toBe(true);
     for (const projectorVersion of ["2.1", "02.1.0", "2.1.0-01", "latest"]) {
       expect(PreparedProjectorConfigSchema.safeParse({ ...prepared, projectorVersion }).success).toBe(false);
+    }
+  });
+
+  it("models ordered project-data migrations without implying review or approval", () => {
+    const hash = `sha256:v1:${"a".repeat(64)}`;
+    const snapshot = {
+      apiVersion: "projector.project-data-format-snapshot/v1",
+      packageIdentity: { name: "projector", version: "2.1.0" },
+      preparedConfig: { apiVersion: "projector.config/v1", projectorVersion: "2.1.0", semanticHash: hash },
+      canonical: { envelopeApiVersion: "projector/v2", schemaBundleHash: hash, semanticSetHash: hash },
+      runtimeEvidence: { schemaVersion: "1.0.0", semanticHash: hash },
+      sqlite: { schemaVersion: 1, derivationHash: hash },
+      snapshotHash: hash,
+    } as const;
+    const ref = { id: "transform:config-v2", relativePath: "migrations/config-v2.mjs", contentHash: hash };
+    const manifest = {
+      apiVersion: "projector.project-data-migration-manifest/v1",
+      id: "migration:2.1.0-to-2.2.0",
+      fromVersion: "2.1.0",
+      toVersion: "2.2.0",
+      sourceSnapshotHash: hash,
+      targetSnapshotHash: hash,
+      manifestHash: hash,
+      kind: "transform",
+      transforms: [ref],
+      validations: [{ ...ref, id: "validation:config-v2" }],
+    } as const;
+
+    expect(ProjectDataFormatSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    expect(ProjectDataMigrationManifestSchema.safeParse(manifest).success).toBe(true);
+    for (const [fromVersion, toVersion] of [["2.1.0", "2.1.0"], ["2.2.0", "2.1.0"], ["2.1.0", "2.1.0-alpha"]]) {
+      expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifest, fromVersion, toVersion }).success).toBe(false);
+    }
+    expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifest, fromVersion: "2.1.0-alpha.9", toVersion: "2.1.0-alpha.10" }).success).toBe(true);
+    const { transforms: _transforms, validations: _validations, ...manifestBase } = manifest;
+    expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifestBase, kind: "no-data-change" }).success).toBe(true);
+    expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifest, kind: "no-data-change" }).success).toBe(false);
+    expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifest, transforms: [] }).success).toBe(false);
+
+    const nextManifest = { ...manifestBase, id: "migration:2.2.0-to-4.0.0", fromVersion: "2.2.0", toVersion: "4.0.0", sourceSnapshotHash: manifest.targetSnapshotHash, kind: "no-data-change" } as const;
+    const chain = { apiVersion: "projector.data-migration-chain/v1", manifests: [manifest, nextManifest] } as const;
+    expect(ProjectDataMigrationChainSchema.safeParse(chain).success).toBe(true);
+    expect(ProjectDataMigrationChainSchema.safeParse({ ...chain, manifests: [manifest, { ...nextManifest, fromVersion: "3.0.0" }] }).success).toBe(false);
+    expect(ProjectDataMigrationChainSchema.safeParse({ ...chain, manifests: [manifest, { ...nextManifest, sourceSnapshotHash: `sha256:v1:${"b".repeat(64)}` }] }).success).toBe(false);
+    expect(ProjectDataMigrationChainSchema.safeParse({ ...chain, manifests: [manifest, { ...nextManifest, id: manifest.id }] }).success).toBe(false);
+
+    const draft = { apiVersion: "projector.project-data-migration-draft/v1", sourceSnapshot: snapshot, targetSnapshot: { ...snapshot, packageIdentity: { ...snapshot.packageIdentity, version: "2.2.0" } }, operations: [], customTransforms: [], validations: [] };
+    expect(ProjectDataMigrationDraftSchema.safeParse(draft).success).toBe(true);
+    expect(ProjectDataMigrationDraftSchema.safeParse({ ...draft, approvalId: "invented" }).success).toBe(false);
+
+    const pending = { apiVersion: "projector.pending-project-data-migration/v1", migrationId: manifest.id, sourceSnapshotHash: hash, targetSnapshotHash: hash, manifestHash: hash, backup: { id: "backup:2.1.0", location: { kind: "codex-data-relative", path: "projector/backups/2.1.0" }, manifestHash: hash }, stagingLocation: ".projector.staging/2.2.0", phase: "staged", createdAt: "2026-09-10T12:00:00Z" };
+    expect(PendingProjectDataMigrationSchema.safeParse(pending).success).toBe(true);
+    expect(PendingProjectDataMigrationSchema.safeParse({ ...pending, markerHash: hash }).success).toBe(false);
+    const invalidPaths = ["../escape", "./staging", "/absolute", "C:/absolute", "a/../b", "a\\b", "migrations/step.mjs:payload", ".projector.staging/state:stream", "state.", "state ", "CON", "con.txt", "nested/PRN.log", "nested/COM1"];
+    for (const path of invalidPaths) {
+      expect(PendingProjectDataMigrationSchema.safeParse({ ...pending, stagingLocation: path }).success).toBe(false);
+    }
+
+    const exported = exportContractJsonSchemas();
+    for (const name of ["ProjectDataFormatSnapshot", "ProjectDataMigrationManifest", "ProjectDataMigrationChain", "ProjectDataMigrationDraft", "PendingProjectDataMigration"]) {
+      expect(exported[name]).toMatchObject({ $schema: expect.any(String) });
+    }
+    const portablePathPattern = (exported.PortableRelativePath as { pattern?: string }).pattern;
+    expect(portablePathPattern).toBeTypeOf("string");
+    for (const path of invalidPaths) {
+      expect(PortableRelativePathSchema.safeParse(path).success, path).toBe(false);
+      expect(new RegExp(portablePathPattern!, "u").test(path), path).toBe(false);
     }
   });
 
