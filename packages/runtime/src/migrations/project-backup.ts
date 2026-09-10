@@ -12,6 +12,11 @@ import {
   type PendingProjectDataMigration,
 } from "@projector/core";
 
+import {
+  hashFileTransactionJournalBytes,
+  type ExactFileTransactionJournalRecord,
+} from "../journal/transaction-journal.js";
+
 const archiveMagic = Buffer.from("PROJECTOR-BACKUP-ARCHIVE-V1\n");
 const maximumEntryCount = 100_000;
 const maximumArchiveBytes = 64 * 1024 * 1024 * 1024;
@@ -38,6 +43,17 @@ export interface ProjectBackupResult {
 export interface VerifyProjectBackupInput {
   codexDataRoot: string;
   backup: PendingProjectDataMigration["backup"];
+}
+export interface VerifyRetainedProjectDataTargetInput extends VerifyProjectBackupInput {
+  repositoryRoot: string;
+  journal: ExactFileTransactionJournalRecord;
+  operationalPaths: readonly string[];
+}
+export interface RetainedProjectDataTargetVerification {
+  backup: ProjectBackupResult;
+  journalHash: ContentHash;
+  retainedFileCount: number;
+  currentFiles: ProjectBackupManifestFile[];
 }
 export type ProjectBackupCrashPoint = "before-namespace-publish" | "after-namespace-publish";
 export interface ProjectBackupDependencies {
@@ -202,6 +218,112 @@ export async function verifyProjectBackup(input: VerifyProjectBackupInput): Prom
     throw new ProjectBackupError("Recorded backup manifest hash does not match the exact archive manifest", backupPath);
   }
   return resultFromInspection(backupPath, codexDataRoot, inspection);
+}
+
+export async function verifyRetainedProjectDataTarget(
+  input: VerifyRetainedProjectDataTargetInput,
+): Promise<RetainedProjectDataTargetVerification> {
+  const repositoryRoot = resolveRequiredPath(input.repositoryRoot, "repository root");
+  await assertRegularDirectory(repositoryRoot, "Repository root");
+  const sourceRoot = containedPath(repositoryRoot, join(repositoryRoot, ".projector"), "project source");
+  await assertRegularDirectory(sourceRoot, "Projector source directory");
+  const backup = await verifyProjectBackup(input);
+  verifyExactCommittedJournal(input.journal, repositoryRoot);
+  const operationalPaths = validateOperationalPaths(input.operationalPaths);
+
+  const expected = new Map<string, ProjectBackupManifestFile>();
+  for (const file of backup.manifest.files) expected.set(file.path, { ...file });
+  for (const operation of input.journal.record.operations) {
+    for (const change of operation.changes) {
+      if (!change.path.startsWith(".projector/")) {
+        throw new ProjectBackupError(`Committed migration journal change is outside .projector: ${change.path}`);
+      }
+      if (operationalPaths.has(change.path)) continue;
+      const prior = expected.get(change.path);
+      if (!snapshotMatchesFile(change.before, prior)) {
+        throw new ProjectBackupError(`Committed migration journal before-state does not match backup: ${change.path}`);
+      }
+      if (change.after.kind === "missing") expected.delete(change.path);
+      else {
+        const bytes = decodeSnapshotBytes(change.after.contentBase64, change.path);
+        expected.set(change.path, { path: change.path, length: bytes.byteLength, sha256: rawSha256(bytes) });
+      }
+    }
+  }
+
+  const current = await scanTree(sourceRoot);
+  const currentFiles = current.files
+    .map((file) => ({ path: `.projector/${file.path}`, length: file.length, sha256: file.sha256 }))
+    .filter((file) => !operationalPaths.has(file.path));
+  for (const path of operationalPaths) expected.delete(path);
+  const currentByPath = new Map(currentFiles.map((file) => [file.path, file]));
+  const missing: string[] = [];
+  const changed: string[] = [];
+  const extra: string[] = [];
+  for (const [path, file] of expected) {
+    const observed = currentByPath.get(path);
+    if (observed === undefined) missing.push(path);
+    else if (observed.length !== file.length || observed.sha256 !== file.sha256) changed.push(path);
+  }
+  for (const path of currentByPath.keys()) if (!expected.has(path)) extra.push(path);
+  if (missing.length > 0 || extra.length > 0 || changed.length > 0) {
+    throw new ProjectBackupError(
+      `Retained project target mismatch: missing [${missing.sort(compareText).join(", ")}]; ` +
+      `extra [${extra.sort(compareText).join(", ")}]; changed [${changed.sort(compareText).join(", ")}]`,
+    );
+  }
+  currentFiles.sort((left, right) => compareText(left.path, right.path));
+  return {
+    backup,
+    journalHash: input.journal.contentHash,
+    retainedFileCount: currentFiles.length,
+    currentFiles,
+  };
+}
+
+function verifyExactCommittedJournal(journal: ExactFileTransactionJournalRecord, repositoryRoot: string): void {
+  if (hashFileTransactionJournalBytes(journal.bytes) !== journal.contentHash) {
+    throw new ProjectBackupError("Committed migration journal bytes do not match their exact content hash");
+  }
+  if (!journal.bytes.equals(Buffer.from(`${JSON.stringify(journal.record)}\n`))) {
+    throw new ProjectBackupError("Committed migration journal record does not match its exact persisted bytes");
+  }
+  if (journal.record.entry.phase !== "committed" || journal.record.operations.some(({ status }) => status !== "applied")) {
+    throw new ProjectBackupError("Migration journal must be committed with every operation applied");
+  }
+  if (resolve(journal.record.entry.worktreePath) !== repositoryRoot) {
+    throw new ProjectBackupError("Committed migration journal is bound to a different repository root");
+  }
+}
+
+function validateOperationalPaths(paths: readonly string[]): Set<string> {
+  const exact = new Set<string>();
+  for (const path of paths) {
+    if (!path.startsWith(".projector/") || path.includes("*") || path.includes("?") ||
+        !PortableRelativePathSchema.safeParse(path).success || exact.has(path)) {
+      throw new ProjectBackupError(`Invalid or duplicate exact operational path: ${path}`);
+    }
+    exact.add(path);
+  }
+  return exact;
+}
+
+function snapshotMatchesFile(
+  snapshot: ExactFileTransactionJournalRecord["record"]["operations"][number]["changes"][number]["before"],
+  file: ProjectBackupManifestFile | undefined,
+): boolean {
+  if (snapshot.kind === "missing") return file === undefined;
+  if (file === undefined) return false;
+  const bytes = decodeSnapshotBytes(snapshot.contentBase64, file.path);
+  return bytes.byteLength === file.length && rawSha256(bytes) === file.sha256;
+}
+
+function decodeSnapshotBytes(contentBase64: string, path: string): Buffer {
+  const bytes = Buffer.from(contentBase64, "base64");
+  if (bytes.toString("base64") !== contentBase64) {
+    throw new ProjectBackupError(`Committed migration journal snapshot is invalid base64: ${path}`);
+  }
+  return bytes;
 }
 
 interface SnapshotFile { path: string; length: number; sha256: string }
@@ -460,6 +582,7 @@ function assertBackupId(value: string): void {
   }
 }
 function contentHash(hex: string): ContentHash { return `sha256:v1:${hex}`; }
+function rawSha256(bytes: Uint8Array): string { return createHash("sha256").update(bytes).digest("hex"); }
 function compareText(left: string, right: string): number { return left < right ? -1 : left > right ? 1 : 0; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {

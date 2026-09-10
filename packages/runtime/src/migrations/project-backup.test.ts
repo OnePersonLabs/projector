@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,12 +10,16 @@ import {
   createProjectBackup,
   hashProjectBackupArchive,
   hashProjectBackupManifest,
+  verifyRetainedProjectDataTarget,
   verifyProjectBackup,
   type ProjectBackupManifest,
 } from "./project-backup.js";
+import { FileTransactionJournal } from "../journal/transaction-journal.js";
+import { RepositoryPathService } from "../security/repository-path.js";
 
 const roots: string[] = [];
 const magic = Buffer.from("PROJECTOR-BACKUP-ARCHIVE-V1\n");
+let transactionSequence = 0;
 
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
@@ -42,6 +47,31 @@ function decodeArchive(bytes: Buffer): { manifestBytes: Buffer; manifest: Projec
   }
   expect(offset).toBe(bytes.length);
   return { manifestBytes, manifest, files };
+}
+
+async function commitProjectChange(repositoryRoot: string, path: string, bytes: string) {
+  const journal = new FileTransactionJournal(await RepositoryPathService.create(repositoryRoot));
+  const transactionId = `retained-${transactionSequence += 1}`;
+  const transaction = await journal.begin({
+    transactionId,
+    planId: "plan:retained-verification",
+    beforeState: {
+      gitBase: "HEAD",
+      worktreeDigest: `sha256:v1:${"1".repeat(64)}`,
+      canonicalProjectorDigest: `sha256:v1:${"2".repeat(64)}`,
+      toolchainDigest: `sha256:v1:${"3".repeat(64)}`,
+    },
+    allowedWriteRoots: [".projector"],
+  });
+  await transaction.writeFile(path, bytes);
+  for (const phase of ["workspace-staged", "validating", "canonical-staging", "committing"] as const) {
+    await transaction.transition(phase);
+  }
+  await transaction.commit();
+  return {
+    exact: await journal.readExact(transactionId),
+    journalPath: `.projector/runtime/journal/${createHash("sha256").update(transactionId).digest("hex")}.json`,
+  };
 }
 
 describe("project migration backup archive", () => {
@@ -249,5 +279,116 @@ describe("project migration backup archive", () => {
     await symlink(outside, created.backupPath, "file");
     await expect(verifyProjectBackup({ codexDataRoot: input.codexDataRoot, backup }))
       .rejects.toThrow(/symbolic link/i);
+  });
+});
+
+describe("retained project target verification", () => {
+  test("accepts only the exact backup tree transformed by an exact committed journal", async () => {
+    const input = await fixture();
+    await writeFile(join(input.repositoryRoot, ".projector", "config.toml"), "before\n");
+    await writeFile(join(input.repositoryRoot, ".projector", "meaning.toml"), "untouched\n");
+    await writeFile(join(input.repositoryRoot, ".projector", "runtime", "state.db"), Buffer.from([1, 2, 3]));
+    const created = await createProjectBackup(input, {
+      createBackupId: () => "retained-pass",
+      createTemporaryId: () => "temp-pass",
+    });
+    const committed = await commitProjectChange(input.repositoryRoot, ".projector/config.toml", "after\n");
+
+    const result = await verifyRetainedProjectDataTarget({
+      repositoryRoot: input.repositoryRoot,
+      codexDataRoot: input.codexDataRoot,
+      backup: {
+        id: created.backupId,
+        location: created.backupLocation,
+        manifestHash: created.manifestHash,
+      },
+      journal: committed.exact,
+      operationalPaths: [committed.journalPath],
+    });
+
+    expect(result).toEqual({
+      backup: created,
+      journalHash: committed.exact.contentHash,
+      retainedFileCount: 3,
+      currentFiles: [
+        { path: ".projector/config.toml", length: 6, sha256: createHash("sha256").update("after\n").digest("hex") },
+        { path: ".projector/meaning.toml", length: 10, sha256: createHash("sha256").update("untouched\n").digest("hex") },
+        { path: ".projector/runtime/state.db", length: 3, sha256: createHash("sha256").update(Buffer.from([1, 2, 3])).digest("hex") },
+      ],
+    });
+  });
+
+  test("rejects untouched edits, extra runtime or residue files, SQLite changes, and prefix ignores", async () => {
+    const input = await fixture();
+    const projector = join(input.repositoryRoot, ".projector");
+    await writeFile(join(projector, "config.toml"), "before\n");
+    await writeFile(join(projector, "meaning.toml"), "untouched\n");
+    await writeFile(join(projector, "runtime", "state.db"), Buffer.from([1, 2, 3]));
+    const created = await createProjectBackup(input, {
+      createBackupId: () => "retained-negative",
+      createTemporaryId: () => "temp-negative",
+    });
+    const committed = await commitProjectChange(input.repositoryRoot, ".projector/config.toml", "after\n");
+    const base = {
+      repositoryRoot: input.repositoryRoot,
+      codexDataRoot: input.codexDataRoot,
+      backup: { id: created.backupId, location: created.backupLocation, manifestHash: created.manifestHash },
+      journal: committed.exact,
+      operationalPaths: [committed.journalPath],
+    } as const;
+
+    await writeFile(join(projector, "meaning.toml"), "changed\n");
+    await expect(verifyRetainedProjectDataTarget(base)).rejects.toThrow(/changed.*meaning\.toml/i);
+    await writeFile(join(projector, "meaning.toml"), "untouched\n");
+
+    await rm(join(projector, "meaning.toml"));
+    await expect(verifyRetainedProjectDataTarget(base)).rejects.toThrow(/missing.*meaning\.toml/i);
+    await writeFile(join(projector, "meaning.toml"), "untouched\n");
+
+    const runtimeExtra = join(projector, "runtime", "unexpected.json");
+    await writeFile(runtimeExtra, "{}\n");
+    await expect(verifyRetainedProjectDataTarget(base)).rejects.toThrow(/extra.*unexpected\.json/i);
+    await rm(runtimeExtra);
+
+    await writeFile(join(projector, "runtime", "state.db"), Buffer.from([9, 9, 9]));
+    await expect(verifyRetainedProjectDataTarget(base)).rejects.toThrow(/changed.*state\.db/i);
+    await writeFile(join(projector, "runtime", "state.db"), Buffer.from([1, 2, 3]));
+
+    const residue = join(projector, "migration-residue.tmp");
+    await writeFile(residue, "residue");
+    await expect(verifyRetainedProjectDataTarget(base)).rejects.toThrow(/extra.*migration-residue/i);
+    await rm(residue);
+
+    const accessDirectory = join(projector, "runtime", "access");
+    await mkdir(accessDirectory);
+    await writeFile(join(accessDirectory, "claim.json"), "{}\n");
+    await expect(verifyRetainedProjectDataTarget({
+      ...base,
+      operationalPaths: [committed.journalPath, ".projector/runtime/access"],
+    })).rejects.toThrow(/extra.*claim\.json/i);
+    await expect(verifyRetainedProjectDataTarget({
+      ...base,
+      operationalPaths: [committed.journalPath, ".projector/runtime/access/claim.json"],
+    })).resolves.toMatchObject({ retainedFileCount: 3 });
+  });
+
+  test("rejects a committed journal whose recorded before-state is not the verified backup", async () => {
+    const input = await fixture();
+    const config = join(input.repositoryRoot, ".projector", "config.toml");
+    await writeFile(config, "backed-up\n");
+    const created = await createProjectBackup(input, {
+      createBackupId: () => "retained-before-mismatch",
+      createTemporaryId: () => "temp-before-mismatch",
+    });
+    await writeFile(config, "intervening\n");
+    const committed = await commitProjectChange(input.repositoryRoot, ".projector/config.toml", "published\n");
+
+    await expect(verifyRetainedProjectDataTarget({
+      repositoryRoot: input.repositoryRoot,
+      codexDataRoot: input.codexDataRoot,
+      backup: { id: created.backupId, location: created.backupLocation, manifestHash: created.manifestHash },
+      journal: committed.exact,
+      operationalPaths: [committed.journalPath],
+    })).rejects.toThrow(/before-state.*config\.toml/i);
   });
 });
