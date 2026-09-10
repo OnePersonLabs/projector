@@ -78,6 +78,7 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
       const resources: { kind: "server-process" | "browser-context"; handle: string; runId: string }[] = [];
       const browserCommands: PsychordBrowserCommandEvidence[] = [];
       let server: Server | undefined;
+      let serverOwned = false;
       const browser = new AgentBrowserCommandClient(dependencies, plan, browserCommands);
       const cleanup = async (cleanupSignal: AbortSignal): Promise<PsychordCleanupObservation> => {
         const observations: PsychordCleanupObservation["resources"][number][] = [];
@@ -93,9 +94,10 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
             diagnostics.push(errorMessage(error));
           }
         }
-        if (server !== undefined) {
+        if (server !== undefined && serverOwned) {
           try {
             await closeServer(server, cleanupSignal);
+            serverOwned = false;
             observations.push({ kind: "server-process", handle: serverHandle(plan), outcome: "released" });
           } catch (error) {
             observations.push({ kind: "server-process", handle: serverHandle(plan), outcome: "failed" });
@@ -131,6 +133,7 @@ export function createPsychordAgentBrowserHost(dependencies: PsychordAgentBrowse
         const buildArtifacts = await readExpectedArtifacts(plan);
         server = createOwnedServer(plan, buildArtifacts);
         await listen(server, plan, signal);
+        serverOwned = true;
         resources.push({ kind: "server-process", handle: serverHandle(plan), runId: plan.runId });
         const readiness = await fetchReadiness(plan, signal);
         const servedArtifacts = await fetchServedArtifacts(plan, signal);
