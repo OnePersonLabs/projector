@@ -408,6 +408,47 @@ describe("FileTransactionJournal", () => {
     await expect(journal.recoverIncomplete()).rejects.toBeInstanceOf(JournalRecoveryRequiredError);
   });
 
+  it("retries transient Windows journal publication locks before reporting durable success", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-journal-"));
+    const paths = await RepositoryPathService.create(root);
+    let attempts = 0;
+    const journal = new FileTransactionJournal(paths, {
+      now: () => new Date("2026-08-07T12:00:00.000Z"),
+      platform: "win32",
+      renameRecord: async (source, destination) => {
+        attempts += 1;
+        if (attempts < 3) throw Object.assign(new Error("temporarily locked"), { code: "EPERM" });
+        await rename(source, destination);
+      },
+    });
+    const transaction = await journal.begin(beginInput("tx-transient-publish-lock"));
+
+    await transaction.transition("workspace-mutating");
+
+    expect(attempts).toBe(3);
+    expect((await journal.read("tx-transient-publish-lock")).entry.phase).toBe("workspace-mutating");
+  });
+
+  it("preserves an actionable failure after the bounded Windows publication retry budget", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-journal-"));
+    const paths = await RepositoryPathService.create(root);
+    let attempts = 0;
+    const journal = new FileTransactionJournal(paths, {
+      now: () => new Date("2026-08-07T12:00:00.000Z"),
+      platform: "win32",
+      renameRecord: async () => {
+        attempts += 1;
+        throw Object.assign(new Error("sharing violation"), { code: "EPERM" });
+      },
+    });
+    const transaction = await journal.begin(beginInput("tx-persistent-publish-lock"));
+
+    await expect(transaction.transition("workspace-mutating")).rejects.toThrow(/bounded Windows retries.*sharing violation/iu);
+
+    expect(attempts).toBe(6);
+    expect((await journal.read("tx-persistent-publish-lock")).entry.phase).toBe("prepared");
+  });
+
   it("fails closed when persisted touched paths disagree with reversible operations", async () => {
     const { root, journal } = await harness();
     const transaction = await journal.begin(beginInput("tx-corrupt-path-index"));

@@ -118,8 +118,8 @@
       "sourceDigest": "sha256:v1:ed2734bd064f5bfc8f2f24d2e44fef7c100a2059bb21101e65ff23185d6eea1a",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating",
-      "testSourceDigest": "sha256:v1:0c7001001769a29465572e55a9fc904bed512e98e7777f304e0abefdc59669a8",
-      "mappingHash": "sha256:v1:ece712ed84c55fdf588c29f84f981b606ff08f46b96ec511fbcbea27750d2364"
+      "testSourceDigest": "sha256:v1:20ed89496253c833bd804c0f29191ebb07d1cc5ddd9a23325b1572d8c7e92eb5",
+      "mappingHash": "sha256:v1:a6ca5672b18eb8e0613d1452f3b458201aa875f977b7eb85116aff55cfc8d10d"
     },
     {
       "id": "scenario:11:branch-governance-conflict",
@@ -902,8 +902,8 @@
       "sourceDigest": "sha256:v1:0440c7219a414710294c5ff852fc84314c563dbed22a60292952beace6de30e5",
       "publicFacade": "projector",
       "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence recomputes completion hashes and derives oracle/fixed-point outcomes instead of trusting flags",
-      "testSourceDigest": "sha256:v1:33910455622d40f08b0b659c183f78d253ce9f7d4ed26e904a842dfaef4390ca",
-      "mappingHash": "sha256:v1:d728e9e87793d22a5f68b316d680103cfab986335958160c0725d1d006fc434f"
+      "testSourceDigest": "sha256:v1:431b87f34902640bf417ba3ed610ee7e755f892b0494fbb4b348da7c915372da",
+      "mappingHash": "sha256:v1:cb7515ff7947b4114c36a095dbc751c4373ced2c9f3db3ab7ec333e2788cf629"
     },
     {
       "id": "property:13:increasing-uncertainty-cannot-lower-approval-risk-requirements",
@@ -1010,8 +1010,8 @@
       "sourceDigest": "sha256:v1:0440c7219a414710294c5ff852fc84314c563dbed22a60292952beace6de30e5",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating",
-      "testSourceDigest": "sha256:v1:0c7001001769a29465572e55a9fc904bed512e98e7777f304e0abefdc59669a8",
-      "mappingHash": "sha256:v1:79293a763d63a65e296dcc6028e7aca59df5cf98e12c468a819026ed7e101690"
+      "testSourceDigest": "sha256:v1:20ed89496253c833bd804c0f29191ebb07d1cc5ddd9a23325b1572d8c7e92eb5",
+      "mappingHash": "sha256:v1:b4b49afab811451addcd189e800acb9cc80b534a90131704515363d167cef8b2"
     },
     {
       "id": "property:22:rebuilding-sqlite-from-canonical-inputs-preserves-semantic-state",
@@ -1130,8 +1130,8 @@
       "sourceDigest": "sha256:v1:0440c7219a414710294c5ff852fc84314c563dbed22a60292952beace6de30e5",
       "publicFacade": "projector/testkit",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating",
-      "testSourceDigest": "sha256:v1:0c7001001769a29465572e55a9fc904bed512e98e7777f304e0abefdc59669a8",
-      "mappingHash": "sha256:v1:d72b39d7dbb1133767d6a74a46f8cc74019647f7b8cce376d07f0c444177c2bc"
+      "testSourceDigest": "sha256:v1:20ed89496253c833bd804c0f29191ebb07d1cc5ddd9a23325b1572d8c7e92eb5",
+      "mappingHash": "sha256:v1:82bb9a890274f60b35bc175c1340a08b1ec9bf323ff20b1dae894eecdc167011"
     },
     {
       "id": "adversary:05:branch-merge-canonical-governance-conflict",
