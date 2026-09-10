@@ -19,6 +19,10 @@ export interface ProjectOperationAccess {
   assertOwned(): Promise<void>;
 }
 
+export interface ProjectOperationAccessRecovery {
+  readonly removedClaimIds: readonly string[];
+}
+
 export type OperationAccessErrorCode = "project-not-ready" | "access-corrupt" | "access-aborted";
 
 export class OperationAccessError extends Error {
@@ -92,6 +96,43 @@ export async function withProjectOperationAccess<T>(
   } finally {
     await removeOwnClaim(accessPath, acquired ? holdersDirectoryName : requestsDirectoryName, claim);
   }
+}
+
+/**
+ * Removes only structurally valid, expired claims whose recorded process is no longer alive.
+ * This is a narrow preflight for an explicit recovery operation; ordinary operations fail closed.
+ */
+export async function recoverAbandonedProjectOperationAccess(
+  root: string,
+  signal?: AbortSignal,
+): Promise<ProjectOperationAccessRecovery> {
+  throwIfAborted(signal);
+  const accessPath = await prepareAccessDirectory(root);
+  return withMutex(accessPath, signal, async () => {
+    const state = await readAccessState(accessPath, true);
+    const now = Date.now();
+    const abandoned = [...state.requests, ...state.holders].filter((claim) => {
+      const heartbeat = new Date(claim.heartbeatAt).getTime();
+      if (heartbeat > now + abandonedClaimAfterMs) {
+        throw corrupt(`Operation access claim ${claim.requestId} has an invalid future heartbeat and requires manual recovery`);
+      }
+      return now - heartbeat > abandonedClaimAfterMs;
+    });
+    for (const claim of abandoned) {
+      if (processIsAlive(claim.processId)) {
+        throw corrupt(`Operation access claim ${claim.requestId} is stale but its recorded process is still alive`);
+      }
+    }
+    const requestIds = new Set(state.requests.map(({ requestId }) => requestId));
+    const synced = new Set<string>();
+    for (const claim of abandoned) {
+      const directory = join(accessPath, requestIds.has(claim.requestId) ? requestsDirectoryName : holdersDirectoryName);
+      await rm(join(directory, `${claim.requestId}.json`));
+      synced.add(directory);
+    }
+    for (const directory of synced) await syncDirectory(directory);
+    return { removedClaimIds: abandoned.map(({ requestId }) => requestId) };
+  });
 }
 
 function validateOptions(options: ProjectOperationAccessOptions): void {
@@ -261,7 +302,7 @@ async function removeOwnClaim(accessPath: string, location: string, claim: Acces
   });
 }
 
-async function readAccessState(accessPath: string): Promise<AccessState> {
+async function readAccessState(accessPath: string, permitAbandoned = false): Promise<AccessState> {
   await validateAccessDirectoryEntries(accessPath);
   const requests = await readClaims(join(accessPath, requestsDirectoryName));
   const holders = await readClaims(join(accessPath, holdersDirectoryName));
@@ -269,7 +310,7 @@ async function readAccessState(accessPath: string): Promise<AccessState> {
   const now = Date.now();
   for (const claim of allClaims) {
     const heartbeat = new Date(claim.heartbeatAt).getTime();
-    if (heartbeat > now + abandonedClaimAfterMs || now - heartbeat > abandonedClaimAfterMs) {
+    if (!permitAbandoned && (heartbeat > now + abandonedClaimAfterMs || now - heartbeat > abandonedClaimAfterMs)) {
       throw corrupt(`Operation access claim ${claim.requestId} has an abandoned or invalid heartbeat and requires recovery`);
     }
   }
@@ -298,6 +339,17 @@ async function readAccessState(accessPath: string): Promise<AccessState> {
     throw corrupt("Operation access ticket counter precedes a persisted claim");
   }
   return { requests, holders, nextTicket };
+}
+
+function processIsAlive(processId: number): boolean {
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch (error) {
+    if (isCode(error, "ESRCH")) return false;
+    if (isCode(error, "EPERM")) return true;
+    throw corrupt(`Could not determine whether operation access process ${processId} is alive`, error);
+  }
 }
 
 async function validateAccessDirectoryEntries(accessPath: string): Promise<void> {
