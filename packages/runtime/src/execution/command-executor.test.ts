@@ -55,14 +55,10 @@ class FixedBindingValidator implements StateBindingValidator {
   }
 }
 
-class EchoSandboxLauncher implements ProcessLauncher {
+class RecordingHostLauncher implements ProcessLauncher {
   readonly capabilities = {
-    filesystemIsolation: true,
-    networkIsolation: true,
     cpuLimits: true,
     memoryLimits: true,
-    externalWrites: true,
-    readOnlyFileOverlays: false,
   };
 
   async launch(request: ProcessLaunchRequest) {
@@ -71,24 +67,11 @@ class EchoSandboxLauncher implements ProcessLauncher {
       signal: null,
       stdout: JSON.stringify({
         cwd: request.cwd,
-        readRoots: request.readRoots,
-        writeRoots: request.writeRoots,
       }),
       stderr: "",
       durationMs: 1,
     };
   }
-}
-
-class NoExternalWriteSandboxLauncher extends EchoSandboxLauncher {
-  override readonly capabilities = {
-    filesystemIsolation: true,
-    networkIsolation: true,
-    cpuLimits: true,
-    memoryLimits: true,
-    externalWrites: false,
-    readOnlyFileOverlays: false,
-  };
 }
 
 describe("StateBoundCommandExecutor", () => {
@@ -99,13 +82,26 @@ describe("StateBoundCommandExecutor", () => {
     const spec = command({ argv: [process.execPath, "--input-type=module", "--eval", "process.stdout.write('host-ok')"], writeScope: [], sideEffectClass: "none" });
     const result = await executor.execute(spec, request(spec));
     expect(result).toMatchObject({ exitCode: 0, signal: null, stdout: "host-ok", stderr: "" });
-    expect(new NativeProcessLauncher().capabilities).toMatchObject({ filesystemIsolation: false, networkIsolation: false, readOnlyFileOverlays: false });
+    expect(result.authorization).toEqual({
+      commandId: spec.id,
+      readScope: ["."],
+      writeScope: [],
+      requiresNetwork: false,
+      sideEffectClass: "none",
+    });
+    expect(result.hostAssumptions).toEqual({
+      permissions: "configured-host",
+      filesystemConfinement: false,
+      networkDenial: false,
+      hostileSameUserProtection: false,
+    });
+    expect(new NativeProcessLauncher().capabilities).toEqual({ cpuLimits: false, memoryLimits: false });
   });
 
   it("refuses a command whose binding is stale before starting a process", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
-    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("stale"), new EchoSandboxLauncher());
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("stale"), new RecordingHostLauncher());
 
     await expect(executor.execute(command(), request())).rejects.toMatchObject({
       code: "stale-binding",
@@ -115,31 +111,29 @@ describe("StateBoundCommandExecutor", () => {
   it("refuses command scopes outside the plan-authorized roots", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
-    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new EchoSandboxLauncher());
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new RecordingHostLauncher());
     const spec = command({ writeScope: ["secrets"] });
 
     await expect(executor.execute(spec, request(spec))).rejects.toBeInstanceOf(ExecutionRefusedError);
   });
 
-  it("passes only validated real roots to the sandbox launcher", async () => {
+  it("validates declared access before passing only host launch inputs", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
-    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new EchoSandboxLauncher());
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new RecordingHostLauncher());
 
     const result = await executor.execute(command(), request());
     expect(JSON.parse(result.stdout)).toEqual({
       cwd: root,
-      readRoots: [root],
-      writeRoots: [join(root, "src")],
     });
   });
 
   it("refuses undeclared network access", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
-    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new EchoSandboxLauncher());
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new RecordingHostLauncher());
 
-    const spec = command({ network: "allow" });
+    const spec = command({ requiresNetwork: true });
     await expect(executor.execute(spec, request(spec))).rejects.toMatchObject({
       code: "network-refused",
     });
@@ -148,7 +142,7 @@ describe("StateBoundCommandExecutor", () => {
   it("refuses altered argv even when it reuses an authorized command ID", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
-    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new EchoSandboxLauncher());
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new RecordingHostLauncher());
 
     await expect(
       executor.execute(command({ argv: ["different-tool", "unexpected"] }), request()),
@@ -158,7 +152,7 @@ describe("StateBoundCommandExecutor", () => {
   it("fails closed for an external-write command without explicit policy authorization", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
-    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new EchoSandboxLauncher());
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new RecordingHostLauncher());
     const spec = command({ sideEffectClass: "external-write" });
 
     await expect(executor.execute(spec, request(spec))).rejects.toMatchObject({
@@ -172,7 +166,7 @@ describe("StateBoundCommandExecutor", () => {
     const executor = new StateBoundCommandExecutor(
       paths,
       new FixedBindingValidator("current"),
-      new NoExternalWriteSandboxLauncher(),
+      new RecordingHostLauncher(),
     );
     const spec = command({ sideEffectClass: "external-write" });
 
@@ -184,7 +178,7 @@ describe("StateBoundCommandExecutor", () => {
   it("rejects non-finite, fractional, or non-positive resource budgets", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
-    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new EchoSandboxLauncher());
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new RecordingHostLauncher());
     const cases: Array<{ spec: CommandSpec; maxOutputBytes: number }> = [
       { spec: command(), maxOutputBytes: Number.NaN },
       { spec: command(), maxOutputBytes: Number.POSITIVE_INFINITY },
@@ -206,7 +200,7 @@ describe("StateBoundCommandExecutor", () => {
   it("does not treat a rebound status without a replacement binding as authorized", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-"));
     const paths = await RepositoryPathService.create(root);
-    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("rebound"), new EchoSandboxLauncher());
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("rebound"), new RecordingHostLauncher());
 
     await expect(executor.execute(command(), request())).rejects.toMatchObject({ code: "stale-binding" });
   });
@@ -221,9 +215,6 @@ describe("NativeProcessLauncher", () => {
       args: ["-e", script, "$(printf exploited)"],
       cwd: process.cwd(),
       env: { KEPT: "yes" },
-      readRoots: [],
-      writeRoots: [],
-      network: "deny",
       timeoutMs: 1_000,
       maxOutputBytes: 1_024,
       signal: new AbortController().signal,
@@ -240,9 +231,6 @@ describe("NativeProcessLauncher", () => {
         args: ["-e", "setInterval(() => {}, 1000)"],
         cwd: process.cwd(),
         env: {},
-        readRoots: [],
-        writeRoots: [],
-        network: "deny",
         timeoutMs: 20,
         maxOutputBytes: 1_024,
         signal: new AbortController().signal,
@@ -258,14 +246,22 @@ describe("NativeProcessLauncher", () => {
         args: ["-e", "process.stdout.write('x'.repeat(4096))"],
         cwd: process.cwd(),
         env: {},
-        readRoots: [],
-        writeRoots: [],
-        network: "deny",
         timeoutMs: 1_000,
         maxOutputBytes: 64,
         signal: new AbortController().signal,
       }),
     ).rejects.toBeInstanceOf(ExecutionLimitError);
+  });
+
+  it("refuses unsupported CPU and memory limits before spawning the host command", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-exec-limits-"));
+    const paths = await RepositoryPathService.create(root);
+    const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new NativeProcessLauncher());
+    for (const spec of [command({ cpuBudgetMs: 100 }), command({ memoryBudgetMb: 64 })]) {
+      await expect(executor.execute(spec, request(spec))).rejects.toMatchObject({
+        code: "unsupported-resource-limit",
+      });
+    }
   });
 
   it("terminates the owned descendant tree when caller cancellation interrupts execution", async () => {
@@ -285,9 +281,6 @@ describe("NativeProcessLauncher", () => {
       args: ["-e", source, pidFile],
       cwd: root,
       env: {},
-      readRoots: [],
-      writeRoots: [root],
-      network: "allow",
       timeoutMs: 5_000,
       maxOutputBytes: 1_024,
       signal: controller.signal,
@@ -323,9 +316,6 @@ describe("NativeProcessLauncher", () => {
       args: ["-e", source, pidFile],
       cwd: root,
       env: {},
-      readRoots: [],
-      writeRoots: [root],
-      network: "allow",
       timeoutMs: 5_000,
       maxOutputBytes: 1_024,
       signal: controller.signal,
@@ -373,7 +363,7 @@ function command(overrides: Partial<CommandSpec> = {}): CommandSpec {
     cwd: ".",
     readScope: ["."],
     writeScope: ["src"],
-    network: "deny",
+    requiresNetwork: false,
     environmentKeys: ["KEPT"],
     sideEffectClass: "workspace-write",
     timeoutMs: 1_000,

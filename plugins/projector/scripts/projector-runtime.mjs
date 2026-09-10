@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -9,17 +10,14 @@ async function readable(path) {
   catch { return false; }
 }
 
-/** Resolve only an explicit CLI, this plugin's packaged runtime, or PATH. */
+/** Resolve an explicit or packaged Projector CLI and use the host PATH for Node. */
 export async function projectorRuntime() {
   const configured = process.env.PROJECTOR_CLI?.trim();
   const packagedCli = join(pluginRoot, "runtime", "projector", "bin", "projector.js");
   const cli = configured || (await readable(packagedCli) ? packagedCli : "projector");
   if (!/\.(?:c|m)?js$/u.test(cli)) return { executable: cli, prefix: [], cli };
 
-  const packagedNode = join(pluginRoot, "runtime", "node", process.platform === "win32" ? "node.exe" : "node");
-  const executable = await readable(packagedNode) ? packagedNode : process.execPath;
-  if (executable === process.execPath && Number(process.versions.node.split(".")[0]) !== 24) {
-    throw new Error("Projector requires Node 24. Use its packaged plugin runtime or launch this script with Node 24.");
-  }
-  return { executable, prefix: [cli], cli };
+  const version = execFileSync("node", ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  if (!/^v24\./u.test(version)) throw new Error(`Projector requires Node 24 on PATH; resolved ${version || "an unknown version"}.`);
+  return { executable: "node", prefix: [cli], cli };
 }

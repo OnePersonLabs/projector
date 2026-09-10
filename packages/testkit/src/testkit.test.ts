@@ -18,7 +18,7 @@ import {
   CrashInjectedError,
   DeterministicClock,
   DeterministicIdProvider,
-  FakeCommandSandbox,
+  FakeCommandRunner,
   FakeGraphReader,
   FakeHostProcess,
   FakeModelProvider,
@@ -376,10 +376,10 @@ describe("fake core ports and process substitutes", () => {
   });
 
   it("records declared commands and scripted host sessions without spawning processes", async () => {
-    const commands = new FakeCommandSandbox({ validate: { exitCode: 0, stdout: "valid\n", stderr: "" } });
+    const commands = new FakeCommandRunner({ validate: { exitCode: 0, stdout: "valid\n", stderr: "" } });
     const host = new FakeHostProcess([{ exitCode: 0, stdout: "complete\n", stderr: "", events: [{ type: "tool-call", name: "projector.validate" }] }]);
 
-    expect(await commands.run({ id: "validate", argv: ["node", "validate.mjs"], cwd: ".", readScope: ["."], writeScope: [], network: "deny", environmentKeys: [], sideEffectClass: "read-only", timeoutMs: 1000 })).toMatchObject({ stdout: "valid\n" });
+    expect(await commands.run({ id: "validate", argv: ["node", "validate.mjs"], cwd: ".", readScope: ["."], writeScope: [], requiresNetwork: false, environmentKeys: [], sideEffectClass: "read-only", timeoutMs: 1000 })).toMatchObject({ stdout: "valid\n" });
     expect(commands.calls()).toHaveLength(1);
     expect(await host.run({ argv: ["agent"], cwd: ".", instructions: "validate", environment: {} })).toMatchObject({ stdout: "complete\n" });
     expect(host.sessions()).toHaveLength(1);

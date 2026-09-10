@@ -77,8 +77,7 @@ export class KnowledgeValidatorRun {
         executable: process.execPath,
         args: [target, canonicalJson(protocol)],
         cwd: this.observation.repositoryRoot,
-        env: {}, readRoots: [this.observation.repositoryRoot], writeRoots: [],
-        network: "deny",
+        env: {},
         timeoutMs: 30_000, maxOutputBytes: 256 * 1024, signal: this.signal,
       });
       const afterHash = hashFramedDomain("transform-content", await readFile(target, "utf8"));

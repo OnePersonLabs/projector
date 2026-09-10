@@ -101,7 +101,7 @@ const launchConfiguredServer = async (): Promise<JsonRpcMessage[]> => {
 };
 
 describe("Projector Codex plugin MCP launch", () => {
-  test("preserves explicit WSL runtime choices through the MCP child without forwarding unrelated environment", async () => {
+  test("does not forward retired WSL runtime choices or unrelated environment to the MCP child", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-plugin-env-"));
     try {
       const fakeCli = join(root, "cli.mjs");
@@ -125,7 +125,7 @@ for await (const line of createInterface({input:process.stdin})) {
       ]) child.stdin.write(`${JSON.stringify(request)}\n`);
       await finishMcpExchange(child, () => stdout.includes('"id":2'), () => `${stdout}\n${stderr}`);
       const response = stdout.trim().split("\n").map((line) => JSON.parse(line)).find(({ id }) => id === 2);
-      expect(response.result.observed).toEqual({ distro: "Chosen-Distro", node: "/opt/projector node/node", unrelated: null });
+      expect(response.result.observed).toEqual({ unrelated: null });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
@@ -165,12 +165,21 @@ for await (const line of createInterface({input:process.stdin})) {
       await writeFile(join(repository, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true,"extra":true}\n');
       const malformed = await runExecutable(process.execPath, [hook], repository, environment);
       expect(malformed).toMatchObject({ status: 0, stdout: "" });
+      await writeFile(join(repository, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":false}\n');
+      const disabled = await runExecutable(process.execPath, [hook], repository, environment);
+      expect(disabled).toMatchObject({ status: 0, stdout: "" });
       await writeFile(join(repository, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
       const active = await runExecutable(process.execPath, [hook], repository, environment);
       expect(active.status).toBe(0);
       expect(JSON.parse(active.stdout)).toMatchObject({ hookSpecificOutput: { hookEventName: "SessionStart" } });
       const unavailable = await runExecutable(process.execPath, [hook], repository, { ...environment, PROJECTOR_CLI: join(root, "absent-cli.mjs") });
       expect(unavailable).toMatchObject({ status: 0, stdout: "" });
+      await rm(join(repository, ".projector", "config.json"));
+      await mkdir(join(repository, ".projector", "config.json"));
+      const unexpected = await runExecutable(process.execPath, [hook], repository, environment);
+      expect(unexpected.status).toBe(1);
+      expect(unexpected.stdout).toBe("");
+      expect(unexpected.stderr).not.toBe("");
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

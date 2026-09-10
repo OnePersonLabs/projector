@@ -18,12 +18,8 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - name: Provision capability-proven Ubuntu sandbox
-        run: bash .github/scripts/provision-ubuntu-sandbox.sh
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Prove sandbox isolation
-        run: node scripts/probe-sandbox.mjs
       - run: pnpm acceptance:knowledge
       - run: pnpm verify
       - run: pnpm release:artifacts:check

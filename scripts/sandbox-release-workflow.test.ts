@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const topLevelChildren = (source: string, key: string): string[] => {
-  const lines = source.split("\n");
+  const lines = source.split(/\r?\n/u);
   const start = lines.findIndex((line) => line === `${key}:`);
   if (start < 0) return [];
   const children: string[] = [];
@@ -14,7 +14,7 @@ const topLevelChildren = (source: string, key: string): string[] => {
   return children;
 };
 
-describe("manual sandbox release workflow", () => {
+describe("manual source-severed release workflow", () => {
   it("has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job", async () => {
     const workflow = await readFile(".github/workflows/projector-operations.yml", "utf8");
     const provisioning = await readFile(".github/scripts/provision-ubuntu-sandbox.sh", "utf8");
@@ -22,8 +22,6 @@ describe("manual sandbox release workflow", () => {
 
     expect(topLevelChildren(workflow, "on")).toEqual(["workflow_dispatch"]);
     const buildCommands = [
-      "bash .github/scripts/provision-ubuntu-sandbox.sh",
-      "node scripts/probe-sandbox.mjs",
       "pnpm acceptance:knowledge",
       "pnpm verify",
       "pnpm release:artifacts:check",
@@ -32,6 +30,8 @@ describe("manual sandbox release workflow", () => {
     const positions = buildCommands.map((command) => workflow.indexOf(`run: ${command}`));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    expect(workflow.slice(0, workflow.indexOf("  source-severed-acceptance:"))).not.toContain("provision-ubuntu-sandbox");
+    expect(workflow).not.toContain("probe-sandbox.mjs");
     const acceptanceJob = workflow.slice(workflow.indexOf("  source-severed-acceptance:"));
     expect(acceptanceJob).toContain("needs: build-candidate");
     expect(acceptanceJob).toContain("actions/download-artifact@v4");

@@ -171,9 +171,12 @@ describe("public architectural decision validity", () => {
 
 /** Protocol simulation under the selected trusted-host contract. */
 function protocolLauncher(calls: ProcessLaunchRequest[]): ProcessLauncher {
-  return { capabilities: { filesystemIsolation: false, networkIsolation: false, readOnlyFileOverlays: false, cpuLimits: false, memoryLimits: false, externalWrites: false }, async launch(request) {
+  return { capabilities: { cpuLimits: false, memoryLimits: false }, async launch(request) {
     calls.push(request);
-    expect(request).toMatchObject({ env: {}, readRoots: [request.cwd], writeRoots: [], network: "deny", timeoutMs: 30_000 });
+    expect(request).toMatchObject({ env: {}, timeoutMs: 30_000 });
+    expect(request).not.toHaveProperty("network");
+    expect(request).not.toHaveProperty("readRoots");
+    expect(request).not.toHaveProperty("writeRoots");
     expect(request.args[0]).toBe(join(request.cwd, "validators/check.cjs"));
     const { stdout, stderr } = await execute(process.execPath, [request.args[0]!, request.args[1]!], { cwd: request.cwd, env: {}, timeout: request.timeoutMs });
     return { exitCode: 0, signal: null, stdout, stderr, durationMs: 0 };
@@ -226,6 +229,21 @@ describe("public durable repository validators", () => {
     const inspected = await pending;
     expect(inspected.branches[0]?.governanceEvaluations?.[0]?.status).toBe("unknown");
     expect(JSON.stringify(inspected.branches[0]?.governanceEvaluations?.[0])).toContain("aborted");
+  });
+
+  it("reports denied host execution as unavailable without claiming validator conformance", async () => {
+    const { root } = await validatorFixture();
+    const denied = Object.assign(new Error("spawn EACCES"), { code: "EACCES" });
+    const service = await RepositoryKnowledgeService.create({
+      repositoryRoot: root,
+      createLauncher: async () => ({
+        capabilities: { cpuLimits: false, memoryLimits: false },
+        async launch() { throw denied; },
+      }),
+    });
+    const inspected = await service.context({ request: "inspect", entities: ["lens:validator"] });
+    expect(inspected.branches[0]?.governanceEvaluations?.[0]).toMatchObject({ status: "unknown" });
+    expect(JSON.stringify(inspected.branches[0]?.governanceEvaluations?.[0])).toContain("EACCES");
   });
 
   it("rejects validator success when the exact tracked source changes during execution", async () => {

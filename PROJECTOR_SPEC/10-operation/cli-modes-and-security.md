@@ -142,13 +142,13 @@ Canonical repository paths are POSIX-style relative paths. All filesystem operat
 - side-effect class included in risk.
 - mutation normally requires Git unless `--unsafe-no-git` is explicitly provided.
 
-### Capability-proven isolation
+### Host execution authorization and bounds
 
-Projector MUST select a sandbox backend only after a live probe proves the required filesystem and network controls. Executable presence, successful installation, configuration, and self-reported capability flags are not proof.
+Projector MUST admit a command only when its exact declaration is part of the current reviewed plan. Read and write scopes describe intended access and MUST fall within approved declarations. A declared network need or external-write effect requires its corresponding explicit authorization. No declaration implies that the host process is confined to it.
 
-The probe MUST show that the backend can read a declared read root and keep that root read-only. It MUST also prove declared writes, hidden undeclared paths, and denied network access. Each fallback backend MUST return the same complete evidence from its own probe. Projector MUST reject false, missing, malformed, or failed evidence.
+The native launcher MUST pass argv without shell interpolation, expose only declared environment values, and enforce timeout and combined-output limits. It MUST propagate caller cancellation and report observed exit, signal, output, duration, authorization, and host assumptions separately. Unsupported requested CPU or memory limits MUST fail before spawn.
 
-If no backend proves all required controls, Projector MUST refuse the sandbox-required command before it starts. It MUST fail closed with `unsupported-isolation`. It MUST NOT fall back to an unisolated native process.
+Projector MUST NOT report declared paths as observed access or claim filesystem confinement, network denial, hidden paths, immutable overlays, or hostile same-user protection. A denied host launch or unconfirmed interrupted cleanup blocks the affected operation and retains actionable recovery evidence.
 
 ## External and host writes
 
