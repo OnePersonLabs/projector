@@ -15,6 +15,7 @@ import {
 } from "@projector/core";
 
 import { parseTomlDocument, stringifyTomlDocument } from "./toml-codec.js";
+import { canonicalEditorSchemaRelativePath } from "./project-schema-bundle.js";
 
 const kindLocations = {
   concept: ["model", "concepts", "concept"],
@@ -241,7 +242,7 @@ export class CanonicalFileRepository {
     const normalized = result.data as CanonicalDocumentEnvelope;
     assertSupportedCanonicalVersions(normalized);
     const path = this.pathFor(kind, normalized.id);
-    const schemaPath = relative(dirname(path), join(this.canonicalRoot, "schemas", "canonical-document-v2.schema.json")).replaceAll("\\", "/");
+    const schemaPath = relative(dirname(path), join(this.repositoryRoot, canonicalEditorSchemaRelativePath(kind))).replaceAll("\\", "/");
     return {
       path,
       contents: stringifyTomlDocument(toCanonicalDocumentWire(normalized) as unknown as Record<string, unknown>, { schemaPath }),

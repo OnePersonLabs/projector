@@ -10,23 +10,27 @@ const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 describe("installed Projector editor schema bundle", () => {
-  test("derives the two versioned editor schemas from core contract authority", () => {
+  test("derives strict per-kind canonical and config editor schemas from core contract authority", () => {
     const bundle = createProjectorEditorSchemaBundle();
 
-    expect(bundle.map(({ relativePath }) => relativePath)).toEqual([
-      ".projector/schemas/canonical-document-v2.schema.json",
+    expect(bundle).toHaveLength(17);
+    expect(bundle.map(({ relativePath }) => relativePath).sort()).toEqual(expect.arrayContaining([
+      ".projector/schemas/canonical-concept-v2.schema.json",
+      ".projector/schemas/canonical-requirement-v2.schema.json",
       ".projector/schemas/projector-config-v1.schema.json",
-    ]);
+    ]));
     for (const item of bundle) {
       const schema = JSON.parse(item.contents) as Record<string, unknown>;
       expect(schema.$schema).toBe("http://json-schema.org/draft-04/schema#");
       expect(item.contents.endsWith("\n")).toBe(true);
     }
-    const canonical = JSON.parse(bundle[0]!.contents) as {
-      anyOf: Array<{ properties: Record<string, unknown> }>;
+    const schemaFor = (name: string) => JSON.parse(bundle.find(({ relativePath }) => relativePath === name)!.contents) as {
+      properties: Record<string, unknown>;
       definitions: Record<string, unknown>;
     };
-    expect(canonical.anyOf).toHaveLength(16);
+    const concept = schemaFor(".projector/schemas/canonical-concept-v2.schema.json");
+    const requirement = schemaFor(".projector/schemas/canonical-requirement-v2.schema.json");
+    const canonical = concept;
     expect(JSON.stringify(canonical.definitions)).toContain('\"__projector_toml_null\":{\"enum\":[true]}');
     expect(JSON.stringify(canonical.definitions)).not.toContain('\"type\":\"null\"');
 
@@ -45,17 +49,20 @@ describe("installed Projector editor schema bundle", () => {
       if (target === undefined) throw new Error(`unresolved test schema reference ${value.$ref}`);
       return target as JsonSchema;
     };
-    const arm = (kind: string): JsonSchema => canonical.anyOf
-      .map((candidate) => candidate as JsonSchema)
-      .find((candidate) => (dereference(candidate.properties!.kind!) as { enum?: unknown[] }).enum?.[0] === kind)!;
-    const conceptPayload = dereference(arm("concept").properties!.payload!);
-    const requirementPayload = dereference(arm("requirement").properties!.payload!);
+    const conceptPayload = dereference(concept.properties.payload as JsonSchema);
+    const requirementPayload = (() => {
+      const requirementDefinitions = requirement.definitions;
+      const payload = requirement.properties.payload as JsonSchema;
+      if (payload.$ref === undefined) return payload;
+      const key = payload.$ref.match(/^#\/definitions\/(.+)$/u)?.[1];
+      return requirementDefinitions[key!] as JsonSchema;
+    })();
     expect(conceptPayload).toMatchObject({
-      additionalProperties: false,
+      additionalProperties: { not: {} },
       required: expect.arrayContaining(["kind", "name", "statement"]),
     });
     expect(requirementPayload).toMatchObject({
-      additionalProperties: false,
+      additionalProperties: { not: {} },
       required: expect.arrayContaining(["statement", "origin"]),
     });
     for (const payload of [conceptPayload, requirementPayload]) {
@@ -65,10 +72,11 @@ describe("installed Projector editor schema bundle", () => {
       expect(payload.properties).not.toHaveProperty("semanticHash");
       expect(payload.properties).not.toHaveProperty("discoveryHash");
     }
-    for (const candidate of canonical.anyOf) {
+    for (const candidate of [concept, requirement]) {
       expect(candidate.properties).not.toHaveProperty("semanticHash");
       expect(candidate.properties).not.toHaveProperty("discoveryHash");
       expect(candidate.properties).not.toHaveProperty("canonicalDocumentHash");
+      expect(candidate).toMatchObject({ additionalProperties: { not: {} } });
     }
     expect(requirementPayload.properties).not.toHaveProperty("name");
     const objectSchemas: Array<Record<string, unknown>> = [];
@@ -86,7 +94,7 @@ describe("installed Projector editor schema bundle", () => {
     });
     expect(nullWireSchemas.length).toBeGreaterThan(0);
     for (const schema of nullWireSchemas) {
-      expect(schema).toMatchObject({ required: ["__projector_toml_null"], additionalProperties: false });
+      expect(schema).toMatchObject({ required: ["__projector_toml_null"], additionalProperties: { not: {} } });
     }
     for (const schema of objectSchemas.filter((candidate) => !nullWireSchemas.includes(candidate))) {
       expect(schema.not).toEqual({ required: ["__projector_toml_null"] });
@@ -99,6 +107,28 @@ describe("installed Projector editor schema bundle", () => {
     expect(serialized).not.toContain("(?!");
     expect(serialized).toContain("#/definitions/");
     expect(serialized).toContain("\\\\x00");
+
+    const gitLocatorConstraints: Array<Record<string, unknown>> = [];
+    const findGitLocator = (value: unknown): void => {
+      if (value === null || typeof value !== "object") return;
+      if (!Array.isArray(value) && Array.isArray((value as Record<string, unknown>).allOf)
+        && JSON.stringify((value as Record<string, unknown>).allOf).includes("^git:")) {
+        gitLocatorConstraints.push(...((value as { allOf: Array<Record<string, unknown>> }).allOf));
+      }
+      for (const child of Object.values(value)) findGitLocator(child);
+    };
+    for (const item of bundle) findGitLocator(JSON.parse(item.contents));
+    expect(gitLocatorConstraints.length).toBeGreaterThan(0);
+    const matches = (value: string) => gitLocatorConstraints.every((constraint) => {
+      if (typeof constraint.pattern === "string" && !new RegExp(constraint.pattern, "u").test(value)) return false;
+      const excluded = (constraint.not as { pattern?: string } | undefined)?.pattern;
+      return excluded === undefined || !new RegExp(excluded, "u").test(value);
+    });
+    const prefix = `git:${"a".repeat(40)}:`;
+    expect(matches(`${prefix}nested/file.json`)).toBe(true);
+    for (const terminator of ["\r", "\n", "\u2028", "\u2029"]) {
+      expect(matches(`${prefix}a${terminator}b`)).toBe(false);
+    }
   });
 
   test("installs exact deterministic bytes without creating or overwriting editor configuration", async () => {
@@ -119,7 +149,7 @@ describe("installed Projector editor schema bundle", () => {
   test("refuses to replace a differing installed schema", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-schema-bundle-"));
     roots.push(root);
-    const target = join(root, ".projector", "schemas", "canonical-document-v2.schema.json");
+    const target = join(root, ".projector", "schemas", "canonical-concept-v2.schema.json");
     await mkdir(join(target, ".."), { recursive: true });
     await writeFile(target, "{}\n");
 

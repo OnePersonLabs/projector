@@ -210,12 +210,12 @@ describe("project readiness metadata inspection", () => {
     await expect(initializePreparedProject(root, { package: packageIdentity })).resolves.toMatchObject({ created: false });
     expect(await readFile(join(root, ".projector", "config.toml"), "utf8")).toMatch(/^#:schema schemas\/projector-config-v1\.schema\.json\n/u);
     expect(JSON.parse(await readFile(join(root, ".projector", "schemas", "projector-config-v1.schema.json"), "utf8")))
-      .toMatchObject({ $schema: "https://json-schema.org/draft/2020-12/schema" });
+      .toMatchObject({ $schema: "http://json-schema.org/draft-04/schema#" });
   });
 
   test("leaves configuration unpublished when schema staging fails", async () => {
     const root = await repository();
-    const schemaPath = join(root, ".projector", "schemas", "canonical-document-v2.schema.json");
+    const schemaPath = join(root, ".projector", "schemas", "canonical-concept-v2.schema.json");
     await mkdir(join(schemaPath, ".."), { recursive: true });
     await writeFile(schemaPath, "{}\n");
 
