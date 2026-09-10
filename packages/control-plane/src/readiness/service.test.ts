@@ -54,6 +54,54 @@ describe("project readiness metadata inspection", () => {
     });
   });
 
+  test("requires recovery when a recognized pending migration survives matching prepared metadata", async () => {
+    const root = await repository();
+    await mkdir(join(root, ".projector", "runtime", "migrations"), { recursive: true });
+    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
+    await writeFile(join(root, ".projector", "runtime", "migrations", "pending.json"), JSON.stringify({
+      apiVersion: "projector.pending-project-data-migration/v1",
+      migrationId: "migration:prepared-data",
+      sourceSnapshotHash: `sha256:v1:${"1".repeat(64)}`,
+      targetSnapshotHash: `sha256:v1:${"2".repeat(64)}`,
+      manifestHash: `sha256:v1:${"3".repeat(64)}`,
+      backup: {
+        id: "backup:prepared-data",
+        location: { kind: "codex-data-relative", path: "projector/backups/published/backup-prepared-data" },
+        manifestHash: `sha256:v1:${"4".repeat(64)}`,
+      },
+      stagingLocation: "runtime/migrations/staging/migration-prepared-data",
+      phase: "publishing",
+      createdAt: "2026-09-10T12:00:00.000Z",
+    }));
+
+    await expect(inspectProjectReadiness(root, { operation: "context", package: packageIdentity })).resolves.toMatchObject({
+      status: "recovery-required",
+      recovery: {
+        code: "project-data-migration-pending",
+        location: ".projector/runtime/migrations/pending.json",
+        action: expect.stringMatching(/migration:prepared-data.*backup-prepared-data/iu),
+      },
+    });
+  });
+
+  test("preserves an unrecognized pending marker and refuses automated recovery", async () => {
+    const root = await repository();
+    await mkdir(join(root, ".projector", "runtime", "migrations"), { recursive: true });
+    const pendingPath = join(root, ".projector", "runtime", "migrations", "pending.json");
+    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
+    await writeFile(pendingPath, "{unrecognized");
+
+    await expect(inspectProjectReadiness(root, { operation: "verify", package: packageIdentity })).resolves.toMatchObject({
+      status: "unavailable",
+      recovery: {
+        code: "project-data-migration-unrecognized",
+        location: ".projector/runtime/migrations/pending.json",
+        action: expect.stringMatching(/preserve.*inspect/iu),
+      },
+    });
+    expect(await readFile(pendingPath, "utf8")).toBe("{unrecognized");
+  });
+
   test("does not treat a newer, mixed, or malformed marker as current", async () => {
     for (const fixture of [
       { name: "newer", files: { "config.toml": 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "3.0.0"\n' } },
