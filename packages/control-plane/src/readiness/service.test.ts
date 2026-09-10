@@ -54,7 +54,7 @@ describe("project readiness metadata inspection", () => {
     });
   });
 
-  test("requires recovery when a recognized pending migration survives matching prepared metadata", async () => {
+  test("requires recovery without claiming an absent marker-declared backup is verified", async () => {
     const root = await repository();
     await mkdir(join(root, ".projector", "runtime", "migrations"), { recursive: true });
     await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
@@ -79,9 +79,11 @@ describe("project readiness metadata inspection", () => {
       recovery: {
         code: "project-data-migration-pending",
         location: ".projector/runtime/migrations/pending.json",
-        action: expect.stringMatching(/migration:prepared-data.*backup-prepared-data/iu),
+        action: expect.stringMatching(/migration:prepared-data.*marker-declared backup backup:prepared-data.*codex-data-relative:projector\/backups\/published\/backup-prepared-data.*verify its existence.*manifest hash/iu),
       },
     });
+    const readiness = await inspectProjectReadiness(root, { operation: "context", package: packageIdentity });
+    expect(readiness.recovery?.action).not.toMatch(/verified backup/iu);
   });
 
   test("preserves an unrecognized pending marker and refuses automated recovery", async () => {

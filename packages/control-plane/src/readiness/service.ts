@@ -141,7 +141,7 @@ function inspectPendingMigration(metadata: MetadataRead, packageIdentity: Packag
     recovery: {
       code: "project-data-migration-pending",
       location,
-      action: `Recover migration ${result.data.migrationId} from recognized bytes; verified backup ${result.data.backup.id} remains at ${result.data.backup.location.path}`,
+      action: `Recover migration ${result.data.migrationId} from recognized marker bytes; resolve the marker-declared backup ${result.data.backup.id} at ${result.data.backup.location.kind}:${result.data.backup.location.path}, then verify its existence and recorded manifest hash before use`,
     },
   });
 }
