@@ -3,7 +3,14 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { hashFramedDomain, hydrateCanonicalDocumentWire, type ContentHash } from "@projector/core";
+import {
+  CanonicalDocumentWireSchemasByKind,
+  CanonicalKindSchema,
+  hashFramedDomain,
+  type CanonicalDocumentWire,
+  type CanonicalKind,
+  type ContentHash,
+} from "@projector/core";
 import { parse as parseToml } from "smol-toml";
 import { validateBenchmarkMetrics, type BenchmarkGateResult } from "./benchmark.js";
 import type { SubsystemClosureReceipt } from "./subsystem-closure.js";
@@ -127,14 +134,69 @@ export function evaluateIndependentConformance(observation: IndependentConforman
     try { parsed = decodeTomlNulls(parseToml(bytes, { integersAsBigInt: "asNeeded" })); }
     catch (error) { throw new Error(`independent raw TOML fixture is malformed at ${path}`, { cause: error }); }
     try {
-      const document = hydrateCanonicalDocumentWire(parsed);
-      return { id: document.id, kind: document.kind, semanticHash: document.semanticHash };
+      const kind = CanonicalKindSchema.parse((parsed as { readonly kind?: unknown }).kind);
+      const wire = CanonicalDocumentWireSchemasByKind[kind].parse(parsed) as CanonicalDocumentWire;
+      return { id: wire.id, kind: wire.kind, semanticHash: independentlyHashWireSemantics(wire) };
     } catch (error) {
       throw new Error(`independent raw TOML fixture does not satisfy canonical semantic schema at ${path}`, { cause: error });
     }
   }).sort((a, b) => a.id.localeCompare(b.id)); const rawIds = canonicalSet(entities.map(({ id }) => id)); const independentSemanticDigest = hashFramedDomain("independent-release-semantics", { schemaId: observation.schemaId, runtimeLane: observation.runtimeLane, entities }); const cleanIds = canonicalSet(observation.clean.entityIds); const incrementalIds = canonicalSet(observation.incremental.entityIds); const changed = new Set(observation.locality.changedEntityIds);
   const reasons = [...(observation.clean.derivedDigest === observation.incremental.derivedDigest ? [] : ["clean and incremental derived observations differ"]), ...(observation.clean.semanticDigest === independentSemanticDigest && observation.incremental.semanticDigest === independentSemanticDigest ? [] : ["derived semantics contradict independent raw fixture interpretation"]), ...(JSON.stringify(cleanIds) === JSON.stringify(rawIds) && JSON.stringify(incrementalIds) === JSON.stringify(rawIds) ? [] : ["derived observations contradict independent raw canonical identities"]), ...(observation.locality.recomputedEntityIds.every((id) => changed.has(id)) ? [] : ["incremental recomputation escaped the changed dependency scope"]), ...(observation.evidenceIds.length > 0 && observation.rawDocuments.length > 0 ? [] : ["independent raw evidence is missing"] )];
   return { passed: reasons.length === 0, reasons, contentHash: hashFramedDomain("independent-release-conformance", observation) };
+}
+
+const lifecycleMirrorByKind: Readonly<Partial<Record<CanonicalKind, "status" | "lifecycle" | "active">>> = Object.freeze({
+  concept: "status",
+  requirement: "status",
+  "behavioral-scenario": "status",
+  relation: "active",
+  "projection-lens": "status",
+  "semantic-representation-profile": "status",
+  "authority-record": "status",
+  "architecture-decision": "lifecycle",
+  "architecture-concern": "status",
+  "developer-preference": "status",
+  exception: "status",
+});
+
+const independentSemanticPathsByKind: Readonly<Record<CanonicalKind, readonly string[]>> = Object.freeze({
+  concept: ["kind", "statement", "status", "tags"],
+  requirement: ["statement", "status", "scope"],
+  "behavioral-scenario": ["status", "scope", "steps"],
+  relation: ["fromId", "toId", "type", "active", "confidence"],
+  lineage: ["kind", "fromIds", "toIds", "reason", "stateDigest"],
+  tombstone: ["entityId", "deletedAtRevision", "lastSemanticHash", "replacementIds", "reason"],
+  rule: ["version", "effect", "authorityClass", "governanceBasis", "selector", "predicates", "advisoryPayload", "conflictPolicy", "validatorIds", "transformIds"],
+  "projection-lens": ["version", "status", "realizesConceptKinds", "selector", "contributions", "expectedProjections", "rules", "impactRules", "recognizers", "validators", "transforms", "migrations", "conflictsWith", "compatibleWith", "authorityRecordId", "governanceBasis"],
+  "semantic-representation-profile": ["version", "status", "target", "selector", "optimization", "protectedDimensions", "styleRules", "generatorId", "validatorIds", "tokenizerProfileId", "fallbackProfileId"],
+  "authority-record": ["subjectId", "status", "conclusion", "assumptions", "reconsiderWhen", "evidenceRefreshPolicy", "vector", "assessmentConfidence", "evidence", "governanceRiskClass", "decidedBy"],
+  "architecture-decision": ["concernId", "decision", "selectedOptionKey", "scope", "lifecycle", "authorityRecordId", "governanceBasis", "consequences", "appliedPreferences", "supersedesDecisionIds", "migrationId"],
+  "architecture-concern": ["question", "scope", "sourceClass", "status", "materiality", "activationReasons", "relatedConceptIds", "relatedRequirementIds", "decisionIds", "deferral", "evidence"],
+  "developer-preference": ["scope", "selector", "strength", "statement", "status", "sourceClass"],
+  exception: ["selector", "exceptedRuleIds", "exceptedLensIds", "exceptedExpectationIds", "rationale", "evidence", "owner", "reviewOrExpiryTrigger", "invalidationConditions", "exitCriteria", "status"],
+  migration: ["sourceLensRef", "targetLensRef", "phase", "entryCriteria", "exitCriteria", "compatibilityStrategy", "allowedTemporaryDivergenceIds", "generatedOutputOverlays", "validationObligations", "rollbackPlan", "compensationPlan", "cleanupResidueDetector"],
+  "transaction-receipt": ["planId", "semanticChangeId", "riskClass", "beforeState", "afterState", "changedCanonicalEntityIds", "changedRequirementIds", "changedScenarioIds", "changedUnitIds", "validationSummaryHash", "certificateHash", "rollbackRef"],
+});
+
+function independentlyHashWireSemantics(wire: CanonicalDocumentWire): ContentHash {
+  const lifecycleMirror = lifecycleMirrorByKind[wire.kind];
+  const payload: Record<string, unknown> = {
+    ...wire.payload,
+    ...(lifecycleMirror === "active" ? { active: wire.lifecycle === "active" }
+      : lifecycleMirror === undefined ? {}
+        : { [lifecycleMirror]: wire.lifecycle }),
+  };
+  const projection = Object.fromEntries(independentSemanticPathsByKind[wire.kind].map((path) => [path, valueAtPath(payload, path)]));
+  return hashFramedDomain("semantic", { kind: wire.kind, projection });
+}
+
+function valueAtPath(value: unknown, path: string): unknown {
+  let current = value;
+  for (const segment of path.split(".")) {
+    if (typeof current !== "object" || current === null || !(segment in current)) return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
 }
 
 function decodeTomlNulls(value: unknown): unknown {
