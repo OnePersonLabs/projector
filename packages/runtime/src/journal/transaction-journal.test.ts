@@ -318,6 +318,28 @@ describe("FileTransactionJournal", () => {
     expect(exact.contentHash).toBe(hashFileTransactionJournalBytes(persisted));
   });
 
+  it("reflushes an exact committed record after interruption between publication and file flush", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-journal-publication-"));
+    const paths = await RepositoryPathService.create(root);
+    const interrupted = new FileTransactionJournal(paths, {
+      now: () => new Date("2026-08-07T12:00:00.000Z"),
+      crash: (point) => {
+        if (point === "after-record-publication-before-flush:committed") {
+          throw new Error("crash:committed-publication");
+        }
+      },
+    });
+    const transaction = await interrupted.begin(beginInput("tx-interrupted-commit-flush"));
+    await transaction.writeFile("sample.txt", "committed");
+    for (const phase of phasesAfterMutation) await transaction.transition(phase);
+
+    await expect(transaction.commit()).rejects.toThrow("crash:committed-publication");
+    const restarted = new FileTransactionJournal(await RepositoryPathService.create(root));
+    const durable = await restarted.ensureRecordDurable("tx-interrupted-commit-flush");
+    expect(durable.record.entry.phase).toBe("committed");
+    expect(durable.contentHash).toBe(hashFileTransactionJournalBytes(durable.bytes));
+  });
+
   it("keeps a committed record immutable when metadata mutators are called", async () => {
     const { journal } = await harness();
     const transaction = await journal.begin(beginInput("tx-committed-immutable"));

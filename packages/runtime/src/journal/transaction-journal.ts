@@ -45,6 +45,7 @@ export type JournalCrashPoint =
   | "after-operation-intent"
   | "after-operation-apply"
   | "after-new-record-claim"
+  | `after-record-publication-before-flush:${TransactionPhase}`
   | `after-phase:${TransactionPhase}`
   | `after-operation-revert:${string}`;
 
@@ -118,6 +119,11 @@ export interface ExactFileTransactionJournalRecord {
   record: DurableTransactionRecord;
   bytes: Buffer;
   contentHash: ContentHash;
+}
+
+export interface ExactFileTransactionJournalState extends ExactFileTransactionJournalRecord {
+  matchesRecordedAfterState: boolean;
+  mismatchedPaths: string[];
 }
 
 export function hashFileTransactionJournalBytes(bytes: Uint8Array): ContentHash {
@@ -348,6 +354,36 @@ export class FileTransactionJournal {
       throw new JournalRecoveryRequiredError("Journal identity or worktree binding does not match its path");
     }
     return { record, bytes, contentHash: hashFileTransactionJournalBytes(bytes) };
+  }
+
+  async ensureRecordDurable(transactionId: string): Promise<ExactFileTransactionJournalRecord> {
+    const path = await this.recordPath(transactionId);
+    const expected = await readBoundedRegularFile(path, maximumJournalBytes);
+    await flushPublishedJournalRecord(path, expected);
+    const exact = await this.readExact(transactionId);
+    if (!exact.bytes.equals(expected)) {
+      throw new JournalRecoveryRequiredError("Journal record changed while its publication was confirmed");
+    }
+    return exact;
+  }
+
+  async inspectRecordedAfterState(transactionId: string): Promise<ExactFileTransactionJournalState> {
+    const exact = await this.readExact(transactionId);
+    const finalByPath = new Map<string, PathSnapshot>();
+    for (const operation of exact.record.operations) {
+      for (const change of operation.changes) finalByPath.set(change.path, change.after);
+    }
+    const mismatchedPaths: string[] = [];
+    for (const [path, expected] of finalByPath) {
+      const observed = await this.snapshot(path, exact.record.allowedWriteRoots);
+      if (!sameSnapshot(observed, expected)) mismatchedPaths.push(path);
+    }
+    mismatchedPaths.sort();
+    return {
+      ...exact,
+      matchesRecordedAfterState: mismatchedPaths.length === 0,
+      mismatchedPaths,
+    };
   }
 
   async recoverIncomplete(options: RecoveryOptions = {}): Promise<RecoveryResult[]> {
@@ -597,9 +633,10 @@ export class FileTransactionJournal {
     const destination = await this.recordPath(record.entry.transactionId);
     const directory = dirname(destination);
     const temporary = join(directory, `.${recordFileName(record.entry.transactionId)}.${randomUUID()}.tmp`);
+    const bytes = Buffer.from(`${JSON.stringify(record)}\n`, "utf8");
     const handle = await open(temporary, "wx");
     try {
-      await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8");
+      await handle.writeFile(bytes);
       await handle.sync();
     } finally {
       await handle.close();
@@ -607,6 +644,8 @@ export class FileTransactionJournal {
     if (mustBeNew) {
       try {
         await link(temporary, destination);
+        this.inject(`after-record-publication-before-flush:${record.entry.phase}`);
+        await flushPublishedJournalRecord(destination, bytes);
         await syncDirectory(directory);
         this.inject("after-new-record-claim");
       } catch (error) {
@@ -619,6 +658,8 @@ export class FileTransactionJournal {
       return;
     }
     await publishJournalRecord(temporary, destination, this.renameRecord, this.platform);
+    this.inject(`after-record-publication-before-flush:${record.entry.phase}`);
+    await flushPublishedJournalRecord(destination, bytes);
     await syncDirectory(directory);
   }
 
@@ -695,6 +736,21 @@ async function readBoundedRegularFile(path: string, maximumBytes: number): Promi
       throw new JournalRecoveryRequiredError(`Journal record changed while it was read: ${path}`);
     }
     return bytes;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function flushPublishedJournalRecord(path: string, expected: Uint8Array): Promise<void> {
+  const handle = await open(path, constants.O_RDWR | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const status = await handle.stat();
+    if (!status.isFile()) throw new JournalRecoveryRequiredError(`Published journal is not a regular file: ${path}`);
+    await handle.sync();
+    const observed = await handle.readFile();
+    if (!observed.equals(expected)) {
+      throw new JournalRecoveryRequiredError(`Published journal bytes changed during durable flush: ${path}`);
+    }
   } finally {
     await handle.close();
   }

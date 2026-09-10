@@ -43,6 +43,7 @@ export interface ProjectBackupDependencies {
   crash?: (point: ProjectBackupCrashPoint) => void;
   afterNamespacePublished?: (path: string) => void | Promise<void>;
   syncPublished?: (handle: FileHandle) => Promise<void>;
+  platform?: NodeJS.Platform;
 }
 
 export class ProjectBackupError extends Error {
@@ -132,6 +133,7 @@ export async function createProjectBackup(
       throw error;
     }
     namespacePublished = true;
+    await syncDirectory(codexDataRoot, dependencies.platform ?? process.platform);
     dependencies.crash?.("after-namespace-publish");
     await dependencies.afterNamespacePublished?.(backupPath);
     await flushPublished(backupPath, dependencies);
@@ -140,6 +142,7 @@ export async function createProjectBackup(
       throw new ProjectBackupError("Published backup archive failed exact verification", backupPath);
     }
     await rm(temporaryPath);
+    await syncDirectory(codexDataRoot, dependencies.platform ?? process.platform);
     return resultFromInspection(backupPath, codexDataRoot, published);
   } catch (error) {
     const recoveryPath = namespacePublished ? backupPath : temporaryPath;
@@ -185,6 +188,7 @@ async function recoverPublishedArchive(
   catch (error) {
     throw new ProjectBackupError(`Existing backup archive could not be flushed: ${errorMessage(error)}`, path, { cause: error });
   }
+  await syncDirectory(codexDataRoot, dependencies.platform ?? process.platform);
   inspection = await inspectArchive(path, backupId);
   return resultFromInspection(path, codexDataRoot, inspection);
 }
@@ -205,6 +209,18 @@ async function flushPublished(path: string, dependencies: ProjectBackupDependenc
   try { await (dependencies.syncPublished ?? ((file) => file.sync()))(handle); }
   catch (error) { throw new ProjectBackupError(`Published backup archive flush failed: ${errorMessage(error)}`, path, { cause: error }); }
   finally { await handle.close(); }
+}
+
+async function syncDirectory(path: string, platform: NodeJS.Platform): Promise<void> {
+  const handle = await open(path, "r");
+  try { await handle.sync(); }
+  catch (error) {
+    if (
+      platform === "win32" &&
+      (hasCode(error, "EINVAL") || hasCode(error, "ENOTSUP") || hasCode(error, "EPERM"))
+    ) return;
+    throw error;
+  } finally { await handle.close(); }
 }
 
 async function inspectArchive(path: string, expectedBackupId: string): Promise<ArchiveInspection> {
