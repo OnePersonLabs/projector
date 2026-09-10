@@ -2,7 +2,14 @@ import { mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ProjectReadinessSchema, type PackageIdentity, type ProjectReadiness, type ProjectorOperation } from "@projector/core";
+import {
+  ProjectReadinessSchema,
+  ProjectorOperationInputSchemas,
+  ProjectorOperationRequestSchema,
+  type PackageIdentity,
+  type ProjectReadiness,
+  type ProjectorOperation,
+} from "@projector/core";
 import { afterEach, describe, expect, test } from "vitest";
 import { z } from "zod";
 
@@ -11,7 +18,6 @@ import {
   defineProjectorOperationHandler,
   OperationCapabilityDiscoverySchema,
   type OperationRunnerPorts,
-  type OrdinaryProjectorOperation,
   type ProjectorOperationHandler,
 } from "./operation-runner.js";
 
@@ -65,11 +71,20 @@ function ports(overrides: Partial<OperationRunnerPorts> = {}): OperationRunnerPo
 
 const handlerOutputSchema = z.strictObject({ valid: z.boolean() });
 
-function handler<const TOperation extends OrdinaryProjectorOperation>(
-  operation: TOperation = "verify" as TOperation,
-  execute: ProjectorOperationHandler<TOperation, typeof handlerOutputSchema>["execute"] = async () => ({ valid: true }),
-): ProjectorOperationHandler<TOperation, typeof handlerOutputSchema> {
-  return defineProjectorOperationHandler({ operation, outputSchema: handlerOutputSchema, execute });
+function handler(
+  operation: "verify" = "verify",
+  execute: ProjectorOperationHandler<
+    "verify",
+    typeof ProjectorOperationInputSchemas.verify,
+    typeof handlerOutputSchema
+  >["execute"] = async () => ({ valid: true }),
+): ProjectorOperationHandler<"verify", typeof ProjectorOperationInputSchemas.verify, typeof handlerOutputSchema> {
+  return defineProjectorOperationHandler({
+    operation,
+    inputSchema: ProjectorOperationInputSchemas.verify,
+    outputSchema: handlerOutputSchema,
+    execute,
+  });
 }
 
 describe("bounded Projector operation runner", () => {
@@ -262,6 +277,7 @@ describe("bounded Projector operation runner", () => {
     const outputSchema = z.object({ valid: z.boolean() });
     const strippingHandler = defineProjectorOperationHandler({
       operation: "verify",
+      inputSchema: ProjectorOperationInputSchemas.verify,
       outputSchema,
       execute: async () => ({ valid: true, undeclared: "would be stripped" }),
     });
@@ -282,6 +298,7 @@ describe("bounded Projector operation runner", () => {
     const outputSchema = z.strictObject({ count: z.coerce.number() });
     const coercingHandler = defineProjectorOperationHandler({
       operation: "verify",
+      inputSchema: ProjectorOperationInputSchemas.verify,
       outputSchema,
       execute: async () => ({ count: "7" }) as never,
     });
@@ -320,6 +337,7 @@ describe("bounded Projector operation runner", () => {
       packagedRoot: root,
       handlers: [defineProjectorOperationHandler({
         operation: "verify",
+        inputSchema: ProjectorOperationInputSchemas.verify,
         outputSchema: nonJsonSchema,
         execute: async () => new Date("2026-09-10T00:00:00.000Z"),
       })],
@@ -331,7 +349,7 @@ describe("bounded Projector operation runner", () => {
     });
   });
 
-  test("reports a canonical but unregistered operation as unavailable", async () => {
+  test("reports an unregistered application operation without pretending to validate owner input", async () => {
     const root = await packagedRoot();
     let accessed = false;
     const runner = await createProjectorOperationRunner({
@@ -345,12 +363,57 @@ describe("bounded Projector operation runner", () => {
       }),
     });
 
-    await expect(runner.execute(request("verify"))).resolves.toMatchObject({
+    await expect(runner.execute(request("application.observe", { ownerSchemaIsUnavailable: { future: true } }))).resolves.toMatchObject({
       status: "unavailable",
+      operation: "application.observe",
       package: { name: "@projector/cli", version: "7.4.2" },
       error: { code: "operation-unregistered", retriable: false },
     });
     expect(accessed).toBe(false);
+  });
+
+  test("executes a registered application operation through its exact owner input schema", async () => {
+    const root = await packagedRoot();
+    const inputSchema = z.strictObject({
+      plan: z.strictObject({
+        schemaVersion: z.literal("test-application-plan@1"),
+        runId: z.string().min(1),
+      }),
+    });
+    const outputSchema = z.strictObject({ observedRunId: z.string().min(1) });
+    let invocations = 0;
+    const applicationHandler = defineProjectorOperationHandler({
+      operation: "application.observe",
+      inputSchema,
+      outputSchema,
+      execute: async (operationRequest) => {
+        invocations += 1;
+        return { observedRunId: operationRequest.input.plan.runId };
+      },
+    });
+    const applicationRequest = request("application.observe", {
+      plan: { schemaVersion: "test-application-plan@1", runId: "run:17" },
+    });
+    expect(ProjectorOperationRequestSchema.safeParse(applicationRequest).success).toBe(false);
+
+    const runner = await createProjectorOperationRunner({
+      packagedRoot: root,
+      handlers: [applicationHandler],
+      ports: ports(),
+    });
+    await expect(runner.execute(applicationRequest)).resolves.toMatchObject({
+      status: "succeeded",
+      operation: "application.observe",
+      output: { observedRunId: "run:17" },
+    });
+    await expect(runner.execute(request("application.observe", {
+      plan: { schemaVersion: "test-application-plan@1", runId: "run:18" },
+      undeclared: true,
+    }))).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "operation-failed", message: expect.stringMatching(/unrecognized key/iu) },
+    });
+    expect(invocations).toBe(1);
   });
 
   test("keeps registry reachability, readiness, and direct host observations distinct", async () => {

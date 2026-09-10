@@ -5,26 +5,45 @@ import { join } from "node:path";
 import {
   PackageIdentitySchema,
   ProjectReadinessSchema,
-  ProjectorOperationRequestSchema,
+  ProjectorOperationInputSchemas,
   ProjectorOperationSchema,
   canonicalJson,
+  createProjectorOperationRequestSchema,
   createProjectorOperationResultSchema,
+  projectorOperationApiVersion,
   projectorOperationResultApiVersion,
   type PackageIdentity,
   type ProjectReadiness,
   type ProjectorOperation,
   type ProjectorOperationAction,
   type ProjectorOperationError,
-  type ProjectorOperationRequest,
+  type ProjectorOperationRequestFor,
 } from "@projector/core";
 import type { PreparedProjectInitializationResult } from "@projector/control-plane";
 import { z } from "zod";
 
 const maximumPackageManifestBytes = 16 * 1024;
 const ordinaryOperationSchema = ProjectorOperationSchema.exclude(["status", "init"]);
+const operationEnvelopeSchema = z.strictObject({
+  apiVersion: z.literal(projectorOperationApiVersion),
+  operation: ProjectorOperationSchema,
+  repositoryRoot: z.string().min(1),
+  requestId: z.string().min(1).optional(),
+  input: z.unknown(),
+}).superRefine((envelope, context) => {
+  if (!Object.hasOwn(envelope, "input")) {
+    context.addIssue({ code: "custom", path: ["input"], message: "Operation input is required" });
+  }
+});
 
 export type OrdinaryProjectorOperation = z.infer<typeof ordinaryOperationSchema>;
-export type OrdinaryProjectorOperationRequest = Exclude<ProjectorOperationRequest, { operation: "status" | "init" }>;
+type ProjectorOperationEnvelope = z.infer<typeof operationEnvelopeSchema>;
+export type RegisteredProjectorOperationRequest<
+  TOperation extends OrdinaryProjectorOperation,
+  TInputSchema extends z.ZodObject,
+> = Omit<ProjectorOperationRequestFor<TOperation, TInputSchema>, "input"> & {
+  readonly input: z.output<TInputSchema>;
+};
 
 export interface OperationHandlerContext {
   readonly package: PackageIdentity;
@@ -35,34 +54,38 @@ export interface OperationHandlerContext {
 
 export interface ProjectorOperationHandler<
   TOperation extends OrdinaryProjectorOperation = OrdinaryProjectorOperation,
+  TInputSchema extends z.ZodObject = z.ZodObject,
   TOutputSchema extends z.ZodType = z.ZodType,
 > {
   readonly operation: TOperation;
+  readonly inputSchema: TInputSchema;
   readonly outputSchema: TOutputSchema;
   readonly execute: (
-    request: Extract<OrdinaryProjectorOperationRequest, { operation: TOperation }>,
+    request: RegisteredProjectorOperationRequest<TOperation, TInputSchema>,
     context: OperationHandlerContext,
   ) => Promise<z.output<TOutputSchema>> | z.output<TOutputSchema>;
 }
 
 export function defineProjectorOperationHandler<
   const TOperation extends OrdinaryProjectorOperation,
+  const TInputSchema extends z.ZodObject,
   const TOutputSchema extends z.ZodType,
 >(
-  handler: ProjectorOperationHandler<TOperation, TOutputSchema>,
-): ProjectorOperationHandler<TOperation, TOutputSchema> {
+  handler: ProjectorOperationHandler<TOperation, TInputSchema, TOutputSchema>,
+): ProjectorOperationHandler<TOperation, TInputSchema, TOutputSchema> {
   return handler;
 }
 
 type AnyProjectorOperationHandler = {
-  [TOperation in OrdinaryProjectorOperation]: ProjectorOperationHandler<TOperation, z.ZodType>;
+  [TOperation in OrdinaryProjectorOperation]: ProjectorOperationHandler<TOperation, z.ZodObject, z.ZodType>;
 }[OrdinaryProjectorOperation];
 
 interface ErasedProjectorOperationHandler {
   readonly operation: OrdinaryProjectorOperation;
+  readonly inputSchema: z.ZodObject;
   readonly outputSchema: z.ZodType;
   readonly execute: (
-    request: OrdinaryProjectorOperationRequest,
+    request: RegisteredProjectorOperationRequest<OrdinaryProjectorOperation, z.ZodObject>,
     context: OperationHandlerContext,
   ) => Promise<unknown> | unknown;
 }
@@ -214,7 +237,7 @@ export async function createProjectorOperationRunner<
   return {
     package: packageIdentity,
     execute: async (candidate, options = {}) => {
-      const request = ProjectorOperationRequestSchema.parse(candidate);
+      const request = operationEnvelopeSchema.parse(candidate);
       return executeOperation<RunnerOutput>(request, options, packageIdentity, handlers, observedHostCapabilities, input.ports);
     },
     discoverCapabilities: async ({ repositoryRoot, signal }) => {
@@ -230,7 +253,7 @@ export async function createProjectorOperationRunner<
 }
 
 async function executeOperation<TOutput>(
-  request: ProjectorOperationRequest,
+  request: ProjectorOperationEnvelope,
   options: ExecuteOperationOptions,
   packageIdentity: PackageIdentity,
   handlers: ReadonlyMap<OrdinaryProjectorOperation, ErasedProjectorOperationHandler>,
@@ -248,7 +271,8 @@ async function executeOperation<TOutput>(
   try {
     throwIfAborted(options.signal);
     if (request.operation === "status") {
-      const readiness = ProjectReadinessSchema.parse(await ports.inspectReadiness(request.repositoryRoot, {
+      const statusRequest = createProjectorOperationRequestSchema("status", ProjectorOperationInputSchemas.status).parse(request);
+      const readiness = ProjectReadinessSchema.parse(await ports.inspectReadiness(statusRequest.repositoryRoot, {
         operation: "status",
         package: packageIdentity,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -264,7 +288,8 @@ async function executeOperation<TOutput>(
       });
     }
     if (request.operation === "init") {
-      const rawInitialized = await ports.initializer.execute(request.repositoryRoot, {
+      const initRequest = createProjectorOperationRequestSchema("init", ProjectorOperationInputSchemas.init).parse(request);
+      const rawInitialized = await ports.initializer.execute(initRequest.repositoryRoot, {
         package: packageIdentity,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
@@ -303,7 +328,8 @@ async function executeOperation<TOutput>(
       });
     }
 
-    const access = await ports.withProjectOperationAccess(request.repositoryRoot, {
+    const operationRequest = createProjectorOperationRequestSchema(operation, handler.inputSchema).parse(request);
+    const access = await ports.withProjectOperationAccess(operationRequest.repositoryRoot, {
       operation,
       package: packageIdentity,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -311,7 +337,7 @@ async function executeOperation<TOutput>(
       observedReadiness = readiness;
       accessSignal = signal;
       throwIfAborted(signal);
-      const output = await handler.execute(request, {
+      const output = await handler.execute(operationRequest, {
         package: packageIdentity,
         readiness,
         signal,
