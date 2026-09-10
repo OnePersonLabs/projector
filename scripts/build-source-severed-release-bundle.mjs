@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -7,11 +7,12 @@ import { promisify } from "node:util";
 import { buildReleasePackage, releasePackageName, releaseVersion } from "./build-release-package.mjs";
 import { buildPluginRuntime, checkedBuildDirectory, pluginBuildOptions } from "./build-plugin-runtime.mjs";
 import { canonicalJson, inventoryCandidateFiles, releaseCandidateApiVersion, validateReleaseCandidate } from "./release-candidate.mjs";
+import { assertProjectDataMigrationReleaseReady } from "./project-data-migration-release-check.mjs";
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
-export async function buildSourceSeveredReleaseBundle(candidateRoot) {
+export async function buildSourceSeveredReleaseBundle(candidateRoot, options = {}) {
   candidateRoot = await checkedBuildDirectory(resolve(candidateRoot));
   if (basename(candidateRoot) !== "release-candidate") throw new Error("release candidate output must end in release-candidate");
   const stagingRoot = await checkedBuildDirectory(join(dirname(candidateRoot), `projector-release-${process.pid}`));
@@ -30,6 +31,16 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot) {
       ["release/fixtures/held-out-change.json", "fixtures/held-out-change.json"],
     ]) await cp(join(repositoryRoot, source), join(candidateRoot, target));
 
+    const migrationRoot = join(repositoryRoot, "release/project-data-migrations");
+    if (await access(migrationRoot).then(() => true, (error) => error?.code === "ENOENT" ? false : Promise.reject(error))) {
+      await cp(migrationRoot, join(candidateRoot, "project-data/migrations"), { recursive: true });
+    }
+    const formatBaseline = join(repositoryRoot, "release/project-data-format-baseline.json");
+    if (await access(formatBaseline).then(() => true, (error) => error?.code === "ENOENT" ? false : Promise.reject(error))) {
+      await mkdir(join(candidateRoot, "project-data"), { recursive: true });
+      await cp(formatBaseline, join(candidateRoot, "project-data/format-baseline.json"));
+    }
+
     const [{ stdout: packedManifestSource }, { stdout: sourceRevision }] = await Promise.all([
       execute("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }),
       execute("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, encoding: "utf8" }),
@@ -40,6 +51,9 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot) {
     if (pluginManifest.name !== "projector" || pluginManifest.version !== releaseVersion) throw new Error("plugin release identity does not match the candidate");
 
     const files = await inventoryCandidateFiles(candidateRoot);
+    if (options.allowPendingProjectDataMigration !== true) {
+      await assertProjectDataMigrationReleaseReady({ repositoryRoot, packageIdentity: { name: releasePackageName, version: releaseVersion }, files });
+    }
     const manifest = {
       apiVersion: releaseCandidateApiVersion,
       release: { name: releasePackageName, version: releaseVersion, sourceRevision: sourceRevision.trim() },

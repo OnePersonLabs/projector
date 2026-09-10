@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,6 +50,10 @@ export async function buildPluginRuntime(outputRoot, options = {}) {
     const manifest = JSON.parse(await readFile(join(releaseRoot, "package.json"), "utf8"));
     if (manifest.name !== releasePackageName || manifest.version !== releaseVersion || manifest.bin?.projector !== "./bin/projector.js") throw new Error("plugin runtime is not the expected built Projector release");
     await cp(pluginSource, target, { recursive: true, filter: (source) => source !== join(pluginSource, "runtime") });
+    const pluginManifestPath = join(target, ".codex-plugin/plugin.json");
+    const pluginManifest = JSON.parse(await readFile(pluginManifestPath, "utf8"));
+    pluginManifest.version = releaseVersion;
+    await writeFile(pluginManifestPath, `${JSON.stringify(pluginManifest, null, 2)}\n`);
     await mkdir(join(target, "runtime"), { recursive: true });
     await cp(releaseRoot, join(target, "runtime/projector"), { recursive: true });
     return { root: target, releaseVersion, nodeRuntime: { executable: "node", resolution: "host-path" } };
