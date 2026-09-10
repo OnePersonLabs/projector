@@ -24,6 +24,7 @@ async function installedFixture() {
     "import { access, readFile } from 'node:fs/promises';",
     "import { join } from 'node:path';",
     "export function createInstalledProjectorApplicationEvidenceHost() { return { fixture: true }; }",
+    "export function createInstalledPsychordObservationFactory() { return async () => { throw new Error('fixture observation should not run'); }; }",
     "export async function createBundledProjectorOperationRunner({ packagedRoot, applicationEvidence }) {",
     " if (typeof applicationEvidence !== 'function') throw new Error('application evidence host missing');",
     " const manifest = JSON.parse(await readFile(join(packagedRoot, 'package.json'), 'utf8'));",

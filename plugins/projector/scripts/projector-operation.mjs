@@ -51,14 +51,18 @@ async function main() {
   if (!/^24\./u.test(process.versions.node)) throw new Error(`Projector requires Node 24 on PATH; resolved ${process.version}.`);
   const request = JSON.parse(await requestSource());
   const moduleUrl = pathToFileURL(resolve(packagedRoot, "exports/operations.js")).href;
-  const { createBundledProjectorOperationRunner, createInstalledProjectorApplicationEvidenceHost } = await import(moduleUrl);
-  if (typeof createBundledProjectorOperationRunner !== "function" || typeof createInstalledProjectorApplicationEvidenceHost !== "function") throw new Error("The installed Projector package does not export its operation runner and application evidence host");
+  const { createBundledProjectorOperationRunner, createInstalledProjectorApplicationEvidenceHost, createInstalledPsychordObservationFactory } = await import(moduleUrl);
+  if (typeof createBundledProjectorOperationRunner !== "function" || typeof createInstalledProjectorApplicationEvidenceHost !== "function" || typeof createInstalledPsychordObservationFactory !== "function") throw new Error("The installed Projector package does not export its operation runner and application observation composition");
   const cancellation = new AbortController();
   const cancel = () => cancellation.abort(new DOMException("Host cancelled Projector operation", "AbortError"));
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
   try {
-    const runner = await createBundledProjectorOperationRunner({ packagedRoot, applicationEvidence: createInstalledProjectorApplicationEvidenceHost });
+    const runner = await createBundledProjectorOperationRunner({
+      packagedRoot,
+      applicationEvidence: createInstalledProjectorApplicationEvidenceHost,
+      ...(request.operation === "application.observe" ? { applicationObservation: createInstalledPsychordObservationFactory() } : {}),
+    });
     const result = await runner.execute(request, { signal: cancellation.signal, environment: process.env });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return result.exitCode;
