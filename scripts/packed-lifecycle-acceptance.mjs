@@ -3,6 +3,7 @@ import { execFile, spawn } from "node:child_process";
 import { access, cp, lstat, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { canonicalJson as candidateJson, hashBytes, hashCanonical, inventoryCandidateFiles, validateReleaseCandidate } from "./release-candidate.mjs";
@@ -73,67 +74,64 @@ function sameStrings(left, right) {
   return canonical([...left].sort()) === canonical([...right].sort());
 }
 
-function option(args, name) {
-  const index = args.indexOf(name);
-  return index < 0 ? undefined : args[index + 1];
-}
-
-function authenticateTrace(trace, direct) {
+function authenticateTrace(trace, plan) {
   let previousHash = null;
   for (const entry of trace) {
     const { entryHash, ...body } = entry;
     assert(body.previousHash === previousHash, "has a broken agent trace chain");
-    assert(body.invocationHash === hash("projector-agent-cli-invocation", { command: body.command, args: body.args }), "has an invalid agent invocation hash");
+    assert(body.invocationHash === hash("projector-agent-operation-invocation", { operation: body.operation, input: body.input }), "has an invalid agent invocation hash");
     if (body.phase === "completed") {
-      assert(body.outputHash === hash("projector-agent-cli-output", { exitCode: body.exitCode, stdout: body.output }), "has an invalid agent output hash");
-      assert(body.diagnosticHash === hash("projector-agent-cli-diagnostic", body.diagnostic), "has an invalid agent diagnostic hash");
+      assert(body.outputHash === hash("projector-agent-operation-output", { exitCode: body.exitCode, stdout: body.output }), "has an invalid agent output hash");
+      assert(body.diagnosticHash === hash("projector-agent-operation-diagnostic", body.diagnostic), "has an invalid agent diagnostic hash");
     } else {
       assert(body.exitCode === null && body.output === null && body.diagnostic === null && body.outputHash === null && body.diagnosticHash === null, "has output on an incomplete agent invocation");
     }
     assert(entryHash === hash("projector-agent-trace-entry", body), "has an invalid agent trace entry hash");
     previousHash = entryHash;
   }
-  const sequence = trace.map(({ phase, command }) => `${phase}:${command}`);
-  const expected = ["invoked:start", "completed:start", "invoked:approve", "completed:approve", "invoked:approve", "completed:approve", "invoked:apply", "invoked:recover", "completed:recover", "invoked:resume", "completed:resume", "invoked:resume", "completed:resume"];
+  const sequence = trace.map(({ phase, operation }) => `${phase}:${operation}`);
+  const expected = ["invoked:change.capture", "completed:change.capture", "invoked:change.plan", "completed:change.plan", "invoked:change.approve", "completed:change.approve", "invoked:change.approve", "completed:change.approve", "invoked:change.apply", "invoked:change.recover", "completed:change.recover", "invoked:change.resume", "completed:change.resume", "invoked:change.resume", "completed:change.resume"];
   assert(canonical(sequence) === canonical(expected), "does not preserve the interrupted invocation and recovery trace");
-  const rejectedInvocation = trace[2]; const rejectedCompletion = trace[3]; const acceptedInvocation = trace[4]; const acceptedCompletion = trace[5];
-  assert(canonical(rejectedInvocation.args) === canonical(rejectedCompletion.args) && canonical(acceptedInvocation.args) === canonical(acceptedCompletion.args), "has mismatched approval invocation/completion arguments");
-  assert(option(rejectedInvocation.args, "--change") === direct.changeSelector && option(acceptedInvocation.args, "--change") === direct.changeSelector, "does not bind approval attempts to the exact change selector");
-  assert(option(rejectedInvocation.args, "--plan-hash") !== direct.planHash && option(acceptedInvocation.args, "--plan-hash") === direct.planHash, "does not preserve the substituted and exact plan hashes");
-  assert(rejectedCompletion.exitCode !== 0 && /(?:plan hash.*(?:does not match|exact)|exact.*plan hash)/iu.test(rejectedCompletion.diagnostic) && acceptedCompletion.exitCode === 0, "does not authenticate substituted plan-hash rejection and exact approval");
-  assert(trace[6]?.exitCode === null && trace[6]?.outputHash === null, "does not leave the killed apply invocation durably open");
+  const rejectedInvocation = trace[4]; const rejectedCompletion = trace[5]; const acceptedInvocation = trace[6]; const acceptedCompletion = trace[7];
+  assert(canonical(rejectedInvocation.input) === canonical(rejectedCompletion.input) && canonical(acceptedInvocation.input) === canonical(acceptedCompletion.input), "has mismatched approval invocation/completion inputs");
+  const rejectedInput = rejectedInvocation.input; const acceptedInput = acceptedInvocation.input;
+  const rejectedResult = JSON.parse(rejectedCompletion.output);
+  assert(rejectedInput.changeSelector === plan.changeSelector && acceptedInput.changeSelector === plan.changeSelector, "does not bind approval attempts to the exact change selector");
+  assert(rejectedInput.planHash !== plan.planHash && acceptedInput.planHash === plan.planHash, "does not preserve the substituted and exact plan hashes");
+  assert(rejectedCompletion.exitCode !== 0 && /(?:plan hash.*(?:does not match|exact)|exact.*plan hash)/iu.test(rejectedResult.error?.message ?? "") && acceptedCompletion.exitCode === 0, "does not authenticate substituted plan-hash rejection and exact approval");
+  assert(trace[8]?.exitCode === null && trace[8]?.outputHash === null, "does not leave the killed apply invocation durably open");
 }
 
 export function verifyPackedLifecycleEvidence(evidence) {
   assert(evidence?.version === 1, "has an unsupported version");
   assert(typeof evidence.runId === "string" && /^[0-9a-f]{8}-[0-9a-f-]{27}$/iu.test(evidence.runId), "has no authenticated run identity");
   assert(typeof evidence.request === "string" && evidence.request.length > 0 && evidence.request !== "repair-governed-state", "uses a fixture-only request");
-  assert(evidence.activation?.initialized === true && evidence.activation?.projectEnabled === true && canonical(evidence.activation?.config) === canonical({ apiVersion: "projector.config/v1", enabled: true }), "did not explicitly activate the held-out repository");
+  assert(evidence.activation?.initialized === true && evidence.activation?.projectEnabled === true && evidence.activation?.config?.apiVersion === "projector.config/v1" && evidence.activation?.config?.enabled === true && evidence.activation?.config?.projectorVersion === "2.1.0", "did not explicitly activate the held-out repository");
   const boundary = evidence.artifactBoundary;
   assert(boundary?.checkoutDependency === "none-declared" && boundary.checkoutPathInput === null && boundary.checkoutAbsenceObservation === "not-claimed" && typeof boundary.candidateManifestHash === "string" && typeof boundary.pluginBundleHash === "string" && boundary.installedSymlinkCount === 0 && boundary.pluginSymlinkCount === 0 && boundary.nodePathEmpty === true && boundary.execution === "trusted-host", "did not prove checkout-independent installed-artifact execution");
-  assert(evidence.direct?.changeSelector === evidence.pause?.changeSelector && evidence.direct?.planHash === evidence.pause?.planHash, "does not match direct and agent plan identity");
-  assert(evidence.pause?.status === "approval-required" && evidence.approval?.status === "approved" && evidence.approval?.planHash === evidence.direct?.planHash, "did not enforce exact plan-hash approval");
+  assert(evidence.plan?.changeSelector === evidence.pause?.changeSelector && evidence.plan?.planHash === evidence.pause?.planHash, "does not match planned and approval-required identity");
+  assert(evidence.pause?.status === "approval-required" && evidence.approval?.status === "approved" && evidence.approval?.planHash === evidence.plan?.planHash, "did not enforce exact plan-hash approval");
   const interruption = evidence.interruption;
   assert(interruption?.terminationRequested === true && interruption.rootExitObserved === true && interruption.journalPhase === "validating" && interruption.mutationObserved === true, "did not prove a bounded validating-phase interruption");
   const windowsCleanupObserved = interruption.cleanupStrategy === "windows-taskkill-tree" && interruption.cleanupStatus === "reported-complete" && interruption.cleanupCommandExitCode === 0 && interruption.rootAbsentObserved === true;
   const posixCleanupRecovered = interruption.cleanupStrategy === "posix-process-group-sigkill" && interruption.cleanupStatus === "unconfirmed" && typeof interruption.cleanupReason === "string" && interruption.cleanupReason.length > 0 && evidence.recovery?.action === "rolled-back" && evidence.recovery?.exactBeforeRestored === true;
   assert(windowsCleanupObserved || posixCleanupRecovered, "did not preserve truthful platform cleanup and recovery evidence");
   assert(evidence.recovery?.action === "rolled-back" && evidence.recovery?.exactBeforeRestored === true, "did not prove exact rollback");
-  assert(evidence.result?.outcome === "success" && evidence.result?.approvalSelector === evidence.approval?.approvalSelector && evidence.result?.planId === evidence.direct?.planId, "does not bind successful result identity");
+  assert(evidence.result?.outcome === "success" && evidence.result?.approvalSelector === evidence.approval?.approvalSelector && evidence.result?.planId === evidence.plan?.planId, "does not bind successful result identity");
   let certificateArtifact; let receipt;
   try { certificateArtifact = JSON.parse(evidence.result?.certificateBytes); receipt = JSON.parse(evidence.result?.receiptBytes); } catch { throw new Error("packed lifecycle evidence has malformed completion artifact bytes"); }
   assert(`${canonicalJson(certificateArtifact)}\n` === evidence.result.certificateBytes && `${canonicalJson(receipt)}\n` === evidence.result.receiptBytes, "has noncanonical persisted completion artifact bytes");
   assert(evidence.result.certificateHash === hashFramedDomain("change-certificate-artifact", certificateArtifact) && evidence.result.receiptHash === hashFramedDomain("transaction-receipt-artifact", receipt) && receipt.certificateHash === evidence.result.certificateHash, "has completion hashes that do not match artifact bytes");
-  assert(sameStrings(evidence.direct.predictedChangedPaths, evidence.result.predictedChangedPaths) && sameStrings(evidence.result.predictedChangedPaths, evidence.result.observedChangedPaths), "has predicted/observed path impact mismatch");
+  assert(sameStrings(evidence.plan.predictedChangedPaths, evidence.result.predictedChangedPaths) && sameStrings(evidence.result.predictedChangedPaths, evidence.result.observedChangedPaths), "has predicted/observed path impact mismatch");
   assert(evidence.result.unexpectedChangedPaths.length === 0 && evidence.result.unexpectedChangedCanonicalIds.length === 0 && evidence.result.planningSurpriseIds.length === 0 && evidence.result.unknowns.length === 0, "has unexplained impact or planning surprise");
   const oracle = evidence.independentOracle; assert(oracle?.beforeExitCode !== 0 && oracle?.afterExitCode === 0 && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oracle?.gitObjectId ?? "") && oracle?.expectedContentHash === oracle?.beforeContentHash && oracle?.beforeContentHash === oracle?.afterContentHash && oracle?.afterContentHash === oracle?.executedContentHash && oracle?.executionSource === "exact-live-tracked-validator", "lacks an independent Git-base desired-behavior oracle");
   const rerun = evidence.fixedPointRerun; assert(rerun?.firstCertificateHash === evidence.result.certificateHash && rerun?.secondCertificateHash === rerun?.firstCertificateHash && rerun?.firstReceiptHash === evidence.result.receiptHash && rerun?.secondReceiptHash === rerun?.firstReceiptHash && rerun?.afterSourceHash === rerun?.rerunSourceHash, "lacks an actual fixed-point rerun");
-  authenticateTrace(evidence.trace, evidence.direct);
+  authenticateTrace(evidence.trace, evidence.plan);
   return hash("packed-held-out-lifecycle-evidence", evidence);
 }
 
 function launch(file, args, options = {}) {
-  const child = spawn(file, args, { cwd: options.cwd, env: options.env ?? {}, detached: options.detached ?? false, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(file, args, { cwd: options.cwd, env: options.env ?? {}, detached: options.detached ?? false, stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
   let stdout = ""; let stderr = ""; let outputBytes = 0; let boundaryFailure; let cleanup;
   child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
   const collect = (stream) => (chunk) => {
@@ -146,6 +144,7 @@ function launch(file, args, options = {}) {
     cleanup ??= terminateProcessTree(child.pid);
   };
   child.stdout.on("data", collect("stdout")); child.stderr.on("data", collect("stderr"));
+  if (options.stdin !== undefined) child.stdin.end(options.stdin);
   const timer = setTimeout(() => {
     boundaryFailure ??= `execution exceeded ${String(options.timeoutMs ?? maximumExecutionMs)}ms`;
     cleanup ??= terminateProcessTree(child.pid);
@@ -296,8 +295,7 @@ export async function runPackedLifecycleAcceptance(input) {
   const runId = randomUUID();
   const pluginRoot = join(input.temporaryRoot, "held-out-plugin");
   const repository = join(input.temporaryRoot, "held-out-repository");
-  const installedCli = join(installedProjector, "bin", "projector.js");
-  const wrapper = join(pluginRoot, "scripts", "projector-change.mjs");
+  const operationEntry = join(pluginRoot, "scripts", "projector-operation.mjs");
   await cp(candidatePluginRoot, pluginRoot, { recursive: true });
   const expectedCopiedPluginFiles = pluginFiles.map(({ path, ...rest }) => ({ path: path.slice(`${candidate.manifest.pluginRoot}/`.length), ...rest }));
   const copiedPluginFiles = await inventoryCandidateFiles(pluginRoot);
@@ -336,36 +334,44 @@ export async function runPackedLifecycleAcceptance(input) {
   await writeFile(join(repository, ".projector", "runtime", "interruption-hold"), "hold\n", "utf8");
 
   const inherited = ["SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "PATH", "TEMP", "TMP", "TMPDIR"].flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]]]);
-  const environment = { ...Object.fromEntries(inherited), HOME: repository, NODE_PATH: "", PROJECTOR_CLI: installedCli };
+  const environment = { ...Object.fromEntries(inherited), HOME: repository, NODE_PATH: "" };
   const hostLaunch = (executable, args, options = {}) => launch(executable, args, { cwd: repository, env: environment, detached: options.detached });
-  const direct = async (args) => (await hostLaunch(process.execPath, [installedCli, ...args]).completed);
   const trace = [];
-  const recordInvocation = (phase, command, args, result) => {
+  const recordInvocation = (phase, operation, input, result) => {
     const previousHash = trace.at(-1)?.entryHash ?? null;
-    const body = { version: 1, phase, command, args, exitCode: result?.exitCode ?? null, invocationHash: hash("projector-agent-cli-invocation", { command, args }), output: result?.stdout ?? null, diagnostic: result?.stderr ?? null, outputHash: result === undefined ? null : hash("projector-agent-cli-output", { exitCode: result.exitCode, stdout: result.stdout }), diagnosticHash: result === undefined ? null : hash("projector-agent-cli-diagnostic", result.stderr), previousHash, recordedAt: new Date().toISOString() };
+    const body = { version: 1, phase, operation, input, exitCode: result?.exitCode ?? null, invocationHash: hash("projector-agent-operation-invocation", { operation, input }), output: result?.stdout ?? null, diagnostic: result?.stderr ?? null, outputHash: result === undefined ? null : hash("projector-agent-operation-output", { exitCode: result.exitCode, stdout: result.stdout }), diagnosticHash: result === undefined ? null : hash("projector-agent-operation-diagnostic", result.stderr), previousHash, recordedAt: new Date().toISOString() };
     trace.push({ ...body, entryHash: hash("projector-agent-trace-entry", body) });
   };
-  const launchAgent = (args, options = {}) => {
-    const [command, ...commandArgs] = args; recordInvocation("invoked", command, commandArgs);
-    const launched = hostLaunch(process.execPath, [wrapper, ...args], { detached: options.detached });
-    const completed = launched.completed.then((result) => { if (options.recordCompletion !== false) recordInvocation("completed", command, commandArgs, result); return result; });
+  const launchAgent = (operation, input, options = {}) => {
+    recordInvocation("invoked", operation, input);
+    const requestEnvelope = { apiVersion: "projector.operation/v1", operation, repositoryRoot: repository, requestId: `${runId}:${trace.length}`, input };
+    const launched = launch(process.execPath, [operationEntry], { cwd: repository, env: environment, detached: options.detached, stdin: `${canonical(requestEnvelope)}\n` });
+    const completed = launched.completed.then((result) => { if (options.recordCompletion !== false) recordInvocation("completed", operation, input, result); return result; });
     return { ...launched, completed };
   };
-  const agent = async (args) => launchAgent(args).completed;
-  const installedVersion = requireExit(await direct(["--version"]), "source-severed installed CLI version").stdout;
-  assert(installedVersion === "2.1.0", "did not execute the installed CLI");
-  const initialized = json(await direct(["init", "--format", "json"]), "explicit held-out repository activation");
-  const activationConfig = JSON.parse(await readFile(join(repository, ".projector", "config.json"), "utf8"));
+  const agentResult = async (operation, input, label, allowed = [0]) => json(await launchAgent(operation, input).completed, label, allowed);
+  const succeededOutput = (result, label) => {
+    assert(result.status === "succeeded" && result.output !== undefined, `${label} did not return a successful operation output`);
+    return result.output;
+  };
+  const initializationRequest = { apiVersion: "projector.operation/v1", operation: "init", repositoryRoot: repository, requestId: `${runId}:init`, input: {} };
+  const initializedEnvelope = json(await launch(process.execPath, [operationEntry], { cwd: repository, env: environment, stdin: `${canonical(initializationRequest)}\n` }).completed, "explicit held-out repository activation");
+  assert(initializedEnvelope.package?.name === "@onepersonlabs/projector" && initializedEnvelope.package?.version === "2.1.0", "did not execute the installed operation package");
+  const initialized = succeededOutput(initializedEnvelope, "initialization");
+  const { parse: parseToml } = await import(pathToFileURL(join(installedProjector, "node_modules/smol-toml/dist/index.js")).href);
+  const activationConfig = parseToml(await readFile(join(repository, ".projector", "config.toml"), "utf8"));
 
-  const directChange = json(await direct(["change", request, "--proposal", proposalPath, "--format", "json"]), "direct held-out change");
-  const directPlan = json(await direct(["plan", directChange.selector, "--format", "json"]), "direct held-out plan");
-  const pause = json(await agent(["start", "--request", request, "--proposal", proposalPath]), "agent held-out start", [3]);
+  const capturedEnvelope = await agentResult("change.capture", { request, proposal }, "agent held-out capture");
+  const captured = succeededOutput(capturedEnvelope, "capture");
+  const plannedEnvelope = await agentResult("change.plan", { changeSelector: captured.selector }, "agent held-out plan");
+  const pause = succeededOutput(plannedEnvelope, "plan");
   const substitutedPlanHash = `${pause.immutablePlanHash.slice(0, -1)}${pause.immutablePlanHash.endsWith("0") ? "1" : "0"}`;
-  const substituted = await agent(["approve", "--change", pause.selector, "--plan-hash", substitutedPlanHash]);
-  assert(substituted.exitCode !== 0 && /(?:plan hash.*(?:does not match|exact)|exact.*plan hash)/iu.test(substituted.stderr), "accepted a substituted plan hash");
-  const approval = json(await agent(["approve", "--change", pause.selector, "--plan-hash", pause.immutablePlanHash]), "agent held-out approval");
+  const substituted = await launchAgent("change.approve", { changeSelector: pause.selector, planHash: substitutedPlanHash }).completed;
+  const substitutedResult = json(substituted, "substituted plan hash", [6]);
+  assert(substitutedResult.status === "failed" && /(?:plan hash.*(?:does not match|exact)|exact.*plan hash)/iu.test(substitutedResult.error?.message ?? ""), "accepted a substituted plan hash");
+  const approval = succeededOutput(await agentResult("change.approve", { changeSelector: pause.selector, planHash: pause.immutablePlanHash }, "agent held-out approval"), "approval");
 
-  const applying = launchAgent(["apply", "--approval", approval.selector], { detached: true, recordCompletion: false });
+  const applying = launchAgent("change.apply", { approvalSelector: approval.selector }, { detached: true, recordCompletion: false });
   const progress = await Promise.race([
     waitForJournalPhase(repository, "validating").then((entry) => ({ kind: "validating", entry })),
     applying.completed.then((result) => ({ kind: "exited", result })),
@@ -378,14 +384,14 @@ export async function runPackedLifecycleAcceptance(input) {
   await rm(join(repository, ".projector", "runtime", "interruption-hold"), { force: true });
   await waitForStaleLease(repository);
 
-  const recovered = json(await agent(["recover", "--approval", approval.selector]), "agent held-out recovery");
+  const recovered = succeededOutput(await agentResult("change.recover", { approvalSelector: approval.selector }, "agent held-out recovery"), "recovery");
   const recovery = recovered.outcomes.find(({ transactionId }) => transactionId === validating.transactionId);
   const recoveredSource = await readFile(join(repository, "src", "format-label.mjs"), "utf8");
   const supplementalAbsent = await pathAbsent(join(repository, "test", "trim-label.test.mjs"));
   const exactBeforeRestored = recoveredSource === beforeSource && supplementalAbsent;
   if (recovery?.action !== "rolled-back" || !exactBeforeRestored) throw new Error(`packed rollback mismatch: ${canonical({ validating, recovered, recovery, recoveredSource, supplementalAbsent })}`);
-  const result = json(await agent(["resume", "--approval", approval.selector]), "agent held-out resume");
-  const fixed = json(await agent(["resume", "--approval", approval.selector]), "agent held-out fixed-point resume");
+  const result = succeededOutput(await agentResult("change.resume", { approvalSelector: approval.selector }, "agent held-out resume"), "resume");
+  const fixed = succeededOutput(await agentResult("change.resume", { approvalSelector: approval.selector }, "agent held-out fixed-point resume"), "fixed-point resume");
   const afterOracle = await hostLaunch(process.execPath, [oracleValidatorPath]).completed;
   const observation = result.validations.find(({ validatorId }) => validatorId === "projector.repository-post-observation")?.details?.observation;
   const independent = result.validations.find(({ validatorId }) => validatorId === "node-independent:test/public-api.test.mjs");
@@ -397,10 +403,10 @@ export async function runPackedLifecycleAcceptance(input) {
     version: 1,
     runId,
     request,
-    activation: { initialized: initialized.initialized === true, projectEnabled: initialized.projectEnabled === true, config: activationConfig },
+    activation: { initialized: initialized.created === true, projectEnabled: initialized.readiness?.status === "ready", config: activationConfig },
     artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", candidateManifestHash: candidate.manifestHash, pluginBundleHash: hashCanonical(copiedPluginFiles), installedSymlinkCount: await countSymlinks(installedProjector), pluginSymlinkCount: await countSymlinks(pluginRoot), nodePathEmpty: environment.NODE_PATH === "", execution: "trusted-host" },
-    direct: { changeSelector: directChange.selector, planHash: directPlan.immutablePlanHash, planId: directPlan.plan.id, predictedChangedPaths: expectedPaths, preview: directPlan.preview },
-    pause: { status: pause.outcome, changeSelector: pause.selector, planHash: pause.immutablePlanHash },
+    plan: { changeSelector: pause.selector, planHash: pause.immutablePlanHash, planId: pause.plan.id, predictedChangedPaths: expectedPaths, preview: pause.preview },
+    pause: { status: "approval-required", changeSelector: pause.selector, planHash: pause.immutablePlanHash },
     approval: { status: approval.kind === "lifecycle-approval" ? "approved" : "invalid", approvalSelector: approval.selector, planHash: approval.immutablePlanHash },
     interruption: { terminationRequested: cleanup.requestedProcessIds.length > 0, rootExitObserved: interrupted.exitCode !== null || interrupted.signal !== null, rootAbsentObserved: cleanup.rootAbsentObserved, cleanupStatus: cleanup.status, cleanupStrategy: cleanup.strategy, cleanupCommandExitCode: cleanup.cleanupCommandExitCode, cleanupReason: cleanup.reason, journalPhase: validating.phase, mutationObserved, requestedProcessCount: cleanup.requestedProcessIds.length },
     recovery: { action: recovery?.action, exactBeforeRestored },
@@ -426,6 +432,6 @@ export async function runPackedLifecycleAcceptance(input) {
     trace,
   };
   const evidenceHash = verifyPackedLifecycleEvidence(evidence);
-  const transcript = { runId, directChange, directPlan, pause, approval, interrupted, recovered, result, fixed, trace };
+  const transcript = { runId, captured, planned: pause, approval, interrupted, recovered, result, fixed, trace };
   return { runId, evidence, evidenceHash, transcript, transcriptHash: hash("packed-held-out-lifecycle-transcript", transcript) };
 }

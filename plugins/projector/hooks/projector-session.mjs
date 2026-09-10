@@ -1,40 +1,19 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { constants } from "node:fs";
-import { access, lstat, readFile } from "node:fs/promises";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
-import { projectorRuntime } from "../scripts/projector-runtime.mjs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 // Advisory only: do not mutate, invoke a model, or create repository authority.
-async function availableCli() {
-  const runtime = await projectorRuntime();
-  if (runtime.prefix.length !== 0) {
-    try { await access(runtime.cli, constants.R_OK); return true; }
-    catch (error) {
-      if (error?.code === "ENOENT") return false;
-      throw error;
-    }
-  }
-  const configured = process.env.PROJECTOR_CLI?.trim();
-  const candidates = configured
-    ? [isAbsolute(configured) ? configured : resolve(configured)]
-    : (process.env.PATH ?? "").split(delimiter).map(directory => join(directory, process.platform === "win32" ? "projector.exe" : "projector"));
-  for (const candidate of candidates) {
-    try {
-      if (!(await lstat(candidate)).isFile()) continue;
-      await access(candidate, /\.(?:c|m)?js$/u.test(candidate) ? constants.R_OK : constants.X_OK);
-      return true;
-    } catch (error) {
-      if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
-    }
-  }
-  return false;
-}
-
-async function optionalMetadata(path) {
-  try { return await lstat(path); }
-  catch (error) {
-    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return undefined;
+async function loadRunner() {
+  if (!/^24\./u.test(process.versions.node)) throw new Error(`Projector requires Node 24 on PATH; resolved ${process.version}.`);
+  const packagedRoot = resolve(import.meta.dirname, "../runtime/projector");
+  const modulePath = resolve(packagedRoot, "exports/operations.js");
+  try {
+    const { createBundledProjectorOperationRunner } = await import(pathToFileURL(modulePath).href);
+    if (typeof createBundledProjectorOperationRunner !== "function") throw new Error("The installed Projector package does not export its operation runner");
+    return createBundledProjectorOperationRunner({ packagedRoot });
+  } catch (error) {
+    if (error?.code === "ERR_MODULE_NOT_FOUND" && error?.url === pathToFileURL(modulePath).href) return undefined;
     throw error;
   }
 }
@@ -47,17 +26,18 @@ async function main() {
     if (typeof error?.status === "number") return;
     throw error;
   }
-  const state = join(root, ".projector");
-  const config = join(state, "config.json");
-  const stateMetadata = await optionalMetadata(state);
-  const configMetadata = await optionalMetadata(config);
-  if (stateMetadata === undefined || configMetadata === undefined || !stateMetadata.isDirectory() || stateMetadata.isSymbolicLink() || configMetadata.isSymbolicLink()) return;
-  const source = await readFile(config, "utf8");
-  const enabled = '{"apiVersion":"projector.config/v1","enabled":true}';
-  if ((source !== enabled && source !== enabled + "\n") || !await availableCli()) return;
+  const runner = await loadRunner();
+  if (runner === undefined) return;
+  const result = await runner.execute({
+    apiVersion: "projector.operation/v1",
+    operation: "status",
+    repositoryRoot: root,
+    input: {},
+  });
+  if (result.readiness.status !== "ready") return;
   process.stdout.write(JSON.stringify({ hookSpecificOutput: {
     hookEventName: "SessionStart",
-    additionalContext: "This repository has Projector enabled and its CLI is present. Use projector.status to check tool availability. Retrieve projector.context before choosing edit paths; reconcile saved context before reuse. Canonical records and reports remain claims to verify.",
+    additionalContext: "Projector is active and its bundled operation runner is present. Use scripts/projector-operation.mjs with versioned JSON requests. Run status, then context before edits; reconcile retained context before reuse. Results do not authorize mutation.",
   } }) + "\n");
 }
 

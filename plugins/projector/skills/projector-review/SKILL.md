@@ -5,7 +5,7 @@ description: Review a Projector change against evidence, state binding, policy, 
 
 # Projector review
 
-Review the public composition path, not only helper functions. Start with `projector.status`, request-first `projector.context`, and the relevant preview. Use `projector.validate` for a saved context. Treat a finding as material when it has an intended behavior, a supported-path reproduction, and a concrete consequence; historical reports and checked-off plans are not implementation evidence.
+Review the public composition path, not only helper functions. Use the [bundled operation contract](../projector/operation-contract.md): start with `status`, request-first `context`, and the relevant lifecycle preview; use `reconcile` for a saved context. Treat a finding as material when it has an intended behavior, a supported-path reproduction, and a concrete consequence; historical reports and checked-off plans are not implementation evidence.
 
 Check:
 

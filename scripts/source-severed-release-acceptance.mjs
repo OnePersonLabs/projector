@@ -27,17 +27,17 @@ export async function runSourceSeveredReleaseAcceptance(candidateRoot) {
   const candidate = await validateReleaseCandidate(candidateRoot);
   const { manifest, root } = candidate;
   const tarball = join(root, manifest.tarballPath);
-  const [{ stdout: packageSource }, pluginSource, mcpSource, fixtureSource] = await Promise.all([
+  const [{ stdout: packageSource }, pluginSource, operationSource, fixtureSource] = await Promise.all([
     execute("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }),
     readFile(join(root, manifest.pluginRoot, ".codex-plugin/plugin.json"), "utf8"),
-    readFile(join(root, manifest.pluginRoot, "scripts/projector-mcp.mjs"), "utf8"),
+    readFile(join(root, manifest.pluginRoot, "scripts/projector-operation.mjs"), "utf8"),
     readFile(join(root, manifest.fixturePath), "utf8"),
   ]);
   const packageManifest = JSON.parse(packageSource);
   const pluginManifest = JSON.parse(pluginSource);
   const fixture = JSON.parse(fixtureSource);
   if (packageManifest.name !== releasePackageName || packageManifest.version !== releaseVersion || packageManifest.bin?.projector !== "./bin/projector.js") throw new Error("downloaded tarball has the wrong release identity");
-  if (pluginManifest.name !== "projector" || pluginManifest.version !== releaseVersion || !mcpSource.includes(`version: "${releaseVersion}"`)) throw new Error("downloaded plugin has the wrong release identity");
+  if (packageManifest.exports?.["./operations"] === undefined || pluginManifest.name !== "projector" || pluginManifest.version !== releaseVersion || pluginManifest.mcpServers !== undefined || !operationSource.includes("createBundledProjectorOperationRunner")) throw new Error("downloaded plugin has the wrong operation-runner identity");
   if (fixture.version !== 1 || typeof fixture.request !== "string" || !Array.isArray(fixture.expectedPaths)) throw new Error("downloaded held-out fixture has an invalid contract");
 
   const resultsRoot = join(root, "results");

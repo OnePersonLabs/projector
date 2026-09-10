@@ -1,5 +1,5 @@
-import { exec, execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { exec, execFile, spawn } from "node:child_process";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -19,7 +19,7 @@ const temporary = async () => {
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))));
 
 describe("standalone plugin assembly", () => {
-  it("packages the release CLI and resolves Node through the host PATH", async () => {
+  it("packages the release operation runner and resolves Node through the host PATH", async () => {
     const root = await temporary();
     const plugin = join(root, "installed plugin");
     const result = await buildPluginRuntime(plugin);
@@ -27,9 +27,8 @@ describe("standalone plugin assembly", () => {
     expect(result.nodeRuntime).toEqual({ executable: "node", resolution: "host-path" });
     expect(await readdir(join(plugin, "runtime"))).toEqual(["projector"]);
     expect(JSON.parse(await readFile(join(plugin, "runtime/projector/package.json"), "utf8"))).toMatchObject({ name: "@onepersonlabs/projector", version: "2.1.0" });
-    const mcp = JSON.parse(await readFile(join(plugin, ".mcp.json"), "utf8"));
-    expect(mcp.mcpServers.projector.command).toBe("node");
-    const hostNode = await execute(mcp.mcpServers.projector.command, ["--version"], { cwd: plugin, env: { ...process.env, NODE_PATH: "" }, encoding: "utf8" });
+    await expect(access(join(plugin, ".mcp.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    const hostNode = await execute("node", ["--version"], { cwd: plugin, env: { ...process.env, NODE_PATH: "" }, encoding: "utf8" });
     expect(hostNode.stdout.trim()).toBe(process.version);
     const hook = JSON.parse(await readFile(join(plugin, "hooks/hooks.json"), "utf8")).hooks.SessionStart[0].hooks[0];
     expect(hook.command).toBe('node "${PLUGIN_ROOT}/hooks/projector-session.mjs"');
@@ -39,10 +38,22 @@ describe("standalone plugin assembly", () => {
     await mkdir(repository);
     await execute("git", ["init", "--quiet"], { cwd: repository });
     const env = { ...process.env, NODE_PATH: "" };
-    delete env.PROJECTOR_CLI;
-    const { stdout } = await execute(process.execPath, [join(plugin, "scripts/projector-change.mjs"), "init"], { cwd: repository, env, encoding: "utf8" });
-    expect(JSON.parse(stdout)).toMatchObject({ initialized: true, projectEnabled: true, configCreated: true });
-    expect(await readFile(join(repository, ".projector/config.json"), "utf8")).toContain("projector");
+    const request = {
+      apiVersion: "projector.operation/v1",
+      operation: "init",
+      repositoryRoot: repository,
+      requestId: "installed-init",
+      input: {},
+    };
+    const child = spawn(process.execPath, [join(plugin, "scripts/projector-operation.mjs")], { cwd: repository, env, stdio: ["pipe", "pipe", "pipe"] });
+    child.stdin.end(`${JSON.stringify(request)}\n`);
+    let stdout = ""; let stderr = "";
+    child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; }); child.stderr.on("data", (chunk) => { stderr += chunk; });
+    const exitCode = await new Promise((resolveExit, reject) => { child.once("error", reject); child.once("exit", resolveExit); });
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(stdout)).toMatchObject({ status: "succeeded", operation: "init", package: { name: "@onepersonlabs/projector", version: "2.1.0" }, output: { created: true, readiness: { status: "ready" } } });
+    expect(await readFile(join(repository, ".projector/config.toml"), "utf8")).toContain("projectorVersion");
 
     if (process.platform === "win32") {
       const installedCommand = hook.command.replaceAll("${PLUGIN_ROOT}", plugin);
