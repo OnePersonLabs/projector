@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
+import { hashCanonical, validateReleaseCandidate } from "./release-candidate.mjs";
+
 const execute = promisify(execFile);
 const maximumOutputBytes = 1_048_576;
 const maximumExecutionMs = 60_000;
@@ -107,7 +109,7 @@ export function verifyPackedLifecycleEvidence(evidence) {
   assert(typeof evidence.request === "string" && evidence.request.length > 0 && evidence.request !== "repair-governed-state", "uses a fixture-only request");
   assert(evidence.activation?.initialized === true && evidence.activation?.projectEnabled === true && canonical(evidence.activation?.config) === canonical({ apiVersion: "projector.config/v1", enabled: true }), "did not explicitly activate the held-out repository");
   const boundary = evidence.artifactBoundary;
-  assert(boundary?.checkoutDependency === "none-declared" && boundary.checkoutPathInput === null && boundary.checkoutAbsenceObservation === "not-claimed" && boundary.installedSymlinkCount === 0 && boundary.pluginSymlinkCount === 0 && boundary.nodePathEmpty === true && boundary.execution === "trusted-host", "did not prove checkout-independent installed-artifact execution");
+  assert(boundary?.checkoutDependency === "none-declared" && boundary.checkoutPathInput === null && boundary.checkoutAbsenceObservation === "not-claimed" && typeof boundary.candidateManifestHash === "string" && typeof boundary.pluginBundleHash === "string" && boundary.installedSymlinkCount === 0 && boundary.pluginSymlinkCount === 0 && boundary.nodePathEmpty === true && boundary.execution === "trusted-host", "did not prove checkout-independent installed-artifact execution");
   assert(evidence.direct?.changeSelector === evidence.pause?.changeSelector && evidence.direct?.planHash === evidence.pause?.planHash, "does not match direct and agent plan identity");
   assert(evidence.pause?.status === "approval-required" && evidence.approval?.status === "approved" && evidence.approval?.planHash === evidence.direct?.planHash, "did not enforce exact plan-hash approval");
   const interruption = evidence.interruption;
@@ -261,6 +263,10 @@ async function pathAbsent(path) {
 }
 
 export async function runPackedLifecycleAcceptance(input) {
+  const candidate = await validateReleaseCandidate(input.candidateRoot);
+  const candidatePluginRoot = join(candidate.root, candidate.manifest.pluginRoot);
+  const pluginFiles = candidate.files.filter(({ path }) => path.startsWith(`${candidate.manifest.pluginRoot}/`));
+  assert(pluginFiles.length > 0, "release candidate has no authenticated plugin files");
   const fixture = input.fixture;
   assert(fixture?.version === 1 && typeof fixture.request === "string" && Array.isArray(fixture.expectedPaths), "received an invalid held-out fixture");
   const runId = randomUUID();
@@ -268,7 +274,7 @@ export async function runPackedLifecycleAcceptance(input) {
   const repository = join(input.temporaryRoot, "held-out-repository");
   const installedCli = join(input.installedProjector, "bin", "projector.js");
   const wrapper = join(pluginRoot, "scripts", "projector-change.mjs");
-  await cp(input.pluginSource, pluginRoot, { recursive: true });
+  await cp(candidatePluginRoot, pluginRoot, { recursive: true });
   await mkdir(join(repository, "src"), { recursive: true });
   await mkdir(join(repository, "test"), { recursive: true });
   await writeFile(join(repository, ".gitignore"), ".projector/runtime/\n", "utf8");
@@ -319,7 +325,7 @@ export async function runPackedLifecycleAcceptance(input) {
     return { ...launched, completed };
   };
   const agent = async (args) => launchAgent(args).completed;
-  assert(!Object.hasOwn(input, "repositoryRoot") && !Object.hasOwn(input, "checkoutPath"), "received a checkout dependency in source-severed acceptance");
+  assert(!Object.hasOwn(input, "repositoryRoot") && !Object.hasOwn(input, "checkoutPath") && !Object.hasOwn(input, "pluginSource"), "received a checkout dependency in source-severed acceptance");
   const installedVersion = requireExit(await direct(["--version"]), "source-severed installed CLI version").stdout;
   assert(installedVersion === "2.1.0", "did not execute the installed CLI");
   const initialized = json(await direct(["init", "--format", "json"]), "explicit held-out repository activation");
@@ -364,7 +370,7 @@ export async function runPackedLifecycleAcceptance(input) {
     runId,
     request,
     activation: { initialized: initialized.initialized === true, projectEnabled: initialized.projectEnabled === true, config: activationConfig },
-    artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", installedSymlinkCount: await countSymlinks(input.installedProjector), pluginSymlinkCount: await countSymlinks(pluginRoot), nodePathEmpty: environment.NODE_PATH === "", execution: "trusted-host" },
+    artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", candidateManifestHash: candidate.manifestHash, pluginBundleHash: hashCanonical(pluginFiles), installedSymlinkCount: await countSymlinks(input.installedProjector), pluginSymlinkCount: await countSymlinks(pluginRoot), nodePathEmpty: environment.NODE_PATH === "", execution: "trusted-host" },
     direct: { changeSelector: directChange.selector, planHash: directPlan.immutablePlanHash, planId: directPlan.plan.id, predictedChangedPaths: expectedPaths, preview: directPlan.preview },
     pause: { status: pause.outcome, changeSelector: pause.selector, planHash: pause.immutablePlanHash },
     approval: { status: approval.kind === "lifecycle-approval" ? "approved" : "invalid", approvalSelector: approval.selector, planHash: approval.immutablePlanHash },

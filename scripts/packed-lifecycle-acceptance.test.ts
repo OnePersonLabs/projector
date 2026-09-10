@@ -51,7 +51,7 @@ function evidence() {
     runId: "01234567-89ab-4def-8123-456789abcdef",
     request: "Trim surrounding label whitespace while preserving existing callers.",
     activation: { initialized: true, projectEnabled: true, config: { apiVersion: "projector.config/v1", enabled: true } },
-    artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", installedSymlinkCount: 0, pluginSymlinkCount: 0, nodePathEmpty: true, execution: "trusted-host" },
+    artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", candidateManifestHash: "sha256:v1:candidate", pluginBundleHash: "sha256:v1:plugin", installedSymlinkCount: 0, pluginSymlinkCount: 0, nodePathEmpty: true, execution: "trusted-host" },
     direct: { changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan", planId: "plan_abc", predictedChangedPaths: ["src/format-label.mjs", "test/trim-label.test.mjs"] },
     pause: { status: "approval-required", changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan" },
     approval: { status: "approved", approvalSelector: "lifecycle_approval_abc", planHash: "sha256:v1:plan" },

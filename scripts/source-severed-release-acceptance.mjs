@@ -52,7 +52,7 @@ export async function runSourceSeveredReleaseAcceptance(candidateRoot) {
       temporaryRoot: join(temporary, "acceptance"),
       consumerRoot: consumer,
       installedProjector,
-      pluginSource: join(root, manifest.pluginRoot),
+      candidateRoot: root,
       fixture,
     });
     const evidencePath = "results/packed-held-out-lifecycle.json";
