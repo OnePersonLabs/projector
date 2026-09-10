@@ -1,4 +1,14 @@
-import { ContentHashSchema, canonicalJson } from "@projector/core";
+import {
+  EvidenceRefSchema,
+  ContentHashSchema,
+  applicationEvidenceBindingIssues,
+  canonicalDocumentEnvelopeSchemaForKind,
+  canonicalJson,
+  type ApplicationEvidencePredicateBinding,
+  type CanonicalDocumentEnvelope,
+  type EvidenceRef,
+  type Requirement,
+} from "@projector/core";
 import {
   PsychordApplicationObservationResultSchema,
   PsychordEvidenceCurrentnessSchema,
@@ -13,27 +23,34 @@ import { z } from "zod";
 
 const identity = z.string().min(1).max(512).regex(/^[^\0\r\n]+$/u);
 const reason = z.string().min(1).max(4_096);
-const observationReference = z.strictObject({
-  role: z.enum(["prior", "latest"]),
-  runId: identity,
-  artifactSetId: identity,
+type PsychordEvidenceReference = EvidenceRef & { readonly applicationPredicate: ApplicationEvidencePredicateBinding };
+const observationReference: z.ZodType<PsychordEvidenceReference> = EvidenceRefSchema.transform((value, context) => {
+  const reference = value as EvidenceRef;
+  const binding = reference.applicationPredicate;
+  if (binding?.kind !== "application-observation"
+    || binding.adapter.id !== psychordObservationAdapterId
+    || binding.adapter.version !== psychordObservationAdapterVersion
+    || !isPsychordCase(binding.case)) {
+    context.addIssue({ code: "custom", path: ["applicationPredicate"], message: "evidence must bind the Psychord application observation adapter and case" });
+    return z.NEVER;
+  }
+  const predicate = psychordPredicateFor(binding.case);
+  if (binding.scenario.id !== "scenario:keep-reload-replay-owned-moment"
+    || binding.predicateId !== predicate.id
+    || canonicalJson(binding.assertionIds) !== canonicalJson(predicate.assertionIds)) {
+    context.addIssue({ code: "custom", path: ["applicationPredicate"], message: "evidence predicate must match the exact canonical Psychord scenario assertion mapping" });
+    return z.NEVER;
+  }
+  return reference as PsychordEvidenceReference;
 });
 
 export const PsychordApplicationEvidenceAssessmentRequestSchema = z.strictObject({
-  schemaVersion: z.literal("psychord-application-evidence-assessment-request@1"),
-  requirementId: identity,
-  scenario: z.strictObject({ id: identity, semanticHash: ContentHashSchema }),
-  case: z.enum(["no-input", "keep-reload-replay", "save-failure"]),
-  predicate: z.strictObject({ id: identity, assertionIds: z.array(identity).min(1).max(64) }).superRefine((value, context) => {
-    if (new Set(value.assertionIds).size !== value.assertionIds.length) context.addIssue({ code: "custom", path: ["assertionIds"], message: "predicate assertion IDs must be unique" });
-  }),
-  observations: z.array(observationReference).min(1).max(64),
+  schemaVersion: z.literal("psychord-application-evidence-assessment-request@3"),
+  requirement: z.strictObject({ id: identity, canonicalDocumentHash: ContentHashSchema }),
+  evidenceIds: z.array(identity).min(1).max(64),
 }).superRefine((value, context) => {
-  if (new Set(value.observations.map(({ artifactSetId }) => artifactSetId)).size !== value.observations.length) {
-    context.addIssue({ code: "custom", path: ["observations"], message: "observation artifact references must be unique" });
-  }
-  if (value.observations.filter(({ role }) => role === "latest").length > 1) {
-    context.addIssue({ code: "custom", path: ["observations"], message: "at most one observation may be declared latest" });
+  if (new Set(value.evidenceIds).size !== value.evidenceIds.length) {
+    context.addIssue({ code: "custom", path: ["evidenceIds"], message: "observation evidence references must be unique" });
   }
 });
 export type PsychordApplicationEvidenceAssessmentRequest = z.infer<typeof PsychordApplicationEvidenceAssessmentRequestSchema>;
@@ -77,17 +94,24 @@ const fulfillment = z.strictObject({
 });
 
 export const PsychordApplicationEvidenceAssessmentSchema = z.strictObject({
-  schemaVersion: z.literal("psychord-application-evidence-assessment@1"),
+  schemaVersion: z.literal("psychord-application-evidence-assessment@3"),
   request: PsychordApplicationEvidenceAssessmentRequestSchema,
+  requirement: canonicalDocumentEnvelopeSchemaForKind("requirement") as z.ZodType<RequirementEnvelope>,
   observations: z.array(assessedObservation).min(1).max(64),
   fulfillment,
 }).superRefine((value, context) => {
-  if (canonicalJson(value.request.observations) !== canonicalJson(value.observations.map(({ reference }) => reference))) {
+  if (value.requirement.id !== value.request.requirement.id
+    || value.requirement.canonicalDocumentHash !== value.request.requirement.canonicalDocumentHash) {
+    context.addIssue({ code: "custom", path: ["requirement"], message: "assessment requirement does not match its state-bound request" });
+  }
+  const selected = selectRequirementEvidence(value.request.evidenceIds, value.requirement, context);
+  if (canonicalJson(selected) !== canonicalJson(value.observations.map(({ reference }) => reference))) {
     context.addIssue({ code: "custom", path: ["observations"], message: "assessment observations do not match the exact declared references" });
   }
   for (const [index, observation] of value.observations.entries()) {
-    if (observation.predicate.id !== value.request.predicate.id
-      || canonicalJson(observation.predicate.assertions.map(({ id }) => id)) !== canonicalJson(value.request.predicate.assertionIds)) {
+    const binding = observation.reference.applicationPredicate;
+    if (observation.predicate.id !== binding.predicateId
+      || canonicalJson(observation.predicate.assertions.map(({ id }) => id)) !== canonicalJson(binding.assertionIds)) {
       context.addIssue({ code: "custom", path: ["observations", index, "predicate"], message: "assessment predicate does not match the declared assertion binding" });
     }
   }
@@ -105,21 +129,39 @@ export interface PsychordApplicationEvidenceAssessmentService {
   assess(request: PsychordApplicationEvidenceAssessmentRequest, environment: { readonly signal: AbortSignal }): Promise<PsychordApplicationEvidenceAssessment>;
 }
 
+export interface PsychordRequirementCustodyPort {
+  readCurrent(
+    requirement: PsychordApplicationEvidenceAssessmentRequest["requirement"],
+    environment: { readonly signal: AbortSignal },
+  ): Promise<RequirementEnvelope>;
+}
+
 export function createPsychordApplicationEvidenceAssessmentService(input: {
   readonly artifacts: PsychordObservationArtifactService;
   readonly currentness: PsychordEvidenceCurrentnessPort;
+  readonly requirements: PsychordRequirementCustodyPort;
 }): PsychordApplicationEvidenceAssessmentService {
   return {
     async assess(unparsedRequest, environment) {
       const request = PsychordApplicationEvidenceAssessmentRequestSchema.parse(unparsedRequest);
+      environment.signal.throwIfAborted();
+      const requirement = (canonicalDocumentEnvelopeSchemaForKind("requirement") as z.ZodType<RequirementEnvelope>)
+        .parse(await input.requirements.readCurrent(request.requirement, environment));
+      if (requirement.id !== request.requirement.id
+        || requirement.canonicalDocumentHash !== request.requirement.canonicalDocumentHash
+        || requirement.payload.id !== request.requirement.id) {
+        throw new Error("Current canonical requirement does not match the state-bound requirement document");
+      }
+      const evidence = selectRequirementEvidence(request.evidenceIds, requirement);
       const observations: z.infer<typeof assessedObservation>[] = [];
-      for (const reference of request.observations) {
+      for (const reference of evidence) {
         environment.signal.throwIfAborted();
-        observations.push(await assessObservation(input.artifacts, input.currentness, request, reference, environment.signal));
+        observations.push(await assessObservation(input.artifacts, input.currentness, reference, environment.signal));
       }
       return PsychordApplicationEvidenceAssessmentSchema.parse({
-        schemaVersion: "psychord-application-evidence-assessment@1",
+        schemaVersion: "psychord-application-evidence-assessment@3",
         request,
+        requirement,
         observations,
         fulfillment: deriveFulfillment(observations),
       });
@@ -130,15 +172,14 @@ export function createPsychordApplicationEvidenceAssessmentService(input: {
 async function assessObservation(
   artifacts: PsychordObservationArtifactService,
   currentness: PsychordEvidenceCurrentnessPort,
-  request: PsychordApplicationEvidenceAssessmentRequest,
-  reference: PsychordApplicationEvidenceAssessmentRequest["observations"][number],
+  reference: PsychordEvidenceReference,
   signal: AbortSignal,
 ): Promise<z.infer<typeof assessedObservation>> {
-  const stored = await artifacts.read(reference.artifactSetId);
-  if (stored.status !== "published") return unavailableObservation(reference, request, stored);
-  const predicate = observedPredicate(request, stored);
-  if (!matchesRequest(stored, request, reference)) {
-    return { reference, predicate, publicationStatus: "integrity-failed", eligibility: "open", reason: "Published observation does not match its declared requirement, scenario, case, adapter, or run." };
+  const stored = await artifacts.read(reference.evidenceId);
+  if (stored.status !== "published") return unavailableObservation(reference, stored);
+  const predicate = observedPredicate(reference, stored);
+  if (!matchesRequest(stored, reference)) {
+    return { reference, predicate, publicationStatus: "integrity-failed", eligibility: "open", reason: "Published observation does not match its declared scenario, case, or adapter binding." };
   }
   const historical = {
     operationalStatus: stored.result.operationalStatus,
@@ -161,6 +202,9 @@ async function assessObservation(
   if (reuseCurrentness.status !== "current") {
     return { reference, predicate, publicationStatus: "published", historical, reuseCurrentness, reuseBinding, eligibility: "open", reason: reuseCurrentness.status === "stale" ? "Published behavior is historical because a bound input changed." : "Published behavior cannot be reused because a bound input is unavailable." };
   }
+  if (reference.stance !== "supports") {
+    return { reference, predicate, publicationStatus: "published", historical, reuseCurrentness, reuseBinding, eligibility: "open", reason: "This positive predicate evaluator retains context and contradictory evidence without treating it as fulfillment." };
+  }
   if (stored.behavioralEvidence && predicate.assertions.every(({ status }) => status === "passed")) {
     return { reference, predicate, publicationStatus: "published", historical, reuseCurrentness, reuseBinding, eligibility: "eligible", reason: "Authenticated behavior and the declared predicate assertions passed while every bound dependency remains current at supporting assurance." };
   }
@@ -171,34 +215,32 @@ async function assessObservation(
 }
 
 function unavailableObservation(
-  reference: PsychordApplicationEvidenceAssessmentRequest["observations"][number],
-  request: PsychordApplicationEvidenceAssessmentRequest,
+  reference: PsychordEvidenceReference,
   stored: Exclude<PsychordArtifactSetReadResult, { readonly status: "published" }>,
 ): z.infer<typeof assessedObservation> {
   const detail = stored.status === "integrity-failed" ? `: ${stored.reason}` : "";
-  return { reference, predicate: unavailablePredicate(request), publicationStatus: stored.status, eligibility: "open", reason: `Observation artifact is ${stored.status}${detail}`.slice(0, 4_096) };
+  return { reference, predicate: unavailablePredicate(reference), publicationStatus: stored.status, eligibility: "open", reason: `Observation artifact is ${stored.status}${detail}`.slice(0, 4_096) };
 }
 
 function matchesRequest(
   stored: Extract<PsychordArtifactSetReadResult, { readonly status: "published" }>,
-  request: PsychordApplicationEvidenceAssessmentRequest,
-  reference: PsychordApplicationEvidenceAssessmentRequest["observations"][number],
+  reference: PsychordEvidenceReference,
 ): boolean {
-  return stored.artifactSetId === reference.artifactSetId
-    && stored.plan.runId === reference.runId
-    && stored.plan.scenario.id === request.scenario.id
-    && stored.plan.scenario.semanticHash === request.scenario.semanticHash
-    && stored.plan.case === request.case
-    && stored.plan.adapter.id === psychordObservationAdapterId
-    && stored.plan.adapter.version === psychordObservationAdapterVersion;
+  const binding = reference.applicationPredicate;
+  return stored.artifactSetId === reference.evidenceId
+    && stored.plan.scenario.id === binding.scenario.id
+    && stored.plan.scenario.semanticHash === binding.scenario.semanticHash
+    && stored.plan.case === binding.case
+    && stored.plan.adapter.id === binding.adapter.id
+    && stored.plan.adapter.version === binding.adapter.version;
 }
 
 function deriveFulfillment(observations: readonly z.infer<typeof assessedObservation>[]) {
-  const latest = observations.find(({ reference }) => reference.role === "latest");
+  const latest = observations.find(({ reference }) => reference.applicationPredicate.observationRole === "latest");
   if (latest?.eligibility === "eligible") return selected("satisfied", latest, false, "The declared latest observation is eligible.");
   if (latest?.eligibility === "violated") return selected("violated", latest, false, "The declared latest current observation failed.");
-  const priorEligible = observations.filter(({ reference, eligibility }) => reference.role === "prior" && eligibility === "eligible");
-  const priorViolated = observations.filter(({ reference, eligibility }) => reference.role === "prior" && eligibility === "violated");
+  const priorEligible = observations.filter(({ reference, eligibility }) => reference.applicationPredicate.observationRole === "prior" && eligibility === "eligible");
+  const priorViolated = observations.filter(({ reference, eligibility }) => reference.applicationPredicate.observationRole === "prior" && eligibility === "violated");
   if (priorEligible.length > 0 && priorViolated.length > 0) {
     return { status: "unknown" as const, preservedPriorPassing: false, reason: "Current prior observations contradict each other; none is selected as fulfillment." };
   }
@@ -220,9 +262,10 @@ function eligibilityFor(observation: {
   readonly reuseCurrentness?: PsychordEvidenceCurrentness | undefined;
   readonly reuseBinding?: "matched" | "mismatched" | undefined;
   readonly predicate: { readonly assertions: readonly { readonly status: "passed" | "failed" | "unavailable" }[] };
+  readonly reference: { readonly stance: "supports" | "contradicts" | "context" };
 }): "eligible" | "violated" | "open" {
   const historical = observation.historical;
-  if (observation.publicationStatus !== "published" || historical === undefined || observation.reuseBinding !== "matched" || observation.reuseCurrentness?.status !== "current") return "open";
+  if (observation.reference.stance !== "supports" || observation.publicationStatus !== "published" || historical === undefined || observation.reuseBinding !== "matched" || observation.reuseCurrentness?.status !== "current") return "open";
   if (historical.behavioralEvidence && observation.predicate.assertions.every(({ status }) => status === "passed")
     && historical.operationalStatus === "completed" && historical.outcome === "passed"
     && historical.collectedCurrentness === "current" && historical.assurance === "supporting" && historical.cleanupComplete) return "eligible";
@@ -240,18 +283,20 @@ function currentnessMatchesPlan(plan: PsychordApplicationObservationPlan, curren
 }
 
 function observedPredicate(
-  request: PsychordApplicationEvidenceAssessmentRequest,
+  reference: PsychordEvidenceReference,
   stored: Extract<PsychordArtifactSetReadResult, { readonly status: "published" }>,
 ) {
   const assertions = new Map(stored.result.adapter.output.assertions.map(({ id, passed }) => [id, passed]));
+  const binding = reference.applicationPredicate;
   return {
-    id: request.predicate.id,
-    assertions: request.predicate.assertionIds.map((id) => ({ id, status: assertions.has(id) ? assertions.get(id) ? "passed" as const : "failed" as const : "unavailable" as const })),
+    id: binding.predicateId,
+    assertions: binding.assertionIds.map((id) => ({ id, status: assertions.has(id) ? assertions.get(id) ? "passed" as const : "failed" as const : "unavailable" as const })),
   };
 }
 
-function unavailablePredicate(request: PsychordApplicationEvidenceAssessmentRequest) {
-  return { id: request.predicate.id, assertions: request.predicate.assertionIds.map((id) => ({ id, status: "unavailable" as const })) };
+function unavailablePredicate(reference: PsychordEvidenceReference) {
+  const binding = reference.applicationPredicate;
+  return { id: binding.predicateId, assertions: binding.assertionIds.map((id) => ({ id, status: "unavailable" as const })) };
 }
 
 function selected(
@@ -260,7 +305,63 @@ function selected(
   preservedPriorPassing: boolean,
   selectedReason: string,
 ) {
-  return { status, selectedArtifactSetId: observation.reference.artifactSetId, preservedPriorPassing, reason: selectedReason };
+  return { status, selectedArtifactSetId: observation.reference.evidenceId, preservedPriorPassing, reason: selectedReason };
+}
+
+type RequirementEnvelope = Omit<CanonicalDocumentEnvelope, "kind" | "payload"> & { readonly kind: "requirement"; readonly payload: Requirement };
+
+function selectRequirementEvidence(
+  evidenceIds: readonly string[],
+  requirement: RequirementEnvelope,
+  context?: z.RefinementCtx,
+): PsychordEvidenceReference[] {
+  const selected: PsychordEvidenceReference[] = [];
+  if (requirement.payload.status !== "active") {
+    if (context !== undefined) context.addIssue({ code: "custom", path: ["requirement", "payload", "status"], message: "application evidence custody requires an active canonical requirement" });
+    else throw new Error("Application evidence custody requires an active canonical requirement");
+  }
+  for (const [index, evidenceId] of evidenceIds.entries()) {
+    const matches = requirement.payload.evidence.filter((reference) => reference.evidenceId === evidenceId);
+    if (matches.length !== 1) {
+      if (context !== undefined) context.addIssue({ code: "custom", path: ["evidenceIds", index], message: "evidence ID must identify exactly one reference in the authenticated requirement" });
+      else throw new Error("Evidence ID does not belong exactly once to the current canonical requirement");
+      continue;
+    }
+    const parsed = observationReference.safeParse(matches[0]);
+    if (!parsed.success) {
+      if (context !== undefined) for (const issue of parsed.error.issues) context.addIssue({ code: "custom", path: ["evidenceIds", index, ...issue.path], message: issue.message });
+      else throw parsed.error;
+      continue;
+    }
+    selected.push(parsed.data);
+  }
+  for (const issue of applicationEvidenceBindingIssues(selected)) {
+    if (context !== undefined) context.addIssue({ code: "custom", path: ["evidenceIds", issue.index], message: issue.message });
+    else throw new Error(issue.message);
+  }
+  if (selected.length === 0) return selected;
+  const expected = exactPredicateBinding(selected[0]!.applicationPredicate);
+  for (const [index, reference] of selected.entries()) {
+    if (canonicalJson(exactPredicateBinding(reference.applicationPredicate)) === canonicalJson(expected)) continue;
+    if (context !== undefined) context.addIssue({ code: "custom", path: ["evidenceIds", index], message: "one assessment must contain one exact scenario and predicate binding" });
+    else throw new Error("One assessment must contain one exact scenario and predicate binding");
+  }
+  return selected;
+}
+
+function exactPredicateBinding(binding: ApplicationEvidencePredicateBinding) {
+  const { observationRole: _observationRole, ...exact } = binding;
+  return exact;
+}
+
+function isPsychordCase(value: string): value is "no-input" | "keep-reload-replay" | "save-failure" {
+  return value === "no-input" || value === "keep-reload-replay" || value === "save-failure";
+}
+
+function psychordPredicateFor(caseName: "no-input" | "keep-reload-replay" | "save-failure") {
+  if (caseName === "keep-reload-replay") return { id: "predicate:keep-reload-replay", assertionIds: ["explicit-save", "reload-restores-archive", "replay-is-not-player-input", "replay-preserves-persisted-provenance"] } as const;
+  if (caseName === "save-failure") return { id: "predicate:save-failure-preservation", assertionIds: ["save-failure-visible", "save-failure-preserves-archive"] } as const;
+  return { id: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"] } as const;
 }
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }

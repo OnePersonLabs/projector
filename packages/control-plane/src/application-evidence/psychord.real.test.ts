@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, join, relative } from "node:path";
 
-import type { ContentHash } from "@projector/core";
+import { withCanonicalHashes, type ContentHash, type EvidenceRef, type Requirement } from "@projector/core";
 import {
   capturePsychordWorktreeDigest,
   createPsychordAgentBrowserHost,
@@ -16,6 +16,7 @@ import {
   type PsychordCommandResult,
   type PsychordCommandRunner,
   type PsychordDependencyPin,
+  type PsychordApplicationObservationPlan,
   type PsychordObservationPlan,
 } from "@projector/integrations/runtime-evidence";
 import { expect, it } from "vitest";
@@ -136,22 +137,30 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
     });
     const authenticated = await reopened.read(persisted.artifactSetId);
     if (authenticated.status !== "published") throw new Error(JSON.stringify(authenticated, null, 2));
+    const evidence: EvidenceRef = {
+        evidenceId: persisted.artifactSetId,
+        stance: "supports",
+        applicationPredicate: {
+          kind: "application-observation",
+          adapter: { id: persisted.plan.adapter.id, version: persisted.plan.adapter.version },
+          scenario: persisted.plan.scenario,
+          case: caseName,
+          predicateId: caseName === "keep-reload-replay" ? "predicate:keep-reload-replay" : "predicate:save-failure-preservation",
+          assertionIds: caseName === "keep-reload-replay"
+            ? ["explicit-save", "reload-restores-archive", "replay-is-not-player-input", "replay-preserves-persisted-provenance"]
+            : ["save-failure-visible", "save-failure-preserves-archive"],
+          observationRole: "latest",
+        },
+    };
+    const boundRequirement = realAssessmentRequest(persisted.plan, evidence);
     const assessments = createPsychordApplicationEvidenceAssessmentService({
       artifacts: reopened,
       currentness: { async observe(currentPlan, { signal: currentnessSignal }) {
         return await observePsychordEvidenceCurrentness({ commands: runner, plan: currentPlan, environment, signal: currentnessSignal });
       } },
+      requirements: { async readCurrent() { return boundRequirement.requirement; } },
     });
-    const assessment = await assessments.assess({
-      schemaVersion: "psychord-application-evidence-assessment-request@1",
-      requirementId: "requirement:keep-owned-moment",
-      scenario: persisted.plan.scenario,
-      case: caseName,
-      predicate: caseName === "keep-reload-replay"
-        ? { id: "predicate:keep-reload-replay", assertionIds: ["explicit-save", "reload-restores-archive", "replay-is-not-player-input", "replay-preserves-persisted-provenance"] }
-        : { id: "predicate:save-failure-preservation", assertionIds: ["save-failure-visible", "save-failure-preserves-archive"] },
-      observations: [{ role: "latest", runId, artifactSetId: persisted.artifactSetId }],
-    }, { signal });
+    const assessment = await assessments.assess(boundRequirement.request, { signal });
     expect(assessment).toMatchObject({ fulfillment: { status: "satisfied", selectedArtifactSetId: persisted.artifactSetId }, observations: [{ eligibility: "eligible", reuseCurrentness: { status: "current" } }] });
     const result = persisted.result;
     const output = result.adapter.output;
@@ -170,6 +179,33 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
     expect(output.host.browserCommands.every(({ rootExitObserved, descendantState }) => rootExitObserved && descendantState === "not-observed")).toBe(true);
     expect(output.host.browserCommands.some(({ stdio }) => stdio === "detached-after-bounded-drain")).toBe(true);
   }, 150_000);
+}
+
+function realAssessmentRequest(plan: PsychordApplicationObservationPlan, evidence: EvidenceRef) {
+  const payload: Requirement = {
+    id: "requirement:keep-owned-moment",
+    key: "keep-owned-moment",
+    title: "Keep a player-owned moment",
+    aliases: [],
+    statement: "The selected Psychord scenario predicate remains supported by current application evidence.",
+    status: "active",
+    sourceClass: "authored",
+    scope: { op: "atom", field: "scenario", matcher: "equals", value: plan.scenario.id },
+    origin: [],
+    evidence: [evidence],
+    discoveryHash: sha256(Buffer.from("requirement-discovery")),
+    semanticHash: sha256(Buffer.from("requirement-semantic")),
+  };
+  const canonical = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement" as const, id: payload.id, key: payload.key, lifecycle: payload.status, payload: { ...payload } });
+  const requirement = { ...canonical, kind: "requirement" as const, payload };
+  return {
+    requirement,
+    request: {
+      schemaVersion: "psychord-application-evidence-assessment-request@3" as const,
+      requirement: { id: requirement.id, canonicalDocumentHash: requirement.canonicalDocumentHash },
+      evidenceIds: [evidence.evidenceId],
+    },
+  };
 }
 
 async function dependencyPins(): Promise<readonly PsychordDependencyPin[]> {
