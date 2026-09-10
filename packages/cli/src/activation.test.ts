@@ -110,10 +110,11 @@ describe("explicit Projector project activation", () => {
 
   it("does not write the marker when initialization rebuild fails", async () => {
     const root = await gitRepository();
-    await mkdir(join(root, ".projector"));
-    await writeFile(join(root, ".projector", "unknown.json"), "{}\n");
+    await mkdir(join(root, ".projector", "model", "concepts"), { recursive: true });
+    await writeFile(join(root, ".projector", "model", "concepts", "broken.concept.toml"), "apiVersion = [\n");
 
-    await expect(executeProjector(["init"], { cwd: root })).rejects.toThrow(/unsupported canonical/iu);
+    await expect(executeProjector(["init"], { cwd: root })).rejects.toThrow(/invalid canonical TOML/iu);
+    await expect(access(join(root, ".projector", "config.toml"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(root, ".projector", "config.json"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
