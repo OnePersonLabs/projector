@@ -3,15 +3,14 @@ import {
   ProjectDataMigrationDraftSchema,
   ProjectDataMigrationManifestSchema,
   comparePackageVersions,
-  hashFramedDomain,
-  type ContentHash,
+  createProjectDataMigrationManifest,
   type ProjectDataFormatSnapshot,
   type ProjectDataMigrationArtifactRef,
   type ProjectDataMigrationDraft,
   type ProjectDataMigrationManifest,
 } from "@projector/core";
 
-import type { ValidatedReleaseCandidateInventory } from "./project-data-format-owner.js";
+import { createReleaseCandidateProjectDataFormat, type ValidatedReleaseCandidateInventory } from "./project-data-format-owner.js";
 
 export const projectDataFormatDimensions = [
   "prepared-config",
@@ -71,6 +70,10 @@ export function createReleaseCandidateProjectDataMigration(input: {
       input.candidate.packageIdentity.version !== draft.targetSnapshot.packageIdentity.version) {
     throw new Error("Authenticated release candidate identity does not match the migration target release");
   }
+  const candidateTarget = createReleaseCandidateProjectDataFormat({ candidate: input.candidate });
+  if (candidateTarget.snapshotHash !== draft.targetSnapshot.snapshotHash) {
+    throw new Error("Authenticated release candidate format does not match the migration target snapshot");
+  }
   const transforms = [...draft.operations, ...draft.customTransforms];
   requireUniqueArtifacts([...transforms, ...draft.validations]);
   if (changes.length === 0 && (transforms.length > 0 || draft.validations.length > 0)) {
@@ -104,23 +107,11 @@ export function createReleaseCandidateProjectDataMigration(input: {
     transforms,
     validations: draft.validations,
   };
-  return ProjectDataMigrationManifestSchema.parse({
-    ...body,
-    manifestHash: hashProjectDataMigrationManifestBody(body),
-  });
+  return createProjectDataMigrationManifest(body);
 }
 
 export function verifyProjectDataMigrationManifest(manifest: ProjectDataMigrationManifest): ProjectDataMigrationManifest {
-  const parsed = ProjectDataMigrationManifestSchema.parse(manifest);
-  const { manifestHash, ...body } = parsed;
-  if (manifestHash !== hashProjectDataMigrationManifestBody(body)) {
-    throw new Error("Project-data migration manifest hash does not authenticate its strict body");
-  }
-  return parsed;
-}
-
-function hashProjectDataMigrationManifestBody(body: Omit<ProjectDataMigrationManifest, "manifestHash">): ContentHash {
-  return hashFramedDomain("project-data-migration-manifest:v1", body);
+  return ProjectDataMigrationManifestSchema.parse(manifest);
 }
 
 function requireReleaseProgression(source: ProjectDataFormatSnapshot, target: ProjectDataFormatSnapshot): void {

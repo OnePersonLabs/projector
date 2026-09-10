@@ -123,22 +123,39 @@ export function comparePackageVersions(left: string, right: string): number {
   return 0;
 }
 
-const migrationManifestBase = z.strictObject({
+const migrationManifestBaseFields = {
   apiVersion: z.literal(projectDataMigrationManifestApiVersion),
   id: stableId,
   fromVersion: PackageVersionSchema,
   toVersion: PackageVersionSchema,
   sourceSnapshotHash: ContentHashSchema,
   targetSnapshotHash: ContentHashSchema,
-  manifestHash: ContentHashSchema,
-});
+} as const;
 
-export const ProjectDataMigrationManifestSchema = z.discriminatedUnion("kind", [
-  migrationManifestBase.extend({ kind: z.literal("no-data-change") }),
-  migrationManifestBase.extend({
+const projectDataMigrationManifestBodySchema = z.discriminatedUnion("kind", [
+  z.strictObject({ ...migrationManifestBaseFields, kind: z.literal("no-data-change") }),
+  z.strictObject({
+    ...migrationManifestBaseFields,
     kind: z.literal("transform"),
     transforms: z.array(ProjectDataMigrationArtifactRefSchema).min(1).max(256),
     validations: z.array(ProjectDataMigrationArtifactRefSchema).min(1).max(256),
+  }),
+]);
+
+export type ProjectDataMigrationManifestInput = z.infer<typeof projectDataMigrationManifestBodySchema>;
+
+export function hashProjectDataMigrationManifest(input: ProjectDataMigrationManifestInput) {
+  return hashFramedDomain("project-data-migration-manifest:v1", projectDataMigrationManifestBodySchema.parse(input));
+}
+
+export const ProjectDataMigrationManifestSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ ...migrationManifestBaseFields, kind: z.literal("no-data-change"), manifestHash: ContentHashSchema }),
+  z.strictObject({
+    ...migrationManifestBaseFields,
+    kind: z.literal("transform"),
+    transforms: z.array(ProjectDataMigrationArtifactRefSchema).min(1).max(256),
+    validations: z.array(ProjectDataMigrationArtifactRefSchema).min(1).max(256),
+    manifestHash: ContentHashSchema,
   }),
 ]).superRefine((manifest, context) => {
   if (comparePackageVersions(manifest.fromVersion, manifest.toVersion) >= 0) {
@@ -148,9 +165,22 @@ export const ProjectDataMigrationManifestSchema = z.discriminatedUnion("kind", [
       message: "migration target version must be numerically greater than source version",
     });
   }
+  const { manifestHash, ...body } = manifest;
+  if (manifestHash !== hashFramedDomain("project-data-migration-manifest:v1", body)) {
+    context.addIssue({
+      code: "custom",
+      path: ["manifestHash"],
+      message: "manifestHash does not authenticate the strict migration manifest body",
+    });
+  }
 });
 
 export type ProjectDataMigrationManifest = z.infer<typeof ProjectDataMigrationManifestSchema>;
+
+export function createProjectDataMigrationManifest(input: ProjectDataMigrationManifestInput): ProjectDataMigrationManifest {
+  const body = projectDataMigrationManifestBodySchema.parse(input);
+  return ProjectDataMigrationManifestSchema.parse({ ...body, manifestHash: hashProjectDataMigrationManifest(body) });
+}
 
 export const ProjectDataMigrationChainSchema = z.strictObject({
   apiVersion: z.literal(projectDataMigrationChainApiVersion),

@@ -33,6 +33,8 @@ import {
   createProjectorOperationResultSchema,
   createProjectorOperationRequestSchema,
   createProjectDataMigrationReceipt,
+  createProjectDataMigrationManifest,
+  hashProjectDataMigrationManifest,
   hashProjectDataFormatSnapshot,
   applicationEvidenceBindingIssues,
   parseProjectorConfig,
@@ -40,6 +42,7 @@ import {
   withCanonicalHashes,
   parseChangeProposal,
   type ContentHash,
+  type ProjectDataMigrationManifestInput,
   type EvidenceRef,
   type ApplicationEvidencePredicateBinding,
 } from "./index.js";
@@ -325,18 +328,18 @@ describe("normative contract registry", () => {
     } as const;
     const snapshot = { ...snapshotBody, snapshotHash: hashProjectDataFormatSnapshot(snapshotBody) } as const;
     const ref = { id: "transform:config-v2", relativePath: "migrations/config-v2.mjs", contentHash: hash };
-    const manifest = {
+    const manifestInput: ProjectDataMigrationManifestInput = {
       apiVersion: "projector.project-data-migration-manifest/v1",
       id: "migration:2.1.0-to-2.2.0",
       fromVersion: "2.1.0",
       toVersion: "2.2.0",
       sourceSnapshotHash: hash,
       targetSnapshotHash: hash,
-      manifestHash: hash,
       kind: "transform",
       transforms: [ref],
       validations: [{ ...ref, id: "validation:config-v2" }],
-    } as const;
+    };
+    const manifest = createProjectDataMigrationManifest(manifestInput);
 
     expect(ProjectDataFormatSnapshotSchema.safeParse(snapshot).success).toBe(true);
     expect(ProjectDataFormatSnapshotSchema.safeParse({ ...snapshot, runtimeEvidence: { ...snapshot.runtimeEvidence, schemaHash: `sha256:v1:${"b".repeat(64)}` } }).success).toBe(false);
@@ -345,15 +348,19 @@ describe("normative contract registry", () => {
     for (const [fromVersion, toVersion] of [["2.1.0", "2.1.0"], ["2.2.0", "2.1.0"], ["2.1.0", "2.1.0-alpha"]]) {
       expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifest, fromVersion, toVersion }).success).toBe(false);
     }
-    expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifest, fromVersion: "2.1.0-alpha.9", toVersion: "2.1.0-alpha.10" }).success).toBe(true);
-    const { transforms: _transforms, validations: _validations, ...manifestBase } = manifest;
-    expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifestBase, kind: "no-data-change" }).success).toBe(true);
+    const prerelease = createProjectDataMigrationManifest({ ...manifestInput, fromVersion: "2.1.0-alpha.9", toVersion: "2.1.0-alpha.10" });
+    expect(ProjectDataMigrationManifestSchema.safeParse(prerelease).success).toBe(true);
+    const { transforms: _transforms, validations: _validations, ...manifestBase } = manifestInput;
+    const noDataChange = createProjectDataMigrationManifest({ ...manifestBase, kind: "no-data-change" });
+    expect(ProjectDataMigrationManifestSchema.safeParse(noDataChange).success).toBe(true);
     expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifest, kind: "no-data-change" }).success).toBe(false);
     expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifest, transforms: [] }).success).toBe(false);
 
-    const nextManifest = { ...manifestBase, id: "migration:2.2.0-to-4.0.0", fromVersion: "2.2.0", toVersion: "4.0.0", sourceSnapshotHash: manifest.targetSnapshotHash, kind: "no-data-change" } as const;
+    const nextManifest = createProjectDataMigrationManifest({ ...manifestBase, id: "migration:2.2.0-to-4.0.0", fromVersion: "2.2.0", toVersion: "4.0.0", sourceSnapshotHash: manifest.targetSnapshotHash, kind: "no-data-change" });
     const chain = { apiVersion: "projector.data-migration-chain/v1", manifests: [manifest, nextManifest] } as const;
     expect(ProjectDataMigrationChainSchema.safeParse(chain).success).toBe(true);
+    expect(ProjectDataMigrationChainSchema.safeParse({ ...chain, manifests: [{ ...manifest, manifestHash: hash }, nextManifest] }).success).toBe(false);
+    expect(hashProjectDataMigrationManifest({ ...manifestBase, kind: "no-data-change" })).toBe(noDataChange.manifestHash);
     expect(ProjectDataMigrationChainSchema.safeParse({ ...chain, manifests: [manifest, { ...nextManifest, fromVersion: "3.0.0" }] }).success).toBe(false);
     expect(ProjectDataMigrationChainSchema.safeParse({ ...chain, manifests: [manifest, { ...nextManifest, sourceSnapshotHash: `sha256:v1:${"b".repeat(64)}` }] }).success).toBe(false);
     expect(ProjectDataMigrationChainSchema.safeParse({ ...chain, manifests: [manifest, { ...nextManifest, id: manifest.id }] }).success).toBe(false);
