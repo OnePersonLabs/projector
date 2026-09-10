@@ -323,6 +323,32 @@ it("projects a current failed observation as violated rather than fulfilled", as
     fulfillment: { status: "violated", selectedArtifactSetId: published.artifactSetId, preservedPriorPassing: false },
     observations: [{ publicationStatus: "published", eligibility: "violated", historical: { outcome: "failed" } }],
   });
+
+  const laterLegacyPlan = observationPlan(root, "run-later-unavailable");
+  const laterPlan = createPsychordApplicationObservationPlan(laterLegacyPlan);
+  const unavailable = observationResult(laterLegacyPlan, {
+    operationalStatus: "cancelled",
+    outcome: "unavailable",
+    currentness: "unknown",
+    cleanup: { complete: true, resources: [], diagnostics: ["collection cancelled before behavior"] },
+  });
+  const laterArtifacts = createDurablePsychordObservationArtifactService({
+    storageRoot: root,
+    observer: createStrictPsychordApplicationObserver({ async observeApplication() { return unavailable; } }),
+  });
+  const later = await laterArtifacts.observeAndPublish(laterPlan, { signal: new AbortController().signal });
+  if (later.status !== "published") throw new Error("expected unavailable terminal observation to be retained");
+  const retainedFailure = await assessments.assess(assessmentRequest(plan, [
+    evidenceReference(plan, published.artifactSetId, "prior"),
+    evidenceReference(laterPlan, later.artifactSetId, "latest"),
+  ]), { signal: new AbortController().signal });
+  expect(retainedFailure).toMatchObject({
+    fulfillment: { status: "violated", selectedArtifactSetId: published.artifactSetId },
+    observations: [
+      { publicationStatus: "published", eligibility: "violated", historical: { outcome: "failed" } },
+      { publicationStatus: "published", eligibility: "open", historical: { outcome: "unavailable" } },
+    ],
+  });
 });
 
 it("leaves the attempt incomplete when a terminal result fails exact plan binding", async () => {
@@ -369,6 +395,19 @@ it("preserves an incomplete attempt when collection ends without a terminal resu
     recovery: { code: "attempt-owner-unavailable" },
   });
   expect(calls).toBe(1);
+
+  const cleanLegacyPlan = observationPlan(root, "run-after-interruption");
+  const cleanPlan = createPsychordApplicationObservationPlan(cleanLegacyPlan);
+  const clean = createDurablePsychordObservationArtifactService({
+    storageRoot: root,
+    observer: createStrictPsychordApplicationObserver({ async observeApplication() { return observationResult(cleanLegacyPlan); } }),
+  });
+  await expect(clean.observeAndPublish(cleanPlan, { signal: new AbortController().signal })).resolves.toMatchObject({
+    status: "published",
+    behavioralEvidence: true,
+    result: { operationalStatus: "completed", outcome: "passed", cleanup: { complete: true } },
+  });
+  await expect(reopened.read(reopened.artifactSetId(plan))).resolves.toMatchObject({ status: "incomplete" });
 });
 
 it("rejects symlinked artifact roots and attempt-claim entries before collection", async () => {
