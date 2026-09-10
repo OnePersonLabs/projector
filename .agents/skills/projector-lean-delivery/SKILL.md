@@ -9,7 +9,7 @@ Before choosing edit paths, follow the repository's `AGENTS.md` context and reco
 
 For substantial cross-package changes, retain one Sol-medium implementor and a separate Sol-medium reviewer across implementation and repair. Assign nonoverlapping file ownership. For small changes, work locally. Do not revive historical task numbering, DAGs, or task-report directories.
 
-Before implementation, identify the smallest public workflow that exercises the requested behavior. Include applicable failure cases: stale knowledge, new query members, ambiguous identity, unsupported observation, invalid authority, failure before mutation, and recovery after interruption. Record only the compact working context needed for handoff under ignored `.temp/`.
+Before implementation, identify the smallest public workflow that exercises the requested behavior. Include applicable failure cases: stale knowledge, new query members, ambiguous identity, unsupported observation, invalid authority, failure before mutation, and recovery after interruption. Retain context and lifecycle identities in their actual Projector owners; do not create a second scratch result as a handoff ledger.
 
 During implementation, reuse the canonical schemas, identity, relevance, state binding, lens, and lifecycle components. Add a regression when it demonstrates a material failure. Run affected tests and rebuild packages before testing consumers that import their `dist` outputs.
 

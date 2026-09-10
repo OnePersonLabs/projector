@@ -16,7 +16,6 @@ const boundaryScript = path.join(sourceRoot, "scripts/check-package-boundaries.m
 const temporaryParent = await realpath(tmpdir());
 const fixture = await mkdtemp(path.join(temporaryParent, "projector-knowledge-acceptance-"));
 const cloneFixture = `${fixture}-clone`;
-const output = path.join(sourceRoot, ".temp/knowledge-acceptance.json");
 const steps = [];
 const report = {
   kind: "public-cli-functional-acceptance",
@@ -268,8 +267,7 @@ try {
   process.exitCode = 1;
   console.error(report.error);
 } finally {
-  await mkdir(path.dirname(output), { recursive: true });
-  await writeFile(output, JSON.stringify(report, null, 2) + "\n");
+  process.stdout.write(JSON.stringify(report) + "\n");
   for (const target of [cloneFixture, fixture]) {
     let resolved;
     try { resolved = await realpath(target); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
