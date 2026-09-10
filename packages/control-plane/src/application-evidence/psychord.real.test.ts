@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { withCanonicalHashes, type ContentHash, type EvidenceRef, type Requirement } from "@projector/core";
+import { canonicalDocumentEnvelopeSchemaForKind, withCanonicalHashes, type BehavioralScenario, type ContentHash, type EvidenceRef } from "@projector/core";
 import {
   capturePsychordWorktreeDigest,
   createPsychordAgentBrowserHost,
@@ -23,7 +23,7 @@ import {
 import { expect, it } from "vitest";
 
 import { createDurablePsychordObservationArtifactService } from "./psychord.js";
-import { createPsychordApplicationEvidenceAssessmentService } from "./psychord-assessment.js";
+import { createPsychordApplicationEvidenceAssessmentService, type PsychordScenarioEnvelope } from "./psychord-assessment.js";
 
 const real = process.env.PROJECTOR_RUN_REAL_PSYCHORD === "1" ? it : it.skip;
 const psychordRoot = process.env.PROJECTOR_PSYCHORD_ROOT ?? "C:/dev/projects/psychord-omega";
@@ -95,7 +95,7 @@ for (const caseName of ["no-input", "keep-reload-replay", "save-failure"] as con
     const runId = `psychord-real-${caseName}-${randomUUID()}`;
     const port = await allocatePort();
     const dependencies = await dependencyPins();
-    const scenario = JSON.parse(await readFile(join(psychordRoot, ".projector/model/scenarios/9c1e2ad3d203e2c2b9a840364f70b786f86c48bdf5f58883f4bd82d80a827083.scenario.json"), "utf8")) as { semanticHash: ContentHash };
+    const scenario = canonicalDocumentEnvelopeSchemaForKind("behavioral-scenario").parse(JSON.parse(await readFile(join(psychordRoot, ".projector/model/scenarios/9c1e2ad3d203e2c2b9a840364f70b786f86c48bdf5f58883f4bd82d80a827083.scenario.json"), "utf8"))) as PsychordScenarioEnvelope;
     const plan: PsychordObservationPlan = {
       runId,
       case: caseName,
@@ -159,15 +159,15 @@ for (const caseName of ["no-input", "keep-reload-replay", "save-failure"] as con
           observationRole: "latest",
         },
     };
-    const boundRequirement = realAssessmentRequest(persisted.plan, evidence);
+    const boundOwner = realAssessmentRequest(persisted.plan, evidence, scenario);
     const assessments = createPsychordApplicationEvidenceAssessmentService({
       artifacts: reopened,
       currentness: { async observe(currentPlan, { signal: currentnessSignal }) {
         return await observePsychordEvidenceCurrentness({ commands: runner, plan: currentPlan, environment, signal: currentnessSignal });
       } },
-      requirements: { async readCurrent() { return boundRequirement.requirement; } },
+      owners: { async readCurrent() { return boundOwner.owner; } },
     });
-    const assessment = await assessments.assess(boundRequirement.request, { signal });
+    const assessment = await assessments.assess(boundOwner.request, { signal });
     expect(assessment).toMatchObject({ fulfillment: { status: "satisfied", selectedArtifactSetId: persisted.artifactSetId }, observations: [{ eligibility: "eligible", reuseCurrentness: { status: "current" } }] });
     const result = persisted.result;
     const output = result.adapter.output;
@@ -242,28 +242,16 @@ real("reobserves unchanged-HEAD dirty source, controller, and missing build byte
   }
 }, 90_000);
 
-function realAssessmentRequest(plan: PsychordApplicationObservationPlan, evidence: EvidenceRef) {
-  const payload: Requirement = {
-    id: "requirement:keep-owned-moment",
-    key: "keep-owned-moment",
-    title: "Keep a player-owned moment",
-    aliases: [],
-    statement: "The selected Psychord scenario predicate remains supported by current application evidence.",
-    status: "active",
-    sourceClass: "authored",
-    scope: { op: "atom", field: "scenario", matcher: "equals", value: plan.scenario.id },
-    origin: [],
-    evidence: [evidence],
-    discoveryHash: sha256(Buffer.from("requirement-discovery")),
-    semanticHash: sha256(Buffer.from("requirement-semantic")),
-  };
-  const canonical = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement" as const, id: payload.id, key: payload.key, lifecycle: payload.status, payload: { ...payload } });
-  const requirement = { ...canonical, kind: "requirement" as const, payload };
+function realAssessmentRequest(plan: PsychordApplicationObservationPlan, evidence: EvidenceRef, scenario: PsychordScenarioEnvelope) {
+  if (scenario.id !== plan.scenario.id || scenario.semanticHash !== plan.scenario.semanticHash) throw new Error("real observation plan must bind the authenticated Psychord scenario");
+  const payload: BehavioralScenario = { ...scenario.payload, evidence: [evidence] };
+  const owner = canonicalDocumentEnvelopeSchemaForKind("behavioral-scenario").parse(withCanonicalHashes({ apiVersion: scenario.apiVersion, schemaVersion: scenario.schemaVersion, kind: "behavioral-scenario" as const, id: scenario.id, key: scenario.key, lifecycle: scenario.lifecycle, payload: { ...payload } })) as PsychordScenarioEnvelope;
+  if (owner.semanticHash !== scenario.semanticHash) throw new Error("adding observation custody must not change scenario meaning identity");
   return {
-    requirement,
+    owner,
     request: {
-      schemaVersion: "psychord-application-evidence-assessment-request@3" as const,
-      requirement: { id: requirement.id, canonicalDocumentHash: requirement.canonicalDocumentHash },
+      schemaVersion: "psychord-application-evidence-assessment-request@4" as const,
+      owner: { kind: "behavioral-scenario" as const, id: owner.id, canonicalDocumentHash: owner.canonicalDocumentHash },
       evidenceIds: [evidence.evidenceId],
     },
   };

@@ -1,13 +1,13 @@
-import { canonicalDocumentEnvelopeSchemaForKind, type ContentHash } from "@projector/core";
+import { type ContentHash } from "@projector/core";
 import { CanonicalFileRepository } from "@projector/runtime";
 
 import type {
   PsychordApplicationEvidenceAssessmentService,
   PsychordEvidenceCurrentnessPort,
-  PsychordRequirementCustodyPort,
-  PsychordRequirementEnvelope,
+  PsychordEvidenceOwnerCustodyPort,
+  PsychordEvidenceOwnerEnvelope,
 } from "./psychord-assessment.js";
-import { createPsychordApplicationEvidenceAssessmentService } from "./psychord-assessment.js";
+import { createPsychordApplicationEvidenceAssessmentService, PsychordEvidenceOwnerEnvelopeSchema } from "./psychord-assessment.js";
 import type { PsychordObservationArtifactService } from "@projector/integrations/runtime-evidence";
 
 export type RetainedPsychordCanonicalAccess = {
@@ -16,12 +16,12 @@ export type RetainedPsychordCanonicalAccess = {
   readonly signal: AbortSignal;
 };
 
-export function createCanonicalPsychordRequirementCustody(
+export function createCanonicalPsychordEvidenceOwnerCustody(
   retained: RetainedPsychordCanonicalAccess,
-): PsychordRequirementCustodyPort {
+): PsychordEvidenceOwnerCustodyPort {
   const repository = new CanonicalFileRepository(retained.repositoryRoot);
   return {
-    async readCurrent(requirement, environment) {
+    async readCurrent(owner, environment) {
       const signal = AbortSignal.any([retained.signal, environment.signal]);
       signal.throwIfAborted();
       const snapshot = await abortable(repository.snapshot(), signal);
@@ -29,11 +29,11 @@ export function createCanonicalPsychordRequirementCustody(
       if (snapshot.rootDigest !== retained.canonicalProjectorDigest) {
         throw new Error("Current canonical snapshot differs from the retained shared-access state");
       }
-      const matches = snapshot.documents.filter(({ kind, id }) => kind === "requirement" && id === requirement.id);
-      if (matches.length !== 1) throw new Error("Current canonical requirement is absent or ambiguous");
-      const current = canonicalDocumentEnvelopeSchemaForKind("requirement").parse(matches[0]) as PsychordRequirementEnvelope;
-      if (current.canonicalDocumentHash !== requirement.canonicalDocumentHash) {
-        throw new Error("Current canonical requirement differs from the state-bound requirement document");
+      const matches = snapshot.documents.filter(({ kind, id }) => kind === owner.kind && id === owner.id);
+      if (matches.length !== 1) throw new Error("Current canonical evidence owner is absent or ambiguous");
+      const current = PsychordEvidenceOwnerEnvelopeSchema.parse(matches[0]) as PsychordEvidenceOwnerEnvelope;
+      if (current.canonicalDocumentHash !== owner.canonicalDocumentHash) {
+        throw new Error("Current canonical evidence owner differs from the state-bound owner document");
       }
       return current;
     },
@@ -48,14 +48,14 @@ export function createRetainedPsychordApplicationEvidenceAssessmentService(input
   return createPsychordApplicationEvidenceAssessmentService({
     artifacts: input.artifacts,
     currentness: input.currentness,
-    requirements: createCanonicalPsychordRequirementCustody(input.retained),
+    owners: createCanonicalPsychordEvidenceOwnerCustody(input.retained),
   });
 }
 
 async function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) signal.throwIfAborted();
   return await new Promise<T>((resolvePromise, rejectPromise) => {
-    const abort = () => rejectPromise(signal.reason ?? new Error("Canonical requirement custody was cancelled"));
+    const abort = () => rejectPromise(signal.reason ?? new Error("Canonical evidence owner custody was cancelled"));
     signal.addEventListener("abort", abort, { once: true });
     work.then(resolvePromise, rejectPromise).finally(() => signal.removeEventListener("abort", abort)).catch(() => undefined);
   });

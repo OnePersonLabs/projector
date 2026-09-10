@@ -122,7 +122,7 @@ it("is durably incomplete while observation has no terminal result, then publish
   });
   expect(PsychordApplicationEvidenceAssessmentSchema.parse(assessed)).toEqual(assessed);
   expect(psychordApplicationEvidenceDependencies(assessed)).toEqual([
-    expect.objectContaining({ kind: "canonical-entity", id: assessed.requirement.id, versionHash: assessed.requirement.canonicalDocumentHash }),
+    expect.objectContaining({ kind: "canonical-entity", id: assessed.owner.id, versionHash: assessed.owner.canonicalDocumentHash }),
     expect.objectContaining({ kind: "artifact", id: `application-evidence:${published.artifactSetId}` }),
     expect.objectContaining({ kind: "external-snapshot", id: `application-evidence-currentness:${published.artifactSetId}` }),
     expect.objectContaining({ kind: "artifact", id: `application-evidence:${laterArtifactSetId}` }),
@@ -179,17 +179,17 @@ it("is durably incomplete while observation has no terminal result, then publish
   ]), { signal: new AbortController().signal })).rejects.toThrow(/Psychord application observation adapter/u);
   const otherRequirement = requirementEnvelope([evidenceReference(plan, "other-artifact", "prior")], "requirement:other");
   await expect(assessmentService.assess({
-    schemaVersion: "psychord-application-evidence-assessment-request@3",
-    requirement: { id: otherRequirement.id, canonicalDocumentHash: otherRequirement.canonicalDocumentHash },
+    schemaVersion: "psychord-application-evidence-assessment-request@4",
+    owner: { kind: "requirement", id: otherRequirement.id, canonicalDocumentHash: otherRequirement.canonicalDocumentHash },
     evidenceIds: [published.artifactSetId],
-  }, { signal: new AbortController().signal })).rejects.toThrow(/current canonical requirement is absent/u);
+  }, { signal: new AbortController().signal })).rejects.toThrow(/current canonical evidence owner is absent/u);
   const currentRequest = assessmentRequest(plan, [evidenceReference(plan, published.artifactSetId, "prior")]);
   const staleRequirement = requirementEnvelope([evidenceReference(plan, "stale-artifact", "prior")]);
   await expect(assessmentService.assess({
     ...currentRequest,
-    requirement: { id: staleRequirement.id, canonicalDocumentHash: staleRequirement.canonicalDocumentHash },
+    owner: { kind: "requirement", id: staleRequirement.id, canonicalDocumentHash: staleRequirement.canonicalDocumentHash },
     evidenceIds: ["stale-artifact"],
-  }, { signal: new AbortController().signal })).rejects.toThrow(/state-bound requirement document/u);
+  }, { signal: new AbortController().signal })).rejects.toThrow(/state-bound owner document/u);
   for (const stance of ["context", "contradicts"] as const) {
     await expect(assessmentService.assess(assessmentRequest(plan, [
       { ...evidenceReference(plan, published.artifactSetId, "prior"), stance },
@@ -261,13 +261,13 @@ it("is durably incomplete while observation has no terminal result, then publish
 });
 
 const createPsychordApplicationEvidenceAssessmentService = (
-  input: Omit<Parameters<typeof createStateBoundPsychordApplicationEvidenceAssessmentService>[0], "requirements">,
+  input: Omit<Parameters<typeof createStateBoundPsychordApplicationEvidenceAssessmentService>[0], "owners">,
 ) => createStateBoundPsychordApplicationEvidenceAssessmentService({
   ...input,
-  requirements: {
-    async readCurrent(requirement) {
-      const current = currentRequirements.get(requirement.id);
-      if (current === undefined) throw new Error("current canonical requirement is absent");
+  owners: {
+    async readCurrent(owner) {
+      const current = currentRequirements.get(owner.id);
+      if (current === undefined) throw new Error("current canonical evidence owner is absent");
       return current;
     },
   },
@@ -675,8 +675,8 @@ function assessmentRequest(_plan: PsychordApplicationObservationPlan, evidence: 
   const requirement = requirementEnvelope(evidence);
   currentRequirements.set(requirement.id, requirement);
   return {
-    schemaVersion: "psychord-application-evidence-assessment-request@3" as const,
-    requirement: { id: requirement.id, canonicalDocumentHash: requirement.canonicalDocumentHash },
+    schemaVersion: "psychord-application-evidence-assessment-request@4" as const,
+    owner: { kind: "requirement" as const, id: requirement.id, canonicalDocumentHash: requirement.canonicalDocumentHash },
     evidenceIds: evidence.map(({ evidenceId }) => evidenceId),
   };
 }

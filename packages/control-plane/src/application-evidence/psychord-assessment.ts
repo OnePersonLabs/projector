@@ -8,6 +8,7 @@ import {
   hashFramedDomain,
   type ApplicationEvidencePredicateBinding,
   type CanonicalDocumentEnvelope,
+  type BehavioralScenario,
   type ContentHash,
   type EvidenceRef,
   type Requirement,
@@ -49,8 +50,8 @@ const observationReference: z.ZodType<PsychordEvidenceReference> = EvidenceRefSc
 });
 
 export const PsychordApplicationEvidenceAssessmentRequestSchema = z.strictObject({
-  schemaVersion: z.literal("psychord-application-evidence-assessment-request@3"),
-  requirement: z.strictObject({ id: identity, canonicalDocumentHash: ContentHashSchema }),
+  schemaVersion: z.literal("psychord-application-evidence-assessment-request@4"),
+  owner: z.strictObject({ kind: z.enum(["requirement", "behavioral-scenario"]), id: identity, canonicalDocumentHash: ContentHashSchema }),
   evidenceIds: z.array(identity).min(1).max(64),
 }).superRefine((value, context) => {
   if (new Set(value.evidenceIds).size !== value.evidenceIds.length) {
@@ -122,18 +123,27 @@ const fulfillment = z.strictObject({
   reason,
 });
 
+export type PsychordRequirementEnvelope = Omit<CanonicalDocumentEnvelope, "kind" | "payload"> & { readonly kind: "requirement"; readonly payload: Requirement };
+export type PsychordScenarioEnvelope = Omit<CanonicalDocumentEnvelope, "kind" | "payload"> & { readonly kind: "behavioral-scenario"; readonly payload: BehavioralScenario };
+export type PsychordEvidenceOwnerEnvelope = PsychordRequirementEnvelope | PsychordScenarioEnvelope;
+export const PsychordEvidenceOwnerEnvelopeSchema = z.union([
+  canonicalDocumentEnvelopeSchemaForKind("requirement"),
+  canonicalDocumentEnvelopeSchemaForKind("behavioral-scenario"),
+]) as z.ZodType<PsychordEvidenceOwnerEnvelope>;
+
 export const PsychordApplicationEvidenceAssessmentSchema = z.strictObject({
-  schemaVersion: z.literal("psychord-application-evidence-assessment@3"),
+  schemaVersion: z.literal("psychord-application-evidence-assessment@4"),
   request: PsychordApplicationEvidenceAssessmentRequestSchema,
-  requirement: canonicalDocumentEnvelopeSchemaForKind("requirement") as z.ZodType<PsychordRequirementEnvelope>,
+  owner: PsychordEvidenceOwnerEnvelopeSchema,
   observations: z.array(assessedObservation).min(1).max(64),
   fulfillment,
 }).superRefine((value, context) => {
-  if (value.requirement.id !== value.request.requirement.id
-    || value.requirement.canonicalDocumentHash !== value.request.requirement.canonicalDocumentHash) {
-    context.addIssue({ code: "custom", path: ["requirement"], message: "assessment requirement does not match its state-bound request" });
+  if (value.owner.kind !== value.request.owner.kind
+    || value.owner.id !== value.request.owner.id
+    || value.owner.canonicalDocumentHash !== value.request.owner.canonicalDocumentHash) {
+    context.addIssue({ code: "custom", path: ["owner"], message: "assessment owner does not match its state-bound request" });
   }
-  const selected = selectRequirementEvidence(value.request.evidenceIds, value.requirement, context);
+  const selected = selectOwnerEvidence(value.request.evidenceIds, value.owner, context);
   if (canonicalJson(selected) !== canonicalJson(value.observations.map(({ reference }) => reference))) {
     context.addIssue({ code: "custom", path: ["observations"], message: "assessment observations do not match the exact declared references" });
   }
@@ -158,39 +168,39 @@ export interface PsychordApplicationEvidenceAssessmentService {
   assess(request: PsychordApplicationEvidenceAssessmentRequest, environment: { readonly signal: AbortSignal }): Promise<PsychordApplicationEvidenceAssessment>;
 }
 
-export interface PsychordRequirementCustodyPort {
+export interface PsychordEvidenceOwnerCustodyPort {
   readCurrent(
-    requirement: PsychordApplicationEvidenceAssessmentRequest["requirement"],
+    owner: PsychordApplicationEvidenceAssessmentRequest["owner"],
     environment: { readonly signal: AbortSignal },
-  ): Promise<PsychordRequirementEnvelope>;
+  ): Promise<PsychordEvidenceOwnerEnvelope>;
 }
 
 export function createPsychordApplicationEvidenceAssessmentService(input: {
   readonly artifacts: PsychordObservationArtifactService;
   readonly currentness: PsychordEvidenceCurrentnessPort;
-  readonly requirements: PsychordRequirementCustodyPort;
+  readonly owners: PsychordEvidenceOwnerCustodyPort;
 }): PsychordApplicationEvidenceAssessmentService {
   return {
     async assess(unparsedRequest, environment) {
       const request = PsychordApplicationEvidenceAssessmentRequestSchema.parse(unparsedRequest);
       environment.signal.throwIfAborted();
-      const requirement = (canonicalDocumentEnvelopeSchemaForKind("requirement") as z.ZodType<PsychordRequirementEnvelope>)
-        .parse(await input.requirements.readCurrent(request.requirement, environment));
-      if (requirement.id !== request.requirement.id
-        || requirement.canonicalDocumentHash !== request.requirement.canonicalDocumentHash
-        || requirement.payload.id !== request.requirement.id) {
-        throw new Error("Current canonical requirement does not match the state-bound requirement document");
+      const owner = PsychordEvidenceOwnerEnvelopeSchema.parse(await input.owners.readCurrent(request.owner, environment));
+      if (owner.kind !== request.owner.kind
+        || owner.id !== request.owner.id
+        || owner.canonicalDocumentHash !== request.owner.canonicalDocumentHash
+        || owner.payload.id !== request.owner.id) {
+        throw new Error("Current canonical evidence owner does not match the state-bound owner document");
       }
-      const evidence = selectRequirementEvidence(request.evidenceIds, requirement);
+      const evidence = selectOwnerEvidence(request.evidenceIds, owner);
       const observations: z.infer<typeof assessedObservation>[] = [];
       for (const reference of evidence) {
         environment.signal.throwIfAborted();
         observations.push(await assessObservation(input.artifacts, input.currentness, reference, environment.signal));
       }
       return PsychordApplicationEvidenceAssessmentSchema.parse({
-        schemaVersion: "psychord-application-evidence-assessment@3",
+        schemaVersion: "psychord-application-evidence-assessment@4",
         request,
-        requirement,
+        owner,
         observations,
         fulfillment: deriveFulfillment(observations),
       });
@@ -344,23 +354,21 @@ function selected(
   return { status, selectedArtifactSetId: observation.reference.evidenceId, preservedPriorPassing, reason: selectedReason };
 }
 
-export type PsychordRequirementEnvelope = Omit<CanonicalDocumentEnvelope, "kind" | "payload"> & { readonly kind: "requirement"; readonly payload: Requirement };
-
-function selectRequirementEvidence(
+function selectOwnerEvidence(
   evidenceIds: readonly string[],
-  requirement: PsychordRequirementEnvelope,
+  owner: PsychordEvidenceOwnerEnvelope,
   context?: z.RefinementCtx,
 ): PsychordEvidenceReference[] {
   const selected: PsychordEvidenceReference[] = [];
-  if (requirement.payload.status !== "active") {
-    if (context !== undefined) context.addIssue({ code: "custom", path: ["requirement", "payload", "status"], message: "application evidence custody requires an active canonical requirement" });
-    else throw new Error("Application evidence custody requires an active canonical requirement");
+  if (owner.payload.status !== "active") {
+    if (context !== undefined) context.addIssue({ code: "custom", path: ["owner", "payload", "status"], message: "application evidence custody requires an active canonical owner" });
+    else throw new Error("Application evidence custody requires an active canonical owner");
   }
   for (const [index, evidenceId] of evidenceIds.entries()) {
-    const matches = requirement.payload.evidence.filter((reference) => reference.evidenceId === evidenceId);
+    const matches = owner.payload.evidence.filter((reference) => reference.evidenceId === evidenceId);
     if (matches.length !== 1) {
-      if (context !== undefined) context.addIssue({ code: "custom", path: ["evidenceIds", index], message: "evidence ID must identify exactly one reference in the authenticated requirement" });
-      else throw new Error("Evidence ID does not belong exactly once to the current canonical requirement");
+      if (context !== undefined) context.addIssue({ code: "custom", path: ["evidenceIds", index], message: "evidence ID must identify exactly one reference in the authenticated owner" });
+      else throw new Error("Evidence ID does not belong exactly once to the current canonical owner");
       continue;
     }
     const parsed = observationReference.safeParse(matches[0]);
@@ -370,6 +378,14 @@ function selectRequirementEvidence(
       continue;
     }
     selected.push(parsed.data);
+  }
+  if (owner.kind === "behavioral-scenario") {
+    for (const [index, reference] of selected.entries()) {
+      const scenario = reference.applicationPredicate.scenario;
+      if (scenario.id === owner.id && scenario.semanticHash === owner.semanticHash) continue;
+      if (context !== undefined) context.addIssue({ code: "custom", path: ["evidenceIds", index, "applicationPredicate", "scenario"], message: "scenario-owned evidence must bind the exact current owner meaning" });
+      else throw new Error("Scenario-owned evidence must bind the exact current owner meaning");
+    }
   }
   for (const issue of applicationEvidenceBindingIssues(selected)) {
     if (context !== undefined) context.addIssue({ code: "custom", path: ["evidenceIds", issue.index], message: issue.message });
@@ -404,9 +420,9 @@ export function psychordApplicationEvidenceDependencies(unparsedAssessment: unkn
   const assessment = PsychordApplicationEvidenceAssessmentSchema.parse(unparsedAssessment);
   const dependencies: StateValueDependencyRef[] = [{
     kind: "canonical-entity",
-    id: assessment.requirement.id,
-    versionHash: assessment.requirement.canonicalDocumentHash,
-    role: "Current canonical requirement owning the application evidence predicate",
+    id: assessment.owner.id,
+    versionHash: assessment.owner.canonicalDocumentHash,
+    role: "Current canonical meaning owning the application evidence predicate",
   }];
   for (const observation of assessment.observations) {
     dependencies.push({
