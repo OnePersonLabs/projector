@@ -6,11 +6,14 @@ import {
   ConfidenceSchema,
   ContentHashSchema,
   EntityIdSchema,
+  GitRealizationLocatorSchema,
   SourceClassSchema,
 } from "./contracts.js";
 import * as generated from "./generated-contracts.js";
 import { getHashProfile } from "../hashing/projections.js";
 import { ChangeProposalSchema } from "./change-proposal.js";
+import { CanonicalDocumentEnvelopeSchema } from "./canonical-envelope.js";
+import { PreparedProjectorConfigSchema } from "./project-config.js";
 
 export interface ContractRegistration {
   readonly schema?: z.ZodType;
@@ -42,6 +45,7 @@ export const normativeContractNames = [
   "ChangeIntentAnalysis",
   "ChangeOperation",
   "ChangeProposal",
+  "CanonicalDocumentEnvelope",
   "CommandSpec",
   "CompletionContract",
   "Concept",
@@ -75,6 +79,7 @@ export const normativeContractNames = [
   "ExecutionPolicy",
   "GovernanceBasis",
   "GovernanceException",
+  "GitRealizationLocator",
   "GraphReader",
   "IgnorePolicy",
   "ImpactClosureRef",
@@ -103,6 +108,7 @@ export const normativeContractNames = [
   "ProjectionLens",
   "ProjectionSpec",
   "ProjectionUnit",
+  "PreparedProjectorConfig",
   "RecognizerBinding",
   "Relation",
   "RelationType",
@@ -111,6 +117,9 @@ export const normativeContractNames = [
   "RelevanceEntry",
   "RelevanceReason",
   "RelevanceSeed",
+  "RealizationBinding",
+  "RealizationOriginRef",
+  "RealizationSelectorExpr",
   "RepairCapabilities",
   "RepairStrategy",
   "RepresentationProjection",
@@ -205,9 +214,12 @@ const schemaExports: Record<string, z.ZodType> = {
   EntityIdSchema,
   ConfidenceSchema,
   ContentHashSchema,
+  GitRealizationLocatorSchema,
   SourceClassSchema,
   ...generated,
   ChangeProposalSchema,
+  CanonicalDocumentEnvelopeSchema,
+  PreparedProjectorConfigSchema,
 };
 
 export const contractRegistry: Readonly<Record<string, ContractRegistration>> =
