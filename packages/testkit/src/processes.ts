@@ -8,11 +8,11 @@ export interface CommandResult {
   stderr: string;
 }
 
-export interface CommandSandbox {
+export interface CommandRunner {
   run(command: CommandSpec): Promise<CommandResult>;
 }
 
-export class FakeCommandSandbox implements CommandSandbox {
+export class FakeCommandRunner implements CommandRunner {
   readonly #results: Readonly<Record<string, CommandResult>>;
   readonly #calls: CommandSpec[] = [];
 

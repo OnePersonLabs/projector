@@ -76,15 +76,15 @@
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/execution/packet-coordinator.test.ts#packet execution coordinator detects same-path content mutation, rejects forged approval/independence, and replaces commit intent with failure truth"
     },
-    "scenario:16:capability-proven-sandbox-isolation": {
-      "obligationId": "scenario:16:capability-proven-sandbox-isolation",
-      "publicFacade": "projector/runtime",
-      "testRef": "packages/runtime/src/execution/sandbox-launcher.test.ts#createSandboxLauncher refuses denied primary and incomplete fallback before commands while selecting and launching only a proven backend"
+    "scenario:16:trusted-host-validator-integrity": {
+      "obligationId": "scenario:16:trusted-host-validator-integrity",
+      "publicFacade": "projector/control-plane",
+      "testRef": "packages/control-plane/src/knowledge/governance.test.ts#public durable repository validators executes the pinned tracked validator through the native host with explicit trust limits"
     },
-    "scenario:17:manual-only-sandbox-release-workflow": {
-      "obligationId": "scenario:17:manual-only-sandbox-release-workflow",
+    "scenario:17:manual-only-source-severed-release-workflow": {
+      "obligationId": "scenario:17:manual-only-source-severed-release-workflow",
       "publicFacade": "projector",
-      "testRef": "scripts/sandbox-release-workflow.test.ts#manual sandbox release workflow has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job"
+      "testRef": "scripts/sandbox-release-workflow.test.ts#manual source-severed release workflow has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job"
     },
     "scenario:18:operational-mcp-advertisement": {
       "obligationId": "scenario:18:operational-mcp-advertisement",

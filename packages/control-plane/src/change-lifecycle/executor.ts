@@ -23,9 +23,10 @@ import {
   ExactTextPatchTransform,
   FileTransactionJournal,
   GovernedWorktreeRuntime,
+  NativeProcessLauncher,
   RepositoryPathService,
   WriterLeaseManager,
-  createSandboxLauncher,
+  configuredHostAssumptions,
   type ExactTextPatchInput,
   type FileTransaction,
   type GovernedWorktreeSession,
@@ -358,7 +359,6 @@ async function runNodeValidators(
   paths: RepositoryPathService,
   validatorIds: readonly string[],
   independentValidators: CompiledRepositoryChange["independentValidators"],
-  independentValidatorProjections: ReadonlyMap<string, string>,
   signal: AbortSignal,
   now: () => string,
   runWhileOwned: <T>(operation: () => Promise<T>) => Promise<T>,
@@ -369,7 +369,6 @@ async function runNodeValidators(
     if (validator === undefined) continue;
     const startedAt = now();
     const expected = independentValidators.find(({ path }) => path === validator.path)?.contentHash;
-    const projectionSource = independentValidatorProjections.get(validator.path);
     const contentPath = (await paths.resolveRead(validator.path)).realTarget;
     const beforeContentHash = hashFramedDomain("transform-content", await readFile(contentPath, "utf8"));
     const identityEvidenceId = `evidence_${hashFramedDomain("validator-execution-identity", {
@@ -377,18 +376,18 @@ async function runNodeValidators(
       expectedContentHash: expected ?? beforeContentHash,
       beforeContentHash,
     }).slice(-32)}`;
-    if (expected !== undefined && (beforeContentHash !== expected || projectionSource === undefined)) {
+    if (expected === undefined || beforeContentHash !== expected) {
       results.push({
         validatorId,
         status: "blocked",
-        summary: `sandboxed Node validator identity changed before execution: ${validator.path}`,
+        summary: `Host validator source is unavailable or changed before execution: ${validator.path}`,
         evidenceIds: [identityEvidenceId],
         evidenceLane: "test",
         independenceGroup: validator.independenceGroup,
         assurance: "strong",
         authorSource: validator.authorSource,
         sideEffectClass: "none",
-        details: { expectedContentHash: expected, beforeContentHash, projectionAvailable: projectionSource !== undefined },
+        details: { expectedContentHash: expected, beforeContentHash, exactResolvedPath: contentPath },
         startedAt,
         completedAt: now(),
       });
@@ -396,15 +395,9 @@ async function runNodeValidators(
     }
     const execution = await runWhileOwned(() => launcher.launch({
       executable: process.execPath,
-      args: [validator.path],
+      args: [contentPath],
       cwd: repositoryRoot,
       env: {},
-      readRoots: [repositoryRoot],
-      writeRoots: [],
-      ...(projectionSource === undefined ? {} : {
-        readOnlyFileOverlays: [{ source: projectionSource, target: contentPath }],
-      }),
-      network: "deny",
       timeoutMs: 30_000,
       maxOutputBytes: 256 * 1_024,
       signal,
@@ -416,10 +409,10 @@ async function runNodeValidators(
       validatorId,
       status: passed ? "passed" : "failed",
       summary: passed
-        ? `sandboxed Node validator passed with stable content identity: ${validator.path}`
+        ? `Host validator passed with stable exact source identity: ${validator.path}`
         : identityCurrent
-          ? `sandboxed Node validator failed: ${validator.path}`
-          : `sandboxed Node validator identity changed during execution: ${validator.path}`,
+          ? `Host validator failed: ${validator.path}`
+          : `Host validator source identity changed during execution: ${validator.path}`,
       evidenceIds: [identityEvidenceId],
       evidenceLane: "test",
       independenceGroup: validator.independenceGroup,
@@ -431,11 +424,11 @@ async function runNodeValidators(
         beforeContentHash,
         afterContentHash,
         executedContentHash: expected ?? beforeContentHash,
-        executionSource: projectionSource === undefined ? "live-proposal-validator" : "immutable-captured-overlay",
-        exitCode: execution.exitCode,
-        signal: execution.signal,
-        stdout: execution.stdout,
-        stderr: execution.stderr,
+        executionSource: "exact-live-tracked-validator",
+        exactResolvedPath: contentPath,
+        observedResult: { exitCode: execution.exitCode, signal: execution.signal, stdout: execution.stdout, stderr: execution.stderr },
+        enforcedBounds: { timeoutMs: 30_000, maxOutputBytes: 256 * 1_024, callerCancellation: true },
+        hostAssumptions: configuredHostAssumptions,
       },
       startedAt,
       completedAt: now(),
@@ -453,17 +446,8 @@ export async function executeCompiledRepositoryChange(
   const capsule: ExecutionCapsule = packet.capsule;
   if (input.approval.capsuleId !== capsule.id) throw new Error("execution approval belongs to another capsule");
 
-  // Selection performs a live isolation probe. It must succeed before a lease or journal begins.
-  const launcher = input.compiled.executionKind === "canonical-only" ? undefined : await createSandboxLauncher();
-  if (input.compiled.independentValidators.length > 0 && launcher?.capabilities.readOnlyFileOverlays !== true) {
-    throw new Error("selected sandbox cannot capability-prove immutable validator file overlays");
-  }
+  const launcher = input.compiled.executionKind === "canonical-only" ? undefined : new NativeProcessLauncher();
   const paths = await RepositoryPathService.create(input.repositoryRoot);
-  const independentValidatorProjections = new Map<string, string>();
-  for (const validator of input.compiled.independentValidators) {
-    const reference = await input.store.writeValidatorProjection(validator.contentHash, validator.content);
-    independentValidatorProjections.set(validator.path, (await paths.resolveRead(reference)).realTarget);
-  }
   const journal = new FileTransactionJournal(paths);
   const leaseStaleAfterMs = input.leaseStaleAfterMs ?? 30_000;
   const worktree = new GovernedWorktreeRuntime(new WriterLeaseManager(paths, { staleAfterMs: leaseStaleAfterMs }), journal);
@@ -525,7 +509,6 @@ export async function executeCompiledRepositoryChange(
         paths,
         capsule.requiredValidations,
         input.compiled.independentValidators,
-        independentValidatorProjections,
         context.signal,
         now,
         (operation) => transaction.runWhileOwned(operation),

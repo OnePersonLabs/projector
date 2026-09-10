@@ -18,7 +18,7 @@ export type ExecutionRefusalCode =
   | "network-refused"
   | "scope-refused"
   | "stale-binding"
-  | "unsupported-isolation";
+  | "unsupported-resource-limit";
 
 export class ExecutionRefusedError extends Error {
   readonly code: ExecutionRefusalCode;
@@ -63,17 +63,8 @@ export interface ProcessCleanupObservation {
 }
 
 export interface ProcessLauncherCapabilities {
-  filesystemIsolation: boolean;
-  networkIsolation: boolean;
   cpuLimits: boolean;
   memoryLimits: boolean;
-  externalWrites: boolean;
-  readOnlyFileOverlays: boolean;
-}
-
-export interface ReadOnlyFileOverlay {
-  readonly source: string;
-  readonly target: string;
 }
 
 export interface ProcessLaunchRequest {
@@ -81,10 +72,6 @@ export interface ProcessLaunchRequest {
   args: string[];
   cwd: string;
   env: Record<string, string>;
-  readRoots: string[];
-  writeRoots: string[];
-  readOnlyFileOverlays?: ReadOnlyFileOverlay[];
-  network: "deny" | "allow";
   timeoutMs: number;
   cpuBudgetMs?: number;
   memoryBudgetMb?: number;
@@ -99,6 +86,31 @@ export interface ProcessExecutionResult {
   stderr: string;
   durationMs: number;
 }
+
+export interface HostExecutionAssumptions {
+  readonly permissions: "configured-host";
+  readonly filesystemConfinement: false;
+  readonly networkDenial: false;
+  readonly hostileSameUserProtection: false;
+}
+
+export interface StateBoundCommandExecutionResult extends ProcessExecutionResult {
+  readonly authorization: {
+    readonly commandId: string;
+    readonly readScope: readonly string[];
+    readonly writeScope: readonly string[];
+    readonly requiresNetwork: boolean;
+    readonly sideEffectClass: CommandSpec["sideEffectClass"];
+  };
+  readonly hostAssumptions: HostExecutionAssumptions;
+}
+
+export const configuredHostAssumptions: HostExecutionAssumptions = {
+  permissions: "configured-host",
+  filesystemConfinement: false,
+  networkDenial: false,
+  hostileSameUserProtection: false,
+};
 
 export interface ProcessLauncher {
   readonly capabilities: ProcessLauncherCapabilities;
@@ -129,7 +141,7 @@ export class StateBoundCommandExecutor {
   async execute(
     spec: CommandSpec,
     authorization: CommandExecutionAuthorization,
-  ): Promise<ProcessExecutionResult> {
+  ): Promise<StateBoundCommandExecutionResult> {
     this.validateDeclaration(spec, authorization);
 
     const context: AdapterContext = {
@@ -154,18 +166,16 @@ export class StateBoundCommandExecutor {
     }
 
     let cwd: Awaited<ReturnType<RepositoryPathService["resolveScopedRead"]>>;
-    let readRoots: string[];
-    let writeRoots: string[];
     try {
       cwd = await this.paths.resolveScopedRead(spec.cwd, spec.readScope);
       await this.paths.resolveScopedRead(spec.cwd, authorization.allowedReadRoots);
-      readRoots = await Promise.all(
+      await Promise.all(
         spec.readScope.map(async (scope) => {
           const resolved = await this.paths.resolveScopedRead(scope, authorization.allowedReadRoots);
           return resolved.realTarget;
         }),
       );
-      writeRoots = await Promise.all(
+      await Promise.all(
         spec.writeScope.map(async (scope) => {
           const resolved = await this.paths.resolveScopedWrite(scope, authorization.allowedWriteRoots);
           return resolved.realTarget;
@@ -189,20 +199,28 @@ export class StateBoundCommandExecutor {
     if (executable === undefined) {
       throw new ExecutionRefusedError("invalid-command", `Command ${spec.id} has no executable`);
     }
-    return this.launcher.launch({
+    const observed = await this.launcher.launch({
       executable,
       args: spec.argv.slice(1),
       cwd: cwd.realTarget,
       env,
-      readRoots,
-      writeRoots,
-      network: spec.network,
       timeoutMs: spec.timeoutMs,
       ...(spec.cpuBudgetMs === undefined ? {} : { cpuBudgetMs: spec.cpuBudgetMs }),
       ...(spec.memoryBudgetMb === undefined ? {} : { memoryBudgetMb: spec.memoryBudgetMb }),
       maxOutputBytes: authorization.maxOutputBytes,
       signal: authorization.signal,
     });
+    return {
+      ...observed,
+      authorization: {
+        commandId: spec.id,
+        readScope: [...spec.readScope],
+        writeScope: [...spec.writeScope],
+        requiresNetwork: spec.requiresNetwork,
+        sideEffectClass: spec.sideEffectClass,
+      },
+      hostAssumptions: configuredHostAssumptions,
+    };
   }
 
   private validateDeclaration(spec: CommandSpec, authorization: CommandExecutionAuthorization): void {
@@ -226,7 +244,7 @@ export class StateBoundCommandExecutor {
     if ((spec.sideEffectClass === "none" || spec.sideEffectClass === "read-only") && spec.writeScope.length > 0) {
       throw new ExecutionRefusedError("scope-refused", `Read-only command ${spec.id} declares write scope`);
     }
-    if (spec.network === "allow" && !authorization.allowNetwork) {
+    if (spec.requiresNetwork && !authorization.allowNetwork) {
       throw new ExecutionRefusedError("network-refused", `Command ${spec.id} has no network grant`);
     }
     if (spec.sideEffectClass === "external-write" && !authorization.allowExternalWrites) {
@@ -237,10 +255,10 @@ export class StateBoundCommandExecutor {
   private validateLauncherCapabilities(spec: CommandSpec): void {
     const capabilities = this.launcher.capabilities;
     if (spec.cpuBudgetMs !== undefined && !capabilities.cpuLimits) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Host process launcher cannot enforce the requested CPU budget");
+      throw new ExecutionRefusedError("unsupported-resource-limit", "Host process launcher cannot enforce the requested CPU budget");
     }
     if (spec.memoryBudgetMb !== undefined && !capabilities.memoryLimits) {
-      throw new ExecutionRefusedError("unsupported-isolation", "Host process launcher cannot enforce the requested memory budget");
+      throw new ExecutionRefusedError("unsupported-resource-limit", "Host process launcher cannot enforce the requested memory budget");
     }
   }
 }
@@ -252,7 +270,7 @@ function sameCommand(left: CommandSpec, right: CommandSpec): boolean {
     left.cwd === right.cwd &&
     sameStrings(left.readScope, right.readScope) &&
     sameStrings(left.writeScope, right.writeScope) &&
-    left.network === right.network &&
+    left.requiresNetwork === right.requiresNetwork &&
     sameStrings(left.environmentKeys, right.environmentKeys) &&
     left.sideEffectClass === right.sideEffectClass &&
     Object.is(left.timeoutMs, right.timeoutMs) &&
@@ -281,12 +299,8 @@ function sameState(left: StateDigest, right: StateDigest): boolean {
 
 export class NativeProcessLauncher implements ProcessLauncher {
   readonly capabilities: ProcessLauncherCapabilities = {
-    filesystemIsolation: false,
-    networkIsolation: false,
     cpuLimits: false,
     memoryLimits: false,
-    externalWrites: false,
-    readOnlyFileOverlays: false,
   };
 
   launch(request: ProcessLaunchRequest): Promise<ProcessExecutionResult> {

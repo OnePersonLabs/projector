@@ -136,7 +136,7 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("journals and applies a model-only future obligation without a code sandbox or runtime satisfaction claim", async () => {
+  it("journals and applies a model-only future obligation without host code execution or runtime satisfaction claim", async () => {
     const root = await repository();
     try {
       const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-09-09T00:00:00.000Z" });
@@ -398,7 +398,7 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("executes the approved exact packet through the lease, journal, sandbox, and durable result", async () => {
+  it("executes the approved exact packet through the lease, journal, host validator, and durable result", async () => {
     const root = await repository();
     try {
       const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
@@ -423,7 +423,13 @@ describe("repository change lifecycle service", () => {
         beforeContentHash: expect.stringMatching(/^sha256:v1:/u),
         afterContentHash: expect.stringMatching(/^sha256:v1:/u),
         executedContentHash: expect.stringMatching(/^sha256:v1:/u),
-        executionSource: "immutable-captured-overlay",
+        executionSource: "exact-live-tracked-validator",
+        hostAssumptions: {
+          permissions: "configured-host",
+          filesystemConfinement: false,
+          networkDenial: false,
+          hostileSameUserProtection: false,
+        },
       });
       expect(independent?.details.expectedContentHash).toBe(independent?.details.afterContentHash);
       expect(independent?.evidenceIds).toHaveLength(1);
@@ -435,7 +441,7 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("rolls back the journaled packet when the independent sandboxed validator fails", async () => {
+  it("rolls back the journaled packet when the independent host validator fails", async () => {
     const root = await repository();
     try {
       const service = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-08-26T00:00:00.000Z" });
@@ -576,7 +582,7 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("survives SIGKILL during sandbox validation, takes over the stale lease, and resumes", async () => {
+  it("survives SIGKILL during host validation, takes over the stale lease, and resumes", async () => {
     const root = await repository();
     let child: ReturnType<typeof spawn> | undefined;
     try {
@@ -682,7 +688,7 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("propagates cancellation into sandbox validation and rolls back exactly", async () => {
+  it("propagates cancellation into host validation and rolls back exactly", async () => {
     const root = await repository();
     try {
       await writeFile(join(root, "test", "public-contract.test.mjs"), ["import { existsSync } from 'node:fs';", "import { setTimeout as delay } from 'node:timers/promises';", "if (existsSync('.projector/runtime/cancellation-hold')) await delay(20_000);", ""].join("\n"));
@@ -721,5 +727,5 @@ async function waitForValidatingTransaction(root: string): Promise<string> {
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error("child lifecycle did not reach sandbox validation before interruption deadline");
+  throw new Error("child lifecycle did not reach host validation before interruption deadline");
 }
