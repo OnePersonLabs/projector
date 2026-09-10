@@ -68,6 +68,9 @@ importers:
       '@projector/engine':
         specifier: workspace:*
         version: link:../engine
+      '@projector/integrations':
+        specifier: workspace:*
+        version: link:../integrations
       '@projector/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -98,6 +101,9 @@ importers:
       '@projector/engine':
         specifier: workspace:*
         version: link:../engine
+      zod:
+        specifier: ^4.0.15
+        version: 4.4.3
 
   packages/runtime:
     dependencies:
