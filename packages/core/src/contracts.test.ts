@@ -38,7 +38,7 @@ describe("normative contract registry", () => {
     };
 
     expect(CommandSpecSchema.safeParse(command).success).toBe(true);
-    expect(CommandSpecSchema.safeParse({ ...command, requiresNetwork: undefined, network: "deny" }).success).toBe(false);
+    expect(CommandSpecSchema.safeParse({ ...command, network: "deny" }).success).toBe(false);
   });
 
   it("represents every exported normative declaration exactly once", () => {
