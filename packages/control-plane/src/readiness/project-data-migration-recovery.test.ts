@@ -81,6 +81,27 @@ describe("prepared project-data migration recovery service", () => {
     expect((await fixture.pending.read())?.phase).toBe("publishing");
   });
 
+  test("identifies the exact attempt when the release candidate does not match its target", async () => {
+    const fixture = await committedFixture();
+    const candidate = {
+      ...fixture.candidate,
+      files: fixture.candidate.files.map((file, index) => index === 0 ? { ...file, digest: hash("f") } : file),
+    };
+    const service = createPreparedProjectDataMigrationRecoveryService({
+      candidate,
+      codexDataRoot: fixture.codexDataRoot,
+    });
+
+    await expect(service.recover(fixture.root, { requestId: "recovery-request", processId: process.pid }))
+      .resolves.toMatchObject({
+        status: "recovery-required",
+        attemptId: fixture.marker.attemptId,
+        migrationId: fixture.marker.migrationId,
+        reason: expect.stringMatching(/release candidate/iu),
+      });
+    expect((await fixture.pending.read())?.phase).toBe("publishing");
+  });
+
   test.each([
     ["retained runtime bytes change", ".projector/runtime/application-evidence/retained.bin", "changed"],
     ["legacy activation residue appears", ".projector/config.json", "{}\n"],
@@ -98,7 +119,12 @@ describe("prepared project-data migration recovery service", () => {
     await rm(fixture.backupPath);
     const service = serviceFor(fixture);
     await expect(service.recover(fixture.root, { requestId: "recovery-request", processId: process.pid }))
-      .resolves.toMatchObject({ status: "recovery-required", reason: expect.stringMatching(/backup/iu) });
+      .resolves.toMatchObject({
+        status: "recovery-required",
+        attemptId: fixture.marker.attemptId,
+        migrationId: fixture.marker.migrationId,
+        reason: expect.stringMatching(/backup/iu),
+      });
     expect((await fixture.pending.read())?.phase).toBe("publishing");
   });
 

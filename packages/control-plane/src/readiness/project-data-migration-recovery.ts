@@ -56,7 +56,7 @@ export function createPreparedProjectDataMigrationRecoveryService(input: {
           const pending = await pendingStore.read();
           if (pending === undefined) return { status: "no-pending" };
           if (pending.targetSnapshotHash !== targetFormat.snapshotHash) {
-            return required(pending.migrationId, "Pending migration target does not match this release candidate");
+            return required(pending, "Pending migration target does not match this release candidate");
           }
 
           const paths = await RepositoryPathService.create(repositoryRoot);
@@ -110,7 +110,7 @@ export function createPreparedProjectDataMigrationRecoveryService(input: {
               retained.backup.manifestHash !== backup.manifestHash ||
               retained.backup.archiveHash !== backup.archiveHash
             ) {
-              return required(pending.migrationId, "Backup evidence changed during recovery observation");
+              return required(pending, "Backup evidence changed during recovery observation");
             }
             const observedTarget = await observePreparedMigrationTarget({
               repositoryRoot,
@@ -135,7 +135,7 @@ export function createPreparedProjectDataMigrationRecoveryService(input: {
               (error instanceof DOMException && error.name === "AbortError") ||
               (error instanceof Error && error.name === "AbortError")
             ) throw error;
-            return required(pending.migrationId, error instanceof Error ? error.message : String(error));
+            return required(pending, error instanceof Error ? error.message : String(error));
           } finally {
             await lease.release();
           }
@@ -158,6 +158,9 @@ function assertRequest(request: { readonly requestId: string; readonly processId
   }
 }
 
-function required(migrationId: string, reason: string): CompletedProjectDataMigrationRecoveryResult {
-  return { status: "recovery-required", migrationId, reason };
+function required(
+  pending: { readonly attemptId: string; readonly migrationId: string },
+  reason: string,
+): CompletedProjectDataMigrationRecoveryResult {
+  return { status: "recovery-required", attemptId: pending.attemptId, migrationId: pending.migrationId, reason };
 }
