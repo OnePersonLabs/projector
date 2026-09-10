@@ -102,3 +102,12 @@ export function canonicalDocumentEnvelopeSchemaForKind<const TKind extends Canon
 export const CanonicalDocumentEnvelopeSchemasByKind = Object.freeze(Object.fromEntries(
   CanonicalKindSchema.options.map((kind) => [kind, canonicalDocumentEnvelopeSchemaForKind(kind)]),
 ) as Readonly<Record<CanonicalKind, ReturnType<typeof canonicalDocumentEnvelopeSchemaForKind>>>);
+
+const canonicalDocumentEnvelopeSchemas = Object.values(CanonicalDocumentEnvelopeSchemasByKind) as unknown as [
+  z.ZodType,
+  z.ZodType,
+  ...z.ZodType[],
+];
+
+/** Serialized/editor authority whose union arms retain each canonical kind's exact payload schema. */
+export const CanonicalDocumentEnvelopeByKindSchema: z.ZodType = z.union(canonicalDocumentEnvelopeSchemas);
