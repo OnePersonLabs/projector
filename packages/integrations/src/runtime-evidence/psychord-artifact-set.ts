@@ -207,13 +207,24 @@ function incompleteWithClaim(artifactSetId: string, record: PsychordAttemptClaim
 
 async function readExistingAttemptClaim(storageRoot: string, artifactSetId: string): Promise<PsychordAttemptClaimRecord | undefined> {
   const claimPath = join(storageRoot, "attempt-claims", `${artifactSetId}.claim`);
-  try { return await readClaimRecord(claimPath); }
-  catch (error) {
-    if (isFilesystemCode(error, "ENOENT")) return undefined;
-    try { await lstat(claimPath); }
-    catch (claimError) { if (isFilesystemCode(claimError, "ENOENT")) return undefined; }
-    throw error;
+  let transientError: unknown;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try { return await readClaimRecord(claimPath); }
+    catch (error) {
+      if (isFilesystemCode(error, "ENOENT")) return undefined;
+      if (!isTransientClaimRemovalError(error)) throw error;
+      transientError = error;
+      try {
+        const entry = await lstat(claimPath);
+        if (entry.isSymbolicLink() || !entry.isDirectory()) throw error;
+      } catch (claimError) {
+        if (isFilesystemCode(claimError, "ENOENT")) return undefined;
+        if (!isTransientClaimRemovalError(claimError)) throw error;
+      }
+      if (attempt < 19) await new Promise((resolvePromise) => setTimeout(resolvePromise, 5));
+    }
   }
+  throw transientError;
 }
 
 interface PsychordAttemptClaimRecord {
@@ -327,7 +338,7 @@ function claimHandle(claimPath: string, initial: PsychordAttemptClaimRecord): Ps
     },
     async releaseAfterPublication() {
       await assertOwned();
-      await rm(claimPath, { recursive: true });
+      await rm(claimPath, { recursive: true, maxRetries: 20, retryDelay: 10 });
       await syncDirectory(dirname(claimPath));
     },
   };
@@ -406,6 +417,9 @@ function assertRequestedPlanBinding(requested: PsychordApplicationObservationPla
 function claimLeaseDuration(requestedMs: number): number { return Math.max(1_000, requestedMs); }
 function validDate(value: unknown): value is string { return typeof value === "string" && Number.isFinite(Date.parse(value)); }
 function isFilesystemCode(error: unknown, code: string): boolean { return error instanceof Error && "code" in error && error.code === code; }
+function isTransientClaimRemovalError(error: unknown): boolean {
+  return isFilesystemCode(error, "EPERM") || isFilesystemCode(error, "EBUSY") || isFilesystemCode(error, "ENOTEMPTY");
+}
 async function writeDurableClaimFile(path: string, value: PsychordAttemptClaimRecord): Promise<void> {
   const handle = await open(path, "wx");
   try { await handle.writeFile(`${canonicalJson(value)}\n`, "utf8"); await handle.sync(); }
