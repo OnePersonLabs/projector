@@ -22,14 +22,27 @@ import {
 import {
   KnowledgeContextResultSchema,
   KnowledgeReconciliationResultSchema,
+  LifecycleApplyOutputSchema,
+  LifecycleApprovalOutputSchema,
+  LifecycleCaptureOutputSchema,
+  LifecyclePlanOutputSchema,
+  LifecycleRecoveryOutputSchema,
+  LifecycleResumeOutputSchema,
   PreparedProjectInitializationResultSchema,
   RepositoryCleanupOutputSchema,
   RepositoryCompletionOutputSchema,
   RepositoryCoverageOutputSchema,
+  RepositoryChangeLifecycleService,
   RepositoryKnowledgeService,
   initializePreparedProject,
   inspectProjectReadiness,
   inspectRepositoryCoverage,
+  projectLifecycleApply,
+  projectLifecycleApproval,
+  projectLifecycleCapture,
+  projectLifecyclePlan,
+  projectLifecycleRecovery,
+  projectLifecycleResume,
   withProjectOperationAccess,
   type PreparedProjectInitializationResult,
 } from "@projector/control-plane";
@@ -312,6 +325,64 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       execute: async ({ repositoryRoot, input }, { signal }) => {
         const service = await RepositoryKnowledgeService.create(repositoryRoot);
         return service.reconcile(input.contextId, { signal });
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "change.capture",
+      inputSchema: ProjectorOperationInputSchemas["change.capture"],
+      outputSchema: LifecycleCaptureOutputSchema,
+      execute: async ({ repositoryRoot, input }, { signal }) => {
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot);
+        return LifecycleCaptureOutputSchema.parse(projectLifecycleCapture(await service.capture({
+          request: input.request,
+          proposal: input.proposal,
+          ...(input.contextId === undefined ? {} : { knowledgeContextId: input.contextId }),
+        }, { signal })));
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "change.plan",
+      inputSchema: ProjectorOperationInputSchemas["change.plan"],
+      outputSchema: LifecyclePlanOutputSchema,
+      execute: async ({ repositoryRoot, input }, { signal }) => {
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot);
+        return LifecyclePlanOutputSchema.parse(projectLifecyclePlan(input.changeSelector, await service.plan(input.changeSelector, { signal })));
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "change.approve",
+      inputSchema: ProjectorOperationInputSchemas["change.approve"],
+      outputSchema: LifecycleApprovalOutputSchema,
+      execute: async ({ repositoryRoot, input }, { signal }) => {
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot);
+        return LifecycleApprovalOutputSchema.parse(projectLifecycleApproval(await service.approve(input.changeSelector, input.planHash, { signal })));
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "change.apply",
+      inputSchema: ProjectorOperationInputSchemas["change.apply"],
+      outputSchema: LifecycleApplyOutputSchema,
+      execute: async ({ repositoryRoot, input }, { signal }) => {
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot);
+        return LifecycleApplyOutputSchema.parse(projectLifecycleApply(input.approvalSelector, await service.apply(input.approvalSelector, { signal })));
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "change.recover",
+      inputSchema: ProjectorOperationInputSchemas["change.recover"],
+      outputSchema: LifecycleRecoveryOutputSchema,
+      execute: async ({ repositoryRoot, input }, { signal }) => {
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot);
+        return LifecycleRecoveryOutputSchema.parse(projectLifecycleRecovery(input.approvalSelector, await service.recover(input.approvalSelector, { signal })));
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "change.resume",
+      inputSchema: ProjectorOperationInputSchemas["change.resume"],
+      outputSchema: LifecycleResumeOutputSchema,
+      execute: async ({ repositoryRoot, input }, { signal }) => {
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot);
+        return LifecycleResumeOutputSchema.parse(projectLifecycleResume(input.approvalSelector, await service.resume(input.approvalSelector, { signal })));
       },
     }),
     coverageHandler("coverage", RepositoryCoverageOutputSchema),
