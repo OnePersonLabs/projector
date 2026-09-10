@@ -5,14 +5,15 @@ import { dirname, join, relative } from "node:path";
 
 import {
   CanonicalDocumentEnvelopeSchema,
-  canonicalJson,
+  CanonicalDocumentEnvelopeSchemasByKind,
   parseProjectorConfig,
-  parseCanonicalJson,
   hashRootManifest,
   type CanonicalDocumentEnvelope,
   type ContentHash,
   type RootManifestEntry,
 } from "@projector/core";
+
+import { parseTomlDocument, stringifyTomlDocument } from "./toml-codec.js";
 
 const kindLocations = {
   concept: ["model", "concepts", "concept"],
@@ -53,8 +54,17 @@ const derivedTopLevelDirectories = new Set([
 const operationalTopLevelDirectories = new Set(["runtime", "task17-host-journals", "task17-sessions", "task17-capabilities", "task18-upgrades", "telemetry", "watch"]);
 const operationalRootFiles = new Set(["dogfood.json", "governance.json"]);
 
-async function canonicalJsonFiles(root: string): Promise<string[]> {
+async function canonicalTomlFiles(root: string): Promise<string[]> {
   const files: string[] = [];
+  try {
+    const rootStatus = await lstat(root);
+    if (rootStatus.isSymbolicLink() || !rootStatus.isDirectory()) {
+      throw new Error(`canonical root must be a real directory: ${root}`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return files;
+    throw error;
+  }
   const visit = async (directory: string): Promise<void> => {
     let entries;
     try {
@@ -78,8 +88,10 @@ async function canonicalJsonFiles(root: string): Promise<string[]> {
       }
       if (entry.isDirectory()) {
         await visit(path);
-      } else if (entry.isFile() && entry.name.endsWith(".json")) {
+      } else if (entry.isFile() && entry.name.endsWith(".toml")) {
         files.push(path);
+      } else if (entry.isFile() && isLegacyCanonicalJson(relativePath)) {
+        throw new Error(`legacy or mixed canonical JSON requires project readiness migration: ${path}`);
       }
     }
   };
@@ -87,12 +99,22 @@ async function canonicalJsonFiles(root: string): Promise<string[]> {
   return files.sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)));
 }
 
+function isLegacyCanonicalJson(relativePath: string): boolean {
+  if (relativePath === "config.json") return true;
+  return Object.values(kindLocations).some((location) => relativePath.endsWith(`.${location.at(-1)}.json`));
+}
+
+export interface PreparedCanonicalWrite {
+  readonly path: string;
+  readonly contents: string;
+}
+
 function parseEnvelope(source: string, path: string): CanonicalDocumentEnvelope {
   let parsed: unknown;
   try {
-    parsed = parseCanonicalJson(source);
+    parsed = parseTomlDocument(source, path);
   } catch (error) {
-    throw new Error(`invalid canonical JSON at ${path}`, { cause: error });
+    throw new Error(`invalid canonical TOML at ${path}`, { cause: error });
   }
   const result = CanonicalDocumentEnvelopeSchema.safeParse(parsed);
   if (!result.success) {
@@ -114,7 +136,7 @@ export function assertSupportedCanonicalVersions(document: CanonicalDocumentEnve
 
 async function atomicWrite(path: string, contents: string): Promise<void> {
   const directory = dirname(path);
-  await mkdir(directory, { recursive: true });
+  await ensureDurableCanonicalDirectory(directory);
   const temporaryPath = join(directory, `.${randomBytes(12).toString("hex")}.tmp`);
   let handle;
   try {
@@ -132,13 +154,39 @@ async function atomicWrite(path: string, contents: string): Promise<void> {
 }
 
 async function syncCanonicalDirectory(directory: string): Promise<void> {
-  // Node cannot fsync a directory on Windows. The file contents are still
-  // flushed before atomic replacement; power-loss durability of the directory
-  // entry is only established on platforms that support directory fsync.
-  if (process.platform === "win32") return;
   const handle = await open(directory, constants.O_RDONLY);
   try { await handle.sync(); }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EINVAL" && code !== "ENOTSUP" && code !== "EPERM") throw error;
+  }
   finally { await handle.close(); }
+}
+
+async function ensureDurableCanonicalDirectory(path: string): Promise<void> {
+  const missing: string[] = [];
+  let current = path;
+  while (true) {
+    try {
+      const status = await lstat(current);
+      if (status.isSymbolicLink() || !status.isDirectory()) throw new Error(`canonical path is not a real directory: ${current}`);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      missing.push(current);
+      const parent = dirname(current);
+      if (parent === current) throw new Error(`canonical path has no existing parent directory: ${path}`);
+      current = parent;
+    }
+  }
+  for (const directory of missing.reverse()) {
+    const parent = dirname(directory);
+    try { await mkdir(directory); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+    const status = await lstat(directory);
+    if (status.isSymbolicLink() || !status.isDirectory()) throw new Error(`canonical path is not a real directory: ${directory}`);
+    await syncCanonicalDirectory(parent);
+  }
 }
 
 export class CanonicalFileRepository {
@@ -152,13 +200,9 @@ export class CanonicalFileRepository {
     const location = kindLocations[kind];
     const directoryParts = location.slice(0, -1);
     const suffix = location.at(-1);
-    const storageKey = createHash("sha256").update(id, "utf8").digest("hex");
-    return join(this.canonicalRoot, ...directoryParts, `${storageKey}.${suffix}.json`);
-  }
-
-  private legacyPathFor(kind: SupportedCanonicalKind, id: string): string {
-    const location = kindLocations[kind];
-    return join(this.canonicalRoot, ...location.slice(0, -1), `${encodeURIComponent(id)}.${location.at(-1)}.json`);
+    const identityHash = createHash("sha256").update(id, "utf8").digest("hex");
+    const readableIdentity = id.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "").slice(0, 80) || "entity";
+    return join(this.canonicalRoot, ...directoryParts, `${readableIdentity}--${identityHash}.${suffix}.toml`);
   }
 
   private async validateOwnedPath(path: string, kind: SupportedCanonicalKind, id: string): Promise<boolean> {
@@ -187,24 +231,30 @@ export class CanonicalFileRepository {
     }
   }
 
-  async write(document: CanonicalDocumentEnvelope): Promise<string> {
-    const result = CanonicalDocumentEnvelopeSchema.safeParse(document);
-    if (!result.success) throw new Error(`invalid canonical document: ${result.error.message}`);
-    assertSupportedCanonicalVersions(document);
+  prepareWrite(document: CanonicalDocumentEnvelope): PreparedCanonicalWrite {
     const kind = document.kind as SupportedCanonicalKind;
     if (!(kind in kindLocations)) throw new Error(`unsupported canonical kind: ${document.kind}`);
-    const path = this.pathFor(kind, document.id);
-    await this.validateOwnedPath(path, kind, document.id);
-    const legacyPath = this.legacyPathFor(kind, document.id);
-    const hasLegacy = legacyPath !== path && await this.validateOwnedPath(legacyPath, kind, document.id);
-    await atomicWrite(path, `${canonicalJson(document)}\n`);
-    if (hasLegacy) await rm(legacyPath);
-    return path;
+    const result = CanonicalDocumentEnvelopeSchemasByKind[kind].safeParse(document);
+    if (!result.success) throw new Error(`invalid canonical document: ${result.error.message}`);
+    const normalized = result.data as CanonicalDocumentEnvelope;
+    assertSupportedCanonicalVersions(normalized);
+    const path = this.pathFor(kind, normalized.id);
+    const schemaPath = relative(dirname(path), join(this.canonicalRoot, "schemas", "canonical-document-v2.schema.json")).replaceAll("\\", "/");
+    return {
+      path,
+      contents: stringifyTomlDocument(normalized as unknown as Record<string, unknown>, { schemaPath }),
+    };
+  }
+
+  async write(document: CanonicalDocumentEnvelope): Promise<string> {
+    const prepared = this.prepareWrite(document);
+    await this.validateOwnedPath(prepared.path, document.kind as SupportedCanonicalKind, document.id);
+    await atomicWrite(prepared.path, prepared.contents);
+    return prepared.path;
   }
 
   async read(kind: SupportedCanonicalKind, id: string): Promise<CanonicalDocumentEnvelope | undefined> {
-    let path = this.pathFor(kind, id);
-    if (!await this.validateOwnedPath(path, kind, id)) path = this.legacyPathFor(kind, id);
+    const path = this.pathFor(kind, id);
     if (!await this.validateOwnedPath(path, kind, id)) return undefined;
     const document = parseEnvelope(await readFile(path, "utf8"), path);
     if (document.kind !== kind || document.id !== id) {
@@ -214,24 +264,20 @@ export class CanonicalFileRepository {
   }
 
   async delete(kind: SupportedCanonicalKind, id: string): Promise<boolean> {
-    const paths = [...new Set([this.pathFor(kind, id), this.legacyPathFor(kind, id)])];
-    const owned: string[] = [];
-    for (const path of paths) if (await this.validateOwnedPath(path, kind, id)) owned.push(path);
-    if (owned.length === 0) return false;
-    for (const path of owned) await rm(path);
-    for (const directory of new Set(owned.map(dirname))) {
-      await syncCanonicalDirectory(directory);
-    }
+    const path = this.pathFor(kind, id);
+    if (!await this.validateOwnedPath(path, kind, id)) return false;
+    await rm(path);
+    await syncCanonicalDirectory(dirname(path));
     return true;
   }
 
   async snapshot(): Promise<CanonicalSnapshot> {
     const documents: CanonicalDocumentEnvelope[] = [];
-    for (const path of await canonicalJsonFiles(this.canonicalRoot)) {
+    for (const path of await canonicalTomlFiles(this.canonicalRoot)) {
       const relativePath = relative(this.canonicalRoot, path).replaceAll("\\", "/");
-      if (relativePath === "config.json") {
+      if (relativePath === "config.toml") {
         try {
-          parseProjectorConfig(parseCanonicalJson(await readFile(path, "utf8")));
+          parseProjectorConfig(parseTomlDocument(await readFile(path, "utf8"), path));
         } catch (error) {
           throw new Error(`invalid Projector config at ${path}`, { cause: error });
         }
@@ -240,11 +286,11 @@ export class CanonicalFileRepository {
       const topLevel = relativePath.split("/")[0];
       const supportedKind = (Object.entries(kindLocations) as Array<
         [SupportedCanonicalKind, (typeof kindLocations)[SupportedCanonicalKind]]
-      >).find(([, location]) => path.endsWith(`.${location.at(-1)}.json`))?.[0];
+      >).find(([, location]) => path.endsWith(`.${location.at(-1)}.toml`))?.[0];
       if (supportedKind === undefined) {
         if (topLevel !== undefined && derivedTopLevelDirectories.has(topLevel)) continue;
-        const unsupportedKind = relativePath.endsWith(".exception.json") ? "Exception"
-            : relativePath.endsWith(".migration.json") ? "Migration"
+        const unsupportedKind = relativePath.endsWith(".exception.toml") ? "Exception"
+            : relativePath.endsWith(".migration.toml") ? "Migration"
               : "unknown";
         throw new Error(`unsupported canonical ${unsupportedKind} kind at ${path}`);
       }

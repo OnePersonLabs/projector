@@ -3,9 +3,9 @@ import { readFile, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { promisify } from "node:util";
 
-import { AuthorityRecordSchema, ContentHashSchema, canonicalJson, normalizeRepositoryRelativePath, verifyCanonicalEnvelope, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type AuthorityReconsiderTrigger, type CanonicalDocumentEnvelope } from "@projector/core";
+import { AuthorityRecordSchema, CanonicalDocumentEnvelopeSchema, ContentHashSchema, canonicalJson, normalizeRepositoryRelativePath, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type AuthorityReconsiderTrigger, type CanonicalDocumentEnvelope } from "@projector/core";
 import { evaluateSelector, type StateBoundChangeResult } from "@projector/engine";
-import { CanonicalFileRepository, RepositoryPathService } from "@projector/runtime";
+import { CanonicalFileRepository, RepositoryPathService, assertSupportedCanonicalVersions, parseTomlDocument } from "@projector/runtime";
 import { z } from "zod";
 
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
@@ -166,22 +166,24 @@ export class DecisionBaselineReader {
 
   private async readGit(decision: ArchitectureDecision, authority: AuthorityRecord): Promise<DecisionBaselineEvidence> {
     try {
-      const parse = (text: string): CanonicalDocumentEnvelope => {
-        const record = JSON.parse(text) as CanonicalDocumentEnvelope;
-        if (verifyCanonicalEnvelope(record).length > 0) throw new Error("tracked canonical baseline failed content authentication");
+      const parse = (text: string, sourcePath: string): CanonicalDocumentEnvelope => {
+        const result = CanonicalDocumentEnvelopeSchema.safeParse(parseTomlDocument(text, sourcePath));
+        if (!result.success) throw new Error(`invalid tracked canonical document at ${sourcePath}: ${result.error.message}`);
+        const record = result.data as CanonicalDocumentEnvelope;
+        assertSupportedCanonicalVersions(record, ` at ${sourcePath}`);
         return record;
       };
       const files = new CanonicalFileRepository(this.observation.repositoryRoot);
       if ((await this.git(["rev-parse", "--is-shallow-repository"])).trim() === "true") throw new Error("shallow Git history cannot establish the first authority baseline");
       const path = relative(this.observation.repositoryRoot, files.pathFor("authority-record", authority.id)).replaceAll("\\", "/");
-      const head = parse(await this.git(["show", `HEAD:${path}`]));
+      const head = parse(await this.git(["show", `HEAD:${path}`]), `HEAD:${path}`);
       if (head.semanticHash !== authority.semanticHash) throw new Error("current authority is not recorded at Git HEAD");
       const history = (await this.git(["log", "--format=%H", "--max-count=257", "HEAD", "--", path])).trim().split(/\s+/u).filter(Boolean);
       if (history.length > 256) throw new Error("authority history exceeds the bounded Git baseline search");
       let anchor: string | undefined;
       let anchorAuthority: AuthorityRecord | undefined;
       for (const revision of history) {
-        const record = parse(await this.git(["show", `${revision}:${path}`]));
+        const record = parse(await this.git(["show", `${revision}:${path}`]), `${revision}:${path}`);
         if (record.semanticHash !== authority.semanticHash) continue;
         anchor = revision;
         anchorAuthority = AuthorityRecordSchema.parse(record.payload) as AuthorityRecord;
@@ -195,14 +197,14 @@ export class DecisionBaselineReader {
         for (const kind of kinds) {
             const subjectPath = relative(this.observation.repositoryRoot, files.pathFor(kind as Parameters<CanonicalFileRepository["pathFor"]>[0], subjectId)).replaceAll("\\", "/");
             if (!trackedPaths.has(subjectPath)) continue;
-            const record = parse(await this.git(["show", `${anchor}:${subjectPath}`]));
+            const record = parse(await this.git(["show", `${anchor}:${subjectPath}`]), `${anchor}:${subjectPath}`);
             if (record.id !== subjectId || typeof record.semanticHash !== "string") throw new Error(`tracked trigger subject ${subjectId} cannot be authenticated`);
             documents.push(record); break;
         }
       }
       const paths = [...trackedPaths].filter((path) => path !== ".projector" && !path.startsWith(".projector/"));
       const decisionPath = relative(this.observation.repositoryRoot, files.pathFor("architecture-decision", decision.id)).replaceAll("\\", "/");
-      const recordedDecision = parse(await this.git(["show", `${anchor}:${decisionPath}`]));
+      const recordedDecision = parse(await this.git(["show", `${anchor}:${decisionPath}`]), `${anchor}:${decisionPath}`);
       if (recordedDecision.semanticHash !== decision.semanticHash) throw new Error("decision changed without an applicable authority baseline");
       return { kind: "tracked-git-history", reference: anchor, baseline: { decisionId: decision.id, decisionSemanticHash: decision.semanticHash, authorityId: authority.id, authoritySemanticHash: authority.semanticHash,
         observations: captureDecisionTriggerObservations(decision, anchorAuthority!, documents, paths, "repository") } };
