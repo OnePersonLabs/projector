@@ -32,7 +32,7 @@ import { inspectCanonicalKnowledge, runReadOnlyOperationalVerification } from ".
 import { createInstalledProjectorApplicationEvidenceHost } from "./operation-runner.js";
 export * from "./upgrade.js";
 
-export const PROJECTOR_VERSION = "2.1.0";
+export const PROJECTOR_VERSION = (await cliPackageIdentity()).version;
 
 async function cliPackageIdentity() {
   const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));

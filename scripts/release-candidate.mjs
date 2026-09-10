@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 export const releaseCandidateApiVersion = "projector.release-candidate/v1";
 export const releasePackageName = "@onepersonlabs/projector";
-export const releaseVersion = "2.1.0";
+const numericVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 
 function serialize(value, seen, inArray) {
   if (value === undefined) {
@@ -89,8 +89,8 @@ export async function validateReleaseCandidate(candidateRoot) {
   try { manifest = JSON.parse(manifestBytes); } catch { throw new Error("release candidate manifest is malformed JSON"); }
   if (`${canonicalJson(manifest)}\n` !== manifestBytes.toString("utf8")) throw new Error("release candidate manifest is not canonical JSON");
   if (manifest.apiVersion !== releaseCandidateApiVersion) throw new Error("release candidate manifest has an unsupported API version");
-  if (manifest.release?.name !== releasePackageName || manifest.release?.version !== releaseVersion || !/^[0-9a-f]{40}$/u.test(manifest.release?.sourceRevision ?? "")) throw new Error("release candidate manifest has an invalid release identity");
-  if (manifest.tarballPath !== "artifacts/onepersonlabs-projector-2.1.0.tgz" || manifest.pluginRoot !== "plugin/projector" || manifest.runnerPath !== "source-severed-release-acceptance.mjs" || manifest.fixturePath !== "fixtures/held-out-change.json") throw new Error("release candidate manifest has invalid entrypoint paths");
+  if (manifest.release?.name !== releasePackageName || !numericVersion.test(manifest.release?.version ?? "") || !/^[0-9a-f]{40}$/u.test(manifest.release?.sourceRevision ?? "")) throw new Error("release candidate manifest has an invalid release identity");
+  if (manifest.tarballPath !== `artifacts/onepersonlabs-projector-${manifest.release.version}.tgz` || manifest.pluginRoot !== "plugin/projector" || manifest.runnerPath !== "source-severed-release-acceptance.mjs" || manifest.fixturePath !== "fixtures/held-out-change.json") throw new Error("release candidate manifest has invalid entrypoint paths");
   if (!Array.isArray(manifest.files)) throw new Error("release candidate manifest has no file inventory");
   const actual = await inventoryCandidateFiles(root);
   if (canonicalJson(manifest.files) !== canonicalJson(actual)) throw new Error("release candidate file inventory, bytes, or digest does not match manifest");

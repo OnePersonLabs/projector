@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -11,7 +11,8 @@ import {
   preparedConfigOwnerModulePaths,
   runtimeEvidenceOwnerModulePaths,
 } from "../packages/control-plane/src/readiness/project-data-format-owner.js";
-import { createProjectDataMigrationFile } from "./create-project-data-migration.mjs";
+import { createProjectDataMigrationFile, createRepositoryProjectDataMigration } from "./create-project-data-migration.mjs";
+import { assertProjectDataMigrationReleaseReady } from "./project-data-migration-release-check.mjs";
 import { inventoryCandidateFiles } from "./release-candidate.mjs";
 
 const roots: string[] = [];
@@ -38,6 +39,38 @@ describe("create-project-data-migration", () => {
     await writeFile(join(fixture.candidateRoot, ...ownerPath.split("/")), "changed-owner\n");
     await publishCandidateManifest(fixture.candidateRoot);
     await expect(createProjectDataMigrationFile(fixture.input)).rejects.toThrow(/candidate format.*target snapshot/iu);
+  });
+
+  test("blocks release packaging while a draft is pending or a newer format has no chain", async () => {
+    const fixture = await authoringFixture();
+    const releaseRoot = join(fixture.root, "release");
+    await mkdir(releaseRoot, { recursive: true });
+    await writeFile(join(releaseRoot, "project-data-format-baseline.json"), await readFile(fixture.input.sourcePath));
+    await writeFile(join(releaseRoot, "project-data-migration-draft.json"), await readFile(fixture.input.draftPath));
+    let files = await inventoryCandidateFiles(fixture.candidateRoot);
+    await expect(assertProjectDataMigrationReleaseReady({ repositoryRoot: fixture.root, packageIdentity: { name: "@onepersonlabs/projector", version: "2.1.0" }, files })).rejects.toThrow(/pending.*draft/iu);
+    await rm(join(releaseRoot, "project-data-migration-draft.json"));
+    await writeFile(join(fixture.candidateRoot, ...canonicalOwnerModulePaths[0]!.split("/")), "new canonical format\n");
+    files = await inventoryCandidateFiles(fixture.candidateRoot);
+    await expect(assertProjectDataMigrationReleaseReady({ repositoryRoot: fixture.root, packageIdentity: { name: "@onepersonlabs/projector", version: "2.1.0" }, files })).rejects.toThrow(/migration chain|ENOENT/iu);
+  });
+
+  test("derives, seals, chains, and clears an ordinary no-data-change draft", async () => {
+    const fixture = await authoringFixture();
+    await rm(fixture.input.draftPath);
+    const migrationsRoot = join(fixture.root, "release/project-data-migrations");
+    const result = await createRepositoryProjectDataMigration({
+      repositoryRoot: fixture.root,
+      sourcePath: fixture.input.sourcePath,
+      draftPath: fixture.input.draftPath,
+      migrationsRoot,
+      candidateRoot: fixture.candidateRoot,
+      readReleaseIdentity: async () => ({ name: "@onepersonlabs/projector", version: "2.1.0" }),
+      buildCandidate: async () => undefined,
+    });
+    expect(result).toMatchObject({ status: "sealed", version: "2.1.0", manifest: { kind: "no-data-change" } });
+    await expect(access(fixture.input.draftPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(JSON.parse(await readFile(join(migrationsRoot, "chain-through-2.1.0.json"), "utf8"))).toMatchObject({ manifests: [{ id: "migration:2.0.0-to-2.1.0" }] });
   });
 });
 
@@ -83,6 +116,7 @@ async function authoringFixture() {
   await writeFile(sourcePath, `${canonicalJson(sourceSnapshot)}\n`);
   await writeFile(draftPath, `${canonicalJson(draft)}\n`);
   return {
+    root,
     candidateRoot,
     input: { candidateRoot, sourcePath, draftPath, outputPath, migrationId: "migration:2.0.0-to-2.1.0" },
   };
