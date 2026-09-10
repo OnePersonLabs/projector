@@ -7,11 +7,11 @@
       "ordinal": 1,
       "title": "Canonical rebuild closure",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/sqlite/derived-store.test.ts#SQLite derived canonical index canonical concepts, requirements, scenarios, relations, rules, lenses, exceptions, and migrations rebuild equivalently after state.db deletion",
-      "testSourceDigest": "sha256:v1:2f4de5c0c3a064f2b0cfa5b88d85f0573e344d057731397a95fd739b8aaad31f",
-      "mappingHash": "sha256:v1:e50e33809337beabf2a5bd2c03062094c6977039a65df2796e2e4393a5e71a61"
+      "testSourceDigest": "sha256:v1:fa3f528f542f56052f3603f00ba489dcee60f552960482fc3e14a257042c9c0c",
+      "mappingHash": "sha256:v1:97edb973d0a59fcd33467f45ad7f135d7ae9177ea5fedb86f82d065d66a59c8f"
     },
     {
       "id": "scenario:02:copied-slop-majority-and-endogenous-evidence-defense",
@@ -19,11 +19,11 @@
       "ordinal": 2,
       "title": "Copied-slop majority and endogenous-evidence defense",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/inference/inference.test.ts#causal evidence grouping collapses copied occurrences and discounts Projector-generated support for its causal lens",
-      "testSourceDigest": "sha256:v1:a4415f26ea8df2b68a4bde308953fbbda4cee35ead3ca6f4ec1d352a042b8144",
-      "mappingHash": "sha256:v1:179a728855da350cdabbbce60a443af18b9ad0bd951e5846b9af0a0c5a51f036"
+      "testSourceDigest": "sha256:v1:c30c8678b40e0c80417ac35688d0c0ec59c1e22bf021beb8275f3db61bb0a3ea",
+      "mappingHash": "sha256:v1:3dac2668577299d6274149b11de2b8ec489e66592fb8a66f38b10e60fcd148b4"
     },
     {
       "id": "scenario:03:semantic-signature-insufficiency",
@@ -31,11 +31,11 @@
       "ordinal": 3,
       "title": "Semantic-signature insufficiency",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation refuses heuristic equality and widens to downstream clients",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:e52109d8a0ea7de6c38b009c3a53a96cde8778e253c248248331d0526c5bae7d"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:9ba50ed2553feeaa7d04aca54b76a0de08bdee1b607e8a4cab67a2899429bb35"
     },
     {
       "id": "scenario:04:semantic-backdating",
@@ -43,11 +43,11 @@
       "ordinal": 4,
       "title": "Semantic backdating",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation backdates an unchanged exact public contract and keeps clients valid",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:a25786c223348f02e3f44e23125f5cb380a4a40a3aeaa1002fc9f0532bfb1e0b"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:9ae328a20551f7606069f202a5b965cf5f955ec6e11127a0ddc22d1cad8266a9"
     },
     {
       "id": "scenario:05:shared-bug-rebuild-oracle",
@@ -55,11 +55,11 @@
       "ordinal": 5,
       "title": "Shared-bug rebuild oracle",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles does not let a shared-bug clean rebuild override contradictory independent conformance",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:8a2d1c368a4ff070c874d607998388d7873fdada1055caf64cd903af69ebef77"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:abac7abb4e2ca7c5732975ecb895d5b17130defb6d01f7d75171e5e92da52293"
     },
     {
       "id": "scenario:06:scc-backdating",
@@ -67,11 +67,11 @@
       "ordinal": 6,
       "title": "SCC backdating",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation evaluates a recursive contract SCC as one proof group before retaining consumers",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:8776c320af8d11c77c6200ce91847fb47330d0afd55baa02903d66ea6574899c"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:74c85afbb174623e79b8b84f7396b1360cfb33ba617b2486ed3dfa97770fc294"
     },
     {
       "id": "scenario:07:selector-membership-change",
@@ -79,11 +79,11 @@
       "ordinal": 7,
       "title": "Selector membership change",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles uses both prior and current selector membership so additions and removals invalidate",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:12e3a91c62fb0994cf97b26cab7a23d64b68671737cb501268b60d51dddaa621"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:bc99b3b3727b8a6135576480b72538ae4b9c4f802fde4e6dfc248f4e397e4e13"
     },
     {
       "id": "scenario:08:multiple-valid-shared-implementations",
@@ -91,11 +91,11 @@
       "ordinal": 8,
       "title": "Multiple valid shared implementations",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution uses coordinated modification for multiple owners and merge only for an explicit merge assessment",
-      "testSourceDigest": "sha256:v1:7b86c2aad3a4df71127dd5bf937a05d6d66d81d6032f7401c06d69b6c8ada3dc",
-      "mappingHash": "sha256:v1:80e21e7d0c6c2343a73e602005179623848bfda0654994df6094da5137858a21"
+      "testSourceDigest": "sha256:v1:27af943ce8ccf73973ede7124412cc2d768631c49825c14b88806f252c22fb56",
+      "mappingHash": "sha256:v1:9d540bdfc0deb9c72a2e2add662db99741ae497f421f1d2c1ccedef93d02079a"
     },
     {
       "id": "scenario:09:governance-cycle-detection",
@@ -103,11 +103,11 @@
       "ordinal": 9,
       "title": "Governance-cycle detection",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/governance.test.ts#bounded decision SCC convergence detects repeated non-stable digests and returns no partial activation",
-      "testSourceDigest": "sha256:v1:5fcf6c0c4613b70ff619f69b58ee2eecc7d780a9b6cda7146008e99a32eb603c",
-      "mappingHash": "sha256:v1:ce38273f1d8184c405a0872328e5f18a09b7840648b404f2e24dced24c12e73e"
+      "testSourceDigest": "sha256:v1:bbf75197e71d8cb0db18e21b747cad5456981be766535e455af158e4cd9348f7",
+      "mappingHash": "sha256:v1:5502ac1a4cb7e3d1c37124bbd4760ff0e149d689c2839edd5b9d57d8483161f6"
     },
     {
       "id": "scenario:10:crash-recovery-matrix",
@@ -115,11 +115,11 @@
       "ordinal": 10,
       "title": "Crash recovery matrix",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating",
-      "testSourceDigest": "sha256:v1:11398e537f486b470011756e5a3c3a33a32cc0f754e3c753532cd3260df38fbb",
-      "mappingHash": "sha256:v1:9927fb9c593c698482bf772921246cf3c6057a464a7afbaca85f8fc92b4a8304"
+      "testSourceDigest": "sha256:v1:0c7001001769a29465572e55a9fc904bed512e98e7777f304e0abefdc59669a8",
+      "mappingHash": "sha256:v1:be932439b8a5c6b674a92ef461e35b89d725b8c0384bdfb36d11075251f4c0b1"
     },
     {
       "id": "scenario:11:branch-governance-conflict",
@@ -127,11 +127,11 @@
       "ordinal": 11,
       "title": "Branch governance conflict",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/cli.test.ts#minimal CLI entrypoint blocks canonical governance conflicts before public mutation work begins",
-      "testSourceDigest": "sha256:v1:1b2dcd8c6b29af257159b7b3245de6bc597b2f1aa402044a2908ce39783b66b5",
-      "mappingHash": "sha256:v1:ae7dc1eb48bff77f749592c4e79a09644c7b37bbbeac1cf23b209b5e25695aae"
+      "testSourceDigest": "sha256:v1:2731ee22c11326556fd455c33c28142cfe2ff29f8a7de9767039cf3517daf332",
+      "mappingHash": "sha256:v1:65019d0b76bbc8f5f61a74888a9befb9d6090e054bfa5d1ffd6d6417bfb8f5cd"
     },
     {
       "id": "scenario:12:open-world-completeness-refusal",
@@ -139,11 +139,11 @@
       "ordinal": 12,
       "title": "Open-world completeness refusal",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure binds empty stopping queries and records open-world emptiness as unknown rather than absence",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:060fc6cc363fbb7e0783daf10e63881cd0a491777929e0f386d1083118284b26"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:064e1febb34c528da9f49c1d76d3d0f1ada50ba8b3c8f1262b93a1d6da27ac55"
     },
     {
       "id": "scenario:13:unreachable-external-surface",
@@ -151,11 +151,11 @@
       "ordinal": 13,
       "title": "Unreachable external surface",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/testkit",
       "testRef": "packages/integrations/src/surfaces/index.test.ts#surface snapshots and Task16 composition keeps open/read-only and unavailable observations truthful without mutation methods or absence proof",
-      "testSourceDigest": "sha256:v1:6225690e4e870db2464085754b527a6b548e837ed84185ca750603bf421005d9",
-      "mappingHash": "sha256:v1:108636e4f0eaf0d78eb8996595ae1c9f102baa0b5dcd7843e741eb46d2403b38"
+      "testSourceDigest": "sha256:v1:2527fa0edfa29d59479e6aeeaa999ebba219a9d2519447652879ae23cbbd591e",
+      "mappingHash": "sha256:v1:5f434b2d48cb4b5fe3cda534e92221f3ff0a265531fed8d5776dab85b61de7c2"
     },
     {
       "id": "scenario:14:model-resampling-idempotence",
@@ -163,11 +163,11 @@
       "ordinal": 14,
       "title": "Model resampling idempotence",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/models/inference.test.ts#provider-neutral structured inference fails explicitly on cancellation/exhaustion and makes resampling a distinct candidate",
-      "testSourceDigest": "sha256:v1:f678de472a6b2e3ab4e235b209c11ace9a61dd450ba8ce88fb1c78ebd3e97a9d",
-      "mappingHash": "sha256:v1:7e066bab701465234db037cc29f66bc4d76d77438aa0aff60771fc3ee8fdb32f"
+      "testSourceDigest": "sha256:v1:61ce48acd339c93fd00ab307e3ca66c15907f3b4b1fa2e7cb066f95838a75bff",
+      "mappingHash": "sha256:v1:3a5ec55a02171254c9e852e17ede93ed5f7342e7e152190c977c33e2f59ab345"
     },
     {
       "id": "scenario:15:validator-independence",
@@ -175,11 +175,11 @@
       "ordinal": 15,
       "title": "Validator independence",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/execution/packet-coordinator.test.ts#packet execution coordinator detects same-path content mutation, rejects forged approval/independence, and replaces commit intent with failure truth",
-      "testSourceDigest": "sha256:v1:72df2c8b2f1bb229325497d06b685b3d24605e49a7eb121d72d031787e07cc37",
-      "mappingHash": "sha256:v1:21eac762480ea16b6f1d721d01ba794a103802d41fba3f686afd07b2d564db20"
+      "testSourceDigest": "sha256:v1:0f01ee28bbe75bc7b3c5cc5aec2bcc5f1bf42dda9772e0be0d7d69c64f74e070",
+      "mappingHash": "sha256:v1:d2e40e9160b018f59976f3ee73af106750372c6d4d30dcc1eeb61cb729c162ec"
     },
     {
       "id": "scenario:16:trusted-host-validator-integrity",
@@ -187,11 +187,11 @@
       "ordinal": 16,
       "title": "Trusted host validator integrity",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/control-plane",
       "testRef": "packages/control-plane/src/knowledge/governance.test.ts#public durable repository validators executes the pinned tracked validator through the native host with explicit trust limits",
-      "testSourceDigest": "sha256:v1:ae91b2be09ff396f23ce60ae76c41d6d109b7e0ee228ac995b02ccb39395d61d",
-      "mappingHash": "sha256:v1:29aa7095ef89b91cfeb879005fec4b11602fe970bd7127417c01b24ba1b6cefa"
+      "testSourceDigest": "sha256:v1:ef1c6469487fba6be2306dd365ce0d02b181408805479460452b468d06bb2db9",
+      "mappingHash": "sha256:v1:97eec119742c09b8f24d2520f622dab60225681a21fabfdcaf0fa2454bba7288"
     },
     {
       "id": "scenario:17:manual-only-source-severed-release-workflow",
@@ -199,11 +199,11 @@
       "ordinal": 17,
       "title": "Manual-only source-severed release workflow",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector",
       "testRef": "scripts/sandbox-release-workflow.test.ts#manual source-severed release workflow has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job",
-      "testSourceDigest": "sha256:v1:b23f64cecf4f265b7697e29f5458a83f3510584147815c23f8b75a22acb541bf",
-      "mappingHash": "sha256:v1:257d1e9fa0adf3956fd5418387f80cd608563466b93567e2c2606c655011727a"
+      "testSourceDigest": "sha256:v1:7e9a0a0ecf61205b90a72de5bf3fb18b2ae01219038ec130c8501e99d26777ed",
+      "mappingHash": "sha256:v1:545ae7553afeda9a288f591528e14c06d417346ccd8d7edc71b21420255b043e"
     },
     {
       "id": "scenario:18:operational-mcp-advertisement",
@@ -211,11 +211,11 @@
       "ordinal": 18,
       "title": "Operational MCP advertisement",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/run-cli.test.ts#projector run host boundary resolves an authenticated built session and detects a fake host's committed-clean write",
-      "testSourceDigest": "sha256:v1:8186a81ff1ed7b60fc7941622f4cea53fd0d77461aade038452dbb9b99498059",
-      "mappingHash": "sha256:v1:8fd659d02a13311565a1db1bdcc23729e85bb65e38ba0cc78bb56451f9ab47d5"
+      "testSourceDigest": "sha256:v1:7954bdb3ea6c7f7fb523d0a9b8a3e2df2d90305b426b0a49fce82c3f50b8c4d7",
+      "mappingHash": "sha256:v1:e3572357f690403b2d76ab157ad046f3a332dc1ff61dd0d8bc4a5bce83a5ebde"
     },
     {
       "id": "scenario:19:installed-held-out-change-lifecycle",
@@ -223,15 +223,15 @@
       "ordinal": 19,
       "title": "Installed held-out change lifecycle",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector",
       "testRef": "packages/testkit/src/release-acceptance.test.ts#public release acceptance authority binds verified traceability, subsystem closure, full benchmark results, and same-run packed lifecycle artifacts",
-      "testSourceDigest": "sha256:v1:23d144acfc11d780060d8893ad941f4918b81312d526bfb93a1d5dfece13b80e",
+      "testSourceDigest": "sha256:v1:037fda6e3c5d9d34fa7400cfa38aea158bc3729326a8b6ebe216ba5170891710",
       "requiredArtifactIds": [
         "packed-held-out-lifecycle",
         "packed-held-out-lifecycle-transcript"
       ],
-      "mappingHash": "sha256:v1:ed5bd32ee25e180e7af75d8516db08481ac760d88e19895843835cd56f105c73"
+      "mappingHash": "sha256:v1:cd047eca278dffdf2332bed9e2e0c3e18dc1db5b5e08e717409b38634bbfb1df"
     },
     {
       "id": "scenario:20:generated-output-upstream-repair",
@@ -239,11 +239,11 @@
       "ordinal": 20,
       "title": "Generated-output upstream repair",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/planning/generated-output-repair.test.ts#generated output upstream repair policy plans upstream change regeneration and validation while rejecting direct patches and unauthenticated overlays",
-      "testSourceDigest": "sha256:v1:c07e408f9568232438e4803375f6c938fe1b81c2729f3a731fa345556a9b6ed2",
-      "mappingHash": "sha256:v1:2da894326aef74df4373ab269b46fa18392b4e0c1f99137f84b872bbc2a4cc0d"
+      "testSourceDigest": "sha256:v1:038107bd94716be9d5e16247443ed8fdc456fd6ecfdaf60e704900f1a92add9d",
+      "mappingHash": "sha256:v1:3dce7ad11e21d29df4b597106d826119bfa1346f105e6000b2f66fd08384f1ba"
     },
     {
       "id": "scenario:21:partial-completion-and-plan-rebase",
@@ -251,11 +251,11 @@
       "ordinal": 21,
       "title": "Partial completion and plan rebase",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/planning/revisions.test.ts#immutable plan revision rebind and semantic rebase semantically rebases complete fields and carries only independently current completion",
-      "testSourceDigest": "sha256:v1:04fbf3db0eb062050913c36d411166c8b0a3a222b872dbc3e97635e93066b70a",
-      "mappingHash": "sha256:v1:e617f9bf01ba9b29a9b394555aa2b092939dfb884f8600d0af60de77ee4fb98f"
+      "testSourceDigest": "sha256:v1:ecdbf3a8b9bea1cec06c744e36d041b80dc920a401423367eb49c6230fa47b09",
+      "mappingHash": "sha256:v1:dd249a440cfe3f9affaf72c3dbe65f3b510e4a3a61cb3108b4ec99531283bc48"
     },
     {
       "id": "scenario:22:localized-cache-performance",
@@ -263,11 +263,11 @@
       "ordinal": 22,
       "title": "Localized cache performance",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation rebinds an unrelated root change without recomputing semantic work",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:f7f205dac94806964db693e6a0a5ea6c429fdddcdd364068149b53ee16540023"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:e0e0ffc5e82eb1f23e8bfe18a96742e8355f7b88c36ee7245e500dd84e480fa8"
     },
     {
       "id": "scenario:23:engine-signature-profile-upgrade",
@@ -275,11 +275,11 @@
       "ordinal": 23,
       "title": "Engine/signature-profile upgrade",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation marks profile-dependent derivations suspect after a signature profile upgrade",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:e2f0346e2460da3114318c1191cb3f2d8a2f1553685b9920c6b6e0a70c14919e"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:147f14c1937d192403676e929e42b9448ba007aea5017f70163f6b973567c7d4"
     },
     {
       "id": "scenario:24:analyzer-partial-failure",
@@ -287,11 +287,11 @@
       "ordinal": 24,
       "title": "Analyzer partial failure",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer localizes a malformed manifest failure while preserving filesystem and JavaScript observations",
-      "testSourceDigest": "sha256:v1:8a8af741965421af42d0e44e83677cc5191d2528e62bf6134446c693ee3ec91b",
-      "mappingHash": "sha256:v1:03dcf4182c40e862d627cea585389c8b6f8b579df021203b94ee91e4c7ed0b43"
+      "testSourceDigest": "sha256:v1:3012a3222b60e6c3c770be8ef17b322fd1ff8e0aa91029b0bc83c09d1e597696",
+      "mappingHash": "sha256:v1:9b8263c5f3880670783d198029b51766b5960b38b568491b8bf4f18ab2943bf3"
     },
     {
       "id": "scenario:25:path-symlink-escape",
@@ -299,11 +299,11 @@
       "ordinal": 25,
       "title": "Path/symlink escape",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/activation/project-activation.test.ts#project activation authority rejects symlink escape at the marker directory",
-      "testSourceDigest": "sha256:v1:43271510e61550a4d292b6629f1c928712dd31d26d16326331daf96a785c883f",
-      "mappingHash": "sha256:v1:3cff6ace2e1f289da5db1e136d34c50e6413da35bc12f89e646ffa850937009f"
+      "testSourceDigest": "sha256:v1:7fef11439e97871d5986826e24cbc2b0dccbb2c5c545780f95b6a9cdae409b18",
+      "mappingHash": "sha256:v1:16c44eb24f57a87e19eba0e62a67a9415a23502f4e4449985af17fe1a0fbac1e"
     },
     {
       "id": "scenario:26:misleading-local-precedent",
@@ -311,11 +311,11 @@
       "ordinal": 26,
       "title": "Misleading local precedent",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it",
-      "testSourceDigest": "sha256:v1:8a8af741965421af42d0e44e83677cc5191d2528e62bf6134446c693ee3ec91b",
-      "mappingHash": "sha256:v1:cf4e5834f1a09b6f6d879bd932fecf084c9c7df6550daa616c6583f68e254445"
+      "testSourceDigest": "sha256:v1:3012a3222b60e6c3c770be8ef17b322fd1ff8e0aa91029b0bc83c09d1e597696",
+      "mappingHash": "sha256:v1:99963176557cfb470f37c8a9e9bf4b812fe0aa8277f7aec93cfe5cc41afe2003"
     },
     {
       "id": "scenario:27:projector-repair-oscillation",
@@ -323,11 +323,11 @@
       "ordinal": 27,
       "title": "Projector repair oscillation",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation iterates an SCC proof strategy to a fixed point and refuses oscillation at the bound",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:5a841716bc2995fdb7730f1d53ad6115cd3e9e47b68c3ca1889374efdc5d9d2b"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:bfe3654750728d4e2dd916b1365b591a52630a6bdc064cab3536d504f0c933a0"
     },
     {
       "id": "scenario:28:held-out-mutation-generated-benchmark",
@@ -335,11 +335,11 @@
       "ordinal": 28,
       "title": "Held-out/mutation-generated benchmark",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
-      "sourceDigest": "sha256:v1:c00cf3209a1d7d3399b0e09f3f04745d765e47f236a23001800885d4087a55ef",
+      "sourceDigest": "sha256:v1:4c18e238d860c21b936576732bbc21f48d6cacbe29f45ceca74bc1e0005b15ae",
       "publicFacade": "projector",
       "testRef": "scripts/release-benchmark-authority.test.ts#release benchmark executable authority derives every gate metric from authenticated trials and production context bytes",
-      "testSourceDigest": "sha256:v1:c2e300b08988ae5b4426920e94b372bb21eaa2e1b8100cf27a8ea85424ccdcd0",
-      "mappingHash": "sha256:v1:7df4c8b8a02975c27710243acd0d1fc9471f2f7263401a37cf146e7298097a7f"
+      "testSourceDigest": "sha256:v1:b9eec3479379bf90962a031c74c47a10eb565fa0869f295a4e891260bebb5ff6",
+      "mappingHash": "sha256:v1:5f8580524fcc0113c249457865276cbf94c526756f016f4a87f3f15d2da453f6"
     },
     {
       "id": "scenario:29:synonymous-request-reuses-canonical-identity",
@@ -347,11 +347,11 @@
       "ordinal": 29,
       "title": "Synonymous request reuses canonical identity",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution rejects cross-kind, cross-request, and cross-source typed claim replay",
-      "testSourceDigest": "sha256:v1:7b86c2aad3a4df71127dd5bf937a05d6d66d81d6032f7401c06d69b6c8ada3dc",
-      "mappingHash": "sha256:v1:ced507c6240b7220cc9394f6bc6aed5aa6afea2d067db45edca7100095c0490a"
+      "testSourceDigest": "sha256:v1:27af943ce8ccf73973ede7124412cc2d768631c49825c14b88806f252c22fb56",
+      "mappingHash": "sha256:v1:78e99d3d5ec14d49a14b0c0456073d5a8aa3d2e57648c70d31c329d296faab00"
     },
     {
       "id": "scenario:30:alias-change-refreshes-discovery-without-semantic-invalidation",
@@ -359,11 +359,11 @@
       "ordinal": 30,
       "title": "Alias change refreshes discovery without semantic invalidation",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/core",
       "testRef": "packages/core/src/hashing.test.ts#canonical serialization and hash domains excludes aliases from semantic hashes and volatile fields from all projected hashes",
-      "testSourceDigest": "sha256:v1:25cbbfe1177e75ec1bdbbd31f04676cef6278e031a44b322b84e03044d7fac24",
-      "mappingHash": "sha256:v1:0c494056dfa040ab1b555b866cf50134ad41f504b2e0a42629bf2e741f4e5288"
+      "testSourceDigest": "sha256:v1:c252980808cb28ca1f6be085564238398483474c89be6373cac3aacc4dd878d4",
+      "mappingHash": "sha256:v1:9f1241ac7af72cc74ea733141277995ac880710235800d6c0ec715dcbd249855"
     },
     {
       "id": "scenario:31:superseded-renamed-identity-is-not-resurrected-as-a-duplicate",
@@ -371,11 +371,11 @@
       "ordinal": 31,
       "title": "Superseded/renamed identity is not resurrected as a duplicate",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution blocks create-new when an active, deprecated, superseded, or tombstoned identity still overlaps",
-      "testSourceDigest": "sha256:v1:7b86c2aad3a4df71127dd5bf937a05d6d66d81d6032f7401c06d69b6c8ada3dc",
-      "mappingHash": "sha256:v1:2df66560b2ba17b97a94186bf60c86690e6a8e5bae12a8f4e6f64494e86c6204"
+      "testSourceDigest": "sha256:v1:27af943ce8ccf73973ede7124412cc2d768631c49825c14b88806f252c22fb56",
+      "mappingHash": "sha256:v1:3af85d447a6312b8210a7fde48c8986fd0c4cf4b6ad2480e9bfadfefc368ca7e"
     },
     {
       "id": "scenario:32:cross-cutting-governing-concern-outside-touched-package",
@@ -383,11 +383,11 @@
       "ordinal": 32,
       "title": "Cross-cutting governing concern outside touched package",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:f74eb5b8bf50048b281624d8c5058d97c85dae9332a5c20c56d09a04424df9b4"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:5b4bcccdda038b23e4d59dbf56ef910ddbad989786a072b9cbd9c33de5d35d94"
     },
     {
       "id": "scenario:33:encapsulation-is-not-retrieval",
@@ -395,11 +395,11 @@
       "ordinal": 33,
       "title": "Encapsulation is not retrieval",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:11d81697c0e5849744601c8c01bcfc7cde8adf407f0a8bdfca385fb488b93a78"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:b79e56b826d1e1f6a51313a4a8df19bf6d912dd19e8ae77639026ea1ad91e65a"
     },
     {
       "id": "scenario:34:relevance-is-not-impact",
@@ -407,11 +407,11 @@
       "ordinal": 34,
       "title": "Relevance is not impact",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/broad-analyzers.test.ts#broad analyzer public composition runs analyze -> topology -> relevance with cross-package and zero-consumer routes without execution",
-      "testSourceDigest": "sha256:v1:4da2450f56042a27f25fec2fb722be7d1e35b3b2b39997c6d2eeae7218846eb4",
-      "mappingHash": "sha256:v1:bbe3f943dd37b716b8c7952ad8a0bb7904150da8c1ca1a17c8f5c008454d7807"
+      "testSourceDigest": "sha256:v1:f813724311a41dc953b3cbc5ad123004cc6d34ecc91d93dad315e45797c44d39",
+      "mappingHash": "sha256:v1:99277331420436ed073565970fb36b7309f9e23e456aee2e02f2063f68ea09d9"
     },
     {
       "id": "scenario:35:relevance-over-expansion-refusal",
@@ -419,11 +419,11 @@
       "ordinal": 35,
       "title": "Relevance over-expansion refusal",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:f3e7c6ca6f3b399b8abcfaaada8d87b278210c36df9b485a14326572df01a188"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:4deb6e8c39c0c81fca6461ea79c78c15c2131965f29e311665354e899a3de4a7"
     },
     {
       "id": "scenario:36:event-topology-discovers-non-obvious-consumers",
@@ -431,11 +431,11 @@
       "ordinal": 36,
       "title": "Event topology discovers non-obvious consumers",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/topology/topology.test.ts#event and contract topology routes every known event and contract consumer deterministically with conservatively capped raw assurance",
-      "testSourceDigest": "sha256:v1:fb59e873e73e37a6e809f6fa32c46918c4688c375732f04506887b7af3f301f8",
-      "mappingHash": "sha256:v1:71460e6f5e27669ccf593a56f6a4d396069bbd1b4e7d33e106e2e1089eb1735a"
+      "testSourceDigest": "sha256:v1:4de769333a1bbc048d6e7ed89dd8e1f35a375f8990eb3dc18cf16ec140352b58",
+      "mappingHash": "sha256:v1:a37669be9a9039fa87fc8506c5c678abb8138cfb4bd6042fd10e4ca8114fa3d8"
     },
     {
       "id": "scenario:37:contract-topology-discovers-consumers",
@@ -443,11 +443,11 @@
       "ordinal": 37,
       "title": "Contract topology discovers consumers",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/topology/topology.test.ts#event and contract topology routes every known event and contract consumer deterministically with conservatively capped raw assurance",
-      "testSourceDigest": "sha256:v1:fb59e873e73e37a6e809f6fa32c46918c4688c375732f04506887b7af3f301f8",
-      "mappingHash": "sha256:v1:c3b27d00ac9b7f172f66cfab132e3fa57e28c36f3c47e8e901e22cc60c6db31d"
+      "testSourceDigest": "sha256:v1:4de769333a1bbc048d6e7ed89dd8e1f35a375f8990eb3dc18cf16ec140352b58",
+      "mappingHash": "sha256:v1:23c8dd920617bf0a2e43ef235274fe890f854fbefa7878299952571c2027b7da"
     },
     {
       "id": "scenario:38:requirement-and-scenario-projections-are-derived",
@@ -455,11 +455,11 @@
       "ordinal": 38,
       "title": "Requirement and scenario projections are derived",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:c6bf86c8975876f21cac2680e3af1164a490295c415a68f30882ca25fbbe2168"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:61050a5f3be4e75cd8da84d6fdd0f7dc815725e54be21788fc6f322191dea833"
     },
     {
       "id": "scenario:39:what-why-is-protected-without-where-blindness",
@@ -467,11 +467,11 @@
       "ordinal": 39,
       "title": "WHAT/WHY is protected without WHERE blindness",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#WHAT/WHY and WHERE/WHAT-ELSE separation keeps a proposed implementation out of behavioral intent",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:0724baadd645631d4390f2df4b4243fd98d4ecfe5f93be1defc7019d038a13a8"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:fd8d36645ce934f3757e04003de39f2c339c6ceb2ec44799acf2649b02ecfd57"
     },
     {
       "id": "scenario:40:unrelated-canonical-change-does-not-stale-local-work",
@@ -479,11 +479,11 @@
       "ordinal": 40,
       "title": "Unrelated canonical change does not stale local work",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation rebinds an unrelated root change without recomputing semantic work",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:7a1fcdfb6b23c8551ccd1e770672f1827958e85f87a30d742dab5dd83a710196"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:0513d20124e997b3cc745c0d48d0fe03dc9c3082530d198fd8a0a51220018116"
     },
     {
       "id": "scenario:41:bound-dependency-change-does-stale-local-work",
@@ -491,11 +491,11 @@
       "ordinal": 41,
       "title": "Bound dependency change does stale local work",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/change/index.test.ts#state-bound deterministic change execution refuses stale bindings and approval mismatches before preview/apply while still recording failure evidence",
-      "testSourceDigest": "sha256:v1:32fc50b590e0d94f8fb4cea11004c93918ddd0bd6efc6cbd5b4e1fbe897b32a8",
-      "mappingHash": "sha256:v1:ad6d1dc9c0e741d31bbf9f6ab6af93814942bf9a3aa706fe2beeabd9375563dc"
+      "testSourceDigest": "sha256:v1:117e93e266b32fb42b7681f14ac243f0ab893a09e36c25e7467da37a12026ae7",
+      "mappingHash": "sha256:v1:4a449f2ba85f46be453c2f63831cd7dfc63273e6eccf36ef8efea3409792dc2d"
     },
     {
       "id": "scenario:42:membership-changing-fact-invalidates-context-even-when-loaded-entities-are-unchanged",
@@ -503,11 +503,11 @@
       "ordinal": 42,
       "title": "Membership-changing fact invalidates context even when loaded entities are unchanged",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation invalidates when the result set changes even though selected value hashes are unchanged",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:f6c8ae6caea4c86c67ed9403f4f50f9d62ba0240e7c902d41cbcffc8dd79829a"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:e797f7518dfdcc0415c3be7962dbc3d8b85f6f35c3e27ee5bf527c6bb0db046e"
     },
     {
       "id": "scenario:43:newly-relevant-semantic-state-invalidates-negative-space-proof",
@@ -515,11 +515,11 @@
       "ordinal": 43,
       "title": "Newly relevant semantic state invalidates negative-space proof",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure recompiles newly relevant membership and replaces the negative-space StateBinding proof",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:411717c4dd513d0240d8ceed925bbfb2377ef4668e8cd08aad43d063eb436128"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:8c5ee2899805d61e5caf5694c1493ade3027d5a313cb631dbe878148ebabc6a3"
     },
     {
       "id": "scenario:44:query-semantics-are-part-of-state-binding",
@@ -527,11 +527,11 @@
       "ordinal": 44,
       "title": "Query semantics are part of state binding",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation detects a query program version replacement against the same StateDigest",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:27ba3355e02e1d3bd0283d50986160e477ff381e96606f3bceab47bee80e4636"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:6707c6122359489c415f13dd3639e05d3af42e6e2e6c2f23eee208654e7d42dd"
     },
     {
       "id": "scenario:45:open-world-emptiness-is-not-absence-proof",
@@ -539,11 +539,11 @@
       "ordinal": 45,
       "title": "Open-world emptiness is not absence proof",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure binds empty stopping queries and records open-world emptiness as unknown rather than absence",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:d60188626b8a3d3afc54c46516ae604f86f7c7a0b7559940d6908c47b9ca8b28"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:d44b03240df3c9ca7ace337c8c786c0bb2e2e4ada6646eba56abae5255f253b5"
     },
     {
       "id": "scenario:46:planning-surprise-learns-a-missing-relationship",
@@ -551,11 +551,11 @@
       "ordinal": 46,
       "title": "Planning Surprise learns a missing relationship",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#predicted versus observed Planning Surprises proposes an evidence-backed missing relationship without silently making it canonical",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:3fe6ad39cc767f759535bea4876613d2ae6b4d16d406b58001669164275216f6"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:f6ee3bff2c0e0ac3a24568ff695b81124ba3b513b477fdca54e40631a875a4fb"
     },
     {
       "id": "scenario:47:planning-surprise-rejects-agent-overreach",
@@ -563,11 +563,11 @@
       "ordinal": 47,
       "title": "Planning Surprise rejects agent overreach",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#predicted versus observed Planning Surprises classifies unrelated agent edits as overreach and refuses to learn a false relationship",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:27e4fa962c29a4d3db166239d47462f549956d1d3be49b5d927ad777bb626283"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:cf506fbc42617bf635ba89108031c2c97585ac2cf6c9b58eced5571274391375"
     },
     {
       "id": "scenario:48:fine-grained-canonical-merge-locality",
@@ -575,11 +575,11 @@
       "ordinal": 48,
       "title": "Fine-grained canonical merge locality",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository updates one canonical entity without rewriting an unrelated entity",
-      "testSourceDigest": "sha256:v1:83da0c8530334dbab1edba3b60b58e3b35edee02391dae203e07c966ffef3342",
-      "mappingHash": "sha256:v1:d3418761416f0ecc0a69e6f269e150e5b19de7626942e76799a10502bbaa5d5b"
+      "testSourceDigest": "sha256:v1:198e4f5c0fade0ce18d8c0bafa92a15b48df17b517618a59fd78940d6e9a2c21",
+      "mappingHash": "sha256:v1:cce16a893c21aa46c89ad7ad2b7c29d0c603c048cec38231223733de50676a34"
     },
     {
       "id": "scenario:49:semantic-storage-path-does-not-define-meaning",
@@ -587,11 +587,11 @@
       "ordinal": 49,
       "title": "Semantic storage path does not define meaning",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository derives the same root from document identity regardless of write order or storage path",
-      "testSourceDigest": "sha256:v1:83da0c8530334dbab1edba3b60b58e3b35edee02391dae203e07c966ffef3342",
-      "mappingHash": "sha256:v1:b6da54989bd420617be3dcb211701d573ce624bd0266c71e9cd90d16aec3613b"
+      "testSourceDigest": "sha256:v1:198e4f5c0fade0ce18d8c0bafa92a15b48df17b517618a59fd78940d6e9a2c21",
+      "mappingHash": "sha256:v1:98b21e24118c2006f574d784ab1a70d7b89e0c301929d10eb049c55f0d38ebc3"
     },
     {
       "id": "scenario:50:analysis-facets-compose-without-methodology-lock-in",
@@ -599,11 +599,11 @@
       "ordinal": 50,
       "title": "Analysis Facets compose without methodology lock-in",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
-      "sourceDigest": "sha256:v1:e7b0c9a4266a6e4656abb2367eae879373d4321c05a593c81e66eb2205f897dc",
+      "sourceDigest": "sha256:v1:a2a2726e6b4e4cd217e3ebfe2f27c4f4eae8c84d20a6fddb7448de6703a6c444",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/context/index.test.ts#Analysis Facets composes only applicable facets and adds obligations without selecting technology",
-      "testSourceDigest": "sha256:v1:6b648cb1b89d49815938f1dcd53e4baf9db208c09c9a85b66c9e515229d7991a",
-      "mappingHash": "sha256:v1:de4a1a6d6ac90a5d3e56466ba78f9d8193c4e09303408512fafca661ac330d3d"
+      "testSourceDigest": "sha256:v1:d38e5816789de25fa2e5160416bb8ba952b4a7dccea285f56dd59ba5f5554f17",
+      "mappingHash": "sha256:v1:e78207652abdad8422126be3ca98eb6dba78ba92a33afa5687e7045bf78a075a"
     },
     {
       "id": "scenario:51:representation-semantic-fidelity-rejection",
@@ -611,11 +611,11 @@
       "ordinal": 51,
       "title": "Representation semantic-fidelity rejection",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:770a7cbff40cb7cca925082a8d86c0f7ac7fc7dd3e2d97715fcc2eb77bb6556e",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:87d7c5ecdcae9e15c5ed2f73d8d2e643aec566d3527193a4cef669c980f62ac7"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:2057aafb1993f977e5316b2c6c3e368393bb547484d24356c363cb7f319b5eb4"
     },
     {
       "id": "scenario:52:cross-projection-consistency",
@@ -623,11 +623,11 @@
       "ordinal": 52,
       "title": "Cross-projection consistency",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:770a7cbff40cb7cca925082a8d86c0f7ac7fc7dd3e2d97715fcc2eb77bb6556e",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:cc50ceb5b37d1106b851b7ffcda2b1292c8b63fc429e5ed173e267834e4bcd5a"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:766ddfcf36d93cbc90d5911ca37421405ca18aff72b6c86d1eacc67a4104bb59"
     },
     {
       "id": "scenario:53:net-negative-compact-context-fallback",
@@ -635,11 +635,11 @@
       "ordinal": 53,
       "title": "Net-negative compact-context fallback",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:770a7cbff40cb7cca925082a8d86c0f7ac7fc7dd3e2d97715fcc2eb77bb6556e",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation falls back for measured net-negative compact output but selects compact for measured positive utility",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:714393ac405b9d6270e680688e55a993cb12c7a0d9b77caae0d654bbd9f83bd2"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:1c3f53bbda3c3bb1e8926922c0894966df947af82bcceeb6a707e25dadb5dbf5"
     },
     {
       "id": "scenario:54:representation-profile-invalidation",
@@ -647,11 +647,11 @@
       "ordinal": 54,
       "title": "Representation-profile invalidation",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:770a7cbff40cb7cca925082a8d86c0f7ac7fc7dd3e2d97715fcc2eb77bb6556e",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/upgrades.test.ts#representation and semantic upgrade protocol invalidates only representation dependents while preserving actual canonical source semantic hashes",
-      "testSourceDigest": "sha256:v1:27820707e0c517e9cb4ffe979bff361d7325c45a75e8c9e2d2ffc1ab36042c18",
-      "mappingHash": "sha256:v1:040176237342cb762fa2cd60ae7fcd69f29f8efa6e5714c3f061a6cc93b04f36"
+      "testSourceDigest": "sha256:v1:ecc285da24d2617318e513125e223be1b0878ffc4cef450d08c5b0108f33f664",
+      "mappingHash": "sha256:v1:d54eb581dd586eb9f0a33be63484d3e99b70ad017a79fc59d829d4cd71ff6088"
     },
     {
       "id": "scenario:55:authoritative-specification-human-technical-conformance",
@@ -659,11 +659,11 @@
       "ordinal": 55,
       "title": "Authoritative specification human-technical conformance",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:770a7cbff40cb7cca925082a8d86c0f7ac7fc7dd3e2d97715fcc2eb77bb6556e",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "scripts/check-spec-human-technical.test.ts#authoritative specification executable style check executes the human-technical checker across the entrypoint, index, and every manifest module",
-      "testSourceDigest": "sha256:v1:3304e40bf0b506d0e70b89ee2c00d8134052cd3f143497d10cf54cd979b73a68",
-      "mappingHash": "sha256:v1:cb7451239c2f401897a72374da950034d21796f686875b188a79714ea856ab07"
+      "testSourceDigest": "sha256:v1:19eadbb46578391acf4c3c5de2ed064d0c0ab1c87915f87cfbe23b96662f1d7b",
+      "mappingHash": "sha256:v1:5ef7b0795425bb8784cf0a565b89da8d19c48eb8adef20dadc5b4af3684b0c7c"
     },
     {
       "id": "scenario:56:compact-context-preserves-critical-tokens-and-avoids-false-compression",
@@ -671,11 +671,11 @@
       "ordinal": 56,
       "title": "Compact context preserves critical tokens and avoids false compression",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
-      "sourceDigest": "sha256:v1:770a7cbff40cb7cca925082a8d86c0f7ac7fc7dd3e2d97715fcc2eb77bb6556e",
+      "sourceDigest": "sha256:v1:8603e0449a1dc1aa552ebc2d6f58b1f00658ad3cefa1e93254800747d315a43f",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation accepts the exact machine kernel and preserves every protected literal",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:75ee75acedfb42b854326097c19cd4e02e9e676ea3644b63e990fb5fe00faafb"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:7edc1134c04b9997b7cc16cd4e559f0409c997c4b35ecd566357bb3767d9c2e7"
     },
     {
       "id": "scenario:57:architecture-expansion-web-app-cross-platform-product",
@@ -683,11 +683,11 @@
       "ordinal": 57,
       "title": "Architecture expansion: web app → cross-platform product",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md",
-      "sourceDigest": "sha256:v1:72e1a5a5cd2e0dc8110d844f7c7c8bed1dfce990303d39e8bf0bb1fce12a0517",
+      "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/architecture-expansion.acceptance.test.ts#cross-platform architecture acceptance composes the complete ten-step decision frontier before planning",
-      "testSourceDigest": "sha256:v1:63404df65d071b2b4ae19d607cebb2fca6e67100691f397d10c3b97f45d5e7cc",
-      "mappingHash": "sha256:v1:eb5e67815e8f7816f4531ac4f7b0d885614ba2e9b76693e7e1ae0beb012595bc"
+      "testSourceDigest": "sha256:v1:89825431187a3647a0fbfcc93ada5285f2a0f7b0718de88585799d785d9639cd",
+      "mappingHash": "sha256:v1:dcd30e02c585405d2bd6560b013a9ae4528dee7f10449165d371da406e5d0c33"
     },
     {
       "id": "scenario:58:preference-scope-isolation",
@@ -695,11 +695,11 @@
       "ordinal": 58,
       "title": "Preference scope isolation",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md",
-      "sourceDigest": "sha256:v1:72e1a5a5cd2e0dc8110d844f7c7c8bed1dfce990303d39e8bf0bb1fce12a0517",
+      "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/evaluation.test.ts#research, options, preferences, and deferral isolates user preferences until explicit project adoption makes them shared ranking input without governance",
-      "testSourceDigest": "sha256:v1:a142c391e689cf1ba2edcffd42436c70a310ac61d9d96b0fe9084eac5fca5a5a",
-      "mappingHash": "sha256:v1:a48e115983bd3c032bc2a8d3fd20c7726637405a61a30a73ce785a5735fc3c59"
+      "testSourceDigest": "sha256:v1:72c91441fba9e9539a7772a0fd1bc79f5a92393363c86fc0606abd9fedda99f2",
+      "mappingHash": "sha256:v1:2989e2bcb832ef9b0b5edfad300b60c678957ad8302d56d11433f38d58ed0e96"
     },
     {
       "id": "scenario:59:stale-architecture-research",
@@ -707,11 +707,11 @@
       "ordinal": 59,
       "title": "Stale architecture research",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md",
-      "sourceDigest": "sha256:v1:72e1a5a5cd2e0dc8110d844f7c7c8bed1dfce990303d39e8bf0bb1fce12a0517",
+      "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/evaluation.test.ts#research, options, preferences, and deferral verifies only the affected option set through the port and blocks unavailable automatic acceptance",
-      "testSourceDigest": "sha256:v1:a142c391e689cf1ba2edcffd42436c70a310ac61d9d96b0fe9084eac5fca5a5a",
-      "mappingHash": "sha256:v1:44760107123772442501a5ef6a269b899b7c7eed99fd7e4a1966798938837c71"
+      "testSourceDigest": "sha256:v1:72c91441fba9e9539a7772a0fd1bc79f5a92393363c86fc0606abd9fedda99f2",
+      "mappingHash": "sha256:v1:39f391a2642ce8ea7eeca11580a5f87ba0bd1031360579d08ac5c841ee87c54f"
     },
     {
       "id": "scenario:60:decision-deferral-preserves-optionality",
@@ -719,11 +719,11 @@
       "ordinal": 60,
       "title": "Decision deferral preserves optionality",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md",
-      "sourceDigest": "sha256:v1:72e1a5a5cd2e0dc8110d844f7c7c8bed1dfce990303d39e8bf0bb1fce12a0517",
+      "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/repair.test.ts#typed discovery and verified deferral rejects any verified originating-decision inference and requires semantic deferral assessment",
-      "testSourceDigest": "sha256:v1:69a191ef8e6f2b5dd73fa81d2b64dc28f28fadbe61ea1db16270a4506ba736a1",
-      "mappingHash": "sha256:v1:d54983c2a67224ef3580db8ad838d8acd53539f3e0d9b9308af36c46de984806"
+      "testSourceDigest": "sha256:v1:aedda4917c7bd3e2e6a258abf55c8d4427055db1392f5e5808ed3b2c5c258c56",
+      "mappingHash": "sha256:v1:5d7ab2322df4b4e1b0fe1ff76d6709c25c839dbeeda06360822b0040bf1578f3"
     },
     {
       "id": "scenario:61:negative-simple-decision",
@@ -731,11 +731,11 @@
       "ordinal": 61,
       "title": "Negative/simple decision",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md",
-      "sourceDigest": "sha256:v1:72e1a5a5cd2e0dc8110d844f7c7c8bed1dfce990303d39e8bf0bb1fce12a0517",
+      "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/evaluation.test.ts#research, options, preferences, and deferral accepts a negative/simple option and requires neutral, trigger-bound deferral",
-      "testSourceDigest": "sha256:v1:a142c391e689cf1ba2edcffd42436c70a310ac61d9d96b0fe9084eac5fca5a5a",
-      "mappingHash": "sha256:v1:26e49a3ab2b7932b36743e189350c5b008f0a16844aac1749ec0f999d6be1901"
+      "testSourceDigest": "sha256:v1:72c91441fba9e9539a7772a0fd1bc79f5a92393363c86fc0606abd9fedda99f2",
+      "mappingHash": "sha256:v1:42557c98ef8ee62f246c18f8adca216a7fee5de0a18eb7289305e209c8a1136d"
     },
     {
       "id": "scenario:62:decision-overlap-conflict",
@@ -743,11 +743,11 @@
       "ordinal": 62,
       "title": "Decision overlap conflict",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md",
-      "sourceDigest": "sha256:v1:72e1a5a5cd2e0dc8110d844f7c7c8bed1dfce990303d39e8bf0bb1fce12a0517",
+      "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/governance.test.ts#atomic decision consequences and overlap blocks incompatible overlap before opening the semantic governance transaction",
-      "testSourceDigest": "sha256:v1:5fcf6c0c4613b70ff619f69b58ee2eecc7d780a9b6cda7146008e99a32eb603c",
-      "mappingHash": "sha256:v1:cd65c00c09c490c2a837ed83c916b99f23fcbb65ef19c5e71cdae292fa2d8f85"
+      "testSourceDigest": "sha256:v1:bbf75197e71d8cb0db18e21b747cad5456981be766535e455af158e4cd9348f7",
+      "mappingHash": "sha256:v1:e5776f9cbd80956b20b4e41e264ae648a49267181899b77f75c79bdfc21b040f"
     },
     {
       "id": "scenario:63:held-out-concern-discovery-robustness",
@@ -755,11 +755,11 @@
       "ordinal": 63,
       "title": "Held-out concern-discovery robustness",
       "sourcePath": "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md",
-      "sourceDigest": "sha256:v1:72e1a5a5cd2e0dc8110d844f7c7c8bed1dfce990303d39e8bf0bb1fce12a0517",
+      "sourceDigest": "sha256:v1:d791c3e80d5f8f18549574e74e8709266bff06f889fa06980acc65a569f7c551",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/architecture-expansion.acceptance.test.ts#cross-platform architecture acceptance measures held-out concern discovery without fixture-name routing",
-      "testSourceDigest": "sha256:v1:63404df65d071b2b4ae19d607cebb2fca6e67100691f397d10c3b97f45d5e7cc",
-      "mappingHash": "sha256:v1:76b27c3f0b960cec01af7493e92a18eec0a4ba80cbdb8fb12bfb0c0f0e3a6ae2"
+      "testSourceDigest": "sha256:v1:89825431187a3647a0fbfcc93ada5285f2a0f7b0718de88585799d785d9639cd",
+      "mappingHash": "sha256:v1:4eeb529c90f3256609ca349faf9d42e4ed34d0a7155f2364d7da9450f5773a67"
     },
     {
       "id": "property:01:canonical-serialization-independent-of-object-insertion-order",
@@ -767,11 +767,11 @@
       "ordinal": 1,
       "title": "canonical serialization independent of object insertion order.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/core",
       "testRef": "packages/core/src/hashing.test.ts#canonical serialization and hash domains is independent of object insertion order",
-      "testSourceDigest": "sha256:v1:25cbbfe1177e75ec1bdbbd31f04676cef6278e031a44b322b84e03044d7fac24",
-      "mappingHash": "sha256:v1:647742850aef9ec6560dff06f6a0c1df8876742a68d87483a373fc37d7bb92b9"
+      "testSourceDigest": "sha256:v1:c252980808cb28ca1f6be085564238398483474c89be6373cac3aacc4dd878d4",
+      "mappingHash": "sha256:v1:b63dc67d331f61036481a39887230af21dc10b1c57c1b07677ed78b5451364c3"
     },
     {
       "id": "property:02:splitting-canonical-entities-into-independent-files-does-not-alter-semantic-project-root-identity",
@@ -779,11 +779,11 @@
       "ordinal": 2,
       "title": "splitting canonical entities into independent files does not alter semantic project-root identity.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository derives the same root from document identity regardless of write order or storage path",
-      "testSourceDigest": "sha256:v1:83da0c8530334dbab1edba3b60b58e3b35edee02391dae203e07c966ffef3342",
-      "mappingHash": "sha256:v1:eaa6abaa9854eb3dd6be60046c851b47c99bf34de2dff3fc0abe368d5617fd32"
+      "testSourceDigest": "sha256:v1:198e4f5c0fade0ce18d8c0bafa92a15b48df17b517618a59fd78940d6e9a2c21",
+      "mappingHash": "sha256:v1:34a2fc552305a6e11527b5987cb1b6b05fc82bda1e10b82a40f7a24a1022c07b"
     },
     {
       "id": "property:03:unrelated-canonical-worktree-changes-do-not-invalidate-a-statebinding-whose-value-dependencies-and-query-result-fingerprints-remain-unchanged",
@@ -791,11 +791,11 @@
       "ordinal": 3,
       "title": "unrelated canonical/worktree changes do not invalidate a `StateBinding` whose value dependencies and query-result fingerprints remain unchanged.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation rebinds an unrelated root change without recomputing semantic work",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:d6470d7f533bbfcd1febbfdc5af1c2f4e7aa0e5f232a5525c6f26382faa542b2"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:f062988827cb58b4084b07670f19ba49e857b90303fff89627ff3e5ec1ff8a05"
     },
     {
       "id": "property:04:adding-changing-a-bound-value-dependency-always-invalidates-or-revalidates-the-affected-binding",
@@ -803,11 +803,11 @@
       "ordinal": 4,
       "title": "adding/changing a bound value dependency always invalidates or revalidates the affected binding.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation marks a changed value dependency stale",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:4e279db20b752fcf409e7c16cbdc3f2a1ea9a458a80a538b8c6e624f637dfc59"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:4cdf2c0c15dca86550b70c98cb1aeb96aeb530bea55448ca0c355571254e5976"
     },
     {
       "id": "property:05:adding-an-entity-relation-membership-that-changes-a-bound-query-result-invalidates-revalidates-the-binding-even-when-every-previously-returned-entity-hash-is-unchanged",
@@ -815,11 +815,11 @@
       "ordinal": 5,
       "title": "adding an entity/Relation/membership that changes a bound query result invalidates/revalidates the binding even when every previously returned entity hash is unchanged.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation invalidates when the result set changes even though selected value hashes are unchanged",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:ce002748bcc56c5b66189be24ff706d96e3d6b38d7dfd731f5f56babf3c5f913"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:76bdb62f94aef7db39e80677e78bc203063a7b4f2f0823e0eb1b6b314cc7f4f5"
     },
     {
       "id": "property:06:changing-a-statequeryspec-program-version-or-closure-sensitive-result-projection-invalidates-the-corresponding-query-dependency",
@@ -827,11 +827,11 @@
       "ordinal": 6,
       "title": "changing a `StateQuerySpec` program/version or closure-sensitive result projection invalidates the corresponding query dependency.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation detects a query program version replacement against the same StateDigest",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:32d5c8e36d16180ff88f3e11a56d5c38e4821967b399b983465527775aca364e"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:31f1a1531dbb99580eca4c7323eb5f9e2363b14d3c4e49da85891b149db77218"
     },
     {
       "id": "property:07:an-empty-query-on-an-open-sampled-unavailable-lane-never-upgrades-a-negative-space-claim-to-proof",
@@ -839,11 +839,11 @@
       "ordinal": 7,
       "title": "an empty query on an open/sampled/unavailable lane never upgrades a negative-space claim to proof.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/evaluation.test.ts#scoped decision proof and StateBinding binds applicability and negative-space queries and never treats open empty results as absence",
-      "testSourceDigest": "sha256:v1:a142c391e689cf1ba2edcffd42436c70a310ac61d9d96b0fe9084eac5fca5a5a",
-      "mappingHash": "sha256:v1:9578e14a3ba0e72afea299de3261622b519d99f50e258cdac5cf098990e76a25"
+      "testSourceDigest": "sha256:v1:72c91441fba9e9539a7772a0fd1bc79f5a92393363c86fc0606abd9fedda99f2",
+      "mappingHash": "sha256:v1:3e0c6de0560fc6d16e18e251af7b0455e3ba4cc513d4518a5a00e5b7e996a68a"
     },
     {
       "id": "property:08:stable-semantic-hash-excludes-declared-volatile-metadata",
@@ -851,11 +851,11 @@
       "ordinal": 8,
       "title": "stable semantic hash excludes declared volatile metadata.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/core",
       "testRef": "packages/core/src/hashing.test.ts#canonical serialization and hash domains excludes aliases from semantic hashes and volatile fields from all projected hashes",
-      "testSourceDigest": "sha256:v1:25cbbfe1177e75ec1bdbbd31f04676cef6278e031a44b322b84e03044d7fac24",
-      "mappingHash": "sha256:v1:396587b4f4216e2e5e060530b0f1523885e5c5b8cec068be36607168250fb6c0"
+      "testSourceDigest": "sha256:v1:c252980808cb28ca1f6be085564238398483474c89be6373cac3aacc4dd878d4",
+      "mappingHash": "sha256:v1:406f5a9adc9b9a095920226f4ea7ba2cd2b6f536940b0b4f09ab70232ec5c865"
     },
     {
       "id": "property:09:deterministic-derived-ids-are-stable-across-repeated-indexing",
@@ -863,11 +863,11 @@
       "ordinal": 9,
       "title": "deterministic derived IDs are stable across repeated indexing.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/testkit",
       "testRef": "packages/testkit/src/testkit.test.ts#deterministic providers allocates stable instance-local IDs",
-      "testSourceDigest": "sha256:v1:5ebae681cbb27e1c2d8b099849ab9071c8cbc3079a773e4463046e53713ff13b",
-      "mappingHash": "sha256:v1:925dcd5334d2955f8f4a4b37cd80613525b21577d99f2a24dc880bde69d04436"
+      "testSourceDigest": "sha256:v1:7ce83f6175a3c4d5062b424369eee789cad8fc6210529cbcef5616318abef7df",
+      "mappingHash": "sha256:v1:4bc963888de9ef53df730badb744d2130024a64606e15ca07ec1b8a6a667c6bd"
     },
     {
       "id": "property:10:hard-rule-composition-is-order-independent",
@@ -875,11 +875,11 @@
       "ordinal": 10,
       "title": "hard-rule composition is order-independent.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/governance/selectors-rules.test.ts#hard rule compilation is order-independent and sorts higher authority before specificity and stable ID",
-      "testSourceDigest": "sha256:v1:c4ef7a05923e313c4eeac3a3a697140055ecbfdb498c518458394ab927bbab9c",
-      "mappingHash": "sha256:v1:368ede9d6ea966802d240f2af85825f6b1ae524ee8fa3b3bab31aff5a8bc96ba"
+      "testSourceDigest": "sha256:v1:5071420ed5632a9658058b99fee91679de65a10979c24a9238e889c074c5c940",
+      "mappingHash": "sha256:v1:f4cd213893face0870c2b2a86be34d7f3190a7577afd272e85506fa2f31d0608"
     },
     {
       "id": "property:11:selector-lens-rule-applicability-is-deterministic-for-fixed-dependencies",
@@ -887,11 +887,11 @@
       "ordinal": 11,
       "title": "selector/lens/rule applicability is deterministic for fixed dependencies.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles binds selector membership, rule applicability, reverse traversal, and enumeration queries",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:d77c8d9fe850d660f7a929edee91dccce67225388a49244fe67e9178feb083d0"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:b9a22240625754c78b8653aca3fe7c4976e6a6118ac5fc0062b46c4146079e32"
     },
     {
       "id": "property:12:lowering-evidence-coverage-cannot-produce-a-stronger-completion-claim",
@@ -899,11 +899,11 @@
       "ordinal": 12,
       "title": "lowering evidence/coverage cannot produce a stronger completion claim.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector",
       "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence recomputes completion hashes and derives oracle/fixed-point outcomes instead of trusting flags",
-      "testSourceDigest": "sha256:v1:20a2faec81bffa91f7befc57eba3feb3b5de172d18203c1a6efba59b1d9f5f25",
-      "mappingHash": "sha256:v1:41df112681fff63a65824c8ba83cbc1c47e99f4b7d1c448d71137dfafa782489"
+      "testSourceDigest": "sha256:v1:c7af8d4357afeadb6ad6d9eec0dd3e648556e324fb298cc4fd96b6d93040c29f",
+      "mappingHash": "sha256:v1:6d67be14290603f7f5a0fa5bd30fac5bd7312995df1281a87af5eda2adb40ae8"
     },
     {
       "id": "property:13:increasing-uncertainty-cannot-lower-approval-risk-requirements",
@@ -911,11 +911,11 @@
       "ordinal": 13,
       "title": "increasing uncertainty cannot lower approval/risk requirements.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/governance/execution-policy.test.ts#risk policy never weakens approval, isolation, evidence, or validation as risk rises",
-      "testSourceDigest": "sha256:v1:992dd57d8a5b6da80c783a4fa3243ee789adc09a168d2f1f69bad4b6a81af778",
-      "mappingHash": "sha256:v1:363d6dc387c62cbd10c452aab4c009c633afedf9e790f5ccf4034a4f8d97049d"
+      "testSourceDigest": "sha256:v1:7285b784103ddff6cff6aa4248aff0f8f4e001fbf72a6df1f1f80b83907548c1",
+      "mappingHash": "sha256:v1:75027b6194012f3675506f81cac73ecb6f4c9f31065aff6690333cd6afb48a42"
     },
     {
       "id": "property:14:idempotent-transforms-converge",
@@ -923,11 +923,11 @@
       "ordinal": 14,
       "title": "idempotent transforms converge.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector",
       "testRef": "packages/runtime/src/transforms/index.test.ts#move/reference transform previews, applies, verifies, and converges with source operations before generated operations",
-      "testSourceDigest": "sha256:v1:f3da1730a3e89a879d7a3428dcd1e35b259138deadfbd894acea1dde64a5e6c1",
-      "mappingHash": "sha256:v1:ef6630cb0398626c3c21b18e43e96b105041e3d64ac352d3c67751ee538e72e0"
+      "testSourceDigest": "sha256:v1:f87c6a479f41f222eff00d56dae444c5dd68c1ff561c9d4b301c3a20eebf6f78",
+      "mappingHash": "sha256:v1:d478b52d3ff4348e080ca59e8aa621f67bb863f7a9820a06fb2764b543fd76cb"
     },
     {
       "id": "property:15:exact-reverse-derivation-dependencies-are-never-lost",
@@ -935,11 +935,11 @@
       "ordinal": 15,
       "title": "exact reverse derivation dependencies are never lost.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation normalizes records and reverse dependencies independent of insertion order",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:d8c2c795c0a4f1dc42aa9975bba556456c08bd0b220cad01e218627d96d7bfdd"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:91e10ca3f063c081f53d2f5d489751db73d8501dbce28e20b0bf3acf10d52c41"
     },
     {
       "id": "property:16:relevance-closure-never-gains-exact-impact-authority-merely-from-semantic-similarity-score",
@@ -947,11 +947,11 @@
       "ordinal": 16,
       "title": "Relevance Closure never gains exact-impact authority merely from semantic-similarity score.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:54ac997d570941a44e6e47d69c25ce2b1f43df45f034118fd6e56646b9e3221f"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:04afa43fa9c6d391f1833b40c0adab07bda5f588dc8da6f795e4244681cf0e08"
     },
     {
       "id": "property:17:identity-resolution-renames-aliases-cannot-create-a-second-identity-for-the-same-selected-entity",
@@ -959,11 +959,11 @@
       "ordinal": 17,
       "title": "identity-resolution renames/aliases cannot create a second identity for the same selected entity.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution blocks create-new when an active, deprecated, superseded, or tombstoned identity still overlaps",
-      "testSourceDigest": "sha256:v1:7b86c2aad3a4df71127dd5bf937a05d6d66d81d6032f7401c06d69b6c8ada3dc",
-      "mappingHash": "sha256:v1:839c2c2f1e35c733c9779289f8e330c5110cd1a4b31b1deb5f15421c5b557a99"
+      "testSourceDigest": "sha256:v1:27af943ce8ccf73973ede7124412cc2d768631c49825c14b88806f252c22fb56",
+      "mappingHash": "sha256:v1:27c8d5eff2258b0d8be73be33d96570d2cc14c0df3fe7c0907adc7e577a62b77"
     },
     {
       "id": "property:18:alias-name-only-changes-alter-discovery-canonical-document-hashes-but-not-semantic-meaning-hashes-and-therefore-refresh-affected-identity-relevance-queries-without-staling-meaning-only-derivations",
@@ -971,11 +971,11 @@
       "ordinal": 18,
       "title": "alias/name-only changes alter discovery/canonical-document hashes but not semantic meaning hashes, and therefore refresh affected identity/relevance queries without staling meaning-only derivations.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/core",
       "testRef": "packages/core/src/hashing.test.ts#canonical serialization and hash domains excludes volatile-only changes from semantic and discovery hashes",
-      "testSourceDigest": "sha256:v1:25cbbfe1177e75ec1bdbbd31f04676cef6278e031a44b322b84e03044d7fac24",
-      "mappingHash": "sha256:v1:02be8404d20950e7d4a4ee48872816f02c788628bf5ab39c88e9521d8a8a43e6"
+      "testSourceDigest": "sha256:v1:c252980808cb28ca1f6be085564238398483474c89be6373cac3aacc4dd878d4",
+      "mappingHash": "sha256:v1:183febe50cb834cd31b199b9be9c2ab9a13e3677aef2328247c021710f35f751"
     },
     {
       "id": "property:19:scc-invalidation-backdating-reaches-the-same-fixed-point-as-a-clean-group-recomputation",
@@ -983,11 +983,11 @@
       "ordinal": 19,
       "title": "SCC invalidation/backdating reaches the same fixed point as a clean group recomputation.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation iterates an SCC proof strategy to a fixed point and refuses oscillation at the bound",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:59ac1b2ae0f93aaa5ad28431f17406cd4253e52f578c51676486596dfd32c087"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:42d1d089355ab149ca4f480e8c7984ecd400da1f160bf2716f49c49669e034a1"
     },
     {
       "id": "property:20:reconciliation-terminates-or-emits-an-explicit-non-convergence-failure",
@@ -995,11 +995,11 @@
       "ordinal": 20,
       "title": "reconciliation terminates or emits an explicit non-convergence failure.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/governance.test.ts#bounded decision SCC convergence uses stable normalized digests and terminates at a fixed point",
-      "testSourceDigest": "sha256:v1:5fcf6c0c4613b70ff619f69b58ee2eecc7d780a9b6cda7146008e99a32eb603c",
-      "mappingHash": "sha256:v1:5dfcb86302c343ff957ac629d4c54804192b128772e021927c4affb398ccf4d0"
+      "testSourceDigest": "sha256:v1:bbf75197e71d8cb0db18e21b747cad5456981be766535e455af158e4cd9348f7",
+      "mappingHash": "sha256:v1:6b6c2fa8c4f18e9795d2c013d430994e9a59a698e58e031a4e07c3af92fc0048"
     },
     {
       "id": "property:21:rollback-restores-fixture-supported-physical-and-canonical-state",
@@ -1007,11 +1007,11 @@
       "ordinal": 21,
       "title": "rollback restores fixture-supported physical and canonical state.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating",
-      "testSourceDigest": "sha256:v1:11398e537f486b470011756e5a3c3a33a32cc0f754e3c753532cd3260df38fbb",
-      "mappingHash": "sha256:v1:4dd21e31d987ef1592912f90aae8e6367033b0a314432c90d108a6a473a5d776"
+      "testSourceDigest": "sha256:v1:0c7001001769a29465572e55a9fc904bed512e98e7777f304e0abefdc59669a8",
+      "mappingHash": "sha256:v1:baff6f84418e57b508c5ee8925237160af638842bff0d06643526acfb2ff695c"
     },
     {
       "id": "property:22:rebuilding-sqlite-from-canonical-inputs-preserves-semantic-state",
@@ -1019,11 +1019,11 @@
       "ordinal": 22,
       "title": "rebuilding SQLite from canonical inputs preserves semantic state.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/sqlite/derived-store.test.ts#SQLite derived canonical index canonical concepts, requirements, scenarios, relations, rules, lenses, exceptions, and migrations rebuild equivalently after state.db deletion",
-      "testSourceDigest": "sha256:v1:2f4de5c0c3a064f2b0cfa5b88d85f0573e344d057731397a95fd739b8aaad31f",
-      "mappingHash": "sha256:v1:b8f37deaafe80569bb7403dccc7c490833943964280d7f031ee9e37be59a3b99"
+      "testSourceDigest": "sha256:v1:fa3f528f542f56052f3603f00ba489dcee60f552960482fc3e14a257042c9c0c",
+      "mappingHash": "sha256:v1:17a118c71342ab72b9b599ae57d47baaa5ff049facc1ca7a5ae321a4d874f965"
     },
     {
       "id": "property:23:a-projector-caused-conforming-occurrence-never-becomes-independent-support-for-its-causal-lens-rule",
@@ -1031,11 +1031,11 @@
       "ordinal": 23,
       "title": "a Projector-caused conforming occurrence never becomes independent support for its causal lens/rule.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/inference/inference.test.ts#causal evidence grouping defaults every Projector-caused occurrence to authority-ineligible without requiring a target",
-      "testSourceDigest": "sha256:v1:a4415f26ea8df2b68a4bde308953fbbda4cee35ead3ca6f4ec1d352a042b8144",
-      "mappingHash": "sha256:v1:535d463954bf9af797d6cb29683690476f053fafaea922f3f7936a90214c4192"
+      "testSourceDigest": "sha256:v1:c30c8678b40e0c80417ac35688d0c0ec59c1e22bf021beb8275f3db61bb0a3ea",
+      "mappingHash": "sha256:v1:d4f18c6139956c2f3e07e9c3ee3dff377d02b280596bf9d09ead9e185e41a126"
     },
     {
       "id": "property:24:changing-only-a-representation-profile-never-changes-canonical-semantic-hashes-of-its-source-entities",
@@ -1043,11 +1043,11 @@
       "ordinal": 24,
       "title": "changing only a Representation Profile never changes canonical semantic hashes of its source entities.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/upgrades.test.ts#representation and semantic upgrade protocol invalidates only representation dependents while preserving actual canonical source semantic hashes",
-      "testSourceDigest": "sha256:v1:27820707e0c517e9cb4ffe979bff361d7325c45a75e8c9e2d2ffc1ab36042c18",
-      "mappingHash": "sha256:v1:f486efb0fb2a706775927544f59f880d835986159cc903f7617d8c60d9a038d4"
+      "testSourceDigest": "sha256:v1:ecc285da24d2617318e513125e223be1b0878ffc4cef450d08c5b0108f33f664",
+      "mappingHash": "sha256:v1:f11cd8b12e1ec67b83e034a52b3a465b213e7811bb493fee80a5fb602c7ecce4"
     },
     {
       "id": "property:25:a-representation-projection-cannot-validate-when-any-required-protected-dimension-fingerprint-differs",
@@ -1055,11 +1055,11 @@
       "ordinal": 25,
       "title": "a Representation Projection cannot validate when any required protected-dimension fingerprint differs.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:a9fdc514c65b15a831e13ffd2c7467b4db19c35d17b036721fff057966b968ff"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:c9fa79d4404c8fd9dc40547e033745e2c0b8a3a5049a1eda104706658ae32cc5"
     },
     {
       "id": "property:26:reducing-text-token-count-cannot-strengthen-a-fidelity-completion-claim",
@@ -1067,11 +1067,11 @@
       "ordinal": 26,
       "title": "reducing text/token count cannot strengthen a fidelity/completion claim.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation selects compact by measured net instruction efficiency and falls back when compact fidelity is unsafe",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:3c6dfbefcd01dadd6f4782d017eb167615eeb213522848c57bce2cefd55fb40c"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:226d0b7b2dc5f52c8105dd0f282267e9e72f6e3605c6848f2f3bcfd6d76815c4"
     },
     {
       "id": "property:27:profile-selection-is-deterministic-for-fixed-inputs-tokenizer-profile-policy-and-measured-cost-model",
@@ -1079,11 +1079,11 @@
       "ordinal": 27,
       "title": "profile selection is deterministic for fixed inputs, tokenizer profile, policy, and measured cost model.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation selects compact by measured net instruction efficiency and falls back when compact fidelity is unsafe",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:8a3aac1fe7c5bdb5ea2f9d08ddfa5e5cf326aa711e0df65a7b80225a16617a9f"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:35dbb53679e0d27554ef36ef9a056ae352fc8327e9dfabeebd1ce29986a32f89"
     },
     {
       "id": "adversary:01:canonical-rebuild-closure",
@@ -1091,11 +1091,11 @@
       "ordinal": 1,
       "title": "Canonical rebuild closure.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/runtime/src/sqlite/derived-store.test.ts#SQLite derived canonical index canonical concepts, requirements, scenarios, relations, rules, lenses, exceptions, and migrations rebuild equivalently after state.db deletion",
-      "testSourceDigest": "sha256:v1:2f4de5c0c3a064f2b0cfa5b88d85f0573e344d057731397a95fd739b8aaad31f",
-      "mappingHash": "sha256:v1:9c23fe43070e32e012bd15d17b6e86621bacd9fe92d0bafb1d01acf9b3e0a322"
+      "testSourceDigest": "sha256:v1:fa3f528f542f56052f3603f00ba489dcee60f552960482fc3e14a257042c9c0c",
+      "mappingHash": "sha256:v1:e6a16e4de174ffcd11f25536eb8a30884bb3dab191e656928d8a7d889083bd15"
     },
     {
       "id": "adversary:02:semantic-signature-insufficiency",
@@ -1103,11 +1103,11 @@
       "ordinal": 2,
       "title": "Semantic-signature insufficiency.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation refuses heuristic equality and widens to downstream clients",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:03b716d0c1bb8d213128a6f2fda222258c02eedfdf7a41955f48caff1c405264"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:47ca0174b0a59648ce41b73db42cb4f793de3e3d315ce2f3df7840fc18d14a80"
     },
     {
       "id": "adversary:03:shared-analyzer-bug-fooling-both-incremental-and-rebuild-paths",
@@ -1115,11 +1115,11 @@
       "ordinal": 3,
       "title": "Shared analyzer bug fooling both incremental and rebuild paths.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles does not let a shared-bug clean rebuild override contradictory independent conformance",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:623bebc1468f6543439369d2cd945d0e451a0479e57527ba4b5285b7092d49ed"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:2086faefdd710d1463f8255ebd757caa0f791bd92d7e44871f2f8ad2ef5863b8"
     },
     {
       "id": "adversary:04:crash-at-every-semantic-transaction-phase",
@@ -1127,11 +1127,11 @@
       "ordinal": 4,
       "title": "Crash at every semantic transaction phase.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/testkit",
       "testRef": "packages/runtime/src/journal/transaction-journal.test.ts#FileTransactionJournal recovers a restart injected after authoritative phase validating",
-      "testSourceDigest": "sha256:v1:11398e537f486b470011756e5a3c3a33a32cc0f754e3c753532cd3260df38fbb",
-      "mappingHash": "sha256:v1:4ebb9512675ad4e86c704399cac7739f67104688b1cf96785172dbc71d2f66e3"
+      "testSourceDigest": "sha256:v1:0c7001001769a29465572e55a9fc904bed512e98e7777f304e0abefdc59669a8",
+      "mappingHash": "sha256:v1:b73d6ee994d5bf21c101f20875539d44bfac313901dfc266b113b7264e6c7110"
     },
     {
       "id": "adversary:05:branch-merge-canonical-governance-conflict",
@@ -1139,11 +1139,11 @@
       "ordinal": 5,
       "title": "Branch/merge canonical-governance conflict.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/cli",
       "testRef": "packages/cli/src/cli.test.ts#minimal CLI entrypoint blocks canonical governance conflicts before public mutation work begins",
-      "testSourceDigest": "sha256:v1:1b2dcd8c6b29af257159b7b3245de6bc597b2f1aa402044a2908ce39783b66b5",
-      "mappingHash": "sha256:v1:96aff4025a932153e58c87f39031bbcb507233f7408ebaf8b8b635a1010ba289"
+      "testSourceDigest": "sha256:v1:2731ee22c11326556fd455c33c28142cfe2ff29f8a7de9767039cf3517daf332",
+      "mappingHash": "sha256:v1:c9550de4e215ce715c5c3943d2a7244f16099c5b53ad45fde1947ee71eaec85d"
     },
     {
       "id": "adversary:06:projector-endogenous-authority-evidence",
@@ -1151,11 +1151,11 @@
       "ordinal": 6,
       "title": "Projector-endogenous authority evidence.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/inference/inference.test.ts#causal evidence grouping defaults every Projector-caused occurrence to authority-ineligible without requiring a target",
-      "testSourceDigest": "sha256:v1:a4415f26ea8df2b68a4bde308953fbbda4cee35ead3ca6f4ec1d352a042b8144",
-      "mappingHash": "sha256:v1:87d17aa4f985882c6daa6e770f17c21dc92d7a39a1edbbb941990b883018c506"
+      "testSourceDigest": "sha256:v1:c30c8678b40e0c80417ac35688d0c0ec59c1e22bf021beb8275f3db61bb0a3ea",
+      "mappingHash": "sha256:v1:c9ac6cbf0ec700bdabc844245bfaf16b71d66f7a761201012d15bd1b002d3ca5"
     },
     {
       "id": "adversary:07:governance-cycle-and-non-convergence",
@@ -1163,11 +1163,11 @@
       "ordinal": 7,
       "title": "Governance cycle and non-convergence.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/governance.test.ts#bounded decision SCC convergence detects repeated non-stable digests and returns no partial activation",
-      "testSourceDigest": "sha256:v1:5fcf6c0c4613b70ff619f69b58ee2eecc7d780a9b6cda7146008e99a32eb603c",
-      "mappingHash": "sha256:v1:3ec9f73f8df7661fb5a8226c81cd424ae45794110beb938413b1e6266e6aaa8a"
+      "testSourceDigest": "sha256:v1:bbf75197e71d8cb0db18e21b747cad5456981be766535e455af158e4cd9348f7",
+      "mappingHash": "sha256:v1:9c02aa10f15f36c8ac9cf4345fa3c8683a788ca6ffce76c5fc0267606142d7bd"
     },
     {
       "id": "adversary:08:open-world-completeness-refusal",
@@ -1175,11 +1175,11 @@
       "ordinal": 8,
       "title": "Open-world completeness refusal.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure binds empty stopping queries and records open-world emptiness as unknown rather than absence",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:d8c70d81104b483db5bb3314607197fd03d136b95bec3a23486d243b5602b710"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:5bc63c487cea7080e61660ba80330187f5f6a9a778b2792a61947e78a8eddbc2"
     },
     {
       "id": "adversary:09:multiple-valid-handwritten-implementations",
@@ -1187,11 +1187,11 @@
       "ordinal": 9,
       "title": "Multiple valid handwritten implementations.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution uses coordinated modification for multiple owners and merge only for an explicit merge assessment",
-      "testSourceDigest": "sha256:v1:7b86c2aad3a4df71127dd5bf937a05d6d66d81d6032f7401c06d69b6c8ada3dc",
-      "mappingHash": "sha256:v1:bd346ed14529381e81efc9ced3474bb22e773fe2326825c054d98f79256e42e6"
+      "testSourceDigest": "sha256:v1:27af943ce8ccf73973ede7124412cc2d768631c49825c14b88806f252c22fb56",
+      "mappingHash": "sha256:v1:792bad16a2faedf684d58070373e0f8e4aae8b222ab3501da5d991384b268685"
     },
     {
       "id": "adversary:10:scc-backdating",
@@ -1199,11 +1199,11 @@
       "ordinal": 10,
       "title": "SCC backdating.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/architecture/governance.test.ts#bounded decision SCC convergence detects repeated non-stable digests and returns no partial activation",
-      "testSourceDigest": "sha256:v1:5fcf6c0c4613b70ff619f69b58ee2eecc7d780a9b6cda7146008e99a32eb603c",
-      "mappingHash": "sha256:v1:225bf2215152faf661045f149293a181d7d6e451bf7d021975e742f7ef37f9dd"
+      "testSourceDigest": "sha256:v1:bbf75197e71d8cb0db18e21b747cad5456981be766535e455af158e4cd9348f7",
+      "mappingHash": "sha256:v1:cee9d0aff662b6096d4c896651a89978a5c39b9f07af33bb6244c50293624761"
     },
     {
       "id": "adversary:11:model-resampling-idempotence",
@@ -1211,11 +1211,11 @@
       "ordinal": 11,
       "title": "Model resampling/idempotence.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/integrations",
       "testRef": "packages/integrations/src/models/inference.test.ts#provider-neutral structured inference fails explicitly on cancellation/exhaustion and makes resampling a distinct candidate",
-      "testSourceDigest": "sha256:v1:f678de472a6b2e3ab4e235b209c11ace9a61dd450ba8ce88fb1c78ebd3e97a9d",
-      "mappingHash": "sha256:v1:2b5551c5af6c7f3e01f056d72f90f47daaa711f8f954c642f4792ed3ef6b219e"
+      "testSourceDigest": "sha256:v1:61ce48acd339c93fd00ab307e3ca66c15907f3b4b1fa2e7cb066f95838a75bff",
+      "mappingHash": "sha256:v1:a400a92fc8c34db907f83d86d9431521af6beaa6a0c07de1294f8d8539289b40"
     },
     {
       "id": "adversary:12:correlated-self-authored-validator-evidence",
@@ -1223,11 +1223,11 @@
       "ordinal": 12,
       "title": "Correlated/self-authored validator evidence.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles does not grant strong completion to weak, ungrouped, correlated conformance evidence",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:18a23e679777bdb55dc838a29e64bf14e65ca3fa5f731beda31e8377417eac99"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:bceb63bf873ef2fb9fd298691b899ad701a75a1a627e82e23b2c2feeb3be0dcb"
     },
     {
       "id": "adversary:13:generated-output-upstream-repair",
@@ -1235,11 +1235,11 @@
       "ordinal": 13,
       "title": "Generated-output upstream repair.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/planning/generated-output-repair.test.ts#generated output upstream repair policy plans upstream change regeneration and validation while rejecting direct patches and unauthenticated overlays",
-      "testSourceDigest": "sha256:v1:c07e408f9568232438e4803375f6c938fe1b81c2729f3a731fa345556a9b6ed2",
-      "mappingHash": "sha256:v1:5ff52f35edbc529eb3a96fe74707762e1e2a8b6dcdf8ce6ee991bc0bc50e6b1b"
+      "testSourceDigest": "sha256:v1:038107bd94716be9d5e16247443ed8fdc456fd6ecfdaf60e704900f1a92add9d",
+      "mappingHash": "sha256:v1:db813c3bb56bddbbe299e8590794ffc6a3caaa7903dcb1d4388d008c0be92bbb"
     },
     {
       "id": "adversary:14:localized-cache-performance",
@@ -1247,11 +1247,11 @@
       "ordinal": 14,
       "title": "Localized cache performance.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped cache refuses an entry that omits consumed value hashes",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:e17764b1021fd541bf410d092b1c0879dc0a4221ed45d2091065d99b836c2175"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:fd97678e0e575118aa96dba8794999bff93af7fadc6c971c5986a9003a636689"
     },
     {
       "id": "adversary:15:projector-engine-signature-profile-upgrade-invalidation",
@@ -1259,11 +1259,11 @@
       "ordinal": 15,
       "title": "Projector engine/signature-profile upgrade invalidation.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation marks profile-dependent derivations suspect after a signature profile upgrade",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:7800ec8204708d376c9191d7872802f41da9d16aa6bc6097dfbed054d338ca57"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:b054040788690acbe184af968557c6e6623566555124095be247be0b02e847c6"
     },
     {
       "id": "adversary:16:misleading-local-precedent",
@@ -1271,11 +1271,11 @@
       "ordinal": 16,
       "title": "Misleading local precedent.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer classifies the misplaced repository script from invocation and dependency evidence without executing it",
-      "testSourceDigest": "sha256:v1:8a8af741965421af42d0e44e83677cc5191d2528e62bf6134446c693ee3ec91b",
-      "mappingHash": "sha256:v1:c7338658eab2b58b614207904eefa281444d706e4dfb3b72fade7da9e0c013de"
+      "testSourceDigest": "sha256:v1:3012a3222b60e6c3c770be8ef17b322fd1ff8e0aa91029b0bc83c09d1e597696",
+      "mappingHash": "sha256:v1:a137179690574cf6f6e3025a2eec851ceb65fc76ce4b5251e6977c7d90e8625d"
     },
     {
       "id": "adversary:17:mutation-generated-near-misses",
@@ -1283,11 +1283,11 @@
       "ordinal": 17,
       "title": "Mutation-generated near misses.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/local-repository.test.ts#local repository analyzer marks generated sources explicitly and limits unresolved imports to dependency claims",
-      "testSourceDigest": "sha256:v1:8a8af741965421af42d0e44e83677cc5191d2528e62bf6134446c693ee3ec91b",
-      "mappingHash": "sha256:v1:9cd54c461a7a4247b6828b9b0f941bcfcca88ffe1fcf1fd8acae2f585edbbd74"
+      "testSourceDigest": "sha256:v1:3012a3222b60e6c3c770be8ef17b322fd1ff8e0aa91029b0bc83c09d1e597696",
+      "mappingHash": "sha256:v1:3c86aa50714618895da08e8a045f4d354fce5e917f67df1daa0a8da4cfc8f727"
     },
     {
       "id": "adversary:18:unsupported-analyzer-capability-degradation",
@@ -1295,11 +1295,11 @@
       "ordinal": 18,
       "title": "Unsupported analyzer capability degradation.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/repair-regressions.test.ts#Task 14 consolidated repair regressions preserves block-list path filters and scalar permissions and marks unsupported shapes uncertain",
-      "testSourceDigest": "sha256:v1:fc3db7e8c6d385a17dbd907eebba317ec42e9f9e3041ec6f5a8f089796831a1f",
-      "mappingHash": "sha256:v1:7a77fae10d0c72a47fb909b13f0157347a11e28ceacac14f7ce59159e3283b3a"
+      "testSourceDigest": "sha256:v1:a3ae63ae885489b44fbd11bbae039b95303a6ab03bc5fd0c6261eba69ab1d848",
+      "mappingHash": "sha256:v1:1a02d9acc545222b1f8e4f80d3f50dd5d41a0f942986121caa23102a58b04471"
     },
     {
       "id": "adversary:19:semantic-identity-duplicate-overlap-creation-under-synonymous-requests",
@@ -1307,11 +1307,11 @@
       "ordinal": 19,
       "title": "Semantic identity duplicate/overlap creation under synonymous requests.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector",
       "testRef": "packages/control-plane/src/change-lifecycle/compiler.test.ts#repository change compiler blocks duplicate identity candidates and invalid or expired deferrals",
-      "testSourceDigest": "sha256:v1:6ca1d868f67405138ad1b45d2897251b55c3bb83beb4d6dd4ee4057ad4b0c1c2",
-      "mappingHash": "sha256:v1:d04dbe557b6aede37ed59ca195a7d4f15e683b7353968b81a2d71b7f0a7391b1"
+      "testSourceDigest": "sha256:v1:cd8d226523406f2e998a2c5b949e30eab14e79fb133f548898e3f3791a22c0c9",
+      "mappingHash": "sha256:v1:09d8f545dcf8df15aab8f569dc3ff6b32f24e569ac8b6b2633ebe95122dcb3bf"
     },
     {
       "id": "adversary:20:cross-cutting-governing-semantics-hidden-outside-the-touched-package",
@@ -1319,11 +1319,11 @@
       "ordinal": 20,
       "title": "Cross-cutting governing semantics hidden outside the touched package.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:05b8270832d787465ebed6164e37c7fb291171ee1f265d2cad5948d657857ce8"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:69c1e2207a7838c724af83bf129611e858acd1b8d7721aadf4b3dde825d659e6"
     },
     {
       "id": "adversary:21:relevance-over-expansion-returning-effectively-project-wide-context",
@@ -1331,11 +1331,11 @@
       "ordinal": 21,
       "title": "Relevance over-expansion returning effectively project-wide context.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure finds physically distant governing and downstream semantics while refusing weak over-expansion",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:482fa504dc0d7fe9a8ac3552e27d3bf9561a374e843f077272881cc2d8ae1972"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:fd5553d1a2cc691e451a22503a1fc8cd186e7e1a9604599bb6e4b160423cb1a8"
     },
     {
       "id": "adversary:22:event-contract-consumer-omission-despite-deterministic-topology",
@@ -1343,11 +1343,11 @@
       "ordinal": 22,
       "title": "Event/contract consumer omission despite deterministic topology.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/analyzers",
       "testRef": "packages/analyzers/src/topology/topology.test.ts#event and contract topology routes every known event and contract consumer deterministically with conservatively capped raw assurance",
-      "testSourceDigest": "sha256:v1:fb59e873e73e37a6e809f6fa32c46918c4688c375732f04506887b7af3f301f8",
-      "mappingHash": "sha256:v1:361b8d372ecc7bbc466d7c2551b31612d5b1be62a1d966ddeeb86358419f1c71"
+      "testSourceDigest": "sha256:v1:4de769333a1bbc048d6e7ed89dd8e1f35a375f8990eb3dc18cf16ec140352b58",
+      "mappingHash": "sha256:v1:2ae3dd0d758e8181ed67fe34fffdb2e9aa6ca1a2de3ccdcd72ba4f69ae97f51b"
     },
     {
       "id": "adversary:23:unrelated-root-state-mutation-incorrectly-staling-scoped-work",
@@ -1355,11 +1355,11 @@
       "ordinal": 23,
       "title": "Unrelated root-state mutation incorrectly staling scoped work.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles keeps unrelated work valid under an unrelated root mutation",
-      "testSourceDigest": "sha256:v1:279e29bdb8d11cf7703bf66238328cde87dcf8c889d5726d719523c100e49e3c",
-      "mappingHash": "sha256:v1:1421031ddcbe741a56ecde744c882a454d51e78f6372879da9cfaef9750cd1c2"
+      "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
+      "mappingHash": "sha256:v1:a14961c50e36730aae413e50f83867aee72cbc24c51750062faf19f2494eb586"
     },
     {
       "id": "adversary:24:missing-statebinding-value-dependency-incorrectly-preserving-stale-work",
@@ -1367,11 +1367,11 @@
       "ordinal": 24,
       "title": "Missing StateBinding value dependency incorrectly preserving stale work.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped cache refuses an entry that omits consumed value hashes",
-      "testSourceDigest": "sha256:v1:b6d2e3decd53e63f5cadf56a892b9ab117b0f188fb0b36c943e257c251ac18a2",
-      "mappingHash": "sha256:v1:859957dac1f6db21a992706dbd488b31b57069fb40752de2d19c42a784dc0d6a"
+      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
+      "mappingHash": "sha256:v1:4bba9fa383d422b4923406f1a58e69393fdbf50787f77146243f552fc93cd609"
     },
     {
       "id": "adversary:25:missing-negative-space-query-dependency-incorrectly-preserving-stale-relevance-after-a-newly-matching-entity-edge-appears",
@@ -1379,11 +1379,11 @@
       "ordinal": 25,
       "title": "Missing negative-space/query dependency incorrectly preserving stale relevance after a newly matching entity/edge appears.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector",
       "testRef": "packages/control-plane/src/change-lifecycle/query-programs.test.ts#change query programs reruns identity and reverse-import negative space against current observations",
-      "testSourceDigest": "sha256:v1:97e601064307be7f5b858a4a9d9262ce1846fa2d5f07ff6e457080914cce3467",
-      "mappingHash": "sha256:v1:b6a466a8eb9e8130d1a16a3ab7d7f95aed65a067757f3ebf86e74306b33b9129"
+      "testSourceDigest": "sha256:v1:d73a9b7e6037e9f930dd97ac92923bef614cee456dfad3b3a13478e551af7f9e",
+      "mappingHash": "sha256:v1:5ce3b75c80f2743909b106302f021cebbb0e208b3a919ee91a9f3a569b5409d3"
     },
     {
       "id": "adversary:26:query-program-version-drift-silently-preserving-an-old-result-fingerprint",
@@ -1391,11 +1391,11 @@
       "ordinal": 26,
       "title": "Query-program/version drift silently preserving an old result fingerprint.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/query/query.test.ts#registered query dependencies rejects replacing a registered program without a version change",
-      "testSourceDigest": "sha256:v1:7d650fc851415360936097523870059d58ebbf05e87734f290fee5ffae959ffc",
-      "mappingHash": "sha256:v1:36432c5af6df2a1ec17d3b194683fd982c6fa8949c60dccff405f34d7e640039"
+      "testSourceDigest": "sha256:v1:b5bdfacbf6bf846d8d97255ce9711242733f8abf04e09a21c0a427f10a824218",
+      "mappingHash": "sha256:v1:3cfef7c0742bff04aa8c76ac7e3ae2ac20045967adb744feb746295b8e619996"
     },
     {
       "id": "adversary:27:open-sampled-discovery-lane-incorrectly-proving-absence",
@@ -1403,11 +1403,11 @@
       "ordinal": 27,
       "title": "Open/sampled discovery lane incorrectly proving absence.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/inference/inference.test.ts#causal evidence grouping never treats an empty sampled lane as absence proof",
-      "testSourceDigest": "sha256:v1:a4415f26ea8df2b68a4bde308953fbbda4cee35ead3ca6f4ec1d352a042b8144",
-      "mappingHash": "sha256:v1:e30b237b3752fca501dbcfebba9ddfe772667b4ac53183c6af3f35a7c209a7ef"
+      "testSourceDigest": "sha256:v1:c30c8678b40e0c80417ac35688d0c0ec59c1e22bf021beb8275f3db61bb0a3ea",
+      "mappingHash": "sha256:v1:065f47fa7798c2b91761d9f16918dc716263b2c5ff96897dfea8e04477a414a4"
     },
     {
       "id": "adversary:28:predicted-versus-observed-impact-surprise-and-relationship-learning",
@@ -1415,11 +1415,11 @@
       "ordinal": 28,
       "title": "Predicted-versus-observed impact surprise and relationship learning.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/relevance/index.test.ts#predicted versus observed Planning Surprises proposes an evidence-backed missing relationship without silently making it canonical",
-      "testSourceDigest": "sha256:v1:debd5948ec546310c414137b3391a93c88bd752a730ee1343811235d6743b4f7",
-      "mappingHash": "sha256:v1:52b6438b02afc8f6c1a536ada663f32ba3adc137f49be00b91d6668943bfc5c9"
+      "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
+      "mappingHash": "sha256:v1:6b31b7c00bf651c042d4ff406cf8cbceb5ad0c2e7437c716fecf49bc7e9e7685"
     },
     {
       "id": "adversary:29:representation-modal-negation-cardinality-logical-connective-condition-exception-drift",
@@ -1427,11 +1427,11 @@
       "ordinal": 29,
       "title": "Representation modal/negation/cardinality/logical-connective/condition/exception drift.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:78677c9cfe947287c3245a3c7ebe2a0131f42c306fc842e7a15eaa14c2f92c9b"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:8ab50bfb6c9488586792b1131f3c0941cc76fa2ac4dbb46f30a05a2f33c7ddaf"
     },
     {
       "id": "adversary:30:token-compression-that-passes-style-lint-while-changing-semantics",
@@ -1439,11 +1439,11 @@
       "ordinal": 30,
       "title": "Token compression that passes style lint while changing semantics.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation keeps style lint separate from semantic truth and reports blocking mechanics deterministically",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:5696c74b39887ece808a3119720b61ebd25e447dc256bb7e0d699f1a5fc605ac"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:cbd2e4f5203da1b3208b0438e485451078af5834ebe4d87ff1485f94ba755804"
     },
     {
       "id": "adversary:31:net-negative-representation-overhead-and-fallback-selection",
@@ -1451,11 +1451,11 @@
       "ordinal": 31,
       "title": "Net-negative representation overhead and fallback selection.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation falls back for measured net-negative compact output but selects compact for measured positive utility",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:fa8f718d3ce86d26b0d858d4ece86f5b1993b186251ab559c42b7db2762da960"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:8fda259dbee93f706f002170e020d13c0b5a4cb15a6d8b3fa6af104339831f45"
     },
     {
       "id": "adversary:32:human-agent-machine-gherkin-projections-with-different-text-but-one-canonical-semantic-source",
@@ -1463,11 +1463,11 @@
       "ordinal": 32,
       "title": "Human/agent/machine/Gherkin projections with different text but one canonical semantic source.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port",
-      "testSourceDigest": "sha256:v1:b315ca585d03bd66ea9a32ae2a80e58e78beb45c50ea559829a73a763f6249b6",
-      "mappingHash": "sha256:v1:9f315bc5b2b85bb181975379125b7b7d71b94e13a348f86165f981987ec566e5"
+      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
+      "mappingHash": "sha256:v1:733c1c540f550279a98824c440b942f00d90ffcc084b2ffaaf0b85add4033ae4"
     },
     {
       "id": "adversary:33:installed-source-severed-lifecycle-interruption-recovery-and-identity-continuity",
@@ -1475,16 +1475,16 @@
       "ordinal": 33,
       "title": "Installed source-severed lifecycle interruption, recovery, and identity continuity.",
       "sourcePath": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
-      "sourceDigest": "sha256:v1:7325560ae3c50f944cdd9953b101e591e2b301a5f57cc827bbb6ece287a75be1",
+      "sourceDigest": "sha256:v1:8fc8221dcca555ae2a52066c1b08ec452f3ddacb04fd777906ec646679b8b28a",
       "publicFacade": "projector",
       "testRef": "packages/testkit/src/release-acceptance.test.ts#public release acceptance authority binds verified traceability, subsystem closure, full benchmark results, and same-run packed lifecycle artifacts",
-      "testSourceDigest": "sha256:v1:23d144acfc11d780060d8893ad941f4918b81312d526bfb93a1d5dfece13b80e",
+      "testSourceDigest": "sha256:v1:037fda6e3c5d9d34fa7400cfa38aea158bc3729326a8b6ebe216ba5170891710",
       "requiredArtifactIds": [
         "packed-held-out-lifecycle",
         "packed-held-out-lifecycle-transcript"
       ],
-      "mappingHash": "sha256:v1:952708047cf9cc59b4b333b24ae86029d1d82551aab5f6be035c043f2e605241"
+      "mappingHash": "sha256:v1:83e32e2770c5ede404cd1e88879e4125e9e9990675c25926079aa535c96f70f9"
     }
   ],
-  "inventoryHash": "sha256:v1:1b45fab30a40e700d87e8ff3d510182e680474c544cbd15e215bbb3a2fca0e48"
+  "inventoryHash": "sha256:v1:17e51582e791ce5916757787cf3ba8937d55f3102c3f49053c69b8a752982c27"
 }

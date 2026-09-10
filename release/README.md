@@ -5,6 +5,6 @@ This file is generated from authoritative acceptance headings and an explicit ex
 - Scenarios: 63
 - Property classes: 27
 - Adversary classes: 33
-- Inventory hash: `sha256:v1:1b45fab30a40e700d87e8ff3d510182e680474c544cbd15e215bbb3a2fca0e48`
+- Inventory hash: `sha256:v1:17e51582e791ce5916757787cf3ba8937d55f3102c3f49053c69b8a752982c27`
 
 Run `pnpm release:acceptance` to execute the mapped tests and validate the packed artifact, installed workflow, benchmarks, rebuild, conformance, and durable release evidence.
