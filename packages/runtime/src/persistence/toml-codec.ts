@@ -1,6 +1,21 @@
 import { parse, stringify, TomlError } from "smol-toml";
 
 const nullMarkerKey = "__projector_toml_null";
+const readableProseKeys = new Set([
+  "compensationPlan",
+  "conclusion",
+  "decision",
+  "description",
+  "explanation",
+  "influence",
+  "purpose",
+  "question",
+  "rationale",
+  "reason",
+  "rollbackPlan",
+  "statement",
+]);
+const readableProseColumn = 100;
 
 export interface TomlDocumentOptions {
   readonly schemaPath?: string;
@@ -122,8 +137,9 @@ function replaceMultilineStrings(
   value: unknown,
   reserved: Set<string>,
   replacements: Array<{ token: string; value: string }>,
+  key?: string,
 ): unknown {
-  if (typeof value === "string" && value.includes("\n")) {
+  if (typeof value === "string" && (value.includes("\n") || shouldWrapProse(key, value))) {
     let suffix = replacements.length;
     let token = `__PROJECTOR_MULTILINE_${suffix.toString().padStart(8, "0")}__`;
     while (reserved.has(token)) {
@@ -135,30 +151,43 @@ function replaceMultilineStrings(
     return token;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => replaceMultilineStrings(item, reserved, replacements));
+    return value.map((item) => replaceMultilineStrings(item, reserved, replacements, key));
   }
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, replaceMultilineStrings(item, reserved, replacements)]),
+      Object.entries(value).map(([entryKey, item]) => [entryKey, replaceMultilineStrings(item, reserved, replacements, entryKey)]),
     );
   }
   return value;
 }
 
+function shouldWrapProse(key: string | undefined, value: string): boolean {
+  return key !== undefined && readableProseKeys.has(key) && value.length > readableProseColumn && value.includes(" ");
+}
+
 function renderMultilineBasicString(value: string): string {
   let encoded = "";
+  let column = 0;
   for (let index = 0; index < value.length; index += 1) {
     const character = value[index]!;
     const code = character.charCodeAt(0);
-    if (character === "\n") encoded += index === 0 || index === value.length - 1 ? "\\n" : "\n";
-    else if (character === "\\") encoded += "\\\\";
-    else if (character === '"') encoded += '\\"';
-    else if (character === "\b") encoded += "\\b";
-    else if (character === "\t") encoded += "\\t";
-    else if (character === "\f") encoded += "\\f";
-    else if (character === "\r") encoded += "\\r";
-    else if (code < 0x20 || code === 0x7f) encoded += `\\u${code.toString(16).padStart(4, "0")}`;
-    else encoded += character;
+    let fragment: string;
+    if (character === "\n") fragment = index === 0 || index === value.length - 1 ? "\\n" : "\n";
+    else if (character === "\\") fragment = "\\\\";
+    else if (character === '"') fragment = '\\"';
+    else if (character === "\b") fragment = "\\b";
+    else if (character === "\t") fragment = "\\t";
+    else if (character === "\f") fragment = "\\f";
+    else if (character === "\r") fragment = "\\r";
+    else if (code < 0x20 || code === 0x7f) fragment = `\\u${code.toString(16).padStart(4, "0")}`;
+    else fragment = character;
+    encoded += fragment;
+    if (fragment === "\n") column = 0;
+    else column += fragment.length;
+    if (character === " " && column >= readableProseColumn && index < value.length - 1 && value[index + 1] !== " ") {
+      encoded += "\\\n  ";
+      column = 2;
+    }
   }
   return `"""${encoded}"""`;
 }
