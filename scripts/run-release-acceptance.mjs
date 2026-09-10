@@ -11,7 +11,7 @@ import { runPackedLifecycleAcceptance } from "./packed-lifecycle-acceptance.mjs"
 import { runReleaseBenchmarkAuthority } from "./release-benchmark-authority.mjs";
 
 const execute = promisify(execFile);
-const repositoryRoot = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/u, "");
+const repositoryRoot = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/u, "");
 const sha = (value) => `sha256:v1:${createHash("sha256").update(value).digest("hex")}`;
 const command = async (file, args, options = {}) => { try { const result = await execute(file, args, { encoding: "utf8", maxBuffer: 20_000_000, ...options }); return { exitCode: 0, stdout: result.stdout, stderr: result.stderr }; } catch (error) { return { exitCode: typeof error.code === "number" ? error.code : 1, stdout: error.stdout ?? "", stderr: error.stderr ?? String(error) }; } };
 const required = (result, label, allowed = [0]) => { if (!allowed.includes(result.exitCode)) throw new Error(`${label} exited ${result.exitCode}: ${result.stderr || result.stdout}`); return result; };
