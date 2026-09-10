@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { verifyCanonicalEnvelope, type CanonicalDocumentEnvelope } from "../hashing/canonical-envelope.js";
 import { ContentHashSchema, EntityIdSchema } from "./contracts.js";
+import { applicationEvidenceBindingIssues } from "./application-evidence-binding.js";
 import {
   ArchitectureDecisionSchema,
   ArchitectureConcernSchema,
@@ -81,6 +82,15 @@ const verifyEnvelope = (value: Record<string, unknown>, context: z.RefinementCtx
   }
 };
 
+const verifyRequirementEvidence = (value: { readonly kind: CanonicalKind; readonly payload: unknown }, context: z.RefinementCtx): void => {
+  if (value.kind !== "requirement") return;
+  const parsed = RequirementSchema.safeParse(value.payload);
+  if (!parsed.success) return;
+  for (const issue of applicationEvidenceBindingIssues((parsed.data as { evidence: Parameters<typeof applicationEvidenceBindingIssues>[0] }).evidence)) {
+    context.addIssue({ code: "custom", path: ["payload", "evidence", issue.index, "applicationPredicate", "observationRole"], message: issue.message });
+  }
+};
+
 export const CanonicalDocumentEnvelopeSchema: z.ZodType = z.strictObject(canonicalEnvelopeShape).superRefine((value, context) => {
   const payloadResult = CanonicalPayloadSchemas[value.kind].safeParse(value.payload);
   if (!payloadResult.success) {
@@ -88,6 +98,7 @@ export const CanonicalDocumentEnvelopeSchema: z.ZodType = z.strictObject(canonic
       context.addIssue({ code: "custom", path: ["payload", ...issue.path], message: issue.message });
     }
   }
+  verifyRequirementEvidence(value, context);
   verifyEnvelope(value, context);
 });
 
@@ -96,7 +107,7 @@ export function canonicalDocumentEnvelopeSchemaForKind<const TKind extends Canon
     ...canonicalEnvelopeShape,
     kind: z.literal(kind),
     payload: CanonicalPayloadSchemas[kind],
-  }).superRefine(verifyEnvelope);
+  }).superRefine((value, context) => { verifyRequirementEvidence(value as unknown as { kind: CanonicalKind; payload: unknown }, context); verifyEnvelope(value, context); });
 }
 
 export const CanonicalDocumentEnvelopeSchemasByKind = Object.freeze(Object.fromEntries(
