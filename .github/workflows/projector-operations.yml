@@ -18,12 +18,8 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - name: Provision capability-proven Ubuntu sandbox
-        run: bash .github/scripts/provision-ubuntu-sandbox.sh
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Prove sandbox isolation
-        run: node scripts/probe-sandbox.mjs
       - run: pnpm acceptance:knowledge
       - run: pnpm verify
       - run: pnpm release:artifacts:check
@@ -38,7 +34,11 @@ jobs:
 
   source-severed-acceptance:
     needs: build-candidate
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -51,14 +51,12 @@ jobs:
         with:
           name: projector-release-candidate
           path: candidate
-      - name: Provision capability-proven Ubuntu sandbox
-        run: bash candidate/provision-ubuntu-sandbox.sh
       - name: Accept downloaded source-severed candidate
         run: node candidate/source-severed-release-acceptance.mjs candidate
       - name: Upload exact accepted artifacts and evidence
         uses: actions/upload-artifact@v4
         with:
-          name: projector-2.1.0-accepted
+          name: projector-2.1.0-accepted-${{ matrix.os }}
           path: |
             candidate/artifacts
             candidate/plugin

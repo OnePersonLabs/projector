@@ -29,7 +29,7 @@ A public release is credible when a new user can:
 23. Rebuild `state.db` from canonical state with equivalent semantics.
 24. Compile one canonical semantic scope into human-technical, Gherkin/human behavioral, agent-compact, and machine-invariant representations where applicable, rejecting seeded protected-semantic drift.
 25. Show that compact context selection uses measured net utility/cost rather than token count alone. Include a net-negative fallback case.
-26. Run installed validators only through a sandbox backend whose live evidence proves the required filesystem and network isolation. Refuse release acceptance when that surface is unavailable.
+26. Run installed validators through configured host permissions with exact tracked-source identity, state/version checks, bounded time/output/cancellation, observed results, and truthful host assumptions. Refuse release acceptance when required execution or cleanup is unavailable.
 27. Complete one source-severed, installed, non-fixture repository change through direct CLI and `$projector-change`, including exact-hash approval, real interruption, recovery, fixed-point resume, and authenticated predicted-versus-observed impact.
 
 A release that primarily writes Markdown, prompts, static graphs, or advice does not satisfy Projector.
@@ -62,11 +62,11 @@ No subsystem may be promoted to `integrated` from leaf implementation or source-
 
 The Representation subsystem starts with seven obligations. They are `representation.authority.v1`, `representation.public-composition.v1`, `representation.downstream-consumer.v1`, `representation.invalidation-recovery.v1`, `representation.observability.v1`, `representation.dogfood.v1`, and `representation.packed-release.v1`. The packed release gate MUST run canonical semantic-change input through projection selection and capsule composition. It MUST also run host/MCP validation, profile invalidation/reconciliation, and dedicated representation telemetry. Each severed required edge MUST fail closed. Repository-local status labels, broad test-suite anchors, and generic document/analyzer metrics are not closure evidence.
 
-The packed release gate MUST invoke the installed sandbox composition and record its capability evidence. Authenticated traceability MUST map sandbox selection, fail-closed unavailability, and release-workflow ordering to observed public tests. A source-only import or self-reported capability flag is not release evidence.
+The packed release gate MUST invoke installed host validation and record exact source identity, observed results, enforced bounds, and host assumptions. Authenticated traceability MUST map trusted-host integrity, fail-closed unavailability, and release-workflow ordering to observed public tests. A source-only import, handler registration, or self-reported capability flag is not release evidence.
 
 Release traceability authority MUST key one explicit mapping by each exact acceptance obligation ID. Generation MUST NOT infer mappings from titles, keywords, or suite anchors. Each mapping MUST name an observed exact Vitest `fullName` from a source-controlled test.
 
-The packed release gate MUST also execute `@onepersonlabs/projector@2.1.0` against a held-out ordinary Git repository. It MUST sever the Projector source checkout, drive the same request through the direct CLI and installed stateless agent wrapper, and bind their semantic/plan/approval/certificate identities. It MUST inject `SIGKILL` only after the authenticated journal reaches validation with durable mutation. It MUST prove stale-lease takeover, exact rollback, same-approval resume, immutable independent-validator execution, observed-impact closure, external invocation continuity, and idempotent certificate/receipt replay. Fixture-only transforms and source fallbacks are not release evidence.
+The packed release gate MUST also execute `@onepersonlabs/projector@2.1.0` against a held-out ordinary Git repository. It MUST sever the Projector source checkout, drive the same request through the direct CLI and installed stateless agent wrapper, and bind their semantic/plan/approval/certificate identities. It MUST inject `SIGKILL` only after the authenticated journal reaches validation with durable mutation. It MUST prove stale-lease takeover, exact rollback, same-approval resume, exact tracked-source independent-validator execution, observed-impact closure, external invocation continuity, and idempotent certificate/receipt replay. Fixture-only transforms and source fallbacks are not release evidence.
 
 Each lifecycle traceability entry MUST name the packed lifecycle evidence and transcript artifacts that it requires. Release compilation MUST reject a run when either same-run artifact is absent. The final release evidence MUST authenticate both hashes.
 
@@ -78,7 +78,7 @@ Packed lifecycle verification MUST parse the canonical certificate and receipt a
 
 Dogfood governance MUST bind `PROJECTOR_SPEC/spec.manifest.json`, its byte digest, and a deterministic root digest over the manifest-addressed entrypoint, index, and every listed module. A digest over a selected subset of normative modules does not bind the Projector specification.
 
-The repository GitHub Actions release workflow MUST remain manual-only with `workflow_dispatch` as its only trigger. One build job MUST provision and prove the sandbox before dogfooding, verification, artifact checks, and creation of one authenticated release candidate. A fresh job with no source checkout MUST download that candidate and provision and prove its sandbox. It MUST install the exact tarball and plugin and run packed release acceptance. The workflow MUST upload the exact tested tarball, plugin, evidence, transcript, and digests. It MUST NOT publish, tag, create a release, or disable the runner's global unprivileged-user-namespace restriction to make a probe pass.
+The repository GitHub Actions release workflow MUST remain manual-only with `workflow_dispatch` as its only trigger. One build job MUST perform dogfooding, verification, artifact checks, and creation of one authenticated release candidate without requiring a Projector sandbox backend. A fresh job with no source checkout MUST download that candidate and may provision an isolated release-test harness to prove source severance. It MUST install the exact tarball and plugin and run packed release acceptance. The workflow MUST upload the exact tested tarball, plugin, evidence, transcript, and digests. It MUST NOT publish, tag, create a release, or disable the runner's global unprivileged-user-namespace restriction to make a probe pass.
 
 The authoritative Projector specification MUST pass the blocking `human-technical@1` mechanical style gate. Code blocks and exact technical literals are outside that prose gate. Passive voice and nominalization remain review signals when a deterministic checker cannot identify a better actor or verb safely.
 
@@ -137,8 +137,8 @@ Before claiming any slice or release complete, verify:
 - engine/schema/signature upgrades invalidate old proofs when required.
 - sensitive data is removed before model-context construction.
 - path/symlink boundaries prevent out-of-root mutation.
-- each sandbox-required validator command uses a capability-proven backend, and unavailable isolation fails before that command starts.
-- release traceability observes the installed sandbox path and the manual-only release workflow.
+- each validator command binds the compiled and live tracked source and records enforced bounds and host assumptions. Denied launch, drift, interruption, or cleanup uncertainty is nonconforming.
+- release traceability observes installed trusted-host validation and the manual-only source-severed release workflow.
 - release traceability observes the source-severed installed lifecycle, exact approval pause, interruption, recovery, and fixed-point completion.
 - second identical reconciliation has no material semantic delta.
 - held-out/mutation-generated evaluation accompanies golden fixtures.

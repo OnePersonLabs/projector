@@ -19,7 +19,9 @@ const inside = (path: string, scope: string): boolean => scope === "." || path =
 const unavailable = (key: RequiredCoverageLaneKey, reason: string): CoverageLaneEvidence => ({ key, applicability: "required", observability: "unavailable", numerator: 0, confidence: 0, assumptions: [], provenAssumptions: [], blindSpots: [reason], staleObservationIds: [] });
 
 /** Current observations, never an answer ledger or a completion percentage for behavior. */
-export async function inspectRepositoryCoverage(repositoryRoot: string, request: RepositoryCoverageRequest, mode: "coverage" | "complete" | "cleanup" = "coverage") {
+export async function inspectRepositoryCoverage(repositoryRoot: string, request: RepositoryCoverageRequest, mode: "coverage" | "complete" | "cleanup" = "coverage", options: { readonly signal?: AbortSignal } = {}) {
+  const signal = options.signal ?? new AbortController().signal;
+  signal.throwIfAborted();
   const questionOffset = request.questionOffset ?? 0;
   if (!Number.isSafeInteger(questionOffset) || questionOffset < 0) throw new Error("questionOffset must be a nonnegative safe integer");
   const observation = await observeChangeRepository(repositoryRoot);
@@ -29,7 +31,8 @@ export async function inspectRepositoryCoverage(repositoryRoot: string, request:
   const unitIds = new Set(units.map(({ id }) => id));
   const artifacts = analysis.artifacts.filter(({ locator }) => inside(locator, request.scope));
   const dependencies = analysis.dependencies.filter(({ importerPath }) => inside(importerPath, request.scope));
-  const context: AdapterContext = { repositoryRoot, stateDigest: currentState, config: {}, signal: new AbortController().signal };
+  signal.throwIfAborted();
+  const context: AdapterContext = { repositoryRoot, stateDigest: currentState, config: {}, signal };
   const activeLenses = graph.lenses.filter(({ status, id }) => status === "active" && (request.scope === "." || graph.lensCompilation === undefined || graph.implementationBindings(id).some((member) => unitIds.has(String(member.id)))));
   const decisions = graph.decisions.filter(({ id }) => request.scope === "." || graph.implementationBindings(id).some((member) => unitIds.has(String(member.id))));
   const decisionResult = await assessKnowledgeDecisions(graph, decisions, "inspect", context);

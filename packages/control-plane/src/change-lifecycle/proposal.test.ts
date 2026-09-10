@@ -28,7 +28,10 @@ const proposal = () => ({
       forbiddenWritePaths: ["package.json"],
     },
   },
-  edits: [{ path: "src/greeting.mjs", before: "export const greet = () => 'hello';\n", after: "export const greet = (name = '') => name ? `hello ${name}` : 'hello';\n" }],
+  edits: [
+    { path: "src/greeting.mjs", before: "export const greet = () => 'hello';\n", after: "export const greet = (name = '') => name ? `hello ${name}` : 'hello';\n" },
+    { path: "test/greeting-change.test.mjs", before: null, after: "import assert from 'node:assert/strict'; import { greet } from '../src/greeting.mjs'; assert.equal(greet('Ada'), 'hello Ada');\n" },
+  ],
   validation: {
     independentNodeTests: ["test/public-contract.test.mjs"],
     supplementalNodeTests: ["test/greeting-change.test.mjs"],
@@ -64,7 +67,7 @@ describe("change proposal", () => {
     expect(() => parseChangeProposal({ ...proposal(), requirements: [...proposal().requirements, proposal().requirements[0]] })).toThrow(/duplicate.*requirement/iu);
     expect(() => parseChangeProposal({
       ...proposal(),
-      edits: [{ path: "test/public-contract.test.mjs", before: "old", after: "new" }],
+      edits: [...proposal().edits, { path: "test/public-contract.test.mjs", before: "old", after: "new" }],
     })).toThrow(/independent.*edited/iu);
   });
 

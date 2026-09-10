@@ -20,6 +20,20 @@ function authority(): AuthorityRecord {
 }
 
 describe("observed progressive coverage", () => {
+  it("honors an already-cancelled caller signal before repository observation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-coverage-cancelled-"));
+    const controller = new AbortController();
+    controller.abort(new Error("coverage cancelled by caller"));
+
+    try {
+      await expect(
+        inspectRepositoryCoverage(root, { scope: "." }, "coverage", { signal: controller.signal }),
+      ).rejects.toThrow(/cancel|abort/iu);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps future behavior ahead of mapping noise and exposes every remaining question through bounded pages", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-completion-pages-"));
     try {

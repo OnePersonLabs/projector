@@ -17,6 +17,21 @@ import type { ContentHash, StateDigest, TransactionJournalEntry, TransactionPhas
 import type { RepositoryPathService } from "../security/index.js";
 
 const journalRoot = ".projector/runtime/journal";
+const transientWindowsRenameCodes = new Set(["EACCES", "EBUSY", "EPERM"]);
+
+async function publishJournalRecord(source: string, destination: string, renameRecord: typeof rename, platform: NodeJS.Platform): Promise<void> {
+  for (const delayMs of [0, 10, 25, 50, 100, 200]) {
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      await renameRecord(source, destination);
+      return;
+    } catch (error) {
+      const retryable = platform === "win32" && typeof error === "object" && error !== null && "code" in error && transientWindowsRenameCodes.has(String(error.code));
+      if (!retryable) throw error;
+      if (delayMs === 200) throw new Error(`Journal record publication remained blocked after bounded Windows retries: ${source} -> ${destination}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+  }
+}
 
 export type JournalCrashPoint =
   | "after-operation-intent"
@@ -28,6 +43,8 @@ export type JournalCrashPoint =
 export interface FileTransactionJournalOptions {
   now?: () => Date;
   crash?: (point: JournalCrashPoint) => void;
+  renameRecord?: typeof rename;
+  platform?: NodeJS.Platform;
 }
 
 export interface BeginTransactionInput {
@@ -252,6 +269,8 @@ export class FileTransaction {
 export class FileTransactionJournal {
   private readonly now: () => Date;
   private readonly crash: ((point: JournalCrashPoint) => void) | undefined;
+  private readonly renameRecord: typeof rename;
+  private readonly platform: NodeJS.Platform;
 
   constructor(
     private readonly paths: RepositoryPathService,
@@ -259,6 +278,8 @@ export class FileTransactionJournal {
   ) {
     this.now = options.now ?? (() => new Date());
     this.crash = options.crash;
+    this.renameRecord = options.renameRecord ?? rename;
+    this.platform = options.platform ?? process.platform;
   }
 
   async begin(input: BeginTransactionInput): Promise<FileTransaction> {
@@ -549,7 +570,7 @@ export class FileTransactionJournal {
       await syncDirectory(directory);
       return;
     }
-    await rename(temporary, destination);
+    await publishJournalRecord(temporary, destination, this.renameRecord, this.platform);
     await syncDirectory(directory);
   }
 

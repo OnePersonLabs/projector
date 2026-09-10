@@ -535,14 +535,6 @@ export class ChangeLifecycleStore {
     return `${storeRoot}/${relativePath}`;
   }
 
-  async writeValidatorProjection(hash: ContentHash, content: string): Promise<string> {
-    if (hashFramedDomain("transform-content", content) !== hash) throw new Error(`validator projection content hash is invalid: ${hash}`);
-    const relativePath = `artifacts/validator/${hash.slice("sha256:v1:".length)}.mjs`;
-    await this.writeTextNew(relativePath, content);
-    if (await this.read(relativePath) !== content) throw new Error(`content-addressed validator projection collision: ${hash}`);
-    return `${storeRoot}/${relativePath}`;
-  }
-
   private async authenticateArtifact(kind: "certificate" | "receipt", hash: ContentHash, reference: string): Promise<void> {
     const expected = `${storeRoot}/artifacts/${kind}/${hash.slice("sha256:v1:".length)}.json`;
     if (reference !== expected) throw new Error(`${kind} artifact reference does not match its authenticated content hash`);
