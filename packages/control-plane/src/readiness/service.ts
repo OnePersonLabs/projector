@@ -21,6 +21,7 @@ import {
   RepositoryPathService,
   initializeProjectLocalIgnore,
   installProjectorEditorSchemaBundle,
+  pendingProjectDataMigrationRelativePath,
   parseTomlDocument,
   stringifyTomlDocument,
   withProjectOperationAccess as withRuntimeOperationAccess,
@@ -31,7 +32,7 @@ import { comparePackageVersions } from "./version-order.js";
 
 const legacyConfigPath = join(".projector", "config.json");
 const preparedConfigPath = join(".projector", "config.toml");
-const pendingMigrationPath = join(".projector", "runtime", "migrations", "pending.json");
+const pendingMigrationPath = pendingProjectDataMigrationRelativePath;
 const maximumConfigBytes = 16 * 1024;
 
 export interface ReadinessInspectionInput {

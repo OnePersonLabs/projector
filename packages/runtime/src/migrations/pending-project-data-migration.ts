@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open, rename, rm, unlink } from "node:fs/promises";
+import { link, lstat, open, rename, rm, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -11,7 +11,7 @@ import {
   type PendingProjectDataMigration,
 } from "@projector/core";
 
-const pendingMarkerRelativePath = join(".projector", "runtime", "migrations", "pending.json");
+export const pendingProjectDataMigrationRelativePath = ".projector/pending-project-data-migration.json" as const;
 const maximumMarkerBytes = 64 * 1024;
 
 export interface PendingMigrationBinding {
@@ -19,7 +19,7 @@ export interface PendingMigrationBinding {
   manifestHash: ContentHash;
 }
 
-export type PendingMigrationCrashPoint = "after-replacement-write";
+export type PendingMigrationCrashPoint = "after-replacement-write" | "after-publication-before-flush";
 
 export interface PendingProjectDataMigrationStoreOptions {
   crash?: (point: PendingMigrationCrashPoint) => void;
@@ -34,7 +34,7 @@ export class PendingProjectDataMigrationStore {
   ) {
     if (repositoryRoot.length === 0) throw new TypeError("A repository root is required");
     this.repositoryRoot = resolve(repositoryRoot);
-    this.markerPath = join(this.repositoryRoot, pendingMarkerRelativePath);
+    this.markerPath = join(this.repositoryRoot, ...pendingProjectDataMigrationRelativePath.split("/"));
   }
 
   async read(): Promise<PendingProjectDataMigration | undefined> {
@@ -47,7 +47,6 @@ export class PendingProjectDataMigrationStore {
     if (valid.phase !== "backed-up") {
       throw new PendingMigrationPersistenceError("A new pending migration marker must begin in backed-up phase");
     }
-    await syncDirectory(this.repositoryRoot);
     const bytes = markerBytes(valid);
     const directory = await this.ensureParent();
     const temporary = join(directory, `.pending.${randomUUID()}.tmp`);
@@ -63,13 +62,17 @@ export class PendingProjectDataMigrationStore {
             "Pending migration marker already contains unknown bytes; refusing to overwrite it",
           );
         }
+        await flushPublishedFile(this.markerPath, bytes);
+        await syncDirectoryIfSupported(directory);
         return parseMarker(existing);
       }
-      await syncDirectory(directory);
+      this.options.crash?.("after-publication-before-flush");
+      await flushPublishedFile(this.markerPath, bytes);
+      await syncDirectoryIfSupported(directory);
       return valid;
     } finally {
       await rm(temporary, { force: true });
-      await syncDirectory(directory);
+      await syncDirectoryIfSupported(directory);
     }
   }
 
@@ -79,11 +82,14 @@ export class PendingProjectDataMigrationStore {
   ): Promise<PendingProjectDataMigration> {
     const { bytes: priorBytes, marker } = await this.readRequired();
     assertBinding(marker, binding);
-    if (marker.phase === phase) return marker;
+    if (marker.phase === phase) {
+      await flushPublishedFile(this.markerPath, priorBytes);
+      await syncDirectoryIfSupported(dirname(this.markerPath));
+      return marker;
+    }
     if (nextPhase(marker.phase) !== phase) {
       throw new PendingMigrationPersistenceError(`Invalid pending migration transition from ${marker.phase} to ${phase}`);
     }
-    await syncDirectory(dirname(this.markerPath));
     const next = PendingProjectDataMigrationSchema.parse({ ...marker, phase });
     const directory = dirname(this.markerPath);
     const temporary = join(directory, `.pending.${randomUUID()}.tmp`);
@@ -95,14 +101,16 @@ export class PendingProjectDataMigrationStore {
         throw new PendingMigrationPersistenceError("Pending migration marker changed before phase publication");
       }
       await rename(temporary, this.markerPath);
-      await syncDirectory(directory);
+      this.options.crash?.("after-publication-before-flush");
+      await flushPublishedFile(this.markerPath, markerBytes(next));
+      await syncDirectoryIfSupported(directory);
       return next;
     } finally {
       await rm(temporary, { force: true });
     }
   }
 
-  async clearAfterConfigPublication(binding: PendingMigrationBinding): Promise<void> {
+  async clearAfterReceiptPublication(binding: PendingMigrationBinding): Promise<void> {
     const { bytes, marker } = await this.readRequired();
     assertBinding(marker, binding);
     if (marker.phase !== "publishing") {
@@ -110,13 +118,12 @@ export class PendingProjectDataMigrationStore {
         `Pending migration marker can be cleared only from publishing, not ${marker.phase}`,
       );
     }
-    await syncDirectory(dirname(this.markerPath));
     const current = await this.readRaw();
     if (current === undefined || !current.equals(bytes)) {
       throw new PendingMigrationPersistenceError("Pending migration marker changed before exact-bound clear");
     }
     await unlink(this.markerPath);
-    await syncDirectory(dirname(this.markerPath));
+    await syncDirectoryIfSupported(dirname(this.markerPath));
   }
 
   private async readRequired(): Promise<{ bytes: Buffer; marker: PendingProjectDataMigration }> {
@@ -126,7 +133,7 @@ export class PendingProjectDataMigrationStore {
   }
 
   private async readRaw(): Promise<Buffer | undefined> {
-    await assertExistingDirectoryChain(this.repositoryRoot, [".projector", "runtime", "migrations"]);
+    await assertExistingDirectoryChain(this.repositoryRoot, [".projector"]);
     let status;
     try { status = await lstat(this.markerPath); }
     catch (error) { if (hasCode(error, "ENOENT")) return undefined; throw error; }
@@ -146,16 +153,9 @@ export class PendingProjectDataMigrationStore {
 
   private async ensureParent(): Promise<string> {
     await assertRegularDirectory(this.repositoryRoot, "Repository root");
-    let current = this.repositoryRoot;
-    for (const segment of [".projector", "runtime", "migrations"]) {
-      const parent = current;
-      current = join(current, segment);
-      try { await mkdir(current); }
-      catch (error) { if (!hasCode(error, "EEXIST")) throw error; }
-      await assertRegularDirectory(current, `Pending migration directory ${segment}`);
-      await syncDirectory(parent);
-    }
-    return current;
+    const projectorRoot = join(this.repositoryRoot, ".projector");
+    await assertRegularDirectory(projectorRoot, "Projector directory");
+    return projectorRoot;
   }
 }
 
@@ -163,16 +163,6 @@ export class PendingMigrationPersistenceError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PendingMigrationPersistenceError";
-  }
-}
-
-export class PendingMigrationDurabilityUnavailableError extends PendingMigrationPersistenceError {
-  constructor(path: string, cause: NodeJS.ErrnoException) {
-    super(
-      `Pending migration publication is unavailable because directory-entry durability cannot be confirmed at ${path}: ` +
-      `${cause.code ?? cause.message}`,
-    );
-    this.name = "PendingMigrationDurabilityUnavailableError";
   }
 }
 
@@ -230,14 +220,24 @@ async function writeDurableNewFile(path: string, bytes: Uint8Array): Promise<voi
   finally { await handle.close(); }
 }
 
-async function syncDirectory(path: string): Promise<void> {
+async function flushPublishedFile(path: string, expected: Uint8Array): Promise<void> {
+  const handle = await open(path, "r+");
+  try {
+    const status = await handle.stat();
+    if (!status.isFile()) throw new PendingMigrationPersistenceError(`Published pending migration marker is not a regular file: ${path}`);
+    await handle.sync();
+    const observed = await handle.readFile();
+    if (!observed.equals(expected)) {
+      throw new PendingMigrationPersistenceError("Published pending migration marker bytes changed during durable flush");
+    }
+  } finally { await handle.close(); }
+}
+
+async function syncDirectoryIfSupported(path: string): Promise<void> {
   const handle = await open(path, "r");
   try { await handle.sync(); }
   catch (error) {
-    if (hasCode(error, "EINVAL") || hasCode(error, "ENOTSUP") || hasCode(error, "EPERM")) {
-      throw new PendingMigrationDurabilityUnavailableError(path, error);
-    }
-    throw error;
+    if (!hasCode(error, "EINVAL") && !hasCode(error, "ENOTSUP") && !hasCode(error, "EPERM")) throw error;
   } finally { await handle.close(); }
 }
 

@@ -20,7 +20,7 @@ async function fixture(): Promise<{ repositoryRoot: string; markerPath: string }
   await mkdir(join(repositoryRoot, ".projector"));
   return {
     repositoryRoot,
-    markerPath: join(repositoryRoot, ".projector", "runtime", "migrations", "pending.json"),
+    markerPath: join(repositoryRoot, ".projector", "pending-project-data-migration.json"),
   };
 }
 
@@ -46,7 +46,7 @@ function canonicalBytes(value: PendingProjectDataMigration): string {
   return `${canonicalJson(value)}\n`;
 }
 
-describe.skipIf(process.platform === "win32")("pending project-data migration persistence", () => {
+describe("pending project-data migration persistence", () => {
   test("creates canonical bytes exclusively and accepts only exact-byte idempotence", async () => {
     const { repositoryRoot, markerPath } = await fixture();
     const store = new PendingProjectDataMigrationStore(repositoryRoot);
@@ -90,6 +90,21 @@ describe.skipIf(process.platform === "win32")("pending project-data migration pe
     expect(await new PendingProjectDataMigrationStore(repositoryRoot).read()).toEqual(marker());
   });
 
+  test("leaves recognized bytes after namespace publication is interrupted before the post-publication file flush", async () => {
+    const { repositoryRoot } = await fixture();
+    const initialStore = new PendingProjectDataMigrationStore(repositoryRoot);
+    await initialStore.create(marker());
+    const interrupted = new PendingProjectDataMigrationStore(repositoryRoot, {
+      crash: (point) => {
+        if (point === "after-publication-before-flush") throw new Error("simulated post-publication interruption");
+      },
+    });
+
+    await expect(interrupted.transition({ migrationId: marker().migrationId, manifestHash: hashA }, "staged"))
+      .rejects.toThrow(/simulated post-publication interruption/i);
+    await expect(new PendingProjectDataMigrationStore(repositoryRoot).read()).resolves.toEqual(marker("staged"));
+  });
+
   test("clears only the exact publishing marker after config-last publication", async () => {
     const { repositoryRoot, markerPath } = await fixture();
     const store = new PendingProjectDataMigrationStore(repositoryRoot);
@@ -98,10 +113,10 @@ describe.skipIf(process.platform === "win32")("pending project-data migration pe
     await store.transition(binding, "staged");
     await store.transition(binding, "publishing");
 
-    await expect(store.clearAfterConfigPublication({ ...binding, manifestHash: hashB }))
+    await expect(store.clearAfterReceiptPublication({ ...binding, manifestHash: hashB }))
       .rejects.toThrow(/identity/i);
     expect(await readFile(markerPath, "utf8")).toBe(canonicalBytes(marker("publishing")));
-    await store.clearAfterConfigPublication(binding);
+    await store.clearAfterReceiptPublication(binding);
     expect(await store.read()).toBeUndefined();
   });
 
@@ -124,14 +139,3 @@ describe.skipIf(process.platform === "win32")("pending project-data migration pe
     expect(await readFile(outside, "utf8")).toBe(canonicalBytes(marker()));
   });
 });
-
-test.runIf(process.platform === "win32")(
-  "refuses pending publication before mutation when directory-entry durability is unavailable",
-  async () => {
-    const { repositoryRoot, markerPath } = await fixture();
-    const store = new PendingProjectDataMigrationStore(repositoryRoot);
-
-    await expect(store.create(marker())).rejects.toThrow(/durability cannot be confirmed/i);
-    await expect(readFile(markerPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-  },
-);
