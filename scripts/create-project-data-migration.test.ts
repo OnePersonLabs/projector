@@ -2,7 +2,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { canonicalJson, type ProjectDataMigrationDraft } from "@projector/core";
+import { ProjectDataMigrationDraftSchema, canonicalJson, type ProjectDataMigrationDraft } from "@projector/core";
 import { afterEach, describe, expect, test } from "vitest";
 
 import {
@@ -71,6 +71,50 @@ describe("create-project-data-migration", () => {
     expect(result).toMatchObject({ status: "sealed", version: "2.1.0", manifest: { kind: "no-data-change" } });
     await expect(access(fixture.input.draftPath)).rejects.toMatchObject({ code: "ENOENT" });
     expect(JSON.parse(await readFile(join(migrationsRoot, "chain-through-2.1.0.json"), "utf8"))).toMatchObject({ manifests: [{ id: "migration:2.0.0-to-2.1.0" }] });
+  });
+
+  test("restores the exact authored draft when final candidate verification fails", async () => {
+    const fixture = await authoringFixture();
+    const transformPath = canonicalOwnerModulePaths[0]!;
+    const validationPath = canonicalOwnerModulePaths[1]!;
+    await writeFile(join(fixture.candidateRoot, ...transformPath.split("/")), "changed format owner\n");
+    await publishCandidateManifest(fixture.candidateRoot);
+    const files = await inventoryCandidateFiles(fixture.candidateRoot);
+    const targetSnapshot = createReleaseCandidateProjectDataFormat({ candidate: { packageIdentity: { name: "@onepersonlabs/projector", version: "2.1.0" }, files } });
+    const sourceSnapshot = ProjectDataMigrationDraftSchema.parse(JSON.parse(await readFile(fixture.input.draftPath, "utf8"))).sourceSnapshot;
+    const digest = (path: string) => files.find((file) => file.path === path)!.digest;
+    await writeFile(fixture.input.draftPath, `${canonicalJson({
+      apiVersion: "projector.project-data-migration-draft/v1",
+      sourceSnapshot,
+      targetSnapshot,
+      operations: [{ id: "transform:canonical-wire", relativePath: transformPath, contentHash: digest(transformPath) }],
+      customTransforms: [],
+      validations: [{ id: "validate:canonical-wire", relativePath: validationPath, contentHash: digest(validationPath) }],
+    })}\n`);
+    const before = await readFile(fixture.input.draftPath, "utf8");
+    let builds = 0;
+    await expect(createRepositoryProjectDataMigration({
+      repositoryRoot: fixture.root,
+      sourcePath: fixture.input.sourcePath,
+      draftPath: fixture.input.draftPath,
+      migrationsRoot: join(fixture.root, "release/project-data-migrations"),
+      candidateRoot: fixture.candidateRoot,
+      readReleaseIdentity: async () => ({ name: "@onepersonlabs/projector", version: "2.1.0" }),
+      buildCandidate: async () => { builds += 1; if (builds === 2) throw new Error("final candidate rejected"); },
+    })).rejects.toThrow("final candidate rejected");
+    expect(await readFile(fixture.input.draftPath, "utf8")).toBe(before);
+    await expect(access(`${fixture.input.draftPath}.sealing`)).rejects.toMatchObject({ code: "ENOENT" });
+    const recovered = await createRepositoryProjectDataMigration({
+      repositoryRoot: fixture.root,
+      sourcePath: fixture.input.sourcePath,
+      draftPath: fixture.input.draftPath,
+      migrationsRoot: join(fixture.root, "release/project-data-migrations"),
+      candidateRoot: fixture.candidateRoot,
+      readReleaseIdentity: async () => ({ name: "@onepersonlabs/projector", version: "2.1.0" }),
+      buildCandidate: async () => undefined,
+    });
+    expect(recovered).toMatchObject({ status: "sealed", manifest: { kind: "transform", transforms: [{ id: "transform:canonical-wire" }] } });
+    await expect(access(fixture.input.draftPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

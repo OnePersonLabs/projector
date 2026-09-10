@@ -52,7 +52,7 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot, options = {
 
     const files = await inventoryCandidateFiles(candidateRoot);
     if (options.allowPendingProjectDataMigration !== true) {
-      await assertProjectDataMigrationReleaseReady({ repositoryRoot, packageIdentity: { name: releasePackageName, version: releaseVersion }, files });
+      await assertProjectDataMigrationReleaseReady({ repositoryRoot, packageIdentity: { name: releasePackageName, version: releaseVersion }, files, allowActiveSeal: options.allowActiveProjectDataMigrationSeal === true });
     }
     const manifest = {
       apiVersion: releaseCandidateApiVersion,
