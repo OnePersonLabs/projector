@@ -1,0 +1,101 @@
+[
+  {
+    "name": "anti_slop_patterns.md",
+    "sha256": "b86124ab710b751298a04d9d9f086c00d046bc4a6a23434f015d0b5aa8bbf47e",
+    "bytes": 13236,
+    "researchUnit": "W3",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "Avoiding_AI_Slop_in_Projects.md",
+    "sha256": "15ac547be5f5c0404202d76804f31329569775ee856c4346eb56e61159e2ef97",
+    "bytes": 8392,
+    "researchUnit": "W3",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "domain_specific_agents.md",
+    "sha256": "b6c8d8da04417d653f8a417723b60d5909de1305b55782a0410fefd1a76f5881",
+    "bytes": 27365,
+    "researchUnit": "W2",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "Effective_harnesses_for_long-running_agents_Anthropic.md",
+    "sha256": "d25485fe858adc1fc421127ce1cb0475d83c502fc86bfd4f80ac0e8403709652",
+    "bytes": 14015,
+    "researchUnit": "W2",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "geometric_reasoning_-_explainer.md",
+    "sha256": "7cfea254a3d9d37a09735a7488ea85adfec6996714a9cbf8709bd64cfb6f9a98",
+    "bytes": 8538,
+    "researchUnit": "W3",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "geometric_reasoning_transcript.md",
+    "sha256": "861ea299dc9f50657c34073547412cb85cc4dc54d41da84dffb043d0a4781b9e",
+    "bytes": 45941,
+    "researchUnit": "W3",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "graph_engineering_-_anthropic.md",
+    "sha256": "3ecc393b208b7d2faa0c4319b9b072ff46d4793704143659cbf9b125de8e0878",
+    "bytes": 17054,
+    "researchUnit": "W2",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "graph_engineering_-_introduction.md",
+    "sha256": "964dd74ed3c2e908773ea480e568fbe9799df0ec3c70db5714e30c7a2c7ad7fd",
+    "bytes": 22835,
+    "researchUnit": "W2",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "Harness_engineering_leveraging_Codex_in_an_agent-first_world_OpenAI.md",
+    "sha256": "0c6deed0d68e51640b63cc209c72597b2e23f35a5d461302695501e1cba49117",
+    "bytes": 176,
+    "researchUnit": "W3",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "Is_Agent_Code_Less_Maintainable_Than_Human_Code.md",
+    "sha256": "63fb60670e4e6a7db5586f6f0c96eaa0041fc75d70bc13547304ad854690893e",
+    "bytes": 61171,
+    "researchUnit": "W1",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  },
+  {
+    "name": "SlopCodeBench_Benchmarking_How_Coding_Agents_Degrade_Over_Long-Horizon_Iterative_Tasks.md",
+    "sha256": "2df8b074f6fa412ddacb6f4b9e8b70a29aa423be9a483509bd64cc9ee94de59c",
+    "bytes": 106575,
+    "researchUnit": "W1",
+    "coverage": "full supplied file inspected",
+    "disposition": "EVIDENCE.md donor table",
+    "evidenceStatus": "source-inspected and primary-checked where material; not experimentally reproduced"
+  }
+]

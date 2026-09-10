@@ -1,0 +1,51 @@
+{
+  "donors": {
+    "count": 11,
+    "mismatches": []
+  },
+  "pilot": {
+    "count": 8,
+    "mismatches": []
+  },
+  "originalSpec": {
+    "count": 46,
+    "mismatches": []
+  },
+  "projectorHead": {
+    "exitCode": 0,
+    "stdout": "043a7c32e62f3e8319fe5a0e4bfc54d949a9f096",
+    "stderr": ""
+  },
+  "projectorStatus": {
+    "exitCode": 0,
+    "stdout": "?? .borg/",
+    "stderr": ""
+  },
+  "trackedDiffCheck": {
+    "exitCode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "trackedDiff": {
+    "exitCode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "psychordHead": {
+    "exitCode": 0,
+    "stdout": "75d4d9e5949c33f39b43b215e315f8f4d80efc36",
+    "stderr": ""
+  },
+  "psychordStatus": {
+    "exitCode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "markdownLinks": {
+    "files": 26,
+    "localLinks": 123,
+    "missing": [],
+    "scope": "package Markdown excluding copied spec tree; existence only, not fragment anchors or external reachability"
+  },
+  "finalIntegrityPassed": true
+}

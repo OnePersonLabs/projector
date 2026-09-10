@@ -1,0 +1,186 @@
+[
+  {
+    "path": "PROJECTOR_SPEC/INDEX.md",
+    "sha256": "817704645bb08724bfa314ecafe807db7f800a32b5c3083f7ab01e5bc8c801b6"
+  },
+  {
+    "path": "PROJECTOR_SPEC/spec.manifest.json",
+    "sha256": "863a6c685c874043fb204ef7c5623c280999af903181d1636c8c2e1263d399e2"
+  },
+  {
+    "path": "PROJECTOR_SPEC/SPEC.md",
+    "sha256": "18de8ef4b4a0b4233d368aa6da256935a7ef4607498baaf019bdfd00015f7655"
+  },
+  {
+    "path": "PROJECTOR_SPEC/01-product/principles-and-non-goals.md",
+    "sha256": "e821d0b1d1d7efefaba2af27178e21073efb45bf0172b2f921a6122d081413e7"
+  },
+  {
+    "path": "PROJECTOR_SPEC/01-product/vision-and-north-star.md",
+    "sha256": "09c9ac37456dccf31a4326c5d8bb7ce7613bee0e350910b7e56d8f4f2f2f3024"
+  },
+  {
+    "path": "PROJECTOR_SPEC/02-semantic-kernel/architecture-decision-contracts.md",
+    "sha256": "a56174ede8352d7239fcc5d599ca174a7ec95bd92efb37009b41b6fd127b4569"
+  },
+  {
+    "path": "PROJECTOR_SPEC/02-semantic-kernel/canonical-state.md",
+    "sha256": "d61615655002ae2d3948ffcf44ebb33aa609d66ecd136b5afd6e153b003c1676"
+  },
+  {
+    "path": "PROJECTOR_SPEC/02-semantic-kernel/conceptual-architecture.md",
+    "sha256": "159b0b0277aea603e9a50b5ed8711ea80bcc1ba3dbaea5b03c7ecd6132b98f64"
+  },
+  {
+    "path": "PROJECTOR_SPEC/02-semantic-kernel/identity-and-relations.md",
+    "sha256": "d5b86822bdd85d18e9003399e2f3dcee2580201c635ddde302d87fe8b58c04ef"
+  },
+  {
+    "path": "PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md",
+    "sha256": "8849f22f1513690b66b4cfaac7739b6efa91c06a080abe4165e86725cb5a105f"
+  },
+  {
+    "path": "PROJECTOR_SPEC/02-semantic-kernel/representation-contracts.md",
+    "sha256": "dfa0fcfb810a28afa95e4913281c89107c67b53828741f23dc36b066601ce45e"
+  },
+  {
+    "path": "PROJECTOR_SPEC/02-semantic-kernel/state-binding-and-ports.md",
+    "sha256": "a86c27f77d85de0082c09f41f26cad9629fefc8f840f7904d0ba2b3861cecdd0"
+  },
+  {
+    "path": "PROJECTOR_SPEC/02-semantic-kernel/surfaces-and-projection-units.md",
+    "sha256": "51a36c0db2427f1e630820cffe9d5429ab996a6d98fcdd641c38b6ebe173210a"
+  },
+  {
+    "path": "PROJECTOR_SPEC/02-semantic-kernel/terminology-and-source-classes.md",
+    "sha256": "4f4dcb11b9e7e6eddd3a2b2e23ab542510ffcaea8ab49448b77b6c79902056d5"
+  },
+  {
+    "path": "PROJECTOR_SPEC/03-knowledge/architecture-concerns-and-validity.md",
+    "sha256": "f5a33730fbc21157365872cd19f0516cb3f4977672394060a597f23d8de8ff1f"
+  },
+  {
+    "path": "PROJECTOR_SPEC/03-knowledge/architecture-decisions.md",
+    "sha256": "99d28ad74deb8ce6ad87a92faec720f43fe330742ca316ce514875fea729c4e8"
+  },
+  {
+    "path": "PROJECTOR_SPEC/03-knowledge/architecture-evidence-and-consequences.md",
+    "sha256": "e6112714f853390c65416f04d71db961f0fbca21eab860bb4922a84d2b0e5b16"
+  },
+  {
+    "path": "PROJECTOR_SPEC/03-knowledge/evidence-and-authority.md",
+    "sha256": "446eb1e67a268c41082a2151efe09e600750174790af007886a4907bb7ace206"
+  },
+  {
+    "path": "PROJECTOR_SPEC/03-knowledge/relevance-and-change-cognition.md",
+    "sha256": "7630d0d66c3c9eea8affd2dbf17adf2bdc24bb076f7536edeb4164ba698728fa"
+  },
+  {
+    "path": "PROJECTOR_SPEC/03-knowledge/risk-and-execution-policy.md",
+    "sha256": "940550eed6cba1181611b16e901950cb61f679a9c5a14af36eda932978deac10"
+  },
+  {
+    "path": "PROJECTOR_SPEC/04-governance/lenses.md",
+    "sha256": "89c8df1e703b614587c9a2db2afb2b80f4bb8d3bff3696fd724880519c3faf57"
+  },
+  {
+    "path": "PROJECTOR_SPEC/04-governance/scope-and-rules.md",
+    "sha256": "40146a146f6a47465d9e8c7603477aad68dbd0a618b92aa3c82226e938cb9a83"
+  },
+  {
+    "path": "PROJECTOR_SPEC/05-projections/derivations-and-invalidation.md",
+    "sha256": "d9138ea33f193fb42d96d25e952bc29e5400b18494f1dbc0b4f9a4b49477b703"
+  },
+  {
+    "path": "PROJECTOR_SPEC/05-projections/execution-capsules.md",
+    "sha256": "9abd86fc35d3e8b96ccc0b0f9a56fd99affbf3a107c4c270a4291373c83415e9"
+  },
+  {
+    "path": "PROJECTOR_SPEC/05-projections/runtime-and-representations.md",
+    "sha256": "a1aa287be9740885d83c0b5509f5274d57d80794b3a7d615f3cbf97282d841a0"
+  },
+  {
+    "path": "PROJECTOR_SPEC/06-reconciliation/coverage-and-completion.md",
+    "sha256": "c02655de8f504d312df41b7280fbde2d34a21fd5d85ff2e94f33feea58b3f1c5"
+  },
+  {
+    "path": "PROJECTOR_SPEC/06-reconciliation/reconciliation-and-divergence.md",
+    "sha256": "aa322881e51538f7a9ec4a3c4a3195d50c495faf14ee598f03eb9288e22f8856"
+  },
+  {
+    "path": "PROJECTOR_SPEC/07-change/plans.md",
+    "sha256": "67a92413adb5e88b993d5104f755e674a4b9a4e243d2ef491947e6987ed2d39c"
+  },
+  {
+    "path": "PROJECTOR_SPEC/07-change/semantic-change-compiler.md",
+    "sha256": "2ff71a7c8afe89d539bedf2990dfe9ce7d8a4400fee206a982dfe5f56b6d8c1a"
+  },
+  {
+    "path": "PROJECTOR_SPEC/07-change/transactions-and-certificates.md",
+    "sha256": "654332ea855594d4c44fdf5bb49bf6ec7b1b8a9e0a9cb8f532df8df5b941c612"
+  },
+  {
+    "path": "PROJECTOR_SPEC/08-agents/hosts-and-mcp.md",
+    "sha256": "4af5944b9bb21c68189e20418081dd8d7a6799bad99050e5b9d66193be920f15"
+  },
+  {
+    "path": "PROJECTOR_SPEC/08-agents/orchestration-and-models.md",
+    "sha256": "ee3d98d98020281fccedaeb8e950e8a03b32059a0179eb194228a45156348e7c"
+  },
+  {
+    "path": "PROJECTOR_SPEC/09-evolution/historical-evaluation-and-research.md",
+    "sha256": "3f08636c635ee41916526fd47de9bda4846c47daf4e6680c6c49b2ddcbfc0e20"
+  },
+  {
+    "path": "PROJECTOR_SPEC/09-evolution/modernization-and-surfaces.md",
+    "sha256": "ff986a014ff0cd8b7be189b106e183b54096efb5b3e55e82e5809be5f7981209"
+  },
+  {
+    "path": "PROJECTOR_SPEC/09-evolution/persistence-and-observation.md",
+    "sha256": "eaac5866dcce28cfefe9f21dc566dcaabe6916be9f66f010c40e3e4431a0f69c"
+  },
+  {
+    "path": "PROJECTOR_SPEC/10-operation/cli-modes-and-security.md",
+    "sha256": "f13ef6927aad6c640e2eac60533a5cf1c8cb5576b1d8c15a61869f01a7b6ea57"
+  },
+  {
+    "path": "PROJECTOR_SPEC/10-operation/observability-and-reporting.md",
+    "sha256": "cf0ba360ff8e5e124288d8105fffcace6f2e7e8611b024bdf2d2862e2b306753"
+  },
+  {
+    "path": "PROJECTOR_SPEC/11-validation/benchmarks-and-redesign-criteria.md",
+    "sha256": "e2025997c4b115c640e4552a9bbe8864984ce9be4fe7a853105802e48cadaba2"
+  },
+  {
+    "path": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
+    "sha256": "d4a7960cd50c87e2a532b5392ab1d44c1594a6089c40f35560d1fff8640d8814"
+  },
+  {
+    "path": "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md",
+    "sha256": "5c3b61124058d6743e05a658b5a63da8b930cbc1b716948bcba2170c7f91e74b"
+  },
+  {
+    "path": "PROJECTOR_SPEC/12-delivery/acceptance-core.md",
+    "sha256": "fd9c73f31d544b55bde278bb03f9fa24f492ffcefc5333fa2559987f03a259b1"
+  },
+  {
+    "path": "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md",
+    "sha256": "11d59a588b7fa0a781ace0a04b81e0856a45b59bbaba6fe0cf433e7200a16b39"
+  },
+  {
+    "path": "PROJECTOR_SPEC/12-delivery/acceptance-representation.md",
+    "sha256": "da531331605b94681697c33a4a763da6dfabe19200cc37d73c93798efb1af3b5"
+  },
+  {
+    "path": "PROJECTOR_SPEC/12-delivery/first-vertical-slice.md",
+    "sha256": "496a75c02ef26131072c8c85418f7f68a51ba8aa7d4650e1f440659d3cf6fcb4"
+  },
+  {
+    "path": "PROJECTOR_SPEC/12-delivery/implementation-plan.md",
+    "sha256": "6f6d3fcb5d85904dbfec5652da0685a7a4e2a72af5bde125820b22b2c0a4c2f1"
+  },
+  {
+    "path": "PROJECTOR_SPEC/12-delivery/release-and-directive.md",
+    "sha256": "36a09c0f0a1b46f1ced70e45bf0d04c40e35f1618232eead2a6eca880d63b727"
+  }
+]

@@ -1,0 +1,30 @@
+{
+  "head": "043a7c32e62f3e8319fe5a0e4bfc54d949a9f096",
+  "scope": "Prior W6 acceptance expanded to existing wrap-up plan, actual retirement consumers and user-requested end-to-end execution readiness",
+  "inputs": [
+    {
+      "path": ".temp\\projector-wrap-up-plan-2026-09-09.md",
+      "sha256": "c81cb36560808c6a7b638fc43295ef727eb60518280e08c05908e6da17449664"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P1-application-evidence.md",
+      "sha256": "2618610206f65360fde083464d991287f011674796d667f116d23b14ab5f010e"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P2-contributions-and-continuation.md",
+      "sha256": "e40a8da5d9476ced666e4075c521d06231be1e38d31433bd4798ac8b0a79c0ef"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P3-correction-and-governance.md",
+      "sha256": "60f3eecf595f1d6ea5461a7ac41b50cf5f37d24ba2076a330585cf098c03ca18"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\proposals\\P4-longitudinal-evaluation.md",
+      "sha256": "b9ef7397b17f4ca80a523624da1cb0e9009e481b0c8a0d8d8f52c83c47f2ed73"
+    },
+    {
+      "path": ".borg\\ingest-2026-09-09\\spec-deltas\\PROJECTOR_SPEC.patch",
+      "sha256": "026defb2364aa3358fa5504ce9e5d1ede7242aa869ba5d7ba4876e2d4e712d39"
+    }
+  ]
+}

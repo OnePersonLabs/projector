@@ -1,0 +1,153 @@
+{
+  "baseline": "043a7c32e62f3e8319fe5a0e4bfc54d949a9f096",
+  "status": "proposed-unapplied",
+  "changes": [
+    {
+      "proposal": "P1",
+      "path": "PROJECTOR_SPEC/02-semantic-kernel/conceptual-architecture.md",
+      "operation": "modify",
+      "sourceSha256": "159b0b0277aea603e9a50b5ed8711ea80bcc1ba3dbaea5b03c7ecd6132b98f64",
+      "proposedTextSha256": "fc5ad963951b7b8885f40cb3f432ebe54e87f0ec151d61230844ff4856f012d1"
+    },
+    {
+      "proposal": "P1",
+      "path": "PROJECTOR_SPEC/02-semantic-kernel/reference-implementation.md",
+      "operation": "modify",
+      "sourceSha256": "8849f22f1513690b66b4cfaac7739b6efa91c06a080abe4165e86725cb5a105f",
+      "proposedTextSha256": "dd4b0d071ea602825daf24af567315a5b387ca273c8430ef7b13e70b430cd7bf"
+    },
+    {
+      "proposal": "P3",
+      "path": "PROJECTOR_SPEC/03-knowledge/architecture-concerns-and-validity.md",
+      "operation": "modify",
+      "sourceSha256": "f5a33730fbc21157365872cd19f0516cb3f4977672394060a597f23d8de8ff1f",
+      "proposedTextSha256": "af3919a2fca748a04a93c1ac833e4394556e77a4fa65d3fea149c79645b9c9fb"
+    },
+    {
+      "proposal": "P1",
+      "path": "PROJECTOR_SPEC/03-knowledge/evidence-and-authority.md",
+      "operation": "modify",
+      "sourceSha256": "446eb1e67a268c41082a2151efe09e600750174790af007886a4907bb7ace206",
+      "proposedTextSha256": "0a99d83a8bc07a81993afca4fe242fcbf602e533c04ed44e004b29f2c4aca391"
+    },
+    {
+      "proposal": "P3",
+      "path": "PROJECTOR_SPEC/04-governance/lenses.md",
+      "operation": "modify",
+      "sourceSha256": "89c8df1e703b614587c9a2db2afb2b80f4bb8d3bff3696fd724880519c3faf57",
+      "proposedTextSha256": "d9ef8943fb15d859b569d111ac9b6cc0b938e5544ae9b9c45c0e9e316331894a"
+    },
+    {
+      "proposal": "P2",
+      "path": "PROJECTOR_SPEC/05-projections/execution-capsules.md",
+      "operation": "modify",
+      "sourceSha256": "9abd86fc35d3e8b96ccc0b0f9a56fd99affbf3a107c4c270a4291373c83415e9",
+      "proposedTextSha256": "763241be61535f7861f62a207434fe0f708fd785f514e1512cd4aac23bd0eb2d"
+    },
+    {
+      "proposal": "P1",
+      "path": "PROJECTOR_SPEC/06-reconciliation/coverage-and-completion.md",
+      "operation": "modify",
+      "sourceSha256": "c02655de8f504d312df41b7280fbde2d34a21fd5d85ff2e94f33feea58b3f1c5",
+      "proposedTextSha256": "f81a68e6ec228b7bc15839129ab7574660acaf6dd967522148ac8b76a417c890"
+    },
+    {
+      "proposal": "P3",
+      "path": "PROJECTOR_SPEC/06-reconciliation/reconciliation-and-divergence.md",
+      "operation": "modify",
+      "sourceSha256": "aa322881e51538f7a9ec4a3c4a3195d50c495faf14ee598f03eb9288e22f8856",
+      "proposedTextSha256": "6f501f0524caa2d8946e0e427156d369995f4c06ec728a61a1e0171365098f7b"
+    },
+    {
+      "proposal": "P2",
+      "path": "PROJECTOR_SPEC/07-change/plans.md",
+      "operation": "modify",
+      "sourceSha256": "67a92413adb5e88b993d5104f755e674a4b9a4e243d2ef491947e6987ed2d39c",
+      "proposedTextSha256": "4ab12f3961e3e836610ba7e8fc385fc902ded127687a630313e0611eec71efd6"
+    },
+    {
+      "proposal": "P2",
+      "path": "PROJECTOR_SPEC/07-change/transactions-and-certificates.md",
+      "operation": "modify",
+      "sourceSha256": "654332ea855594d4c44fdf5bb49bf6ec7b1b8a9e0a9cb8f532df8df5b941c612",
+      "proposedTextSha256": "99507487fe27c61418d24edc51489dbda9e7d08ba04684323d89e72ae5c3185a"
+    },
+    {
+      "proposal": "P2",
+      "path": "PROJECTOR_SPEC/08-agents/hosts-and-mcp.md",
+      "operation": "modify",
+      "sourceSha256": "4af5944b9bb21c68189e20418081dd8d7a6799bad99050e5b9d66193be920f15",
+      "proposedTextSha256": "ac5da73e868d830cfa6a9b9f4086cc3f1b150c72a14c99a43d8b61b50c3a8eed"
+    },
+    {
+      "proposal": "P2",
+      "path": "PROJECTOR_SPEC/08-agents/orchestration-and-models.md",
+      "operation": "modify",
+      "sourceSha256": "ee3d98d98020281fccedaeb8e950e8a03b32059a0179eb194228a45156348e7c",
+      "proposedTextSha256": "03386bf19af98c32e9256e3b6421c2e9a28bf79807a6f43af8611130e6c2ea04"
+    },
+    {
+      "proposal": "P1",
+      "path": "PROJECTOR_SPEC/09-evolution/application-evidence.md",
+      "operation": "add",
+      "sourceSha256": null,
+      "proposedTextSha256": "8db1e171cdb16cd6da4391173c4400a566b7fdc79ada00b25224cf44c239a79d"
+    },
+    {
+      "proposal": "P3",
+      "path": "PROJECTOR_SPEC/09-evolution/historical-evaluation-and-research.md",
+      "operation": "modify",
+      "sourceSha256": "3f08636c635ee41916526fd47de9bda4846c47daf4e6680c6c49b2ddcbfc0e20",
+      "proposedTextSha256": "f04b922cdfa4aa141df60608066b402c11ddf87a45f99be941a5fd8b928dbdce"
+    },
+    {
+      "proposal": "P1",
+      "path": "PROJECTOR_SPEC/09-evolution/persistence-and-observation.md",
+      "operation": "modify",
+      "sourceSha256": "eaac5866dcce28cfefe9f21dc566dcaabe6916be9f66f010c40e3e4431a0f69c",
+      "proposedTextSha256": "f2fd3344f5b865d1b9360eda339839977e54fe20019d4dce0ea6f2b20e0deb28"
+    },
+    {
+      "proposal": "P4",
+      "path": "PROJECTOR_SPEC/10-operation/observability-and-reporting.md",
+      "operation": "modify",
+      "sourceSha256": "cf0ba360ff8e5e124288d8105fffcace6f2e7e8611b024bdf2d2862e2b306753",
+      "proposedTextSha256": "86aba0a73be5ee0f66f4ed5025e81e00ec252cb26f9c715cf756ca545d145f63"
+    },
+    {
+      "proposal": "P4",
+      "path": "PROJECTOR_SPEC/11-validation/benchmarks-and-redesign-criteria.md",
+      "operation": "modify",
+      "sourceSha256": "e2025997c4b115c640e4552a9bbe8864984ce9be4fe7a853105802e48cadaba2",
+      "proposedTextSha256": "6ec47d105103b9bad77cdf3ffba58d09d74e65d01471941ca37718798da631ad"
+    },
+    {
+      "proposal": "P4",
+      "path": "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
+      "operation": "modify",
+      "sourceSha256": "d4a7960cd50c87e2a532b5392ab1d44c1594a6089c40f35560d1fff8640d8814",
+      "proposedTextSha256": "acd8b1c7bd39d4b65ed38845ba33d54727e2adb1c5b9f6da7f008a4034e98997"
+    },
+    {
+      "proposal": "P1",
+      "path": "PROJECTOR_SPEC/INDEX.md",
+      "operation": "modify",
+      "sourceSha256": "817704645bb08724bfa314ecafe807db7f800a32b5c3083f7ab01e5bc8c801b6",
+      "proposedTextSha256": "74d4ef1c75550e913467f7b76e53ba91843dcf0db098a526677a5fb32f2a2a6a"
+    },
+    {
+      "proposal": "P1",
+      "path": "PROJECTOR_SPEC/SPEC.md",
+      "operation": "modify",
+      "sourceSha256": "18de8ef4b4a0b4233d368aa6da256935a7ef4607498baaf019bdfd00015f7655",
+      "proposedTextSha256": "f24bab8197ce7ac786f93b6e807f918c673134c2e3ef015e27a7da3093f83d89"
+    },
+    {
+      "proposal": "P1",
+      "path": "PROJECTOR_SPEC/spec.manifest.json",
+      "operation": "modify",
+      "sourceSha256": "863a6c685c874043fb204ef7c5623c280999af903181d1636c8c2e1263d399e2",
+      "proposedTextSha256": "387cc75319ac6723ab120d2e2e54daaa0e2a85fd4f184f8049f2029864769def"
+    }
+  ]
+}
