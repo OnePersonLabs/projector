@@ -102,6 +102,12 @@ describe("normative contract registry", () => {
     expect(ChangeProposalSchema.safeParse({ ...proposal, hidden: true }).success).toBe(false);
     expect(ChangeProposalSchema.safeParse({ ...proposal, scenarios: [{ ...proposal.scenarios[0], steps: [{ ...proposal.scenarios[0]!.steps[0], hidden: true }, proposal.scenarios[0]!.steps[1]] }] }).success).toBe(false);
     for (const path of ["../escape", "/absolute", "C:/absolute", "src\\value.mjs", ".projector/runtime/forged.json"]) expect(ChangeProposalSchema.safeParse({ ...proposal, edits: [{ ...proposal.edits[0], path }] }).success).toBe(false);
+    const supplementalPath = "test/supplemental.test.mjs";
+    const withSupplemental = { ...proposal, edits: [...proposal.edits, { path: supplementalPath, before: "old", after: "new" }], validation: { ...proposal.validation, supplementalNodeTests: [supplementalPath] } };
+    expect(ChangeProposalSchema.safeParse(withSupplemental).success).toBe(true);
+    expect(ChangeProposalSchema.safeParse({ ...withSupplemental, edits: proposal.edits }).success).toBe(false);
+    expect(ChangeProposalSchema.safeParse({ ...withSupplemental, edits: [...proposal.edits, { path: supplementalPath, before: "old", after: null }] }).success).toBe(false);
+    expect(ChangeProposalSchema.safeParse({ ...withSupplemental, validation: { ...withSupplemental.validation, supplementalNodeTests: ["test/other.test.mjs"] } }).success).toBe(false);
   });
 
   it("accepts explicit model-only additions while rejecting empty and unauthenticated revisions", () => {
