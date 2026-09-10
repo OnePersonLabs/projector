@@ -184,6 +184,8 @@ export class KnowledgeGraph implements ContextSourcePort {
   private readonly unitPath = new Map<string, string>();
   private readonly unitByPath = new Map<string, ProjectionUnit>();
   private readonly selectorFactsByUnitId = new Map<string, ProjectionUnitSelectorFacts>();
+  private readonly selectorSubjects: readonly ReturnType<typeof projectionUnitSelectorSubject>[];
+  private readonly implementationBindingsBySubjectId = new Map<string, readonly Readonly<Record<string, unknown>>[]>();
   private readonly envelopeById = new Map<string, CanonicalDocumentEnvelope>();
 
   constructor(readonly observation: ChangeRepositoryObservation, decisionHost: KnowledgeDecisionHost = {}) {
@@ -215,6 +217,7 @@ export class KnowledgeGraph implements ContextSourcePort {
         });
       }
     }
+    this.selectorSubjects = this.units.map((unit) => projectionUnitSelectorSubject(unit, this.selectorFactsByUnitId.get(unit.id)));
     let compilation: ProjectionLensCompilation | undefined;
     let compilationUnknown: string | undefined;
     try {
@@ -595,6 +598,18 @@ export class KnowledgeGraph implements ContextSourcePort {
   }
 
   implementationBindings(subjectId: string): Array<Record<string, unknown>> {
+    // Membership depends only on this graph's repository observation. Reuse it
+    // across branches and query validation, never across fresh observations or
+    // for live decision-trigger checks. Callers cannot mutate retained results.
+    let bindings = this.implementationBindingsBySubjectId.get(subjectId);
+    if (bindings === undefined) {
+      bindings = Object.freeze(this.computeImplementationBindings(subjectId).map((binding) => Object.freeze(binding)));
+      this.implementationBindingsBySubjectId.set(subjectId, bindings);
+    }
+    return bindings.map((binding) => ({ ...binding }));
+  }
+
+  private computeImplementationBindings(subjectId: string): Array<Record<string, unknown>> {
     const direct = this.units.filter((unit) => unit.conceptIds.includes(subjectId) || unit.requirementIds.includes(subjectId) || unit.scenarioIds.includes(subjectId)).map(({ id }) => ({ id, reason: "typed projection-unit semantic binding" }));
     const entity = this.entitiesById.get(subjectId);
     // Preferences influence future options. They do not implicitly govern code or
@@ -602,8 +617,7 @@ export class KnowledgeGraph implements ContextSourcePort {
     if (entity?.kind === "developer-preference") return direct;
     if (entity?.kind === "projection-lens") return (this.lensCompilation?.memberships[subjectId] ?? []).map((id) => ({ id, reason: "active lens selector matched observed unit", membershipFingerprint: this.lensCompilation!.membershipFingerprints[subjectId] }));
     if (entity === undefined || !("scope" in entity.payload) || typeof entity.payload.scope === "string") return direct;
-    const subjects = this.units.map((unit) => projectionUnitSelectorSubject(unit, this.selectorFactsByUnitId.get(unit.id)));
-    const membership = evaluateSelectorMembership(entity.payload.scope, subjects, { observability: this.observation.analysis.surface.enumeration.observability, assumptions: this.observation.analysis.surface.enumeration.assumptions, unavailableLanes: this.failureLanes(["projector.filesystem-local"]) });
+    const membership = evaluateSelectorMembership(entity.payload.scope, this.selectorSubjects, { observability: this.observation.analysis.surface.enumeration.observability, assumptions: this.observation.analysis.surface.enumeration.assumptions, unavailableLanes: this.failureLanes(["projector.filesystem-local"]) });
     return [...direct, ...membership.memberIds.map((id) => ({ id, reason: `canonical ${entity.kind} scope selector matched observed unit`, selectorHash: membership.selectorHash }))]
       .sort((left, right) => compare(String(left.id), String(right.id)));
   }
