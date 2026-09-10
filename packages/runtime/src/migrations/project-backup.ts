@@ -16,6 +16,11 @@ import {
   hashFileTransactionJournalBytes,
   type ExactFileTransactionJournalRecord,
 } from "../journal/transaction-journal.js";
+import type { ProjectOperationAccess } from "../access/operation-access.js";
+import type {
+  MigrationRecoveryWriterLeaseHandle,
+  WriterLeaseHandle,
+} from "../worktrees/writer-lease.js";
 
 const archiveMagic = Buffer.from("PROJECTOR-BACKUP-ARCHIVE-V1\n");
 const maximumEntryCount = 100_000;
@@ -23,7 +28,15 @@ const maximumArchiveBytes = 64 * 1024 * 1024 * 1024;
 const maximumManifestBytes = 16 * 1024 * 1024;
 const ioBufferSize = 1024 * 1024;
 
-export interface ProjectBackupInput { repositoryRoot: string; codexDataRoot: string }
+export interface ProjectBackupCoordination {
+  operationAccess: Pick<ProjectOperationAccess, "ownedRelativePaths" | "assertOwned">;
+  writerLease: Pick<WriterLeaseHandle | MigrationRecoveryWriterLeaseHandle, "heartbeat">;
+}
+export interface ProjectBackupInput {
+  repositoryRoot: string;
+  codexDataRoot: string;
+  coordination?: ProjectBackupCoordination;
+}
 export interface ProjectBackupManifestFile { path: string; length: number; sha256: string }
 export interface ProjectBackupManifest {
   formatVersion: 1;
@@ -89,6 +102,7 @@ export async function createProjectBackup(
   await assertRegularDirectory(repositoryRoot, "Repository root");
   await assertRegularDirectory(sourceRoot, "Projector source directory");
   await assertRegularDirectory(codexDataRoot, "Codex data root");
+  const excludedPaths = await authenticateCoordination(input.coordination);
 
   const fileName = `projector-backup-${backupId}.pba`;
   const backupPath = containedPath(codexDataRoot, join(codexDataRoot, fileName), "backup archive");
@@ -102,7 +116,7 @@ export async function createProjectBackup(
     throw new ProjectBackupError(`Backup staging name already exists: ${temporaryPath}`, temporaryPath);
   }
 
-  const initial = await scanTree(sourceRoot);
+  const initial = await scanTree(sourceRoot, excludedPaths);
   const manifest: ProjectBackupManifest = {
     formatVersion: 1,
     backupId,
@@ -137,7 +151,8 @@ export async function createProjectBackup(
       await output.sync();
     } finally { await output.close(); }
 
-    const finalSnapshot = await scanTree(sourceRoot);
+    await assertCoordinationOwned(input.coordination);
+    const finalSnapshot = await scanTree(sourceRoot, excludedPaths);
     if (!sameSnapshot(initial, finalSnapshot)) {
       throw new ProjectBackupError("Projector source changed while the backup was being created", temporaryPath);
     }
@@ -466,7 +481,7 @@ function parseManifest(bytes: Buffer, expectedBackupId: string): ProjectBackupMa
   return manifest;
 }
 
-async function scanTree(root: string): Promise<TreeSnapshot> {
+async function scanTree(root: string, excludedPaths: ReadonlySet<string> = new Set()): Promise<TreeSnapshot> {
   const files: SnapshotFile[] = [];
   let entries = 0;
   let totalBytes = 0;
@@ -482,6 +497,7 @@ async function scanTree(root: string): Promise<TreeSnapshot> {
     names.sort(compareText);
     for (const name of names) {
       const relativePath = prefix.length === 0 ? name : `${prefix}/${name}`;
+      if (excludedPaths.has(relativePath)) continue;
       if (!PortableRelativePathSchema.safeParse(`.projector/${relativePath}`).success) {
         throw new ProjectBackupError(`Projector source contains an unsafe path: .projector/${relativePath}`);
       }
@@ -503,6 +519,42 @@ async function scanTree(root: string): Promise<TreeSnapshot> {
   await visit(root, "");
   files.sort((left, right) => compareText(left.path, right.path));
   return { files };
+}
+
+const accessCounterPath = ".projector/runtime/operation-access/next-ticket";
+const accessHolderPattern = /^\.projector\/runtime\/operation-access\/holders\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/iu;
+const writerLeasePaths = [
+  ".projector/runtime/writer-lease.lock/owner.json",
+  ".projector/runtime/writer-lease.lock/heartbeat",
+] as const;
+
+async function authenticateCoordination(
+  coordination: ProjectBackupCoordination | undefined,
+): Promise<ReadonlySet<string>> {
+  if (coordination === undefined) return new Set();
+  await assertCoordinationOwned(coordination);
+  const paths = [...coordination.operationAccess.ownedRelativePaths];
+  if (
+    paths.length !== 2 ||
+    new Set(paths).size !== 2 ||
+    !paths.includes(accessCounterPath) ||
+    paths.filter((path) => accessHolderPattern.test(path)).length !== 1
+  ) {
+    throw new ProjectBackupError("Backup coordination must identify exactly the authenticated access counter and holder");
+  }
+  for (const path of paths) {
+    if (!PortableRelativePathSchema.safeParse(path).success) {
+      throw new ProjectBackupError(`Backup coordination contains an unsafe owned path: ${path}`);
+    }
+  }
+  return new Set([...paths, ...writerLeasePaths].map((path) => path.slice(".projector/".length)));
+}
+
+async function assertCoordinationOwned(coordination: ProjectBackupCoordination | undefined): Promise<void> {
+  if (coordination === undefined) return;
+  await coordination.operationAccess.assertOwned();
+  await coordination.writerLease.heartbeat();
+  await coordination.operationAccess.assertOwned();
 }
 
 async function hashOpenFile(handle: FileHandle): Promise<{ length: number; sha256: string }> {

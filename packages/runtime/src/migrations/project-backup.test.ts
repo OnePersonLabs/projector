@@ -15,7 +15,9 @@ import {
   type ProjectBackupManifest,
 } from "./project-backup.js";
 import { FileTransactionJournal } from "../journal/transaction-journal.js";
+import { withProjectOperationAccess } from "../access/operation-access.js";
 import { RepositoryPathService } from "../security/repository-path.js";
+import { WriterLeaseManager } from "../worktrees/writer-lease.js";
 
 const roots: string[] = [];
 const magic = Buffer.from("PROJECTOR-BACKUP-ARCHIVE-V1\n");
@@ -198,6 +200,89 @@ describe("project migration backup archive", () => {
         afterNamespacePublished: async (path) => writeFile(path, "tampered"),
       },
     )).rejects.toThrow(/archive|verification|magic/i);
+  });
+
+  test("backs up durable history while its authenticated access and writer heartbeats change", async () => {
+    const input = await fixture();
+    await writeFile(join(input.repositoryRoot, ".projector", "config.toml"), "source\n");
+    const journalPath = join(input.repositoryRoot, ".projector", "runtime", "journal", "receipt.json");
+    await writeFile(journalPath, "durable receipt\n");
+    const paths = await RepositoryPathService.create(input.repositoryRoot);
+    const leases = new WriterLeaseManager(paths, { staleAfterMs: 10_000 });
+    const digest = `sha256:v1:${"1".repeat(64)}` as const;
+
+    const result = await withProjectOperationAccess(
+      input.repositoryRoot,
+      { operation: "test.backup", mode: "exclusive" },
+      async (operationAccess) => {
+        const writerLease = await leases.acquireMigrationRecovery({
+          sessionId: "backup-test",
+          processId: 42,
+          attemptId: "migration-attempt:backup-test:001",
+          migrationId: "migration:backup-test",
+          manifestHash: digest,
+          targetSnapshotHash: digest,
+          backupManifestHash: digest,
+        });
+        try {
+          return await createProjectBackup(
+            { ...input, coordination: { operationAccess, writerLease } },
+            {
+              createBackupId: () => "coordinated",
+              createTemporaryId: () => "coordinated-temp",
+              afterFileCopied: async () => {
+                await operationAccess.assertOwned();
+                await writerLease.heartbeat();
+              },
+            },
+          );
+        } finally {
+          await writerLease.release();
+        }
+      },
+    );
+
+    expect(result.manifest.files.map((file) => file.path)).toEqual([
+      ".projector/config.toml",
+      ".projector/runtime/journal/receipt.json",
+    ]);
+    expect(decodeArchive(await readFile(result.backupPath)).files.get(
+      ".projector/runtime/journal/receipt.json",
+    )?.toString()).toBe("durable receipt\n");
+  });
+
+  test("rejects unrecognized claimed exclusions and still detects unrelated runtime mutation", async () => {
+    const first = await fixture();
+    await writeFile(join(first.repositoryRoot, ".projector", "config.toml"), "source\n");
+    await expect(createProjectBackup({
+      ...first,
+      coordination: {
+        operationAccess: {
+          ownedRelativePaths: [
+            ".projector/runtime/operation-access/next-ticket",
+            ".projector/runtime/journal/receipt.json",
+          ],
+          assertOwned: async () => undefined,
+        },
+        writerLease: { heartbeat: async () => undefined },
+      },
+    })).rejects.toThrow(/exactly.*counter and holder/i);
+    expect(await readdir(first.codexDataRoot)).toEqual([]);
+
+    const second = await fixture();
+    await writeFile(join(second.repositoryRoot, ".projector", "config.toml"), "source\n");
+    const evidence = join(second.repositoryRoot, ".projector", "runtime", "journal", "receipt.json");
+    await writeFile(evidence, "before\n");
+    await expect(createProjectBackup(
+      second,
+      {
+        createBackupId: () => "runtime-changing",
+        createTemporaryId: () => "runtime-changing-temp",
+        afterFileCopied: async (path) => {
+          if (path === ".projector/config.toml") await writeFile(evidence, "after\n");
+        },
+      },
+    )).rejects.toThrow(/source changed/i);
   });
 
   test("rejects unsafe links and unknown existing backup IDs without writing through or over them", async () => {
