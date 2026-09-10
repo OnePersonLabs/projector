@@ -8,6 +8,8 @@ import {
   SqliteDerivedStore,
   StateBoundCommandExecutor,
   WriterLeaseManager,
+  createProjectBackup,
+  hashProjectBackupManifest,
   assertSupportedCanonicalVersions,
   currentSqliteSchemaVersion,
   executePacketPlan,
@@ -29,5 +31,7 @@ describe("runtime public entrypoint", () => {
     expect(executePacketPlan).toBeTypeOf("function");
     expect(inspectProjectActivation).toBeTypeOf("function");
     expect(initializeProjectActivation).toBeTypeOf("function");
+    expect(createProjectBackup).toBeTypeOf("function");
+    expect(hashProjectBackupManifest).toBeTypeOf("function");
   });
 });

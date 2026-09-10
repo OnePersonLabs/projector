@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   ProjectBackupError,
   createProjectBackup,
+  hashProjectBackupManifest,
   type ProjectBackupManifest,
 } from "./project-backup.js";
 
@@ -51,6 +52,10 @@ describe("project migration backup", () => {
     );
 
     expect(result.backupPath).toBe(join(codexDataRoot, "projector", "backups", "published", "backup-001"));
+    expect(result.backupLocation).toEqual({
+      kind: "codex-data-relative",
+      path: "projector/backups/published/backup-001",
+    });
     expect(result.manifest).toEqual({
       formatVersion: 1,
       backupId: "backup-001",
@@ -63,8 +68,10 @@ describe("project migration backup", () => {
       })).sort((left, right) => left.path.localeCompare(right.path)),
     });
 
-    const manifest = JSON.parse(await readFile(join(result.backupPath, "manifest.json"), "utf8")) as ProjectBackupManifest;
+    const manifestBytes = await readFile(join(result.backupPath, "manifest.json"));
+    const manifest = JSON.parse(manifestBytes.toString("utf8")) as ProjectBackupManifest;
     expect(manifest).toEqual(result.manifest);
+    expect(result.manifestHash).toBe(hashProjectBackupManifest(manifestBytes));
     for (const entry of manifest.files) {
       const copied = await readFile(join(result.backupPath, ...entry.path.split("/")));
       expect(copied.byteLength).toBe(entry.length);
@@ -143,5 +150,18 @@ describe("project migration backup", () => {
       { createBackupId: () => "linked-destination" },
     )).rejects.toThrow(/symbolic link/i);
     expect(await readdir(actual)).toEqual([]);
+  });
+
+  test("rejects cross-platform backup identifier aliases before creating storage", async () => {
+    const { repositoryRoot, codexDataRoot } = await fixture();
+    await writeFile(join(repositoryRoot, ".projector", "config.toml"), "source\n");
+
+    for (const backupId of ["A", "CON", "lpt1.txt", "backup.", "backup ", "a:stream"]) {
+      await expect(createProjectBackup(
+        { repositoryRoot, codexDataRoot },
+        { createBackupId: () => backupId },
+      )).rejects.toThrow(/backup identifier/i);
+    }
+    await expect(readdir(codexDataRoot)).resolves.toEqual([]);
   });
 });
