@@ -22,7 +22,7 @@ describe("decision CLI composition", () => {
     try {
       await promisify(execFile)("git", ["init", "-q", root]);
       await mkdir(join(root, ".projector"));
-      await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+      await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
       await new CanonicalFileRepository(root).write(withCanonicalHashes({
         apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "architecture-decision",
         id: selected.id, key: selected.key, lifecycle: selected.lifecycle, payload: { ...selected },

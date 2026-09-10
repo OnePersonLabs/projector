@@ -1,20 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open, rename, rm } from "node:fs/promises";
+import { lstat, open, rename, rm } from "node:fs/promises";
 import { dirname, join, parse } from "node:path";
 
 import {
-  canonicalJson,
-  defaultProjectorConfig,
-  parseCanonicalJson,
   parseProjectorConfig,
   projectorConfigApiVersion,
   type ProjectorConfig,
 } from "@projector/core";
+import { parse as parseToml } from "smol-toml";
 
 import { RepositoryPathService } from "../security/repository-path.js";
 
-export const PROJECTOR_CONFIG_PATH = ".projector/config.json" as const;
+export const PROJECTOR_CONFIG_PATH = ".projector/config.toml" as const;
 const MAXIMUM_CONFIG_BYTES = 16 * 1024;
 const PROJECTOR_LOCAL_IGNORE_RULES = ["/state.db", "/state.db-wal", "/state.db-shm", "/state.db-journal", "/runtime/", "/telemetry/", "/watch/"];
 
@@ -76,7 +74,7 @@ export async function inspectProjectActivation(repositoryRoot: string): Promise<
 
   let value: unknown;
   try {
-    value = parseCanonicalJson(source);
+    value = parseToml(source);
   } catch (error) {
     return disabled(paths.root, "malformed", `${PROJECTOR_CONFIG_PATH} is malformed: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -87,45 +85,6 @@ export async function inspectProjectActivation(repositoryRoot: string): Promise<
     return { status: "enabled", repositoryRoot: paths.root, configPath: PROJECTOR_CONFIG_PATH, config: parseProjectorConfig(value) };
   } catch (error) {
     return disabled(paths.root, "malformed", `${PROJECTOR_CONFIG_PATH} is invalid: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-export async function initializeProjectActivation(repositoryRoot: string): Promise<{ readonly config: ProjectorConfig; readonly created: boolean }> {
-  const current = await inspectProjectActivation(repositoryRoot);
-  if (current.status === "enabled") {
-    await initializeProjectIgnore(await RepositoryPathService.create(current.repositoryRoot));
-    return { config: current.config, created: false };
-  }
-  if (current.failure !== "missing") throw new Error(current.reason);
-
-  const paths = await RepositoryPathService.create(current.repositoryRoot);
-  const projectorDirectory = (await paths.resolveWrite(".projector")).realTarget;
-  try { await mkdir(projectorDirectory); }
-  catch (error) { if (!isCode(error, "EEXIST")) throw error; }
-  await syncDirectory(paths.root);
-  await initializeProjectIgnore(paths);
-  const target = (await paths.resolveWrite(PROJECTOR_CONFIG_PATH)).realTarget;
-  const temporary = join(dirname(target), `.config.${randomBytes(12).toString("hex")}.tmp`);
-  let handle;
-  try {
-    handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-    await handle.writeFile(`${canonicalJson(defaultProjectorConfig)}\n`, "utf8");
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    try {
-      await link(temporary, target);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-      const raced = await inspectProjectActivation(repositoryRoot);
-      if (raced.status !== "enabled") throw new Error(raced.reason);
-      return { config: raced.config, created: false };
-    }
-    await syncDirectory(dirname(target));
-    return { config: defaultProjectorConfig, created: true };
-  } finally {
-    if (handle !== undefined) await handle.close();
-    await rm(temporary, { force: true });
   }
 }
 

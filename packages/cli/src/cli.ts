@@ -5,10 +5,10 @@ import { execFile } from "node:child_process";
 import { watch as watchFileSystem } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { promisify } from "node:util";
-import { canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type ContentHash, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass } from "@projector/core";
+import { PackageIdentitySchema, canonicalJson, hashFramedDomain, type ArchitectureConcern, type ArchitectureDecision, type ContentHash, type CoverageSnapshot, type DecisionValidityAssessment, type ObservabilityClass, type RiskClass } from "@projector/core";
 import { analyzeLocalRepository } from "@projector/analyzers";
 
-import { CanonicalFileRepository, SqliteDerivedStore, createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, initializeProjectActivation, inspectProjectActivation, type OperationalExitProof, type OperationalReport, type ReportFormat } from "@projector/runtime";
+import { CanonicalFileRepository, SqliteDerivedStore, createOperationalReport, renderOperationalReport, validateOperationalReport, unavailableOperationalEvidence, JsonlTelemetryStore, FileWatchCheckpointStore, RepositoryPathService, WatchCoordinator, runWatchLifecycle, inspectProjectActivation, type OperationalExitProof, type OperationalReport, type ReportFormat } from "@projector/runtime";
 import {
   auditArchitectureDecisions,
   explainArchitectureDecision,
@@ -25,13 +25,18 @@ import { createBuiltRunHostPort } from "./host-cli.js";
 import { createBuiltMcpCliPort } from "./mcp-cli.js";
 import { defaultKnowledgeCliPort, presentKnowledgeContext, presentKnowledgeReconciliation, renderKnowledgeContext, renderKnowledgeReconciliation, type RepositoryKnowledgeCliPort } from "./knowledge-cli.js";
 export type { RepositoryKnowledgeCliPort } from "./knowledge-cli.js";
-import { RepositoryChangeLifecycleService, inspectRepositoryArchitecture, inspectRepositoryCoverage } from "@projector/control-plane";
+import { RepositoryChangeLifecycleService, initializePreparedProject, inspectRepositoryArchitecture, inspectRepositoryCoverage } from "@projector/control-plane";
 export { createHostSessionRecord, hostSessionSelector } from "@projector/integrations";
 import { runDefaultUpgradeWorkflow } from "./upgrade.js";
 import { inspectCanonicalKnowledge, runReadOnlyOperationalVerification } from "./operational-verification.js";
 export * from "./upgrade.js";
 
 export const PROJECTOR_VERSION = "2.1.0";
+
+async function cliPackageIdentity() {
+  const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  return PackageIdentitySchema.parse({ name: manifest.name, version: manifest.version });
+}
 
 const HELP = `Projector ${PROJECTOR_VERSION}
 
@@ -513,7 +518,8 @@ export async function executeProjector(
     case "init":
       if (policy.allowAutoMutation) {
         const rebuild = await safeRebuildAcceptedState(repositoryRoot);
-        const initialized = await initializeProjectActivation(repositoryRoot);
+        const initialized = await initializePreparedProject(repositoryRoot, { package: await cliPackageIdentity() });
+        if (initialized.readiness.status !== "ready") throw new Error(initialized.readiness.reason);
         report = { policy, initialized: true, projectEnabled: true, configCreated: initialized.created, rebuild };
       } else report = { policy, initialized: false, projectEnabled: activation.status === "enabled", dryRun: true };
       break;
