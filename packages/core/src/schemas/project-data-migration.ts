@@ -192,6 +192,7 @@ export type ProjectDataMigrationDraft = z.infer<typeof ProjectDataMigrationDraft
 
 export const PendingProjectDataMigrationSchema = z.strictObject({
   apiVersion: z.literal(pendingProjectDataMigrationApiVersion),
+  attemptId: stableId,
   migrationId: stableId,
   sourceSnapshotHash: ContentHashSchema,
   targetSnapshotHash: ContentHashSchema,
@@ -204,8 +205,9 @@ export const PendingProjectDataMigrationSchema = z.strictObject({
 
 export type PendingProjectDataMigration = z.infer<typeof PendingProjectDataMigrationSchema>;
 
-const projectDataMigrationReceiptBodySchema = z.strictObject({
+const projectDataMigrationReceiptBodyFields = {
   apiVersion: z.literal(projectDataMigrationReceiptApiVersion),
+  attemptId: stableId,
   migrationId: stableId,
   manifestHash: ContentHashSchema,
   sourceSnapshotHash: ContentHashSchema,
@@ -215,7 +217,27 @@ const projectDataMigrationReceiptBodySchema = z.strictObject({
   backup: projectDataMigrationBackupRefSchema,
   outcome: z.literal("completed"),
   completedAt: z.iso.datetime({ offset: true }),
-});
+} as const;
+
+function requireAttemptJournalIdentity(
+  receipt: { readonly attemptId: string; readonly journalId: string },
+  context: z.RefinementCtx,
+): boolean {
+  if (receipt.journalId !== receipt.attemptId) {
+    context.addIssue({
+      code: "custom",
+      path: ["journalId"],
+      message: "migration receipt journalId must equal its unique attemptId",
+    });
+    return false;
+  }
+  return true;
+}
+
+const projectDataMigrationReceiptBodySchema = z.strictObject(projectDataMigrationReceiptBodyFields)
+  .superRefine((receipt, context) => {
+    requireAttemptJournalIdentity(receipt, context);
+  });
 
 export type ProjectDataMigrationReceiptInput = z.infer<typeof projectDataMigrationReceiptBodySchema>;
 
@@ -226,9 +248,11 @@ export function hashProjectDataMigrationReceipt(input: ProjectDataMigrationRecei
   );
 }
 
-export const ProjectDataMigrationReceiptSchema = projectDataMigrationReceiptBodySchema.extend({
+export const ProjectDataMigrationReceiptSchema = z.strictObject({
+  ...projectDataMigrationReceiptBodyFields,
   receiptHash: ContentHashSchema,
 }).superRefine((receipt, context) => {
+  if (!requireAttemptJournalIdentity(receipt, context)) return;
   const { receiptHash, ...body } = receipt;
   if (receiptHash !== hashProjectDataMigrationReceipt(body)) {
     context.addIssue({
