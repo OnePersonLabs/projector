@@ -71,6 +71,7 @@ describe("project readiness metadata inspection", () => {
 
   test("requires recovery without claiming an absent marker-declared backup is verified", async () => {
     const root = await repository();
+    await mkdir(join(root, ".projector"));
     await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     await writeFile(join(root, ".projector", "pending-project-data-migration.json"), JSON.stringify({
       apiVersion: "projector.pending-project-data-migration/v1",
@@ -102,6 +103,7 @@ describe("project readiness metadata inspection", () => {
 
   test("preserves an unrecognized pending marker and refuses automated recovery", async () => {
     const root = await repository();
+    await mkdir(join(root, ".projector"));
     const pendingPath = join(root, ".projector", "pending-project-data-migration.json");
     await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     await writeFile(pendingPath, "{unrecognized");
