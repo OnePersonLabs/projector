@@ -26,10 +26,12 @@ async function requestSource() {
   const requestPath = resolve(process.argv[2]);
   const pathStatus = await lstat(requestPath);
   if (pathStatus.isSymbolicLink()) throw new Error("Projector operation request must not be a symbolic link");
-  const handle = await open(requestPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+  const handle = await open(requestPath, constants.O_RDONLY | noFollow);
   try {
     const status = await handle.stat();
     if (!status.isFile()) throw new Error("Projector operation request must be a regular file");
+    if (status.dev !== pathStatus.dev || status.ino !== pathStatus.ino) throw new Error("Projector operation request identity changed before reading");
     if (status.size > maximumRequestBytes) throw new Error(`Projector operation request exceeds ${maximumRequestBytes} bytes`);
     const bytes = Buffer.allocUnsafe(maximumRequestBytes + 1);
     let length = 0;
