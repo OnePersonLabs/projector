@@ -12,7 +12,7 @@ import {
 
 import { assertSupportedCanonicalVersions } from "../persistence/index.js";
 import type { CanonicalIndexRow } from "./derived-store.js";
-import { currentSqliteSchemaVersion } from "./migrations.js";
+import { currentSqliteSchemaVersion, migrateSqlite } from "./migrations.js";
 
 export type ExistingSqliteDerivedState =
   | { readonly status: "absent" }
@@ -50,6 +50,9 @@ export function inspectExistingSqliteDerivedState(
     if (canonicalJson(migrations.map(({ version }) => version)) !== canonicalJson([currentSqliteSchemaVersion])) {
       throw new Error(`state.db schema migrations do not match required version ${currentSqliteSchemaVersion}`);
     }
+    if (canonicalJson(sqliteSchema(database)) !== canonicalJson(expectedSqliteSchema())) {
+      throw new Error("state.db schema does not match the released SQLite migration set");
+    }
     const graph = database.prepare("SELECT revision, canonical_root_digest AS rootDigest FROM graph_state WHERE singleton = 1").get() as
       | { revision: number; rootDigest: ContentHash | null }
       | undefined;
@@ -71,6 +74,34 @@ export function inspectExistingSqliteDerivedState(
       canonicalRootDigest: graph.rootDigest,
       documentCount: rows.length,
     };
+  } finally {
+    database.close();
+  }
+}
+
+type SqliteSchemaRow = { type: string; name: string; tbl_name: string; sql: string | null };
+
+function sqliteSchema(database: DatabaseSync): SqliteSchemaRow[] {
+  return database.prepare(`
+    SELECT type, name, tbl_name, sql FROM sqlite_schema
+    WHERE name NOT LIKE 'sqlite_%'
+    ORDER BY type, name, tbl_name
+  `).all() as unknown as SqliteSchemaRow[];
+}
+
+let releasedSchema: readonly SqliteSchemaRow[] | undefined;
+function expectedSqliteSchema(): readonly SqliteSchemaRow[] {
+  if (releasedSchema !== undefined) return releasedSchema;
+  const database = new DatabaseSync(":memory:", {
+    allowExtension: false,
+    defensive: true,
+    enableDoubleQuotedStringLiterals: false,
+    enableForeignKeyConstraints: true,
+  });
+  try {
+    migrateSqlite(database);
+    releasedSchema = Object.freeze(sqliteSchema(database).map((row) => Object.freeze({ ...row })));
+    return releasedSchema;
   } finally {
     database.close();
   }
