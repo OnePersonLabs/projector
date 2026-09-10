@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -8,7 +8,7 @@ import { hashRootManifest, withCanonicalHashes, type CanonicalDocumentEnvelope }
 import { afterEach, describe, expect, test } from "vitest";
 
 import { CanonicalFileRepository } from "../persistence/index.js";
-import { rebuildDerivedStore, SqliteDerivedStore } from "./index.js";
+import { inspectExistingSqliteDerivedState, rebuildDerivedStore, SqliteDerivedStore } from "./index.js";
 
 const temporaryRoots: string[] = [];
 const zeroHash = `sha256:v1:${"0".repeat(64)}` as const;
@@ -482,5 +482,51 @@ describe("SQLite derived canonical index", () => {
     expect(() => store.canonicalRows()).toThrow(/missing graph_state/i);
     store.close();
     expect(() => new SqliteDerivedStore(path)).toThrow(/missing graph_state/i);
+  });
+
+  test("inspects existing derived state read-only and rejects logical mutation", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const snapshot = await canonical.snapshot();
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    store.close();
+
+    expect(inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).toEqual({
+      status: "valid",
+      schemaVersion: 1,
+      canonicalRootDigest: snapshot.rootDigest,
+      documentCount: 1,
+    });
+
+    const raw = new DatabaseSync(path);
+    raw.exec("UPDATE canonical_documents SET semantic_hash = 'sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'");
+    raw.close();
+    expect(() => inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).toThrow(/corrupt|mismatch/i);
+  });
+
+  test("reports an absent derived store without creating it", async () => {
+    const root = await temporaryRepository();
+    await mkdir(join(root, ".projector"));
+    const path = join(root, ".projector", "state.db");
+    expect(inspectExistingSqliteDerivedState(path, zeroHash)).toEqual({ status: "absent" });
+    expect(await readdir(join(root, ".projector"))).toEqual([]);
+  });
+
+  test("rejects a derived logical table that no longer matches its authenticated canonical row", async () => {
+    const root = await temporaryRepository();
+    const canonical = new CanonicalFileRepository(root);
+    await canonical.write(concept("concept-a"));
+    const snapshot = await canonical.snapshot();
+    const path = join(root, ".projector", "state.db");
+    const store = new SqliteDerivedStore(path);
+    await rebuildDerivedStore(canonical, store);
+    store.close();
+    const raw = new DatabaseSync(path);
+    raw.exec("UPDATE entities SET status = 'retired'");
+    raw.close();
+    expect(() => inspectExistingSqliteDerivedState(path, snapshot.rootDigest)).toThrow(/entities.*canonical/i);
   });
 });
