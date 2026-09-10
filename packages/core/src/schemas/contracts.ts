@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ContentHash } from "../domain/contracts.js";
+import type { ContentHash, GitRealizationLocator } from "../domain/contracts.js";
 
 export const EntityIdSchema = z.string()
   .min(1)
@@ -17,5 +17,10 @@ export const ContentHashSchema = z.string()
   ) as z.ZodType<ContentHash>;
 
 export const SourceClassSchema = z.enum(["authored", "derived", "observed", "inferred"]);
+
+export const GitRealizationLocatorSchema = z.string().regex(
+  /^git:(?:[a-f0-9]{40}|[a-f0-9]{64}):(?!\/)(?![A-Za-z]:)(?!.*\\)(?!.*\/\/)(?!(?:\.|\.\.)(?:\/|$))(?!.*\/(?:\.|\.\.)(?:\/|$))[^/](?:.*[^/])?$/u,
+  "git realization origin must contain a full commit ID and canonical repository-relative path",
+) as z.ZodType<GitRealizationLocator>;
 
 export * from "./generated-contracts.js";

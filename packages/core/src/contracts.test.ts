@@ -1,28 +1,36 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   ContentHashSchema,
   ChangeProposalSchema,
   ConceptSchema,
   EntityIdSchema,
+  GitRealizationLocatorSchema,
   LineageRecordSchema,
+  LegacyUnversionedProjectorConfigSchema,
+  PreparedProjectorConfigSchema,
+  ProjectorOperationRequestSchema,
+  RealizationBindingSchema,
   RequirementDeltaSchema,
   contractRegistry,
   exportContractJsonSchemas,
   validateJsonSchemaReferences,
   validateContractRegistry,
+  createProjectorOperationResultSchema,
+  withCanonicalHashes,
   parseChangeProposal,
 } from "./index.js";
 
 describe("normative contract registry", () => {
   it("represents every exported normative declaration exactly once", () => {
-    expect(Object.keys(contractRegistry)).toHaveLength(150);
+    expect(Object.keys(contractRegistry)).toHaveLength(156);
     expect(validateContractRegistry()).toEqual([]);
   });
 
   it("exports strict JSON Schemas whose references resolve", () => {
     const schemas = exportContractJsonSchemas();
-    expect(Object.keys(schemas)).toHaveLength(141);
+    expect(Object.keys(schemas)).toHaveLength(147);
     expect(validateJsonSchemaReferences(schemas)).toEqual([]);
     for (const schema of Object.values(schemas)) {
       expect(schema).toMatchObject({ $schema: expect.any(String) });
@@ -104,6 +112,76 @@ describe("normative contract registry", () => {
     expect(ConceptSchema.safeParse({ unexpected: true }).error?.issues).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "unrecognized_keys" })]),
     );
+  });
+
+  it("limits authored realization bindings to raw implementation facts and immutable origin", () => {
+    const origin = { kind: "git", locator: `git:${"a".repeat(40)}:PROJECTOR_SPEC/01-product/vision-and-north-star.md` };
+    expect(RealizationBindingSchema.safeParse({ selector: { op: "atom", field: "path", matcher: "glob", value: "packages/core/**" }, origin }).success).toBe(true);
+    for (const field of ["concept", "requirement", "scenario", "lens", "relation"]) {
+      expect(RealizationBindingSchema.safeParse({ selector: { op: "atom", field, matcher: "equals", value: "semantic-id" }, origin }).success).toBe(false);
+    }
+    expect(RealizationBindingSchema.safeParse({ selector: { op: "atom", field: "path", matcher: "glob", value: "packages/core/**" }, origin: { kind: "content", locator: "PROJECTOR_SPEC/01-product/vision-and-north-star.md" } }).success).toBe(false);
+    expect(RealizationBindingSchema.safeParse({ selector: { op: "atom", field: "path", matcher: "glob", value: "packages/core/**" }, origin: { kind: "git", locator: "git:abc123:PROJECTOR_SPEC/01-product/vision-and-north-star.md" } }).success).toBe(false);
+    expect(RealizationBindingSchema.safeParse({ selector: { op: "atom", field: "path", matcher: "glob", value: "packages/core/**" }, origin: { ...origin, kind: "user-request" } }).success).toBe(false);
+    expect(RealizationBindingSchema.safeParse({ selector: { op: "atom", field: "path", matcher: "glob", value: "packages/core/**" }, origin, bindingHash: `sha256:v1:${"b".repeat(64)}` }).success).toBe(false);
+    const commit = "a".repeat(40);
+    const exported = exportContractJsonSchemas().GitRealizationLocator as { pattern?: string };
+    expect(exported.pattern).toBeTypeOf("string");
+    const exportedPattern = new RegExp(exported.pattern!, "u");
+    expect(GitRealizationLocatorSchema.safeParse(`git:${commit}:a`).success).toBe(true);
+    expect(exportedPattern.test(`git:${commit}:a`)).toBe(true);
+    for (const path of [".", "..", "./a", "../a", "a/.", "a/..", "a/../b", "/a", "a/", "a//b", "a\\b"]) {
+      const locator = `git:${commit}:${path}`;
+      expect(GitRealizationLocatorSchema.safeParse(locator).success, locator).toBe(false);
+      expect(exportedPattern.test(locator), locator).toBe(false);
+    }
+  });
+
+  it("keeps realization provenance outside semantic identity and inside document identity", () => {
+    const origin = { kind: "document", locator: `git:${"a".repeat(40)}:PROJECTOR_SPEC/01-product/vision-and-north-star.md`, contentHash: `sha256:v1:${"a".repeat(64)}` } as const;
+    const realizationOrigin = { kind: "git", locator: `git:${"a".repeat(40)}:PROJECTOR_SPEC/01-product/vision-and-north-star.md` } as const;
+    const realization = { selector: { op: "atom", field: "path", matcher: "glob", value: "packages/core/**" }, origin: realizationOrigin } as const;
+    const base = { apiVersion: "projector.change-proposal/v1", architecture: null, analysisFacets: ["behavior", "architecture"] };
+    const common = { key: "retained", title: "Retained", aliases: [], status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, evidence: [], origin: [origin], realizations: [realization] };
+    const mutations = [
+      { kind: "concept", operation: "add", expectedAbsent: true, rationale: "Retain implementation provenance.", payload: { id: "concept:retained", key: "retained", kind: "constraint", name: "Retained", aliases: [], statement: "Retain the accepted behavior.", status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [], origin: [origin], realizations: [realization] } },
+      { kind: "requirement", operation: "add", expectedAbsent: true, rationale: "Retain implementation provenance.", payload: { ...common, id: "requirement:retained", statement: "Retain the accepted behavior." } },
+      { kind: "behavioral-scenario", operation: "add", expectedAbsent: true, rationale: "Retain implementation provenance.", payload: { ...common, id: "scenario:retained", steps: [{ role: "trigger", statement: "The behavior is requested." }, { role: "expected-outcome", statement: "The behavior remains available." }] } },
+    ];
+    expect(ChangeProposalSchema.safeParse({ ...base, canonicalMutations: mutations }).success).toBe(true);
+    expect(ChangeProposalSchema.safeParse({ ...base, canonicalMutations: mutations.map((mutation) => ({ ...mutation, payload: { ...mutation.payload, ...(mutation.kind === "requirement" ? {} : { origin: undefined }), realizations: undefined } })) }).success).toBe(true);
+
+    const payload = mutations[0]!.payload;
+    const legacy = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload, origin: undefined, realizations: undefined } });
+    const mapped = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: payload.id, key: payload.key, lifecycle: "active", payload });
+    expect(mapped.semanticHash).toBe(legacy.semanticHash);
+    expect(mapped.discoveryHash).toBe(legacy.discoveryHash);
+    expect(mapped.canonicalDocumentHash).not.toBe(legacy.canonicalDocumentHash);
+  });
+
+  it("keeps operation requests exact and requires a concrete service output schema", () => {
+    const context = { apiVersion: "projector.operation/v1", operation: "context", repositoryRoot: "C:/repo", input: { request: "Explain checkout.", entities: ["requirement:checkout"], persist: false } };
+    expect(ProjectorOperationRequestSchema.safeParse(context).success).toBe(true);
+    expect(ProjectorOperationRequestSchema.safeParse({ ...context, input: { ...context.input, compact: true } }).success).toBe(false);
+    expect(ProjectorOperationRequestSchema.safeParse({ ...context, operation: "representation.inspect" }).success).toBe(false);
+
+    const schema = createProjectorOperationResultSchema("context", z.strictObject({ contextId: z.string().min(1) }));
+    const base = { apiVersion: "projector.operation-result/v1", operation: "context", package: { name: "projector", version: "2.1.0" }, exitCode: 0, readiness: { status: "ready", package: { name: "projector", version: "2.1.0" } } };
+    expect(schema.safeParse({ ...base, status: "succeeded", output: { contextId: "knowledge_context_1" } }).success).toBe(true);
+    expect(schema.safeParse({ ...base, status: "succeeded", output: { contextId: "knowledge_context_1", inventedEvidence: [] } }).success).toBe(false);
+    expect(schema.safeParse({ ...base, status: "unavailable" }).success).toBe(false);
+  });
+
+  it("separates the prepared config from the one explicit legacy baseline", () => {
+    const legacy = { apiVersion: "projector.config/v1", enabled: true };
+    const prepared = { ...legacy, projectorVersion: "2.1.0" };
+    expect(LegacyUnversionedProjectorConfigSchema.safeParse(legacy).success).toBe(true);
+    expect(LegacyUnversionedProjectorConfigSchema.safeParse(prepared).success).toBe(false);
+    expect(PreparedProjectorConfigSchema.safeParse(prepared).success).toBe(true);
+    expect(PreparedProjectorConfigSchema.safeParse({ ...prepared, projectorVersion: "2.1.0-0.alpha+build.7" }).success).toBe(true);
+    for (const projectorVersion of ["2.1", "02.1.0", "2.1.0-01", "latest"]) {
+      expect(PreparedProjectorConfigSchema.safeParse({ ...prepared, projectorVersion }).success).toBe(false);
+    }
   });
 
   it("enforces operation-specific behavior delta presence rules", () => {
