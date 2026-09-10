@@ -132,6 +132,10 @@ export async function initializeProjectActivation(repositoryRoot: string): Promi
   }
 }
 
+export async function initializeProjectLocalIgnore(repositoryRoot: string): Promise<void> {
+  await initializeProjectIgnore(await RepositoryPathService.create(repositoryRoot));
+}
+
 async function initializeProjectIgnore(paths: RepositoryPathService): Promise<void> {
   const target = (await paths.resolveWrite(".projector/.gitignore")).realTarget;
   let existing = "";

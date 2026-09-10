@@ -12,3 +12,12 @@ export type {
 } from "./knowledge/types.js";
 export { inspectRepositoryCoverage, type RepositoryCoverageRequest } from "./coverage/service.js";
 export type { CompletionQuestion } from "./coverage/issues.js";
+export {
+  initializePreparedProject,
+  inspectProjectReadiness,
+  withProjectOperationAccess,
+  type PreparedProjectInitializationResult,
+  type ProjectOperationAccessResult,
+  type ReadinessInspectionInput,
+  type ReadyProjectReadiness,
+} from "./readiness/service.js";
