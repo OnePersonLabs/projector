@@ -9,6 +9,7 @@ import { observeChangeRepository } from "../change-lifecycle/repository-observer
 import { KnowledgeGraph } from "../knowledge/graph.js";
 import { deriveCompletionQuestions } from "./issues.js";
 import { inspectRepositoryCoverage } from "./service.js";
+import { RepositoryCleanupOutputSchema, RepositoryCompletionOutputSchema, RepositoryCoverageOutputSchema } from "./transport.js";
 
 const hash = hashFramedDomain("coverage-test", "fixture");
 const scope = { op: "atom", field: "path", matcher: "glob", value: "src/**" } as const;
@@ -20,6 +21,20 @@ function authority(): AuthorityRecord {
 }
 
 describe("observed progressive coverage", () => {
+  it("emits strict mode-specific transport results", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-coverage-transport-"));
+    try {
+      const coverage = await inspectRepositoryCoverage(root, { scope: "." }, "coverage");
+      const complete = await inspectRepositoryCoverage(root, { scope: "." }, "complete");
+      const cleanup = await inspectRepositoryCoverage(root, { scope: "." }, "cleanup");
+      expect(RepositoryCoverageOutputSchema.safeParse(coverage).success).toBe(true);
+      expect(RepositoryCompletionOutputSchema.safeParse(complete).success).toBe(true);
+      expect(RepositoryCleanupOutputSchema.safeParse(cleanup).success).toBe(true);
+      expect(RepositoryCoverageOutputSchema.safeParse(cleanup).success).toBe(false);
+      expect(RepositoryCleanupOutputSchema.safeParse({ ...cleanup, completion: { ...cleanup.completion, execution: undefined } }).success).toBe(false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("honors an already-cancelled caller signal before repository observation", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-coverage-cancelled-"));
     const controller = new AbortController();
