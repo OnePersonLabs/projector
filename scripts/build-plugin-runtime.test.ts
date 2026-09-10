@@ -30,9 +30,11 @@ describe("standalone plugin assembly", () => {
     await expect(access(join(plugin, ".mcp.json"))).rejects.toMatchObject({ code: "ENOENT" });
     const hostNode = await execute("node", ["--version"], { cwd: plugin, env: { ...process.env, NODE_PATH: "" }, encoding: "utf8" });
     expect(hostNode.stdout.trim()).toBe(process.version);
-    const hook = JSON.parse(await readFile(join(plugin, "hooks/hooks.json"), "utf8")).hooks.SessionStart[0].hooks[0];
+    const hooks = JSON.parse(await readFile(join(plugin, "hooks/hooks.json"), "utf8")).hooks;
+    const hook = hooks.SessionStart[0].hooks[0];
     expect(hook.command).toBe('node "${PLUGIN_ROOT}/hooks/projector-session.mjs"');
     expect(hook.commandWindows).toBeUndefined();
+    expect(hooks.PreToolUse[0]).toMatchObject({ matcher: "Bash|apply_patch|Edit|Write", hooks: [{ command: hook.command, additionalContextLimit: 256 }] });
 
     const repository = join(root, "ordinary repository");
     await mkdir(repository);
@@ -57,7 +59,7 @@ describe("standalone plugin assembly", () => {
 
     if (process.platform === "win32") {
       const installedCommand = hook.command.replaceAll("${PLUGIN_ROOT}", plugin);
-      const executedHook = await executeShell(installedCommand, {
+      const executedHook = await executeShell(`echo {\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}|${installedCommand}`, {
         cwd: repository,
         env: { ...env, PLUGIN_ROOT: plugin },
         shell: process.env.ComSpec ?? "cmd.exe",

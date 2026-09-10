@@ -115,34 +115,43 @@ describe("Projector installed operation entry", () => {
   });
 });
 
-describe("Projector SessionStart hook", () => {
-  test("announces only an active project with the installed operation runner and surfaces unexpected access failures", async () => {
+describe("Projector lifecycle hooks", () => {
+  test("shares bounded readiness on session startup, resume, and mutation paths without deciding the tool call", async () => {
     const { root, pluginRoot } = await installedFixture();
     const repository = join(root, "repository");
     await mkdir(repository);
     expect((await run("git", ["init", "-q"], repository)).exitCode).toBe(0);
     const hook = join(pluginRoot, "hooks/projector-session.mjs");
 
-    const inactive = await run(process.execPath, [hook], repository);
+    const manifest = JSON.parse(await readFile(join(pluginRoot, "hooks/hooks.json"), "utf8"));
+    expect(manifest.hooks.SessionStart[0].matcher).toBe("startup|resume|clear|compact");
+    expect(manifest.hooks.PreToolUse[0].matcher).toBe("Bash|apply_patch|Edit|Write");
+
+    const inactive = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command: "*** Begin Patch" } }));
     expect(inactive).toMatchObject({ exitCode: 0, stdout: "", stderr: "" });
 
     await mkdir(join(repository, ".projector"));
     await writeFile(join(repository, ".projector/config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "9.8.7"\n');
-    const active = await run(process.execPath, [hook], repository);
-    expect(active).toMatchObject({ exitCode: 0, stderr: "" });
-    expect(JSON.parse(active.stdout)).toMatchObject({
-      hookSpecificOutput: {
-        hookEventName: "SessionStart",
-        additionalContext: expect.stringContaining("projector-operation.mjs"),
-      },
-    });
+    for (const source of ["startup", "resume"] as const) {
+      const active = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "SessionStart", source }));
+      expect(active).toMatchObject({ exitCode: 0, stderr: "" });
+      expect(JSON.parse(active.stdout)).toMatchObject({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: expect.stringContaining("projector-operation.mjs") } });
+    }
+
+    const beforeMutation = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_use_id: "tool-1", tool_input: { command: "*** Begin Patch" } }));
+    expect(beforeMutation).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(beforeMutation.stdout)).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: expect.stringContaining("operation entry owns readiness and access") } });
+    expect(JSON.parse(beforeMutation.stdout).hookSpecificOutput).not.toHaveProperty("permissionDecision");
 
     await rm(join(pluginRoot, "runtime/projector/exports/operations.js"));
     await mkdir(join(pluginRoot, "runtime/projector/exports/operations.js"));
-    const unexpected = await run(process.execPath, [hook], repository);
+    const unexpected = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "SessionStart", source: "startup" }));
     expect(unexpected.exitCode).toBe(1);
     expect(unexpected.stdout).toBe("");
     expect(unexpected.stderr).not.toBe("");
+
+    const malformed = await run(process.execPath, [hook], repository, "[]");
+    expect(malformed).toMatchObject({ exitCode: 1, stdout: "", stderr: expect.stringMatching(/JSON object/iu) });
   });
 });
 
