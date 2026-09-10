@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
-import { dirname, join, posix } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 
 export interface ArtifactBlobDeclaration { path: string; sha256: string }
 export interface ValidatedArtifactManifest<TManifest> {
@@ -35,7 +35,7 @@ export class ArtifactSetIncompleteError extends Error {
   }
 }
 
-interface CheckedManifest<TManifest> extends ValidatedArtifactManifest<TManifest> { manifestBytes: Uint8Array }
+interface CheckedManifest<TManifest> extends ValidatedArtifactManifest<TManifest> { manifestBytes: Buffer }
 
 export class DurableArtifactSetStore<TManifest> {
   constructor(
@@ -45,80 +45,103 @@ export class DurableArtifactSetStore<TManifest> {
     if (storageRoot.length === 0) throw new TypeError("A durable storage root is required");
   }
 
-  async begin(input: { artifactSetId: string; manifestBytes: Uint8Array }): Promise<{ artifactSetId: string }> {
+  async begin(input: { artifactSetId: string }): Promise<{ artifactSetId: string }> {
     assertArtifactSetId(input.artifactSetId);
-    const manifest = await this.checkManifest(input.manifestBytes);
     await this.ensureLayout();
-    const published = await this.read(input.artifactSetId);
-    if (published.status === "published") {
+    const current = await this.read(input.artifactSetId);
+    if (current.status === "published") {
       throw new ArtifactSetIntegrityError(`Artifact set ${input.artifactSetId} is already published`);
     }
-    if (published.status === "integrity-failed") throw new ArtifactSetIntegrityError(published.reason);
-
-    const stage = this.stagePath(input.artifactSetId);
-    try {
-      await mkdir(stage);
-      await mkdir(join(stage, "blobs"));
-      await writeDurableNewFile(join(stage, "manifest.bin"), manifest.manifestBytes);
-      await syncDirectory(stage);
-      await syncDirectory(this.stagingRoot());
-    } catch (error) {
-      if (!isCode(error, "EEXIST")) throw error;
-      await this.resumeBegin(stage, manifest.manifestBytes);
-    }
+    if (current.status === "integrity-failed") throw new ArtifactSetIntegrityError(current.reason);
+    await ensureDurableDirectory(this.stagePath(input.artifactSetId), "staged artifact set");
+    await ensureDurableDirectory(join(this.stagePath(input.artifactSetId), "blobs"), "staged blob directory");
     return { artifactSetId: input.artifactSetId };
   }
 
   async stageBlob(input: { artifactSetId: string; path: string; bytes: Uint8Array }): Promise<void> {
     assertArtifactSetId(input.artifactSetId);
     assertBlobPath(input.path);
+    if (await pathExists(this.publishedPath(input.artifactSetId))) {
+      throw new ArtifactSetIntegrityError(`Artifact set ${input.artifactSetId} is already published`);
+    }
     const stage = this.stagePath(input.artifactSetId);
     await assertDirectory(stage, "staged artifact set");
-    const manifest = await this.readCheckedManifest(stage);
-    const declaration = manifest.blobs.find(({ path }) => path === input.path);
-    if (declaration === undefined) throw new ArtifactSetIntegrityError(`Blob ${input.path} is not declared by the manifest`);
-    const bytes = Buffer.from(input.bytes);
-    if (hash(bytes) !== declaration.sha256) {
-      throw new ArtifactSetIntegrityError(`Blob ${input.path} does not match its declared SHA-256 hash`);
+    if (await pathExists(join(stage, "manifest.bin"))) {
+      throw new ArtifactSetIntegrityError(`Artifact set ${input.artifactSetId} is already being finalized`);
     }
-    const target = join(stage, "blobs", ...input.path.split("/"));
-    await ensureSafeParents(join(stage, "blobs"), input.path);
+    const blobRoot = join(stage, "blobs");
+    await assertDirectory(blobRoot, "staged blob directory");
+    await ensureSafeParents(blobRoot, input.path);
+    const target = join(blobRoot, ...input.path.split("/"));
+    const bytes = Buffer.from(input.bytes);
     try {
       await writeDurableNewFile(target, bytes);
-      await syncDirectory(dirname(target));
     } catch (error) {
       if (!isCode(error, "EEXIST")) throw error;
-      const existing = await readRegularFile(target, `staged blob ${input.path}`);
-      if (!existing.equals(bytes)) {
+      if (!(await readRegularFile(target, `staged blob ${input.path}`)).equals(bytes)) {
         throw new ArtifactSetIntegrityError(`Staged blob ${input.path} is immutable and has different bytes`);
       }
     }
+    // Persist both a new link and a raced, exact link from another writer.
+    await syncDirectory(dirname(target));
   }
 
-  async finalize(artifactSetId: string): Promise<PublishedArtifactSet<TManifest>> {
-    assertArtifactSetId(artifactSetId);
+  async finalize(input: {
+    artifactSetId: string;
+    manifestBytes: Uint8Array;
+  }): Promise<PublishedArtifactSet<TManifest>> {
+    assertArtifactSetId(input.artifactSetId);
+    const manifest = await this.checkManifest(input.manifestBytes);
     await this.ensureLayout();
-    const current = await this.read(artifactSetId);
-    if (current.status === "published") return current;
+    const current = await this.read(input.artifactSetId);
+    if (current.status === "published") {
+      if (!Buffer.from(current.manifestBytes).equals(manifest.manifestBytes)) {
+        throw new ArtifactSetIntegrityError(`Artifact set ${input.artifactSetId} was published with a different manifest`);
+      }
+      return current;
+    }
     if (current.status === "integrity-failed") throw new ArtifactSetIntegrityError(current.reason);
-    if (current.status === "missing") throw new ArtifactSetIncompleteError(artifactSetId, ["manifest.bin"]);
-    const stage = this.stagePath(artifactSetId);
-    const checked = await this.readCompleteSet(stage, artifactSetId, false);
-    if (checked.status === "incomplete") throw new ArtifactSetIncompleteError(artifactSetId, checked.missingPaths);
+    if (current.status === "missing") throw new ArtifactSetIncompleteError(input.artifactSetId, ["staging"]);
+
+    const stage = this.stagePath(input.artifactSetId);
+    const manifestPath = join(stage, "manifest.bin");
+    const stagedManifestExists = await pathExists(manifestPath);
+    if (stagedManifestExists && !(await readRegularFile(manifestPath, "artifact manifest")).equals(manifest.manifestBytes)) {
+      throw new ArtifactSetIntegrityError(`Artifact set ${input.artifactSetId} is being finalized with a different manifest`);
+    }
+    const staged = await collectStagedBlobs(stage, stagedManifestExists);
+    assertExactDeclaredSet(input.artifactSetId, manifest.blobs, staged);
+    verifyHashes(manifest.blobs, staged);
+
+    if (!stagedManifestExists) {
+      try {
+        await writeDurableNewFile(manifestPath, manifest.manifestBytes);
+        await syncDirectory(stage);
+      } catch (error) {
+        if (!isCode(error, "EEXIST")) throw error;
+        if (!(await readRegularFile(manifestPath, "artifact manifest")).equals(manifest.manifestBytes)) {
+          throw new ArtifactSetIntegrityError(`Artifact set ${input.artifactSetId} is being finalized with a different manifest`);
+        }
+      }
+    }
+    // An exact manifest recovered after interruption may still need its name committed.
+    await syncDirectory(stage);
+    await this.readCompleteSet(stage, input.artifactSetId);
+
     try {
-      await rename(stage, this.publishedPath(artifactSetId));
+      await rename(stage, this.publishedPath(input.artifactSetId));
       await syncDirectory(this.publishedRoot());
       await syncDirectory(this.stagingRoot());
     } catch (error) {
       if (!isCode(error, "EEXIST") && !isCode(error, "ENOTEMPTY") && !isCode(error, "ENOENT")) throw error;
-      const raced = await this.read(artifactSetId);
-      if (raced.status === "published") return raced;
-      throw new ArtifactSetIntegrityError(`Artifact set ${artifactSetId} could not be published atomically`);
+      const raced = await this.read(input.artifactSetId);
+      if (raced.status === "published" && Buffer.from(raced.manifestBytes).equals(manifest.manifestBytes)) return raced;
+      throw new ArtifactSetIntegrityError(`Artifact set ${input.artifactSetId} could not be published atomically`);
     }
-    const published = await this.read(artifactSetId);
+    const published = await this.read(input.artifactSetId);
     if (published.status !== "published") {
       throw new ArtifactSetIntegrityError(
-        published.status === "integrity-failed" ? published.reason : `Published artifact set ${artifactSetId} disappeared`,
+        published.status === "integrity-failed" ? published.reason : `Published artifact set ${input.artifactSetId} disappeared`,
       );
     }
     return published;
@@ -126,84 +149,36 @@ export class DurableArtifactSetStore<TManifest> {
 
   async read(artifactSetId: string): Promise<ArtifactSetReadResult<TManifest>> {
     assertArtifactSetId(artifactSetId);
-    const published = this.publishedPath(artifactSetId);
-    if (await pathExists(published)) {
-      try {
-        const result = await this.readCompleteSet(published, artifactSetId, true);
-        if (result.status === "incomplete") {
-          return { status: "integrity-failed", artifactSetId, reason: `Published artifact set is incomplete: ${result.missingPaths.join(", ")}` };
-        }
-        return result.value;
-      } catch (error) {
-        return { status: "integrity-failed", artifactSetId, reason: errorMessage(error) };
-      }
+    const publishedPath = this.publishedPath(artifactSetId);
+    if (await pathExists(publishedPath)) {
+      try { return await this.readCompleteSet(publishedPath, artifactSetId); }
+      catch (error) { return { status: "integrity-failed", artifactSetId, reason: errorMessage(error) }; }
     }
     const stage = this.stagePath(artifactSetId);
     if (!(await pathExists(stage))) return { status: "missing", artifactSetId };
     try {
-      await this.readCompleteSet(stage, artifactSetId, false);
+      const manifestPath = join(stage, "manifest.bin");
+      if (await pathExists(manifestPath)) await this.readCompleteSet(stage, artifactSetId);
+      else await collectStagedBlobs(stage);
       return { status: "incomplete", artifactSetId };
     } catch (error) {
       return { status: "integrity-failed", artifactSetId, reason: errorMessage(error) };
     }
   }
 
-  private async readCompleteSet(directory: string, artifactSetId: string, published: boolean): Promise<
-    | { status: "complete"; value: PublishedArtifactSet<TManifest> }
-    | { status: "incomplete"; missingPaths: string[] }
-  > {
-    await assertDirectory(directory, published ? "published artifact set" : "staged artifact set");
-    let manifest: CheckedManifest<TManifest>;
-    try { manifest = await this.readCheckedManifest(directory); }
-    catch (error) {
-      if (!published && isCode(error, "ENOENT")) {
-        await this.inspectSetEntries(directory, undefined, true);
-        return { status: "incomplete", missingPaths: ["manifest.bin"] };
-      }
-      throw error;
-    }
-    await this.inspectSetEntries(directory, manifest.blobs, false);
-    const blobs = new Map<string, Uint8Array>();
-    const missing: string[] = [];
-    for (const declaration of manifest.blobs) {
-      const path = join(directory, "blobs", ...declaration.path.split("/"));
-      try {
-        const bytes = await readRegularFile(path, `blob ${declaration.path}`);
-        if (hash(bytes) !== declaration.sha256) {
-          throw new ArtifactSetIntegrityError(`Blob ${declaration.path} failed its declared SHA-256 hash`);
-        }
-        blobs.set(declaration.path, bytes);
-      } catch (error) {
-        if (!published && isCode(error, "ENOENT")) missing.push(declaration.path);
-        else throw error;
-      }
-    }
-    if (missing.length > 0) return { status: "incomplete", missingPaths: missing };
-    return { status: "complete", value: {
-      status: "published", artifactSetId, manifestBytes: manifest.manifestBytes,
-      manifest: manifest.manifest, blobs,
-    } };
-  }
-
-  private async inspectSetEntries(
-    directory: string,
-    declarations: readonly ArtifactBlobDeclaration[] | undefined,
-    permitUnknownWhileManifestMissing: boolean,
-  ): Promise<void> {
-    const allowedFiles = new Set(["manifest.bin"]);
-    const allowedDirectories = new Set(["blobs"]);
-    if (declarations !== undefined) for (const { path } of declarations) {
-      const segments = path.split("/");
-      allowedFiles.add(`blobs/${path}`);
-      for (let index = 1; index < segments.length; index += 1) {
-        allowedDirectories.add(`blobs/${segments.slice(0, index).join("/")}`);
-      }
-    }
-    await inspectDirectory(directory, "", allowedFiles, allowedDirectories, permitUnknownWhileManifestMissing);
-  }
-
-  private async readCheckedManifest(directory: string): Promise<CheckedManifest<TManifest>> {
-    return this.checkManifest(await readRegularFile(join(directory, "manifest.bin"), "artifact manifest"));
+  private async readCompleteSet(directory: string, artifactSetId: string): Promise<PublishedArtifactSet<TManifest>> {
+    await assertDirectory(directory, "artifact set");
+    const manifest = await this.checkManifest(await readRegularFile(join(directory, "manifest.bin"), "artifact manifest"));
+    const staged = await collectStagedBlobs(directory, true);
+    assertExactDeclaredSet(artifactSetId, manifest.blobs, staged);
+    verifyHashes(manifest.blobs, staged);
+    return {
+      status: "published",
+      artifactSetId,
+      manifestBytes: manifest.manifestBytes,
+      manifest: manifest.manifest,
+      blobs: staged,
+    };
   }
 
   private async checkManifest(bytes: Uint8Array): Promise<CheckedManifest<TManifest>> {
@@ -230,34 +205,76 @@ export class DurableArtifactSetStore<TManifest> {
   }
 
   private async ensureLayout(): Promise<void> {
-    await mkdir(this.storageRoot, { recursive: true });
-    await assertDirectory(this.storageRoot, "artifact storage root");
-    for (const path of [this.stagingRoot(), this.publishedRoot()]) {
-      await mkdir(path, { recursive: true });
-      await assertDirectory(path, "artifact storage directory");
-    }
-  }
-
-  private async resumeBegin(stage: string, manifestBytes: Uint8Array): Promise<void> {
-    await assertDirectory(stage, "staged artifact set");
-    const blobs = join(stage, "blobs");
-    try { await mkdir(blobs); }
-    catch (error) { if (!isCode(error, "EEXIST")) throw error; await assertDirectory(blobs, "staged blob directory"); }
-    const manifestPath = join(stage, "manifest.bin");
-    try { await writeDurableNewFile(manifestPath, manifestBytes); }
-    catch (error) {
-      if (!isCode(error, "EEXIST")) throw error;
-      if (!(await readRegularFile(manifestPath, "artifact manifest")).equals(manifestBytes)) {
-        throw new ArtifactSetIntegrityError("Staged artifact manifest is immutable and has different bytes");
-      }
-    }
-    await syncDirectory(stage);
+    await ensureDurableDirectory(this.storageRoot, "artifact storage root");
+    await ensureDurableDirectory(this.stagingRoot(), "artifact staging directory");
+    await ensureDurableDirectory(this.publishedRoot(), "artifact publication directory");
   }
 
   private stagingRoot(): string { return join(this.storageRoot, "staging"); }
   private publishedRoot(): string { return join(this.storageRoot, "published"); }
   private stagePath(id: string): string { return join(this.stagingRoot(), id); }
   private publishedPath(id: string): string { return join(this.publishedRoot(), id); }
+}
+
+function assertExactDeclaredSet(
+  artifactSetId: string,
+  declarations: readonly ArtifactBlobDeclaration[],
+  staged: ReadonlyMap<string, Uint8Array>,
+): void {
+  const declared = new Set(declarations.map(({ path }) => path));
+  const missing = [...declared].filter((path) => !staged.has(path)).sort();
+  const undeclared = [...staged.keys()].filter((path) => !declared.has(path)).sort();
+  if (missing.length > 0 || undeclared.length > 0) {
+    const parts = [
+      ...(missing.length === 0 ? [] : [`missing declared blobs: ${missing.join(", ")}`]),
+      ...(undeclared.length === 0 ? [] : [`undeclared staged blobs: ${undeclared.join(", ")}`]),
+    ];
+    throw new ArtifactSetIntegrityError(`Artifact set ${artifactSetId} does not match its manifest; ${parts.join("; ")}`);
+  }
+}
+
+function verifyHashes(
+  declarations: readonly ArtifactBlobDeclaration[],
+  staged: ReadonlyMap<string, Uint8Array>,
+): void {
+  for (const declaration of declarations) {
+    const bytes = staged.get(declaration.path);
+    if (bytes === undefined || hash(bytes) !== declaration.sha256) {
+      throw new ArtifactSetIntegrityError(`Blob ${declaration.path} failed its declared SHA-256 hash`);
+    }
+  }
+}
+
+async function collectStagedBlobs(directory: string, allowManifest = false): Promise<Map<string, Uint8Array>> {
+  await assertDirectory(directory, "artifact set");
+  const rootEntries = await readdir(directory, { withFileTypes: true });
+  let foundBlobs = false;
+  for (const entry of rootEntries) {
+    const status = await lstat(join(directory, entry.name));
+    if (status.isSymbolicLink()) throw new ArtifactSetIntegrityError(`Artifact set contains a symbolic link: ${entry.name}`);
+    if (entry.name === "blobs" && status.isDirectory()) foundBlobs = true;
+    else if (!(allowManifest && entry.name === "manifest.bin" && status.isFile())) {
+      throw new ArtifactSetIntegrityError(`Artifact set contains an unexpected entry: ${entry.name}`);
+    }
+  }
+  if (!foundBlobs) return new Map();
+  const blobs = new Map<string, Uint8Array>();
+  await collectBlobDirectory(join(directory, "blobs"), "", blobs);
+  return blobs;
+}
+
+async function collectBlobDirectory(root: string, relative: string, blobs: Map<string, Uint8Array>): Promise<void> {
+  const directory = relative.length === 0 ? root : join(root, ...relative.split("/"));
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = relative.length === 0 ? entry.name : `${relative}/${entry.name}`;
+    assertBlobPath(path);
+    const absolute = join(directory, entry.name);
+    const status = await lstat(absolute);
+    if (status.isSymbolicLink()) throw new ArtifactSetIntegrityError(`Artifact set contains a symbolic link: blobs/${path}`);
+    if (status.isDirectory()) await collectBlobDirectory(root, path, blobs);
+    else if (status.isFile()) blobs.set(path, await readRegularFile(absolute, `blob ${path}`));
+    else throw new ArtifactSetIntegrityError(`Artifact set contains a non-regular entry: blobs/${path}`);
+  }
 }
 
 function assertArtifactSetId(value: string): void {
@@ -279,28 +296,27 @@ async function ensureSafeParents(blobRoot: string, relativePath: string): Promis
   for (const segment of relativePath.split("/").slice(0, -1)) {
     const parent = current;
     current = join(current, segment);
-    let created = false;
-    try { await mkdir(current); created = true; } catch (error) { if (!isCode(error, "EEXIST")) throw error; }
+    try { await mkdir(current); } catch (error) { if (!isCode(error, "EEXIST")) throw error; }
     await assertDirectory(current, "staged blob parent");
-    if (created) await syncDirectory(parent);
+    await syncDirectory(parent);
   }
 }
 
-async function inspectDirectory(
-  root: string, relative: string, allowedFiles: ReadonlySet<string>, allowedDirectories: ReadonlySet<string>,
-  permitUnknown: boolean,
-): Promise<void> {
-  const directory = relative.length === 0 ? root : join(root, ...relative.split("/"));
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const child = relative.length === 0 ? entry.name : `${relative}/${entry.name}`;
-    const status = await lstat(join(directory, entry.name));
-    if (status.isSymbolicLink()) throw new ArtifactSetIntegrityError(`Artifact set contains a symbolic link: ${child}`);
-    if (status.isDirectory()) {
-      if (!allowedDirectories.has(child) && !permitUnknown) throw new ArtifactSetIntegrityError(`Artifact set contains an unexpected directory: ${child}`);
-      await inspectDirectory(root, child, allowedFiles, allowedDirectories, permitUnknown);
-    } else if (status.isFile()) {
-      if (!allowedFiles.has(child) && !permitUnknown) throw new ArtifactSetIntegrityError(`Artifact set contains an unexpected file: ${child}`);
-    } else throw new ArtifactSetIntegrityError(`Artifact set contains a non-regular entry: ${child}`);
+async function ensureDurableDirectory(path: string, label: string): Promise<void> {
+  const missing: string[] = [];
+  let current = resolve(path);
+  while (!(await pathExists(current))) {
+    missing.push(current);
+    const parent = dirname(current);
+    if (parent === current) throw new ArtifactSetIntegrityError(`${label} has no existing parent directory`);
+    current = parent;
+  }
+  await assertDirectory(current, label);
+  for (const directory of missing.reverse()) {
+    const parent = dirname(directory);
+    try { await mkdir(directory); } catch (error) { if (!isCode(error, "EEXIST")) throw error; }
+    await assertDirectory(directory, label);
+    await syncDirectory(parent);
   }
 }
 
@@ -314,9 +330,7 @@ async function readRegularFile(path: string, label: string): Promise<Buffer> {
     const status = await handle.stat();
     if (!status.isFile()) throw new ArtifactSetIntegrityError(`${label} is not a regular file`);
     return await handle.readFile();
-  } finally {
-    await handle.close();
-  }
+  } finally { await handle.close(); }
 }
 async function writeDurableNewFile(path: string, bytes: Uint8Array): Promise<void> {
   const temporary = join(dirname(path), `.artifact-${randomUUID()}.tmp`);
