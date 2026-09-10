@@ -8,9 +8,16 @@ import { validateOperationalReport } from "@projector/runtime";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { runReadOnlyOperationalVerification } from "./operational-verification.js";
+import { createInstalledProjectorApplicationEvidenceHost } from "./operation-runner.js";
 
 const roots: string[] = [];
 const execFileAsync = promisify(execFile);
+const verificationOptions = (root: string, signal = new AbortController().signal) => ({
+  signal,
+  toolVersion: "2.1.0-test",
+  policy: { preset: "observe", allowMutation: false, allowPersistence: false },
+  applicationEvidence: createInstalledProjectorApplicationEvidenceHost({ repositoryRoot: root, signal, environment: process.env }),
+});
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, {
@@ -30,11 +37,7 @@ describe("read-only operational verification", () => {
     await execFileAsync("git", ["-C", root, "add", "package.json"]);
     await execFileAsync("git", ["-C", root, "-c", "user.name=Projector Test", "-c", "user.email=test@projector.invalid", "commit", "-m", "fixture"]);
 
-    const report = await runReadOnlyOperationalVerification(root, {
-      signal: new AbortController().signal,
-      toolVersion: "2.1.0-test",
-      policy: { preset: "observe", allowMutation: false, allowPersistence: false },
-    });
+    const report = await runReadOnlyOperationalVerification(root, verificationOptions(root));
 
     expect(report.exitCode).toBe(5);
     expect(report.exitProof).toMatchObject({ blockingInvalidity: false, requiredUnavailable: true });
@@ -51,11 +54,7 @@ describe("read-only operational verification", () => {
     roots.push(root);
     await writeFile(join(root, "package.json"), '{"name":"fixture","version":"1.0.0"}\n');
 
-    const report = await runReadOnlyOperationalVerification(root, {
-      signal: new AbortController().signal,
-      toolVersion: "2.1.0-test",
-      policy: { preset: "observe", allowMutation: false, allowPersistence: false },
-    });
+    const report = await runReadOnlyOperationalVerification(root, verificationOptions(root));
 
     expect(validateOperationalReport(report)).toBe(true);
     expect(report).toMatchObject({
@@ -71,11 +70,7 @@ describe("read-only operational verification", () => {
     });
 
     await writeFile(join(root, "observed.ts"), "export const observed = 1;\n");
-    const changed = await runReadOnlyOperationalVerification(root, {
-      signal: new AbortController().signal,
-      toolVersion: "2.1.0-test",
-      policy: { preset: "observe", allowMutation: false, allowPersistence: false },
-    });
+    const changed = await runReadOnlyOperationalVerification(root, verificationOptions(root));
     expect(changed.stateDigest).not.toBe(report.stateDigest);
     expect(changed.evidence.configDigest).toEqual(report.evidence.configDigest);
     expect(changed.evidence.worktreeDigest).toEqual(report.evidence.worktreeDigest);
@@ -89,11 +84,7 @@ describe("read-only operational verification", () => {
     const malformed = join(canonicalDirectory, "invalid.toml");
     await writeFile(malformed, "not = [valid\n");
 
-    const report = await runReadOnlyOperationalVerification(root, {
-      signal: new AbortController().signal,
-      toolVersion: "2.1.0-test",
-      policy: { preset: "observe", allowMutation: false, allowPersistence: false },
-    });
+    const report = await runReadOnlyOperationalVerification(root, verificationOptions(root));
 
     expect(report.exitProof.blockingInvalidity).toBe(true);
     expect(report.findings).toEqual(expect.arrayContaining([
@@ -107,10 +98,6 @@ describe("read-only operational verification", () => {
     const controller = new AbortController();
     controller.abort(new Error("caller stopped verification"));
 
-    await expect(runReadOnlyOperationalVerification(root, {
-      signal: controller.signal,
-      toolVersion: "2.1.0-test",
-      policy: { preset: "observe", allowMutation: false, allowPersistence: false },
-    })).rejects.toThrow("caller stopped verification");
+    await expect(runReadOnlyOperationalVerification(root, verificationOptions(root, controller.signal))).rejects.toThrow("caller stopped verification");
   });
 });

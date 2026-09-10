@@ -29,6 +29,7 @@ import { RepositoryChangeLifecycleService, initializePreparedProject, inspectRep
 export { createHostSessionRecord, hostSessionSelector } from "@projector/integrations";
 import { runDefaultUpgradeWorkflow } from "./upgrade.js";
 import { inspectCanonicalKnowledge, runReadOnlyOperationalVerification } from "./operational-verification.js";
+import { createInstalledProjectorApplicationEvidenceHost } from "./operation-runner.js";
 export * from "./upgrade.js";
 
 export const PROJECTOR_VERSION = "2.1.0";
@@ -720,7 +721,12 @@ function defaultArchitecturePort(repositoryRoot: string): ArchitectureCliPort {
 function defaultOperationalCliPort(): OperationalCliPort {
   return { authenticate: async (report) => validateOperationalReport(report), run: async ({ command, repositoryRoot, clean, policy, signal, allowPersistence, maximumEvents }) => {
     if (command === "verify" && !clean) {
-      return runReadOnlyOperationalVerification(repositoryRoot, { signal, toolVersion: PROJECTOR_VERSION, policy });
+      return runReadOnlyOperationalVerification(repositoryRoot, {
+        signal,
+        toolVersion: PROJECTOR_VERSION,
+        policy,
+        applicationEvidence: createInstalledProjectorApplicationEvidenceHost({ repositoryRoot, signal, environment: process.env }),
+      });
     }
     const started = Date.now(); const paths = await RepositoryPathService.create(repositoryRoot); let findings: Array<{ code: string; title: string; path?: string; severity: "note" | "warning" | "error"; evidenceIds: string[] }> = []; const proof: { -readonly [Key in keyof OperationalExitProof]: OperationalExitProof[Key] } = { commandFailed: false, blockingInvalidity: false, approvalRequired: false, incompleteCoverage: false, requiredUnavailable: false, recoveryFailure: false, budgetExhausted: false, resumable: false }; let analysisRecords: string[] = []; let journalRecords: string[] = []; let canonicalDigest: ContentHash = hashFramedDomain("operational-canonical", []);
     {
