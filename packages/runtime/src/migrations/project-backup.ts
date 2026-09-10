@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile, rename } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 export interface ProjectBackupInput {
   repositoryRoot: string;
@@ -66,7 +66,7 @@ export async function createProjectBackup(
 
   const initial = await scanTree(sourceRoot);
   try {
-    await mkdir(stagePath);
+    await createDurableDirectory(stagingRoot, stagePath);
   } catch (error) {
     if (hasCode(error, "EEXIST")) throw new ProjectBackupError(`Backup identifier already exists: ${backupId}`);
     throw error;
@@ -74,9 +74,10 @@ export async function createProjectBackup(
 
   try {
     const stagedProjector = join(stagePath, ".projector");
-    await mkdir(stagedProjector);
+    await createDurableDirectory(stagePath, stagedProjector);
     for (const directory of initial.directories) {
-      await mkdir(join(stagedProjector, ...directory.split("/")));
+      const target = join(stagedProjector, ...directory.split("/"));
+      await createDurableDirectory(dirname(target), target);
     }
     for (const file of initial.files) {
       const sourcePath = join(sourceRoot, ...file.path.split("/"));
@@ -171,12 +172,21 @@ async function scanTree(root: string): Promise<TreeSnapshot> {
 async function ensureOwnedDirectory(root: string, segments: string[]): Promise<string> {
   let current = root;
   for (const segment of segments) {
-    current = containedPath(root, join(current, segment), "backup directory");
-    try { await mkdir(current); }
+    const parent = current;
+    current = containedPath(root, join(parent, segment), "backup directory");
+    let created = false;
+    try { await mkdir(current); created = true; }
     catch (error) { if (!hasCode(error, "EEXIST")) throw error; }
     await assertRegularDirectory(current, "Backup directory");
+    if (created) await syncDirectory(parent);
   }
   return current;
+}
+
+async function createDurableDirectory(parent: string, path: string): Promise<void> {
+  await mkdir(path);
+  await assertRegularDirectory(path, "Backup staging directory");
+  await syncDirectory(parent);
 }
 
 async function assertRegularDirectory(path: string, label: string): Promise<void> {

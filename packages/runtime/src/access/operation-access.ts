@@ -11,6 +11,10 @@ export interface ProjectOperationAccessOptions {
   signal?: AbortSignal;
 }
 
+export interface ProjectOperationAccess {
+  readonly signal: AbortSignal;
+}
+
 export type OperationAccessErrorCode = "project-not-ready" | "access-corrupt" | "access-aborted";
 
 export class OperationAccessError extends Error {
@@ -48,12 +52,13 @@ const counterFileName = "next-ticket";
 const mutexDirectoryName = "mutex";
 const pollIntervalMs = 10;
 const abandonedMutexAfterMs = 30_000;
+const abandonedClaimAfterMs = 5_000;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export async function withProjectOperationAccess<T>(
   root: string,
   options: ProjectOperationAccessOptions,
-  operation: () => Promise<T> | T,
+  operation: (access: ProjectOperationAccess) => Promise<T> | T,
 ): Promise<T> {
   validateOptions(options);
   throwIfAborted(options.signal);
@@ -63,9 +68,13 @@ export async function withProjectOperationAccess<T>(
   try {
     await waitToAcquire(accessPath, claim, options.signal);
     acquired = true;
-    const heartbeat = startHeartbeat(accessPath, claim);
+    const integrity = new AbortController();
+    const heartbeat = startHeartbeat(accessPath, claim, integrity);
+    const signal = options.signal === undefined
+      ? integrity.signal
+      : AbortSignal.any([options.signal, integrity.signal]);
     try {
-      return await operation();
+      return await operation({ signal });
     } finally {
       await heartbeat.stop();
     }
@@ -139,7 +148,11 @@ async function enqueue(accessPath: string, options: ProjectOperationAccessOption
   });
 }
 
-function startHeartbeat(accessPath: string, claim: AccessClaim): { stop: () => Promise<void> } {
+function startHeartbeat(
+  accessPath: string,
+  claim: AccessClaim,
+  integrity: AbortController,
+): { stop: () => Promise<void> } {
   let requestStop: () => void = () => undefined;
   const stopped = new Promise<boolean>((resolve) => {
     requestStop = () => resolve(true);
@@ -153,7 +166,10 @@ function startHeartbeat(accessPath: string, claim: AccessClaim): { stop: () => P
   })();
   const outcome = loop.then(
     () => undefined,
-    (error: unknown) => error,
+    (error: unknown) => {
+      integrity.abort(error);
+      return error;
+    },
   );
   return {
     stop: async () => {
@@ -237,6 +253,13 @@ async function readAccessState(accessPath: string): Promise<AccessState> {
   const requests = await readClaims(join(accessPath, requestsDirectoryName));
   const holders = await readClaims(join(accessPath, holdersDirectoryName));
   const allClaims = [...requests, ...holders];
+  const now = Date.now();
+  for (const claim of allClaims) {
+    const heartbeat = new Date(claim.heartbeatAt).getTime();
+    if (heartbeat > now + abandonedClaimAfterMs || now - heartbeat > abandonedClaimAfterMs) {
+      throw corrupt(`Operation access claim ${claim.requestId} has an abandoned or invalid heartbeat and requires recovery`);
+    }
+  }
   const requestIds = new Set<string>();
   const tickets = new Set<number>();
   for (const claim of allClaims) {

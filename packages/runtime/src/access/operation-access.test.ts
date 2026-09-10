@@ -93,6 +93,35 @@ describe("withProjectOperationAccess", () => {
     ).rejects.toMatchObject({ code: "access-corrupt" });
   });
 
+  it("reports an abandoned holder for recovery instead of waiting forever", async () => {
+    const root = await readyProject();
+    const access = join(root, ".projector", "runtime", "operation-access");
+    await mkdir(join(access, "requests"), { recursive: true });
+    await mkdir(join(access, "holders"), { recursive: true });
+    await writeFile(join(access, "next-ticket"), "1\n");
+    await writeClaim(join(access, "holders", "11111111-1111-4111-8111-111111111111.json"), {
+      requestId: "11111111-1111-4111-8111-111111111111",
+      ticket: 1,
+      operation: "crashed",
+      mode: "exclusive",
+    }, "2000-01-01T00:00:00.000Z");
+
+    await expect(withProjectOperationAccess(root, { operation: "inspect", mode: "shared" }, async () => undefined))
+      .rejects.toMatchObject({ code: "access-corrupt", message: expect.stringMatching(/requires recovery/iu) });
+  });
+
+  it("aborts the access signal when a held claim loses integrity", async () => {
+    const root = await readyProject();
+
+    await expect(withProjectOperationAccess(root, { operation: "inspect", mode: "shared" }, async ({ signal }) => {
+      const holders = join(root, ".projector", "runtime", "operation-access", "holders");
+      const [name] = await readdir(holders);
+      await writeFile(join(holders, name!), "{broken");
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      expect(signal.aborted).toBe(true);
+    })).rejects.toMatchObject({ code: "access-corrupt" });
+  });
+
   it("aborts a waiting request and removes it from the queue", async () => {
     const root = await readyProject();
     const controller = new AbortController();
@@ -238,13 +267,14 @@ async function requestCount(root: string): Promise<number> {
 async function writeClaim(
   path: string,
   claim: { requestId: string; ticket: number; operation: string; mode: "shared" | "exclusive" },
+  timestamp = "2026-09-10T12:00:00.000Z",
 ): Promise<void> {
   await writeFile(path, `${JSON.stringify({
     version: 1,
     ...claim,
     processId: 42,
-    createdAt: "2026-09-10T12:00:00.000Z",
-    heartbeatAt: "2026-09-10T12:00:00.000Z",
+    createdAt: timestamp,
+    heartbeatAt: timestamp,
   })}\n`);
 }
 

@@ -277,9 +277,12 @@ async function ensureSafeParents(blobRoot: string, relativePath: string): Promis
   await assertDirectory(blobRoot, "staged blob directory");
   let current = blobRoot;
   for (const segment of relativePath.split("/").slice(0, -1)) {
+    const parent = current;
     current = join(current, segment);
-    try { await mkdir(current); } catch (error) { if (!isCode(error, "EEXIST")) throw error; }
+    let created = false;
+    try { await mkdir(current); created = true; } catch (error) { if (!isCode(error, "EEXIST")) throw error; }
     await assertDirectory(current, "staged blob parent");
+    if (created) await syncDirectory(parent);
   }
 }
 

@@ -322,6 +322,20 @@ describe("CanonicalFileRepository", () => {
     await expect(repository.snapshot()).rejects.toThrow(/symlink.*canonical/i);
   });
 
+  test("rejects a symlinked canonical root during snapshot", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const external = join(root, "external-projector");
+    await mkdir(join(external, "model", "concepts"), { recursive: true });
+    await writeFile(
+      join(external, "model", "concepts", "external.concept.toml"),
+      stringifyTomlDocument(concept("concept:external", "outside") as unknown as Record<string, unknown>),
+    );
+    await symlink(external, join(root, ".projector"), "dir");
+
+    await expect(repository.snapshot()).rejects.toThrow(/canonical root must be a real directory/iu);
+  });
+
   test("rejects direct reads through a symlinked canonical file", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
