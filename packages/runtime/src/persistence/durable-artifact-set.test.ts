@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -145,11 +145,55 @@ describe("durable artifact set publication", () => {
     const manifestBytes = manifest([{ path: "result.txt", bytes: blob }]);
     await store.begin({ artifactSetId: "resume-finalize" });
     await store.stageBlob({ artifactSetId: "resume-finalize", path: "result.txt", bytes: blob });
-    await writeFile(join(root, "staging", "resume-finalize", "manifest.bin"), manifestBytes);
+    await rename(join(root, "staging", "resume-finalize"), join(root, "finalizing", "resume-finalize"));
+    await writeFile(join(root, "finalizing", "resume-finalize", "manifest.bin"), manifestBytes);
 
     expect(await store.read("resume-finalize")).toEqual({ status: "incomplete", artifactSetId: "resume-finalize" });
     const published = await store.finalize({ artifactSetId: "resume-finalize", manifestBytes });
     expect(published.blobs.get("result.txt")).toEqual(blob);
+  });
+
+  test("prevents a previously admitted writer from mutating a set after cross-instance finalization starts", async () => {
+    let admitLateWrite: (() => void) | undefined;
+    let lateWritePaused: (() => void) | undefined;
+    const paused = new Promise<void>((resolve) => { lateWritePaused = resolve; });
+    const admitted = new Promise<void>((resolve) => { admitLateWrite = resolve; });
+    const { storageRoot, store } = await temporaryStore();
+    const stager = new DurableArtifactSetStore(storageRoot, strictManifest, {
+      beforeStageBlobLink: async () => {
+        lateWritePaused?.();
+        await admitted;
+      },
+    });
+    await store.begin({ artifactSetId: "interleaved" });
+    const late = stager.stageBlob({ artifactSetId: "interleaved", path: "late.txt", bytes: Buffer.from("late") });
+    await paused;
+
+    const finalizer = new DurableArtifactSetStore(storageRoot, strictManifest);
+    const published = await finalizer.finalize({ artifactSetId: "interleaved", manifestBytes: manifest([]) });
+    admitLateWrite?.();
+
+    await expect(late).rejects.toMatchObject({ code: "ENOENT" });
+    expect(published.blobs.size).toBe(0);
+    await expect(readFile(join(storageRoot, "published", "interleaved", "blobs", "late.txt")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    expect(await finalizer.read("interleaved")).toMatchObject({ status: "published" });
+  });
+
+  test("rejects cross-platform aliases for artifact IDs and blob paths", async () => {
+    const { store } = await temporaryStore();
+    for (const artifactSetId of ["A", "CON", "lpt1.txt", "set.", "set ", "a:stream"]) {
+      await expect(store.begin({ artifactSetId })).rejects.toThrow(/artifact set ID/i);
+    }
+    await store.begin({ artifactSetId: "portable" });
+    for (const path of ["A/file.txt", "a:stream", "CON.txt", "x. ", "nested//file.txt"]) {
+      await expect(store.stageBlob({ artifactSetId: "portable", path, bytes: Buffer.from("x") }))
+        .rejects.toThrow(/artifact blob path/i);
+    }
+    await expect(store.finalize({
+      artifactSetId: "portable",
+      manifestBytes: Buffer.from(JSON.stringify({ version: 1, blobs: [{ path: "con.txt", sha256: "0".repeat(64) }] })),
+    })).rejects.toThrow(/artifact blob path/i);
   });
 
   test("preserves published evidence, rehashes reads, and rejects unsafe filesystem entries", async () => {
