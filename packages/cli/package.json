@@ -23,6 +23,7 @@
     "@projector/control-plane": "workspace:*",
     "@projector/engine": "workspace:*",
     "@projector/integrations": "workspace:*",
-    "@projector/runtime": "workspace:*"
+    "@projector/runtime": "workspace:*",
+    "zod": "^4.0.15"
   }
 }
