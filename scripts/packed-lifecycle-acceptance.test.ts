@@ -12,25 +12,26 @@ const sortValue = (value) => Array.isArray(value) ? value.map(sortValue) : value
 const hash = (domain, value) => `sha256:v1:${createHash("sha256").update(`${domain}\0${JSON.stringify(sortValue(value))}`, "utf8").digest("hex")}`;
 
 function trace() {
-  const sequence = [["invoked", "start", null], ["completed", "start", 3], ["invoked", "approve", null], ["completed", "approve", 2], ["invoked", "approve", null], ["completed", "approve", 0], ["invoked", "apply", null], ["invoked", "recover", null], ["completed", "recover", 0], ["invoked", "resume", null], ["completed", "resume", 0], ["invoked", "resume", null], ["completed", "resume", 0]];
+  const sequence = [["invoked", "change.capture", null], ["completed", "change.capture", 0], ["invoked", "change.plan", null], ["completed", "change.plan", 0], ["invoked", "change.approve", null], ["completed", "change.approve", 6], ["invoked", "change.approve", null], ["completed", "change.approve", 0], ["invoked", "change.apply", null], ["invoked", "change.recover", null], ["completed", "change.recover", 0], ["invoked", "change.resume", null], ["completed", "change.resume", 0], ["invoked", "change.resume", null], ["completed", "change.resume", 0]];
   let previousHash = null;
-  return sequence.map(([phase, command, exitCode], index) => {
-    const args = command === "approve"
-      ? ["--change", "semantic_change_abc", "--plan-hash", index === 2 || index === 3 ? "sha256:v1:substituted" : "sha256:v1:plan"]
-      : ["selector"];
-    const output = phase === "completed" ? JSON.stringify({ index }) : null;
-    const diagnostic = phase === "completed" && exitCode !== 0 ? "approval requires the exact plan hash" : phase === "completed" ? "" : null;
+  return sequence.map(([phase, operation, exitCode], index) => {
+    const input = operation === "change.capture" ? { request: "Trim surrounding label whitespace while preserving existing callers." }
+      : operation === "change.plan" ? { changeSelector: "semantic_change_abc" }
+      : operation === "change.approve" ? { changeSelector: "semantic_change_abc", planHash: index === 4 || index === 5 ? "sha256:v1:substituted" : "sha256:v1:plan" }
+      : { approvalSelector: "lifecycle_approval_abc" };
+    const output = phase === "completed" ? JSON.stringify(exitCode === 6 ? { error: { message: "approval requires the exact plan hash" } } : { index }) : null;
+    const diagnostic = phase === "completed" ? "" : null;
     const body = {
       version: 1,
       phase,
-      command,
-      args,
+      operation,
+      input,
       exitCode,
-      invocationHash: hash("projector-agent-cli-invocation", { command, args }),
+      invocationHash: hash("projector-agent-operation-invocation", { operation, input }),
       output,
       diagnostic,
-      outputHash: phase === "completed" ? hash("projector-agent-cli-output", { exitCode, stdout: output }) : null,
-      diagnosticHash: phase === "completed" ? hash("projector-agent-cli-diagnostic", diagnostic) : null,
+      outputHash: phase === "completed" ? hash("projector-agent-operation-output", { exitCode, stdout: output }) : null,
+      diagnosticHash: phase === "completed" ? hash("projector-agent-operation-diagnostic", diagnostic) : null,
       previousHash,
       recordedAt: `2026-08-26T00:00:${String(index).padStart(2, "0")}.000Z`,
     };
@@ -50,9 +51,9 @@ function evidence() {
     version: 1,
     runId: "01234567-89ab-4def-8123-456789abcdef",
     request: "Trim surrounding label whitespace while preserving existing callers.",
-    activation: { initialized: true, projectEnabled: true, config: { apiVersion: "projector.config/v1", enabled: true } },
+    activation: { initialized: true, projectEnabled: true, config: { apiVersion: "projector.config/v1", enabled: true, projectorVersion: "2.1.0" } },
     artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", candidateManifestHash: "sha256:v1:candidate", pluginBundleHash: "sha256:v1:plugin", installedSymlinkCount: 0, pluginSymlinkCount: 0, nodePathEmpty: true, execution: "trusted-host" },
-    direct: { changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan", planId: "plan_abc", predictedChangedPaths: ["src/format-label.mjs", "test/trim-label.test.mjs"] },
+    plan: { changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan", planId: "plan_abc", predictedChangedPaths: ["src/format-label.mjs", "test/trim-label.test.mjs"] },
     pause: { status: "approval-required", changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan" },
     approval: { status: "approved", approvalSelector: "lifecycle_approval_abc", planHash: "sha256:v1:plan" },
     interruption: process.platform === "win32"
@@ -153,13 +154,13 @@ describe("packed held-out lifecycle evidence", () => {
     expect(verifyPackedLifecycleEvidence(forgedFlag)).toMatch(/^sha256:v1:/u);
 
     const missingNegative = evidence();
-    missingNegative.trace.splice(2, 2);
+    missingNegative.trace.splice(4, 2);
     rechain(missingNegative.trace);
     expect(() => verifyPackedLifecycleEvidence(missingNegative)).toThrow(/substituted|approval trace|interrupted invocation/iu);
 
     const falseNegative = evidence();
-    falseNegative.trace[3].exitCode = 0;
-    falseNegative.trace[3].diagnostic = "";
+    falseNegative.trace[5].exitCode = 0;
+    falseNegative.trace[5].diagnostic = "";
     rechain(falseNegative.trace);
     expect(() => verifyPackedLifecycleEvidence(falseNegative)).toThrow(/substituted|approval trace/iu);
   });
@@ -170,8 +171,8 @@ function rechain(entries) {
   for (const entry of entries) {
     entry.previousHash = previousHash;
     if (entry.phase === "completed") {
-      entry.outputHash = hash("projector-agent-cli-output", { exitCode: entry.exitCode, stdout: entry.output });
-      entry.diagnosticHash = hash("projector-agent-cli-diagnostic", entry.diagnostic);
+      entry.outputHash = hash("projector-agent-operation-output", { exitCode: entry.exitCode, stdout: entry.output });
+      entry.diagnosticHash = hash("projector-agent-operation-diagnostic", entry.diagnostic);
     }
     const { entryHash: omitted, ...body } = entry; void omitted;
     entry.entryHash = hash("projector-agent-trace-entry", body);
