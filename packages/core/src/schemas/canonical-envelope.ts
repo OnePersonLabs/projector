@@ -41,7 +41,28 @@ export const CanonicalKindSchema = z.enum([
   "transaction-receipt",
 ]);
 
-export const CanonicalDocumentEnvelopeSchema: z.ZodType = z.strictObject({
+export type CanonicalKind = z.infer<typeof CanonicalKindSchema>;
+
+export const CanonicalPayloadSchemas: Readonly<Record<CanonicalKind, z.ZodType>> = Object.freeze({
+  "architecture-decision": ArchitectureDecisionSchema,
+  "architecture-concern": ArchitectureConcernSchema,
+  "developer-preference": DeveloperPreferenceSchema,
+  "authority-record": AuthorityRecordSchema,
+  "behavioral-scenario": BehavioralScenarioSchema,
+  concept: ConceptSchema,
+  exception: GovernanceExceptionSchema,
+  lineage: LineageRecordSchema,
+  migration: MigrationOverlaySchema,
+  "projection-lens": ProjectionLensSchema,
+  relation: RelationSchema,
+  requirement: RequirementSchema,
+  rule: RuleSchema,
+  "semantic-representation-profile": SemanticRepresentationProfileSchema,
+  tombstone: TombstoneSchema,
+  "transaction-receipt": TransactionReceiptSchema,
+});
+
+const canonicalEnvelopeShape = {
   apiVersion: z.string().min(1),
   schemaVersion: z.string().min(1),
   kind: CanonicalKindSchema,
@@ -52,32 +73,32 @@ export const CanonicalDocumentEnvelopeSchema: z.ZodType = z.strictObject({
   semanticHash: ContentHashSchema,
   discoveryHash: ContentHashSchema.optional(),
   canonicalDocumentHash: ContentHashSchema,
-}).superRefine((value, context) => {
-  const payloadSchemas: Readonly<Record<typeof value.kind, z.ZodType>> = {
-    "architecture-decision": ArchitectureDecisionSchema,
-    "architecture-concern": ArchitectureConcernSchema,
-    "developer-preference": DeveloperPreferenceSchema,
-    "authority-record": AuthorityRecordSchema,
-    "behavioral-scenario": BehavioralScenarioSchema,
-    concept: ConceptSchema,
-    exception: GovernanceExceptionSchema,
-    lineage: LineageRecordSchema,
-    migration: MigrationOverlaySchema,
-    "projection-lens": ProjectionLensSchema,
-    relation: RelationSchema,
-    requirement: RequirementSchema,
-    rule: RuleSchema,
-    "semantic-representation-profile": SemanticRepresentationProfileSchema,
-    tombstone: TombstoneSchema,
-    "transaction-receipt": TransactionReceiptSchema,
-  };
-  const payloadResult = payloadSchemas[value.kind].safeParse(value.payload);
+};
+
+const verifyEnvelope = (value: Record<string, unknown>, context: z.RefinementCtx): void => {
+  for (const message of verifyCanonicalEnvelope(value as unknown as CanonicalDocumentEnvelope)) {
+    context.addIssue({ code: "custom", message });
+  }
+};
+
+export const CanonicalDocumentEnvelopeSchema: z.ZodType = z.strictObject(canonicalEnvelopeShape).superRefine((value, context) => {
+  const payloadResult = CanonicalPayloadSchemas[value.kind].safeParse(value.payload);
   if (!payloadResult.success) {
     for (const issue of payloadResult.error.issues) {
       context.addIssue({ code: "custom", path: ["payload", ...issue.path], message: issue.message });
     }
   }
-  for (const message of verifyCanonicalEnvelope(value as CanonicalDocumentEnvelope)) {
-    context.addIssue({ code: "custom", message });
-  }
+  verifyEnvelope(value, context);
 });
+
+export function canonicalDocumentEnvelopeSchemaForKind<const TKind extends CanonicalKind>(kind: TKind) {
+  return z.strictObject({
+    ...canonicalEnvelopeShape,
+    kind: z.literal(kind),
+    payload: CanonicalPayloadSchemas[kind],
+  }).superRefine(verifyEnvelope);
+}
+
+export const CanonicalDocumentEnvelopeSchemasByKind = Object.freeze(Object.fromEntries(
+  CanonicalKindSchema.options.map((kind) => [kind, canonicalDocumentEnvelopeSchemaForKind(kind)]),
+) as Readonly<Record<CanonicalKind, ReturnType<typeof canonicalDocumentEnvelopeSchemaForKind>>>);
