@@ -21,6 +21,7 @@ export const ProjectorOperationSchema = z.enum([
   "complete",
   "cleanup",
   "verify",
+  "application.observe",
 ]);
 
 export type ProjectorOperation = z.infer<typeof ProjectorOperationSchema>;
@@ -31,10 +32,17 @@ const requestBase = {
   requestId: z.string().min(1).optional(),
 };
 
-const request = <TOperation extends ProjectorOperation, TInput extends z.core.$ZodLooseShape>(
-  operation: TOperation,
-  input: TInput,
-) => z.strictObject({ ...requestBase, operation: z.literal(operation), input: z.strictObject(input) });
+export function createProjectorOperationRequestSchema<
+  const TOperation extends ProjectorOperation,
+  const TInputSchema extends z.ZodObject,
+>(operation: TOperation, inputSchema: TInputSchema) {
+  return z.strictObject({ ...requestBase, operation: z.literal(operation), input: inputSchema.strict() });
+}
+
+export type ProjectorOperationRequestFor<
+  TOperation extends ProjectorOperation,
+  TInputSchema extends z.ZodObject,
+> = z.infer<ReturnType<typeof createProjectorOperationRequestSchema<TOperation, TInputSchema>>>;
 
 const boundedInspectionInput = {
   scope: z.string().min(1).optional(),
@@ -52,10 +60,10 @@ const knowledgePolicy = z.strictObject({
   maxContextCost: z.number().int().positive().max(10_000_000).optional(),
 });
 
-export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation", [
-  request("status", {}),
-  request("init", {}),
-  request("context", {
+export const ProjectorOperationInputSchemas = Object.freeze({
+  status: z.strictObject({}),
+  init: z.strictObject({}),
+  context: z.strictObject({
     request: z.string().min(1).max(4_096),
     entities: z.array(z.string().min(1).max(512)).max(64).optional(),
     namedTargets: z.array(z.string().min(1).max(1_024)).max(64).optional(),
@@ -63,17 +71,34 @@ export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation",
     persist: z.boolean().optional(),
     policy: knowledgePolicy.optional(),
   }),
-  request("reconcile", { contextId: z.string().min(1) }),
-  request("change.capture", { request: z.string().min(1), proposal: ChangeProposalSchema, contextId: z.string().min(1).optional() }),
-  request("change.plan", { changeSelector: z.string().min(1) }),
-  request("change.approve", { changeSelector: z.string().min(1), planHash: ContentHashSchema }),
-  request("change.apply", { approvalSelector: z.string().min(1) }),
-  request("change.recover", { approvalSelector: z.string().min(1) }),
-  request("change.resume", { approvalSelector: z.string().min(1) }),
-  request("coverage", boundedInspectionInput),
-  request("complete", boundedInspectionInput),
-  request("cleanup", boundedInspectionInput),
-  request("verify", {}),
+  reconcile: z.strictObject({ contextId: z.string().min(1) }),
+  "change.capture": z.strictObject({ request: z.string().min(1), proposal: ChangeProposalSchema, contextId: z.string().min(1).optional() }),
+  "change.plan": z.strictObject({ changeSelector: z.string().min(1) }),
+  "change.approve": z.strictObject({ changeSelector: z.string().min(1), planHash: ContentHashSchema }),
+  "change.apply": z.strictObject({ approvalSelector: z.string().min(1) }),
+  "change.recover": z.strictObject({ approvalSelector: z.string().min(1) }),
+  "change.resume": z.strictObject({ approvalSelector: z.string().min(1) }),
+  coverage: z.strictObject(boundedInspectionInput),
+  complete: z.strictObject(boundedInspectionInput),
+  cleanup: z.strictObject(boundedInspectionInput),
+  verify: z.strictObject({}),
+});
+
+export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation", [
+  createProjectorOperationRequestSchema("status", ProjectorOperationInputSchemas.status),
+  createProjectorOperationRequestSchema("init", ProjectorOperationInputSchemas.init),
+  createProjectorOperationRequestSchema("context", ProjectorOperationInputSchemas.context),
+  createProjectorOperationRequestSchema("reconcile", ProjectorOperationInputSchemas.reconcile),
+  createProjectorOperationRequestSchema("change.capture", ProjectorOperationInputSchemas["change.capture"]),
+  createProjectorOperationRequestSchema("change.plan", ProjectorOperationInputSchemas["change.plan"]),
+  createProjectorOperationRequestSchema("change.approve", ProjectorOperationInputSchemas["change.approve"]),
+  createProjectorOperationRequestSchema("change.apply", ProjectorOperationInputSchemas["change.apply"]),
+  createProjectorOperationRequestSchema("change.recover", ProjectorOperationInputSchemas["change.recover"]),
+  createProjectorOperationRequestSchema("change.resume", ProjectorOperationInputSchemas["change.resume"]),
+  createProjectorOperationRequestSchema("coverage", ProjectorOperationInputSchemas.coverage),
+  createProjectorOperationRequestSchema("complete", ProjectorOperationInputSchemas.complete),
+  createProjectorOperationRequestSchema("cleanup", ProjectorOperationInputSchemas.cleanup),
+  createProjectorOperationRequestSchema("verify", ProjectorOperationInputSchemas.verify),
 ]);
 
 export type ProjectorOperationRequest = z.infer<typeof ProjectorOperationRequestSchema>;
