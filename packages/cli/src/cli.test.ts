@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { resolve } from "node:path";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { PROJECTOR_VERSION, createHostSessionRecord, executeProjector, hostSessionSelector, renderCli } from "./cli.js";
 
@@ -42,12 +44,20 @@ describe("minimal CLI entrypoint", () => {
   });
 
   it("blocks canonical governance conflicts before public mutation work begins", async () => {
-    const result = await executeProjector(["apply", "lifecycle_approval_test", "--mode", "govern"], {
-      cwd: resolve(import.meta.dirname, "../../.."),
-      governance: { detectCanonicalConflictPaths: async () => [".projector/rules/conflicted.json"], assessOperationRisk: async () => "R1" },
-    });
-    expect(result.exitCode).toBe(2);
-    expect(result.output).toMatch(/canonical governance conflict/u);
+    const repository = await mkdtemp(join(tmpdir(), "projector-cli-governance-"));
+    try {
+      await mkdir(join(repository, ".projector"));
+      await mkdir(join(repository, ".git"));
+      await writeFile(join(repository, ".projector/config.toml"), `apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "${PROJECTOR_VERSION}"\n`);
+      const result = await executeProjector(["apply", "lifecycle_approval_test", "--mode", "govern"], {
+        cwd: repository,
+        governance: { detectCanonicalConflictPaths: async () => [".projector/rules/conflicted.toml"], assessOperationRisk: async () => "R1" },
+      });
+      expect(result.exitCode).toBe(2);
+      expect(result.output).toMatch(/canonical governance conflict/u);
+    } finally {
+      await rm(repository, { recursive: true, force: true });
+    }
   });
 
   it("enforces actual operation risk before public mutation work begins", async () => {
