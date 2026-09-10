@@ -3,6 +3,7 @@ import { CanonicalFileRepository } from "@projector/runtime";
 
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import type { KnowledgeContextResult } from "../knowledge/types.js";
+import type { PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
 import type { CompiledRepositoryChange } from "./compiler.js";
 
 const normalize = (value: string): string => value.normalize("NFKC").trim().toLocaleLowerCase("en-US");
@@ -54,7 +55,7 @@ function existingAddresses(proposal: ChangeProposal, documents: readonly Canonic
   return [...selected].sort();
 }
 
-export async function captureKnowledgeContextId(repositoryRoot: string, request: string, proposal: ChangeProposal, suppliedId?: string, signal?: AbortSignal): Promise<string | undefined> {
+export async function captureKnowledgeContextId(repositoryRoot: string, request: string, proposal: ChangeProposal, suppliedId?: string, signal?: AbortSignal, applicationEvidence?: PsychordApplicationEvidenceHost): Promise<string | undefined> {
   signal?.throwIfAborted();
   const resolutionId = proposal.identityResolution?.contextId;
   if (suppliedId !== undefined && resolutionId !== undefined && suppliedId !== resolutionId) throw new Error("identity resolution and supplied knowledge context differ");
@@ -63,7 +64,7 @@ export async function captureKnowledgeContextId(repositoryRoot: string, request:
   signal?.throwIfAborted();
   if (!snapshot.documents.some(({ kind }) => durableKinds.has(kind))) return undefined;
   const entities = existingAddresses(proposal, snapshot.documents);
-  const context = await (await RepositoryKnowledgeService.create(repositoryRoot)).context({ request, entities, policy: { maxCandidates: Math.max(5, entities.length) }, ...(signal === undefined ? {} : { signal }) });
+  const context = await (await RepositoryKnowledgeService.create(applicationEvidence === undefined ? repositoryRoot : { repositoryRoot, applicationEvidence })).context({ request, entities, policy: { maxCandidates: Math.max(5, entities.length) }, ...(signal === undefined ? {} : { signal }) });
   signal?.throwIfAborted();
   if (!context.branches.some(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)) {
     throw new Error(`Pre-edit meaning is unresolved. Inspect ${context.id} and supply identityResolution bound to its contentHash; omitting context does not authorize a new identity.`);
@@ -72,7 +73,7 @@ export async function captureKnowledgeContextId(repositoryRoot: string, request:
 }
 
 /** Materialize selected candidate branches using the same context machinery and store. */
-export async function adjudicatedKnowledgeContext(repositoryRoot: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal): Promise<KnowledgeContextResult | undefined> {
+export async function adjudicatedKnowledgeContext(repositoryRoot: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, applicationEvidence?: PsychordApplicationEvidenceHost): Promise<KnowledgeContextResult | undefined> {
   signal?.throwIfAborted();
   if (contextId === undefined) {
     if (proposal.identityResolution !== undefined) throw new Error("identity resolution requires its retained candidate context");
@@ -81,7 +82,7 @@ export async function adjudicatedKnowledgeContext(repositoryRoot: string, propos
     if (snapshot.documents.some(({ kind }) => durableKinds.has(kind))) throw new Error("existing canonical meaning requires retained pre-edit knowledge; recapture this change");
     return undefined;
   }
-  const knowledge = await RepositoryKnowledgeService.create(repositoryRoot);
+  const knowledge = await RepositoryKnowledgeService.create(applicationEvidence === undefined ? repositoryRoot : { repositoryRoot, applicationEvidence });
   const retained = await knowledge.read(contextId);
   signal?.throwIfAborted();
   const resolution = proposal.identityResolution;

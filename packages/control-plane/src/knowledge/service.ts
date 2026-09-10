@@ -1,4 +1,5 @@
 import {
+  canonicalJson,
   hashFramedDomain,
   type AdapterContext,
   type RelevanceClosure,
@@ -6,6 +7,7 @@ import {
   type SemanticIdentityResolution,
   type StateBindingValidation,
   type StateQueryDependency,
+  type StateValueDependencyRef,
 } from "@projector/core";
 import {
   DependencyScopedStateBindingValidator,
@@ -20,6 +22,12 @@ import { KnowledgeGraph } from "./graph.js";
 import { buildRepositoryImpactSnapshot, impactReference, persistRepositoryImpactSnapshot, reconcileRetainedImpact } from "../impact/service.js";
 import { assessKnowledgeDecisions, knowledgeGovernanceStatus, type KnowledgeDecisionHost } from "./governance.js";
 import { KnowledgeValidatorRun, type KnowledgeValidatorHost } from "./validators.js";
+import {
+  applicationEvidenceDependencies,
+  applicationEvidenceDisposition,
+  assessKnowledgeApplicationEvidence,
+  type PsychordApplicationEvidenceHost,
+} from "./application-evidence.js";
 import { KnowledgeContextStore, finalizeKnowledgeContext } from "./store.js";
 import {
   KNOWLEDGE_API_VERSION,
@@ -105,10 +113,11 @@ function rebindClosure(
   graph: KnowledgeGraph,
   queryDependencies: readonly StateQueryDependency[],
   extraValueIds: readonly string[] = [],
+  extraValueDependencies: readonly StateValueDependencyRef[] = [],
 ): RelevanceClosure {
   const boundState = createStateBinding({
     compiledAgainst: closure.boundState.compiledAgainst,
-    valueDependencies: graph.valueDependencies(unique([...closure.entries.map(({ entityId }) => entityId), ...extraValueIds])),
+    valueDependencies: [...graph.valueDependencies(unique([...closure.entries.map(({ entityId }) => entityId), ...extraValueIds])), ...extraValueDependencies],
     queryDependencies,
   });
   const basis = {
@@ -136,10 +145,10 @@ export class RepositoryKnowledgeService {
   private constructor(
     readonly repositoryRoot: string,
     private readonly store: KnowledgeContextStore,
-    private readonly host: KnowledgeDecisionHost & KnowledgeValidatorHost,
+    private readonly host: KnowledgeDecisionHost & KnowledgeValidatorHost & { readonly applicationEvidence?: PsychordApplicationEvidenceHost },
   ) {}
 
-  static async create(input: string | ({ readonly repositoryRoot: string } & KnowledgeDecisionHost & KnowledgeValidatorHost)): Promise<RepositoryKnowledgeService> {
+  static async create(input: string | ({ readonly repositoryRoot: string; readonly applicationEvidence?: PsychordApplicationEvidenceHost } & KnowledgeDecisionHost & KnowledgeValidatorHost)): Promise<RepositoryKnowledgeService> {
     const repositoryRoot = typeof input === "string" ? input : input.repositoryRoot;
     return new RepositoryKnowledgeService(repositoryRoot, await KnowledgeContextStore.create(repositoryRoot), typeof input === "string" ? {} : input);
   }
@@ -199,9 +208,10 @@ export class RepositoryKnowledgeService {
       const closureIds = compilation.closure.entries.map(({ entityId }) => entityId);
       const decisionEvidence = await assessKnowledgeDecisions(graph, graph.relevantDecisions(new Set(closureIds)), operation, adapterContext);
       const decisionIds = decisionEvidence.decisions.map(({ decisionId }) => decisionId);
-      const closure = rebindClosure(compilation.closure, graph, [identity.dependency, ...collectedQueries, ...decisionEvidence.dependencies], decisionIds);
+      const applicationEvidence = await assessKnowledgeApplicationEvidence({ observation, requirementIds: closureIds, signal: adapterContext.signal, ...(this.host.applicationEvidence === undefined ? {} : { host: this.host.applicationEvidence }) });
+      const closure = rebindClosure(compilation.closure, graph, [identity.dependency, ...collectedQueries, ...decisionEvidence.dependencies], decisionIds, applicationEvidenceDependencies(applicationEvidence));
       const baseContext = await compileContext(closure, graph, { maxCost: selectedPolicy.maxContextCost });
-      const contextUnknowns = unique([...baseContext.unknowns, ...graph.authorityUnknowns(closureIds), ...graph.topologyUnknowns(closureIds), ...decisionEvidence.decisions.flatMap(({ checks }) => checks.filter(({ status }) => status === "unknown").map(({ reason }) => reason))]);
+      const contextUnknowns = unique([...baseContext.unknowns, ...graph.authorityUnknowns(closureIds), ...graph.topologyUnknowns(closureIds), ...decisionEvidence.decisions.flatMap(({ checks }) => checks.filter(({ status }) => status === "unknown").map(({ reason }) => reason)), ...applicationEvidence.flatMap((item) => item.status === "unavailable" ? [item.reason] : [])]);
       const contextBasis = {
         sourceClosureId: baseContext.sourceClosureId,
         items: baseContext.items,
@@ -215,10 +225,10 @@ export class RepositoryKnowledgeService {
       const lensObligations = graph.lensObligations(new Set(closureIds), operation);
       const validatorFindings = await validators.evaluateAll(graph.validatorRequests(new Set(closureIds), operation));
       const governanceEvaluations = graph.governanceEvaluations(new Set(closureIds), operation, validatorFindings);
-      const sourceFingerprint = hashFramedDomain("knowledge-context-sources", valueDependencies.map(({ id, role }) => ({ id, role, sourceHash: graph.sourceHash(id) ?? null })));
-      const semanticFingerprint = hashFramedDomain("knowledge-context-semantics", valueDependencies);
+      const sourceFingerprint = hashFramedDomain("knowledge-context-sources", { values: valueDependencies.map(({ id, role }) => ({ id, role, sourceHash: graph.sourceHash(id) ?? null })), applicationEvidence: applicationEvidence.map(({ contentHash }) => contentHash) });
+      const semanticFingerprint = hashFramedDomain("knowledge-context-semantics", { values: valueDependencies, applicationEvidence: applicationEvidence.map(({ contentHash }) => contentHash) });
       const queryFingerprint = hashFramedDomain("knowledge-context-queries", closure.boundState.queryDependencies);
-      const branchBasis = { interpretation: candidate, hypothesis: !candidate.direct, closureHash: closure.contentHash, contextHash: compiledContext.contentHash, sourceFingerprint, semanticFingerprint, queryFingerprint, lensObligations, decisionValidity: decisionEvidence.decisions, governanceEvaluations };
+      const branchBasis = { interpretation: candidate, hypothesis: !candidate.direct, closureHash: closure.contentHash, contextHash: compiledContext.contentHash, sourceFingerprint, semanticFingerprint, queryFingerprint, lensObligations, decisionValidity: decisionEvidence.decisions, governanceEvaluations, applicationEvidence };
       branches.push({
         id: `knowledge_branch_${hashFramedDomain("knowledge-context-branch", branchBasis).slice(-32)}`,
         interpretation: candidate,
@@ -230,6 +240,7 @@ export class RepositoryKnowledgeService {
         lensObligations,
         decisionValidity: decisionEvidence.decisions,
         governanceEvaluations,
+        applicationEvidence,
         sourceFingerprint,
         semanticFingerprint,
         queryFingerprint,
@@ -289,8 +300,21 @@ export class RepositoryKnowledgeService {
     options.signal?.throwIfAborted();
     const graph = new KnowledgeGraph(observation, this.host);
     const adapterContext: AdapterContext = { repositoryRoot: observation.repositoryRoot, stateDigest: observation.state, config: {}, signal: options.signal ?? new AbortController().signal };
+    const current = await this.compileContext({
+      request: retained.request,
+      entities: retained.requestOptions.entities,
+      namedTargets: retained.requestOptions.namedTargets,
+      operation: retained.requestOptions.operation,
+      policy: retained.requestOptions.policy,
+      persist: false,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    }, observation, graph);
+    options.signal?.throwIfAborted();
+    const currentApplicationDependencies = new Map(current.branches
+      .flatMap(({ applicationEvidence }) => applicationEvidenceDependencies(applicationEvidence))
+      .map((dependency) => [dependency.id, dependency.versionHash] as const));
     const validator = new DependencyScopedStateBindingValidator({
-      values: { readVersionHash: async (dependency) => graph.currentVersionHash(dependency) },
+      values: { readVersionHash: async (dependency) => currentApplicationDependencies.get(dependency.id) ?? graph.currentVersionHash(dependency) },
       queries: { evaluate: (query, context) => graph.registry.evaluate(query, context) },
     });
     const discoveryValidation = await validator.validate(retained.discoveryBinding, observation.state, adapterContext);
@@ -303,16 +327,6 @@ export class RepositoryKnowledgeService {
     const validations = [discoveryValidation, ...branches.map(({ validation }) => validation)];
     let status = validations.reduce<StateBindingValidation["status"]>((worst, validation) => validationRank[validation.status] > validationRank[worst] ? validation.status : worst, "current");
     let reasons = unique(validations.flatMap(({ reasons: validationReasons }) => validationReasons));
-    const current = await this.compileContext({
-      request: retained.request,
-      entities: retained.requestOptions.entities,
-      namedTargets: retained.requestOptions.namedTargets,
-      operation: retained.requestOptions.operation,
-      policy: retained.requestOptions.policy,
-      persist: false,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    }, observation, graph);
-    options.signal?.throwIfAborted();
     const namedTargetsReplaced = retained.requestOptions.entities.length === 0
       && retained.branches.every(({ interpretation }) => interpretation.entityKind === "projection-unit")
       && retained.requestOptions.namedTargets.length > 0
@@ -380,9 +394,29 @@ export class RepositoryKnowledgeService {
         ...governanceBranches.flatMap(({ reasons: branchReasons }) => branchReasons),
       ]),
     };
+    const applicationBranches = retained.branches.map((retainedBranch) => {
+      const currentBranch = current.branches.find(({ interpretation }) => interpretation.entityId === retainedBranch.interpretation.entityId);
+      if (currentBranch === undefined) return { branchId: retainedBranch.id, status: "unknown" as const, changed: true, reasons: ["The retained application-evidence branch is absent from the current repository observation."] };
+      const currentStatus = applicationEvidenceDisposition(currentBranch.applicationEvidence);
+      const changed = canonicalJson(retainedBranch.applicationEvidence.map(({ contentHash }) => contentHash)) !== canonicalJson(currentBranch.applicationEvidence.map(({ contentHash }) => contentHash));
+      const reasons = unique([
+        ...(changed ? ["Application evidence or its currentness disposition changed since context capture."] : []),
+        ...currentBranch.applicationEvidence.flatMap((item) => item.status === "unavailable" ? [item.reason] : []),
+        ...currentBranch.applicationEvidence.flatMap((item) => item.status === "assessed" && item.assessment.fulfillment.status !== "satisfied" ? [item.assessment.fulfillment.reason] : []),
+      ]);
+      return { branchId: retainedBranch.id, status: currentStatus, changed, reasons };
+    });
+    const directBranchIds = new Set(retained.branches.filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct).map(({ id }) => id));
+    const applicationStatuses = applicationBranches.filter(({ branchId }) => directBranchIds.has(branchId)).map(({ status: applicationStatus }) => applicationStatus);
+    const applicationEvidence = {
+      status: applicationStatuses.includes("violated") ? "violated" as const
+        : applicationStatuses.includes("unknown") ? "unknown" as const
+          : applicationStatuses.includes("satisfied") ? "satisfied" as const : "not-applicable" as const,
+      branches: applicationBranches,
+    };
     const impact = retained.impactBaseline === undefined ? undefined : await reconcileRetainedImpact(this.repositoryRoot, retained.impactBaseline, buildRepositoryImpactSnapshot(observation, graph), unique(retained.branches.flatMap(({ closure }) => closure.entries.filter(({ band }) => band !== "possible").map(({ entityId }) => entityId))), contextId);
     options.signal?.throwIfAborted();
-    const basis = { apiVersion: KNOWLEDGE_API_VERSION, contextId, capturedState: retained.capturedState, currentState: observation.state, status, discoveryValidation, branches, governance, ...(impact === undefined ? {} : { impact }), reasons };
+    const basis = { apiVersion: KNOWLEDGE_API_VERSION, contextId, capturedState: retained.capturedState, currentState: observation.state, status, discoveryValidation, branches, governance, applicationEvidence, ...(impact === undefined ? {} : { impact }), reasons };
     const result = { ...basis, contentHash: hashFramedDomain("knowledge-reconciliation", basis) };
     const parsed = KnowledgeReconciliationResultSchema.parse(result);
     options.signal?.throwIfAborted();

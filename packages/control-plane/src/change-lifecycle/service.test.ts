@@ -100,6 +100,29 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("blocks lifecycle planning when a selected requirement's declared application predicate is unknown", async () => {
+    const root = await repository();
+    const evidenceId = "psychord-artifact:lifecycle";
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      const requirement = (await canonical.read("requirement", "requirement:legacy-greeting"))!;
+      await canonical.write(withCanonicalHashes({ ...requirement, payload: { ...requirement.payload, evidence: [{ evidenceId, stance: "supports", applicationPredicate: {
+        kind: "application-observation", adapter: { id: "psychord.keep-reload-replay", version: "1" },
+        scenario: { id: "scenario:greet-supplied-name", semanticHash: placeholder }, case: "supplied-name",
+        predicateId: "predicate:greeting-preserves-name", assertionIds: ["exact-name"], observationRole: "latest",
+      } }] } }));
+      const applicationEvidence = {
+        artifacts: { artifactSetId: () => evidenceId, observeAndPublish: async () => ({ status: "missing" as const, artifactSetId: evidenceId }), read: async () => ({ status: "missing" as const, artifactSetId: evidenceId }) },
+        currentness: { observe: async () => { throw new Error("currentness is not invoked for missing evidence"); } },
+      } as const;
+      const context = await (await RepositoryKnowledgeService.create({ repositoryRoot: root, applicationEvidence })).context({ request: "Change greeting.", entities: ["requirement:legacy-greeting"] });
+      const selected = { ...proposal(), identityResolution: { contextId: context.id, contextHash: context.contentHash, outcome: "reuse-existing" as const, selectedEntityIds: ["requirement:legacy-greeting"], rationale: "The existing requirement owns greeting behavior." } };
+      const service = await RepositoryChangeLifecycleService.create(root, { applicationEvidence });
+      await expect(service.capture({ request: "Change greeting.", proposal: selected })).rejects.toThrow(/application evidence is unknown/iu);
+      expect(await readdir(join(root, ".projector", "runtime", "change-lifecycles", "captures")).catch(() => [])).toHaveLength(0);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("cancels apply during authenticated replanning before persisting an attempt", async () => {
     const root = await repository();
     try {
