@@ -151,9 +151,22 @@ export class WriterLeaseManager {
 
   async acquireMigrationRecovery(owner: MigrationRecoveryWriterLeaseOwner): Promise<MigrationRecoveryWriterLeaseHandle> {
     assertOwnerIdentity(owner);
+    assertExactKeys(owner as unknown as Record<string, unknown>, [
+      "backupManifestHash", "manifestHash", "migrationId", "processId", "sessionId", "targetSnapshotHash",
+    ]);
     if (!/^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(owner.migrationId)) throw new TypeError("Invalid migration recovery identity");
     for (const value of [owner.manifestHash, owner.targetSnapshotHash, owner.backupManifestHash]) ContentHashSchema.parse(value);
-    const record = await this.acquireRecord((base) => ({ ...base, ...owner, version: 2, ownerKind: "migration-recovery" }));
+    const record = await this.acquireRecord((base) => ({
+      ...base,
+      version: 2,
+      ownerKind: "migration-recovery",
+      sessionId: owner.sessionId,
+      processId: owner.processId,
+      migrationId: owner.migrationId,
+      manifestHash: owner.manifestHash,
+      targetSnapshotHash: owner.targetSnapshotHash,
+      backupManifestHash: owner.backupManifestHash,
+    }));
     if (record.version !== 2) throw new Error("Internal writer lease kind mismatch");
     return new MigrationRecoveryWriterLeaseHandle(this, record);
   }
@@ -176,6 +189,7 @@ export class WriterLeaseManager {
           expiresAt: expires.toISOString(),
           staleAfterMs: this.staleAfterMs,
         });
+        if (!isLeaseRecord(record)) throw new TypeError("Writer lease owner produced an invalid persisted record");
         try {
           await writeDurableNewFile(join(activePath, "owner.json"), `${JSON.stringify(record)}\n`);
           await writeDurableNewFile(join(activePath, "heartbeat"), `${record.leaseId}\n`);
@@ -331,8 +345,18 @@ function isLeaseRecord(value: unknown): value is ActiveWriterLeaseRecord {
 }
 
 function assertOwnerIdentity(owner: { sessionId: string; processId: number | string }): void {
-  if (owner.sessionId.length === 0 || String(owner.processId).length === 0) {
+  const validProcess = typeof owner.processId === "number"
+    ? Number.isSafeInteger(owner.processId) && owner.processId > 0
+    : owner.processId.length > 0 && owner.processId.trim() === owner.processId;
+  if (owner.sessionId.length === 0 || owner.sessionId.trim() !== owner.sessionId || !validProcess) {
     throw new TypeError("A writer lease requires process and session identity");
+  }
+}
+
+function assertExactKeys(value: Record<string, unknown>, expected: readonly string[]): void {
+  const actual = Object.keys(value).sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    throw new TypeError("Migration recovery lease owner contains unexpected keys or missing fields");
   }
 }
 
