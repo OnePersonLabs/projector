@@ -23,6 +23,7 @@ const pnpmCli = process.env.PROJECTOR_PNPM_CLI ?? "C:/Users/zethj/AppData/Roamin
 const agentBrowserExecutable = process.env.PROJECTOR_AGENT_BROWSER_EXECUTABLE ?? "C:/Users/zethj/AppData/Roaming/npm/node_modules/agent-browser/bin/agent-browser-win32-x64.exe";
 const chromeExecutable = process.env.PROJECTOR_CHROME_EXECUTABLE ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const hostFile = new URL("./psychord-agent-browser-host.ts", import.meta.url).pathname.replace(/^\/(?:[A-Za-z]:)/u, (value) => value.slice(1));
+const protocolFile = new URL("./agent-browser-protocol.ts", import.meta.url).pathname.replace(/^\/(?:[A-Za-z]:)/u, (value) => value.slice(1));
 const testFile = new URL("./psychord-agent-browser-host.real.test.ts", import.meta.url).pathname.replace(/^\/(?:[A-Za-z]:)/u, (value) => value.slice(1));
 
 class FiniteNativeCommandRunner implements PsychordCommandRunner {
@@ -106,7 +107,7 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
       commands: runner,
       configuration: {
         build: { executable: nodeExecutable, args: [pnpmCli, "build"] },
-        agentBrowser: { executable: agentBrowserExecutable, expectedVersion: "0.31.1", chromeExecutable, namespace: `projector-${runId}`, session: runId },
+        agentBrowser: { executable: agentBrowserExecutable, expectedVersion: "0.31.1", chromeExecutable, namespace: `projector-${runId}`, session: runId, stdioDrainTimeoutMs: 250 },
         commandEnvironment: environment,
       },
     });
@@ -121,13 +122,16 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
     expect(result.host.readiness).toMatchObject({ status: 200, nonce: boundPlan.server.readinessNonce });
     expect(result.host.buildArtifacts).toHaveLength(boundPlan.server.expectedBuildArtifacts.length);
     expect(result.host.servedArtifacts).toHaveLength(boundPlan.server.expectedBuildArtifacts.length);
+    expect(result.host.browserCommands.length).toBeGreaterThan(0);
+    expect(result.host.browserCommands.every(({ rootExitObserved, descendantState }) => rootExitObserved && descendantState === "not-observed")).toBe(true);
+    expect(result.host.browserCommands.some(({ stdio }) => stdio === "detached-after-bounded-drain")).toBe(true);
   }, 150_000);
 }
 
 async function dependencyPins(): Promise<readonly PsychordDependencyPin[]> {
   const entries: readonly [PsychordDependencyPin["role"], string][] = [
     ["source", "src/ui/App.tsx"], ["source", "src/ui/PianoKeyboard.tsx"], ["source", "src/application/session-controller.ts"], ["source", "src/platform/moments.ts"],
-    ["lockfile", "pnpm-lock.yaml"], ["build-config", "vite.config.ts"], ["controller", hostFile], ["helper", testFile], ["fixture", "src/platform/moments.ts"],
+    ["lockfile", "pnpm-lock.yaml"], ["build-config", "vite.config.ts"], ["controller", hostFile], ["helper", protocolFile], ["helper", testFile], ["fixture", "src/platform/moments.ts"],
     ["toolchain", nodeExecutable], ["toolchain", pnpmCli], ["toolchain", agentBrowserExecutable], ["toolchain", chromeExecutable],
   ];
   return await Promise.all(entries.map(async ([role, locator]) => ({ role, locator, contentHash: sha256(await readFile(locator.includes(":") ? locator : join(psychordRoot, locator))) })));

@@ -105,10 +105,21 @@ export interface PsychordPreparedAttempt {
   readonly servedArtifacts: readonly PsychordArtifactIdentity[];
   readonly browserContext: { readonly id: string; readonly freshStorage: boolean };
   readonly ownedResources: readonly PsychordOwnedResource[];
+  readonly browserCommands: readonly PsychordBrowserCommandEvidence[];
   readonly controller: PsychordBrowserController;
   observeCurrentness(signal: AbortSignal): Promise<PsychordCurrentnessObservation>;
   collectDiagnostics(signal: AbortSignal): Promise<readonly string[]>;
   cleanup(signal: AbortSignal): Promise<PsychordCleanupObservation>;
+}
+
+export interface PsychordBrowserCommandEvidence {
+  readonly argvHash: string;
+  readonly exitCode: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly durationMs: number;
+  readonly rootExitObserved: true;
+  readonly stdio: "closed" | "detached-after-bounded-drain";
+  readonly descendantState: "not-observed";
 }
 
 export interface PsychordOwnedResource {
@@ -162,6 +173,7 @@ export interface PsychordObservationResult {
     readonly buildArtifacts: readonly PsychordArtifactIdentity[];
     readonly servedArtifacts: readonly PsychordArtifactIdentity[];
     readonly ownedResources: readonly PsychordOwnedResource[];
+    readonly browserCommands: readonly PsychordBrowserCommandEvidence[];
   };
   readonly currentnessObservation?: PsychordCurrentnessObservation;
   readonly assertions: readonly PsychordAssertion[];
@@ -187,6 +199,7 @@ export type PsychordPreparationResult =
       readonly status: "unavailable";
       readonly diagnostics: readonly string[];
       readonly ownedResources: readonly PsychordOwnedResource[];
+      readonly browserCommands: readonly PsychordBrowserCommandEvidence[];
       readonly cleanup: PsychordCleanupObservation;
       readonly recovery?: { readonly code: string; readonly action: string };
     };
@@ -207,6 +220,7 @@ export function createPsychordApplicationObserver(host: PsychordObservationHost)
           plan,
           ["application observation plan is invalid"],
           [],
+          [],
           { complete: true, resources: [], diagnostics: [] },
           undefined,
           false,
@@ -221,13 +235,14 @@ export function createPsychordApplicationObserver(host: PsychordObservationHost)
         const preparation = await awaitAbortable(host.prepare(plan, { signal: deadline.signal }), deadline.signal);
         if (preparation.status === "unavailable") {
           const cleanup = authenticateCleanup(preparation.ownedResources, preparation.cleanup);
-          return unavailableResult(plan, preparation.diagnostics, preparation.ownedResources, cleanup, preparation.recovery, deadline.signal.aborted);
+          return unavailableResult(plan, preparation.diagnostics, preparation.ownedResources, preparation.browserCommands, cleanup, preparation.recovery, deadline.signal.aborted);
         }
         return await observePreparedPsychordApplication(plan, preparation.attempt, deadline.signal);
       } catch (error) {
         return unavailableResult(
           plan,
           [error instanceof Error ? error.message : String(error)],
+          [],
           [],
           { complete: false, resources: [], diagnostics: ["host preparation did not return an owned-resource cleanup result"] },
           { code: "application-observation-preparation-unknown", action: "inspect the host attempt and recover only resources owned by its run identity" },
@@ -416,6 +431,7 @@ async function observePreparedPsychordApplication(
       buildArtifacts: attempt.buildArtifacts,
       servedArtifacts: attempt.servedArtifacts,
       ownedResources: attempt.ownedResources,
+      browserCommands: attempt.browserCommands,
     },
     ...(currentnessObservation === undefined ? {} : { currentnessObservation }),
     assertions,
@@ -434,6 +450,7 @@ function unavailableResult(
   plan: PsychordObservationPlan,
   diagnostics: readonly string[],
   ownedResources: readonly PsychordOwnedResource[],
+  browserCommands: readonly PsychordBrowserCommandEvidence[],
   cleanup: PsychordObservationResult["cleanup"],
   recovery: PsychordObservationResult["recovery"],
   cancelled: boolean,
@@ -452,6 +469,7 @@ function unavailableResult(
       buildArtifacts: [],
       servedArtifacts: [],
       ownedResources,
+      browserCommands,
     },
     assertions: [],
     observations: {},
