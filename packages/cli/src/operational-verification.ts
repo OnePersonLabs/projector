@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 
 import { analyzeLocalRepository } from "@projector/analyzers";
 import { hashFramedDomain, type ContentHash } from "@projector/core";
-import { inspectRepositoryCoverage, type RepositoryCoverageResult } from "@projector/control-plane";
+import { inspectRepositoryCoverage, type PsychordApplicationEvidenceHost, type RepositoryCoverageResult } from "@projector/control-plane";
 import {
   CanonicalFileRepository,
   createOperationalReport,
@@ -19,6 +19,7 @@ export interface ReadOnlyOperationalVerificationOptions {
   readonly signal: AbortSignal;
   readonly toolVersion: string;
   readonly policy: unknown;
+  readonly applicationEvidence: PsychordApplicationEvidenceHost;
 }
 
 export async function runReadOnlyOperationalVerification(
@@ -36,6 +37,7 @@ export async function runReadOnlyOperationalVerification(
   try {
     coverage = await inspectRepositoryCoverage(repositoryRoot, { scope: "." }, "coverage", {
       signal: options.signal,
+      applicationEvidence: options.applicationEvidence,
     });
   } catch (error) {
     options.signal.throwIfAborted();

@@ -10,12 +10,13 @@ import {
   type ProjectReadiness,
   type ProjectorOperation,
 } from "@projector/core";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 
 import {
   createProjectorOperationRunner,
   createBundledProjectorOperationRunner,
+  createInstalledProjectorApplicationEvidenceHost,
   defineProjectorOperationHandler,
   OperationCapabilityDiscoverySchema,
   type OperationRunnerPorts,
@@ -94,11 +95,29 @@ function handler(
 }
 
 describe("bounded Projector operation runner", () => {
+  test("reads an exact missing application artifact without creating repository state", async () => {
+    const root = await packagedRoot();
+    const host = createInstalledProjectorApplicationEvidenceHost({
+      repositoryRoot: root,
+      signal: new AbortController().signal,
+      environment: process.env,
+    });
+
+    await expect(host.artifacts.read("psychord-missing-artifact-set")).resolves.toEqual({
+      status: "missing",
+      artifactSetId: "psychord-missing-artifact-set",
+    });
+    await expect(stat(join(root, ".projector"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   test("composes installed readiness, initialization, verification, and observed host capabilities", async () => {
     const root = await packagedRoot();
-    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root });
+    const applicationEvidence = vi.fn(createInstalledProjectorApplicationEvidenceHost);
+    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root, applicationEvidence });
 
     const inactive = await runner.discoverCapabilities({ repositoryRoot: root });
+    expect(applicationEvidence).not.toHaveBeenCalled();
+    await expect(stat(join(root, ".projector/runtime/application-evidence"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(inactive.readiness.status).toBe("inactive");
     expect(inactive.operations.find(({ operation }) => operation === "verify")).toMatchObject({
       registered: true,
@@ -135,6 +154,8 @@ describe("bounded Projector operation runner", () => {
       readiness: { status: "ready" },
       output: { command: "verify", exitCode: 5, exitProof: { requiredUnavailable: true } },
     });
+    expect(applicationEvidence).toHaveBeenCalledOnce();
+    await expect(stat(join(root, ".projector/runtime/application-evidence"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("reports inactive status by bounded inspection without invoking mutation ports", async () => {

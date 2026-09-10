@@ -9,9 +9,9 @@ async function loadRunner() {
   const packagedRoot = resolve(import.meta.dirname, "../runtime/projector");
   const modulePath = resolve(packagedRoot, "exports/operations.js");
   try {
-    const { createBundledProjectorOperationRunner } = await import(pathToFileURL(modulePath).href);
-    if (typeof createBundledProjectorOperationRunner !== "function") throw new Error("The installed Projector package does not export its operation runner");
-    return createBundledProjectorOperationRunner({ packagedRoot });
+    const { createBundledProjectorOperationRunner, createInstalledProjectorApplicationEvidenceHost } = await import(pathToFileURL(modulePath).href);
+    if (typeof createBundledProjectorOperationRunner !== "function" || typeof createInstalledProjectorApplicationEvidenceHost !== "function") throw new Error("The installed Projector package does not export its operation runner and application evidence host");
+    return createBundledProjectorOperationRunner({ packagedRoot, applicationEvidence: createInstalledProjectorApplicationEvidenceHost });
   } catch (error) {
     if (error?.code === "ERR_MODULE_NOT_FOUND" && error?.url === pathToFileURL(modulePath).href) return undefined;
     throw error;

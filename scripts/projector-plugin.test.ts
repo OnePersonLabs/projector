@@ -23,7 +23,9 @@ async function installedFixture() {
   await writeFile(join(packagedRoot, "exports/operations.js"), [
     "import { access, readFile } from 'node:fs/promises';",
     "import { join } from 'node:path';",
-    "export async function createBundledProjectorOperationRunner({ packagedRoot }) {",
+    "export function createInstalledProjectorApplicationEvidenceHost() { return { fixture: true }; }",
+    "export async function createBundledProjectorOperationRunner({ packagedRoot, applicationEvidence }) {",
+    " if (typeof applicationEvidence !== 'function') throw new Error('application evidence host missing');",
     " const manifest = JSON.parse(await readFile(join(packagedRoot, 'package.json'), 'utf8'));",
     " return { execute: async (request, options = {}) => {",
     "  const active = await access(join(request.repositoryRoot, '.projector/config.toml')).then(() => true, () => false);",
