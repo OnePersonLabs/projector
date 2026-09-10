@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ContentHash, StateDigest, TransactionPhase } from "@projector/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { RepositoryPathService } from "../security/index.js";
 import {
@@ -69,6 +69,27 @@ describe("FileTransactionJournal", () => {
     ]);
     expect(await readFile(join(root, "first.txt"), "utf8")).toBe("before-first");
     expect(await readFile(join(root, "second.txt"), "utf8")).toBe("before-second");
+  });
+
+  it("stops targeted discovery when cancellation arrives between journal reads", async () => {
+    const { journal } = await harness();
+    const first = await journal.begin(beginInput("tx-discovery-a"));
+    await first.writeFile("first.txt", "first");
+    const second = await journal.begin(beginInput("tx-discovery-b"));
+    await second.writeFile("second.txt", "second");
+    const controller = new AbortController();
+    const read = journal.read.bind(journal);
+    const observedRead = vi.spyOn(journal, "read").mockImplementation(async (transactionId) => {
+      const record = await read(transactionId);
+      controller.abort(new Error("discovery access lost"));
+      return record;
+    });
+
+    await expect(journal.recover(["tx-discovery-a", "tx-discovery-b"], { signal: controller.signal }))
+      .rejects.toThrow("discovery access lost");
+    expect(observedRead).toHaveBeenCalledTimes(1);
+    expect((await read("tx-discovery-a")).entry.phase).toBe("workspace-mutating");
+    expect((await read("tx-discovery-b")).entry.phase).toBe("workspace-mutating");
   });
   it("can create a new file through an exact authorized path without widening to its parent", async () => {
     const { root, journal } = await harness();

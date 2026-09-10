@@ -329,7 +329,7 @@ export class FileTransactionJournal {
 
   async recoverIncomplete(options: RecoveryOptions = {}): Promise<RecoveryResult[]> {
     throwIfAborted(options.signal);
-    return this.recoverRecords(await this.discover(), options);
+    return this.recoverRecords(await this.discover(undefined, options), options);
   }
 
   async incomplete(transactionIds?: readonly string[]): Promise<DurableTransactionRecord[]> {
@@ -340,25 +340,37 @@ export class FileTransactionJournal {
   async recover(transactionIds: readonly string[], options: RecoveryOptions = {}): Promise<RecoveryResult[]> {
     throwIfAborted(options.signal);
     if (transactionIds.length === 0) return [];
-    return this.recoverRecords(await this.discover(transactionIds), options);
+    return this.recoverRecords(await this.discover(transactionIds, options), options);
   }
 
-  private async discover(transactionIds?: readonly string[]): Promise<DurableTransactionRecord[]> {
+  private async discover(transactionIds?: readonly string[], options: RecoveryOptions = {}): Promise<DurableTransactionRecord[]> {
+    throwIfAborted(options.signal);
     if (transactionIds !== undefined) {
       if (new Set(transactionIds).size !== transactionIds.length) throw new Error("targeted recovery transaction identities must be unique");
       const records: DurableTransactionRecord[] = [];
       for (const transactionId of [...transactionIds].sort()) {
-        try { records.push(await this.read(transactionId)); }
+        throwIfAborted(options.signal);
+        try {
+          const record = await this.read(transactionId);
+          throwIfAborted(options.signal);
+          records.push(record);
+        }
         catch (error) { if (!isCode(error, "ENOENT")) throw error; }
       }
       return records;
     }
     const directory = await this.ensureJournalRoot();
+    throwIfAborted(options.signal);
     const names = (await readdir(directory)).filter((name) => name.endsWith(".json")).sort();
+    throwIfAborted(options.signal);
     const discovered: DurableTransactionRecord[] = [];
     const discoveredIds = new Set<string>();
     for (const name of names) {
-      const record = parseRecord(await readFile(join(directory, name), "utf8"));
+      throwIfAborted(options.signal);
+      const source = await readFile(join(directory, name), "utf8");
+      throwIfAborted(options.signal);
+      const record = parseRecord(source);
+      throwIfAborted(options.signal);
       if (name !== recordFileName(record.entry.transactionId)) {
         throw new JournalRecoveryRequiredError(
           `Journal filename ${name} does not match transaction ${record.entry.transactionId}`,
