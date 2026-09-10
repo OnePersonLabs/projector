@@ -7,6 +7,7 @@ import type { ContentHash } from "@projector/core";
 import {
   createPsychordApplicationObservationPlan,
   createStrictPsychordApplicationObserver,
+  PsychordObserveAndPublishResultSchema,
   psychordObservationAdapterId,
   psychordObservationAdapterVersion,
   type PsychordApplicationObservationResult,
@@ -52,6 +53,41 @@ it("is durably incomplete while observation has no terminal result, then publish
 
   const published = await publishing;
   expect(published).toMatchObject({ status: "published", behavioralEvidence: true, result: { outcome: "passed" } });
+  expect(PsychordObserveAndPublishResultSchema.parse(published)).toEqual(published);
+  expect(() => PsychordObserveAndPublishResultSchema.parse({ ...published, unexpected: true })).toThrow();
+  if (published.status !== "published") throw new Error("expected a published observation");
+  expect(() => PsychordObserveAndPublishResultSchema.parse({
+    ...published,
+    result: { ...published.result, runId: "different-run" },
+  })).toThrow(/plan binding/u);
+  expect(() => PsychordObserveAndPublishResultSchema.parse({
+    ...published,
+    artifactSetId: `${published.artifactSetId}-different`,
+  })).toThrow(/manifest bindings/u);
+  expect(() => PsychordObserveAndPublishResultSchema.parse({
+    ...published,
+    manifest: { ...published.manifest, resultHash: hash("fabricated-result") },
+  })).toThrow(/manifest bindings/u);
+  expect(() => PsychordObserveAndPublishResultSchema.parse({
+    ...published,
+    manifest: {
+      ...published.manifest,
+      blobs: [{ ...published.manifest.blobs[0], sha256: "f".repeat(64) }, published.manifest.blobs[1]],
+    },
+  })).toThrow(/manifest bindings/u);
+  expect(() => PsychordObserveAndPublishResultSchema.parse({
+    ...published,
+    behavioralEvidence: false,
+  })).toThrow(/behavioralEvidence/u);
+  expect(() => PsychordObserveAndPublishResultSchema.parse({
+    status: "incomplete",
+    artifactSetId: published.artifactSetId,
+    recovery: {
+      code: "attempt-in-flight",
+      message: "owned by another collector",
+      action: "await the terminal artifact",
+    },
+  })).toThrow();
   expect(await service.read(service.artifactSetId(plan))).toMatchObject({ status: "published", behavioralEvidence: true });
 });
 
