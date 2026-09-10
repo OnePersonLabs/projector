@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 
-import { canonicalJson, type ContentHash } from "@projector/core";
+import { ContentHashSchema, canonicalJson, type ContentHash } from "@projector/core";
+import { z } from "zod";
 
 import {
   psychordObservationAdapterId,
@@ -19,45 +20,36 @@ import {
 
 interface StrictValueSchema<T> { parse(value: unknown): T }
 
-export interface PsychordObservationArtifactManifest {
-  readonly schemaVersion: "psychord-application-observation-artifact-set@1";
-  readonly artifactSetId: string;
-  readonly runId: string;
-  readonly scenario: PsychordApplicationObservationPlan["scenario"];
-  readonly case: PsychordApplicationObservationPlan["case"];
-  readonly adapter: {
-    readonly id: typeof psychordObservationAdapterId;
-    readonly version: typeof psychordObservationAdapterVersion;
-    readonly inputHash: ContentHash;
-    readonly outputHash: ContentHash;
-  };
-  readonly planHash: ContentHash;
-  readonly resultHash: ContentHash;
-  readonly terminal: {
-    readonly operationalStatus: PsychordApplicationObservationResult["operationalStatus"];
-    readonly outcome: PsychordApplicationObservationResult["outcome"];
-    readonly currentness: PsychordApplicationObservationResult["currentness"];
-    readonly assurance: PsychordApplicationObservationResult["assurance"];
-    readonly cleanupComplete: boolean;
-  };
-  readonly blobs: readonly [
-    { readonly role: "plan"; readonly path: "plan.json"; readonly sha256: string },
-    { readonly role: "result"; readonly path: "result.json"; readonly sha256: string },
-  ];
-}
+const artifactIdentity = z.string().min(1).max(512).regex(/^[^\0\r\n]+$/u);
+const rawSha256 = z.string().regex(/^[a-f0-9]{64}$/u);
 
-export type PsychordArtifactSetReadResult =
-  | {
-      readonly status: "published";
-      readonly artifactSetId: string;
-      readonly manifest: PsychordObservationArtifactManifest;
-      readonly plan: PsychordApplicationObservationPlan;
-      readonly result: PsychordApplicationObservationResult;
-      readonly behavioralEvidence: boolean;
-    }
-  | { readonly status: "incomplete"; readonly artifactSetId: string; readonly recovery?: PsychordAttemptRecovery }
-  | { readonly status: "missing"; readonly artifactSetId: string }
-  | { readonly status: "integrity-failed"; readonly artifactSetId: string; readonly reason: string };
+export const PsychordObservationArtifactManifestSchema = z.strictObject({
+  schemaVersion: z.literal("psychord-application-observation-artifact-set@1"),
+  artifactSetId: artifactIdentity,
+  runId: artifactIdentity,
+  scenario: z.strictObject({ id: artifactIdentity, semanticHash: ContentHashSchema }),
+  case: artifactIdentity,
+  adapter: z.strictObject({
+    id: z.literal(psychordObservationAdapterId),
+    version: z.literal(psychordObservationAdapterVersion),
+    inputHash: ContentHashSchema,
+    outputHash: ContentHashSchema,
+  }),
+  planHash: ContentHashSchema,
+  resultHash: ContentHashSchema,
+  terminal: z.strictObject({
+    operationalStatus: z.enum(["completed", "failed", "cancelled"]),
+    outcome: z.enum(["passed", "failed", "unavailable"]),
+    currentness: z.enum(["current", "stale", "unknown"]),
+    assurance: z.literal("supporting"),
+    cleanupComplete: z.boolean(),
+  }),
+  blobs: z.tuple([
+    z.strictObject({ role: z.literal("plan"), path: z.literal("plan.json"), sha256: rawSha256 }),
+    z.strictObject({ role: z.literal("result"), path: z.literal("result.json"), sha256: rawSha256 }),
+  ]),
+});
+export type PsychordObservationArtifactManifest = z.infer<typeof PsychordObservationArtifactManifestSchema>;
 
 export type PsychordArtifactStoreReadResult =
   | { readonly status: "published"; readonly artifactSetId: string; readonly manifest: PsychordObservationArtifactManifest; readonly blobs: ReadonlyMap<string, Uint8Array> }
@@ -73,13 +65,31 @@ export interface PsychordArtifactSetStorePort {
   read(artifactSetId: string): Promise<PsychordArtifactStoreReadResult>;
 }
 
-export interface PsychordAttemptRecovery {
-  readonly code: "attempt-in-flight" | "attempt-owner-unavailable";
-  readonly message: string;
-  readonly action: string;
-  readonly ownerId?: string;
-  readonly leaseExpiresAt?: string;
-}
+const recoveryMessage = z.string().min(1).max(4_096);
+const PsychordAttemptRecoverySchema = z.discriminatedUnion("code", [
+  z.strictObject({ code: z.literal("attempt-in-flight"), message: recoveryMessage, action: recoveryMessage, ownerId: artifactIdentity, leaseExpiresAt: z.iso.datetime() }),
+  z.strictObject({ code: z.literal("attempt-owner-unavailable"), message: recoveryMessage, action: recoveryMessage, ownerId: artifactIdentity.optional(), leaseExpiresAt: z.iso.datetime().optional() }),
+]);
+export type PsychordAttemptRecovery = z.infer<typeof PsychordAttemptRecoverySchema>;
+
+export const PsychordObserveAndPublishResultSchema = z.discriminatedUnion("status", [
+  z.strictObject({
+    status: z.literal("published"),
+    artifactSetId: artifactIdentity,
+    manifest: PsychordObservationArtifactManifestSchema,
+    plan: PsychordApplicationObservationPlanSchema,
+    result: PsychordApplicationObservationResultSchema,
+    behavioralEvidence: z.boolean(),
+  }),
+  z.strictObject({ status: z.literal("incomplete"), artifactSetId: artifactIdentity, recovery: PsychordAttemptRecoverySchema.optional() }),
+  z.strictObject({ status: z.literal("missing"), artifactSetId: artifactIdentity }),
+  z.strictObject({ status: z.literal("integrity-failed"), artifactSetId: artifactIdentity, reason: z.string().min(1).max(4_096) }),
+]).superRefine((value, context) => {
+  if (value.status !== "published") return;
+  try { assertPublishedServiceBinding(value); }
+  catch (error) { context.addIssue({ code: "custom", message: errorMessage(error) }); }
+});
+export type PsychordArtifactSetReadResult = z.infer<typeof PsychordObserveAndPublishResultSchema>;
 
 export interface PsychordObservationArtifactService {
   artifactSetId(plan: PsychordApplicationObservationPlan): string;
@@ -120,13 +130,13 @@ export function createPsychordObservationArtifactService(input: {
         if (existingClaim === undefined) {
           try {
             if (await store.resumeFinalize(id) === "incomplete") {
-              return { status: "integrity-failed", artifactSetId: id, reason: "Incomplete Psychord attempt has no durable exact-plan claim" };
+              return integrityFailed(id, "Incomplete Psychord attempt has no durable exact-plan claim");
             }
             const resumed = await readPublished(store, id);
             if (resumed.status === "published") assertRequestedPlanBinding(plan, resumed.plan);
             return resumed;
           } catch (error) {
-            return { status: "integrity-failed", artifactSetId: id, reason: errorMessage(error) };
+            return integrityFailed(id, errorMessage(error));
           }
         }
         assertClaimPlanBinding(existingClaim, id, plan, planBytes);
@@ -186,19 +196,24 @@ export function createPsychordObservationArtifactService(input: {
 
 function incompleteWithClaim(artifactSetId: string, record: PsychordAttemptClaimRecord): PsychordArtifactSetReadResult {
   const active = record.state === "active" && Date.parse(record.expiresAt) > Date.now();
-  return {
+  return PsychordObserveAndPublishResultSchema.parse({
     status: "incomplete",
     artifactSetId,
     recovery: active
       ? { code: "attempt-in-flight", message: "The exact observation attempt is owned by another collector.", action: "Await its authenticated terminal artifact without starting another collection.", ownerId: record.ownerId, leaseExpiresAt: record.expiresAt }
       : { code: "attempt-owner-unavailable", message: "The exact observation attempt lost its owner before an authenticated terminal artifact was published; owned resource identities and cleanup status are unknown.", action: "Establish external or manual cleanup without inferring handles from this claim, then use a fresh runId for a new observation.", ownerId: record.ownerId, leaseExpiresAt: record.expiresAt },
-  };
+  });
 }
 
 async function readExistingAttemptClaim(storageRoot: string, artifactSetId: string): Promise<PsychordAttemptClaimRecord | undefined> {
   const claimPath = join(storageRoot, "attempt-claims", `${artifactSetId}.claim`);
   try { return await readClaimRecord(claimPath); }
-  catch (error) { if (isFilesystemCode(error, "ENOENT")) return undefined; throw error; }
+  catch (error) {
+    if (isFilesystemCode(error, "ENOENT")) return undefined;
+    try { await lstat(claimPath); }
+    catch (claimError) { if (isFilesystemCode(claimError, "ENOENT")) return undefined; }
+    throw error;
+  }
 }
 
 interface PsychordAttemptClaimRecord {
@@ -443,22 +458,26 @@ async function readPublished(
   artifactSetId: string,
 ): Promise<PsychordArtifactSetReadResult> {
   const stored = await store.read(artifactSetId);
-  if (stored.status !== "published") return stored;
+  if (stored.status !== "published") {
+    return stored.status === "integrity-failed"
+      ? integrityFailed(artifactSetId, stored.reason)
+      : PsychordObserveAndPublishResultSchema.parse(stored);
+  }
   try {
     const plan = decodeStrict(requiredBlob(stored.blobs, "plan.json"), PsychordApplicationObservationPlanSchema, "plan");
     const result = decodeStrict(requiredBlob(stored.blobs, "result.json"), PsychordApplicationObservationResultSchema, "result");
     assertPlanResultBinding(plan, result);
     assertManifestBinding(stored.manifest, artifactSetId, plan, result, stored.blobs);
-    return {
+    return PsychordObserveAndPublishResultSchema.parse({
       status: "published",
       artifactSetId,
       manifest: stored.manifest,
       plan,
       result,
       behavioralEvidence: isPassingEvidence(result),
-    };
+    });
   } catch (error) {
-    return { status: "integrity-failed", artifactSetId, reason: errorMessage(error) };
+    return integrityFailed(artifactSetId, errorMessage(error));
   }
 }
 
@@ -519,7 +538,7 @@ export function validatePsychordObservationArtifactManifest(bytes: Uint8Array) {
     }
     return { path: blob.path, sha256: blob.sha256 };
   });
-  const manifest = value as unknown as PsychordObservationArtifactManifest;
+  const manifest = PsychordObservationArtifactManifestSchema.parse(value);
   assertManifestScalars(manifest);
   if (!Buffer.from(canonicalJson(manifest), "utf8").equals(Buffer.from(bytes))) {
     throw new TypeError("Psychord artifact manifest bytes are not canonical JSON");
@@ -555,6 +574,7 @@ function assertManifestBinding(
     || canonicalJson(manifest.scenario) !== canonicalJson(plan.scenario)
     || manifest.adapter.inputHash !== plan.adapter.inputHash || manifest.adapter.outputHash !== result.adapter.outputHash
     || manifest.planHash !== contentHash(planBytes) || manifest.resultHash !== contentHash(resultBytes)
+    || manifest.blobs[0].sha256 !== sha256(planBytes) || manifest.blobs[1].sha256 !== sha256(resultBytes)
     || manifest.terminal.operationalStatus !== result.operationalStatus || manifest.terminal.outcome !== result.outcome
     || manifest.terminal.currentness !== result.currentness || manifest.terminal.assurance !== result.assurance
     || manifest.terminal.cleanupComplete !== result.cleanup.complete) {
@@ -565,6 +585,24 @@ function assertManifestBinding(
 function assertPlanResultBinding(plan: PsychordApplicationObservationPlan, result: PsychordApplicationObservationResult): void {
   const parsed = PsychordApplicationObservationExchangeSchema.safeParse({ plan, result });
   if (!parsed.success) throw new Error(`Psychord observation result does not match its plan binding: ${parsed.error.issues[0]?.message ?? "invalid exchange"}`);
+}
+
+function assertPublishedServiceBinding(value: {
+  readonly artifactSetId: string;
+  readonly manifest: PsychordObservationArtifactManifest;
+  readonly plan: PsychordApplicationObservationPlan;
+  readonly result: PsychordApplicationObservationResult;
+  readonly behavioralEvidence: boolean;
+}): void {
+  assertPlanResultBinding(value.plan, value.result);
+  const blobs = new Map<string, Uint8Array>([
+    ["plan.json", encodeStrict(value.plan, PsychordApplicationObservationPlanSchema)],
+    ["result.json", encodeStrict(value.result, PsychordApplicationObservationResultSchema)],
+  ]);
+  assertManifestBinding(value.manifest, value.artifactSetId, value.plan, value.result, blobs);
+  if (value.behavioralEvidence !== isPassingEvidence(value.result)) {
+    throw new Error("Psychord behavioralEvidence does not match the authenticated terminal result");
+  }
 }
 
 function isPassingEvidence(result: PsychordApplicationObservationResult): boolean {
@@ -587,7 +625,7 @@ async function awaitExistingAttempt(
       try {
         if (await store.resumeFinalize(artifactSetId) === "published") return await readPublished(store, artifactSetId);
       } catch (error) {
-        return { status: "integrity-failed", artifactSetId, reason: errorMessage(error) };
+        return integrityFailed(artifactSetId, errorMessage(error));
       }
     }
     if (signal.aborted) return current;
@@ -683,4 +721,7 @@ function contentHash(bytes: Uint8Array): ContentHash { return `sha256:v1:${sha25
 function nonempty(value: unknown): value is string { return typeof value === "string" && value.length > 0; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+function integrityFailed(artifactSetId: string, reason: string): PsychordArtifactSetReadResult {
+  return PsychordObserveAndPublishResultSchema.parse({ status: "integrity-failed", artifactSetId, reason: reason.slice(0, 4_096) || "Unknown artifact integrity failure" });
+}
 const contentHashPattern = /^sha256:v1:[a-f0-9]{64}$/u;
