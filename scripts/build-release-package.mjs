@@ -14,7 +14,7 @@ export const releasePackageName = "@onepersonlabs/projector";
 export const releaseVersion = "2.1.0";
 const internalPackages = ["core", "analyzers", "engine", "runtime", "integrations", "control-plane", "testkit"];
 const bundledNames = internalPackages.map((name) => `@projector/${name}`);
-const exportTargets = { ".": "cli", "./cli": "cli", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./integrations/models": "integrations/models", "./integrations/codex": "integrations/codex", "./testkit": "testkit" };
+const exportTargets = { ".": "cli", "./cli": "cli", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./integrations/models": "integrations/models", "./integrations/codex": "integrations/codex", "./control-plane": "control-plane", "./testkit": "testkit" };
 
 export async function buildReleasePackage(stagingRoot, packDestination) {
   if (!basename(stagingRoot).startsWith("projector-release-")) throw new Error("release staging root must be a dedicated projector-release-* directory"); await rm(stagingRoot, { recursive: true, force: true }); await mkdir(stagingRoot, { recursive: true }); await mkdir(packDestination, { recursive: true });
