@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import { posix } from "node:path";
-import { canonicalJson, hashFramedDomain, type ContentHash } from "@projector/core";
+import { canonicalJson, ContentHashSchema, hashFramedDomain, type ContentHash } from "@projector/core";
+import { z } from "zod";
 import { RepositoryPathService } from "../security/repository-path.js";
 
 export type ReportFormat = "text" | "json" | "md" | "sarif";
@@ -15,6 +16,46 @@ export interface OperationalRunEvidence {
 export interface OperationalReport { readonly version: 1; readonly runId: string; readonly command: string; readonly exitCode: number; readonly exitProof: OperationalExitProof; readonly evidence: OperationalRunEvidence; readonly policy: unknown; readonly stateDigest: ContentHash; readonly unavailableFields: readonly string[]; readonly findings: readonly OperationalFinding[]; readonly dtoHash: ContentHash }
 export interface OperationalReportInput { readonly runId: string; readonly command: string; readonly exitProof: OperationalExitProof; readonly evidence: OperationalRunEvidence; readonly policy: unknown; readonly stateDigest: ContentHash; readonly unavailableFields: readonly string[]; readonly findings: readonly FindingInput[] }
 
+const OperationalExitProofSchema = z.strictObject({
+  commandFailed: z.boolean(),
+  blockingInvalidity: z.boolean(),
+  approvalRequired: z.boolean(),
+  incompleteCoverage: z.boolean(),
+  requiredUnavailable: z.boolean(),
+  recoveryFailure: z.boolean(),
+  budgetExhausted: z.boolean(),
+  resumable: z.boolean(),
+});
+const UnavailableOperationalEvidenceSchema = z.strictObject({ unavailable: z.string() });
+const OperationalEvidenceValueSchema = z.union([ContentHashSchema, UnavailableOperationalEvidenceSchema]);
+const OperationalRunEvidenceSchema = z.strictObject({
+  configDigest: OperationalEvidenceValueSchema,
+  toolchainDigest: OperationalEvidenceValueSchema,
+  gitHead: OperationalEvidenceValueSchema,
+  worktreeDigest: OperationalEvidenceValueSchema,
+  canonicalDigest: OperationalEvidenceValueSchema,
+  graphRecords: z.array(z.string()),
+  analyzerRecords: z.array(z.string()),
+  modelRecords: z.array(z.string()),
+  snapshotRecords: z.array(z.string()),
+  decisionRecords: z.array(z.string()),
+  transformRecords: z.array(z.string()),
+  validationRecords: z.array(z.string()),
+  journalRecords: z.array(z.string()),
+  errorRecords: z.array(z.string()),
+  durationMs: z.union([z.number().finite().nonnegative(), UnavailableOperationalEvidenceSchema]),
+});
+const OperationalFindingSchema = z.strictObject({
+  id: ContentHashSchema,
+  code: z.string(),
+  title: z.string(),
+  path: z.string().optional(),
+  severity: z.enum(["note", "warning", "error"]),
+  evidenceIds: z.array(z.string()),
+}).superRefine((finding, context) => {
+  if (Object.hasOwn(finding, "path") && finding.path === undefined) context.addIssue({ code: "custom", path: ["path"], message: "operational finding path must be omitted or a string" });
+});
+
 export function unavailableOperationalEvidence(reason: string): OperationalRunEvidence { const unavailable = { unavailable: reason }; return { configDigest: unavailable, toolchainDigest: unavailable, gitHead: unavailable, worktreeDigest: unavailable, canonicalDigest: unavailable, graphRecords: [], analyzerRecords: [], modelRecords: [], snapshotRecords: [], decisionRecords: [], transformRecords: [], validationRecords: [], journalRecords: [], errorRecords: [], durationMs: unavailable }; }
 export function deriveOperationalExitCode(proof: OperationalExitProof): number { return proof.budgetExhausted && proof.resumable ? 7 : proof.recoveryFailure ? 6 : proof.requiredUnavailable ? 5 : proof.incompleteCoverage ? 4 : proof.approvalRequired ? 3 : proof.blockingInvalidity ? 2 : proof.commandFailed || proof.budgetExhausted ? 1 : 0; }
 
@@ -26,7 +67,25 @@ export function redactBeforeBoundary(value: unknown, key?: string): unknown {
   if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, redactBeforeBoundary(item, name)]));
   return value;
 }
-function body(report: OperationalReport | Omit<OperationalReport, "dtoHash">): Omit<OperationalReport, "dtoHash"> { const { dtoHash: omitted, ...value } = report as OperationalReport; void omitted; return value; }
+export const OperationalReportSchema = z.strictObject({
+  version: z.literal(1),
+  runId: z.string(),
+  command: z.string(),
+  exitCode: z.number().int(),
+  exitProof: OperationalExitProofSchema,
+  evidence: OperationalRunEvidenceSchema,
+  policy: z.json(),
+  stateDigest: ContentHashSchema,
+  unavailableFields: z.array(z.string()),
+  findings: z.array(OperationalFindingSchema),
+  dtoHash: ContentHashSchema,
+}).superRefine((report, context) => {
+  const { dtoHash, ...authenticatedBody } = report;
+  if (dtoHash !== hashFramedDomain("operational-report-dto", authenticatedBody)) context.addIssue({ code: "custom", path: ["dtoHash"], message: "operational report DTO hash does not authenticate its body" });
+  if (report.exitCode !== deriveOperationalExitCode(report.exitProof)) context.addIssue({ code: "custom", path: ["exitCode"], message: "operational report exit code does not match its exit proof" });
+  if (report.exitCode === 0 && report.findings.some(({ severity }) => severity === "error")) context.addIssue({ code: "custom", path: ["findings"], message: "a successful operational report cannot contain error findings" });
+});
+export function parseOperationalReport(value: unknown): OperationalReport { return OperationalReportSchema.parse(value) as OperationalReport; }
 export function createOperationalReport(input: OperationalReportInput): OperationalReport {
   const findings = input.findings.map((finding) => ({ ...finding, evidenceIds: [...new Set(finding.evidenceIds)].sort(), id: hashFramedDomain("operational-finding", finding) })).sort((left, right) => left.id.localeCompare(right.id));
   const hasUnclassifiedError = findings.some(({ severity }) => severity === "error") && !input.exitProof.commandFailed && !input.exitProof.blockingInvalidity && !input.exitProof.approvalRequired && !input.exitProof.incompleteCoverage && !input.exitProof.requiredUnavailable && !input.exitProof.recoveryFailure && !input.exitProof.budgetExhausted;
@@ -34,7 +93,7 @@ export function createOperationalReport(input: OperationalReportInput): Operatio
   const base = redactBeforeBoundary({ version: 1 as const, runId: input.runId, command: input.command, exitCode: deriveOperationalExitCode(exitProof), exitProof, evidence: input.evidence, policy: input.policy, stateDigest: input.stateDigest, unavailableFields: [...new Set(input.unavailableFields)].sort(), findings }) as Omit<OperationalReport, "dtoHash">;
   return { ...base, dtoHash: hashFramedDomain("operational-report-dto", base) };
 }
-export function validateOperationalReport(report: OperationalReport): boolean { return report.dtoHash === hashFramedDomain("operational-report-dto", body(report)) && report.exitCode === deriveOperationalExitCode(report.exitProof) && (report.exitCode !== 0 || report.findings.every(({ severity }) => severity !== "error")); }
+export function validateOperationalReport(report: OperationalReport): boolean { return OperationalReportSchema.safeParse(report).success; }
 export function renderOperationalReport(report: OperationalReport, format: ReportFormat): string {
   if (!validateOperationalReport(report)) throw new Error("operational report authentication failed");
   if (format === "json") return JSON.stringify(report, null, 2);

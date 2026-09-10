@@ -6,7 +6,7 @@ import { hashFramedDomain } from "@projector/core";
 
 import { RepositoryPathService } from "../security/repository-path.js";
 import { WatchCoordinator, runWatchLifecycle, type AuthenticatedWatchCheckpoint, type WatchCheckpointStore } from "./watch.js";
-import { JsonlTelemetryStore, createOperationalReport, deriveOperationalExitCode, redactBeforeBoundary, renderOperationalReport, unavailableOperationalEvidence } from "./telemetry.js";
+import { JsonlTelemetryStore, createOperationalReport, deriveOperationalExitCode, parseOperationalReport, redactBeforeBoundary, renderOperationalReport, unavailableOperationalEvidence } from "./telemetry.js";
 
 const proof = { commandFailed: false, blockingInvalidity: false, approvalRequired: false, incompleteCoverage: false, requiredUnavailable: false, recoveryFailure: false, budgetExhausted: false, resumable: false } as const;
 const evidence = unavailableOperationalEvidence("fixture");
@@ -30,6 +30,23 @@ describe("operational watch and trust boundary", () => {
     const report = createOperationalReport({ runId: "run:1", command: "ci", exitProof: { ...proof, blockingInvalidity: true }, evidence, policy: { preset: "govern" }, stateDigest: hashFramedDomain("state", "1"), unavailableFields: ["modelCalls"], findings: [{ code: "governance", title: "Invalid governance", path: ".projector/a.json", severity: "error", evidenceIds: ["e:1"] }] });
     for (const format of ["text", "json", "md", "sarif"] as const) expect(renderOperationalReport(report, format)).toContain("Invalid governance");
     const root = await mkdtemp(join(tmpdir(), "projector-telemetry-")); try { const paths = await RepositoryPathService.create(root); const first = await JsonlTelemetryStore.create(paths, "runs.jsonl"); const second = await JsonlTelemetryStore.create(paths, "runs.jsonl"); await Promise.all([first.append(report), second.append(createOperationalReport({ ...report, runId: "run:2", findings: report.findings.map(({ id: omitted, ...finding }) => { void omitted; return finding; }) }))]); const replay = await first.replay(); expect(replay.map(({ sequence }) => sequence)).toEqual([1, 2]); expect(replay[0]?.report.evidence).toHaveProperty("toolchainDigest"); await writeFile(join(root, "runs.jsonl"), `${await readFile(join(root, "runs.jsonl"), "utf8")}{bad\n`); await expect(first.replay()).rejects.toThrow(/corrupt|JSONL/iu); } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("strictly parses an authenticated operational report and rejects tampering at every DTO boundary", () => {
+    const report = createOperationalReport({ runId: "run:schema", command: "verify", exitProof: proof, evidence, policy: { preset: "govern", rules: [true, null, 3] }, stateDigest: hashFramedDomain("state", "schema"), unavailableFields: [], findings: [{ code: "notice", title: "Observed", severity: "warning", evidenceIds: ["e:1"] }] });
+    expect(parseOperationalReport(report)).toEqual(report);
+
+    expect(() => parseOperationalReport({ ...report, dtoHash: hashFramedDomain("tampered", report) })).toThrow();
+
+    const exitTamperedBody = { ...report, exitCode: 5 };
+    const exitTampered = { ...exitTamperedBody, dtoHash: hashFramedDomain("operational-report-dto", (({ dtoHash: omitted, ...body }) => { void omitted; return body; })(exitTamperedBody)) };
+    expect(() => parseOperationalReport(exitTampered)).toThrow(/exit code/iu);
+
+    expect(() => parseOperationalReport({ ...report, injected: true })).toThrow();
+    expect(() => parseOperationalReport({ ...report, exitProof: { ...report.exitProof, injected: true } })).toThrow();
+    expect(() => parseOperationalReport({ ...report, evidence: { ...report.evidence, injected: true } })).toThrow();
+    expect(() => parseOperationalReport({ ...report, findings: [{ ...report.findings[0], injected: true }] })).toThrow();
+    expect(() => parseOperationalReport({ ...report, policy: { preset: "govern", unsupported: undefined } })).toThrow();
   });
 
   it("keeps a subscribed watch alive through initial/event handoff and stops on cancellation or budget", async () => {
