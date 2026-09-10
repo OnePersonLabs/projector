@@ -23,12 +23,12 @@ jobs:
       - run: pnpm acceptance:knowledge
       - run: pnpm verify
       - run: pnpm release:artifacts:check
-      - run: node scripts/build-source-severed-release-bundle.mjs .temp/release-candidate
+      - run: node scripts/build-source-severed-release-bundle.mjs "${{ runner.temp }}/projector-release-candidate"
       - name: Upload exact release candidate
         uses: actions/upload-artifact@v4
         with:
           name: projector-release-candidate
-          path: .temp/release-candidate
+          path: ${{ runner.temp }}/projector-release-candidate
           if-no-files-found: error
           retention-days: 7
 
@@ -50,19 +50,19 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: projector-release-candidate
-          path: candidate
+          path: ${{ runner.temp }}/projector-release-candidate
       - name: Accept downloaded source-severed candidate
-        run: node candidate/source-severed-release-acceptance.mjs candidate
+        run: node "${{ runner.temp }}/projector-release-candidate/source-severed-release-acceptance.mjs" "${{ runner.temp }}/projector-release-candidate"
       - name: Upload exact accepted artifacts and evidence
         uses: actions/upload-artifact@v4
         with:
           name: projector-2.1.0-accepted-${{ matrix.os }}
           path: |
-            candidate/artifacts
-            candidate/plugin
-            candidate/manifest.json
-            candidate/results/packed-held-out-lifecycle.json
-            candidate/results/packed-held-out-lifecycle-transcript.json
-            candidate/results/digests.json
+            ${{ runner.temp }}/projector-release-candidate/artifacts
+            ${{ runner.temp }}/projector-release-candidate/plugin
+            ${{ runner.temp }}/projector-release-candidate/manifest.json
+            ${{ runner.temp }}/projector-release-candidate/results/packed-held-out-lifecycle.json
+            ${{ runner.temp }}/projector-release-candidate/results/packed-held-out-lifecycle-transcript.json
+            ${{ runner.temp }}/projector-release-candidate/results/digests.json
           if-no-files-found: error
           retention-days: 14
