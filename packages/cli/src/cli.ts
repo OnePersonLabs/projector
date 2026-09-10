@@ -28,6 +28,7 @@ export type { RepositoryKnowledgeCliPort } from "./knowledge-cli.js";
 import { RepositoryChangeLifecycleService, inspectRepositoryArchitecture, inspectRepositoryCoverage } from "@projector/control-plane";
 export { createHostSessionRecord, hostSessionSelector } from "@projector/integrations";
 import { runDefaultUpgradeWorkflow } from "./upgrade.js";
+import { inspectCanonicalKnowledge, runReadOnlyOperationalVerification } from "./operational-verification.js";
 export * from "./upgrade.js";
 
 export const PROJECTOR_VERSION = "2.1.0";
@@ -712,6 +713,9 @@ function defaultArchitecturePort(repositoryRoot: string): ArchitectureCliPort {
 
 function defaultOperationalCliPort(): OperationalCliPort {
   return { authenticate: async (report) => validateOperationalReport(report), run: async ({ command, repositoryRoot, clean, policy, signal, allowPersistence, maximumEvents }) => {
+    if (command === "verify" && !clean) {
+      return runReadOnlyOperationalVerification(repositoryRoot, { signal, toolVersion: PROJECTOR_VERSION, policy });
+    }
     const started = Date.now(); const paths = await RepositoryPathService.create(repositoryRoot); let findings: Array<{ code: string; title: string; path?: string; severity: "note" | "warning" | "error"; evidenceIds: string[] }> = []; const proof: { -readonly [Key in keyof OperationalExitProof]: OperationalExitProof[Key] } = { commandFailed: false, blockingInvalidity: false, approvalRequired: false, incompleteCoverage: false, requiredUnavailable: false, recoveryFailure: false, budgetExhausted: false, resumable: false }; let analysisRecords: string[] = []; let journalRecords: string[] = []; let canonicalDigest: ContentHash = hashFramedDomain("operational-canonical", []);
     {
       const knowledge = await inspectCanonicalKnowledge(repositoryRoot); findings.push(...knowledge.findings); canonicalDigest = knowledge.canonicalDigest; proof.blockingInvalidity = knowledge.findings.length > 0;
@@ -727,18 +731,6 @@ function defaultOperationalCliPort(): OperationalCliPort {
     if (allowPersistence && command !== "watch") { try { const store = await JsonlTelemetryStore.create(paths, ".projector/telemetry/runs.jsonl"); await store.append(operational); } catch (error) { operational = createOperationalReport({ ...operational, exitProof: { ...operational.exitProof, recoveryFailure: true }, evidence: { ...operational.evidence, errorRecords: [...operational.evidence.errorRecords, "telemetry-persistence"] }, findings: [...operational.findings.map(({ id: omitted, ...finding }) => { void omitted; return finding; }), { code: "telemetry-persistence", title: error instanceof Error ? error.message : String(error), severity: "error", evidenceIds: [] }] }); } }
     return operational;
   } };
-}
-
-async function inspectCanonicalKnowledge(repositoryRoot: string): Promise<{ readonly canonicalDigest: ContentHash; readonly findings: Array<{ code: string; title: string; path?: string; severity: "error"; evidenceIds: string[] }> }> {
-  try {
-    const snapshot = await new CanonicalFileRepository(repositoryRoot).snapshot();
-    return { canonicalDigest: snapshot.rootDigest, findings: [] };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { canonicalDigest: hashFramedDomain("unavailable-canonical-knowledge", reason), findings: [{
-      code: "canonical-knowledge-invalid", title: reason, path: ".projector", severity: "error", evidenceIds: [],
-    }] };
-  }
 }
 
 function defaultCoveragePort(repositoryRoot: string): CoverageCliPort {
