@@ -239,6 +239,8 @@ export interface Concept {
   confidence: Confidence;
   tags: string[];
   evidence: EvidenceRef[];
+  origin?: IntentOriginRef[];
+  realizations?: RealizationBinding[];
   discoveryHash: ContentHash;
   semanticHash: ContentHash;
 }
@@ -286,6 +288,17 @@ export interface IntentOriginRef {
   description?: string;
 }
 
+export interface RealizationBinding {
+  selector: RealizationSelectorExpr;
+  origin: RealizationOriginRef;
+}
+
+export type GitRealizationLocator = string;
+
+export type RealizationOriginRef =
+  | { kind: "git"; locator: GitRealizationLocator; description?: string }
+  | { kind: "content"; locator: string; contentHash: ContentHash; description?: string };
+
 export interface Requirement {
   id: EntityId;
   key: string;
@@ -296,6 +309,7 @@ export interface Requirement {
   sourceClass: SourceClass;
   scope: SelectorExpr;
   origin: IntentOriginRef[];
+  realizations?: RealizationBinding[];
   evidence: EvidenceRef[];
   discoveryHash: ContentHash;
   semanticHash: ContentHash;
@@ -315,6 +329,8 @@ export interface BehavioralScenario {
   sourceClass: SourceClass;
   scope: SelectorExpr;
   steps: BehavioralScenarioStep[];
+  origin?: IntentOriginRef[];
+  realizations?: RealizationBinding[];
   evidence: EvidenceRef[];
   discoveryHash: ContentHash;
   semanticHash: ContentHash;
@@ -1254,6 +1270,33 @@ export type SelectorExpr =
         | "control-mutation"
         | "ast-pattern"
         | "relation"
+        | "causal-origin";
+      matcher:
+        | "equals"
+        | "in"
+        | "glob"
+        | "regex"
+        | "contains"
+        | "exists"
+        | "matches-structural-query";
+      value: unknown;
+    };
+
+export type RealizationSelectorExpr =
+  | { op: "all"; items: RealizationSelectorExpr[] }
+  | { op: "any"; items: RealizationSelectorExpr[] }
+  | { op: "not"; item: RealizationSelectorExpr }
+  | {
+      op: "atom";
+      field:
+        | "path"
+        | "artifact-role"
+        | "surface"
+        | "package"
+        | "package-kind"
+        | "tag"
+        | "control-ownership"
+        | "control-mutation"
         | "causal-origin";
       matcher:
         | "equals"
