@@ -16,6 +16,7 @@ import {
   type ProjectorOperationError,
   type ProjectorOperationRequest,
 } from "@projector/core";
+import type { PreparedProjectInitializationResult } from "@projector/control-plane";
 import { z } from "zod";
 
 const maximumPackageManifestBytes = 16 * 1024;
@@ -69,11 +70,6 @@ export interface HostCapabilityObservation {
   readonly capability: string;
   readonly available: boolean;
   readonly evidence: string;
-}
-
-export interface PreparedProjectInitializationResult {
-  readonly readiness: ProjectReadiness;
-  readonly created: boolean;
 }
 
 export interface OperationRunnerPorts<
@@ -434,12 +430,6 @@ async function readPackageIdentity(packagedRoot: string): Promise<PackageIdentit
   }
 }
 
-function isReachable(operation: ProjectorOperation, readiness: ProjectReadiness["status"]): boolean {
-  if (operation === "status") return true;
-  if (operation === "init") return readiness === "inactive" || readiness === "ready";
-  return readiness === "ready";
-}
-
 function assembleCapabilityDiscovery(
   packageIdentity: PackageIdentity,
   readiness: ProjectReadiness,
@@ -454,18 +444,17 @@ function assembleCapabilityDiscovery(
       return {
         operation,
         registered,
-        reachable: registered && isReachable(operation, readiness.status),
-        reason: capabilityReason(operation, registered, readiness),
+        reachable: registered,
+        reason: capabilityReason(registered),
       };
     }),
     observedHostCapabilities,
   });
 }
 
-function capabilityReason(operation: ProjectorOperation, registered: boolean, readiness: ProjectReadiness): string {
+function capabilityReason(registered: boolean): string {
   if (!registered) return "No handler is registered in this package";
-  if (isReachable(operation, readiness.status)) return "Registered and reachable under the observed project readiness";
-  return `Registered but blocked by observed project readiness ${readiness.status}`;
+  return "The registered handler is reachable through this runner; project readiness is reported separately";
 }
 
 function unobservedReadiness(packageIdentity: PackageIdentity, cancelled: boolean): ProjectReadiness {
