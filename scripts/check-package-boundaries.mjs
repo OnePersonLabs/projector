@@ -150,7 +150,7 @@ async function main() {
   const errors = [
     ...validatePackageDependencies(await readWorkspaceGraph(root)),
     ...validatePackageDependencies(await readImportGraph(root)),
-    ...validateCuratedExports(controlPlaneFacade, ["LifecycleRecoveryOutcome", "RepositoryChangeLifecycleService", "RepositoryKnowledgeService", "KnowledgeContextRequest", "KnowledgeContextResult", "KnowledgeReconciliationResult", "RepositoryImpactReport", "buildRepositoryImpactSnapshot", "predictRepositoryImpact", "reconcileRepositoryImpact", "inspectRepositoryArchitecture", "inspectRepositoryCoverage", "RepositoryCoverageRequest", "CompletionQuestion"]),
+    ...validateCuratedExports(controlPlaneFacade, ["LifecycleRecoveryOutcome", "RepositoryChangeLifecycleService", "RepositoryKnowledgeService", "KnowledgeContextRequest", "KnowledgeContextResult", "KnowledgeReconciliationResult", "RepositoryImpactReport", "buildRepositoryImpactSnapshot", "predictRepositoryImpact", "reconcileRepositoryImpact", "inspectRepositoryArchitecture", "inspectRepositoryCoverage", "RepositoryCoverageRequest", "CompletionQuestion", "initializePreparedProject", "inspectProjectReadiness", "withProjectOperationAccess", "PreparedProjectInitializationResult", "ProjectOperationAccessResult", "ReadinessInspectionInput", "ReadyProjectReadiness"]),
     ...validateSubsystemArchitecture(subsystemFiles),
   ];
   if (errors.length > 0) {

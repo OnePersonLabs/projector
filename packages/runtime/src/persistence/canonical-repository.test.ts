@@ -6,6 +6,7 @@ import { withCanonicalHashes, type CanonicalDocumentEnvelope } from "@projector/
 import { afterEach, describe, expect, test } from "vitest";
 
 import { CanonicalFileRepository } from "./canonical-repository.js";
+import { parseTomlDocument, stringifyTomlDocument } from "./toml-codec.js";
 
 const temporaryRoots: string[] = [];
 const zeroHash = `sha256:v1:${"0".repeat(64)}` as const;
@@ -47,6 +48,42 @@ afterEach(async () => {
 });
 
 describe("CanonicalFileRepository", () => {
+  test("writes readable TOML paths with a document-relative bundled schema directive", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+
+    const path = await repository.write(concept("concept:durable-meaning", "Readable meaning."));
+    const source = await readFile(path, "utf8");
+
+    expect(path.replaceAll("\\", "/")).toMatch(/\/model\/concepts\/concept-durable-meaning--[a-f0-9]{64}\.concept\.toml$/u);
+    expect(source).toMatch(/^#:schema \.\.\/\.\.\/schemas\/canonical-document-v2\.schema\.json\n/u);
+    expect(source).toContain('statement = "Readable meaning."');
+  });
+
+  test("keeps canonical currentness stable across comments and presentation whitespace", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const path = await repository.write(concept("concept:durable-meaning", "Readable meaning."));
+    const before = await repository.snapshot();
+    const source = await readFile(path, "utf8");
+
+    await writeFile(path, `# local explanation\n${source.replace('lifecycle = "active"', 'lifecycle="active"')}`, "utf8");
+
+    expect((await repository.snapshot()).rootDigest).toBe(before.rootDigest);
+  });
+
+  test("prepares the exact canonical bytes later published by the repository", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const document = concept("concept:planned-write", "Exact reviewed bytes.");
+
+    const prepared = repository.prepareWrite(document);
+    const publishedPath = await repository.write(document);
+
+    expect(prepared.path).toBe(publishedPath);
+    expect(await readFile(publishedPath, "utf8")).toBe(prepared.contents);
+  });
+
   test("updates one canonical entity without rewriting an unrelated entity", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
@@ -94,7 +131,7 @@ describe("CanonicalFileRepository", () => {
     await secondRepository.write(a);
     const movedDirectory = join(firstRoot, ".projector", "model", "concepts", "custom-shard");
     await mkdir(movedDirectory, { recursive: true });
-    await rename(originalPath, join(movedDirectory, "arbitrary.concept.json"));
+    await rename(originalPath, join(movedDirectory, "arbitrary.concept.toml"));
 
     const firstSnapshot = await firstRepository.snapshot();
     const secondSnapshot = await secondRepository.snapshot();
@@ -118,23 +155,20 @@ describe("CanonicalFileRepository", () => {
     const repository = new CanonicalFileRepository(root);
     const targetPath = repository.pathFor("concept", "concept-a");
     await mkdir(join(targetPath, ".."), { recursive: true });
-    await writeFile(targetPath, `${JSON.stringify(concept("concept-b", "protected"))}\n`, "utf8");
+    await writeFile(targetPath, stringifyTomlDocument(concept("concept-b", "protected") as unknown as Record<string, unknown>), "utf8");
     await expect(repository.write(concept("concept-a", "overwrite"))).rejects.toThrow(/owned by concept-b/);
     await expect(repository.delete("concept", "concept-a")).rejects.toThrow(/owned by concept-b/);
-    expect(JSON.parse(await readFile(targetPath, "utf8")).id).toBe("concept-b");
+    expect((parseTomlDocument(await readFile(targetPath, "utf8")) as { id: string }).id).toBe("concept-b");
   });
 
-  test("reads a legacy encoded-ID path and migrates it on the next write", async () => {
+  test("rejects a legacy JSON layout instead of keeping a permanent compatibility reader", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
     const legacyPath = join(root, ".projector", "model", "concepts", "legacy.concept.json");
     await mkdir(join(legacyPath, ".."), { recursive: true });
     await writeFile(legacyPath, `${JSON.stringify(concept("legacy", "old"))}\n`, "utf8");
-    expect((await repository.read("concept", "legacy"))?.payload.statement).toBe("old");
-    const newPath = await repository.write(concept("legacy", "new"));
-    expect(newPath).not.toBe(legacyPath);
-    await expect(readFile(legacyPath)).rejects.toMatchObject({ code: "ENOENT" });
-    expect((await repository.read("concept", "legacy"))?.payload.statement).toBe("new");
+
+    await expect(repository.snapshot()).rejects.toThrow(/legacy or mixed canonical JSON requires project readiness migration/i);
   });
 
   test("rejects duplicate stable IDs even when files use different paths", async () => {
@@ -144,7 +178,7 @@ describe("CanonicalFileRepository", () => {
     const duplicateDirectory = join(root, ".projector", "model", "concepts", "custom-shard");
     await mkdir(duplicateDirectory, { recursive: true });
     await writeFile(
-      join(duplicateDirectory, "duplicate.concept.json"),
+      join(duplicateDirectory, "duplicate.concept.toml"),
       await readFile(canonicalPath, "utf8"),
       "utf8",
     );
@@ -165,9 +199,8 @@ describe("CanonicalFileRepository", () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
     const path = await repository.write(concept("concept-a", "original"));
-    const corrupted = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
-    corrupted.lifecycle = "deprecated";
-    await writeFile(path, JSON.stringify(corrupted), "utf8");
+    const corrupted = (await readFile(path, "utf8")).replace('lifecycle = "active"', 'lifecycle = "deprecated"');
+    await writeFile(path, corrupted, "utf8");
 
     await expect(repository.snapshot()).rejects.toThrow(/canonical document hash mismatch/);
   });
@@ -216,7 +249,7 @@ describe("CanonicalFileRepository", () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
     await mkdir(join(root, ".projector"), { recursive: true });
-    await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
+    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\n');
 
     expect((await repository.snapshot()).documents).toEqual([]);
   });
@@ -225,7 +258,7 @@ describe("CanonicalFileRepository", () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
     await mkdir(join(root, ".projector"), { recursive: true });
-    await writeFile(join(root, ".projector", "config.json"), "{}\n");
+    await writeFile(join(root, ".projector", "config.toml"), "enabled = true\n");
 
     await expect(repository.snapshot()).rejects.toThrow(/invalid Projector config/iu);
   });
@@ -233,18 +266,18 @@ describe("CanonicalFileRepository", () => {
   test("rejects canonical-looking files outside their approved family", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
-    const path = join(root, ".projector", "model", "relations", "wrong.concept.json");
+    const path = join(root, ".projector", "model", "relations", "wrong.concept.toml");
     await mkdir(join(path, ".."), { recursive: true });
-    await writeFile(path, `${JSON.stringify(concept("concept-a", "hidden"))}\n`, "utf8");
+    await writeFile(path, stringifyTomlDocument(concept("concept-a", "hidden") as unknown as Record<string, unknown>), "utf8");
     await expect(repository.snapshot()).rejects.toThrow(/outside approved canonical family/i);
   });
 
   test("does not hide canonical-looking files inside a derived directory", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
-    const path = join(root, ".projector", "generated", "hidden.concept.json");
+    const path = join(root, ".projector", "generated", "hidden.concept.toml");
     await mkdir(join(path, ".."), { recursive: true });
-    await writeFile(path, `${JSON.stringify(concept("concept-a", "hidden"))}\n`, "utf8");
+    await writeFile(path, stringifyTomlDocument(concept("concept-a", "hidden") as unknown as Record<string, unknown>), "utf8");
     await expect(repository.snapshot()).rejects.toThrow(/outside approved canonical family/i);
   });
 
@@ -303,7 +336,7 @@ describe("CanonicalFileRepository", () => {
     }
   });
 
-  test("deletes matching hashed and legacy files left by an interrupted migration", async () => {
+  test("reports legacy residue after deleting a current TOML document", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
     const document = concept("residue", "same owner");
@@ -311,6 +344,6 @@ describe("CanonicalFileRepository", () => {
     const legacy = join(root, ".projector", "model", "concepts", "residue.concept.json");
     await writeFile(legacy, `${JSON.stringify(document)}\n`);
     expect(await repository.delete("concept", "residue")).toBe(true);
-    expect((await repository.snapshot()).documents).toEqual([]);
+    await expect(repository.snapshot()).rejects.toThrow(/legacy or mixed canonical JSON requires project readiness migration/i);
   });
 });
