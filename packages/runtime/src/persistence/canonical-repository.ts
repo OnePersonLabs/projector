@@ -136,7 +136,7 @@ export function assertSupportedCanonicalVersions(document: CanonicalDocumentEnve
 
 async function atomicWrite(path: string, contents: string): Promise<void> {
   const directory = dirname(path);
-  await mkdir(directory, { recursive: true });
+  await ensureDurableCanonicalDirectory(directory);
   const temporaryPath = join(directory, `.${randomBytes(12).toString("hex")}.tmp`);
   let handle;
   try {
@@ -154,13 +154,39 @@ async function atomicWrite(path: string, contents: string): Promise<void> {
 }
 
 async function syncCanonicalDirectory(directory: string): Promise<void> {
-  // Node cannot fsync a directory on Windows. The file contents are still
-  // flushed before atomic replacement; power-loss durability of the directory
-  // entry is only established on platforms that support directory fsync.
-  if (process.platform === "win32") return;
   const handle = await open(directory, constants.O_RDONLY);
   try { await handle.sync(); }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EINVAL" && code !== "ENOTSUP" && code !== "EPERM") throw error;
+  }
   finally { await handle.close(); }
+}
+
+async function ensureDurableCanonicalDirectory(path: string): Promise<void> {
+  const missing: string[] = [];
+  let current = path;
+  while (true) {
+    try {
+      const status = await lstat(current);
+      if (status.isSymbolicLink() || !status.isDirectory()) throw new Error(`canonical path is not a real directory: ${current}`);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      missing.push(current);
+      const parent = dirname(current);
+      if (parent === current) throw new Error(`canonical path has no existing parent directory: ${path}`);
+      current = parent;
+    }
+  }
+  for (const directory of missing.reverse()) {
+    const parent = dirname(directory);
+    try { await mkdir(directory); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+    const status = await lstat(directory);
+    if (status.isSymbolicLink() || !status.isDirectory()) throw new Error(`canonical path is not a real directory: ${directory}`);
+    await syncCanonicalDirectory(parent);
+  }
 }
 
 export class CanonicalFileRepository {

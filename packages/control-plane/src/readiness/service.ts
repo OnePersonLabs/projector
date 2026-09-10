@@ -57,7 +57,15 @@ export async function initializePreparedProject(
   if (initial.status !== "inactive") return { readiness: initial, created: false };
 
   const paths = await RepositoryPathService.create(repositoryRoot);
-  await mkdir((await paths.resolveWrite(".projector")).realTarget, { recursive: true });
+  const projectorDirectory = (await paths.resolveWrite(".projector")).realTarget;
+  try {
+    await mkdir(projectorDirectory);
+  } catch (error) {
+    if (!isCode(error, "EEXIST")) throw error;
+  }
+  const projectorStatus = await lstat(projectorDirectory);
+  if (projectorStatus.isSymbolicLink() || !projectorStatus.isDirectory()) throw new Error(".projector must be a real directory");
+  await syncDirectory(paths.root);
   return withRuntimeOperationAccess(
     repositoryRoot,
     { operation: "init", mode: "exclusive", ...(input.signal === undefined ? {} : { signal: input.signal }) },
@@ -244,17 +252,21 @@ async function publishPreparedConfig(paths: RepositoryPathService, packageIdenti
         throw new Error("Prepared Projector configuration was concurrently published with different bytes");
       }
     }
-    if (process.platform !== "win32") {
-      const directory = await open(dirname(target), constants.O_RDONLY);
-      try {
-        await directory.sync();
-      } finally {
-        await directory.close();
-      }
-    }
+    await syncDirectory(dirname(target));
   } finally {
     if (handle !== undefined) await handle.close();
     await rm(temporary, { force: true });
+  }
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  const directory = await open(path, constants.O_RDONLY);
+  try {
+    await directory.sync();
+  } catch (error) {
+    if (!isCode(error, "EINVAL") && !isCode(error, "ENOTSUP") && !isCode(error, "EPERM")) throw error;
+  } finally {
+    await directory.close();
   }
 }
 

@@ -19,178 +19,157 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function manifest(blobs: Array<{ path: string; bytes: Uint8Array }>): Buffer {
+  return Buffer.from(JSON.stringify({
+    version: 1,
+    blobs: blobs.map(({ path, bytes }) => ({ path, sha256: sha256(bytes) })),
+  }));
+}
+
 function strictManifest(bytes: Uint8Array): { manifest: TestManifest; blobs: TestManifest["blobs"] } {
   const parsed: unknown = JSON.parse(Buffer.from(bytes).toString("utf8"));
-  if (typeof parsed !== "object" || parsed === null) throw new TypeError("manifest must be an object");
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new TypeError("manifest must be an object");
   const candidate = parsed as Partial<TestManifest>;
-  if (candidate.version !== 1 || !Array.isArray(candidate.blobs)) throw new TypeError("invalid manifest");
+  if (candidate.version !== 1 || !Array.isArray(candidate.blobs) || Object.keys(candidate).some((key) => key !== "version" && key !== "blobs")) {
+    throw new TypeError("invalid manifest");
+  }
   for (const blob of candidate.blobs) {
-    if (
-      typeof blob !== "object" ||
-      blob === null ||
-      typeof blob.path !== "string" ||
-      typeof blob.sha256 !== "string"
-    ) throw new TypeError("invalid blob declaration");
+    if (typeof blob !== "object" || blob === null || Object.keys(blob).some((key) => key !== "path" && key !== "sha256") ||
+        typeof blob.path !== "string" || typeof blob.sha256 !== "string") throw new TypeError("invalid blob declaration");
   }
   return { manifest: candidate as TestManifest, blobs: candidate.blobs };
 }
 
-async function temporaryStore(): Promise<{ root: string; store: DurableArtifactSetStore<TestManifest> }> {
+async function temporaryStore(storageSuffix?: string): Promise<{ root: string; storageRoot: string; store: DurableArtifactSetStore<TestManifest> }> {
   const root = await mkdtemp(join(tmpdir(), "projector-artifact-set-"));
   roots.push(root);
-  return { root, store: new DurableArtifactSetStore(root, strictManifest) };
+  const storageRoot = storageSuffix === undefined ? root : join(root, storageSuffix);
+  return { root, storageRoot, store: new DurableArtifactSetStore(storageRoot, strictManifest) };
 }
 
 describe("durable artifact set publication", () => {
-  test("publishes a complete exact-byte set atomically", async () => {
+  test("preserves begun and partially staged attempts as incomplete across store instances", async () => {
+    const { storageRoot, store } = await temporaryStore();
+    await store.begin({ artifactSetId: "begun" });
+    expect(await store.read("begun")).toEqual({ status: "incomplete", artifactSetId: "begun" });
+
+    await store.stageBlob({ artifactSetId: "begun", path: "evidence/partial.bin", bytes: Buffer.from([0, 255]) });
+    const reopened = new DurableArtifactSetStore(storageRoot, strictManifest);
+    expect(await reopened.read("begun")).toEqual({ status: "incomplete", artifactSetId: "begun" });
+  });
+
+  test("publishes exact manifest and blob bytes only after successful final validation", async () => {
     const { root, store } = await temporaryStore();
     const blob = Buffer.from([0, 255, 13, 10, 42]);
-    const manifestBytes = Buffer.from(JSON.stringify({
-      version: 1,
-      blobs: [{ path: "evidence/output.bin", sha256: sha256(blob) }],
-    }));
-
-    await store.begin({ artifactSetId: "run-001", manifestBytes });
+    const manifestBytes = manifest([{ path: "evidence/output.bin", bytes: blob }]);
+    await store.begin({ artifactSetId: "run-001" });
     await store.stageBlob({ artifactSetId: "run-001", path: "evidence/output.bin", bytes: blob });
-    const published = await store.finalize("run-001");
+
+    const published = await store.finalize({ artifactSetId: "run-001", manifestBytes });
 
     expect(published).toMatchObject({ status: "published", artifactSetId: "run-001" });
-    if (published.status !== "published") throw new Error("expected publication");
     expect(published.manifestBytes).toEqual(manifestBytes);
     expect(published.blobs.get("evidence/output.bin")).toEqual(blob);
     expect(await readFile(join(root, "published", "run-001", "manifest.bin"))).toEqual(manifestBytes);
-    await expect(readFile(join(root, "staging", "run-001", "manifest.bin"))).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  test("keeps valid staged blobs immutable when a later write has different bytes", async () => {
-    const { root, store } = await temporaryStore();
-    const original = Buffer.from("original");
-    const replacement = Buffer.from("replacement");
-    const manifestBytes = Buffer.from(JSON.stringify({
-      version: 1,
-      blobs: [{ path: "output.txt", sha256: sha256(original) }],
-    }));
-    await store.begin({ artifactSetId: "immutable", manifestBytes });
-    await store.stageBlob({ artifactSetId: "immutable", path: "output.txt", bytes: original });
-
-    await expect(store.stageBlob({ artifactSetId: "immutable", path: "output.txt", bytes: replacement }))
-      .rejects.toThrow(/declared SHA-256/i);
-    expect(await readFile(join(root, "staging", "immutable", "blobs", "output.txt"))).toEqual(original);
-  });
-
-  test("rejects a wrong declared blob hash and reports an unfinished stage as incomplete", async () => {
-    const { store } = await temporaryStore();
-    const expected = Buffer.from("expected");
-    const manifestBytes = Buffer.from(JSON.stringify({
-      version: 1,
-      blobs: [{ path: "report.txt", sha256: sha256(expected) }],
-    }));
-    await store.begin({ artifactSetId: "unfinished", manifestBytes });
-
-    expect(await store.read("unfinished")).toEqual({ status: "incomplete", artifactSetId: "unfinished" });
-    await expect(store.stageBlob({ artifactSetId: "unfinished", path: "report.txt", bytes: Buffer.from("wrong") }))
-      .rejects.toThrow(/declared SHA-256/i);
-    await expect(store.finalize("unfinished")).rejects.toMatchObject({
-      name: "ArtifactSetIncompleteError",
-      missingPaths: ["report.txt"],
-    });
-  });
-
-  test("rehashes published blobs on every read and distinguishes missing evidence", async () => {
-    const { root, store } = await temporaryStore();
-    const blob = Buffer.from("trusted");
-    const manifestBytes = Buffer.from(JSON.stringify({
-      version: 1,
-      blobs: [{ path: "result.txt", sha256: sha256(blob) }],
-    }));
-    expect(await store.read("absent")).toEqual({ status: "missing", artifactSetId: "absent" });
-    await store.begin({ artifactSetId: "corrupted", manifestBytes });
-    await store.stageBlob({ artifactSetId: "corrupted", path: "result.txt", bytes: blob });
-    await store.finalize("corrupted");
-    await writeFile(join(root, "published", "corrupted", "blobs", "result.txt"), "tampered");
-
-    const result = await store.read("corrupted");
-    expect(result).toMatchObject({ status: "integrity-failed", artifactSetId: "corrupted" });
-    if (result.status !== "integrity-failed") throw new Error("expected integrity failure");
-    expect(result.reason).toMatch(/SHA-256/i);
-  });
-
-  test("distinguishes a corrupt staged blob from a genuinely incomplete stage", async () => {
-    const { root, store } = await temporaryStore();
-    const blob = Buffer.from("expected");
-    const manifestBytes = Buffer.from(JSON.stringify({
-      version: 1,
-      blobs: [{ path: "result.txt", sha256: sha256(blob) }],
-    }));
-    await store.begin({ artifactSetId: "bad-stage", manifestBytes });
-    await writeFile(join(root, "staging", "bad-stage", "blobs", "result.txt"), "corrupt");
-
-    const result = await store.read("bad-stage");
-    expect(result).toMatchObject({ status: "integrity-failed", artifactSetId: "bad-stage" });
-    if (result.status !== "integrity-failed") throw new Error("expected integrity failure");
-    expect(result.reason).toMatch(/SHA-256/i);
-  });
-
-  test("makes finalize idempotent while preserving the original published bytes", async () => {
-    const { store } = await temporaryStore();
-    const blob = Buffer.from("once");
-    const manifestBytes = Buffer.from(JSON.stringify({
-      version: 1,
-      blobs: [{ path: "result.txt", sha256: sha256(blob) }],
-    }));
-    await store.begin({ artifactSetId: "idempotent", manifestBytes });
-    await store.stageBlob({ artifactSetId: "idempotent", path: "result.txt", bytes: blob });
-
-    const [first, second] = await Promise.all([store.finalize("idempotent"), store.finalize("idempotent")]);
-    expect(second).toEqual(first);
-    expect(await store.finalize("idempotent")).toEqual(first);
-    await expect(store.begin({ artifactSetId: "idempotent", manifestBytes: Buffer.from("different") }))
-      .rejects.toThrow();
-  });
-
-  test("runs the strict manifest validator before creating durable directories", async () => {
-    const root = await mkdtemp(join(tmpdir(), "projector-artifact-set-"));
-    roots.push(root);
-    const storageRoot = join(root, "evidence-store");
-    const store = new DurableArtifactSetStore(storageRoot, strictManifest);
-
-    await expect(store.begin({ artifactSetId: "invalid", manifestBytes: Buffer.from("[]") }))
-      .rejects.toThrow(/invalid manifest/i);
-    await expect(readFile(join(storageRoot, "staging", "invalid", "manifest.bin")))
+    await expect(readFile(join(root, "staging", "run-001", "blobs", "evidence", "output.bin")))
       .rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  test("resumes an exact prepublication stage without replacing its immutable manifest", async () => {
+  test("refuses manifests with undeclared staged blobs or missing declared blobs and preserves staging", async () => {
     const { root, store } = await temporaryStore();
-    const first = Buffer.from(JSON.stringify({ version: 1, blobs: [] }));
-    const second = Buffer.from(JSON.stringify({ version: 1, blobs: [{ path: "other", sha256: "0".repeat(64) }] }));
-    await store.begin({ artifactSetId: "recoverable", manifestBytes: first });
+    const staged = Buffer.from("staged");
+    await store.begin({ artifactSetId: "set-mismatch" });
+    await store.stageBlob({ artifactSetId: "set-mismatch", path: "actual.txt", bytes: staged });
 
-    await store.begin({ artifactSetId: "recoverable", manifestBytes: first });
-    await expect(store.begin({ artifactSetId: "recoverable", manifestBytes: second }))
-      .rejects.toThrow(/immutable/i);
-    expect(await readFile(join(root, "staging", "recoverable", "manifest.bin"))).toEqual(first);
+    await expect(store.finalize({
+      artifactSetId: "set-mismatch",
+      manifestBytes: manifest([{ path: "declared.txt", bytes: staged }]),
+    })).rejects.toThrow(/missing.*declared\.txt.*undeclared.*actual\.txt/i);
+    expect(await store.read("set-mismatch")).toEqual({ status: "incomplete", artifactSetId: "set-mismatch" });
+    expect(await readFile(join(root, "staging", "set-mismatch", "blobs", "actual.txt"))).toEqual(staged);
   });
 
-  test("rejects unsafe IDs, paths, symbolic links, and unexpected published entries", async () => {
+  test("refuses a declared hash mismatch without publishing or replacing the staged blob", async () => {
     const { root, store } = await temporaryStore();
-    const blob = Buffer.from("safe");
-    const manifestBytes = Buffer.from(JSON.stringify({
-      version: 1,
-      blobs: [{ path: "nested/result.txt", sha256: sha256(blob) }],
-    }));
-    await expect(store.begin({ artifactSetId: "../escape", manifestBytes })).rejects.toThrow(/ID/i);
-    await store.begin({ artifactSetId: "unsafe-entry", manifestBytes });
-    await expect(store.stageBlob({ artifactSetId: "unsafe-entry", path: "../escape", bytes: blob }))
-      .rejects.toThrow(/path/i);
-    await store.stageBlob({ artifactSetId: "unsafe-entry", path: "nested/result.txt", bytes: blob });
-    await store.finalize("unsafe-entry");
-    await writeFile(join(root, "published", "unsafe-entry", "extra.txt"), "unexpected");
-    expect(await store.read("unsafe-entry")).toMatchObject({ status: "integrity-failed" });
+    const staged = Buffer.from("actual");
+    await store.begin({ artifactSetId: "hash-mismatch" });
+    await store.stageBlob({ artifactSetId: "hash-mismatch", path: "result.txt", bytes: staged });
 
-    const symlinkStage = join(root, "staging", "linked");
-    await mkdir(symlinkStage);
-    await symlink(root, join(symlinkStage, "blobs"), "dir");
+    await expect(store.finalize({
+      artifactSetId: "hash-mismatch",
+      manifestBytes: manifest([{ path: "result.txt", bytes: Buffer.from("expected") }]),
+    })).rejects.toThrow(/SHA-256/i);
+    expect(await readFile(join(root, "staging", "hash-mismatch", "blobs", "result.txt"))).toEqual(staged);
+    expect(await store.read("hash-mismatch")).toEqual({ status: "incomplete", artifactSetId: "hash-mismatch" });
+  });
+
+  test("keeps staged blobs immutable and makes exact repeated staging idempotent", async () => {
+    const { root, store } = await temporaryStore();
+    await store.begin({ artifactSetId: "immutable" });
+    await store.stageBlob({ artifactSetId: "immutable", path: "output.txt", bytes: Buffer.from("original") });
+
+    await store.stageBlob({ artifactSetId: "immutable", path: "output.txt", bytes: Buffer.from("original") });
+    await expect(store.stageBlob({ artifactSetId: "immutable", path: "output.txt", bytes: Buffer.from("replacement") }))
+      .rejects.toThrow(/immutable/i);
+    expect(await readFile(join(root, "staging", "immutable", "blobs", "output.txt"))).toEqual(Buffer.from("original"));
+  });
+
+  test("validates the manifest at finalize before changing durable staged state", async () => {
+    const { root, store } = await temporaryStore();
+    await store.begin({ artifactSetId: "invalid-manifest" });
+
+    await expect(store.finalize({ artifactSetId: "invalid-manifest", manifestBytes: Buffer.from("[]") }))
+      .rejects.toThrow(/manifest must be an object/i);
+    await expect(readFile(join(root, "staging", "invalid-manifest", "manifest.bin")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    expect(await store.read("invalid-manifest")).toEqual({ status: "incomplete", artifactSetId: "invalid-manifest" });
+  });
+
+  test("durably creates a nested storage layout and nested blob parents", async () => {
+    const { storageRoot, store } = await temporaryStore("deep/evidence/store");
+    const blob = Buffer.from("nested");
+    await store.begin({ artifactSetId: "nested-layout" });
+    await store.stageBlob({ artifactSetId: "nested-layout", path: "a/b/c/result.txt", bytes: blob });
+
+    const reopened = new DurableArtifactSetStore(storageRoot, strictManifest);
+    const published = await reopened.finalize({
+      artifactSetId: "nested-layout",
+      manifestBytes: manifest([{ path: "a/b/c/result.txt", bytes: blob }]),
+    });
+    expect(published.blobs.get("a/b/c/result.txt")).toEqual(blob);
+  });
+
+  test("recovers an interrupted finalization whose exact manifest was made durable before publication", async () => {
+    const { root, store } = await temporaryStore();
+    const blob = Buffer.from("recoverable");
+    const manifestBytes = manifest([{ path: "result.txt", bytes: blob }]);
+    await store.begin({ artifactSetId: "resume-finalize" });
+    await store.stageBlob({ artifactSetId: "resume-finalize", path: "result.txt", bytes: blob });
+    await writeFile(join(root, "staging", "resume-finalize", "manifest.bin"), manifestBytes);
+
+    expect(await store.read("resume-finalize")).toEqual({ status: "incomplete", artifactSetId: "resume-finalize" });
+    const published = await store.finalize({ artifactSetId: "resume-finalize", manifestBytes });
+    expect(published.blobs.get("result.txt")).toEqual(blob);
+  });
+
+  test("preserves published evidence, rehashes reads, and rejects unsafe filesystem entries", async () => {
+    const { root, store } = await temporaryStore();
+    expect(await store.read("absent")).toEqual({ status: "missing", artifactSetId: "absent" });
+    const blob = Buffer.from("trusted");
+    const manifestBytes = manifest([{ path: "result.txt", bytes: blob }]);
+    await store.begin({ artifactSetId: "published" });
+    await store.stageBlob({ artifactSetId: "published", path: "result.txt", bytes: blob });
+    const first = await store.finalize({ artifactSetId: "published", manifestBytes });
+    expect(await store.finalize({ artifactSetId: "published", manifestBytes })).toEqual(first);
+    await expect(store.finalize({ artifactSetId: "published", manifestBytes: manifest([]) }))
+      .rejects.toThrow(/different manifest/i);
+    await writeFile(join(root, "published", "published", "blobs", "result.txt"), "tampered");
+    expect(await store.read("published")).toMatchObject({ status: "integrity-failed" });
+
+    await expect(store.begin({ artifactSetId: "../escape" })).rejects.toThrow(/ID/i);
+    const linked = join(root, "staging", "linked");
+    await mkdir(linked);
+    await symlink(root, join(linked, "blobs"), "dir");
     expect(await store.read("linked")).toMatchObject({ status: "integrity-failed" });
   });
 });

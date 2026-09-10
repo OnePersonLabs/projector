@@ -100,7 +100,9 @@ export async function initializeProjectActivation(repositoryRoot: string): Promi
 
   const paths = await RepositoryPathService.create(current.repositoryRoot);
   const projectorDirectory = (await paths.resolveWrite(".projector")).realTarget;
-  await mkdir(projectorDirectory, { recursive: true });
+  try { await mkdir(projectorDirectory); }
+  catch (error) { if (!isCode(error, "EEXIST")) throw error; }
+  await syncDirectory(paths.root);
   await initializeProjectIgnore(paths);
   const target = (await paths.resolveWrite(PROJECTOR_CONFIG_PATH)).realTarget;
   const temporary = join(dirname(target), `.config.${randomBytes(12).toString("hex")}.tmp`);
@@ -119,12 +121,7 @@ export async function initializeProjectActivation(repositoryRoot: string): Promi
       if (raced.status !== "enabled") throw new Error(raced.reason);
       return { config: raced.config, created: false };
     }
-    // The marker file is flushed above. Node does not support flushing a
-    // directory handle on Windows; POSIX additionally flushes the new entry.
-    if (process.platform !== "win32") {
-      const directoryHandle = await open(dirname(target), constants.O_RDONLY);
-      try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
-    }
+    await syncDirectory(dirname(target));
     return { config: defaultProjectorConfig, created: true };
   } finally {
     if (handle !== undefined) await handle.close();
@@ -159,5 +156,17 @@ async function initializeProjectIgnore(paths: RepositoryPathService): Promise<vo
     try { await handle.writeFile(next, "utf8"); await handle.sync(); } finally { await handle.close(); }
     await paths.resolveWrite(".projector/.gitignore");
     await rename(temporary, target);
+    await syncDirectory(dirname(target));
   } finally { await rm(temporary, { force: true }); }
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  const handle = await open(path, constants.O_RDONLY);
+  try { await handle.sync(); }
+  catch (error) { if (!isCode(error, "EINVAL") && !isCode(error, "ENOTSUP") && !isCode(error, "EPERM")) throw error; }
+  finally { await handle.close(); }
+}
+
+function isCode(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === code;
 }

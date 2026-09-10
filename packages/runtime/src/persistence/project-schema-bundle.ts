@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { link, mkdir, open, readFile, rm } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { exportContractJsonSchemas } from "@projector/core";
@@ -26,6 +26,7 @@ export function createProjectorEditorSchemaBundle(): readonly ProjectorEditorSch
 
 export async function installProjectorEditorSchemaBundle(repositoryRoot: string): Promise<void> {
   const paths = await RepositoryPathService.create(repositoryRoot);
+  await ensureDurableDirectoryPath(paths.root, [".projector", "schemas"]);
   const prepared = await Promise.all(createProjectorEditorSchemaBundle().map(async (item) => {
     const target = (await paths.resolveWrite(item.relativePath)).realTarget;
     let existing: string | undefined;
@@ -41,7 +42,6 @@ export async function installProjectorEditorSchemaBundle(repositoryRoot: string)
   }));
   for (const item of prepared) {
     if (!item.missing) continue;
-    await mkdir(dirname(item.target), { recursive: true });
     const temporary = join(dirname(item.target), `.schema.${randomBytes(12).toString("hex")}.tmp`);
     let handle;
     try {
@@ -58,10 +58,40 @@ export async function installProjectorEditorSchemaBundle(repositoryRoot: string)
       } catch (error) {
         if (!isCode(error, "EEXIST") || await readFile(item.target, "utf8") !== item.contents) throw error;
       }
+      // Publish the durable schema name before config.toml can refer to it.
+      await syncDirectory(dirname(item.target));
     } finally {
       if (handle !== undefined) await handle.close();
       await rm(temporary, { force: true });
     }
+  }
+}
+
+async function ensureDurableDirectoryPath(root: string, segments: readonly string[]): Promise<void> {
+  let current = root;
+  for (const segment of segments) {
+    const parent = current;
+    current = join(current, segment);
+    try {
+      await mkdir(current);
+    } catch (error) {
+      if (!isCode(error, "EEXIST")) throw error;
+    }
+    const status = await lstat(current);
+    if (status.isSymbolicLink() || !status.isDirectory()) throw new Error(`${current} must be a real directory`);
+    // A raced creator may not have persisted the new name yet.
+    await syncDirectory(parent);
+  }
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } catch (error) {
+    if (!isCode(error, "EINVAL") && !isCode(error, "ENOTSUP") && !isCode(error, "EPERM")) throw error;
+  } finally {
+    await handle.close();
   }
 }
 
