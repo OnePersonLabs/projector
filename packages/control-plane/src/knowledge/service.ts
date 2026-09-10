@@ -145,6 +145,7 @@ export class RepositoryKnowledgeService {
   }
 
   async context(input: KnowledgeContextRequest): Promise<KnowledgeContextResult> {
+    input.signal?.throwIfAborted();
     const observation = await observeChangeRepository(this.repositoryRoot);
     return this.compileContext(input, observation, new KnowledgeGraph(observation, this.host));
   }
@@ -154,6 +155,7 @@ export class RepositoryKnowledgeService {
     observation: ChangeRepositoryObservation,
     graph: KnowledgeGraph,
   ): Promise<KnowledgeContextResult> {
+    input.signal?.throwIfAborted();
     const request = input.request.normalize("NFKC").trim();
     if (request.length === 0) throw new Error("knowledge context request must be nonblank");
     const entities = unique((input.entities ?? []).map((item) => item.normalize("NFKC").trim()).filter(Boolean));
@@ -235,6 +237,7 @@ export class RepositoryKnowledgeService {
     }
     if (validators.executed) {
       const after = await observeChangeRepository(this.repositoryRoot);
+      input.signal?.throwIfAborted();
       if (hashFramedDomain("knowledge-validation-state", after.state) !== hashFramedDomain("knowledge-validation-state", observation.state)) throw new Error("Repository changed while custom validators ran; discard these observations and request fresh context.");
     }
     const requestOptions = { entities, namedTargets, operation, policy: selectedPolicy };
@@ -244,7 +247,11 @@ export class RepositoryKnowledgeService {
       ...branches.flatMap(({ closure, context }) => [...closure.unknowns, ...context.unknowns]),
     ]);
     const impactSnapshot = buildRepositoryImpactSnapshot(observation, graph);
-    if (persist) await persistRepositoryImpactSnapshot(this.repositoryRoot, impactSnapshot);
+    input.signal?.throwIfAborted();
+    if (persist) {
+      await persistRepositoryImpactSnapshot(this.repositoryRoot, impactSnapshot);
+      input.signal?.throwIfAborted();
+    }
     const result = finalizeKnowledgeContext({
       impactBaseline: impactReference(impactSnapshot),
       apiVersion: KNOWLEDGE_API_VERSION,
@@ -266,6 +273,7 @@ export class RepositoryKnowledgeService {
       persisted: persist,
     });
     const parsed = KnowledgeContextResultSchema.parse(result);
+    input.signal?.throwIfAborted();
     return persist ? this.store.write(parsed) : parsed;
   }
 
@@ -274,8 +282,11 @@ export class RepositoryKnowledgeService {
   }
 
   async reconcile(contextId: string, options: { readonly signal?: AbortSignal } = {}): Promise<KnowledgeReconciliationResult> {
+    options.signal?.throwIfAborted();
     const retained = await this.store.read(contextId);
+    options.signal?.throwIfAborted();
     const observation = await observeChangeRepository(this.repositoryRoot);
+    options.signal?.throwIfAborted();
     const graph = new KnowledgeGraph(observation, this.host);
     const adapterContext: AdapterContext = { repositoryRoot: observation.repositoryRoot, stateDigest: observation.state, config: {}, signal: options.signal ?? new AbortController().signal };
     const validator = new DependencyScopedStateBindingValidator({
@@ -283,9 +294,11 @@ export class RepositoryKnowledgeService {
       queries: { evaluate: (query, context) => graph.registry.evaluate(query, context) },
     });
     const discoveryValidation = await validator.validate(retained.discoveryBinding, observation.state, adapterContext);
+    options.signal?.throwIfAborted();
     const branches = [];
     for (const branch of retained.branches) {
       branches.push({ branchId: branch.id, validation: await validator.validate(branch.closure.boundState, observation.state, adapterContext) });
+      options.signal?.throwIfAborted();
     }
     const validations = [discoveryValidation, ...branches.map(({ validation }) => validation)];
     let status = validations.reduce<StateBindingValidation["status"]>((worst, validation) => validationRank[validation.status] > validationRank[worst] ? validation.status : worst, "current");
@@ -299,6 +312,7 @@ export class RepositoryKnowledgeService {
       persist: false,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     }, observation, graph);
+    options.signal?.throwIfAborted();
     const namedTargetsReplaced = retained.requestOptions.entities.length === 0
       && retained.branches.every(({ interpretation }) => interpretation.entityKind === "projection-unit")
       && retained.requestOptions.namedTargets.length > 0
@@ -367,8 +381,11 @@ export class RepositoryKnowledgeService {
       ]),
     };
     const impact = retained.impactBaseline === undefined ? undefined : await reconcileRetainedImpact(this.repositoryRoot, retained.impactBaseline, buildRepositoryImpactSnapshot(observation, graph), unique(retained.branches.flatMap(({ closure }) => closure.entries.filter(({ band }) => band !== "possible").map(({ entityId }) => entityId))), contextId);
+    options.signal?.throwIfAborted();
     const basis = { apiVersion: KNOWLEDGE_API_VERSION, contextId, capturedState: retained.capturedState, currentState: observation.state, status, discoveryValidation, branches, governance, ...(impact === undefined ? {} : { impact }), reasons };
     const result = { ...basis, contentHash: hashFramedDomain("knowledge-reconciliation", basis) };
-    return KnowledgeReconciliationResultSchema.parse(result);
+    const parsed = KnowledgeReconciliationResultSchema.parse(result);
+    options.signal?.throwIfAborted();
+    return parsed;
   }
 }

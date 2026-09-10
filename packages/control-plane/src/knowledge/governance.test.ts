@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -209,7 +209,7 @@ describe("public durable repository validators", () => {
     expect(JSON.stringify(inspected.branches[0]?.governanceEvaluations?.[0])).toContain("configured host permissions");
   });
 
-  it("passes caller cancellation into a running native validator and reports unavailable evidence", async () => {
+  it("passes caller cancellation into a running native validator without persisting partial knowledge", async () => {
     const { root, lens } = await validatorFixture();
     const slow = "setInterval(() => {}, 1000);";
     await writeFile(join(root, "validators/check.cjs"), slow);
@@ -229,9 +229,9 @@ describe("public durable repository validators", () => {
     const service = await RepositoryKnowledgeService.create({ repositoryRoot: root, createLauncher: async () => new NativeProcessLauncher() });
     const pending = service.context({ request: "inspect", entities: ["lens:validator"], signal: controller.signal });
     setTimeout(() => controller.abort(), 20).unref();
-    const inspected = await pending;
-    expect(inspected.branches[0]?.governanceEvaluations?.[0]?.status).toBe("unknown");
-    expect(JSON.stringify(inspected.branches[0]?.governanceEvaluations?.[0])).toContain("aborted");
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(await readdir(join(root, ".projector/runtime/knowledge/contexts")).catch(() => [])).toEqual([]);
+    expect(await readdir(join(root, ".projector/runtime/impact")).catch(() => [])).toEqual([]);
   });
 
   it("reports denied host execution as unavailable without claiming validator conformance", async () => {

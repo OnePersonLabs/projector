@@ -412,6 +412,23 @@ describe("repository change compiler", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("stops a mid-compilation cancellation after representation publication", async () => {
+    const root = await repository();
+    try {
+      const controller = new AbortController();
+      await expect(compileRepositoryChange(
+        { repositoryRoot: root, request: "Change greeting.", proposal: proposal(), now: "2026-08-26T00:00:00.000Z" },
+        {
+          signal: controller.signal,
+          representationArtifacts: {
+            put: async () => { controller.abort(); },
+            get: async () => undefined,
+          },
+        },
+      )).rejects.toMatchObject({ name: "AbortError" });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("blocks duplicate identity candidates and invalid or expired deferrals", async () => {
     const root = await repository();
     try {

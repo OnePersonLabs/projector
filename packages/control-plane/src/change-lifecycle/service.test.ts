@@ -83,6 +83,43 @@ function authority(id: string, subjectId: string): AuthorityRecord {
 }
 
 describe("repository change lifecycle service", () => {
+  it("honors caller cancellation across capture, plan, approve, and recover", async () => {
+    const root = await repository();
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const captured = await service.capture({ request: "Change greeting.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      const controller = new AbortController();
+      controller.abort();
+      const options = { signal: controller.signal };
+
+      await expect(service.capture({ request: "Do not capture after cancellation.", proposal: proposal() }, options)).rejects.toMatchObject({ name: "AbortError" });
+      await expect(service.plan(captured.capture.semanticChangeId, options)).rejects.toMatchObject({ name: "AbortError" });
+      await expect(service.approve(captured.capture.semanticChangeId, captured.capture.planHash, options)).rejects.toMatchObject({ name: "AbortError" });
+      await expect(service.recover(approval.id, options)).rejects.toMatchObject({ name: "AbortError" });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("cancels apply during authenticated replanning before persisting an attempt", async () => {
+    const root = await repository();
+    try {
+      const controller = new AbortController();
+      let phase: "setup" | "apply" = "setup";
+      const service = await RepositoryChangeLifecycleService.create(root, {
+        now: () => {
+          if (phase === "apply") controller.abort();
+          return "2026-09-10T00:00:00.000Z";
+        },
+      });
+      const captured = await service.capture({ request: "Change greeting.", proposal: proposal() });
+      const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      phase = "apply";
+
+      await expect(service.apply(approval.id, { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+      expect(await (await ChangeLifecycleStore.create(root)).incompleteAttemptsForApproval(approval.id)).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("cannot bypass unresolved new meaning by omitting pre-edit context", async () => {
     const root = await repository();
     try {
@@ -681,6 +718,27 @@ describe("repository change lifecycle service", () => {
 
       await expect(service.apply(approval.id)).rejects.toThrow(/simulated process interruption/iu);
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("hello ${name}");
+
+      internal.store.writeArtifact = writeArtifact;
+      const readPreparedSuccess = internal.store.readPreparedSuccess.bind(internal.store);
+      const readController = new AbortController();
+      internal.store.readPreparedSuccess = async (attemptId) => {
+        const prepared = await readPreparedSuccess(attemptId);
+        readController.abort();
+        return prepared;
+      };
+      await expect(service.recover(approval.id, { signal: readController.signal })).rejects.toMatchObject({ name: "AbortError" });
+      expect(await internal.store.incompleteAttemptsForApproval(approval.id)).toHaveLength(1);
+
+      internal.store.readPreparedSuccess = readPreparedSuccess;
+      const publishController = new AbortController();
+      internal.store.writeArtifact = async (kind, hash, content) => {
+        const path = await writeArtifact(kind, hash, content);
+        publishController.abort();
+        return path;
+      };
+      await expect(service.recover(approval.id, { signal: publishController.signal })).rejects.toMatchObject({ name: "AbortError" });
+      expect(await internal.store.incompleteAttemptsForApproval(approval.id)).toHaveLength(1);
 
       internal.store.writeArtifact = writeArtifact;
       const recovered = await service.recover(approval.id);
