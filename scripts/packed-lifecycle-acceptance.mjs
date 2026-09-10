@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
-import { hashCanonical, validateReleaseCandidate } from "./release-candidate.mjs";
+import { canonicalJson as candidateJson, hashBytes, hashCanonical, inventoryCandidateFiles, validateReleaseCandidate } from "./release-candidate.mjs";
+import { resolveNpmCommand } from "./npm-command.mjs";
 
 const execute = promisify(execFile);
 const maximumOutputBytes = 1_048_576;
@@ -262,19 +263,45 @@ async function pathAbsent(path) {
   try { await access(path); return false; } catch (error) { if (error?.code === "ENOENT") return true; throw error; }
 }
 
+export function validatePackedLifecycleInput(input) {
+  assert(input !== null && typeof input === "object" && typeof input.temporaryRoot === "string" && typeof input.candidateRoot === "string", "packed lifecycle requires owned temporary and candidate roots");
+  for (const forbidden of ["repositoryRoot", "checkoutPath", "pluginSource", "fixture", "consumerRoot", "installedProjector"]) assert(!Object.hasOwn(input, forbidden), `received forbidden caller input: ${forbidden}`);
+}
+
+async function installCandidateTarball(candidate, temporaryRoot) {
+  const consumerRoot = join(temporaryRoot, "packed-consumer");
+  await mkdir(consumerRoot, { recursive: true });
+  await writeFile(join(consumerRoot, "package.json"), "{\"private\":true,\"type\":\"module\"}\n");
+  const npmConfig = join(temporaryRoot, "packed-empty-npmrc");
+  await writeFile(npmConfig, "");
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith("npm_config_")));
+  environment.NPM_CONFIG_USERCONFIG = npmConfig;
+  const npm = await resolveNpmCommand(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock", join(candidate.root, candidate.manifest.tarballPath)], environment);
+  requireExit(await run(npm.executable, npm.arguments, { cwd: consumerRoot, env: environment }), "packed candidate tarball install");
+  return { consumerRoot, installedProjector: join(consumerRoot, "node_modules/@onepersonlabs/projector") };
+}
+
 export async function runPackedLifecycleAcceptance(input) {
+  validatePackedLifecycleInput(input);
   const candidate = await validateReleaseCandidate(input.candidateRoot);
   const candidatePluginRoot = join(candidate.root, candidate.manifest.pluginRoot);
   const pluginFiles = candidate.files.filter(({ path }) => path.startsWith(`${candidate.manifest.pluginRoot}/`));
   assert(pluginFiles.length > 0, "release candidate has no authenticated plugin files");
-  const fixture = input.fixture;
+  const fixtureDescriptor = candidate.files.find(({ path }) => path === candidate.manifest.fixturePath);
+  const fixtureBytes = await readFile(join(candidate.root, candidate.manifest.fixturePath));
+  assert(fixtureDescriptor !== undefined && hashBytes(fixtureBytes) === fixtureDescriptor.digest, "held-out fixture bytes do not match the candidate manifest");
+  const fixture = JSON.parse(fixtureBytes.toString("utf8"));
   assert(fixture?.version === 1 && typeof fixture.request === "string" && Array.isArray(fixture.expectedPaths), "received an invalid held-out fixture");
+  const { installedProjector } = await installCandidateTarball(candidate, input.temporaryRoot);
   const runId = randomUUID();
   const pluginRoot = join(input.temporaryRoot, "held-out-plugin");
   const repository = join(input.temporaryRoot, "held-out-repository");
-  const installedCli = join(input.installedProjector, "bin", "projector.js");
+  const installedCli = join(installedProjector, "bin", "projector.js");
   const wrapper = join(pluginRoot, "scripts", "projector-change.mjs");
   await cp(candidatePluginRoot, pluginRoot, { recursive: true });
+  const expectedCopiedPluginFiles = pluginFiles.map(({ path, ...rest }) => ({ path: path.slice(`${candidate.manifest.pluginRoot}/`.length), ...rest }));
+  const copiedPluginFiles = await inventoryCandidateFiles(pluginRoot);
+  assert(candidateJson(expectedCopiedPluginFiles) === candidateJson(copiedPluginFiles), "copied plugin bytes do not match the candidate manifest");
   await mkdir(join(repository, "src"), { recursive: true });
   await mkdir(join(repository, "test"), { recursive: true });
   await writeFile(join(repository, ".gitignore"), ".projector/runtime/\n", "utf8");
@@ -325,7 +352,6 @@ export async function runPackedLifecycleAcceptance(input) {
     return { ...launched, completed };
   };
   const agent = async (args) => launchAgent(args).completed;
-  assert(!Object.hasOwn(input, "repositoryRoot") && !Object.hasOwn(input, "checkoutPath") && !Object.hasOwn(input, "pluginSource"), "received a checkout dependency in source-severed acceptance");
   const installedVersion = requireExit(await direct(["--version"]), "source-severed installed CLI version").stdout;
   assert(installedVersion === "2.1.0", "did not execute the installed CLI");
   const initialized = json(await direct(["init", "--format", "json"]), "explicit held-out repository activation");
@@ -365,12 +391,14 @@ export async function runPackedLifecycleAcceptance(input) {
   const independent = result.validations.find(({ validatorId }) => validatorId === "node-independent:test/public-api.test.mjs");
   const certificateBytes = await readFile(join(repository, result.certificateRef), "utf8"); const receiptBytes = await readFile(join(repository, result.receiptRef), "utf8");
   const rerunSource = await readFile(join(repository, "src", "format-label.mjs"), "utf8");
+  const revalidatedCandidate = await validateReleaseCandidate(candidate.root);
+  assert(revalidatedCandidate.manifestHash === candidate.manifestHash && candidateJson(revalidatedCandidate.files) === candidateJson(candidate.files), "release candidate inputs changed during packed execution");
   const evidence = {
     version: 1,
     runId,
     request,
     activation: { initialized: initialized.initialized === true, projectEnabled: initialized.projectEnabled === true, config: activationConfig },
-    artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", candidateManifestHash: candidate.manifestHash, pluginBundleHash: hashCanonical(pluginFiles), installedSymlinkCount: await countSymlinks(input.installedProjector), pluginSymlinkCount: await countSymlinks(pluginRoot), nodePathEmpty: environment.NODE_PATH === "", execution: "trusted-host" },
+    artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", candidateManifestHash: candidate.manifestHash, pluginBundleHash: hashCanonical(copiedPluginFiles), installedSymlinkCount: await countSymlinks(installedProjector), pluginSymlinkCount: await countSymlinks(pluginRoot), nodePathEmpty: environment.NODE_PATH === "", execution: "trusted-host" },
     direct: { changeSelector: directChange.selector, planHash: directPlan.immutablePlanHash, planId: directPlan.plan.id, predictedChangedPaths: expectedPaths, preview: directPlan.preview },
     pause: { status: pause.outcome, changeSelector: pause.selector, planHash: pause.immutablePlanHash },
     approval: { status: approval.kind === "lifecycle-approval" ? "approved" : "invalid", approvalSelector: approval.selector, planHash: approval.immutablePlanHash },

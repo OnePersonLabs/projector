@@ -902,8 +902,8 @@
       "sourceDigest": "sha256:v1:0440c7219a414710294c5ff852fc84314c563dbed22a60292952beace6de30e5",
       "publicFacade": "projector",
       "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence recomputes completion hashes and derives oracle/fixed-point outcomes instead of trusting flags",
-      "testSourceDigest": "sha256:v1:2654ff839a10dbf2bb7bb8b0e44c1f5c7ad91f0be22a78dfa5cae0b732cdfeaa",
-      "mappingHash": "sha256:v1:c00b0be89e1c535efdbcea7bcf4d4a11511cbc1873e39d1dbe6d5163fe0ef27a"
+      "testSourceDigest": "sha256:v1:036cba27720b03ad725eafb21182273851d37b56fe6153386c55c826f09275ea",
+      "mappingHash": "sha256:v1:25777c3442a2020b179d225789713a966315d1c3e5e2084cbfee0a3a837682e9"
     },
     {
       "id": "property:13:increasing-uncertainty-cannot-lower-approval-risk-requirements",
