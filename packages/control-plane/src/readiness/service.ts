@@ -111,7 +111,7 @@ export async function withProjectOperationAccess<T>(
   input: Omit<ReadinessInspectionInput, "operation"> & {
     readonly operation: Exclude<ProjectorOperation, "init">;
   },
-  callback: (access: { readonly readiness: ReadyProjectReadiness }) => Promise<T>,
+  callback: (access: { readonly readiness: ReadyProjectReadiness; readonly signal: AbortSignal }) => Promise<T>,
 ): Promise<ProjectOperationAccessResult<T>> {
   const initial = await inspectProjectReadiness(repositoryRoot, input);
   if (initial.status !== "ready") return { readiness: initial };
@@ -119,11 +119,11 @@ export async function withProjectOperationAccess<T>(
     return await withRuntimeOperationAccess(
       repositoryRoot,
       { operation: input.operation, mode: "shared", ...(input.signal === undefined ? {} : { signal: input.signal }) },
-      async () => {
+      async ({ signal }) => {
         const current = await inspectProjectReadiness(repositoryRoot, input);
         if (current.status !== "ready") return { readiness: current };
         const ready = current as ReadyProjectReadiness;
-        return { readiness: ready, value: await callback({ readiness: ready }) };
+        return { readiness: ready, value: await callback({ readiness: ready, signal }) };
       },
     );
   } catch (error) {

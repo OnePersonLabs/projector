@@ -56,6 +56,15 @@ const operationalRootFiles = new Set(["dogfood.json", "governance.json"]);
 
 async function canonicalTomlFiles(root: string): Promise<string[]> {
   const files: string[] = [];
+  try {
+    const rootStatus = await lstat(root);
+    if (rootStatus.isSymbolicLink() || !rootStatus.isDirectory()) {
+      throw new Error(`canonical root must be a real directory: ${root}`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return files;
+    throw error;
+  }
   const visit = async (directory: string): Promise<void> => {
     let entries;
     try {
