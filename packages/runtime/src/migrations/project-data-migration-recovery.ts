@@ -29,7 +29,10 @@ export interface ProjectDataMigrationJournalRecoveryPort {
 }
 
 export interface ProjectDataMigrationTargetRecoveryPort {
-  observeCurrentTarget(pending: PendingProjectDataMigration): Promise<ProjectDataFormatSnapshot>;
+  observeCurrentTarget(pending: PendingProjectDataMigration): Promise<{
+    readonly format: ProjectDataFormatSnapshot;
+    readonly canonicalRootDigest: ContentHash;
+  }>;
 }
 
 export interface CompletedProjectDataMigrationRecoveryPorts {
@@ -106,11 +109,12 @@ export async function reconcileCompletedProjectDataMigration(
     if (!hasConfigLastPublication(exactJournal.record)) {
       return required(pending, "Committed migration journal does not publish prepared config as its final operation");
     }
-    const target = ProjectDataFormatSnapshotSchema.parse(await ports.target.observeCurrentTarget(pending));
-    if (target.snapshotHash !== pending.targetSnapshotHash) {
+    const target = await ports.target.observeCurrentTarget(pending);
+    const format = ProjectDataFormatSnapshotSchema.parse(target.format);
+    if (format.snapshotHash !== pending.targetSnapshotHash) {
       return required(pending, "Current validated format snapshot does not match the Pending target snapshot");
     }
-    if (exactJournal.record.entry.intendedAfterCanonicalDigest !== target.canonical.semanticSetHash) {
+    if (exactJournal.record.entry.intendedAfterCanonicalDigest !== target.canonicalRootDigest) {
       return required(pending, "Committed journal does not bind the current validated canonical target");
     }
 
