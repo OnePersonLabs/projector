@@ -114,6 +114,10 @@ export interface RecoveryResult {
   reason?: string;
 }
 
+export interface RecoveryOptions {
+  readonly signal?: AbortSignal;
+}
+
 export class InvalidJournalTransitionError extends Error {
   constructor(from: TransactionPhase, to: TransactionPhase) {
     super(`Transaction phase cannot transition from ${from} to ${to}`);
@@ -323,8 +327,9 @@ export class FileTransactionJournal {
     return record;
   }
 
-  async recoverIncomplete(): Promise<RecoveryResult[]> {
-    return this.recoverRecords(await this.discover());
+  async recoverIncomplete(options: RecoveryOptions = {}): Promise<RecoveryResult[]> {
+    throwIfAborted(options.signal);
+    return this.recoverRecords(await this.discover(), options);
   }
 
   async incomplete(transactionIds?: readonly string[]): Promise<DurableTransactionRecord[]> {
@@ -332,9 +337,10 @@ export class FileTransactionJournal {
     return records.filter(({ entry }) => entry.phase !== "committed" && entry.phase !== "rolled-back");
   }
 
-  async recover(transactionIds: readonly string[]): Promise<RecoveryResult[]> {
+  async recover(transactionIds: readonly string[], options: RecoveryOptions = {}): Promise<RecoveryResult[]> {
+    throwIfAborted(options.signal);
     if (transactionIds.length === 0) return [];
-    return this.recoverRecords(await this.discover(transactionIds));
+    return this.recoverRecords(await this.discover(transactionIds), options);
   }
 
   private async discover(transactionIds?: readonly string[]): Promise<DurableTransactionRecord[]> {
@@ -371,9 +377,10 @@ export class FileTransactionJournal {
     return discovered;
   }
 
-  private async recoverRecords(discovered: readonly DurableTransactionRecord[]): Promise<RecoveryResult[]> {
+  private async recoverRecords(discovered: readonly DurableTransactionRecord[], options: RecoveryOptions): Promise<RecoveryResult[]> {
     const results: RecoveryResult[] = [];
     for (const record of discovered) {
+      throwIfAborted(options.signal);
       if (record.entry.phase === "committed" || record.entry.phase === "rolled-back") continue;
       const priorPhase = record.entry.phase;
       const pending = record.compensations.find((compensation) => compensation.status === "pending");
@@ -390,7 +397,7 @@ export class FileTransactionJournal {
         });
         continue;
       }
-      results.push(await this.rollbackRecord(record));
+      results.push(await this.rollbackRecord(record, options));
     }
     return results;
   }
@@ -450,7 +457,8 @@ export class FileTransactionJournal {
     await this.persist(record);
   }
 
-  async rollbackRecord(record: DurableTransactionRecord): Promise<RecoveryResult> {
+  async rollbackRecord(record: DurableTransactionRecord, options: RecoveryOptions = {}): Promise<RecoveryResult> {
+    throwIfAborted(options.signal);
     const priorPhase = record.entry.phase;
     if (record.entry.phase !== "rolling-back") {
       if (record.entry.phase === "committed" || record.entry.phase === "rolled-back") {
@@ -460,8 +468,10 @@ export class FileTransactionJournal {
     }
     try {
       for (const operation of [...record.operations].reverse()) {
+        throwIfAborted(options.signal);
         if (operation.status === "reverted") continue;
         for (const change of [...operation.changes].reverse()) {
+          throwIfAborted(options.signal);
           const current = await this.snapshot(change.path, record.allowedWriteRoots);
           if (sameSnapshot(current, change.before)) continue;
           if (!sameSnapshot(current, change.after)) {
@@ -470,11 +480,14 @@ export class FileTransactionJournal {
             );
           }
           await this.restore(change.path, change.before, record.allowedWriteRoots);
+          throwIfAborted(options.signal);
         }
         this.inject(`after-operation-revert:${operation.id}`);
+        throwIfAborted(options.signal);
         operation.status = "reverted";
         await this.persist(record);
       }
+      throwIfAborted(options.signal);
       await this.forcePhase(record, "rolled-back");
       return {
         transactionId: record.entry.transactionId,
@@ -604,6 +617,10 @@ export class FileTransactionJournal {
     await mkdir(dirname(authorizedTarget.realTarget), { recursive: true });
     await this.paths.resolveScopedWrite(path, scopes);
   }
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true) throw signal.reason ?? new DOMException("The operation was aborted", "AbortError");
 }
 
 const allowedTransitions: Record<TransactionPhase, readonly TransactionPhase[]> = {

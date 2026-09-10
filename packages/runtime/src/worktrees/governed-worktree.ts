@@ -4,6 +4,7 @@ import type {
   BeginTransactionInput,
   FileTransaction,
   FileTransactionJournal,
+  RecoveryOptions,
   RecoveryResult,
 } from "../journal/index.js";
 import type { WriterLeaseHandle, WriterLeaseManager, WriterLeaseOwner } from "./writer-lease.js";
@@ -46,10 +47,12 @@ export class GovernedWorktreeSession {
     return this.journal.begin(input);
   }
 
-  async recover(transactionIds: readonly string[]): Promise<RecoveryResult[]> {
+  async recover(transactionIds: readonly string[], options: RecoveryOptions = {}): Promise<RecoveryResult[]> {
     this.assertOpen();
+    options.signal?.throwIfAborted();
     await this.lease.heartbeat();
-    return this.journal.recover(transactionIds);
+    options.signal?.throwIfAborted();
+    return this.journal.recover(transactionIds, options);
   }
 
   async heartbeat(): Promise<void> {
