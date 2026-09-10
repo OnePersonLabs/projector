@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import {
   createProjectorOperationRunner,
+  createBundledProjectorOperationRunner,
   defineProjectorOperationHandler,
   OperationCapabilityDiscoverySchema,
   type OperationRunnerPorts,
@@ -29,7 +30,12 @@ const ready = (packageIdentity: PackageIdentity): ProjectReadiness => ({
 });
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => rm(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 20,
+  })));
 });
 
 async function packagedRoot(manifest: object = { name: "@projector/cli", version: "7.4.2", private: true }): Promise<string> {
@@ -88,6 +94,36 @@ function handler(
 }
 
 describe("bounded Projector operation runner", () => {
+  test("composes installed readiness, initialization, verification, and observed host capabilities", async () => {
+    const root = await packagedRoot();
+    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root });
+
+    const inactive = await runner.discoverCapabilities({ repositoryRoot: root });
+    expect(inactive.readiness.status).toBe("inactive");
+    expect(inactive.operations.find(({ operation }) => operation === "verify")).toMatchObject({
+      registered: true,
+      reachable: true,
+    });
+    expect(inactive.operations.find(({ operation }) => operation === "application.observe")).toMatchObject({
+      registered: false,
+      reachable: false,
+    });
+    expect(inactive.observedHostCapabilities).toEqual([
+      expect.objectContaining({ capability: "process.cpu-limit-enforcement", available: false }),
+      expect.objectContaining({ capability: "process.memory-limit-enforcement", available: false }),
+    ]);
+
+    await expect(runner.execute({ ...request("init"), repositoryRoot: root })).resolves.toMatchObject({
+      status: "succeeded",
+      output: { created: true, readiness: { status: "ready" } },
+    });
+    await expect(runner.execute({ ...request("verify"), repositoryRoot: root })).resolves.toMatchObject({
+      status: "succeeded",
+      readiness: { status: "ready" },
+      output: { command: "verify", exitCode: 5, exitProof: { requiredUnavailable: true } },
+    });
+  });
+
   test("reports inactive status by bounded inspection without invoking mutation ports", async () => {
     const root = await packagedRoot();
     let initialized = false;
