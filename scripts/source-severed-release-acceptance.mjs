@@ -45,15 +45,9 @@ export async function runSourceSeveredReleaseAcceptance(candidateRoot) {
   await mkdir(resultsRoot, { recursive: true });
   const temporary = await mkdtemp(join(tmpdir(), "projector-source-severed-release-"));
   try {
-    const consumer = join(temporary, "consumer");
-    await installTarball(consumer, tarball, temporary);
-    const installedProjector = join(consumer, "node_modules/@onepersonlabs/projector");
     const packed = await runPackedLifecycleAcceptance({
       temporaryRoot: join(temporary, "acceptance"),
-      consumerRoot: consumer,
-      installedProjector,
       candidateRoot: root,
-      fixture,
     });
     const evidencePath = "results/packed-held-out-lifecycle.json";
     const transcriptPath = "results/packed-held-out-lifecycle-transcript.json";

@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { describe, expect, it } from "vitest";
 import { canonicalJson, hashFramedDomain } from "../packages/core/src/index.js";
 
-import { terminateProcessTree, verifyPackedLifecycleEvidence } from "./packed-lifecycle-acceptance.mjs";
+import { terminateProcessTree, validatePackedLifecycleInput, verifyPackedLifecycleEvidence } from "./packed-lifecycle-acceptance.mjs";
 
 const sortValue = (value) => Array.isArray(value) ? value.map(sortValue) : value !== null && typeof value === "object"
   ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortValue(item)]))
@@ -74,6 +74,14 @@ function evidence() {
 }
 
 describe("packed held-out lifecycle evidence", () => {
+  it("rejects caller-supplied fixture, package, plugin, or checkout inputs", () => {
+    const base = { temporaryRoot: "temporary", candidateRoot: "candidate" };
+    expect(() => validatePackedLifecycleInput(base)).not.toThrow();
+    for (const field of ["fixture", "installedProjector", "consumerRoot", "pluginSource", "repositoryRoot", "checkoutPath"]) {
+      expect(() => validatePackedLifecycleInput({ ...base, [field]: "caller-controlled" })).toThrow(/forbidden caller input/iu);
+    }
+  });
+
   it("accepts one source-severed approval/interruption/recovery proof with closed impact", () => {
     expect(verifyPackedLifecycleEvidence(evidence())).toMatch(/^sha256:v1:[a-f0-9]{64}$/u);
   });
