@@ -1561,7 +1561,7 @@ export interface CommandSpec {
   cwd: string;
   readScope: string[];
   writeScope: string[];
-  network: "deny" | "allow";
+  requiresNetwork: boolean;
   environmentKeys: string[];
   sideEffectClass: "none" | "read-only" | "workspace-write" | "external-write";
   timeoutMs: number;

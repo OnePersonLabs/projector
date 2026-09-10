@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   ContentHashSchema,
   ChangeProposalSchema,
+  CommandSpecSchema,
   ConceptSchema,
   EntityIdSchema,
   GitRealizationLocatorSchema,
@@ -23,6 +24,23 @@ import {
 } from "./index.js";
 
 describe("normative contract registry", () => {
+  it("models command network access as declared need rather than enforced denial", () => {
+    const command = {
+      id: "test",
+      argv: ["node", "test.mjs"],
+      cwd: ".",
+      readScope: ["src/**"],
+      writeScope: [],
+      requiresNetwork: false,
+      environmentKeys: [],
+      sideEffectClass: "read-only",
+      timeoutMs: 1_000,
+    };
+
+    expect(CommandSpecSchema.safeParse(command).success).toBe(true);
+    expect(CommandSpecSchema.safeParse({ ...command, requiresNetwork: undefined, network: "deny" }).success).toBe(false);
+  });
+
   it("represents every exported normative declaration exactly once", () => {
     expect(Object.keys(contractRegistry)).toHaveLength(156);
     expect(validateContractRegistry()).toEqual([]);
