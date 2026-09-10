@@ -33,6 +33,7 @@ import {
   createProjectorOperationResultSchema,
   createProjectorOperationRequestSchema,
   createProjectDataMigrationReceipt,
+  hashProjectDataFormatSnapshot,
   applicationEvidenceBindingIssues,
   parseProjectorConfig,
   hashSemantic,
@@ -313,16 +314,16 @@ describe("normative contract registry", () => {
   });
 
   it("models ordered project-data migrations without implying review or approval", () => {
-    const hash = `sha256:v1:${"a".repeat(64)}`;
-    const snapshot = {
+    const hash = `sha256:v1:${"a".repeat(64)}` as ContentHash;
+    const snapshotBody = {
       apiVersion: "projector.project-data-format-snapshot/v1",
       packageIdentity: { name: "projector", version: "2.1.0" },
-      preparedConfig: { apiVersion: "projector.config/v1", projectorVersion: "2.1.0", semanticHash: hash },
-      canonical: { envelopeApiVersion: "projector/v2", schemaBundleHash: hash, semanticSetHash: hash },
-      runtimeEvidence: { schemaVersion: "1.0.0", semanticHash: hash },
-      sqlite: { schemaVersion: 1, derivationHash: hash },
-      snapshotHash: hash,
+      preparedConfig: { apiVersion: "projector.config/v1", projectorVersion: "2.1.0", schemaHash: hash },
+      canonical: { envelopeApiVersion: "projector/v2", schemaBundleHash: hash },
+      runtimeEvidence: { schemaVersion: "1.0.0", schemaHash: hash },
+      sqlite: { schemaVersion: 1, migrationSetHash: hash },
     } as const;
+    const snapshot = { ...snapshotBody, snapshotHash: hashProjectDataFormatSnapshot(snapshotBody) } as const;
     const ref = { id: "transform:config-v2", relativePath: "migrations/config-v2.mjs", contentHash: hash };
     const manifest = {
       apiVersion: "projector.project-data-migration-manifest/v1",
@@ -338,6 +339,8 @@ describe("normative contract registry", () => {
     } as const;
 
     expect(ProjectDataFormatSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    expect(ProjectDataFormatSnapshotSchema.safeParse({ ...snapshot, runtimeEvidence: { ...snapshot.runtimeEvidence, schemaHash: `sha256:v1:${"b".repeat(64)}` } }).success).toBe(false);
+    expect(ProjectDataFormatSnapshotSchema.safeParse({ ...snapshot, canonical: { ...snapshot.canonical, semanticSetHash: hash } }).success).toBe(false);
     expect(ProjectDataMigrationManifestSchema.safeParse(manifest).success).toBe(true);
     for (const [fromVersion, toVersion] of [["2.1.0", "2.1.0"], ["2.2.0", "2.1.0"], ["2.1.0", "2.1.0-alpha"]]) {
       expect(ProjectDataMigrationManifestSchema.safeParse({ ...manifest, fromVersion, toVersion }).success).toBe(false);

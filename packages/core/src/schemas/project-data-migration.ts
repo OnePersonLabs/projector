@@ -46,20 +46,19 @@ export const ProjectDataFormatSnapshotSchema = z.strictObject({
   preparedConfig: z.strictObject({
     apiVersion: z.literal("projector.config/v1"),
     projectorVersion: PackageVersionSchema,
-    semanticHash: ContentHashSchema,
+    schemaHash: ContentHashSchema,
   }),
   canonical: z.strictObject({
     envelopeApiVersion: z.literal("projector/v2"),
     schemaBundleHash: ContentHashSchema,
-    semanticSetHash: ContentHashSchema,
   }),
   runtimeEvidence: z.strictObject({
     schemaVersion: PackageVersionSchema,
-    semanticHash: ContentHashSchema,
+    schemaHash: ContentHashSchema,
   }),
   sqlite: z.strictObject({
     schemaVersion: z.number().int().nonnegative(),
-    derivationHash: ContentHashSchema,
+    migrationSetHash: ContentHashSchema,
   }),
   snapshotHash: ContentHashSchema,
 });
