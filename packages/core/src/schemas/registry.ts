@@ -14,6 +14,15 @@ import { getHashProfile } from "../hashing/projections.js";
 import { ChangeProposalSchema } from "./change-proposal.js";
 import { CanonicalDocumentEnvelopeByKindSchema, CanonicalDocumentEnvelopeSchema } from "./canonical-envelope.js";
 import { PreparedProjectorConfigSchema } from "./project-config.js";
+import {
+  PendingProjectDataMigrationSchema,
+  ProjectDataFormatSnapshotSchema,
+  ProjectDataMigrationArtifactRefSchema,
+  ProjectDataMigrationChainSchema,
+  ProjectDataMigrationDraftSchema,
+  ProjectDataMigrationManifestSchema,
+  PortableRelativePathSchema,
+} from "./project-data-migration.js";
 
 export interface ContractRegistration {
   readonly schema?: z.ZodType;
@@ -102,14 +111,21 @@ export const normativeContractNames = [
   "ObservabilityClass",
   "OperationEvidence",
   "PatternCandidate",
+  "PendingProjectDataMigration",
   "PlanCheckpoint",
   "PlanningSurprise",
+  "PortableRelativePath",
   "PreservationDimension",
   "ProjectionExpectation",
   "ProjectionLens",
   "ProjectionSpec",
   "ProjectionUnit",
   "PreparedProjectorConfig",
+  "ProjectDataFormatSnapshot",
+  "ProjectDataMigrationArtifactRef",
+  "ProjectDataMigrationChain",
+  "ProjectDataMigrationDraft",
+  "ProjectDataMigrationManifest",
   "RecognizerBinding",
   "Relation",
   "RelationType",
@@ -222,6 +238,13 @@ const schemaExports: Record<string, z.ZodType> = {
   CanonicalDocumentEnvelopeSchema,
   CanonicalDocumentEnvelopeByKindSchema,
   PreparedProjectorConfigSchema,
+  PendingProjectDataMigrationSchema,
+  ProjectDataFormatSnapshotSchema,
+  ProjectDataMigrationArtifactRefSchema,
+  ProjectDataMigrationChainSchema,
+  ProjectDataMigrationDraftSchema,
+  ProjectDataMigrationManifestSchema,
+  PortableRelativePathSchema,
 };
 
 export const contractRegistry: Readonly<Record<string, ContractRegistration>> =
