@@ -34,6 +34,42 @@ describe("FileTransactionJournal", () => {
     expect((await journal.read("tx-other")).entry.phase).toBe("workspace-mutating");
     expect(await readFile(join(root, "other.txt"), "utf8")).toBe("other");
   });
+
+  it("cancels targeted recovery before mutation and resumes safely between persisted operations", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-journal-cancel-"));
+    await writeFile(join(root, "first.txt"), "before-first");
+    await writeFile(join(root, "second.txt"), "before-second");
+    const controller = new AbortController();
+    let abortedBetweenOperations = false;
+    const journal = await journalFor(root, (point) => {
+      if (!abortedBetweenOperations && point.startsWith("after-operation-revert:")) {
+        abortedBetweenOperations = true;
+        controller.abort(new Error("recovery access lost"));
+      }
+    });
+    const transaction = await journal.begin(beginInput("tx-cancelled-recovery"));
+    await transaction.writeFile("first.txt", "after-first");
+    await transaction.writeFile("second.txt", "after-second");
+
+    const beforeStart = new AbortController();
+    beforeStart.abort(new Error("cancelled before recovery"));
+    await expect(journal.recover(["tx-cancelled-recovery"], { signal: beforeStart.signal }))
+      .rejects.toThrow("cancelled before recovery");
+    expect(await readFile(join(root, "first.txt"), "utf8")).toBe("after-first");
+    expect(await readFile(join(root, "second.txt"), "utf8")).toBe("after-second");
+
+    await expect(journal.recover(["tx-cancelled-recovery"], { signal: controller.signal }))
+      .rejects.toThrow("recovery access lost");
+    expect(await readFile(join(root, "first.txt"), "utf8")).toBe("after-first");
+    expect(await readFile(join(root, "second.txt"), "utf8")).toBe("before-second");
+    expect((await journal.read("tx-cancelled-recovery")).entry.phase).toBe("rolling-back");
+
+    await expect(journal.recover(["tx-cancelled-recovery"])).resolves.toEqual([
+      expect.objectContaining({ transactionId: "tx-cancelled-recovery", action: "rolled-back" }),
+    ]);
+    expect(await readFile(join(root, "first.txt"), "utf8")).toBe("before-first");
+    expect(await readFile(join(root, "second.txt"), "utf8")).toBe("before-second");
+  });
   it("can create a new file through an exact authorized path without widening to its parent", async () => {
     const { root, journal } = await harness();
     const transaction = await journal.begin({ ...beginInput("tx-exact-path"), allowedWriteRoots: ["nested/exact.txt"] });
