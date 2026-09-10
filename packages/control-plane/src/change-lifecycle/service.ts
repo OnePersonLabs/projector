@@ -9,6 +9,8 @@ import { adjudicatedKnowledgeContext, assertIdentityDisposition, captureKnowledg
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import type { KnowledgeReconciliationResult } from "../knowledge/types.js";
 import type { PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
+import { RepositoryRepresentationArtifactStore } from "../representation/artifact-store.js";
+import { validateCompiledRepositoryChangeCurrentness } from "./currentness.js";
 import {
   ChangeLifecycleStore,
   type ChangeLifecycleStoreOptions,
@@ -44,6 +46,11 @@ export interface LifecycleRecoveryOutcome {
 
 export interface LifecycleOperationOptions {
   readonly signal?: AbortSignal;
+}
+
+export interface CurrentLifecyclePlanInspection {
+  readonly capture: LifecycleCaptureRecord;
+  readonly compiled: CompiledRepositoryChange;
 }
 
 export type LifecycleApplyOptions = LifecycleOperationOptions;
@@ -115,6 +122,7 @@ export class RepositoryChangeLifecycleService {
   private constructor(
     private readonly repositoryRoot: string,
     private readonly store: ChangeLifecycleStore,
+    private readonly representationArtifacts: RepositoryRepresentationArtifactStore,
     options: RepositoryChangeLifecycleServiceOptions,
   ) {
     this.now = options.now ?? (() => new Date().toISOString());
@@ -127,7 +135,8 @@ export class RepositoryChangeLifecycleService {
     options: RepositoryChangeLifecycleServiceOptions = {},
   ): Promise<RepositoryChangeLifecycleService> {
     const store = await ChangeLifecycleStore.create(repositoryRoot, options);
-    return new RepositoryChangeLifecycleService(repositoryRoot, store, options);
+    const representationArtifacts = await RepositoryRepresentationArtifactStore.create(repositoryRoot);
+    return new RepositoryChangeLifecycleService(repositoryRoot, store, representationArtifacts, options);
   }
 
   async capture(input: CaptureRepositoryChangeInput, options: LifecycleOperationOptions = {}): Promise<CapturedRepositoryChange> {
@@ -168,6 +177,22 @@ export class RepositoryChangeLifecycleService {
     const currentCapsules = capsules(compiled).map((capsule) => ({ packetId: capsule.taskId, capsuleId: capsule.id, capsuleHash: executionCapsuleHash(capsule) }));
     if (canonicalJson(currentCapsules) !== canonicalJson(capture.capsuleBindings)) mismatches.push("capsule bindings");
     if (mismatches.length > 0) throw new Error(`lifecycle plan is stale or unauthenticated: ${mismatches.join(", ")}`);
+    return { capture, compiled };
+  }
+
+  /**
+   * Re-observes only the dependencies that authorize reuse of a captured plan.
+   * The global compiledAgainst digest may rebind when every value/query and
+   * representation-profile dependency remains identical.
+   */
+  async inspectCurrentPlan(selector: string, options: LifecycleOperationOptions = {}): Promise<CurrentLifecyclePlanInspection> {
+    options.signal?.throwIfAborted();
+    const capture = await this.store.readCapture(selector);
+    const proposal = parseChangeProposal(capture.proposal);
+    const compiled = await this.compile(capture.request, proposal, capture.knowledgeContextId, options.signal, false);
+    if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, compiled, proposal, options.signal);
+    const validation = await validateCompiledRepositoryChangeCurrentness({ repositoryRoot: this.repositoryRoot, compiled, binding: capture.stateBinding, ...(options.signal === undefined ? {} : { signal: options.signal }), now: this.now });
+    if (validation.status !== "current") throw new Error(`lifecycle plan dependencies are ${validation.status}: ${validation.reasons.join("; ")}`);
     return { capture, compiled };
   }
 
@@ -323,10 +348,14 @@ export class RepositoryChangeLifecycleService {
     return this.apply(approvalSelector, options);
   }
 
-  private async compile(request: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal): Promise<CompiledRepositoryChange> {
+  private async compile(request: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, publishRepresentation = true): Promise<CompiledRepositoryChange> {
     const knowledgeContext = await adjudicatedKnowledgeContext(this.repositoryRoot, proposal, contextId, signal, this.applicationEvidence);
-    const compiled = await compileRepositoryChange({ repositoryRoot: this.repositoryRoot, request, proposal, now: this.now(), ...(knowledgeContext === undefined ? {} : { knowledgeContext }) }, signal === undefined ? {} : { signal });
+    const compiled = await compileRepositoryChange(
+      { repositoryRoot: this.repositoryRoot, request, proposal, now: this.now(), ...(knowledgeContext === undefined ? {} : { knowledgeContext }) },
+      { ...(publishRepresentation ? { representationArtifacts: this.representationArtifacts } : {}), ...(signal === undefined ? {} : { signal }) },
+    );
     assertIdentityDisposition(compiled, proposal);
+    if (publishRepresentation) await this.representationArtifacts.publish(compiled.representationDetails);
     return compiled;
   }
 
