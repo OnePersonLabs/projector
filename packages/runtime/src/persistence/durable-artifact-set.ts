@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open, readdir, rename, rm, rmdir } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { PortableRelativePathSchema } from "@projector/core";
@@ -38,7 +38,10 @@ export class ArtifactSetIncompleteError extends Error {
 }
 
 interface CheckedManifest<TManifest> extends ValidatedArtifactManifest<TManifest> { manifestBytes: Buffer }
-interface ArtifactStoreTestHooks { beforeStageBlobLink?: () => void | Promise<void> }
+interface ArtifactStoreTestHooks {
+  beforeStageBlobTemporaryOpen?: () => void | Promise<void>;
+  beforeStageBlobLink?: () => void | Promise<void>;
+}
 class RecoverableArtifactSetValidationError extends ArtifactSetIntegrityError {}
 
 export class DurableArtifactSetStore<TManifest> {
@@ -89,6 +92,7 @@ export class DurableArtifactSetStore<TManifest> {
     const temporary = this.temporarySetPath(input.artifactSetId);
     await ensureDurableDirectory(temporary, "artifact-set temporary directory");
     try {
+      await this.testHooks.beforeStageBlobTemporaryOpen?.();
       await writeDurableNewFile(target, bytes, temporary, this.testHooks.beforeStageBlobLink);
     } catch (error) {
       if (!isCode(error, "EEXIST")) throw error;
@@ -98,7 +102,6 @@ export class DurableArtifactSetStore<TManifest> {
     }
     // Persist both a new link and a raced, exact link from another writer.
     await syncDirectory(dirname(target));
-    await removeEmptyTemporaryDirectory(temporary, this.temporaryRoot());
   }
 
   async finalize(input: {
@@ -120,7 +123,6 @@ export class DurableArtifactSetStore<TManifest> {
       if (!Buffer.from(published.manifestBytes).equals(manifest.manifestBytes)) {
         throw new ArtifactSetIntegrityError(`Artifact set ${input.artifactSetId} was published with a different manifest`);
       }
-      await removeEmptyTemporaryDirectory(temporary, this.temporaryRoot());
       return published;
     }
 
@@ -183,8 +185,24 @@ export class DurableArtifactSetStore<TManifest> {
         published.status === "integrity-failed" ? published.reason : `Published artifact set ${input.artifactSetId} disappeared`,
       );
     }
-    await removeEmptyTemporaryDirectory(temporary, this.temporaryRoot());
     return published;
+  }
+
+  async resumeFinalize(artifactSetId: string): Promise<PublishedArtifactSet<TManifest>> {
+    assertArtifactSetId(artifactSetId);
+    await this.ensureLayout();
+    const current = await this.read(artifactSetId);
+    if (current.status === "published") return current;
+    if (current.status === "integrity-failed" && await pathExists(this.publishedPath(artifactSetId))) {
+      throw new ArtifactSetIntegrityError(current.reason);
+    }
+    const finalizing = this.finalizingPath(artifactSetId);
+    const manifestPath = join(finalizing, "manifest.bin");
+    if (!(await pathExists(finalizing)) || !(await pathExists(manifestPath))) {
+      throw new ArtifactSetIncompleteError(artifactSetId, ["finalizing/manifest.bin"]);
+    }
+    const manifestBytes = await readRegularFile(manifestPath, "artifact manifest");
+    return this.finalize({ artifactSetId, manifestBytes });
   }
 
   async read(artifactSetId: string): Promise<ArtifactSetReadResult<TManifest>> {
@@ -388,6 +406,7 @@ async function ensureDurableDirectory(path: string, label: string): Promise<void
 }
 
 async function assertTemporaryDirectoryClear(path: string): Promise<void> {
+  await assertDirectory(path, "artifact-set temporary directory");
   const entries = await readdir(path, { withFileTypes: true });
   if (entries.length === 0) return;
   const locations: string[] = [];
@@ -403,15 +422,6 @@ async function assertTemporaryDirectoryClear(path: string): Promise<void> {
     `Artifact publication is blocked by active or interrupted temporary files: ${locations.sort().join(", ")}. ` +
     "Retry after active writers finish, or remove only these exact files after confirming no writer remains active.",
   );
-}
-
-async function removeEmptyTemporaryDirectory(path: string, parent: string): Promise<void> {
-  try {
-    await rmdir(path);
-    await syncDirectory(parent);
-  } catch (error) {
-    if (!isCode(error, "ENOENT") && !isCode(error, "ENOTEMPTY") && !isCode(error, "EEXIST")) throw error;
-  }
 }
 
 async function assertDirectory(path: string, label: string): Promise<void> {

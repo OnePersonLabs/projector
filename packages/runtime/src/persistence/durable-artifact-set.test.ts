@@ -149,8 +149,9 @@ describe("durable artifact set publication", () => {
     await writeFile(join(root, "finalizing", "resume-finalize", "manifest.bin"), manifestBytes);
 
     expect(await store.read("resume-finalize")).toEqual({ status: "incomplete", artifactSetId: "resume-finalize" });
-    const published = await store.finalize({ artifactSetId: "resume-finalize", manifestBytes });
+    const published = await store.resumeFinalize("resume-finalize");
     expect(published.blobs.get("result.txt")).toEqual(blob);
+    await expect(store.resumeFinalize("resume-finalize")).resolves.toEqual(published);
   });
 
   test("prevents a previously admitted writer from mutating a set after cross-instance finalization starts", async () => {
@@ -183,6 +184,41 @@ describe("durable artifact set publication", () => {
     expect(await finalizer.read("interleaved")).toMatchObject({ status: "published" });
   });
 
+  test("keeps same-set coordination stable while another process pauses before opening its temporary file", async () => {
+    let releasePausedWriter: (() => void) | undefined;
+    let writerPaused: (() => void) | undefined;
+    const paused = new Promise<void>((resolve) => { writerPaused = resolve; });
+    const released = new Promise<void>((resolve) => { releasePausedWriter = resolve; });
+    const { storageRoot, store } = await temporaryStore();
+    await store.begin({ artifactSetId: "shared-temporary" });
+    const first = new DurableArtifactSetStore(storageRoot, strictManifest, {
+      beforeStageBlobTemporaryOpen: async () => {
+        writerPaused?.();
+        await released;
+      },
+    });
+    const pausedWrite = first.stageBlob({
+      artifactSetId: "shared-temporary",
+      path: "first.txt",
+      bytes: Buffer.from("first"),
+    });
+    await paused;
+    await store.stageBlob({
+      artifactSetId: "shared-temporary",
+      path: "second.txt",
+      bytes: Buffer.from("second"),
+    });
+    releasePausedWriter?.();
+    await expect(pausedWrite).resolves.toBeUndefined();
+    await expect(store.finalize({
+      artifactSetId: "shared-temporary",
+      manifestBytes: manifest([
+        { path: "first.txt", bytes: Buffer.from("first") },
+        { path: "second.txt", bytes: Buffer.from("second") },
+      ]),
+    })).resolves.toMatchObject({ status: "published" });
+  });
+
   test("rolls interrupted invalid finalizing sets back for exact correction", async () => {
     for (const fixture of [
       { id: "missing", staged: [] as Array<{ path: string; bytes: Buffer }>, interrupted: [{ path: "result.txt", bytes: Buffer.from("expected") }], corrected: [{ path: "result.txt", bytes: Buffer.from("expected") }] },
@@ -197,7 +233,7 @@ describe("durable artifact set publication", () => {
       await writeFile(join(root, "finalizing", fixture.id, "manifest.bin"), interruptedManifest);
 
       expect(await store.read(fixture.id)).toMatchObject({ status: "integrity-failed" });
-      await expect(store.finalize({ artifactSetId: fixture.id, manifestBytes: interruptedManifest })).rejects.toThrow();
+      await expect(store.resumeFinalize(fixture.id)).rejects.toThrow();
       expect(await store.read(fixture.id)).toEqual({ status: "incomplete", artifactSetId: fixture.id });
       if (fixture.id === "missing") {
         await store.stageBlob({ artifactSetId: fixture.id, ...fixture.corrected[0]! });
@@ -215,7 +251,7 @@ describe("durable artifact set publication", () => {
     await writeFile(join(root, "finalizing", "unsafe-finalizing", "manifest.bin"), manifestBytes);
     await writeFile(join(root, "finalizing", "unsafe-finalizing", "forged.txt"), "forged");
 
-    await expect(store.finalize({ artifactSetId: "unsafe-finalizing", manifestBytes })).rejects.toThrow(/unexpected entry/i);
+    await expect(store.resumeFinalize("unsafe-finalizing")).rejects.toThrow(/unexpected entry/i);
     expect(await store.read("unsafe-finalizing")).toMatchObject({ status: "integrity-failed" });
     await expect(readFile(join(root, "finalizing", "unsafe-finalizing", "forged.txt"))).resolves.toBeDefined();
   });
@@ -234,6 +270,23 @@ describe("durable artifact set publication", () => {
     await rm(temporary);
     await expect(store.finalize({ artifactSetId: "temp-recovery", manifestBytes: manifest([]) }))
       .resolves.toMatchObject({ status: "published" });
+  });
+
+  test("rejects a symlinked per-set temporary coordination directory", async () => {
+    const { root, store } = await temporaryStore();
+    await store.begin({ artifactSetId: "unsafe-temporary" });
+    await symlink(root, join(root, "temporary", "unsafe-temporary"), "dir");
+
+    await expect(store.begin({ artifactSetId: "unsafe-temporary" })).rejects.toThrow(/not a regular directory/i);
+  });
+
+  test("does not infer a final manifest when only mutable staging exists", async () => {
+    const { store } = await temporaryStore();
+    await store.begin({ artifactSetId: "not-finalizing" });
+    await expect(store.resumeFinalize("not-finalizing")).rejects.toMatchObject({
+      name: "ArtifactSetIncompleteError",
+      missingPaths: ["finalizing/manifest.bin"],
+    });
   });
 
   test("rejects cross-platform aliases for artifact IDs and blob paths", async () => {
@@ -265,6 +318,7 @@ describe("durable artifact set publication", () => {
       .rejects.toThrow(/different manifest/i);
     await writeFile(join(root, "published", "published", "blobs", "result.txt"), "tampered");
     expect(await store.read("published")).toMatchObject({ status: "integrity-failed" });
+    await expect(store.resumeFinalize("published")).rejects.toThrow(/SHA-256/i);
 
     await expect(store.begin({ artifactSetId: "../escape" })).rejects.toThrow(/ID/i);
     const linked = join(root, "staging", "linked");
