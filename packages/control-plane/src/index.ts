@@ -35,6 +35,7 @@ export type {
   KnowledgeContextResult,
   KnowledgeReconciliationResult,
 } from "./knowledge/types.js";
+export { KnowledgeContextResultSchema, KnowledgeReconciliationResultSchema } from "./knowledge/types.js";
 export { inspectRepositoryCoverage, type RepositoryCoverageRequest } from "./coverage/service.js";
 export type { CompletionQuestion } from "./coverage/issues.js";
 export {
