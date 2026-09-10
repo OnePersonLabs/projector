@@ -7,7 +7,7 @@ export function applicationEvidenceBindingIssues(evidence: readonly EvidenceRef[
     const binding = reference.applicationPredicate;
     if (binding?.observationRole !== "latest") continue;
     const group = JSON.stringify([binding.adapter.id, binding.adapter.version, binding.scenario.id, binding.case, binding.predicateId]);
-    if (latest.has(group)) issues.push({ index, message: "only one latest application observation is allowed for a requirement predicate" });
+    if (latest.has(group)) issues.push({ index, message: "only one latest application observation is allowed for a canonical evidence-owner predicate" });
     latest.add(group);
   }
   return issues;

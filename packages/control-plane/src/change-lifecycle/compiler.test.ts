@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { deriveEntityId, hashFramedDomain, parseChangeProposal, withCanonicalHashes, type AuthorityRecord, type BehavioralScenario, type ChangeProposal, type Requirement } from "@projector/core";
+import { deriveEntityId, hashFramedDomain, hashSemantic, parseChangeProposal, withCanonicalHashes, type AuthorityRecord, type BehavioralScenario, type ChangeProposal, type Requirement } from "@projector/core";
 import { createRepositoryScriptLens, executionPlanHash } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
@@ -240,6 +240,19 @@ describe("repository change compiler", () => {
       await expect(compileRepositoryChange({ repositoryRoot: root, request: "Clarify the clock boundary.", proposal: revision })).resolves.toMatchObject({ executionKind: "canonical-only" });
       await expect(compileRepositoryChange({ repositoryRoot: root, request: "Use stale evidence.", proposal: parseChangeProposal({ ...revision, canonicalMutations: [{ ...revision.canonicalMutations![0], expectedDocumentHash: hashFramedDomain("stale", null) }] }) }))
         .rejects.toThrow(/hashes are stale/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("derives scenario meaning before validating self-owned application evidence", async () => {
+    const root = await repository();
+    try {
+      const base = { id: "scenario:self-owned-evidence", key: "self-owned-evidence", title: "Self-owned evidence", aliases: [], status: "active" as const, sourceClass: "authored" as const, scope: { op: "all" as const, items: [] }, steps: [{ role: "trigger" as const, statement: "The application is observed." }, { role: "expected-outcome" as const, statement: "Its declared predicate is evaluated." }], origin: [] };
+      const semanticHash = hashSemantic("behavioral-scenario", base);
+      const evidence = [{ evidenceId: "artifact:self-owned-evidence", stance: "supports" as const, applicationPredicate: { kind: "application-observation" as const, adapter: { id: "psychord", version: "1" }, scenario: { id: base.id, semanticHash }, case: "self-owned", predicateId: "predicate:self-owned", assertionIds: ["assertion:self-owned"], observationRole: "latest" as const } }];
+      const model = parseChangeProposal({ apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"], canonicalMutations: [{ kind: "behavioral-scenario", operation: "add", expectedAbsent: true, rationale: "Bind the observation to its accepted scenario owner.", payload: { ...base, evidence } }] });
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Bind application evidence to its scenario owner.", proposal: model });
+      expect(compiled.canonicalWrites[0]?.envelope).toMatchObject({ kind: "behavioral-scenario", semanticHash, payload: { semanticHash, evidence } });
+      expect(compiled.canonicalWrites[0]?.envelope.canonicalDocumentHash).not.toBe(withCanonicalHashes({ ...compiled.canonicalWrites[0]!.envelope, payload: { ...compiled.canonicalWrites[0]!.envelope.payload, evidence: [] } }).canonicalDocumentHash);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

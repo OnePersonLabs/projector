@@ -6,6 +6,7 @@ import {
   ChangeProposalSchema,
   CanonicalDocumentEnvelopeByKindSchema,
   CanonicalDocumentEnvelopeSchema,
+  BehavioralScenarioSchema,
   CommandSpecSchema,
   ConceptSchema,
   EntityIdSchema,
@@ -34,6 +35,7 @@ import {
   createProjectDataMigrationReceipt,
   applicationEvidenceBindingIssues,
   parseProjectorConfig,
+  hashSemantic,
   withCanonicalHashes,
   parseChangeProposal,
   type ContentHash,
@@ -150,8 +152,26 @@ describe("normative contract registry", () => {
     const requirement = { id: "requirement:archive", key: "archive", title: "Archive", aliases: [], statement: "The archive survives reload.", status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, origin: [], evidence: [{ evidenceId: "artifact:psychord-run-1", stance: "supports", applicationPredicate }], discoveryHash: hash, semanticHash: hash };
     expect(RequirementSchema.safeParse(requirement).success).toBe(true);
     const duplicateLatest: EvidenceRef[] = [{ evidenceId: "artifact:psychord-run-1", stance: "supports", applicationPredicate }, { evidenceId: "artifact:psychord-run-2", stance: "supports", applicationPredicate }];
-    expect(applicationEvidenceBindingIssues(duplicateLatest)).toEqual([{ index: 1, message: "only one latest application observation is allowed for a requirement predicate" }]);
+    expect(applicationEvidenceBindingIssues(duplicateLatest)).toEqual([{ index: 1, message: "only one latest application observation is allowed for a canonical evidence-owner predicate" }]);
     expect(RequirementSchema.safeParse({ ...requirement, evidence: duplicateLatest }).success).toBe(false);
+    const scenarioBase = { id: "scenario:keep-reload", key: "keep-reload", title: "Keep and reload", aliases: [], status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, steps: [{ role: "trigger", statement: "The application reloads." }, { role: "expected-outcome", statement: "The saved state remains." }], origin: [] };
+    const scenarioSemanticHash = hashSemantic("behavioral-scenario", scenarioBase);
+    const scenarioPredicate = { ...applicationPredicate, scenario: { id: scenarioBase.id, semanticHash: scenarioSemanticHash } };
+    const scenarioEvidence = [{ evidenceId: "artifact:psychord-run-1", stance: "supports" as const, applicationPredicate: scenarioPredicate }, { evidenceId: "artifact:psychord-run-2", stance: "supports" as const, applicationPredicate: scenarioPredicate }];
+    const scenario = { ...scenarioBase, evidence: scenarioEvidence, discoveryHash: hash, semanticHash: scenarioSemanticHash };
+    expect(BehavioralScenarioSchema.safeParse(scenario).success).toBe(false);
+    const validScenario = { ...scenario, evidence: [scenarioEvidence[0]!] };
+    expect(BehavioralScenarioSchema.safeParse(validScenario).success).toBe(true);
+    expect(BehavioralScenarioSchema.safeParse({ ...validScenario, evidence: [{ ...validScenario.evidence[0], applicationPredicate: { ...applicationPredicate, scenario: { ...applicationPredicate.scenario, id: "scenario:other" } } }] }).success).toBe(false);
+    const { semanticHash: _scenarioSemanticHash, discoveryHash: _scenarioDiscoveryHash, ...scenarioPayload } = validScenario;
+    const scenarioProposal = { apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["architecture", "behavior"], canonicalMutations: [{ kind: "behavioral-scenario", operation: "add", expectedAbsent: true, rationale: "Bind reviewed application evidence to its scenario owner.", payload: scenarioPayload }] };
+    expect(ChangeProposalSchema.safeParse(scenarioProposal).success).toBe(true);
+    expect(ChangeProposalSchema.safeParse({ ...scenarioProposal, canonicalMutations: [{ ...scenarioProposal.canonicalMutations[0], payload: { ...scenarioPayload, evidence: scenarioEvidence } }] }).success).toBe(false);
+    expect(ChangeProposalSchema.safeParse({ ...scenarioProposal, canonicalMutations: [{ ...scenarioProposal.canonicalMutations[0], payload: { ...scenarioPayload, evidence: [{ ...validScenario.evidence[0], applicationPredicate: { ...applicationPredicate, scenario: { ...applicationPredicate.scenario, id: "scenario:other" } } }] } }] }).success).toBe(false);
+    const scenarioWithoutEvidence = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id: validScenario.id, key: validScenario.key, lifecycle: validScenario.status, payload: { ...validScenario, evidence: [] } });
+    const scenarioWithEvidence = withCanonicalHashes({ ...scenarioWithoutEvidence, payload: validScenario });
+    expect(scenarioWithEvidence.semanticHash).toBe(scenarioWithoutEvidence.semanticHash);
+    expect(scenarioWithEvidence.canonicalDocumentHash).not.toBe(scenarioWithoutEvidence.canonicalDocumentHash);
     const revisedHashLatest = duplicateLatest.map((reference, index) => index === 1 ? { ...reference, applicationPredicate: { ...reference.applicationPredicate!, scenario: { ...reference.applicationPredicate!.scenario, semanticHash: `sha256:v1:${"b".repeat(64)}` as ContentHash } } } : reference);
     expect(RequirementSchema.safeParse({ ...requirement, evidence: revisedHashLatest }).success).toBe(false);
     const { semanticHash: _semanticHash, discoveryHash: _discoveryHash, ...payload } = requirement;

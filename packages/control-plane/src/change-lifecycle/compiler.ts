@@ -384,7 +384,7 @@ function parsedMutationPayload(mutation: PayloadCanonicalMutation): Record<strin
   } : supplied;
   const result = canonicalMutationSchemas[mutation.kind].safeParse({
     ...payloadWithNestedHashes,
-    semanticHash: placeholder,
+    semanticHash: mutation.kind === "behavioral-scenario" ? hashSemantic("behavioral-scenario", payloadWithNestedHashes) : placeholder,
     ...(["concept", "requirement", "behavioral-scenario"].includes(mutation.kind) ? { discoveryHash: placeholder } : {}),
   });
   if (!result.success) throw new Error(`invalid ${mutation.kind} mutation payload: ${result.error.message}`);
