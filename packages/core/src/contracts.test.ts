@@ -22,6 +22,7 @@ import {
   PortableRelativePathSchema,
   ProjectorOperationRequestSchema,
   RealizationBindingSchema,
+  RequirementSchema,
   RequirementDeltaSchema,
   contractRegistry,
   exportContractJsonSchemas,
@@ -30,8 +31,12 @@ import {
   createProjectorOperationResultSchema,
   createProjectorOperationRequestSchema,
   createProjectDataMigrationReceipt,
+  applicationEvidenceBindingIssues,
   withCanonicalHashes,
   parseChangeProposal,
+  type ContentHash,
+  type EvidenceRef,
+  type ApplicationEvidencePredicateBinding,
 } from "./index.js";
 
 describe("normative contract registry", () => {
@@ -53,13 +58,13 @@ describe("normative contract registry", () => {
   });
 
   it("represents every exported normative declaration exactly once", () => {
-    expect(Object.keys(contractRegistry)).toHaveLength(165);
+    expect(Object.keys(contractRegistry)).toHaveLength(166);
     expect(validateContractRegistry()).toEqual([]);
   });
 
   it("exports strict JSON Schemas whose references resolve", () => {
     const schemas = exportContractJsonSchemas();
-    expect(Object.keys(schemas)).toHaveLength(156);
+    expect(Object.keys(schemas)).toHaveLength(157);
     expect(validateJsonSchemaReferences(schemas)).toEqual([]);
     for (const schema of Object.values(schemas)) {
       expect(schema).toMatchObject({ $schema: expect.any(String) });
@@ -135,6 +140,24 @@ describe("normative contract registry", () => {
     expect(parse("behavioral-scenario", { ...common, title: " ", steps })).toBe(false);
     expect(parse("requirement", { ...common, id: "requirement:future", statement: " ", origin: [] })).toBe(false);
     expect(parse("requirement", { ...common, id: "requirement:future", statement: "Retain the future commitment.", origin: [] })).toBe(true);
+  });
+
+  it("binds application evidence to one declared requirement predicate without inferring fulfillment", () => {
+    const hash = `sha256:v1:${"a".repeat(64)}` as ContentHash;
+    const applicationPredicate: ApplicationEvidencePredicateBinding = { kind: "application-observation", adapter: { id: "psychord", version: "1" }, scenario: { id: "scenario:keep-reload", semanticHash: hash }, case: "keep-reload-replay", predicateId: "predicate:archive-persists", assertionIds: ["assertion:archive-bytes", "assertion:replay-visible"], observationRole: "latest" };
+    const requirement = { id: "requirement:archive", key: "archive", title: "Archive", aliases: [], statement: "The archive survives reload.", status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, origin: [], evidence: [{ evidenceId: "artifact:psychord-run-1", stance: "supports", applicationPredicate }], discoveryHash: hash, semanticHash: hash };
+    expect(RequirementSchema.safeParse(requirement).success).toBe(true);
+    const duplicateLatest: EvidenceRef[] = [{ evidenceId: "artifact:psychord-run-1", stance: "supports", applicationPredicate }, { evidenceId: "artifact:psychord-run-2", stance: "supports", applicationPredicate }];
+    expect(applicationEvidenceBindingIssues(duplicateLatest)).toEqual([{ index: 1, message: "only one latest application observation is allowed for a requirement predicate" }]);
+    expect(RequirementSchema.safeParse({ ...requirement, evidence: duplicateLatest }).success).toBe(false);
+    const revisedHashLatest = duplicateLatest.map((reference, index) => index === 1 ? { ...reference, applicationPredicate: { ...reference.applicationPredicate!, scenario: { ...reference.applicationPredicate!.scenario, semanticHash: `sha256:v1:${"b".repeat(64)}` as ContentHash } } } : reference);
+    expect(RequirementSchema.safeParse({ ...requirement, evidence: revisedHashLatest }).success).toBe(false);
+    const { semanticHash: _semanticHash, discoveryHash: _discoveryHash, ...payload } = requirement;
+    const proposal = { apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["architecture", "behavior"], canonicalMutations: [{ kind: "requirement", operation: "add", expectedAbsent: true, rationale: "Bind reviewed application evidence.", payload }] };
+    expect(ChangeProposalSchema.safeParse(proposal).success).toBe(true);
+    expect(ChangeProposalSchema.safeParse({ ...proposal, canonicalMutations: [{ ...proposal.canonicalMutations[0], payload: { ...payload, evidence: duplicateLatest } }] }).success).toBe(false);
+    expect(RequirementSchema.safeParse({ ...requirement, evidence: [{ ...requirement.evidence[0]!, applicationPredicate: { ...applicationPredicate, assertionIds: [] } }] }).success).toBe(false);
+    expect(RequirementSchema.safeParse({ ...requirement, evidence: [{ ...requirement.evidence[0]!, applicationPredicate: { ...applicationPredicate, observationRole: "prior" } }] }).success).toBe(true);
   });
 
   it("accepts exact lineage dispositions and explicit identity-resolution evidence", () => {

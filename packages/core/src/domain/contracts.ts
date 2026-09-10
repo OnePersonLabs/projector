@@ -163,6 +163,17 @@ export interface EvidenceRef {
   evidenceId: EntityId;
   stance: "supports" | "contradicts" | "context";
   weight?: number;
+  applicationPredicate?: ApplicationEvidencePredicateBinding;
+}
+
+export interface ApplicationEvidencePredicateBinding {
+  kind: "application-observation";
+  adapter: { id: string; version: string };
+  scenario: { id: EntityId; semanticHash: ContentHash };
+  case: string;
+  predicateId: EntityId;
+  assertionIds: string[];
+  observationRole: "prior" | "latest";
 }
 
 export interface CausalOrigin {

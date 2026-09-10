@@ -1,6 +1,8 @@
 import { z } from "zod";
+import type { EvidenceRef } from "../domain/contracts.js";
 
 import { ArchitectureConcernSchema, ArchitectureDecisionSchema, AuthorityRecordSchema, BehavioralScenarioSchema, ConceptSchema, DeveloperPreferenceSchema, ImpactRuleSchema, ProjectionLensSchema, RelationSchema, RequirementSchema, RuleSchema } from "./generated-contracts.js";
+import { applicationEvidenceBindingIssues } from "./application-evidence-binding.js";
 
 export const changeProposalApiVersion = "projector.change-proposal/v1" as const;
 const facets = ["behavior", "architecture", "events", "security", "realtime", "migration", "public-contract", "workspace-expansion", "persistence", "performance", "observability", "compatibility", "distribution", "cleanup", "external-surface"] as const;
@@ -65,7 +67,8 @@ function canonicalPayloadWithoutDerivedHashes(schema: z.ZodType, hasDiscoveryHas
   if (!(schema instanceof z.ZodLazy)) throw new TypeError("canonical mutation payload schema must be lazy");
   const object = schema.unwrap();
   if (!(object instanceof z.ZodObject)) throw new TypeError("canonical mutation payload schema must unwrap to an object");
-  return hasDiscoveryHash ? object.omit({ semanticHash: true, discoveryHash: true }) : object.omit({ semanticHash: true });
+  const { semanticHash: _semanticHash, discoveryHash: _discoveryHash, ...shape } = object.shape;
+  return z.strictObject(hasDiscoveryHash ? shape : { ...shape, ...(_discoveryHash === undefined ? {} : { discoveryHash: _discoveryHash }) });
 }
 const canonicalPayloadSchemas = {
   requirement: canonicalPayloadWithoutDerivedHashes(RequirementSchema, true).extend({ key, title: text(240), statement: text(), aliases: unique(text(512)) }),
@@ -151,7 +154,7 @@ export const ChangeProposalSchema = z.object({
     context.addIssue({ code: "custom", message: "canonical-only proposals cannot claim runtime validation" });
   }
   const mutationClaims = new Set<string>();
-  for (const mutation of proposal.canonicalMutations ?? []) {
+  for (const [mutationIndex, mutation] of (proposal.canonicalMutations ?? []).entries()) {
     if (mutation.kind === "lineage") {
       const claim = `lineage:${mutation.lineageKind}:${mutation.sources.map(({ id }) => id).sort(compare).join(",")}:${mutation.replacementIds.join(",")}`;
       if (mutationClaims.has(claim)) context.addIssue({ code: "custom", message: `duplicate canonical mutation: ${claim}` });
@@ -159,6 +162,7 @@ export const ChangeProposalSchema = z.object({
       continue;
     }
     const id = typeof mutation.payload.id === "string" ? mutation.payload.id : undefined;
+    if (mutation.kind === "requirement") for (const issue of applicationEvidenceBindingIssues((mutation.payload as { evidence: EvidenceRef[] }).evidence)) context.addIssue({ code: "custom", path: ["canonicalMutations", mutationIndex, "payload", "evidence", issue.index, "applicationPredicate", "observationRole"], message: issue.message });
     if (id === undefined || id.trim().length === 0) context.addIssue({ code: "custom", message: `${mutation.kind} mutation payload requires an id` });
     else {
       const claim = `${mutation.kind}:${id}`;

@@ -84,6 +84,7 @@ export const normativeContractNames = [
   "EvidenceClaim",
   "EvidenceKind",
   "EvidenceRef",
+  "ApplicationEvidencePredicateBinding",
   "EvidenceRefreshPolicy",
   "ExecutionCapsule",
   "ExecutionPlan",
