@@ -371,7 +371,7 @@ describe("normative contract registry", () => {
     expect(ProjectDataMigrationDraftSchema.safeParse(draft).success).toBe(true);
     expect(ProjectDataMigrationDraftSchema.safeParse({ ...draft, approvalId: "invented" }).success).toBe(false);
 
-    const pending = { apiVersion: "projector.pending-project-data-migration/v1", migrationId: manifest.id, sourceSnapshotHash: hash, targetSnapshotHash: hash, manifestHash: hash, backup: { id: "backup:2.1.0", location: { kind: "codex-data-relative", path: "projector/backups/2.1.0" }, manifestHash: hash }, stagingLocation: ".projector.staging/2.2.0", phase: "staged", createdAt: "2026-09-10T12:00:00Z" };
+    const pending = { apiVersion: "projector.pending-project-data-migration/v1", attemptId: "migration-attempt:prepared-data-001", migrationId: manifest.id, sourceSnapshotHash: hash, targetSnapshotHash: hash, manifestHash: hash, backup: { id: "backup:2.1.0", location: { kind: "codex-data-relative", path: "projector/backups/2.1.0" }, manifestHash: hash }, stagingLocation: ".projector.staging/2.2.0", phase: "staged", createdAt: "2026-09-10T12:00:00Z" };
     expect(PendingProjectDataMigrationSchema.safeParse(pending).success).toBe(true);
     expect(PendingProjectDataMigrationSchema.safeParse({ ...pending, markerHash: hash }).success).toBe(false);
     const invalidPaths = ["../escape", "./staging", "/absolute", "C:/absolute", "a/../b", "a\\b", "migrations/step.mjs:payload", ".projector.staging/state:stream", "state.", "state ", "CON", "con.txt", "nested/PRN.log", "nested/COM1"];
@@ -383,17 +383,19 @@ describe("normative contract registry", () => {
     const contentHash = ContentHashSchema.parse(hash);
     const receipt = createProjectDataMigrationReceipt({
       apiVersion: "projector.project-data-migration-receipt/v1",
+      attemptId: validPending.attemptId,
       migrationId: manifest.id,
       manifestHash: contentHash,
       sourceSnapshotHash: contentHash,
       targetSnapshotHash: contentHash,
-      journalId: "journal:migration-2.1.0-to-2.2.0",
+      journalId: validPending.attemptId,
       journalHash: ContentHashSchema.parse(`sha256:v1:${"b".repeat(64)}`),
       backup: validPending.backup,
       outcome: "completed",
       completedAt: "2026-09-10T12:30:00Z",
     });
     expect(ProjectDataMigrationReceiptSchema.safeParse(receipt).success).toBe(true);
+    expect(ProjectDataMigrationReceiptSchema.safeParse({ ...receipt, journalId: "migration-attempt:other" }).success).toBe(false);
     expect(ProjectDataMigrationReceiptSchema.safeParse({ ...receipt, journalHash: hash }).success).toBe(false);
     expect(ProjectDataMigrationReceiptSchema.safeParse({ ...receipt, targetPaths: [] }).success).toBe(false);
     expect(ProjectDataMigrationReceiptSchema.safeParse({ ...receipt, approvalId: "invented" }).success).toBe(false);
