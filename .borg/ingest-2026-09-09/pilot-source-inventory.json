@@ -1,0 +1,50 @@
+[
+  {
+    "root": "C:\\dev\\projects\\psychord",
+    "revision": "75d4d9e5949c33f39b43b215e315f8f4d80efc36",
+    "path": "NORTH_STAR.md",
+    "sha256": "0b9b078c3d2238e6e4cfcc89b669af085614d02d2e487c494f20930b263a6b53"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord",
+    "revision": "75d4d9e5949c33f39b43b215e315f8f4d80efc36",
+    "path": "openspec/specs/tooling-dev-workbench/spec.md",
+    "sha256": "51ac6692beaeff335d5c3951f1e8438ea4d425d6e18cc68a3ae58021ae6beaa9"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord",
+    "revision": "75d4d9e5949c33f39b43b215e315f8f4d80efc36",
+    "path": "apps/web/e2e/chord-bootstrap.spec.ts",
+    "sha256": "0bd51c0b70d4572cb28f6c339a440dc25cde639ba097ade77c949f3c16f53b50"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord",
+    "revision": "75d4d9e5949c33f39b43b215e315f8f4d80efc36",
+    "path": "apps/web/e2e/dev-workbench.helpers.ts",
+    "sha256": "4a88a57723aa12d5791a65c15406bed330e98a1c679ff7d89098b6d177a8ce62"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord",
+    "revision": "75d4d9e5949c33f39b43b215e315f8f4d80efc36",
+    "path": "apps/web/playwright.config.ts",
+    "sha256": "f0ba6d0d3df43032c231116b25429422c5526176f40559620a5845a8c331877d"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord",
+    "revision": "75d4d9e5949c33f39b43b215e315f8f4d80efc36",
+    "path": "apps/web/package.json",
+    "sha256": "1ac8f436dbcc6a94e4482cb0f544eb666f539c4c351b53af6317cfa37136e569"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord",
+    "revision": "75d4d9e5949c33f39b43b215e315f8f4d80efc36",
+    "path": "e2e/dev-workbench.spec.ts",
+    "sha256": "b596cc023126e62d603d97c1c59c5ec58b2f3d18c65c9beb757a28c61db2469a"
+  },
+  {
+    "root": "C:\\dev\\projects\\psychord",
+    "revision": "75d4d9e5949c33f39b43b215e315f8f4d80efc36",
+    "path": "pnpm-lock.yaml",
+    "sha256": "b4ddcbfc5b9797a5307031877438e0cf1852b7f52a9249279b1c929753195e8f"
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "receipt": "reconcile-design.json",
+    "contextId": "knowledge_context_7eac751d3151408528bfd9c61fa4905a",
+    "status": "rebound",
+    "reasons": [
+      "all bound value hashes and query dependencies remain current"
+    ],
+    "governanceStatus": "not-applicable",
+    "branches": [
+      {
+        "branchId": "knowledge_branch_f90b4fa9707cd735220246bab2b846b1",
+        "status": "rebound",
+        "changedValueDependencyIds": [],
+        "changedQueryDependencyIds": [],
+        "reasons": [
+          "all bound value hashes and query dependencies remain current"
+        ]
+      }
+    ]
+  },
+  {
+    "receipt": "reconcile-runtime.json",
+    "contextId": "knowledge_context_4926d4406163d0077aaf2e32ccd31da9",
+    "status": "rebound",
+    "reasons": [
+      "all bound value hashes and query dependencies remain current"
+    ],
+    "governanceStatus": "conformant",
+    "branches": [
+      {
+        "branchId": "knowledge_branch_9b1bf9ea824d4920413735384259d704",
+        "status": "rebound",
+        "changedValueDependencyIds": [],
+        "changedQueryDependencyIds": [],
+        "reasons": [
+          "all bound value hashes and query dependencies remain current"
+        ]
+      }
+    ]
+  }
+]
