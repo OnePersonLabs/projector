@@ -54,12 +54,13 @@ import {
   createStrictPsychordApplicationObserver,
   observePsychordEvidenceCurrentness,
   type PsychordCommandRunner,
-  type PsychordObservationArtifactService,
 } from "@projector/integrations/runtime-evidence";
 import { NativeProcessLauncher, OperationalReportSchema } from "@projector/runtime";
 import { z } from "zod";
 
 import { runReadOnlyOperationalVerification } from "./operational-verification.js";
+import type { InstalledPsychordObservationFactory } from "./installed-psychord-observation.js";
+export { createInstalledPsychordObservationFactory } from "./installed-psychord-observation.js";
 
 const maximumPackageManifestBytes = 16 * 1024;
 const ordinaryOperationSchema = ProjectorOperationSchema.exclude(["status", "init"]);
@@ -298,7 +299,7 @@ export interface BundledProjectorOperationRunnerInput {
     readonly signal: AbortSignal;
     readonly environment: Readonly<Record<string, string | undefined>>;
   }) => PsychordApplicationEvidenceHost;
-  readonly applicationObservation?: PsychordObservationArtifactService;
+  readonly applicationObservation?: InstalledPsychordObservationFactory;
 }
 
 const inheritedApplicationEnvironmentKeys = ["SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "PATH", "TEMP", "TMP", "TMPDIR"] as const;
@@ -461,12 +462,15 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
     }),
   ];
   if (input.applicationObservation !== undefined) {
-    const service = input.applicationObservation;
+    const serviceFor = input.applicationObservation;
     handlers.push(defineProjectorOperationHandler({
       operation: "application.observe",
       inputSchema: z.strictObject({ plan: PsychordApplicationObservationPlanSchema }),
       outputSchema: PsychordObserveAndPublishResultSchema,
-      execute: ({ input: { plan } }, { signal }) => service.observeAndPublish(plan, { signal }),
+      execute: async ({ repositoryRoot, input: { plan } }, context) => {
+        const service = await serviceFor({ repositoryRoot, plan, signal: context.signal, environment: context.environment });
+        return service.observeAndPublish(plan, { signal: context.signal });
+      },
     }));
   }
 
