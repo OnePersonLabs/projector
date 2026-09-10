@@ -18,6 +18,7 @@ import {
   ProjectDataMigrationDraftSchema,
   ProjectDataMigrationChainSchema,
   ProjectDataMigrationManifestSchema,
+  ProjectDataMigrationReceiptSchema,
   PortableRelativePathSchema,
   ProjectorOperationRequestSchema,
   RealizationBindingSchema,
@@ -27,6 +28,7 @@ import {
   validateJsonSchemaReferences,
   validateContractRegistry,
   createProjectorOperationResultSchema,
+  createProjectDataMigrationReceipt,
   withCanonicalHashes,
   parseChangeProposal,
 } from "./index.js";
@@ -50,13 +52,13 @@ describe("normative contract registry", () => {
   });
 
   it("represents every exported normative declaration exactly once", () => {
-    expect(Object.keys(contractRegistry)).toHaveLength(164);
+    expect(Object.keys(contractRegistry)).toHaveLength(165);
     expect(validateContractRegistry()).toEqual([]);
   });
 
   it("exports strict JSON Schemas whose references resolve", () => {
     const schemas = exportContractJsonSchemas();
-    expect(Object.keys(schemas)).toHaveLength(155);
+    expect(Object.keys(schemas)).toHaveLength(156);
     expect(validateJsonSchemaReferences(schemas)).toEqual([]);
     for (const schema of Object.values(schemas)) {
       expect(schema).toMatchObject({ $schema: expect.any(String) });
@@ -304,8 +306,27 @@ describe("normative contract registry", () => {
       expect(PendingProjectDataMigrationSchema.safeParse({ ...pending, stagingLocation: path }).success).toBe(false);
     }
 
+    const validPending = PendingProjectDataMigrationSchema.parse(pending);
+    const contentHash = ContentHashSchema.parse(hash);
+    const receipt = createProjectDataMigrationReceipt({
+      apiVersion: "projector.project-data-migration-receipt/v1",
+      migrationId: manifest.id,
+      manifestHash: contentHash,
+      sourceSnapshotHash: contentHash,
+      targetSnapshotHash: contentHash,
+      journalId: "journal:migration-2.1.0-to-2.2.0",
+      journalHash: ContentHashSchema.parse(`sha256:v1:${"b".repeat(64)}`),
+      backup: validPending.backup,
+      outcome: "completed",
+      completedAt: "2026-09-10T12:30:00Z",
+    });
+    expect(ProjectDataMigrationReceiptSchema.safeParse(receipt).success).toBe(true);
+    expect(ProjectDataMigrationReceiptSchema.safeParse({ ...receipt, journalHash: hash }).success).toBe(false);
+    expect(ProjectDataMigrationReceiptSchema.safeParse({ ...receipt, targetPaths: [] }).success).toBe(false);
+    expect(ProjectDataMigrationReceiptSchema.safeParse({ ...receipt, approvalId: "invented" }).success).toBe(false);
+
     const exported = exportContractJsonSchemas();
-    for (const name of ["ProjectDataFormatSnapshot", "ProjectDataMigrationManifest", "ProjectDataMigrationChain", "ProjectDataMigrationDraft", "PendingProjectDataMigration"]) {
+    for (const name of ["ProjectDataFormatSnapshot", "ProjectDataMigrationManifest", "ProjectDataMigrationChain", "ProjectDataMigrationDraft", "PendingProjectDataMigration", "ProjectDataMigrationReceipt"]) {
       expect(exported[name]).toMatchObject({ $schema: expect.any(String) });
     }
     const portablePathPattern = (exported.PortableRelativePath as { pattern?: string }).pattern;

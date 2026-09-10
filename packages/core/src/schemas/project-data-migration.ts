@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { hashFramedDomain } from "../hashing/canonical-json.js";
 import { ContentHashSchema } from "./contracts.js";
 import { PackageIdentitySchema, PackageVersionSchema } from "./operations.js";
 
@@ -8,6 +9,7 @@ export const projectDataMigrationManifestApiVersion = "projector.project-data-mi
 export const projectDataMigrationChainApiVersion = "projector.data-migration-chain/v1" as const;
 export const projectDataMigrationDraftApiVersion = "projector.project-data-migration-draft/v1" as const;
 export const pendingProjectDataMigrationApiVersion = "projector.pending-project-data-migration/v1" as const;
+export const projectDataMigrationReceiptApiVersion = "projector.project-data-migration-receipt/v1" as const;
 
 export const PortableRelativePathSchema = z.string().min(1).max(1_024).regex(
   /^(?!\/)(?!.*:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!.*[. ](?:\/|$))(?!.*(?:^|\/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\.[^/]*)?(?:\/|$))(?!(?:\.|\.\.)(?:\/|$))(?!.*\/(?:\.|\.\.)(?:\/|$))[^/](?:.*[^/])?$/u,
@@ -20,6 +22,15 @@ const stableId = z.string().min(1).max(512).regex(
   /^[a-z0-9][a-z0-9._:-]*$/u,
   "must be a stable lowercase identifier",
 );
+
+const projectDataMigrationBackupRefSchema = z.strictObject({
+  id: stableId,
+  location: z.strictObject({
+    kind: z.literal("codex-data-relative"),
+    path: migrationRelativePathSchema,
+  }),
+  manifestHash: ContentHashSchema,
+});
 
 export const ProjectDataMigrationArtifactRefSchema = z.strictObject({
   id: stableId,
@@ -168,17 +179,55 @@ export const PendingProjectDataMigrationSchema = z.strictObject({
   sourceSnapshotHash: ContentHashSchema,
   targetSnapshotHash: ContentHashSchema,
   manifestHash: ContentHashSchema,
-  backup: z.strictObject({
-    id: stableId,
-    location: z.strictObject({
-      kind: z.literal("codex-data-relative"),
-      path: migrationRelativePathSchema,
-    }),
-    manifestHash: ContentHashSchema,
-  }),
+  backup: projectDataMigrationBackupRefSchema,
   stagingLocation: migrationRelativePathSchema,
   phase: z.enum(["backed-up", "staged", "publishing"]),
   createdAt: z.iso.datetime({ offset: true }),
 });
 
 export type PendingProjectDataMigration = z.infer<typeof PendingProjectDataMigrationSchema>;
+
+const projectDataMigrationReceiptBodySchema = z.strictObject({
+  apiVersion: z.literal(projectDataMigrationReceiptApiVersion),
+  migrationId: stableId,
+  manifestHash: ContentHashSchema,
+  sourceSnapshotHash: ContentHashSchema,
+  targetSnapshotHash: ContentHashSchema,
+  journalId: stableId,
+  journalHash: ContentHashSchema,
+  backup: projectDataMigrationBackupRefSchema,
+  outcome: z.literal("completed"),
+  completedAt: z.iso.datetime({ offset: true }),
+});
+
+export type ProjectDataMigrationReceiptInput = z.infer<typeof projectDataMigrationReceiptBodySchema>;
+
+export function hashProjectDataMigrationReceipt(input: ProjectDataMigrationReceiptInput) {
+  return hashFramedDomain(
+    "project-data-migration-receipt:v1",
+    projectDataMigrationReceiptBodySchema.parse(input),
+  );
+}
+
+export const ProjectDataMigrationReceiptSchema = projectDataMigrationReceiptBodySchema.extend({
+  receiptHash: ContentHashSchema,
+}).superRefine((receipt, context) => {
+  const { receiptHash, ...body } = receipt;
+  if (receiptHash !== hashProjectDataMigrationReceipt(body)) {
+    context.addIssue({
+      code: "custom",
+      path: ["receiptHash"],
+      message: "migration receipt hash does not match the strict receipt body",
+    });
+  }
+});
+
+export type ProjectDataMigrationReceipt = z.infer<typeof ProjectDataMigrationReceiptSchema>;
+
+export function createProjectDataMigrationReceipt(input: ProjectDataMigrationReceiptInput): ProjectDataMigrationReceipt {
+  const body = projectDataMigrationReceiptBodySchema.parse(input);
+  return ProjectDataMigrationReceiptSchema.parse({
+    ...body,
+    receiptHash: hashProjectDataMigrationReceipt(body),
+  });
+}

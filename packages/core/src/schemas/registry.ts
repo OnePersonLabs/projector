@@ -21,6 +21,7 @@ import {
   ProjectDataMigrationChainSchema,
   ProjectDataMigrationDraftSchema,
   ProjectDataMigrationManifestSchema,
+  ProjectDataMigrationReceiptSchema,
   PortableRelativePathSchema,
 } from "./project-data-migration.js";
 
@@ -126,6 +127,7 @@ export const normativeContractNames = [
   "ProjectDataMigrationChain",
   "ProjectDataMigrationDraft",
   "ProjectDataMigrationManifest",
+  "ProjectDataMigrationReceipt",
   "RecognizerBinding",
   "Relation",
   "RelationType",
@@ -244,6 +246,7 @@ const schemaExports: Record<string, z.ZodType> = {
   ProjectDataMigrationChainSchema,
   ProjectDataMigrationDraftSchema,
   ProjectDataMigrationManifestSchema,
+  ProjectDataMigrationReceiptSchema,
   PortableRelativePathSchema,
 };
 
