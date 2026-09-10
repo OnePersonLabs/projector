@@ -40,7 +40,7 @@ export const ProjectDataMigrationArtifactRefSchema = z.strictObject({
 
 export type ProjectDataMigrationArtifactRef = z.infer<typeof ProjectDataMigrationArtifactRefSchema>;
 
-export const ProjectDataFormatSnapshotSchema = z.strictObject({
+const ProjectDataFormatSnapshotBodySchema = z.strictObject({
   apiVersion: z.literal(projectDataFormatSnapshotApiVersion),
   packageIdentity: PackageIdentitySchema,
   preparedConfig: z.strictObject({
@@ -60,7 +60,25 @@ export const ProjectDataFormatSnapshotSchema = z.strictObject({
     schemaVersion: z.number().int().nonnegative(),
     migrationSetHash: ContentHashSchema,
   }),
+});
+
+export type ProjectDataFormatSnapshotInput = z.infer<typeof ProjectDataFormatSnapshotBodySchema>;
+
+export function hashProjectDataFormatSnapshot(input: ProjectDataFormatSnapshotInput) {
+  return hashFramedDomain("project-data-format-snapshot:v1", ProjectDataFormatSnapshotBodySchema.parse(input));
+}
+
+export const ProjectDataFormatSnapshotSchema = ProjectDataFormatSnapshotBodySchema.extend({
   snapshotHash: ContentHashSchema,
+}).superRefine((snapshot, context) => {
+  const { snapshotHash, ...body } = snapshot;
+  if (snapshotHash !== hashProjectDataFormatSnapshot(body)) {
+    context.addIssue({
+      code: "custom",
+      message: "snapshotHash does not authenticate the project-data format snapshot",
+      path: ["snapshotHash"],
+    });
+  }
 });
 
 export type ProjectDataFormatSnapshot = z.infer<typeof ProjectDataFormatSnapshotSchema>;

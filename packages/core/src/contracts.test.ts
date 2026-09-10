@@ -358,7 +358,16 @@ describe("normative contract registry", () => {
     expect(ProjectDataMigrationChainSchema.safeParse({ ...chain, manifests: [manifest, { ...nextManifest, sourceSnapshotHash: `sha256:v1:${"b".repeat(64)}` }] }).success).toBe(false);
     expect(ProjectDataMigrationChainSchema.safeParse({ ...chain, manifests: [manifest, { ...nextManifest, id: manifest.id }] }).success).toBe(false);
 
-    const draft = { apiVersion: "projector.project-data-migration-draft/v1", sourceSnapshot: snapshot, targetSnapshot: { ...snapshot, packageIdentity: { ...snapshot.packageIdentity, version: "2.2.0" } }, operations: [], customTransforms: [], validations: [] };
+    const targetSnapshotBody = {
+      ...snapshotBody,
+      packageIdentity: { ...snapshotBody.packageIdentity, version: "2.2.0" },
+    };
+    const draft = {
+      apiVersion: "projector.project-data-migration-draft/v1",
+      sourceSnapshot: snapshot,
+      targetSnapshot: { ...targetSnapshotBody, snapshotHash: hashProjectDataFormatSnapshot(targetSnapshotBody) },
+      operations: [], customTransforms: [], validations: [],
+    };
     expect(ProjectDataMigrationDraftSchema.safeParse(draft).success).toBe(true);
     expect(ProjectDataMigrationDraftSchema.safeParse({ ...draft, approvalId: "invented" }).success).toBe(false);
 
