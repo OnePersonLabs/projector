@@ -45,6 +45,19 @@ describe("TOML document codec", () => {
     expect(second).toEqual(first);
   });
 
+  test("normalizes native syntax newlines without changing escaped carriage-return content", () => {
+    const value = {
+      statement: "First paragraph.\n\nSecond paragraph.",
+      escapedCarriageReturn: "literal\rcontent",
+    };
+    const linuxBytes = stringifyTomlDocument(value);
+    const nativeBytes = linuxBytes.replaceAll("\n", "\r\n");
+
+    expect(nativeBytes).not.toBe(linuxBytes);
+    expect(parseTomlDocument(nativeBytes)).toEqual(value);
+    expect((parseTomlDocument(nativeBytes) as typeof value).escapedCarriageReturn).toContain("\r");
+  });
+
   test("produces deterministic bytes and rejects unsafe schema directives", () => {
     const value = { id: "concept:one", statement: "line one\nline two" };
     const options = { schemaPath: "../../schemas/canonical-document-v2.schema.json" };

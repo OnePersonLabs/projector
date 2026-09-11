@@ -110,6 +110,20 @@ describe("CanonicalFileRepository", () => {
     expect((await repository.snapshot()).rootDigest).toBe(before.rootDigest);
   });
 
+  test("keeps canonical identity stable when checkout newlines change inside multiline prose", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    const path = await repository.write(concept("concept:native-newlines", "First paragraph.\n\nSecond paragraph."));
+    const before = await repository.snapshot();
+    const linuxBytes = await readFile(path, "utf8");
+
+    await writeFile(path, linuxBytes.replaceAll("\n", "\r\n"), "utf8");
+
+    const after = await repository.snapshot();
+    expect(after.documents).toEqual(before.documents);
+    expect(after.rootDigest).toBe(before.rootDigest);
+  });
+
   test("prepares the exact canonical bytes later published by the repository", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);
