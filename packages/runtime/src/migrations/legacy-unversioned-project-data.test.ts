@@ -23,8 +23,8 @@ describe("legacy-unversioned project-data preparation", () => {
     const document = concept("concept:legacy-meaning", "Preserve this accepted meaning.");
     await mkdir(join(repositoryRoot, ".projector", "model", "concepts"), { recursive: true });
     await mkdir(join(repositoryRoot, ".projector", "runtime", "application-evidence"), { recursive: true });
-    await writeFile(join(repositoryRoot, ".projector", "config.json"), `${canonicalJson({ apiVersion: "projector.config/v1", enabled: true })}\n`);
-    await writeFile(join(repositoryRoot, ".projector", "model", "concepts", "legacy.concept.json"), `${canonicalJson(document)}\n`);
+    await writeFile(join(repositoryRoot, ".projector", "config.json"), `${canonicalJson({ apiVersion: "projector.config/v1", enabled: true })}\r\n`);
+    await writeFile(join(repositoryRoot, ".projector", "model", "concepts", "legacy.concept.json"), `${canonicalJson(document)}\r\n`);
     await writeFile(join(repositoryRoot, ".projector", "runtime", "application-evidence", "history.receipt.json"), "runtime-history\n");
 
     const prepared = await prepareLegacyUnversionedProjectData({
@@ -43,7 +43,7 @@ describe("legacy-unversioned project-data preparation", () => {
       projectorVersion: "2.1.0",
     });
     await expect(readFile(join(repositoryRoot, ".projector", "config.json"), "utf8"))
-      .resolves.toBe(`${canonicalJson({ apiVersion: "projector.config/v1", enabled: true })}\n`);
+      .resolves.toBe(`${canonicalJson({ apiVersion: "projector.config/v1", enabled: true })}\r\n`);
     await expect(readFile(join(repositoryRoot, ".projector", "runtime", "application-evidence", "history.receipt.json"), "utf8"))
       .resolves.toBe("runtime-history\n");
   });

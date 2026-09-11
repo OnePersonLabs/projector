@@ -228,7 +228,10 @@ function parseStrictCanonicalJson(bytes: Buffer, label: string): unknown {
   } catch (error) {
     throw new Error(`${label} is malformed JSON: ${message(error)}`);
   }
-  if (`${canonicalJson(value)}\n` !== source) throw new Error(`${label} must use canonical JSON bytes`);
+  const canonical = canonicalJson(value);
+  if (`${canonical}\n` !== source && `${canonical}\r\n` !== source) {
+    throw new Error(`${label} must use canonical JSON bytes`);
+  }
   return value;
 }
 
