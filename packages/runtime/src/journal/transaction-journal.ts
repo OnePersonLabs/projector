@@ -14,6 +14,7 @@ import {
 import { dirname, join, posix } from "node:path";
 
 import {
+  ContentHashSchema,
   PendingProjectDataMigrationSchema,
   hashFramedDomain,
   type ContentHash,
@@ -22,12 +23,33 @@ import {
   type TransactionJournalEntry,
   type TransactionPhase,
 } from "@projector/core";
+import * as z from "zod";
 
 import type { RepositoryPathService } from "../security/index.js";
 
 const journalRoot = ".projector/runtime/journal";
 const maximumJournalBytes = 64 * 1024 * 1024;
 const transientWindowsRenameCodes = new Set(["EACCES", "EBUSY", "EPERM"]);
+const retiredStableIdSchema = z.string().min(1).max(512).regex(/^[a-z0-9][a-z0-9._:-]*$/u);
+const retiredPortableRelativePathSchema = z.string().min(1).max(1_024).regex(
+  /^(?!\/)(?!.*:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!.*[. ](?:\/|$))(?!.*(?:^|\/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\.[^/]*)?(?:\/|$))(?!(?:\.|\.\.)(?:\/|$))(?!.*\/(?:\.|\.\.)(?:\/|$))[^/](?:.*[^/])?$/u,
+);
+const retiredPendingProjectDataMigrationV1Schema = z.strictObject({
+  apiVersion: z.literal("projector.pending-project-data-migration/v1"),
+  attemptId: retiredStableIdSchema,
+  migrationId: retiredStableIdSchema,
+  sourceSnapshotHash: ContentHashSchema,
+  targetSnapshotHash: ContentHashSchema,
+  manifestHash: ContentHashSchema,
+  backup: z.strictObject({
+    id: retiredStableIdSchema,
+    location: z.strictObject({ kind: z.literal("codex-data-relative"), path: retiredPortableRelativePathSchema }),
+    manifestHash: ContentHashSchema,
+  }),
+  stagingLocation: retiredPortableRelativePathSchema,
+  phase: z.literal("backed-up"),
+  createdAt: z.iso.datetime({ offset: true }),
+});
 
 async function publishJournalRecord(source: string, destination: string, renameRecord: typeof rename, platform: NodeJS.Platform): Promise<void> {
   for (const delayMs of [0, 10, 25, 50, 100, 200]) {
@@ -834,48 +856,10 @@ function isPendingMigrationForJournal(value: unknown, entry: Partial<Transaction
 }
 
 function isLegacyTerminalPendingMigration(value: unknown, entry: Partial<TransactionJournalEntry>): boolean {
-  if (typeof value !== "object" || value === null) return false;
-  const pending = value as Record<string, unknown>;
-  if (!hasExactKeys(pending, ["apiVersion", "attemptId", "backup", "createdAt", "manifestHash", "migrationId", "phase", "sourceSnapshotHash", "stagingLocation", "targetSnapshotHash"])) return false;
-  const backup = pending.backup;
-  if (typeof backup !== "object" || backup === null) return false;
-  const backupRecord = backup as Record<string, unknown>;
-  const location = backupRecord.location;
-  if (!hasExactKeys(backupRecord, ["id", "location", "manifestHash"]) || typeof location !== "object" || location === null) return false;
-  const locationRecord = location as Record<string, unknown>;
-  return pending.apiVersion === "projector.pending-project-data-migration/v1"
-    && pending.phase === "backed-up"
-    && isStableId(pending.attemptId)
-    && isStableId(pending.migrationId)
-    && pending.attemptId === entry.transactionId
-    && pending.manifestHash === entry.planId
-    && isPortableRelativePath(pending.stagingLocation)
-    && isIsoDateTimeWithOffset(pending.createdAt)
-    && [pending.sourceSnapshotHash, pending.targetSnapshotHash, pending.manifestHash, backupRecord.manifestHash].every(isContentHash)
-    && isStableId(backupRecord.id)
-    && hasExactKeys(locationRecord, ["kind", "path"])
-    && locationRecord.kind === "codex-data-relative"
-    && isPortableRelativePath(locationRecord.path);
-}
-
-function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return actual.length === sortedExpected.length && actual.every((key, index) => key === sortedExpected[index]);
-}
-
-function isStableId(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 512 && /^[a-z0-9][a-z0-9._:-]*$/u.test(value);
-}
-
-function isPortableRelativePath(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 1_024 && /^(?!\/)(?!.*:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!.*[. ](?:\/|$))(?!.*(?:^|\/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\.[^/]*)?(?:\/|$))(?!(?:\.|\.\.)(?:\/|$))(?!.*\/(?:\.|\.\.)(?:\/|$))[^/](?:.*[^/])?$/u.test(value);
-}
-
-function isIsoDateTimeWithOffset(value: unknown): value is string {
-  return typeof value === "string"
-    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u.test(value)
-    && Number.isFinite(Date.parse(value));
+  const parsed = retiredPendingProjectDataMigrationV1Schema.safeParse(value);
+  return parsed.success
+    && parsed.data.attemptId === entry.transactionId
+    && parsed.data.manifestHash === entry.planId;
 }
 
 const transactionPhases: readonly TransactionPhase[] = [

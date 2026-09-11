@@ -349,6 +349,7 @@ describe("FileTransactionJournal", () => {
       { ...validPending, manifestHash: hash.replace(/2$/u, "3") },
       { ...validPending, migrationId: "Migration:Uppercase" },
       { ...validPending, createdAt: "2026-09-10T00:00:00" },
+      { ...validPending, createdAt: "2026-02-30T00:00:00Z" },
       { ...validPending, stagingLocation: "../outside" },
       { ...validPending, backup: { ...validPending.backup, location: { ...validPending.backup.location, path: "../outside.pba" } } },
     ]) {
