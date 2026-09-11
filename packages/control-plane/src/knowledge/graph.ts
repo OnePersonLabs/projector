@@ -460,6 +460,8 @@ export class KnowledgeGraph implements ContextSourcePort {
   governanceEvaluations(entityIds: ReadonlySet<string>, operation: string, validatorFindings: readonly ExternalGovernanceValidatorFinding[] = []): GovernanceBundleEvaluation[] {
     if (this.lensCompilation === undefined) return [];
     const observation = this.governanceObservation();
+    const obligations = this.lensObligations(entityIds, operation);
+    const obligationsByLensAndUnit = new Map(obligations.map((item) => [`${item.lensId}\0${item.unitId}`, item]));
     const evaluations: GovernanceBundleEvaluation[] = [];
     for (const lens of this.lenses.filter(({ status, id }) => status === "active" && entityIds.has(id))) {
       const members = new Set(this.lensCompilation.memberships[lens.id] ?? []);
@@ -467,7 +469,7 @@ export class KnowledgeGraph implements ContextSourcePort {
         const selectorFacts = { ...(this.selectorFactsByUnitId.get(unit.id) ?? {}), operation };
         const bundle = compileEffectiveRuleBundle({ unit, operation, rules: lens.rules, selectorFacts });
         const requiredValidatorIds = lens.validators.filter(({ required }) => required).map(({ id, version }) => `${id}@${version}`);
-        const expected = this.lensObligations(entityIds, operation).find((item) => item.lensId === lens.id && item.unitId === unit.id);
+        const expected = obligationsByLensAndUnit.get(`${lens.id}\0${unit.id}`);
         const expectationIds = expected?.validatorIds ?? [];
         evaluations.push(evaluateEffectiveRuleBundle(bundle, observation, { validatorFindings, requiredValidatorIds: unique([...requiredValidatorIds, ...expectationIds]) }));
       }

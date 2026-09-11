@@ -15,7 +15,7 @@ import {
 } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RepositoryKnowledgeService } from "./service.js";
 import { KnowledgeGraph } from "./graph.js";
@@ -434,6 +434,25 @@ describe("RepositoryKnowledgeService", () => {
     const branch = result.branches[0]!;
     expect(branch.closure.entries).toEqual(expect.arrayContaining([expect.objectContaining({ entityId: lens.id, band: "governing" })]));
     expect(branch.lensObligations).toEqual(expect.arrayContaining([expect.objectContaining({ lensId: lens.id, status: "applicable", validatorIds: expect.arrayContaining(["repository-script-placement@1"]) })]));
+  });
+
+  it("evaluates one shared obligation snapshot for every selected governed unit", async () => {
+    const root = await repository();
+    await writeFile(join(root, "package.json"), `${JSON.stringify({ name: "knowledge-fixture", type: "module", scripts: { inspect: "node tools/one.ts", verify: "node tools/two.ts" } })}\n`, "utf8");
+    await mkdir(join(root, "tools"), { recursive: true });
+    await writeFile(join(root, "tools", "one.ts"), "export const one = 1;\n", "utf8");
+    await writeFile(join(root, "tools", "two.ts"), "export const two = 2;\n", "utf8");
+    const authorityRecord = authority("authority:repository-script", "lens:repository-script");
+    const lens = createRepositoryScriptLens({ id: "lens:repository-script", status: "active", authorityRecordId: authorityRecord.id, governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:repository-layout" }] });
+    await writeCanonical(root, "authority-record", authorityRecord.id, authorityRecord.key, authorityRecord.status, { ...authorityRecord });
+    await writeCanonical(root, "projection-lens", lens.id, lens.key, lens.status, { ...lens });
+    const observation = await observeChangeRepository(root);
+    const graph = new KnowledgeGraph(observation);
+    const selected = new Set([lens.id, ...observation.analysis.projectionUnits.map(({ id }) => id)]);
+    const obligations = vi.spyOn(graph, "lensObligations");
+
+    expect(graph.governanceEvaluations(selected, "inspect").length).toBeGreaterThan(1);
+    expect(obligations).toHaveBeenCalledTimes(1);
   });
 
   it("fails reconciliation closed when current lens compilation is unavailable", async () => {
