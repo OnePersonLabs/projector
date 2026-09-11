@@ -1,0 +1,4 @@
+# Preserve authenticated release artifacts and deterministic generated inventories.
+release/**/*.json text eol=lf
+release/**/*.mjs text eol=lf
+release/**/*.md text eol=lf
