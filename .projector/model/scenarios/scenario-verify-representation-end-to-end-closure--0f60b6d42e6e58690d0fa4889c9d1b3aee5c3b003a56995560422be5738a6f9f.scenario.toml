@@ -7,7 +7,7 @@ key = "verify-representation-end-to-end-closure"
 lifecycle = "active"
 
 [payload]
-title = "Verify representation end-to-end closure"
+title = "Verify representation through proportionate behavioral checks"
 aliases = []
 sourceClass = "authored"
 realizations = []
@@ -21,29 +21,32 @@ value = "requirement:engineering-english"
 
 [[payload.steps]]
 role = "precondition"
-statement = """The exact packed Projector artifact and an authenticated semantic change are available; representation \
-  closure evaluates the complete composed subsystem rather than only compact rendering or operation \
-  reachability."""
+statement = """The installed Projector artifact and a concrete planned change are available. Accepted meaning and the \
+  relevant execution authority, profile and dependency bindings can be inspected."""
 
 [[payload.steps]]
 role = "trigger"
-statement = """Run the public packed Projector artifact through the Representation closure contract. Compile an authenticated \
-  semantic change. Attach the selected projection to its Execution Capsule. Consume the exact artifact \
-  through the supported host and registered bundled-operation representation handler. Change the profile \
-  and reconcile every dependent projection, context, and capsule. Observe dedicated fidelity, fallback, \
-  and instruction-efficiency telemetry."""
+statement = """Exercise public capture, plan and representation inspection. Check that the exact selected instructions \
+  match their change and capsule. Validate fidelity and explicit fallback behavior. Change a relevant \
+  profile or dependency and reconcile affected projections, context and capsules before reuse. Use a \
+  real installed host exercise to observe delivery and the resulting action."""
 
 [[payload.steps]]
 role = "expected-outcome"
-statement = """all seven stable `representation.*.v1` closure obligations have revision- and worktree-bound positive \
-  evidence. Each obligation also has a negative control that rejects a severed edge. The subsystem remains \
-  open if projection composition is missing or host instructions are free-form. A generic content reader, \
-  skipped refresh, document-parse coverage proxy, or default zero release metric also blocks release."""
+statement = """Direct behavioral checks reject wrong associations, altered instruction bytes, stale authority and missing \
+  required artifacts. Profile reconciliation preserves historical records and creates no automatic approval. \
+  Applicable recovery checks preserve unfinished work. Relevant fidelity and telemetry failures remain \
+  observable. One coherent installed workflow covers host wiring; existing checks may be reused when \
+  their relevant dependencies are unchanged. Required failures remain blocking, while missing procedural \
+  certificates do not create a new product obligation."""
 
 [[payload.steps]]
 role = "forbidden-outcome"
-statement = """Registered handler presence, a fixed closure boolean, fabricated positive/negative observations, or \
-  a test-binding remap is used as evidence that the representation edges were exercised."""
+statement = """A registered handler, content hash, fabricated observation, self-authored certificate or test-binding \
+  remap substitutes for exercising the required behavior. Correct delivery is claimed as proof of agent \
+  understanding. A cheaper method silently drops a consequential failure protection. Universal seven-stage \
+  receipt collection or repeated unchanged host certification is imposed solely because a previous procedure \
+  required it."""
 
 [[payload.origin]]
 kind = "document"
@@ -66,3 +69,11 @@ contentHash = "sha256:v1:a4dd211d265700ff82bf503b4cedf13661ad8d9ec3aea6f147004e7
 description = """Accepted host integrity preserves exact authority, state, provenance, cancellation and recovery without \
   confinement or hostile same-user protection. Immutable Git blob 3ccfee51b0a75179711d6ded3324b17b8279da61; \
   exact-byte SHA-256."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "user:2026-09-11:projection-feedback-proportionate-verification"
+description = """The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual \
+  meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete \
+  behavior rather than create repetitive certification overhead. Preserve required behavior, critical \
+  review, data safety, authority and recovery."""

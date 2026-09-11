@@ -31,7 +31,15 @@ Representation machinery and deterministic operation primitives have separate re
   Unsupported insert, rename, Markdown-editing, or workflow primitives remain explicitly unrealized, \
   and are reconsidered only when an actual supported workflow requires the missing operation and its \
   preview, state, effect, evidence, and recovery contract. This does not revive Projector-owned confinement, \
-  mandatory WSL, or the historical network enum."""
+  mandatory WSL, or the historical network enum.
+
+Verify representation behavior through direct fidelity, association, currentness and recovery checks. \
+  A real installed host exercise checks delivery and the resulting action where automated tests cannot \
+  observe the host. Reuse relevant checks when their dependencies remain unchanged. Do not require a \
+  newly certified seven-stage report or a transcript parser for every release. Hashes identify exact \
+  inputs and outputs; they do not establish truth or agent understanding. Amend verification methods \
+  when a critically reviewed alternative preserves the consequential failure protections with less total \
+  effort."""
 sourceClass = "authored"
 evidence = []
 
@@ -93,6 +101,14 @@ contentHash = "sha256:v1:a1aa287be9740885d83c0b5509f5274d57d80794b3a7d615f3cbf97
 description = """Historical source evidence at lines 5-58 and 82-93; immutable Git blob 452e6b736a082992b65f0b286b60a7c4a515d93c. \
   Content hash is SHA-256 of the exact Git blob bytes. Preserve useful conditions through explicit acceptance; \
   historical implementation prescriptions are not authority."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "user:2026-09-11:projection-feedback-proportionate-verification"
+description = """The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual \
+  meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete \
+  behavior rather than create repetitive certification overhead. Preserve required behavior, critical \
+  review, data safety, authority and recovery."""
 
 [[payload.realizations]]
 [payload.realizations.selector]

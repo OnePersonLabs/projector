@@ -17,7 +17,15 @@ statement = """Retain accepted meaning under stable identities across changes an
 Keep the semantic core provider-neutral. Agent and model output remains a candidate until deterministic \
   policy or explicit acceptance promotes it; resampling cannot mutate accepted architecture or redefine \
   identity. Fine-grained storage, filenames, sharding, wording, and implementation replacement do not \
-  change stable identity, meaning, relations, or lineage."""
+  change stable identity, meaning, relations, or lineage.
+
+The conceptual model owns intended behavior. Code and implementation plans are revisable realizations. \
+  Incremental projection is a practical efficiency choice, not a requirement to preserve generated code. \
+  Planning and implementation inform each other. Feed discoveries back into an explicit model revision \
+  when intended behavior changes. Critically assess revisions against preserved behavior, constraints, \
+  data safety and recovery, rather than conformance to an earlier procedure. Keep unresolved meaning \
+  explicit. Evaluate projection, verification and maintenance effort together; a report or internally \
+  consistent model does not establish net benefit."""
 sourceClass = "authored"
 evidence = []
 
@@ -77,6 +85,14 @@ kind = "document"
 locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md"
 description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
   this proposal."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "user:2026-09-11:projection-feedback-proportionate-verification"
+description = """The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual \
+  meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete \
+  behavior rather than create repetitive certification overhead. Preserve required behavior, critical \
+  review, data safety, authority and recovery."""
 
 [[payload.realizations]]
 [payload.realizations.selector]

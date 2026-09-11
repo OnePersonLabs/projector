@@ -10,7 +10,11 @@ Projector retains accepted meaning, typed relationships, and architectural oblig
 
 Resolve `node` through the host `PATH`; Projector requires Node 24 on native Windows and direct WSL. The installed plugin bundles Projector JavaScript, not a private Node runtime.
 
-## Required workflow
+## Choose the change route
+
+Planning and implementation are a feedback loop. For authorized code changes that realize existing accepted meaning, use ordinary host edits, relevant behavioral checks, and scoped reconciliation as described in step 9. Use the capture/plan/approve/apply route below when revising canonical meaning or requesting Projector-controlled execution; do not replay a completed host edit merely to obtain a certificate. Revise the plan when implementation invalidates its assumptions. Explicitly revise canonical meaning when intended behavior changes, with rationale and provenance; a procedural amendment must not silently drop a required outcome.
+
+## Canonical revision and controlled execution
 
 1. Read the target repository's agent instructions and the [bundled operation contract](../projector/operation-contract.md). Before choosing edit paths, resolve `../../scripts/projector-operation.mjs` relative to this skill. Write a `projector.operation/v1` request with operation `context`, the absolute repository root, and input `{ "request": "<requested-outcome>", "persist": true }`, then run:
 
