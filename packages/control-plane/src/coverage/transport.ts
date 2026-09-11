@@ -4,7 +4,7 @@ import type { CompletionQuestion } from "./issues.js";
 import { KnowledgeApplicationEvidenceAssessmentSchema, type KnowledgeApplicationEvidenceAssessment } from "../knowledge/application-evidence.js";
 
 export const CompletionQuestionSchema = z.object({
-  id: z.string(), kind: z.enum(["governance", "unmapped-group", "unrealized-requirement", "unrealized-scenario", "identity-overlap", "architecture-concern"]), blocking: z.boolean(), ownerIds: z.array(z.string()), affectedCount: z.number().int().nonnegative(), subjectCount: z.number().int().nonnegative(), examples: z.array(z.string()), question: z.string(), reasons: z.array(z.string()), reasonCount: z.number().int().nonnegative(), evidenceHash: ContentHashSchema,
+  id: z.string(), kind: z.enum(["governance", "unmapped-group", "unrealized-requirement", "unrealized-scenario", "realization-binding", "identity-overlap", "architecture-concern"]), blocking: z.boolean(), ownerIds: z.array(z.string()), affectedCount: z.number().int().nonnegative(), subjectCount: z.number().int().nonnegative(), examples: z.array(z.string()), question: z.string(), reasons: z.array(z.string()), reasonCount: z.number().int().nonnegative(), evidenceHash: ContentHashSchema,
   resolution: z.object({ context: z.object({ command: z.literal("context"), request: z.string(), entities: z.array(z.string()), namedTargets: z.array(z.string()) }).strict(), route: z.literal("canonical-proposal"), instruction: z.string() }).strict(),
 }).strict();
 
@@ -17,7 +17,7 @@ const completionSchema = z.object({
 
 const RepositoryCoverageResultBaseSchema = z.object({
   proofStatement: z.enum(["proven-within-boundary", "bounded", "high-confidence", "partial", "not-established"]), boundary: z.array(z.string()), lanes: z.array(CoverageLaneSchema), unavailableSurfaceIds: z.array(z.string()), approvalRequired: z.literal(false), budgetExhausted: z.boolean(), continuationPersisted: z.literal(false), snapshot: CoverageSnapshotSchema, boundState: StateBindingSchema, bindingValidation: StateBindingValidationSchema, bindingIdentity: ContentHashSchema,
-  localAnalysis: z.object({ artifactCount: z.number().int().nonnegative(), projectionUnitCount: z.number().int().nonnegative(), dependencyCount: z.number().int().nonnegative(), analyzerFailureCount: z.number().int().nonnegative(), analyzerFailures: z.array(AnalyzerFailureSchema) }).strict(),
+  localAnalysis: z.object({ artifactCount: z.number().int().nonnegative(), projectionUnitCount: z.number().int().nonnegative(), dependencyCount: z.number().int().nonnegative(), analyzerFailureCount: z.number().int().nonnegative(), analyzerFailures: z.array(AnalyzerFailureSchema), realizations: z.object({ matched: z.number().int().nonnegative(), unmatched: z.number().int().nonnegative(), unsupported: z.number().int().nonnegative(), unavailable: z.number().int().nonnegative() }).strict() }).strict(),
   applicationEvidence: z.object({ status: z.enum(["satisfied", "violated", "unknown", "not-applicable"]), assessments: z.array(KnowledgeApplicationEvidenceAssessmentSchema) }).strict(),
   completion: completionSchema,
 }).strict();
@@ -45,7 +45,7 @@ export interface RepositoryCoverageResult {
   readonly boundState: StateBinding;
   readonly bindingValidation: StateBindingValidation;
   readonly bindingIdentity: ContentHash;
-  readonly localAnalysis: { readonly artifactCount: number; readonly projectionUnitCount: number; readonly dependencyCount: number; readonly analyzerFailureCount: number; readonly analyzerFailures: readonly AnalyzerFailure[] };
+  readonly localAnalysis: { readonly artifactCount: number; readonly projectionUnitCount: number; readonly dependencyCount: number; readonly analyzerFailureCount: number; readonly analyzerFailures: readonly AnalyzerFailure[]; readonly realizations: { readonly matched: number; readonly unmatched: number; readonly unsupported: number; readonly unavailable: number } };
   readonly applicationEvidence: { readonly status: "satisfied" | "violated" | "unknown" | "not-applicable"; readonly assessments: readonly KnowledgeApplicationEvidenceAssessment[] };
   readonly completion: { readonly readOnly: true; readonly disclosure: CoverageDisclosure; readonly questions: readonly CompletionQuestion[]; readonly questionDisclosure: CoverageDisclosure; readonly questionPage: { readonly offset: number; readonly nextOffset: number | null; readonly note: string }; readonly ranking: string; readonly limits: readonly string[]; readonly estimatedQuestionTokens: number; readonly repairPlan?: readonly { readonly order: number; readonly questionId: string; readonly evidenceHash: ContentHash; readonly resolution: CompletionQuestion["resolution"] }[]; readonly execution?: "not-performed" };
 }
