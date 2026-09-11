@@ -20,7 +20,7 @@ This guide and [change-proposal.schema.json](change-proposal.schema.json) are ge
 
 Write one JSON document that validates against the generated schema. Unknown top-level or nested fields fail closed. Repository paths must be canonical, repository-relative, non-reserved paths. Exact edits cannot overlap independent validators. Requirement, scenario, alias, validator, and architecture-deferral constraints are enforced by the same core parser used by the installed lifecycle.
 
-Validate the proposal by passing it to \`projector change <request> --proposal <path>\`. A proposal is interpretation evidence, not approval or mutation authority.
+Submit the proposal in the \`proposal\` field of a versioned \`change.capture\` request through the [bundled operation runner](../projector/operation-contract.md), with the intended repository, request and retained context ID. A proposal is interpretation evidence, not approval or mutation authority.
 
 Existing requirement and scenario identities preserve their canonical payload without a rewrite when their title and meaning are unchanged. To revise existing meaning, supply \`revision\` with its stable \`id\`, current \`expectedSemanticHash\`, and a concrete \`rationale\`. Missing, mismatched, stale, and no-op revisions fail. Identity aliases locate existing meaning; they do not authorize renaming it. The plan's \`preview.intentReview\` shows preserved, added, and revised commitments plus related canonical obligations, including targets without current code. These checks do not prove that tests cover every commitment or that an implementation preserves the whole design.
 
@@ -45,12 +45,12 @@ For example, this establishes a named future capability without pretending its i
 Model-only approval authenticates the proposed model transaction. Its validation covers canonical integrity, references, and eligible lens compilation; it does not establish runtime fidelity. Code-bearing proposals retain the independent-test and controlled-execution requirements. When the host implements code under its own authorization, reconcile the saved context and inspect structural results and independently checked behavior separately.
 `;
 
-const outputs = [[schemaPath, schemaBytes], [guidePath, guideBytes]];
+const outputs = [[schemaPath, schemaBytes], [guidePath, guideBytes]].map(([path, bytes]) => [path, bytes.replace(/\r\n/gu, "\n")]);
 if (process.argv.includes("--check")) {
   const stale = [];
   for (const [path, bytes] of outputs) {
-    try { if (await readFile(path, "utf8") !== bytes) stale.push(path); }
-    catch { stale.push(path); }
+    try { if ((await readFile(path, "utf8")).replace(/\r\n/gu, "\n") !== bytes) stale.push(path); }
+    catch (error) { if (error.code !== "ENOENT") throw error; stale.push(path); }
   }
   if (stale.length > 0) throw new Error(`generated proposal contract is stale: ${stale.map((path) => path.replace(`${root}/`, "")).join(", ")}`);
 } else {
