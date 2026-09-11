@@ -327,7 +327,7 @@ describe("FileTransactionJournal", () => {
 
   it("preserves a terminal journal carrying the retired v1 migration binding", async () => {
     const { root, journal } = await harness();
-    const transaction = await journal.begin(beginInput("tx-v1-migration-terminal"));
+    const transaction = await journal.begin({ ...beginInput("tx-v1-migration-terminal"), planId: hash });
     await transaction.writeFile("sample.txt", "committed");
     for (const phase of phasesAfterMutation) await transaction.transition(phase);
     await transaction.commit();
@@ -337,12 +337,27 @@ describe("FileTransactionJournal", () => {
     if (name === undefined) throw new Error("Expected a committed journal");
     const path = join(directory, name);
     const record = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
-    record.pendingMigration = legacyTerminalPendingMigration();
+    const validPending = legacyTerminalPendingMigration("tx-v1-migration-terminal", hash);
+    record.pendingMigration = validPending;
     await writeFile(path, `${JSON.stringify(record)}\n`, "utf8");
 
     expect(await journal.recoverIncomplete()).toEqual([]);
     expect((await journal.read("tx-v1-migration-terminal")).entry.phase).toBe("committed");
 
+    for (const invalid of [
+      { ...validPending, attemptId: "migration-attempt:detached" },
+      { ...validPending, manifestHash: hash.replace(/2$/u, "3") },
+      { ...validPending, migrationId: "Migration:Uppercase" },
+      { ...validPending, createdAt: "2026-09-10T00:00:00" },
+      { ...validPending, stagingLocation: "../outside" },
+      { ...validPending, backup: { ...validPending.backup, location: { ...validPending.backup.location, path: "../outside.pba" } } },
+    ]) {
+      record.pendingMigration = invalid;
+      await writeFile(path, `${JSON.stringify(record)}\n`, "utf8");
+      await expect(journal.recoverIncomplete()).rejects.toThrow(/invalid structure/i);
+    }
+
+    record.pendingMigration = validPending;
     (record.entry as Record<string, unknown>).phase = "workspace-mutating";
     await writeFile(path, `${JSON.stringify(record)}\n`, "utf8");
     await expect(journal.recoverIncomplete()).rejects.toThrow(/invalid structure/i);
@@ -669,14 +684,14 @@ function beginInput(transactionId: string) {
   };
 }
 
-function legacyTerminalPendingMigration() {
+function legacyTerminalPendingMigration(attemptId: string, manifestHash: ContentHash) {
   return {
     apiVersion: "projector.pending-project-data-migration/v1",
-    attemptId: "migration-attempt:legacy-terminal",
+    attemptId,
     migrationId: "migration:legacy-terminal",
     sourceSnapshotHash: hash,
     targetSnapshotHash: hash,
-    manifestHash: hash,
+    manifestHash,
     backup: {
       id: "backup-legacy-terminal",
       location: { kind: "codex-data-relative", path: "projector-backup-legacy-terminal.pba" },

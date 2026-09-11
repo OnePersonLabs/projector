@@ -821,18 +821,19 @@ function isRecord(value: unknown): value is DurableTransactionRecord {
     record.checkpoints.every(isCheckpoint) &&
     Array.isArray(record.compensations) &&
     record.compensations.every(isCompensation) &&
-    (record.pendingMigration === undefined || isPendingMigrationForJournal(record.pendingMigration, entry.phase)) &&
+    (record.pendingMigration === undefined || isPendingMigrationForJournal(record.pendingMigration, entry)) &&
     hasConsistentRecordIndexes(record as DurableTransactionRecord)
   );
 }
 
-function isPendingMigrationForJournal(value: unknown, transactionPhase: unknown): boolean {
+function isPendingMigrationForJournal(value: unknown, entry: Partial<TransactionJournalEntry>): boolean {
   const current = PendingProjectDataMigrationSchema.safeParse(value);
   if (current.success) return current.data.phase === "backed-up";
-  return (transactionPhase === "committed" || transactionPhase === "rolled-back") && isLegacyTerminalPendingMigration(value);
+  return (entry.phase === "committed" || entry.phase === "rolled-back")
+    && isLegacyTerminalPendingMigration(value, entry);
 }
 
-function isLegacyTerminalPendingMigration(value: unknown): boolean {
+function isLegacyTerminalPendingMigration(value: unknown, entry: Partial<TransactionJournalEntry>): boolean {
   if (typeof value !== "object" || value === null) return false;
   const pending = value as Record<string, unknown>;
   if (!hasExactKeys(pending, ["apiVersion", "attemptId", "backup", "createdAt", "manifestHash", "migrationId", "phase", "sourceSnapshotHash", "stagingLocation", "targetSnapshotHash"])) return false;
@@ -844,18 +845,37 @@ function isLegacyTerminalPendingMigration(value: unknown): boolean {
   const locationRecord = location as Record<string, unknown>;
   return pending.apiVersion === "projector.pending-project-data-migration/v1"
     && pending.phase === "backed-up"
-    && [pending.attemptId, pending.migrationId, pending.stagingLocation, pending.createdAt].every((item) => typeof item === "string" && item.length > 0)
+    && isStableId(pending.attemptId)
+    && isStableId(pending.migrationId)
+    && pending.attemptId === entry.transactionId
+    && pending.manifestHash === entry.planId
+    && isPortableRelativePath(pending.stagingLocation)
+    && isIsoDateTimeWithOffset(pending.createdAt)
     && [pending.sourceSnapshotHash, pending.targetSnapshotHash, pending.manifestHash, backupRecord.manifestHash].every(isContentHash)
-    && typeof backupRecord.id === "string" && backupRecord.id.length > 0
+    && isStableId(backupRecord.id)
     && hasExactKeys(locationRecord, ["kind", "path"])
     && locationRecord.kind === "codex-data-relative"
-    && typeof locationRecord.path === "string" && locationRecord.path.length > 0;
+    && isPortableRelativePath(locationRecord.path);
 }
 
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
   const actual = Object.keys(value).sort();
   const sortedExpected = [...expected].sort();
   return actual.length === sortedExpected.length && actual.every((key, index) => key === sortedExpected[index]);
+}
+
+function isStableId(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= 512 && /^[a-z0-9][a-z0-9._:-]*$/u.test(value);
+}
+
+function isPortableRelativePath(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= 1_024 && /^(?!\/)(?!.*:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!.*[. ](?:\/|$))(?!.*(?:^|\/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\.[^/]*)?(?:\/|$))(?!(?:\.|\.\.)(?:\/|$))(?!.*\/(?:\.|\.\.)(?:\/|$))[^/](?:.*[^/])?$/u.test(value);
+}
+
+function isIsoDateTimeWithOffset(value: unknown): value is string {
+  return typeof value === "string"
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u.test(value)
+    && Number.isFinite(Date.parse(value));
 }
 
 const transactionPhases: readonly TransactionPhase[] = [
