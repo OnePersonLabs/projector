@@ -58,6 +58,17 @@ export const runtimeEvidenceOwnerModulePaths = Object.freeze(
     `${coreRoot}/schemas/representation-artifact.js`,
     `${coreRoot}/schemas/project-data-migration.js`,
     `${releaseRoot}/control-plane/dist/representation/artifact-store.js`,
+    `${runtimeRoot}/journal/transaction-journal.js`,
+    `${runtimeRoot}/migrations/legacy-unversioned-project-data.js`,
+    `${runtimeRoot}/migrations/pending-project-data-migration.js`,
+    `${runtimeRoot}/migrations/project-backup.js`,
+    `${runtimeRoot}/migrations/project-data-migration-receipt.js`,
+    `${runtimeRoot}/migrations/project-data-migration-recovery.js`,
+    `${runtimeRoot}/worktrees/writer-lease.js`,
+    `${releaseRoot}/control-plane/dist/readiness/project-data-migration-artifact.js`,
+    `${releaseRoot}/control-plane/dist/readiness/project-data-migration-execution.js`,
+    `${releaseRoot}/control-plane/dist/readiness/project-data-migration-recovery.js`,
+    `${releaseRoot}/control-plane/dist/readiness/project-data-migration-target.js`,
   ],
 );
 

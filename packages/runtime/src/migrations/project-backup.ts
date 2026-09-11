@@ -19,6 +19,7 @@ import {
 import type { ProjectOperationAccess } from "../access/operation-access.js";
 import type {
   MigrationRecoveryWriterLeaseHandle,
+  ProjectDataMigrationWriterLeaseHandle,
   WriterLeaseHandle,
 } from "../worktrees/writer-lease.js";
 
@@ -30,7 +31,7 @@ const ioBufferSize = 1024 * 1024;
 
 export interface ProjectBackupCoordination {
   operationAccess: Pick<ProjectOperationAccess, "ownedRelativePaths" | "assertOwned">;
-  writerLease: Pick<WriterLeaseHandle | MigrationRecoveryWriterLeaseHandle, "heartbeat">;
+  writerLease: Pick<WriterLeaseHandle | MigrationRecoveryWriterLeaseHandle | ProjectDataMigrationWriterLeaseHandle, "heartbeat">;
 }
 export interface ProjectBackupInput {
   repositoryRoot: string;

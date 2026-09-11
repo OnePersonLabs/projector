@@ -40,6 +40,11 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot, options = {
       await mkdir(join(candidateRoot, "project-data"), { recursive: true });
       await cp(formatBaseline, join(candidateRoot, "project-data/format-baseline.json"));
     }
+    const formatTarget = join(repositoryRoot, "release/project-data-format-target.json");
+    if (await access(formatTarget).then(() => true, (error) => error?.code === "ENOENT" ? false : Promise.reject(error))) {
+      await mkdir(join(candidateRoot, "project-data"), { recursive: true });
+      await cp(formatTarget, join(candidateRoot, "project-data/format-target.json"));
+    }
     const legacyIngress = join(repositoryRoot, "release/project-data-legacy-ingress.json");
     if (await access(legacyIngress).then(() => true, (error) => error?.code === "ENOENT" ? false : Promise.reject(error))) {
       await mkdir(join(candidateRoot, "project-data"), { recursive: true });

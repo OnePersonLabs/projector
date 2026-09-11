@@ -49,6 +49,14 @@ export async function assertProjectDataMigrationReleaseReady(input) {
   for (const manifest of chain.manifests) {
     authenticateArtifacts(manifest.kind === "transform" ? [...manifest.transforms, ...manifest.validations] : [], inventory);
   }
+  const packagedTarget = ProjectDataFormatSnapshotSchema.parse(await readCanonical(
+    join(input.repositoryRoot, "release/project-data-format-target.json"),
+    "released project-data target format",
+  ));
+  if (canonicalJson(packagedTarget) !== canonicalJson(target)) {
+    throw new Error("packaged project-data target format does not match the authenticated candidate owners");
+  }
+  authenticatePackagedReleaseData("project-data/format-target.json", target, inventory);
   return { status: "migration-ready", source, target, chainPath, chain, legacyIngress };
 }
 

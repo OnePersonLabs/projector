@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -34,6 +35,7 @@ import {
   RepositoryCoverageOutputSchema,
   RepositoryChangeLifecycleService,
   RepositoryRepresentationInspectionService,
+  createPackagedProjectDataMigrationService,
   RepresentationInspectionOperationOutputSchema,
   RepresentationInspectionOutputSchema,
   RepositoryKnowledgeService,
@@ -298,6 +300,7 @@ export async function createProjectorOperationRunner<
 
 export interface BundledProjectorOperationRunnerInput {
   readonly packagedRoot: string;
+  readonly codexDataRoot?: string;
   readonly applicationEvidence: (input: {
     readonly repositoryRoot: string;
     readonly signal: AbortSignal;
@@ -343,6 +346,10 @@ export function createInstalledProjectorApplicationEvidenceHost(input: {
 
 /** The installed in-process composition. Every registered result schema remains owned by its service package. */
 export async function createBundledProjectorOperationRunner(input: BundledProjectorOperationRunnerInput) {
+  const migration = createPackagedProjectDataMigrationService({
+    packagedRoot: input.packagedRoot,
+    codexDataRoot: input.codexDataRoot ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"),
+  });
   const applicationEvidenceFor = (repositoryRoot: string, context: OperationHandlerContext) => input.applicationEvidence({
     repositoryRoot,
     signal: context.signal,
@@ -503,7 +510,19 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       inspectReadiness: inspectProjectReadiness,
       initializer: {
         resultSchema: PreparedProjectInitializationResultSchema,
-        execute: initializePreparedProject,
+        execute: async (repositoryRoot, request) => {
+          const readiness = await inspectProjectReadiness(repositoryRoot, { operation: "init", ...request });
+          if (readiness.status === "upgrade-required" || readiness.status === "recovery-required") {
+            await migration.migrate(repositoryRoot, {
+              requestId: `project-data-migration:${process.pid}:${Date.now()}`,
+              processId: process.pid,
+              ...(request.signal === undefined ? {} : { signal: request.signal }),
+            });
+            const migrated = await inspectProjectReadiness(repositoryRoot, { operation: "init", ...request });
+            return PreparedProjectInitializationResultSchema.parse({ readiness: migrated, created: true });
+          }
+          return initializePreparedProject(repositoryRoot, request);
+        },
       },
       withProjectOperationAccess,
       observedHostCapabilities: [
