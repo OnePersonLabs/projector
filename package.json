@@ -14,7 +14,6 @@
     "plugin:proposal-schema": "node scripts/generate-plugin-proposal-schema.mjs",
     "plugin:proposal-schema:check": "node scripts/generate-plugin-proposal-schema.mjs --check",
     "spec:check": "node scripts/check-spec-human-technical.mjs",
-    "spec:check:engine-style": "node scripts/check-spec-human-technical.mjs",
     "release:acceptance": "node scripts/run-release-acceptance.mjs",
     "release:artifacts": "node scripts/generate-release-artifacts.mjs",
     "release:artifacts:check": "node scripts/generate-release-artifacts.mjs --check",
