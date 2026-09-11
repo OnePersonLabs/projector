@@ -821,12 +821,41 @@ function isRecord(value: unknown): value is DurableTransactionRecord {
     record.checkpoints.every(isCheckpoint) &&
     Array.isArray(record.compensations) &&
     record.compensations.every(isCompensation) &&
-    (record.pendingMigration === undefined || (
-      PendingProjectDataMigrationSchema.safeParse(record.pendingMigration).success &&
-      record.pendingMigration.phase === "backed-up"
-    )) &&
+    (record.pendingMigration === undefined || isPendingMigrationForJournal(record.pendingMigration, entry.phase)) &&
     hasConsistentRecordIndexes(record as DurableTransactionRecord)
   );
+}
+
+function isPendingMigrationForJournal(value: unknown, transactionPhase: unknown): boolean {
+  const current = PendingProjectDataMigrationSchema.safeParse(value);
+  if (current.success) return current.data.phase === "backed-up";
+  return (transactionPhase === "committed" || transactionPhase === "rolled-back") && isLegacyTerminalPendingMigration(value);
+}
+
+function isLegacyTerminalPendingMigration(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const pending = value as Record<string, unknown>;
+  if (!hasExactKeys(pending, ["apiVersion", "attemptId", "backup", "createdAt", "manifestHash", "migrationId", "phase", "sourceSnapshotHash", "stagingLocation", "targetSnapshotHash"])) return false;
+  const backup = pending.backup;
+  if (typeof backup !== "object" || backup === null) return false;
+  const backupRecord = backup as Record<string, unknown>;
+  const location = backupRecord.location;
+  if (!hasExactKeys(backupRecord, ["id", "location", "manifestHash"]) || typeof location !== "object" || location === null) return false;
+  const locationRecord = location as Record<string, unknown>;
+  return pending.apiVersion === "projector.pending-project-data-migration/v1"
+    && pending.phase === "backed-up"
+    && [pending.attemptId, pending.migrationId, pending.stagingLocation, pending.createdAt].every((item) => typeof item === "string" && item.length > 0)
+    && [pending.sourceSnapshotHash, pending.targetSnapshotHash, pending.manifestHash, backupRecord.manifestHash].every(isContentHash)
+    && typeof backupRecord.id === "string" && backupRecord.id.length > 0
+    && hasExactKeys(locationRecord, ["kind", "path"])
+    && locationRecord.kind === "codex-data-relative"
+    && typeof locationRecord.path === "string" && locationRecord.path.length > 0;
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return actual.length === sortedExpected.length && actual.every((key, index) => key === sortedExpected[index]);
 }
 
 const transactionPhases: readonly TransactionPhase[] = [

@@ -325,6 +325,29 @@ describe("FileTransactionJournal", () => {
     expect(await readdir(targetDirectory)).toHaveLength(2);
   });
 
+  it("preserves a terminal journal carrying the retired v1 migration binding", async () => {
+    const { root, journal } = await harness();
+    const transaction = await journal.begin(beginInput("tx-v1-migration-terminal"));
+    await transaction.writeFile("sample.txt", "committed");
+    for (const phase of phasesAfterMutation) await transaction.transition(phase);
+    await transaction.commit();
+
+    const directory = join(root, ".projector", "runtime", "journal");
+    const [name] = await readdir(directory);
+    if (name === undefined) throw new Error("Expected a committed journal");
+    const path = join(directory, name);
+    const record = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+    record.pendingMigration = legacyTerminalPendingMigration();
+    await writeFile(path, `${JSON.stringify(record)}\n`, "utf8");
+
+    expect(await journal.recoverIncomplete()).toEqual([]);
+    expect((await journal.read("tx-v1-migration-terminal")).entry.phase).toBe("committed");
+
+    (record.entry as Record<string, unknown>).phase = "workspace-mutating";
+    await writeFile(path, `${JSON.stringify(record)}\n`, "utf8");
+    await expect(journal.recoverIncomplete()).rejects.toThrow(/invalid structure/i);
+  });
+
   it("fails closed on nonterminal recovery work copied from another worktree", async () => {
     const sourceRoot = await mkdtemp(join(tmpdir(), "projector-journal-source-active-"));
     const source = await journalFor(sourceRoot);
@@ -643,5 +666,24 @@ function beginInput(transactionId: string) {
     planId: "plan-1",
     beforeState,
     allowedWriteRoots: ["."],
+  };
+}
+
+function legacyTerminalPendingMigration() {
+  return {
+    apiVersion: "projector.pending-project-data-migration/v1",
+    attemptId: "migration-attempt:legacy-terminal",
+    migrationId: "migration:legacy-terminal",
+    sourceSnapshotHash: hash,
+    targetSnapshotHash: hash,
+    manifestHash: hash,
+    backup: {
+      id: "backup-legacy-terminal",
+      location: { kind: "codex-data-relative", path: "projector-backup-legacy-terminal.pba" },
+      manifestHash: hash,
+    },
+    stagingLocation: ".projector-staging/migration-attempt-legacy-terminal",
+    phase: "backed-up",
+    createdAt: "2026-09-10T00:00:00.000Z",
   };
 }
