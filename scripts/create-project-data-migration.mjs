@@ -54,7 +54,8 @@ export async function createProjectDataMigrationFile(input) {
 
 export async function createRepositoryProjectDataMigration(options = {}) {
   const root = options.repositoryRoot ?? repositoryRoot;
-  const sourcePath = options.sourcePath ?? join(root, "release/project-data-format-baseline.json");
+  const targetFormatPath = join(root, "release/project-data-format-target.json");
+  const sourcePath = options.sourcePath ?? targetFormatPath;
   const draftPath = options.draftPath ?? join(root, "release/project-data-migration-draft.json");
   const migrationsRoot = options.migrationsRoot ?? join(root, "release/project-data-migrations");
   const candidateRoot = options.candidateRoot ?? join(root, ".temp/release-candidate");
@@ -66,14 +67,23 @@ export async function createRepositoryProjectDataMigration(options = {}) {
     try { await rename(sealingDraftPath, draftPath); await syncDirectoryIfSupported(dirname(draftPath)); }
     catch (recoveryError) { if (recoveryError?.code !== "ENOENT") throw recoveryError; }
   }
-  const sourceSnapshot = ProjectDataFormatSnapshotSchema.parse(await readStrictJsonFile(sourcePath, "released format snapshot"));
+  let pendingDraft;
+  try { pendingDraft = ProjectDataMigrationDraftSchema.parse(await readStrictJsonFile(draftPath, "project-data migration draft")); }
+  catch (error) { if (error?.code !== "ENOENT") throw error; }
+  const sourceSnapshot = pendingDraft?.sourceSnapshot ?? ProjectDataFormatSnapshotSchema.parse(await readStrictJsonFile(sourcePath, "released format snapshot"));
   const authored = await (options.readReleaseIdentity ?? readAuthoredReleaseIdentity)(root);
   const selection = selectProjectDataMigrationReleaseVersion(authored.version, sourceSnapshot.packageIdentity.version);
   if (selection.changed) {
     const synchronized = await (options.synchronizeVersion ?? synchronizeWorkspaceReleaseVersion)(root, selection.version);
     return { status: "version-prepared", version: selection.version, changedPaths: synchronized.changedPaths };
   }
-  await ensureLegacyIngressManifest(root, sourceSnapshot);
+  let legacyBaseline;
+  try { legacyBaseline = ProjectDataFormatSnapshotSchema.parse(await readStrictJsonFile(join(root, "release/project-data-format-baseline.json"), "released legacy ingress baseline")); }
+  catch (error) {
+    if (error?.code !== "ENOENT" || options.sourcePath === undefined) throw error;
+    legacyBaseline = sourceSnapshot;
+  }
+  await ensureLegacyIngressManifest(root, legacyBaseline);
   const buildCandidate = options.buildCandidate ?? buildSourceSeveredReleaseBundle;
   await buildCandidate(candidateRoot, { allowPendingProjectDataMigration: true });
   const candidate = await validateReleaseCandidate(candidateRoot);
@@ -81,16 +91,12 @@ export async function createRepositoryProjectDataMigration(options = {}) {
   const targetSnapshot = createReleaseCandidateProjectDataFormat({
     candidate: { packageIdentity: { name: candidate.manifest.release.name, version: candidate.manifest.release.version }, files: candidate.files },
   });
-  const targetFormatPath = join(root, "release/project-data-format-target.json");
-  await writeImmutable(targetFormatPath, `${canonicalJson(targetSnapshot)}\n`);
-  let draft;
-  try {
-    draft = ProjectDataMigrationDraftSchema.parse(await readStrictJsonFile(draftPath, "project-data migration draft"));
+  let draft = pendingDraft;
+  if (draft !== undefined) {
     if (draft.sourceSnapshot.snapshotHash !== sourceSnapshot.snapshotHash || draft.targetSnapshot.snapshotHash !== targetSnapshot.snapshotHash) {
       throw new Error("Pending project-data migration draft does not match the current released source and authenticated candidate target");
     }
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
+  } else {
     const changes = compareProjectDataFormats(sourceSnapshot, targetSnapshot);
     const authoredArtifacts = changes.length === 0
       ? { transforms: [], validations: [] }
@@ -120,16 +126,41 @@ export async function createRepositoryProjectDataMigration(options = {}) {
   await writeImmutable(chainPath, `${canonicalJson(chain)}\n`);
   await rename(draftPath, sealingDraftPath);
   await syncDirectoryIfSupported(dirname(draftPath));
+  const previousTarget = await readOptionalFile(targetFormatPath);
   try {
+    await replaceCurrentTarget(targetFormatPath, `${canonicalJson(targetSnapshot)}\n`);
     await buildCandidate(candidateRoot, { allowActiveProjectDataMigrationSeal: true });
     await rm(sealingDraftPath);
     await syncDirectoryIfSupported(dirname(draftPath));
   } catch (error) {
+    await restoreCurrentTarget(targetFormatPath, previousTarget);
     await rename(sealingDraftPath, draftPath);
     await syncDirectoryIfSupported(dirname(draftPath));
     throw error;
   }
   return { status: "sealed", version: selection.version, manifest: result.manifest, outputPath: result.outputPath, chainPath: resolve(chainPath) };
+}
+
+async function readOptionalFile(path) {
+  try { return await readFile(path); }
+  catch (error) { if (error?.code === "ENOENT") return undefined; throw error; }
+}
+
+async function replaceCurrentTarget(path, bytes) {
+  const temporary = `${path}.projector-target-${process.pid}.tmp`;
+  await writeFile(temporary, bytes, { flag: "wx", mode: 0o600 });
+  try { await rename(temporary, path); }
+  finally { await rm(temporary, { force: true }); }
+  await syncDirectoryIfSupported(dirname(resolve(path)));
+}
+
+async function restoreCurrentTarget(path, bytes) {
+  if (bytes === undefined) {
+    await rm(path, { force: true });
+    await syncDirectoryIfSupported(dirname(resolve(path)));
+    return;
+  }
+  await replaceCurrentTarget(path, bytes);
 }
 
 async function ensureLegacyIngressManifest(root, targetSnapshot) {

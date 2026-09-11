@@ -99,7 +99,7 @@ export function validateSubsystemArchitecture(files) {
   if (facts.context.identifiers.has("deriveBehaviorViews") || facts.context.literals.has("agent-compact") || facts.context.literals.has("machine-invariant")) errors.push("context contains a forbidden parallel representation renderer");
   if (!facts.planning.calls.has("ports.representations.compile") || !facts.planning.identifiers.has("representation")) errors.push("planning does not compose representation into semantic-change capsules");
   if (!facts.host.identifiers.has("authenticateRepresentationBinding") || !facts.session.properties.has("input.capsule.representation") || !facts.session.properties.has("input.instructions.representation") || !facts.session.calls.has("hashFramedDomain") || !facts.session.literals.has("representation-artifact")) errors.push("host does not authenticate the exact capsule representation artifact through shared session authority");
-  if (!facts.mcpServer.identifiers.has("createProjectorMcpServer") || !facts.mcpComposition.properties.has('read["projector.preview_representation"]') || !facts.mcpComposition.properties.has('read["projector.validate_representation"]')) errors.push("MCP composition does not register dedicated representation handlers explicitly");
+  if (!facts.mcpServer.identifiers.has("createProjectorMcpServer")) errors.push("MCP server boundary is missing");
   if (![...facts.coverage.literals].some((value) => value.toLowerCase().includes("authenticated representation projection evidence")) || facts.coverage.identifiers.has("documentNumerator") || (facts.coverage.identifiers.has("structuredArtifacts") && facts.coverage.identifiers.has("representation"))) errors.push("coverage substitutes a generic document proxy for representation projection evidence");
   return errors.sort();
 }
@@ -145,7 +145,7 @@ async function readImportGraph(root) {
 
 async function main() {
   const root = process.cwd();
-  const subsystemFiles = Object.fromEntries(await Promise.all(Object.entries({ context: "packages/engine/src/context/index.ts", planning: "packages/engine/src/planning/change-plan.ts", host: "packages/integrations/src/codex/adapter.ts", session: "packages/integrations/src/sessions/index.ts", mcpServer: "packages/integrations/src/mcp/server.ts", mcpComposition: "packages/cli/src/mcp-cli.ts", coverage: "packages/control-plane/src/coverage/service.ts" }).map(async ([key, file]) => [key, await readFile(path.join(root, file), "utf8")])));
+  const subsystemFiles = Object.fromEntries(await Promise.all(Object.entries({ context: "packages/engine/src/context/index.ts", planning: "packages/engine/src/planning/change-plan.ts", host: "packages/integrations/src/codex/adapter.ts", session: "packages/integrations/src/sessions/index.ts", mcpServer: "packages/integrations/src/mcp/server.ts", coverage: "packages/control-plane/src/coverage/service.ts" }).map(async ([key, file]) => [key, await readFile(path.join(root, file), "utf8")])));
   const controlPlaneFacade = await readFile(path.join(root, "packages/control-plane/src/index.ts"), "utf8");
   const errors = [
     ...validatePackageDependencies(await readWorkspaceGraph(root)),

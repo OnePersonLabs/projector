@@ -28,7 +28,6 @@ describe("source-severed release candidate", () => {
     expect(manifest.files.map(({ path }: { path: string }) => path)).toEqual(expect.arrayContaining([
       manifest.tarballPath,
       "plugin/projector/.codex-plugin/plugin.json",
-      "plugin/projector/runtime/projector/bin/projector.js",
       "plugin/projector/runtime/projector/exports/operations.js",
       "plugin/projector/scripts/projector-operation.mjs",
       "plugin/projector/runtime/projector/node_modules/@projector/runtime/package.json",
@@ -38,6 +37,7 @@ describe("source-severed release candidate", () => {
       "release-candidate.mjs",
       "fixtures/held-out-change.json",
     ]));
+    expect(manifest.files.map(({ path }: { path: string }) => path)).not.toContain("plugin/projector/runtime/projector/bin/projector.js");
     expect(manifest.files.map(({ path }: { path: string }) => path)).not.toContain("provision-ubuntu-sandbox.sh");
     expect(validated.files).toHaveLength(manifest.files.length);
     const format = createReleaseCandidateProjectDataFormat({

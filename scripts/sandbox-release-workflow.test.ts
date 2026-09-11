@@ -21,7 +21,6 @@ describe("manual source-severed release workflow", () => {
 
     expect(topLevelChildren(workflow, "on")).toEqual(["workflow_dispatch"]);
     const buildCommands = [
-      "pnpm acceptance:knowledge",
       "pnpm verify",
       "pnpm release:artifacts:check",
       "node scripts/build-source-severed-release-bundle.mjs \"${{ runner.temp }}/projector-release-candidate\"",

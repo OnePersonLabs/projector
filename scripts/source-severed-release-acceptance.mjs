@@ -36,8 +36,8 @@ export async function runSourceSeveredReleaseAcceptance(candidateRoot) {
   const packageManifest = JSON.parse(packageSource);
   const pluginManifest = JSON.parse(pluginSource);
   const fixture = JSON.parse(fixtureSource);
-  if (packageManifest.name !== releasePackageName || packageManifest.version !== manifest.release.version || packageManifest.bin?.projector !== "./bin/projector.js") throw new Error("downloaded tarball has the wrong release identity");
-  if (packageManifest.exports?.["./operations"] === undefined || pluginManifest.name !== "projector" || pluginManifest.version !== manifest.release.version || pluginManifest.mcpServers !== undefined || !operationSource.includes("createBundledProjectorOperationRunner")) throw new Error("downloaded plugin has the wrong operation-runner identity");
+  if (packageManifest.name !== releasePackageName || packageManifest.version !== manifest.release.version || packageManifest.bin !== undefined || packageManifest.exports?.["."] !== undefined || packageManifest.exports?.["./cli"] !== undefined || packageManifest.exports?.["./operations"] === undefined) throw new Error("downloaded tarball has the wrong operation-only release identity");
+  if (pluginManifest.name !== "projector" || pluginManifest.version !== manifest.release.version || pluginManifest.mcpServers !== undefined || !operationSource.includes("createBundledProjectorOperationRunner")) throw new Error("downloaded plugin has the wrong operation-runner identity");
   if (fixture.version !== 1 || typeof fixture.request !== "string" || !Array.isArray(fixture.expectedPaths)) throw new Error("downloaded held-out fixture has an invalid contract");
 
   const resultsRoot = join(root, "results");
