@@ -110,6 +110,26 @@ description = """The user explicitly authorized an immediate corrective pivot: c
   behavior rather than create repetitive certification overhead. Preserve required behavior, critical \
   review, data safety, authority and recovery."""
 
+[[payload.origin]]
+kind = "document"
+locator = "git:ce7d2e92378921dfdce97f23bca076d795bc31af:packages/engine/src/representation/index.ts"
+contentHash = "sha256:v1:14b500eeee082a4c597c86608187875705680128397acc3b5b096963a017c62f"
+description = """Accepted P3 local correction: preserve the immutable historical machine-invariant@1 descriptor while \
+  selecting @2 separately. The observed hash-regression repair is protected by its historical fixed-hash \
+  regression and installed reconciliation preserving prior capture/approval, refusing bad binding, missing \
+  artifact and already-current cases. A fresh replacement remains unapproved. No new policy/classifier \
+  is inferred from this local repair; conditional paired probes remain conditional."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:73555e2c334d105c13727dcf9b542100df177ddb:scripts/run-release-acceptance.mjs"
+contentHash = "sha256:v1:129512c022e1c48878d350b41ba3e05fe44778b8024f4e4c224461c88f0b195d"
+description = """Accepted coherent integration of independently prepared release checks and canonical test bindings: \
+  the coordinator resolved removed certificate API/exact test-identity consumers and the distinction \
+  between an environment-conditional installed test and regular mapped checks. The final release directly \
+  awaits installed checks; the mapped profile check does not claim packaged delivery. Integrated release \
+  execution passed. This shared-contract resolution does not establish general automatic conflict resolution."""
+
 [[payload.realizations]]
 [payload.realizations.selector]
 op = "atom"

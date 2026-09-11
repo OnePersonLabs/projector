@@ -153,6 +153,26 @@ description = """Historical property/adversary and installed-workflow acceptance
   expectations; this origin does not perform that migration. Source range 47-159; immutable Git blob \
   130a7cbb9c87d445fe907bbf83efb60ecb066157; content hash is SHA-256 of exact blob bytes."""
 
+[[payload.origin]]
+kind = "document"
+locator = "git:a0e246be61d2c91c6bd44edcab06c3acb503b645:packages/control-plane/src/coverage/continuation.ts"
+contentHash = "sha256:v1:eeb0e7792d4154e94a3568db2a9f7936517d6fbe9131d3118c783b6f19e83f74"
+description = """Accepted P2 realization: installed cleanup exposes bounded saved-context/lifecycle continuation, stable \
+  evidence paging and authenticated recovery routing. A published partial result does not conceal an \
+  unfinished journal. Source-absent implementation and independent fresh-process controls exercised \
+  these paths. This records implementation provenance, not automatic fulfillment of broader audit, composition \
+  or multi-packet obligations."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:73555e2c334d105c13727dcf9b542100df177ddb:scripts/run-release-acceptance.mjs"
+contentHash = "sha256:v1:129512c022e1c48878d350b41ba3e05fe44778b8024f4e4c224461c88f0b195d"
+description = """Accepted coherent integration of independently prepared release checks and canonical test bindings: \
+  the coordinator resolved removed certificate API/exact test-identity consumers and the distinction \
+  between an environment-conditional installed test and regular mapped checks. The final release directly \
+  awaits installed checks; the mapped profile check does not claim packaged delivery. Integrated release \
+  execution passed. This shared-contract resolution does not establish general automatic conflict resolution."""
+
 [[payload.realizations]]
 [payload.realizations.selector]
 op = "atom"

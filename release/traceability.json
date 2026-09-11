@@ -249,6 +249,18 @@
             "kind": "user-request",
             "locator": "user:2026-09-11:projection-feedback-proportionate-verification",
             "description": "The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete behavior rather than create repetitive certification overhead. Preserve required behavior, critical review, data safety, authority and recovery."
+          },
+          {
+            "kind": "document",
+            "locator": "git:ce7d2e92378921dfdce97f23bca076d795bc31af:packages/engine/src/representation/index.ts",
+            "contentHash": "sha256:v1:14b500eeee082a4c597c86608187875705680128397acc3b5b096963a017c62f",
+            "description": "Accepted P3 local correction: preserve the immutable historical machine-invariant@1 descriptor while selecting @2 separately. The observed hash-regression repair is protected by its historical fixed-hash regression and installed reconciliation preserving prior capture/approval, refusing bad binding, missing artifact and already-current cases. A fresh replacement remains unapproved. No new policy/classifier is inferred from this local repair; conditional paired probes remain conditional."
+          },
+          {
+            "kind": "document",
+            "locator": "git:73555e2c334d105c13727dcf9b542100df177ddb:scripts/run-release-acceptance.mjs",
+            "contentHash": "sha256:v1:129512c022e1c48878d350b41ba3e05fe44778b8024f4e4c224461c88f0b195d",
+            "description": "Accepted coherent integration of independently prepared release checks and canonical test bindings: the coordinator resolved removed certificate API/exact test-identity consumers and the distinction between an environment-conditional installed test and regular mapped checks. The final release directly awaits installed checks; the mapped profile check does not claim packaged delivery. Integrated release execution passed. This shared-contract resolution does not establish general automatic conflict resolution."
           }
         ],
         "realizations": [
@@ -273,7 +285,7 @@
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation does not grant exact assurance when punctuation changes advisory force or scope",
       "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
-      "mappingHash": "sha256:v1:530f0266de3f8a7ac8ee2c0bda77c2e86369cd42644afb2c2e95efe77f2d658d"
+      "mappingHash": "sha256:v1:fb35232e50b6da786621488ef45f292d2c492c3be565b68e5d439c475b0d4a1d"
     },
     {
       "id": "requirement:evidence-bound-completion",
@@ -370,6 +382,18 @@
             "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
             "contentHash": "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e",
             "description": "Historical property/adversary and installed-workflow acceptance evidence. Task9 separately resolves stable canonical acceptance IDs, legacy mappings, actual consumer evidence and removal of obsolete expectations; this origin does not perform that migration. Source range 47-159; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157; content hash is SHA-256 of exact blob bytes."
+          },
+          {
+            "kind": "document",
+            "locator": "git:a0e246be61d2c91c6bd44edcab06c3acb503b645:packages/control-plane/src/coverage/continuation.ts",
+            "contentHash": "sha256:v1:eeb0e7792d4154e94a3568db2a9f7936517d6fbe9131d3118c783b6f19e83f74",
+            "description": "Accepted P2 realization: installed cleanup exposes bounded saved-context/lifecycle continuation, stable evidence paging and authenticated recovery routing. A published partial result does not conceal an unfinished journal. Source-absent implementation and independent fresh-process controls exercised these paths. This records implementation provenance, not automatic fulfillment of broader audit, composition or multi-packet obligations."
+          },
+          {
+            "kind": "document",
+            "locator": "git:73555e2c334d105c13727dcf9b542100df177ddb:scripts/run-release-acceptance.mjs",
+            "contentHash": "sha256:v1:129512c022e1c48878d350b41ba3e05fe44778b8024f4e4c224461c88f0b195d",
+            "description": "Accepted coherent integration of independently prepared release checks and canonical test bindings: the coordinator resolved removed certificate API/exact test-identity consumers and the distinction between an environment-conditional installed test and regular mapped checks. The final release directly awaits installed checks; the mapped profile check does not claim packaged delivery. Integrated release execution passed. This shared-contract resolution does not establish general automatic conflict resolution."
           }
         ],
         "realizations": [
@@ -394,7 +418,7 @@
       "publicFacade": "projector/control-plane",
       "testRef": "packages/control-plane/src/coverage/service.test.ts#observed progressive coverage keeps a standalone future scenario visible until it gains observed members without claiming conformance",
       "testSourceDigest": "sha256:v1:b29c4f464e0c6008e178c360c2fde3342ed8abcd8e156cd6cebb4ddcdde5010c",
-      "mappingHash": "sha256:v1:77f6017e8f90f92ea074035efa203825461f28108b2bd9d0cdc70f7e7b690ae2"
+      "mappingHash": "sha256:v1:fb2508c14663d20a89a92dc0a31ea41c50a8de1da000336dd125e279f1b5ce1e"
     },
     {
       "id": "requirement:executable-lenses",
@@ -1095,6 +1119,12 @@
             "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/03-knowledge/risk-and-execution-policy.md",
             "contentHash": "sha256:v1:940550eed6cba1181611b16e901950cb61f679a9c5a14af36eda932978deac10",
             "description": "Historical contextual risk and governance-impact meaning, interpreted under current accepted host authorization rather than old confinement/network delivery prescriptions. Source range 47-60; immutable Git blob abe3e4a838844c9b3166569f501d8d9bd0a47c96; content hash is SHA-256 of exact blob bytes."
+          },
+          {
+            "kind": "document",
+            "locator": "git:2af21351ca06af4943e73692ae4ea26700467b19:packages/engine/src/state/index.ts",
+            "contentHash": "sha256:v1:53f94810dba93edb69239d4dd8887459d35a9048f312bcdf55bab1b136d52fdf",
+            "description": "Accepted second source-absent increment: observed old/current values and query membership explain scoped currentness while unrelated edits retain reuse. Independent same-HEAD value and query-membership changes exercised this distinction. This does not establish exhaustive dependency inference, universal equivalence or economic advantage."
           }
         ],
         "realizations": [
@@ -1119,7 +1149,7 @@
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#derivation index and exact invalidation propagates a material contract signature change so clients cannot remain falsely valid",
       "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
-      "mappingHash": "sha256:v1:d1e082b450f357ac515909ef303595711b28bd28628b79ea756ec712018cb005"
+      "mappingHash": "sha256:v1:f5c148a6999a91dfef4a4e80e3281834c7f372d0f3aa0deb01bbc5c01d6951cf"
     },
     {
       "id": "requirement:scoped-reconsideration",
@@ -1335,6 +1365,29 @@
             "locator": "git:f00166064d34aa65a27b397224544e3ee541c71e:.borg/ingest-2026-09-09/spec-deltas/P4.patch",
             "contentHash": "sha256:v1:3fc9c1438493914aeb6a800216454f48d3b8f6e8aba691017645312d198320c6",
             "description": "P4 conditional evaluation commitments; immutable Git blob df7829584f81b9537531be04ae6a1714526b3eb9. Accepted without requiring a new comparative trial or telemetry subsystem."
+          },
+          {
+            "kind": "document",
+            "locator": "git:a0e246be61d2c91c6bd44edcab06c3acb503b645:packages/control-plane/src/coverage/continuation.ts",
+            "contentHash": "sha256:v1:eeb0e7792d4154e94a3568db2a9f7936517d6fbe9131d3118c783b6f19e83f74",
+            "description": "Accepted P2 realization: installed cleanup exposes bounded saved-context/lifecycle continuation, stable evidence paging and authenticated recovery routing. A published partial result does not conceal an unfinished journal. Source-absent implementation and independent fresh-process controls exercised these paths. This records implementation provenance, not automatic fulfillment of broader audit, composition or multi-packet obligations."
+          },
+          {
+            "kind": "document",
+            "locator": "git:2af21351ca06af4943e73692ae4ea26700467b19:packages/engine/src/state/index.ts",
+            "contentHash": "sha256:v1:53f94810dba93edb69239d4dd8887459d35a9048f312bcdf55bab1b136d52fdf",
+            "description": "Accepted second source-absent increment: observed old/current values and query membership explain scoped currentness while unrelated edits retain reuse. Independent same-HEAD value and query-membership changes exercised this distinction. This does not establish exhaustive dependency inference, universal equivalence or economic advantage."
+          },
+          {
+            "kind": "document",
+            "locator": "git:ce7d2e92378921dfdce97f23bca076d795bc31af:packages/engine/src/representation/index.ts",
+            "contentHash": "sha256:v1:14b500eeee082a4c597c86608187875705680128397acc3b5b096963a017c62f",
+            "description": "Accepted P3 local correction: preserve the immutable historical machine-invariant@1 descriptor while selecting @2 separately. The observed hash-regression repair is protected by its historical fixed-hash regression and installed reconciliation preserving prior capture/approval, refusing bad binding, missing artifact and already-current cases. A fresh replacement remains unapproved. No new policy/classifier is inferred from this local repair; conditional paired probes remain conditional."
+          },
+          {
+            "kind": "user-request",
+            "locator": "user:2026-09-11:source-absent-realization-accounting",
+            "description": "Accept the two completed source-absent increments and their independent controls as bounded functional self-development. Main integration and the tested correction are real; total model, setup, repair and review costs and a matched ordinary-agent comparison were not completely measured. Comparative economics remains unproved. Preserve all P4 conditional matching, reveal, regression, accumulated-code and cost-category requirements unchanged."
           }
         ],
         "realizations": [
@@ -1359,7 +1412,7 @@
       "publicFacade": "projector/testkit",
       "testRef": "packages/testkit/src/benchmark.test.ts#release benchmark inventory rejects binary assertion proxies and metrics without an authenticated executed case corpus",
       "testSourceDigest": "sha256:v1:bf668b4228d7ec520b8a70d4d23bb00101e90755570b554ec18e147f28c13186",
-      "mappingHash": "sha256:v1:d04873c79dca7cc6564f0077156e6936aaa5b542bbe193569f428c7871e52bde"
+      "mappingHash": "sha256:v1:ff8ce18b896f114c2552ec8f15aba840e13f6753836971cadc3896c296bf0ede"
     },
     {
       "id": "scenario:accept-simple-decision-without-synthetic-rule",
@@ -10450,5 +10503,5 @@
       "mappingHash": "sha256:v1:f017d0754c0880f0dcb35cba567344c9f2d7f7368d1c5b723adf7652cf61b088"
     }
   ],
-  "inventoryHash": "sha256:v1:05a0395c120317bceba3f3b9a2a1570ecc50477db58e00001f81716e27da7926"
+  "inventoryHash": "sha256:v1:df6c6877ae1d7f1a9abef4a161f343afe4bf855ee7c5afad1a3ad0a5dced2e08"
 }
