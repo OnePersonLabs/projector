@@ -505,6 +505,28 @@ export class ChangeLifecycleStore {
   }
 
   async incompleteAttemptsForApproval(approvalSelector: string): Promise<LifecycleAttemptRecord[]> {
+    const attempts: LifecycleAttemptRecord[] = [];
+    const journal = new FileTransactionJournal(this.paths);
+    for (const attempt of await this.attemptsForApproval(approvalSelector)) {
+      try {
+        const result = await this.readAttemptResult(attempt.id);
+        if (result.outcome !== "success") {
+          let transaction;
+          try { transaction = await journal.read(attempt.transactionId); }
+          catch (error) { if (!isCode(error, "ENOENT")) throw error; }
+          if (transaction !== undefined && !["committed", "rolled-back"].includes(transaction.entry.phase)) attempts.push(attempt);
+        }
+      }
+      catch (error) {
+        if (isCode(error, "ENOENT")) attempts.push(attempt);
+        else throw error;
+      }
+    }
+    return attempts;
+  }
+
+  /** Authenticated attempts from the existing owner, including failed history. */
+  async attemptsForApproval(approvalSelector: string): Promise<LifecycleAttemptRecord[]> {
     const approval = await this.readApproval(approvalSelector);
     const directory = await this.ensureDirectory("attempts");
     const names = (await readdir(directory)).filter((name) => name.endsWith(".json")).sort(compare);
@@ -513,12 +535,7 @@ export class ChangeLifecycleStore {
       const untrusted = JSON.parse(await readFile(join(directory, name), "utf8")) as Partial<LifecycleAttemptRecord>;
       if (untrusted.approvalId !== approval.id || typeof untrusted.id !== "string") continue;
       const attempt = await this.readAttempt(untrusted.id);
-      try {
-        await this.readAttemptResult(attempt.id);
-      } catch (error) {
-        if (isCode(error, "ENOENT")) attempts.push(attempt);
-        else throw error;
-      }
+      attempts.push(attempt);
     }
     return attempts.sort((left, right) => compare(left.startedAt, right.startedAt) || compare(left.id, right.id));
   }

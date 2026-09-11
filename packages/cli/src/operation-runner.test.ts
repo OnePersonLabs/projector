@@ -200,6 +200,17 @@ describe("bounded Projector operation runner", () => {
     expect(accessed).toBe(false);
   });
 
+  test("delivers bounded cleanup continuation through the installed composition schema", async () => {
+    const root = await packagedRoot();
+    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root, applicationEvidence: createInstalledProjectorApplicationEvidenceHost });
+    expect(await runner.execute({ ...request("init"), repositoryRoot: root })).toMatchObject({ status: "succeeded" });
+    const contextId = "knowledge_context_00000000000000000000000000000000";
+    const continued = await runner.execute({ ...request("cleanup", { contextId, evidenceLimit: 1 }), repositoryRoot: root });
+    expect(continued).toMatchObject({ status: "succeeded", output: { continuation: { context: { status: "unknown" }, page: { included: 1 }, nextAction: { operation: "context", repositoryRoot: root } } } });
+    expect(await runner.execute({ ...request("cleanup", { contextId, evidenceLimit: 51 }), repositoryRoot: root })).toMatchObject({ status: "failed" });
+    expect(await runner.execute({ ...request("complete", { contextId }), repositoryRoot: root })).toMatchObject({ status: "failed" });
+  });
+
   test("blocks a registered handler when operation access reports nonready", async () => {
     const root = await packagedRoot();
     let invoked = false;

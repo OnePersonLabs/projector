@@ -332,7 +332,13 @@ export class RepositoryChangeLifecycleService {
           ? { attemptId: attempt.id, transactionId: attempt.transactionId, action: "no-transaction", reason: "attempt stopped before a governed transaction began" }
           : { attemptId: attempt.id, transactionId: attempt.transactionId, action: "rolled-back" };
         options.signal?.throwIfAborted();
-        await this.store.completeAttempt(attempt.id, "failure", { kind: "recovery", ...outcome });
+        // Recovery closes effects; a published failure/partial result remains
+        // authenticated history and must not be overwritten with a new result.
+        try { await this.store.readAttemptResult(attempt.id); }
+        catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+          await this.store.completeAttempt(attempt.id, "failure", { kind: "recovery", ...outcome });
+        }
         outcomes.push(outcome);
       }
       return outcomes;

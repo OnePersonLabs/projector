@@ -8,13 +8,11 @@ import { KnowledgeValidatorRun } from "../knowledge/validators.js";
 import { applicationEvidenceDependencies, applicationEvidenceDisposition, assessKnowledgeApplicationEvidence, assessmentKey, type PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
 import { deriveCompletionQuestions } from "./issues.js";
 import { parseRepositoryCoverageResult, type RepositoryCoverageMode, type RepositoryCoverageResult } from "./transport.js";
+import { inspectRepositoryContinuation, type RepositoryContinuationRequest } from "./continuation.js";
 
-export interface RepositoryCoverageRequest {
+export interface RepositoryCoverageRequest extends RepositoryContinuationRequest {
   readonly scope: string;
-  readonly budgetTokens?: number;
-  readonly budgetCost?: number;
   readonly continuationSelector?: string;
-  readonly questionOffset?: number;
 }
 
 const inside = (path: string, scope: string): boolean => scope === "." || path === scope || path.startsWith(`${scope}/`);
@@ -109,7 +107,23 @@ export async function inspectRepositoryCoverage(repositoryRoot: string, request:
   const nextQuestionOffset = questionOffset + selectedQuestions.length < questions.length ? questionOffset + selectedQuestions.length : null;
   const disclosure = { total: questions.length, included: selectedQuestions.length, omitted: questions.length - selectedQuestions.length, blocking: questions.filter(({ blocking }) => blocking).length };
   const unsupportedContinuation = request.continuationSelector !== undefined;
+  const continuation = mode === "cleanup" && (request.contextId !== undefined || request.changeSelector !== undefined || request.approvalSelector !== undefined)
+    ? await inspectRepositoryContinuation(repositoryRoot, {
+      scope: request.scope,
+      ...(request.contextId === undefined ? {} : { contextId: request.contextId }),
+      ...(request.changeSelector === undefined ? {} : { changeSelector: request.changeSelector }),
+      ...(request.approvalSelector === undefined ? {} : { approvalSelector: request.approvalSelector }),
+      ...(request.evidenceOffset === undefined ? {} : { evidenceOffset: request.evidenceOffset }),
+      ...(request.evidenceLimit === undefined ? {} : { evidenceLimit: request.evidenceLimit }),
+      ...(request.evidenceIdentity === undefined ? {} : { evidenceIdentity: request.evidenceIdentity }),
+    }, options) : undefined;
+  if (continuation !== undefined) {
+    signal.throwIfAborted();
+    const after = await observeChangeRepository(repositoryRoot);
+    if (canonicalJson(after.state) !== canonicalJson(currentState)) throw new Error("Repository changed during cleanup continuation inspection; request a fresh cleanup report.");
+  }
   return parseRepositoryCoverageResult(mode, { proofStatement: compiled.snapshot.proofStatement, boundary: compiled.snapshot.boundary, lanes: compiled.snapshot.lanes, unavailableSurfaceIds: [...compiled.snapshot.unavailableSurfaceIds, ...(unsupportedContinuation ? ["cleanup-continuation-execution"] : [])], approvalRequired: false,
+    ...(continuation === undefined ? {} : { continuation }),
     budgetExhausted: request.budgetTokens !== undefined && selectedQuestions.length < questionPage.length, continuationPersisted: false,
     snapshot: compiled.snapshot, boundState: compiled.boundState, bindingValidation: compiled.bindingValidation, bindingIdentity: compiled.boundState.dependencyDigest,
     localAnalysis: { artifactCount: artifacts.length, projectionUnitCount: units.length, dependencyCount: dependencies.length, analyzerFailureCount: failureIds.length, analyzerFailures,

@@ -2,6 +2,7 @@ import { AnalyzerFailureSchema, ContentHashSchema, CoverageLaneSchema, CoverageS
 import { z } from "zod";
 import type { CompletionQuestion } from "./issues.js";
 import { KnowledgeApplicationEvidenceAssessmentSchema, type KnowledgeApplicationEvidenceAssessment } from "../knowledge/application-evidence.js";
+import { RepositoryContinuationSchema, type RepositoryContinuation } from "./continuation.js";
 
 export const CompletionQuestionSchema = z.object({
   id: z.string(), kind: z.enum(["governance", "unmapped-group", "unrealized-requirement", "unrealized-scenario", "realization-binding", "identity-overlap", "architecture-concern"]), blocking: z.boolean(), ownerIds: z.array(z.string()), affectedCount: z.number().int().nonnegative(), subjectCount: z.number().int().nonnegative(), examples: z.array(z.string()), question: z.string(), reasons: z.array(z.string()), reasonCount: z.number().int().nonnegative(), evidenceHash: ContentHashSchema,
@@ -20,12 +21,15 @@ const RepositoryCoverageResultBaseSchema = z.object({
   localAnalysis: z.object({ artifactCount: z.number().int().nonnegative(), projectionUnitCount: z.number().int().nonnegative(), dependencyCount: z.number().int().nonnegative(), analyzerFailureCount: z.number().int().nonnegative(), analyzerFailures: z.array(AnalyzerFailureSchema), realizations: z.object({ matched: z.number().int().nonnegative(), unmatched: z.number().int().nonnegative(), unsupported: z.number().int().nonnegative(), unavailable: z.number().int().nonnegative() }).strict() }).strict(),
   applicationEvidence: z.object({ status: z.enum(["satisfied", "violated", "unknown", "not-applicable"]), assessments: z.array(KnowledgeApplicationEvidenceAssessmentSchema) }).strict(),
   completion: completionSchema,
+  continuation: RepositoryContinuationSchema.optional(),
 }).strict();
 
 export const RepositoryCoverageOutputSchema = RepositoryCoverageResultBaseSchema.superRefine((value, context) => {
+  if (value.continuation !== undefined) context.addIssue({ code: "custom", message: "continuation inspection belongs to cleanup", path: ["continuation"] });
   if (value.completion.questions.length !== 0 || value.completion.repairPlan !== undefined || value.completion.execution !== undefined) context.addIssue({ code: "custom", message: "coverage output cannot disclose questions or a repair plan", path: ["completion"] });
 });
 export const RepositoryCompletionOutputSchema = RepositoryCoverageResultBaseSchema.superRefine((value, context) => {
+  if (value.continuation !== undefined) context.addIssue({ code: "custom", message: "continuation inspection belongs to cleanup", path: ["continuation"] });
   if (value.completion.repairPlan !== undefined || value.completion.execution !== undefined) context.addIssue({ code: "custom", message: "completion output cannot claim a cleanup plan", path: ["completion"] });
 });
 export const RepositoryCleanupOutputSchema = RepositoryCoverageResultBaseSchema.superRefine((value, context) => {
@@ -34,6 +38,7 @@ export const RepositoryCleanupOutputSchema = RepositoryCoverageResultBaseSchema.
 
 interface CoverageDisclosure { readonly total: number; readonly included: number; readonly omitted: number; readonly blocking: number }
 export interface RepositoryCoverageResult {
+  readonly continuation?: RepositoryContinuation;
   readonly proofStatement: CoverageSnapshot["proofStatement"];
   readonly boundary: readonly string[];
   readonly lanes: CoverageSnapshot["lanes"];
