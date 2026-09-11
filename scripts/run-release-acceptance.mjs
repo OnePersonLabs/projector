@@ -101,7 +101,7 @@ export async function observeInstalledRepresentationLinks({ packagedRoot }) {
     await rejectLinks(packagedRoot);
     await cp(packagedRoot, isolatedPackage, { recursive: true });
     const operationsPath = join(isolatedPackage, "exports/operations.js"), operationBytes = await readFile(operationsPath);
-    const [core, runtime] = await Promise.all(["core", "runtime"].map((name) => import(pathToFileURL(join(isolatedPackage, `exports/${name}.js`)).href)));
+    const [core, runtime, engine, controlPlane] = await Promise.all(["core", "runtime", "engine", "control-plane"].map((name) => import(pathToFileURL(join(isolatedPackage, `exports/${name}.js`)).href)));
     const check = (condition, message) => { if (!condition) throw new Error(`installed representation link: ${message}`); };
     await mkdir(join(root, "src"), { recursive: true }); await mkdir(join(root, "test"));
     await writeFile(join(root, "package.json"), '{"type":"module"}\n');
@@ -149,12 +149,66 @@ export async function observeInstalledRepresentationLinks({ packagedRoot }) {
     check((await readFile(operationsPath)).equals(operationBytes), "packaged export did not restore exactly");
     const restored = succeeded(await invoke("representation.inspect", { changeSelector: capture.selector, view: "content" }));
     check(restored.renderedText === delivered.renderedText && restored.artifactIntegrity.status === "valid", "fresh process failed to consume restored exact bytes");
-    return [
+    const recovered = await observeRepresentationProfileRecovery({ root, core, engine, controlPlane, proposal, reconcile: async (input) => succeeded(await invoke("representation.reconcile", input)) });
+    check(recovered.result.delivery.stage === "operation-runner" && recovered.result.delivery.deliveredToRunnerBoundary === true, "profile recovery did not cross the packaged runner boundary");
+    const observations = [
       { stage: "public-composition", output: { capture, plan, association: delivered.association, fidelity: delivered.semanticFidelity }, negative: wrongCapsule, entrypoint: "change.capture / change.plan / representation.inspect capsule association" },
       { stage: "downstream-consumer", output: delivered, negative: tampered, entrypoint: "representation.inspect content / operation-runner delivery" },
       { stage: "packed-release", output: { exportBytesHash: sha(operationBytes), delivered: restored }, negative: severedPackage, entrypoint: "source-absent copied package exports/operations.js in fresh process" },
     ].map(({ stage, output, negative, entrypoint }) => ({ obligationId: `representation.${stage}.v1`, stage, producer: "release-acceptance", entrypoint, observedOutputHash: core.hashFramedDomain("release-stage-output", output), failureHash: core.hashFramedDomain("release-stage-negative", negative), severedEdgeRejected: true }));
+    return [...observations, recovered.observation];
   } finally { await rm(temporary, { recursive: true, force: true }); }
+}
+
+/** Real historical capture and public recovery. The final gate supplies a fresh packaged operation invocation. */
+export async function observeRepresentationProfileRecovery({ root, core, engine, controlPlane, proposal, reconcile }) {
+  const check = (condition, message) => { if (!condition) throw new Error(`representation profile recovery: ${message}`); };
+  const rejected = async (input, pattern) => {
+    try { await reconcile(input); } catch (error) {
+      check(pattern.test(String(error.message)), `negative failed for an unrelated reason: ${error.message}`);
+      return { rejected: true, reason: error.message };
+    }
+    throw new Error("representation profile recovery negative unexpectedly succeeded");
+  };
+  const request = `Change the greeting while preserving its exact accepted name behavior and repository boundary. ${"Retain authenticated intent. ".repeat(40)}`;
+  const knowledge = await controlPlane.RepositoryKnowledgeService.create({ repositoryRoot: root });
+  const context = await knowledge.context({ request, entities: ["requirement:greeting"], operation: "change", persist: true });
+  const lifecycle = await controlPlane.RepositoryChangeLifecycleService.create(root, { representationProfileKey: "agent-compact@1" });
+  const historical = await lifecycle.capture({ request, proposal, knowledgeContextId: context.id });
+  const approval = await lifecycle.approve(historical.capture.semanticChangeId, historical.capture.planHash);
+  const reference = historical.capture.capsules[0].representation;
+  check(reference?.profileId === "profile:agent-compact" && reference.profileVersion === "1", "historical capture did not select authentic compact @1");
+  check(engine.BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].semanticHash === "sha256:v1:c48716e3554bfc918401ba5b7ba03a39b311030c8cc181da9afd9cc80f5117e5", "historical @1 descriptor changed");
+  const historyRoot = join(root, ".projector/runtime/change-lifecycles");
+  const existingFiles = [...await filesUnder(join(historyRoot, "captures")), ...await filesUnder(join(historyRoot, "approvals"))];
+  const before = new Map(await Promise.all(existingFiles.map(async path => [path, await readFile(path)])));
+  const approvalNames = (await readdir(join(historyRoot, "approvals"))).sort();
+  const result = await reconcile({ changeSelector: historical.capture.semanticChangeId, approvalSelector: approval.id });
+  check(result.profile.fromVersion === "1" && result.profile.toVersion === "2" && result.profile.fromSemanticHash !== result.profile.toSemanticHash, "recovery did not observe the versioned profile transition");
+  check(result.replacement.changeSelector !== historical.capture.semanticChangeId && result.replacement.planHash !== historical.capture.planHash, "recovery reused the historical plan or selector");
+  check(result.replacement.artifactStatus === "valid" && result.replacement.dependencyStatus === "current" && result.replacement.approvalStatus === "not-supplied" && result.automaticApprovalCreated === false && result.historical.approvalStatus === "authenticated-stale", "replacement or historical approval assurance is incorrect");
+  check(["current", "rebound"].includes(result.context.status) && result.context.contextId === context.id && result.context.observedContextId.startsWith("knowledge_context_"), "required retained context was not reconciled");
+  const dependentIds = [reference.projectionId, ...historical.capture.capsules.map(({ id }) => id)];
+  check(dependentIds.every(id => result.invalidation.invalidatedIds.includes(id) && result.reconciliation.refreshedIds.includes(id)), "recovery omitted a historical projection or capsule");
+  check(result.invalidation.preservedCanonicalEntityIds.includes("requirement:greeting"), "recovery omitted preserved canonical authority");
+  const sameVersion = await rejected({ changeSelector: result.replacement.changeSelector }, /already current/iu);
+  const recordPath = join(root, ".projector/runtime/representations/projections", `${core.hashFramedDomain("representation-projection-path", reference.projectionId).slice("sha256:v1:".length)}.json`);
+  const originalRecord = await readFile(recordPath);
+  const record = JSON.parse(originalRecord.toString("utf8"));
+  const boundState = engine.createStateBinding({ compiledAgainst: record.projection.boundState.compiledAgainst, valueDependencies: record.projection.boundState.valueDependencies.map(dependency => dependency.kind === "representation-profile" ? { ...dependency, versionHash: core.hashFramedDomain("release-severed-profile", null) } : dependency), queryDependencies: record.projection.boundState.queryDependencies });
+  const { semanticHash: oldHash, ...basis } = record.projection; void oldHash;
+  const altered = { ...basis, boundState }, projection = { ...altered, semanticHash: core.hashFramedDomain("representation-projection", altered) };
+  let badBinding, missingArtifact;
+  try {
+    await writeFile(recordPath, core.canonicalJson(core.createDurableRepresentationArtifactRecord(projection)));
+    badBinding = await rejected({ changeSelector: historical.capture.semanticChangeId }, /historical representation profile binding is invalid/iu);
+  } finally { await writeFile(recordPath, originalRecord); }
+  await rename(recordPath, `${recordPath}.severed`);
+  try { missingArtifact = await rejected({ changeSelector: historical.capture.semanticChangeId }, /historical representation artifact is unavailable/iu); }
+  finally { await rename(`${recordPath}.severed`, recordPath); }
+  for (const [path, bytes] of before) check((await readFile(path)).equals(bytes), `historical lifecycle bytes changed: ${path}`);
+  check(core.canonicalJson((await readdir(join(historyRoot, "approvals"))).sort()) === core.canonicalJson(approvalNames), "recovery or a negative created approval authority");
+  return { result, observation: { obligationId: "representation.invalidation-recovery.v1", stage: "invalidation-recovery", producer: "release-acceptance", entrypoint: "authentic historical RepositoryChangeLifecycleService capture / representation.reconcile", observedOutputHash: core.hashFramedDomain("release-stage-output", { result, preservedHistory: [...before].map(([path, bytes]) => ({ path: path.slice(root.length), bytesHash: sha(bytes) })) }), failureHash: core.hashFramedDomain("release-stage-negative", { sameVersion, badBinding, missingArtifact }), severedEdgeRejected: sameVersion.rejected && badBinding.rejected && missingArtifact.rejected } };
 }
 
 async function persistEvidence(evidence) { const root = join(repositoryRoot, "release/evidence"); await mkdir(root, { recursive: true }); const bytes = `${JSON.stringify(evidence, null, 2)}\n`; const contentPath = join(root, `${evidence.contentHash.slice("sha256:v1:".length)}.json`); try { await writeFile(contentPath, bytes, { flag: "wx" }); } catch (error) { if (error.code !== "EEXIST" || await readFile(contentPath, "utf8") !== bytes) throw error; } const current = { version: 1, evidenceHash: evidence.contentHash, manifest: contentPath.slice(repositoryRoot.length + 1), sourceRevision: evidence.sourceRevision, worktreeDigest: evidence.worktreeDigest, buildDigest: evidence.buildDigest, tarballDigest: evidence.tarballDigest }; const temporary = join(root, `.current-${process.pid}.tmp`); await writeFile(temporary, `${JSON.stringify(current, null, 2)}\n`, { flag: "wx" }); await rename(temporary, join(root, "current.json")); return current; }

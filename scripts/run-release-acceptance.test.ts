@@ -1,9 +1,16 @@
+import { execFile } from "node:child_process";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import * as runtime from "@projector/runtime";
+import * as controlPlane from "@projector/control-plane";
 import { describe, expect, it } from "vitest";
 import * as core from "@projector/core";
 import * as engine from "@projector/engine";
 import * as testkit from "@projector/testkit";
 // @ts-expect-error release entrypoint is an executable JavaScript module
-import { observeRepresentationClosure, observeInstalledRepresentationLinks } from "./run-release-acceptance.mjs";
+import { observeRepresentationClosure, observeInstalledRepresentationLinks, observeRepresentationProfileRecovery } from "./run-release-acceptance.mjs";
 
 const id = "scenario:verify-representation-end-to-end-closure";
 const owner = { id, title: "Preserve representation closure", steps: [
@@ -16,9 +23,37 @@ const inventory = [{ id, owner, title: owner.title, semanticHash: core.hashFrame
 const input = { core, engine, testkit, inventory, sourceRevision: "fixture-revision", worktreeDigest: core.hashFramedDomain("fixture-worktree", "test") };
 
 describe("release representation observations", () => {
-  it.skipIf(!process.env.PROJECTOR_TEST_PACKAGED_ROOT)("exercises installed composition, delivery and severed-package controls without claiming recovery or dogfood", async () => {
+  it("exercises public profile recovery and three rejection controls without claiming packaged delivery", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-release-profile-"));
+    try {
+      await mkdir(join(root, "src")); await mkdir(join(root, "test"));
+      const before = "export const greet = () => 'hello';\n";
+      await writeFile(join(root, "package.json"), '{"type":"module"}\n');
+      await writeFile(join(root, "src/greeting.mjs"), before);
+      await writeFile(join(root, "test/greeting.test.mjs"), "import assert from 'node:assert/strict'; import { greet } from '../src/greeting.mjs'; assert.equal(greet('Ada'), 'hello Ada');\n");
+      const requirement = { key: "greeting", title: "Greeting", statement: "The greeting includes the supplied name.", aliases: [] };
+      const scenario = { key: "greet-name", title: "Greet a name", steps: [{ role: "precondition", statement: "A caller supplies a name." }, { role: "trigger", statement: "The caller requests a greeting." }, { role: "expected-outcome", statement: "The greeting includes that name." }] };
+      for (const [kind, record] of [["requirement", requirement], ["behavioral-scenario", scenario]] as const) {
+        const id = (kind === "requirement" ? "requirement:" : "scenario:") + record.key;
+        const placeholder = core.hashFramedDomain("release-profile-fixture", null);
+        const payload = { ...record, id, aliases: [], status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, origin: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder };
+        await new runtime.CanonicalFileRepository(root).write(core.withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key: record.key, lifecycle: "active", payload }));
+      }
+      const exec = promisify(execFile);
+      for (const args of [["init", "-q"], ["config", "user.email", "test@example.invalid"], ["config", "user.name", "Release Probe"], ["add", "."], ["commit", "-qm", "fixture"]]) await exec("git", args, { cwd: root, windowsHide: true });
+      const proposal = { apiVersion: "projector.change-proposal/v1", requirements: [requirement], scenarios: [scenario], architecture: null, edits: [{ path: "src/greeting.mjs", before, after: "export const greet = (name) => 'hello ' + name;\n" }], validation: { independentNodeTests: ["test/greeting.test.mjs"], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"] };
+      const service = await controlPlane.RepositoryRepresentationProfileReconciliationService.create(root);
+      const recovered = await observeRepresentationProfileRecovery({ root, core, engine, controlPlane, proposal, reconcile: (input: { changeSelector: string; approvalSelector?: string }) => service.reconcile(input) });
+      expect(recovered.result.profile).toMatchObject({ fromVersion: "1", toVersion: "2" });
+      expect(recovered.result.delivery).toMatchObject({ stage: "reconciliation-service", deliveredToRunnerBoundary: false });
+      expect(recovered.observation.stage).toBe("invalidation-recovery");
+      expect(recovered.observation.severedEdgeRejected).toBe(true);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }, 30_000);
+
+  it.skipIf(!process.env.PROJECTOR_TEST_PACKAGED_ROOT)("exercises installed composition, delivery and severed-package controls and profile recovery without claiming dogfood", async () => {
     const observations = await observeInstalledRepresentationLinks({ packagedRoot: process.env.PROJECTOR_TEST_PACKAGED_ROOT });
-    expect(observations.map((item: { stage: string }) => item.stage)).toEqual(["public-composition", "downstream-consumer", "packed-release"]);
+    expect(observations.map((item: { stage: string }) => item.stage)).toEqual(["public-composition", "downstream-consumer", "packed-release", "invalidation-recovery"]);
     for (const observation of observations) {
       expect(observation.severedEdgeRejected).toBe(true);
       expect(observation.observedOutputHash).not.toBe(observation.failureHash);
@@ -27,7 +62,7 @@ describe("release representation observations", () => {
     const receipt = testkit.createSubsystemClosureReceipt({ subsystemId: "representation", revision: input.sourceRevision, worktreeDigest: input.worktreeDigest, observations: [...base.receipt.observations, ...observations] });
     const result = testkit.evaluateSubsystemClosure({ subsystemId: "representation", requiredObligationIds: testkit.SUBSYSTEM_CLOSURE_STAGES.map((stage) => `representation.${stage}.v1`) }, receipt);
     expect(result.status).toBe("open");
-    expect(result.blockers.join(" ")).toContain("invalidation-recovery");
+    expect(result.blockers.join(" ")).not.toContain("invalidation-recovery");
     expect(result.blockers.join(" ")).toContain("dogfood");
     expect(result.blockers.join(" ")).not.toContain("downstream-consumer");
   }, 90_000);
