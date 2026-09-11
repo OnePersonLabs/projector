@@ -95,6 +95,23 @@ function handler(
 }
 
 describe("bounded Projector operation runner", () => {
+  test("bounds knowledge transport by default and accepts explicit full proof through the same operations", async () => {
+    const root = await packagedRoot();
+    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root, applicationEvidence: createInstalledProjectorApplicationEvidenceHost });
+    await runner.execute({ ...request("init"), repositoryRoot: root });
+    const context = await runner.execute({ ...request("context", { request: "Understand this repository", persist: true }), repositoryRoot: root });
+    expect(context).toMatchObject({ status: "succeeded", output: { view: "agent", persisted: true, branchDisclosure: { total: expect.any(Number) } } });
+    const { output: { id } } = z.object({ output: z.object({ id: z.string() }) }).parse(context);
+    const full = await runner.execute({ ...request("context", { request: "Understand this repository", persist: true, view: "full" }), repositoryRoot: root });
+    expect(full).toMatchObject({ status: "succeeded", output: { discoveryBinding: expect.any(Object) } });
+    const reconciliation = await runner.execute({ ...request("reconcile", { contextId: id }), repositoryRoot: root });
+    expect(reconciliation).toMatchObject({ status: "succeeded", output: { view: "agent", contextId: id, governance: { status: expect.any(String) } } });
+    const fullReconciliation = await runner.execute({ ...request("reconcile", { contextId: id, view: "full" }), repositoryRoot: root });
+    expect(fullReconciliation).toMatchObject({ status: "succeeded", output: { contextId: id, discoveryValidation: expect.any(Object) } });
+    expect(ProjectorOperationInputSchemas.context.safeParse({ request: "x", view: "debug" }).success).toBe(false);
+    expect(ProjectorOperationInputSchemas.reconcile.safeParse({ contextId: id, full: true }).success).toBe(false);
+  });
+
   test("reads an exact missing application artifact without creating repository state", async () => {
     const root = await packagedRoot();
     const host = createInstalledProjectorApplicationEvidenceHost({
@@ -124,6 +141,10 @@ describe("bounded Projector operation runner", () => {
       reachable: true,
     });
     expect(inactive.operations.find(({ operation }) => operation === "representation.inspect")).toMatchObject({
+      registered: true,
+      reachable: true,
+    });
+    expect(inactive.operations.find(({ operation }) => operation === "representation.reconcile")).toMatchObject({
       registered: true,
       reachable: true,
     });

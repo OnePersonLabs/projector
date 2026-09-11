@@ -1,5 +1,5 @@
 import { canonicalJson, hashFramedDomain, parseChangeProposal, type ChangeProposal, type ContentHash, type ExecutionCapsule } from "@projector/core";
-import { executionCapsuleHash } from "@projector/engine";
+import { executionCapsuleHash, type BuiltInRepresentationProfileKey } from "@projector/engine";
 import { publishPreparedStateBoundChangeSuccess, type StateBoundChangeResult } from "@projector/engine";
 import { FileTransactionJournal, GovernedWorktreeRuntime, RepositoryPathService, WriterLeaseManager } from "@projector/runtime";
 
@@ -35,6 +35,8 @@ export interface CapturedRepositoryChange extends PlannedRepositoryChange {}
 export interface RepositoryChangeLifecycleServiceOptions extends ChangeLifecycleStoreOptions {
   readonly leaseStaleAfterMs?: number;
   readonly applicationEvidence?: PsychordApplicationEvidenceHost;
+  /** Selects an authenticated packaged profile; omitted uses the current active profile. */
+  readonly representationProfileKey?: BuiltInRepresentationProfileKey;
 }
 
 export interface LifecycleRecoveryOutcome {
@@ -118,6 +120,7 @@ export class RepositoryChangeLifecycleService {
   private readonly now: () => string;
   private readonly leaseStaleAfterMs: number;
   private readonly applicationEvidence: PsychordApplicationEvidenceHost | undefined;
+  private readonly representationProfileKey: BuiltInRepresentationProfileKey | undefined;
 
   private constructor(
     private readonly repositoryRoot: string,
@@ -128,6 +131,7 @@ export class RepositoryChangeLifecycleService {
     this.now = options.now ?? (() => new Date().toISOString());
     this.leaseStaleAfterMs = options.leaseStaleAfterMs ?? 30_000;
     this.applicationEvidence = options.applicationEvidence;
+    this.representationProfileKey = options.representationProfileKey;
   }
 
   static async create(
@@ -358,7 +362,11 @@ export class RepositoryChangeLifecycleService {
     const knowledgeContext = await adjudicatedKnowledgeContext(this.repositoryRoot, proposal, contextId, signal, this.applicationEvidence);
     const compiled = await compileRepositoryChange(
       { repositoryRoot: this.repositoryRoot, request, proposal, now: this.now(), ...(knowledgeContext === undefined ? {} : { knowledgeContext }) },
-      { ...(publishRepresentation ? { representationArtifacts: this.representationArtifacts } : {}), ...(signal === undefined ? {} : { signal }) },
+      {
+        ...(publishRepresentation ? { representationArtifacts: this.representationArtifacts } : {}),
+        ...(this.representationProfileKey === undefined ? {} : { representationProfileKey: this.representationProfileKey }),
+        ...(signal === undefined ? {} : { signal }),
+      },
     );
     assertIdentityDisposition(compiled, proposal);
     if (publishRepresentation) await this.representationArtifacts.publish(compiled.representationDetails);

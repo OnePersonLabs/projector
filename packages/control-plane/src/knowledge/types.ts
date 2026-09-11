@@ -231,7 +231,7 @@ const relevanceMetricsSchema: z.ZodType<RelevanceMetrics> = z.strictObject({
   closureSize: z.number().int().nonnegative(),
 });
 
-const compiledContextSchema: z.ZodType<CompiledSemanticContext> = z.strictObject({
+export const compiledContextSchema = z.strictObject({
   sourceClosureId: z.string(),
   items: z.array(z.strictObject({
     entityId: z.string(),
@@ -260,12 +260,12 @@ export const KnowledgeDecisionValiditySchema = z.strictObject({
   contentHash: ContentHashSchema,
 }) as unknown as z.ZodType<KnowledgeDecisionValidity>;
 
-const governanceEvaluationSchema = z.strictObject({
+export const governanceEvaluationSchema = z.strictObject({
   unitId: z.string(), status: z.enum(["conformant", "violated", "unknown"]),
   findings: z.array(z.strictObject({ id: z.string(), unitId: z.string(), ruleId: z.string(), predicateHash: ContentHashSchema,
     status: z.enum(["satisfied", "violated", "unknown"]), reason: z.string(), evidenceIds: z.array(z.string()) })),
   boundary: z.array(z.string()), observationHash: ContentHashSchema, contentHash: ContentHashSchema,
-}) as unknown as z.ZodType<GovernanceBundleEvaluation>;
+});
 
 export const KnowledgeContextBranchSchema = z.strictObject({
   id: z.string(),

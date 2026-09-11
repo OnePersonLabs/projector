@@ -78,6 +78,22 @@ const canonicalSourceHash = (body: Omit<CanonicalRepresentationSource, "sourceSe
 const source: CanonicalRepresentationSource = { ...sourceBody, sourceSemanticHash: canonicalSourceHash(sourceBody) };
 
 describe("semantic representation compilation", () => {
+  it("ships one current compact successor while retaining its released predecessor bytes", async () => {
+    expect(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"]).toMatchObject({ id: "profile:agent-compact", version: "1", status: "active" });
+    expect(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].semanticHash)
+      .toBe("sha256:v1:c48716e3554bfc918401ba5b7ba03a39b311030c8cc181da9afd9cc80f5117e5");
+    expect(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@2"]).toMatchObject({ id: "profile:agent-compact", version: "2", status: "active" });
+    expect(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@2"].semanticHash)
+      .not.toBe(BUILT_IN_REPRESENTATION_PROFILES["agent-compact@1"].semanticHash);
+
+    const prior = await new RepresentationCompiler({ artifacts: new MemoryArtifacts(), tokenizer: measured })
+      .compile({ source, binding, profileKey: "agent-compact@1" });
+    const current = await new RepresentationCompiler({ artifacts: new MemoryArtifacts(), tokenizer: measured })
+      .compile({ source, binding, profileKey: "agent-compact@2" });
+    expect(current.projection.id).not.toBe(prior.projection.id);
+    expect(current.projection.profileVersion).toBe("2");
+  });
+
   it("compiles all built-ins from one canonical source while keeping rendered content behind the artifact port", async () => {
     const artifacts = new MemoryArtifacts();
     const compiler = new RepresentationCompiler({ artifacts, tokenizer: measured });

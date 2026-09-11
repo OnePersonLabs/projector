@@ -41,6 +41,7 @@ import {
   type Tombstone,
 } from "@projector/core";
 import {
+  BUILT_IN_REPRESENTATION_PROFILES,
   RepresentationCompiler,
   assessDecisionDeferral,
   canonicalRepresentationSourceFromSemanticChange,
@@ -54,6 +55,7 @@ import {
   type ArchitectureActivationFacet,
   type CompiledSemanticChange,
   type CompiledSemanticChangePlan,
+  type BuiltInRepresentationProfileKey,
 } from "@projector/engine";
 import { CanonicalFileRepository, RepositoryPathService, type ExactTextPatchInput } from "@projector/runtime";
 
@@ -213,6 +215,7 @@ export interface CompileRepositoryChangeInput {
 
 export interface CompileRepositoryChangeOptions {
   readonly representationArtifacts?: RepresentationArtifactStore;
+  readonly representationProfileKey?: BuiltInRepresentationProfileKey;
   readonly signal?: AbortSignal;
 }
 
@@ -424,14 +427,14 @@ function defaultRepresentationArtifacts(): RepresentationArtifactStore {
   return { put: async (hash, content) => { const prior = values.get(hash); if (prior !== undefined && prior !== content) throw new Error("representation artifact hash collision"); values.set(hash, content); }, get: async (hash) => values.get(hash) };
 }
 
-async function compileRepresentation(change: CompiledSemanticChange, artifacts: RepresentationArtifactStore) {
+async function compileRepresentation(change: CompiledSemanticChange, artifacts: RepresentationArtifactStore, profileKey: BuiltInRepresentationProfileKey) {
   const tokenizer = { profileId: "projector.whitespace@1", measure: (text: string) => text.trim() === "" ? 0 : text.trim().split(/\s+/u).length };
   const compiler = new RepresentationCompiler({
     artifacts,
     tokenizer,
     utility: { profileId: "projector.instruction-cost@1", measure: ({ source, candidate, profileOverheadTokens }) => ({ netInstructionEfficiency: tokenizer.measure(source.statements.map(({ text }) => text).join("\n")) - tokenizer.measure(candidate) - profileOverheadTokens, evidence: "deterministic total instruction payload cost including profile overhead" }) },
   });
-  const { projection } = await compiler.compileBest({ source: canonicalRepresentationSourceFromSemanticChange(change.change), binding: change.boundState, requestedProfileKey: "agent-compact@1" });
+  const { projection } = await compiler.compileBest({ source: canonicalRepresentationSourceFromSemanticChange(change.change), binding: change.boundState, requestedProfileKey: profileKey });
   return {
     reference: { projectionId: projection.id, profileId: projection.profileId, profileVersion: projection.profileVersion, contentHash: projection.contentHash, preservationHash: projection.preservation.semanticHash },
     projection,
@@ -447,6 +450,8 @@ export async function compileRepositoryChange(
   if (request.length === 0 || request.length > 16_384 || request.includes("\0")) throw new Error("natural-language change request must be nonblank bounded UTF-8 text");
   const now = input.now ?? new Date().toISOString();
   const executionKind = input.proposal.edits.length === 0 ? "canonical-only" as const : "repository-code" as const;
+  const representationProfileKey = options.representationProfileKey ?? "agent-compact@2";
+  const representationProfile = BUILT_IN_REPRESENTATION_PROFILES[representationProfileKey];
   const semanticAnalysisFacets = input.proposal.analysisFacets.filter((facet) => facet !== "workspace-expansion");
   if (input.proposal.architecture !== null) {
     const deferralDurationMs = Date.parse(input.proposal.architecture.deferral.validUntil) - Date.parse(now);
@@ -878,6 +883,7 @@ export async function compileRepositoryChange(
     { kind: "canonical-governance" as const, id: "canonical-root", versionHash: observation.canonical.rootDigest, role: "canonical identity and decision search root" },
     { kind: "adapter" as const, id: "projector.local-repository", versionHash: observation.state.toolchainDigest, role: "no-exec local analyzer versions" },
     { kind: "artifact" as const, id: `proposal:${proposalHash}`, versionHash: proposalHash, role: "authenticated structured interpretation of the user request" },
+    { kind: "representation-profile" as const, id: representationProfile.id, versionHash: representationProfile.semanticHash, role: "selected plan-bound representation profile" },
     ...(input.knowledgeContext === undefined ? [] : [{ kind: "artifact" as const, id: `knowledge-context:${input.knowledgeContext.id}`, versionHash: input.knowledgeContext.contentHash, role: "retained pre-edit conceptual context" }]),
   ];
   const preliminaryBinding = createStateBinding({ compiledAgainst: observation.state, valueDependencies, queryDependencies: [...identityQueries, relevance.queryDependency] });
@@ -1071,7 +1077,7 @@ export async function compileRepositoryChange(
     impact: { compile: async () => ({ value: impactValue, contentHash: hashFramedDomain("authenticated-impact-closure", impactValue) }) },
     risk: { assess: async () => ({ value: risk, contentHash: hashFramedDomain("authenticated-change-risk", risk) }) },
   }), options.signal);
-  const representation = await withCancellation(compileRepresentation(compiledChange, options.representationArtifacts ?? defaultRepresentationArtifacts()), options.signal);
+  const representation = await withCancellation(compileRepresentation(compiledChange, options.representationArtifacts ?? defaultRepresentationArtifacts(), representationProfileKey), options.signal);
   const validatorIds = [
     "exact-text-patch.verify",
     "projector.repository-post-observation",
