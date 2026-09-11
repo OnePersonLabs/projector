@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:requirement:executable-lenses:demonstrated-by:scenario:reject-undeclared-governance-cycles"
+key = "relation:relation:requirement:executable-lenses:demonstrated-by:scenario:reject-undeclared-governance-cycles"
+lifecycle = "active"
+
+[payload]
+fromId = "requirement:executable-lenses"
+toId = "scenario:reject-undeclared-governance-cycles"
+type = "demonstrated-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []

@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:requirement:scoped-reconsideration:demonstrated-by:scenario:copied-precedent-does-not-create-authority"
+key = "relation:relation:requirement:scoped-reconsideration:demonstrated-by:scenario:copied-precedent-does-not-create-authority"
+lifecycle = "active"
+
+[payload]
+fromId = "requirement:scoped-reconsideration"
+toId = "scenario:copied-precedent-does-not-create-authority"
+type = "demonstrated-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []
