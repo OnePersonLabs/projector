@@ -31,7 +31,7 @@ For an unresolved area, send a `complete` request to inspect ranked obligations 
 
 Inspect reconciliation's impact, Planning Surprises and repair route. Exact derivation inputs and versioned impact rules support post-delta review; they do not replace pre-edit relevance. Candidate relations remain inferred until accepted. Never use source-shape similarity or a derived cache hit to skip required behavioral validation.
 
-Completion preserves future behavior ahead of nonblocking file-mapping questions. Use `--question-offset <nextOffset>` from `completion.questionPage` to inspect another page against unchanged evidence; repository changes recompute the ranking. A token budget too small for the next question requires increasing that budget, not skipping the question.
+Completion preserves future behavior ahead of nonblocking file-mapping questions. Set `input.questionOffset` to `completion.questionPage.nextOffset` in the next `complete` or `cleanup` request to inspect another page against unchanged evidence; repository changes recompute the ranking. A token budget too small for the next question requires increasing that budget, not skipping the question.
 
 ## Failure behavior
 
