@@ -12,7 +12,12 @@ aliases = [ "conceptual operations", "stable meaning", "semantic identity" ]
 statement = """Retain accepted meaning under stable identities across changes and sessions. Reuse an existing Requirement \
   or Scenario when it owns the meaning. Treat wording, aliases, paths, and similarity as discovery evidence; \
   they cannot by themselves prove semantic equivalence or authorize a new identity. Preserve explicit \
-  split, merge, replacement, and deletion history."""
+  split, merge, replacement, and deletion history.
+
+Keep the semantic core provider-neutral. Agent and model output remains a candidate until deterministic \
+  policy or explicit acceptance promotes it; resampling cannot mutate accepted architecture or redefine \
+  identity. Fine-grained storage, filenames, sharding, wording, and implementation replacement do not \
+  change stable identity, meaning, relations, or lineage."""
 sourceClass = "authored"
 evidence = []
 
@@ -48,3 +53,40 @@ kind = "document"
 locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/02-semantic-kernel/identity-and-relations.md"
 contentHash = "sha256:v1:d5b86822bdd85d18e9003399e2f3dcee2580201c635ddde302d87fe8b58c04ef"
 description = "Historical proposal supporting this meaning; not automatic authority."
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/orchestration-and-models.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/implementation-plan.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.realizations]]
+[payload.realizations.selector]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/runtime/src/persistence/canonical-repository.ts"
+
+[payload.realizations.origin]
+kind = "git"
+locator = "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:packages/runtime/src/persistence/canonical-repository.ts"
+description = """Observed implementation surface for requirement:durable-meaning; the selector is evaluated from repository \
+  facts."""

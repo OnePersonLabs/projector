@@ -15,7 +15,39 @@ statement = """After arbitrary repository edits, compare current observations wi
   assumptions and observed impact beyond the plan. Retain Planning Surprises and candidate relationships \
   as state-bound derived evidence with a concrete repair route; explicit acceptance is required before \
   inferred relationships become authoritative. Successful controlled changes authenticate their post-observation \
-  evidence; host edits do not acquire a controlled-execution certificate."""
+  evidence; host edits do not acquire a controlled-execution certificate.
+
+The bounded control loop must compare post-change observation with predicted impact, classify scope \
+  growth, missing relationships, and overreach, and reach a fixed point or report the unresolved frontier. \
+  It may propose a reusable relation from observed surprise evidence but must never learn or authorize \
+  a false relation from unrelated edits.
+
+Choose repairs in this order, recording why cheaper or safer strategies are unavailable or insufficient: \
+  reuse when an eligible exact or validated signature permits backdating; revalidate when a validator \
+  establishes sufficient proof; repair upstream and regenerate a generated unit with known upstream \
+  source and generator; apply a safe reversible deterministic patch to a non-generated governed unit; \
+  use bounded agent repair for shared handwritten semantics only when policy allows; widen analysis \
+  when coverage or proof is insufficient; otherwise request a human decision. This ordering depends \
+  on scoped invalidation and evidence-bound completion rather than a mapping alone.
+
+Direct edits to generated output or a Representation Projection with a known generator or source are \
+  forbidden by default. Normally repair upstream canonical semantics or the representation profile, \
+  regenerate, and validate both the generated result and semantic preservation. A temporary generated-output \
+  overlay is allowed only as an explicit migration or debt record with owner, rationale, invalidation \
+  conditions, and exit criteria. Keep the exception and its removal conditions visible.
+
+Full ordered repair selection, explanations, and overlay handling remain active but explicitly unrealized \
+  as public routing by this ingestion. Reconsider when the host-owned investigate, propose, accept, \
+  repair, verify loop or cleanup workflow must select among these strategies and expose the rejected \
+  cheaper alternatives. Bind only an observed selector and explanation consumer; existing strategy enums \
+  and recovery types do not prove this policy is implemented.
+
+Recovery distinguishes incomplete effects from committed-but-unpublished evidence. Preserve the last \
+  durable checkpoint and authenticate required post-observation evidence; never rerun committed effects \
+  just to republish an already committed result. Safe rollback or historical publication must not depend \
+  on missing advisory preparation notes, and missing notes never justify fabricated prepared-success \
+  evidence. Governed shared-state mutation follows cooperative worktree ownership; independently owned \
+  observation artifacts do not acquire a new global writer lock from this obligation."""
 sourceClass = "authored"
 evidence = []
 
@@ -68,3 +100,80 @@ description = """The user explicitly requires architectural choices, rejected op
 kind = "external"
 locator = "https://openai.com/index/harness-engineering/"
 description = """Motivating integration evidence; not authority for Projector-specific design or claimed implementation."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/hosts-and-mcp.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/first-vertical-slice.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/05-projections/derivations-and-invalidation.md"
+contentHash = "sha256:v1:d9138ea33f193fb42d96d25e952bc29e5400b18494f1dbc0b4f9a4b49477b703"
+description = """Historical source evidence at lines 218-259; immutable Git blob cf6ef40eab7b5d382e30e0d11cd00ec97f9506b9. \
+  Content hash is SHA-256 of the exact Git blob bytes. Preserve useful conditions through explicit acceptance; \
+  historical implementation prescriptions are not authority."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/05-projections/runtime-and-representations.md"
+contentHash = "sha256:v1:a1aa287be9740885d83c0b5509f5274d57d80794b3a7d615f3cbf97282d841a0"
+description = """Historical source evidence at lines 5-58 and 82-93; immutable Git blob 452e6b736a082992b65f0b286b60a7c4a515d93c. \
+  Content hash is SHA-256 of the exact Git blob bytes. Preserve useful conditions through explicit acceptance; \
+  historical implementation prescriptions are not authority."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/07-change/transactions-and-certificates.md"
+contentHash = "sha256:v1:82933e1a14d8bee7b937f6018ac19adb1b425c8ce99be7d1cc42cff573d0795f"
+description = """Historical cooperative worktree ownership and recovery, interpreted under accepted host permissions \
+  and affected-state boundaries. Source range 5-30,32-101; Git blob e012f4a20d1a0114ed16ba271458b904d3c8d782; \
+  content hash is SHA-256 of exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/model/concepts/01561d6546adb32a8afb29429380b0ecdec1bd6a9dd562fbea23a395381ca5b8.concept.json"
+contentHash = "sha256:v1:a4dd211d265700ff82bf503b4cedf13661ad8d9ec3aea6f147004e754a9634c3"
+description = """Accepted host integrity: ordinary processes and hashes do not exclude malicious same-user interference; \
+  no mandatory confinement or WSL bridge. Source range complete accepted record; Git blob 3ccfee51b0a75179711d6ded3324b17b8279da61; \
+  content hash is SHA-256 of exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/decisions/8e351edf78b532b4d4fbc05e3f5c3faf0778d6add11491f518a1cc468ce48c03.decision.json"
+contentHash = "sha256:v1:f3c4d29686f50318549bb73cbd7c96ae1aabebfa44c756980af1e88d36a204f4"
+description = """Accepted lifetime shared operation access, exclusive migration access, retained writer leases without \
+  nested acquisition, and limits for nonparticipating legacy code. Source range complete accepted record; \
+  Git blob 99353cb632158429efb49b5bb111d2f2e274800c; content hash is SHA-256 of exact blob bytes."""
+
+[[payload.realizations]]
+[payload.realizations.selector]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/engine/src/reconciliation/index.ts"
+
+[payload.realizations.origin]
+kind = "git"
+locator = "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:packages/engine/src/reconciliation/index.ts"
+description = """Observed implementation surface for requirement:reverse-reconciliation; the selector is evaluated from \
+  repository facts."""

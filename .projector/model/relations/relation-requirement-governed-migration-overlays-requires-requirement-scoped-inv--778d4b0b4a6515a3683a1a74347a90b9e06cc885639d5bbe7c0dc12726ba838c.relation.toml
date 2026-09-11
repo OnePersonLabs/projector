@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:requirement:governed-migration-overlays:requires:requirement:scoped-invalidation"
+key = "relation:relation:requirement:governed-migration-overlays:requires:requirement:scoped-invalidation"
+lifecycle = "active"
+
+[payload]
+fromId = "requirement:governed-migration-overlays"
+toId = "requirement:scoped-invalidation"
+type = "requires"
+sourceClass = "authored"
+confidence = 1
+evidence = []

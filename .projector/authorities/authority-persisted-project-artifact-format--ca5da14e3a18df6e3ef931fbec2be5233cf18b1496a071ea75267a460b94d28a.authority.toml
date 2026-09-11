@@ -22,7 +22,15 @@ rationale = """The user explicitly selected TOML on September 10, 2026 for human
   requirement-change trigger fired while the format scope and durable-meaning dependency remained current \
   and no assumption was invalidated. Core typecheck, 43 focused contract tests, and package boundaries \
   passed. The new typed schemas remain inside the accepted schema-authority boundary. This does not \
-  claim that TOML conversion, editor delivery, readiness, or migration is complete."""
+  claim that TOML conversion, editor delivery, readiness, or migration is complete.
+
+Reaffirmed for this canonical meaning transaction after reviewing the durable-meaning and engineering-English \
+  revisions. They preserve the accepted strict TOML authored-wire ownership, derived runtime hashes, \
+  and release-selected format boundary; this transaction changes no format schema, persistence codec, \
+  or format assumption. Current retained context knowledge_context_6204acbaff99f456aa7e24800a87b41d \
+  (sha256:v1:5290553931fc3960115742786629db7b6204acbaff99f456aa7e24800a87b41d) supplies the exact current \
+  repository and canonical observation. This reaffirmation does not claim complete implementation or \
+  economic advantage."""
 assumptions = [ "The executable typed contracts remain the sole schema authority.", "Projector can package exact generated schemas and copy them into an adopting repository during initialization or preparation.", "A maintained TOML implementation can round-trip every supported typed value on Node 24.", "Machine-owned journals, receipts, external contracts, and derived SQLite state remain useful in JSON or SQLite rather than being converted for appearance." ]
 assessmentConfidence = "high"
 governanceRiskClass = "R2"
@@ -91,4 +99,8 @@ counterEvidence = 0
 
 [[payload.evidence]]
 evidenceId = "knowledge_context_13c8d763d659dcf5a80b04a3f3234cb2"
+stance = "supports"
+
+[[payload.evidence]]
+evidenceId = "knowledge_context_6204acbaff99f456aa7e24800a87b41d"
 stance = "supports"

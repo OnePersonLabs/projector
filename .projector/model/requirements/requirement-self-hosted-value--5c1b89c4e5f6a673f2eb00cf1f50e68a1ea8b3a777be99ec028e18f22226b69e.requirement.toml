@@ -13,7 +13,38 @@ statement = """Use Projector knowledge to guide a real change and a subsequent c
   stale knowledge, and compare the combined setup, retrieval, repair, and maintenance cost with a capable \
   ordinary agent using search, code, tests, and concise notes. Passing self-authored tests does not \
   prove economic advantage. Retire historical planning material only after useful intent and rationale \
-  are recoverable through the working system."""
+  are recoverable through the working system.
+
+Measure the semantic machinery itself, including cache behavior, invalidation and backdating, identity \
+  and relevance quality, context and representation cost, deterministic mutation, rollback, analyzer \
+  limits, and benchmark outcomes. The goal is lower marginal reasoning and review cost; model growth \
+  faster than useful application is debt. Do not fabricate absent measures as zero. Release remains \
+  manual, source-independent, and non-publishing until an explicit later action; passing self-authored \
+  tests or a historical checklist does not prove economic advantage or full release completeness.
+
+Where feasible, inferred enforcement should be evaluated against repository history and semantic perturbations \
+  before activation. Check independent persistence of examples, later fixes/co-change/migration direction, \
+  shared ancestry, alternative explanations from tests/incidents, intentional variants and nearby generated \
+  cases. Separate exogenous evidence from changes caused by Projector: a migration demanded by a lens \
+  cannot independently support that lens. Shadow evaluation reports true positives, intentional variants \
+  wrongly flagged, possible prevented defects, transform applicability and false positives; pair small-sample \
+  percentages with counts and uncertainty. Evaluation never silently changes governance. Broad historical-evaluation \
+  automation remains unrealized until a named consumer and trustworthy history/perturbation evidence \
+  justify it; required release controls and actual source-absent self-development measurements are not \
+  deferred.
+
+Reopen affected design when observed evidence shows maintenance cost near/exceeding ordinary review; \
+  systematically missed dependencies despite claimed coverage; rebuild needing hidden history; overclaimed \
+  signatures; correlated conformance missing shared bugs; governance cycles/ad hoc ordering; impractical \
+  canonical collaboration; conflicts needing prompt surgery; ordinary instructions/codemods nearly matching \
+  held-out results; repository-sized capsules; package-tree duplication for relevance; recurring synonymous \
+  identities; unsafe or globally stale bindings; lossy or net-negative representation; reduced task \
+  success from compression; endogenous authority dominance; unactionable divergence; routine forbidden \
+  generated-output patches; dishonest interruption recovery; adoption needing manual ontology authoring; \
+  or growing model/rule complexity without declining marginal reasoning/review cost. These are evidence-driven \
+  design feedback, not defects to hide with more rules or relabel as optional. They do not require a \
+  new economic trial, universal superiority proof or completed Psychord rebuild before delivery; use \
+  the already required real-work measurements and disclose missing evidence."""
 sourceClass = "authored"
 evidence = []
 
@@ -53,5 +84,52 @@ description = """Assistant synthesis of the user-directed recovered vision; impl
 [[payload.origin]]
 kind = "document"
 locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/10-operation/observability-and-reporting.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/implementation-plan.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md"
 contentHash = "sha256:v1:36a09c0f0a1b46f1ced70e45bf0d04c40e35f1618232eead2a6eca880d63b727"
 description = "Historical proposal supporting this meaning; not automatic authority."
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/09-evolution/historical-evaluation-and-research.md"
+contentHash = "sha256:v1:3f08636c635ee41916526fd47de9bda4846c47daf4e6680c6c49b2ddcbfc0e20"
+description = """Historical evidence independence, possible relevance, shadow evaluation and concern-scoped research; \
+  feasibility and uncertainty limits retained. Source range 3-63; immutable Git blob 139f6fc5d1063609d12f6edce0d6fe8e92eaba79; \
+  content hash is SHA-256 of exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/benchmarks-and-redesign-criteria.md"
+contentHash = "sha256:v1:e2025997c4b115c640e4552a9bbe8864984ce9be4fe7a853105802e48cadaba2"
+description = """Historical grouped redesign feedback, subordinate to accepted lean delivery and absence of a new mandatory \
+  comparative trial. Source range 64-93; immutable Git blob 45e984369b5f6f3c4e177fc517a618055838c995; \
+  content hash is SHA-256 of exact blob bytes."""
+
+[[payload.realizations]]
+[payload.realizations.selector]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "scripts/knowledge-acceptance.mjs"
+
+[payload.realizations.origin]
+kind = "git"
+locator = "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:scripts/knowledge-acceptance.mjs"
+description = """Observed implementation surface for requirement:self-hosted-value; the selector is evaluated from repository \
+  facts."""

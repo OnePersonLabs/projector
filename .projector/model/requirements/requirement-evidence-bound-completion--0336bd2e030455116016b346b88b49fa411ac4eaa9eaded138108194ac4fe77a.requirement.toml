@@ -14,7 +14,46 @@ statement = """Report finite observed coverage populations and distinguish mappi
   using observed effect and blocking status, with stable issue identity and state-bound evidence. Accepted \
   meaning, satisfied predicates or an explicit valid deferral may settle an issue; relevant new facts \
   reopen it without reopening unrelated decisions. A cleanup plan must identify actionable repairs and \
-  cannot claim execution or a complete design from unavailable evidence."""
+  cannot claim execution or a complete design from unavailable evidence.
+
+An agent's assertion that work is done is non-normative. Completion requires current bindings, reconciled \
+  affected units, required evidence, allowed unknowns, and explicit unavailable external actions. Evidence \
+  identifies its lane, source, independence, side effects, and assurance; tests produced by the same \
+  packet or sharing the same flawed suite are correlated, and a model cannot solely validate its own \
+  compression. Release proof binds stable obligation IDs to observed results from the same revision \
+  and worktree with distinct negative controls; self-report, caller counts, hash-shaped strings, and \
+  default-zero metrics do not count.
+
+Separate exclusion policy for inventory, inference authority, mutation, reporting, model context, and \
+  coverage denominator. A single ignore rule must not silently erase an artifact from every semantic \
+  role. Vendored code may remain inventoried for dependencies while excluded from mutation and pattern \
+  authority; generated outputs may remain in reconciliation while excluded as independent authority \
+  evidence; secrets or configuration values may be inventoried structurally while excluded from model \
+  context. Apply this obligation together with executable-lens authority and scoped-invalidation obligations.
+
+Governance audit must expose contradictions, unreachable selectors, excessive exceptions, duplicate \
+  or semantically equivalent rules, overbroad selectors, stale authority triggers, blocking rules without \
+  executable predicates or validators, deterministic mechanics expressed only in prose, transforms lacking \
+  idempotency evidence, disproportionate invalidation, and rule or model growth whose maintenance cost \
+  exceeds prevented divergence. An unavailable or unevaluable check remains unknown rather than passing.
+
+These layered-exclusion and complete rule-pressure capabilities remain active but explicitly unrealized \
+  as public workflows by this ingestion: existing types, mappings, and implementation surfaces do not \
+  establish their consumers. Reconsider the exclusion carrier when a supported inventory, coverage, \
+  mutation, or context workflow needs purpose-specific treatment, and reconsider each audit check when \
+  an installed audit or coverage workflow needs its result and conservative unknown disclosure. Preserve \
+  these prerequisites in completion and context until observed consumer evidence justifies realization.
+
+Audit, completion, migration and interrupted transactions must yield resumable cleanup/continuation \
+  plans. Required bounded saved-context and lifecycle continuation reports current/stale/unknown evidence, \
+  missing advisory notes/artifacts, unresolved work, recovery-required state and the supported next \
+  action through existing services and the shared runner. Explain relevant query/profile changes while \
+  retaining independently current work, including fresh-session checks. This remains release work; unrestricted \
+  multi-packet limitations do not defer it. Do not create a parallel progress store. Exceptions and \
+  general overlays remain discoverable under their dedicated requirements until actual consumers are \
+  demonstrated. Non-goals limit promises, not future implementation commitments. Coverage preserves \
+  denominator assumptions, open-world limits and unavailable analyzers rather than implying exhaustive \
+  coverage."""
 sourceClass = "authored"
 evidence = []
 
@@ -43,3 +82,86 @@ description = """The user explicitly requires architectural choices, rejected op
 kind = "external"
 locator = "https://openai.com/index/harness-engineering/"
 description = """Motivating integration evidence; not authority for Projector-specific design or claimed implementation."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/orchestration-and-models.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/10-operation/observability-and-reporting.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-core.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-representation.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/04-governance/scope-and-rules.md"
+contentHash = "sha256:v1:40146a146f6a47465d9e8c7603477aad68dbd0a618b92aa3c82226e938cb9a83"
+description = """Historical source evidence at lines 70-91 and 237-257; immutable Git blob cc91a991916c12d20caabda566ed1e21c1edd57f. \
+  Content hash is SHA-256 of the exact Git blob bytes. Preserve useful conditions through explicit acceptance; \
+  historical implementation prescriptions are not authority."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/07-change/plans.md"
+contentHash = "sha256:v1:67a92413adb5e88b993d5104f755e674a4b9a4e243d2ef491947e6987ed2d39c"
+description = """Historical immutable continuation, dependency integrity, rebase and rebind evidence. Source range 5-51; \
+  Git blob c69544cc71bc2c4bf1b3ab3fbfb78a0c08fbfe25; content hash is SHA-256 of exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/06-reconciliation/reconciliation-and-divergence.md"
+contentHash = "sha256:v1:aa322881e51538f7a9ec4a3c4a3195d50c495faf14ee598f03eb9288e22f8856"
+description = """Historical scoped-deviation invariant with optional remediation/exit criteria; not an exception instance. \
+  Source range 126-163; Git blob 04fdadb79ebfc5108b500d559e7fd6f5761138f2; content hash is SHA-256 of \
+  exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/06-reconciliation/reconciliation-and-divergence.md"
+contentHash = "sha256:v1:aa322881e51538f7a9ec4a3c4a3195d50c495faf14ee598f03eb9288e22f8856"
+description = """Historical general lens-transition invariant, not a persisted-data upgrade or an accepted overlay instance. \
+  Source range 165-211; Git blob 04fdadb79ebfc5108b500d559e7fd6f5761138f2; content hash is SHA-256 of \
+  exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md"
+contentHash = "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e"
+description = """Historical property/adversary and installed-workflow acceptance evidence. Task9 separately resolves \
+  stable canonical acceptance IDs, legacy mappings, actual consumer evidence and removal of obsolete \
+  expectations; this origin does not perform that migration. Source range 47-159; immutable Git blob \
+  130a7cbb9c87d445fe907bbf83efb60ecb066157; content hash is SHA-256 of exact blob bytes."""
+
+[[payload.realizations]]
+[payload.realizations.selector]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/control-plane/src/coverage/service.ts"
+
+[payload.realizations.origin]
+kind = "git"
+locator = "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:packages/control-plane/src/coverage/service.ts"
+description = """Observed implementation surface for requirement:evidence-bound-completion; the selector is evaluated \
+  from repository facts."""
