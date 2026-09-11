@@ -39,4 +39,6 @@ The Psychord host uses its running Node executable, resolves the package-declare
 
 The script emits one `projector.operation-result/v1` JSON result and exits with that result's `exitCode`. Read `status`, `readiness`, `error`, `action`, and the operation-owned `output` separately. `registered` means a handler is reachable; it does not prove project readiness or host enforcement. `unavailable`, `recovery-required`, `cancelled`, and failed results are not successful evidence. A successful delivery to this process boundary does not prove that an agent understood or acted on returned instructions.
 
+A successful `context` result places the saved context identity at `output.id`, candidate interpretation at `output.interpretation`, and retained semantic items at `output.branches[].context.items`. Inspect `output.unknowns` and branch frontiers and obligations before relying on the retained context. Focus an existing meaning with `input.entities`; the operation accepts no CLI flags.
+
 Always provide the intended repository explicitly. The operation entry keeps no hidden workspace binding. Retain context IDs, proposal files, selectors, reviewed plan hashes, receipts, and recovery records in their actual owners; the entry is not a second progress store.
