@@ -9,13 +9,13 @@ import {
   createLegacyUnversionedProjectDataSource,
   createProjectDataLegacyIngressManifest,
   canonicalJson,
-} from "../packages/core/dist/index.js";
+} from "@projector/core";
 import {
   createProjectDataMigrationDraft,
   createReleaseCandidateProjectDataFormat,
   createReleaseCandidateProjectDataMigration,
   compareProjectDataFormats,
-} from "../packages/control-plane/dist/index.js";
+} from "@projector/control-plane";
 
 import { buildSourceSeveredReleaseBundle } from "./build-source-severed-release-bundle.mjs";
 import { readAuthoredReleaseIdentity } from "./release-identity.mjs";

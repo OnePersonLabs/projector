@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { exportContractJsonSchemas, validateJsonSchemaReferences } from "../packages/core/dist/index.js";
+import { exportContractJsonSchemas, validateJsonSchemaReferences } from "@projector/core";
 
 const root = resolve(import.meta.dirname, "..");
 const directory = resolve(root, "plugins/projector/skills/projector-change");

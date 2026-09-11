@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { lintHumanTechnical } from "../packages/engine/dist/index.js";
+import { lintHumanTechnical } from "@projector/engine";
 
 const defaultRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 

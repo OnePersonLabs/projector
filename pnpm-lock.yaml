@@ -11,9 +11,18 @@ importers:
       '@projector/analyzers':
         specifier: workspace:*
         version: link:packages/analyzers
+      '@projector/control-plane':
+        specifier: workspace:*
+        version: link:packages/control-plane
       '@projector/core':
         specifier: workspace:*
         version: link:packages/core
+      '@projector/engine':
+        specifier: workspace:*
+        version: link:packages/engine
+      '@projector/runtime':
+        specifier: workspace:*
+        version: link:packages/runtime
       '@projector/testkit':
         specifier: workspace:*
         version: link:packages/testkit

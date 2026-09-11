@@ -1,16 +1,16 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { analyzeLocalRepository } from "../packages/analyzers/dist/index.js";
-import { compileWriteAuthorization, hashFramedDomain } from "../packages/core/dist/index.js";
+import { analyzeLocalRepository } from "@projector/analyzers";
+import { compileWriteAuthorization, hashFramedDomain } from "@projector/core";
 import {
   DependencyScopedStateBindingValidator,
   RepresentationCompiler, assessBackdating, compareCorrectnessOracles, compileContext, compileRelevanceClosure,
   computeEvidenceContentHash, createStateBinding, groupCausalEvidence, reconcileToFixedPoint, resolveSemanticIdentityFromEvidence,
   summarizeEvidenceSupport,
-} from "../packages/engine/dist/index.js";
-import { ExactTextPatchTransform, FileTransactionJournal, RepositoryPathService } from "../packages/runtime/dist/index.js";
-import { BENCHMARK_GATE_REGISTRY, createBenchmarkCaseCorpus, createBenchmarkCaseObservation } from "../packages/testkit/dist/benchmark.js";
+} from "@projector/engine";
+import { ExactTextPatchTransform, FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
+import { BENCHMARK_GATE_REGISTRY, createBenchmarkCaseCorpus, createBenchmarkCaseObservation } from "@projector/testkit/benchmark";
 
 const json = (value) => JSON.stringify(value);
 const digest = (value) => hashFramedDomain("release-benchmark-fixture", value);

@@ -7,8 +7,8 @@ import {
   ProjectDataMigrationChainSchema,
   canonicalJson,
   comparePackageVersions,
-} from "../packages/core/dist/index.js";
-import { createReleaseCandidateProjectDataFormat } from "../packages/control-plane/dist/index.js";
+} from "@projector/core";
+import { createReleaseCandidateProjectDataFormat } from "@projector/control-plane";
 import { hashBytes } from "./release-candidate.mjs";
 
 export async function assertProjectDataMigrationReleaseReady(input) {

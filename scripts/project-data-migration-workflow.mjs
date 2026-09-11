@@ -3,7 +3,7 @@ import { lstat, readFile, readdir, rename, rm, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { comparePackageVersions } from "../packages/core/dist/index.js";
+import { comparePackageVersions } from "@projector/core";
 
 const execute = promisify(execFile);
 const numericVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
