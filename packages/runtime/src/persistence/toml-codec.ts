@@ -41,7 +41,7 @@ function assertJsonCompatible(value: unknown, path = "$"): void {
 
 export function parseTomlDocument(source: string, path = "TOML document"): unknown {
   try {
-    const value = parse(source, { integersAsBigInt: "asNeeded" });
+    const value = parse(source.replaceAll("\r\n", "\n"), { integersAsBigInt: "asNeeded" });
     const decoded = decodeNulls(value);
     if (decoded === null) throw new Error("a TOML document root cannot be null");
     assertJsonCompatible(decoded);
