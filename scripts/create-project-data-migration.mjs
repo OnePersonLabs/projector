@@ -132,12 +132,14 @@ export async function createRepositoryProjectDataMigration(options = {}) {
 
 async function ensureLegacyIngressManifest(root, targetSnapshot) {
   const ingressPath = join(root, "release/project-data-legacy-ingress.json");
-  const artifacts = await readAuthoredMigrationArtifacts(root, "legacy-unversioned", targetSnapshot.packageIdentity.version);
+  const artifacts = await readLegacyIngressArtifacts(root);
   const source = createLegacyUnversionedProjectDataSource({
     apiVersion: "projector.legacy-unversioned-project-data-source/v1",
     config: { apiVersion: "projector.config/v1", path: ".projector/config.json", versionBinding: "absent" },
     canonical: { envelopeApiVersion: "projector/v2", layout: "canonical-json" },
   });
+  const targetFormatPath = join(root, "release/project-data-format-target.json");
+  await writeImmutable(targetFormatPath, `${canonicalJson(targetSnapshot)}\n`);
   const manifest = createProjectDataLegacyIngressManifest({
     apiVersion: "projector.project-data-legacy-ingress-manifest/v1",
     id: `migration:legacy-unversioned-to-${targetSnapshot.packageIdentity.version}`,
@@ -152,12 +154,32 @@ async function ensureLegacyIngressManifest(root, targetSnapshot) {
   return { ingressPath, manifest };
 }
 
+async function readLegacyIngressArtifacts(root) {
+  const specs = [
+    {
+      kind: "transforms",
+      id: "migration-artifact:legacy-unversioned-to-baseline",
+      name: "legacy-unversioned-to-baseline.mjs",
+    },
+    {
+      kind: "validations",
+      id: "migration-artifact:legacy-unversioned-baseline-validation",
+      name: "legacy-unversioned-baseline-validation.mjs",
+    },
+  ];
+  return readArtifactSpecs(root, specs);
+}
+
 async function readAuthoredMigrationArtifacts(root, from, to) {
   const prefix = `${from}-to-${to}`;
   const specs = [
     { kind: "transforms", id: `transform:${prefix}`, name: `${prefix}-transform.mjs` },
     { kind: "validations", id: `validation:${prefix}`, name: `${prefix}-validation.mjs` },
   ];
+  return readArtifactSpecs(root, specs);
+}
+
+async function readArtifactSpecs(root, specs) {
   const result = { transforms: [], validations: [] };
   for (const spec of specs) {
     const sourcePath = join(root, "release/project-data-migrations/artifacts", spec.name);

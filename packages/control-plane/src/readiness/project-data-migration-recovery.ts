@@ -1,5 +1,6 @@
 import { relative } from "node:path";
 
+import { ProjectDataFormatSnapshotSchema, type ProjectDataFormatSnapshot } from "@projector/core";
 import {
   FileTransactionJournal,
   PendingProjectDataMigrationStore,
@@ -36,10 +37,16 @@ export interface PreparedProjectDataMigrationRecoveryService {
  * an operation request cannot select its own target authority.
  */
 export function createPreparedProjectDataMigrationRecoveryService(input: {
-  readonly candidate: ValidatedReleaseCandidateInventory;
+  readonly candidate?: ValidatedReleaseCandidateInventory;
+  readonly targetFormat?: ProjectDataFormatSnapshot;
   readonly codexDataRoot: string;
 }): PreparedProjectDataMigrationRecoveryService {
-  const targetFormat = createReleaseCandidateProjectDataFormat(input);
+  if ((input.candidate === undefined) === (input.targetFormat === undefined)) {
+    throw new TypeError("Exactly one candidate inventory or authenticated target format is required");
+  }
+  const targetFormat = input.targetFormat === undefined
+    ? createReleaseCandidateProjectDataFormat({ candidate: input.candidate! })
+    : ProjectDataFormatSnapshotSchema.parse(input.targetFormat);
   if (input.codexDataRoot.length === 0) throw new TypeError("A Codex data root is required");
   return {
     async recover(repositoryRoot, request) {

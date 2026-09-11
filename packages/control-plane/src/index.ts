@@ -92,6 +92,10 @@ export {
   type ProjectDataMigrationValidationResult,
 } from "./readiness/project-data-migration-artifact.js";
 export {
+  createPackagedProjectDataMigrationService,
+  type PackagedProjectDataMigrationResult,
+} from "./readiness/project-data-migration-execution.js";
+export {
   RepositoryRepresentationArtifactStore,
   type DurableRepresentationArtifact,
 } from "./representation/artifact-store.js";

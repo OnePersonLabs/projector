@@ -138,7 +138,7 @@ async function authoringFixture() {
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, `fixture:${path}\n`);
   }
-  const legacyArtifacts = await writeArtifactPair(root, candidateRoot, "legacy-unversioned", "2.0.0");
+  const legacyArtifacts = await writeLegacyArtifactPair(root, candidateRoot);
   await writeArtifactPair(root, candidateRoot, "2.0.0", "2.1.0");
   await publishCandidateManifest(candidateRoot);
   const files = await inventoryCandidateFiles(candidateRoot);
@@ -210,6 +210,27 @@ async function writeArtifactPair(root: string, candidateRoot: string, from: stri
       await writeFile(target, bytes);
     }
     result[kind].push({ id: `${suffix}:${from}-to-${to}`, relativePath, contentHash: hashBytes(bytes) });
+  }
+  return result;
+}
+
+async function writeLegacyArtifactPair(root: string, candidateRoot: string) {
+  const result = { transforms: [] as { id: string; relativePath: string; contentHash: `sha256:v1:${string}` }[], validations: [] as { id: string; relativePath: string; contentHash: `sha256:v1:${string}` }[] };
+  for (const spec of [
+    { group: "transforms", kind: "transform", id: "migration-artifact:legacy-unversioned-to-baseline", name: "legacy-unversioned-to-baseline.mjs" },
+    { group: "validations", kind: "validation", id: "migration-artifact:legacy-unversioned-baseline-validation", name: "legacy-unversioned-baseline-validation.mjs" },
+  ] as const) {
+    const relativePath = `project-data/migrations/artifacts/${spec.name}`;
+    const bytes = Buffer.from(`export const projectDataMigrationArtifact = { apiVersion: "projector.project-data-migration-artifact/v1", id: "${spec.id}", kind: "${spec.kind}", async run() {} };\n`);
+    const repositoryPath = join(root, "release/project-data-migrations/artifacts", spec.name);
+    await mkdir(dirname(repositoryPath), { recursive: true });
+    await writeFile(repositoryPath, bytes);
+    for (const candidatePath of [relativePath, `plugin/projector/runtime/projector/${relativePath}`]) {
+      const target = join(candidateRoot, ...candidatePath.split("/"));
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, bytes);
+    }
+    result[spec.group].push({ id: spec.id, relativePath, contentHash: hashBytes(bytes) });
   }
   return result;
 }
