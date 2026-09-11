@@ -1,0 +1,45 @@
+#:schema ../../schemas/canonical-behavioral-scenario-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "behavioral-scenario"
+id = "scenario:alternate-conforming-code"
+key = "alternate-conforming-code"
+lifecycle = "active"
+
+[payload]
+title = "Accept another conforming implementation"
+aliases = []
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/knowledge/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/cli/src/knowledge-cli.test.ts"
+
+[[payload.steps]]
+role = "precondition"
+statement = "An applicable active lens defines a predicate-constrained implementation boundary."
+
+[[payload.steps]]
+role = "trigger"
+statement = "An ordinary agent changes the implementation without using a Projector transform."
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Current predicates determine conformance; changed source bindings may still make earlier reasoning stale."""
+
+[[payload.steps]]
+role = "forbidden-outcome"
+statement = """Projector demands canonical bytes from a predicate-constrained handwritten implementation or calls stale \
+  reasoning a semantic violation."""

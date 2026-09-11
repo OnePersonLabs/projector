@@ -1,0 +1,69 @@
+#:schema ../schemas/canonical-authority-record-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "authority-record"
+id = "authority:core-host-independence-decision"
+key = "core-host-independence-decision-authority"
+lifecycle = "auto-approved"
+
+[payload]
+subjectId = "concern:core-host-independence"
+conclusion = "preserve"
+rationale = """Adopt a static core dependency boundary for the concern: should the contract layer depend on its implementation \
+  packages? The user delegated implementation; this is an agent-selected local decision. Keep core independently \
+  reusable. The separate lens authority authorizes its executable constraint. No economic advantage \
+  or complete decision-validity proof is asserted. Reaffirmed after the integrated shared-contract expansion \
+  at main 7b0b01c. Current context knowledge_context_13c8d763d659dcf5a80b04a3f3234cb2 (sha256:v1:d558411000e407401e0f779b6c4e5ed913c8d763d659dcf5a80b04a3f3234cb2) \
+  records assessment sha256:v1:5230419c627d7068e28e1fcc4e9a99cd7cb6c4dbb0ad4491ae6caca7859ecf55: the \
+  scope-expansion trigger fired, all 23 observed core units satisfied the active static-dependency predicate, \
+  and no assumption was invalidated. `pnpm --filter @projector/core typecheck`, its 43 focused tests, \
+  and `pnpm check:boundaries` passed on that integrated source. This reaffirms the existing boundary \
+  and applicability; it does not claim runtime delivery, complete decision-validity proof, or economic \
+  advantage."""
+assumptions = [ "Core owns contracts and value semantics, not host integration.", "Static TS/JS imports are an explicitly bounded observation; runtime dependency mechanisms are outside this lens." ]
+assessmentConfidence = "medium"
+governanceRiskClass = "R1"
+decidedBy = "system"
+createdAt = "2026-09-09T00:00:00.000Z"
+
+[[payload.alternatives]]
+key = "standalone-script-only"
+description = """Keep the existing package boundary checker without integrating its constraint into request relevance \
+  or retained context."""
+advantages = [ "Small existing deterministic check." ]
+disadvantages = [ "Its rationale and applicability do not enter request-first context or scoped reconciliation." ]
+rejectedBecause = [ "Use the core boundary as a bounded experiment in connecting accepted architecture to the public conceptual loop. Retain the script as an independent check." ]
+evidence = []
+
+[[payload.reconsiderWhen]]
+type = "requirement-changed"
+subjectId = "requirement:executable-lenses"
+
+[[payload.reconsiderWhen]]
+type = "scope-expanded"
+scopeKey = "packages/core/src"
+
+[[payload.reconsiderWhen]]
+type = "assumption-falsified"
+assumptionKey = "core-host-independence"
+
+[payload.vector]
+explicitDecisionAlignment = 0
+productConstraintFit = 1
+semanticFit = 1
+independentOccurrence = 0
+historicalStability = 0
+independentValidationSupport = 0
+boundaryCoherence = 1
+maintenanceOutcome = 0
+platformCompatibility = 0
+externalRationale = 0
+ecosystemHealth = 0
+securitySupport = 0
+reversibility = 1
+migrationCost = 0
+counterEvidence = 0
+
+[[payload.evidence]]
+evidenceId = "knowledge_context_13c8d763d659dcf5a80b04a3f3234cb2"
+stance = "supports"

@@ -1,0 +1,58 @@
+#:schema ../../schemas/canonical-requirement-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "requirement"
+id = "requirement:scoped-reconsideration"
+key = "scoped-reconsideration"
+lifecycle = "active"
+
+[payload]
+title = "Reconsider architecture when its reasons change"
+aliases = [ "architectural reconsideration", "assumptions and preferences" ]
+statement = """Retain architectural decisions about patterns, libraries, platforms, boundaries and implementation strategy \
+  together with alternatives, reasons, constraints, assumptions, evidence, tradeoffs and applicable \
+  scope. Make the choice and why retrievable before affected edits and after a fresh clone. Reconsider \
+  only affected decisions when those inputs or scope change; preserve the historical influence of adopted \
+  soft preferences. New non-advisory consequences require actual linked canonical products in the same \
+  accepted transaction. Neither an old approval nor repeating existing code proves that the decision \
+  remains suitable. Unsupported or stale validity evidence stays explicit."""
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/engine/src/architecture/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/engine/src/authority/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/knowledge/**"
+
+[[payload.origin]]
+kind = "user-request"
+locator = "projector-recovered-premise:2026-09-09"
+description = """Assistant synthesis of the user-directed recovered vision; implementation and economic advantage require \
+  separate evidence."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "conversation:2026-09-09:architectural-reasons-and-harness-assimilation"
+description = """The user explicitly requires architectural choices, rejected options and reasons to survive, and requests \
+  useful harness practices be assimilated without flattening Projector into instructions."""
+
+[[payload.origin]]
+kind = "external"
+locator = "https://openai.com/index/harness-engineering/"
+description = """Motivating integration evidence; not authority for Projector-specific design or claimed implementation."""

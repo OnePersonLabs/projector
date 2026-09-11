@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:requirement:pre-edit-relevance:requires:requirement:durable-meaning"
+key = "relation:relation:requirement:pre-edit-relevance:requires:requirement:durable-meaning"
+lifecycle = "active"
+
+[payload]
+fromId = "requirement:pre-edit-relevance"
+toId = "requirement:durable-meaning"
+type = "requires"
+sourceClass = "authored"
+confidence = 1
+evidence = []

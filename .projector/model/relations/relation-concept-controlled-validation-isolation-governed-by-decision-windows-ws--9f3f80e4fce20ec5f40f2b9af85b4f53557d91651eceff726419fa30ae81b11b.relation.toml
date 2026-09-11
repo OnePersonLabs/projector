@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:concept:controlled-validation-isolation:governed-by:decision:windows-wsl-bubblewrap"
+key = "relation:relation:concept:controlled-validation-isolation:governed-by:decision:windows-wsl-bubblewrap"
+lifecycle = "active"
+
+[payload]
+fromId = "concept:controlled-validation-isolation"
+toId = "decision:windows-wsl-bubblewrap"
+type = "governed-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []

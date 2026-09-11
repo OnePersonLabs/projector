@@ -1,0 +1,47 @@
+#:schema ../../schemas/canonical-behavioral-scenario-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "behavioral-scenario"
+id = "scenario:reuse-after-reset"
+key = "reuse-after-reset"
+lifecycle = "active"
+
+[payload]
+title = "Reuse accepted meaning after a fresh start"
+aliases = []
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/knowledge/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/cli/src/knowledge-cli.test.ts"
+
+[[payload.steps]]
+role = "precondition"
+statement = """Accepted requirements and relations exist in canonical storage. Derived context from an earlier request \
+  exists."""
+
+[[payload.steps]]
+role = "trigger"
+statement = "A new process requests a subsequent related change after unrelated repository edits."
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Projector retrieves the existing identities and distant obligations, and reuses or rebinds reasoning \
+  whose dependencies are unchanged."""
+
+[[payload.steps]]
+role = "forbidden-outcome"
+statement = """Projector creates duplicate meaning or treats an unrelated root digest change as sufficient to invalidate \
+  every decision."""

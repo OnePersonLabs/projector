@@ -1,0 +1,27 @@
+#:schema ../../schemas/canonical-concept-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "concept"
+id = "concept:safe-project-data-readiness"
+key = "safe-project-data-readiness"
+lifecycle = "active"
+
+[payload]
+kind = "constraint"
+name = "Safe project-data readiness"
+aliases = [ "automatic data preparation", "recoverable project migration", "operation access lifecycle" ]
+statement = """Before every public operation loads strict current state, Projector performs bounded metadata readiness \
+  and either proceeds under lifetime operation access or returns an explicit inactive, busy, unavailable, \
+  upgrade, or recovery action. Initialization does not mutate during inspection and publishes configuration \
+  last. Migration requires exclusive cooperative access, resolved controlled transactions, a verified \
+  full safe backup under the user Codex data directory, validated staging, a durable pending marker, \
+  exact recognized migration bytes, and config-last recoverable publication. Version domains remain \
+  distinct. Upgrades may cross multiple releases only through the full ordered and verified migration \
+  chain; layouts with missing or invalid chain links, unknown or mixed versions, newer formats, tampering, \
+  or unsupported transitions remain untouched. New locks do not prove nonparticipating legacy code is \
+  quiescent; the first transition requires a supported restart disposition and held-old-runner corruption-negative \
+  evidence."""
+sourceClass = "authored"
+confidence = 1
+tags = [ "readiness", "migration", "backup", "recovery" ]
+evidence = []

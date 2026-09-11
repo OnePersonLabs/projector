@@ -1,0 +1,50 @@
+#:schema ../../schemas/canonical-requirement-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "requirement"
+id = "requirement:durable-meaning"
+key = "durable-meaning"
+lifecycle = "active"
+
+[payload]
+title = "Durable conceptual operations"
+aliases = [ "conceptual operations", "stable meaning", "semantic identity" ]
+statement = """Retain accepted meaning under stable identities across changes and sessions. Reuse an existing Requirement \
+  or Scenario when it owns the meaning. Treat wording, aliases, paths, and similarity as discovery evidence; \
+  they cannot by themselves prove semantic equivalence or authorize a new identity. Preserve explicit \
+  split, merge, replacement, and deletion history."""
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/engine/src/identity/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/core/src/identity/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/runtime/src/persistence/**"
+
+[[payload.origin]]
+kind = "user-request"
+locator = "projector-recovered-premise:2026-09-09"
+description = """Assistant synthesis of the user-directed recovered vision; implementation and economic advantage require \
+  separate evidence."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/02-semantic-kernel/identity-and-relations.md"
+contentHash = "sha256:v1:d5b86822bdd85d18e9003399e2f3dcee2580201c635ddde302d87fe8b58c04ef"
+description = "Historical proposal supporting this meaning; not automatic authority."

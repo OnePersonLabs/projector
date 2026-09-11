@@ -1,0 +1,45 @@
+#:schema ../../schemas/canonical-requirement-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "requirement"
+id = "requirement:evidence-bound-completion"
+key = "evidence-bound-completion"
+lifecycle = "active"
+
+[payload]
+title = "Expose remaining design obligations progressively"
+aliases = []
+statement = """Report finite observed coverage populations and distinguish mapping from fulfillment. Preserve accepted \
+  capabilities before implementation exists. Rank concrete unresolved obligations and repair questions \
+  using observed effect and blocking status, with stable issue identity and state-bound evidence. Accepted \
+  meaning, satisfied predicates or an explicit valid deferral may settle an issue; relevant new facts \
+  reopen it without reopening unrelated decisions. A cleanup plan must identify actionable repairs and \
+  cannot claim execution or a complete design from unavailable evidence."""
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/coverage/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/cli/src/coverage-cli.test.ts"
+
+[[payload.origin]]
+kind = "user-request"
+locator = "conversation:2026-09-09:architectural-reasons-and-harness-assimilation"
+description = """The user explicitly requires architectural choices, rejected options and reasons to survive, and requests \
+  useful harness practices be assimilated without flattening Projector into instructions."""
+
+[[payload.origin]]
+kind = "external"
+locator = "https://openai.com/index/harness-engineering/"
+description = """Motivating integration evidence; not authority for Projector-specific design or claimed implementation."""
