@@ -21,6 +21,7 @@ export const ProjectorOperationSchema = z.enum([
   "complete",
   "cleanup",
   "verify",
+  "representation.inspect",
   "application.observe",
 ]);
 
@@ -82,6 +83,12 @@ export const ProjectorOperationInputSchemas = Object.freeze({
   complete: z.strictObject(boundedInspectionInput),
   cleanup: z.strictObject(boundedInspectionInput),
   verify: z.strictObject({}),
+  "representation.inspect": z.strictObject({
+    changeSelector: z.string().min(1),
+    capsuleId: z.string().min(1).optional(),
+    approvalSelector: z.string().min(1).optional(),
+    view: z.enum(["summary", "content"]),
+  }),
 });
 
 export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation", [
@@ -99,6 +106,7 @@ export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation",
   createProjectorOperationRequestSchema("complete", ProjectorOperationInputSchemas.complete),
   createProjectorOperationRequestSchema("cleanup", ProjectorOperationInputSchemas.cleanup),
   createProjectorOperationRequestSchema("verify", ProjectorOperationInputSchemas.verify),
+  createProjectorOperationRequestSchema("representation.inspect", ProjectorOperationInputSchemas["representation.inspect"]),
 ]);
 
 export type ProjectorOperationRequest = z.infer<typeof ProjectorOperationRequestSchema>;

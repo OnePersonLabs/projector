@@ -20,7 +20,7 @@ The script also accepts the same single JSON object on standard input. A request
 }
 ```
 
-Supported built-in operations are `status`, `init`, `context`, `reconcile`, `change.capture`, `change.plan`, `change.approve`, `change.apply`, `change.recover`, `change.resume`, `coverage`, `complete`, `cleanup`, and `verify`. The installed Windows entry also composes `application.observe` for the Psychord adapter. The typed schemas and registered handlers own each operation's exact input and output. Do not add undeclared fields.
+Supported built-in operations are `status`, `init`, `context`, `reconcile`, `change.capture`, `change.plan`, `change.approve`, `change.apply`, `change.recover`, `change.resume`, `representation.inspect`, `coverage`, `complete`, `cleanup`, and `verify`. The installed Windows entry also composes `application.observe` for the Psychord adapter. The typed schemas and registered handlers own each operation's exact input and output. Do not add undeclared fields.
 
 Common inputs are:
 
@@ -30,6 +30,7 @@ Common inputs are:
 - `change.plan`: `{ "changeSelector": "..." }`.
 - `change.approve`: `{ "changeSelector": "...", "planHash": "sha256:v1:..." }`.
 - `change.apply`, `change.recover`, `change.resume`: `{ "approvalSelector": "..." }`.
+- `representation.inspect`: `{ "changeSelector": "...", "view": "summary" | "content" }`; optional `capsuleId` selects one capsule and optional `approvalSelector` authenticates an existing approval without creating authority.
 - `coverage`, `complete`, `cleanup`: optional `scope`, `budgetTokens`, `budgetCost`, and `questionOffset`.
 - `status`, `init`, and `verify`: `{}`.
 - `application.observe`: `{ "plan": { ... } }`, where `plan` is the strict Psychord application observation plan. Its repository root must equal the request root and `ownedArtifactRoot` must be `<repository>/.projector/runtime/application-evidence`.

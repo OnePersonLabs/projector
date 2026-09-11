@@ -1,6 +1,7 @@
 import {
   PackageIdentitySchema,
   ContentHashSchema,
+  DurableRepresentationArtifactRecordSchema,
   ProjectDataFormatSnapshotSchema,
   canonicalJson,
   exportContractJsonSchemas,
@@ -52,7 +53,12 @@ export const canonicalOwnerModulePaths = Object.freeze([
 ] as const);
 
 export const runtimeEvidenceOwnerModulePaths = Object.freeze(
-  psychordRuntimeEvidenceValidatorModules.map((path) => `${integrationsRoot}/${path}`),
+  [
+    ...psychordRuntimeEvidenceValidatorModules.map((path) => `${integrationsRoot}/${path}`),
+    `${coreRoot}/schemas/representation-artifact.js`,
+    `${coreRoot}/schemas/project-data-migration.js`,
+    `${releaseRoot}/control-plane/dist/representation/artifact-store.js`,
+  ],
 );
 
 export interface ValidatedReleaseCandidateInventory {
@@ -72,6 +78,23 @@ export function createReleaseCandidateProjectDataFormat(input: {
   const runtimeSchemas = Object.fromEntries(Object.entries(runtimeDescriptor.schemas).sort(([left], [right]) => left.localeCompare(right)).map(
     ([name, schema]) => [name, z.toJSONSchema(schema, { target: "draft-2020-12", reused: "ref", cycles: "ref", io: "input" })],
   ));
+  runtimeSchemas.DurableRepresentationArtifactRecord = z.toJSONSchema(DurableRepresentationArtifactRecordSchema, {
+    target: "draft-2020-12",
+    reused: "ref",
+    cycles: "ref",
+    io: "input",
+  });
+  for (const name of [
+    "LegacyUnversionedProjectDataSource",
+    "PendingProjectDataMigration",
+    "ProjectDataLegacyIngressManifest",
+    "ProjectDataMigrationReceipt",
+    "ProjectDataMigrationSourceAuthority",
+  ] as const) {
+    const schema = schemas[name];
+    if (schema === undefined) throw new Error(`${name} JSON Schema is unavailable`);
+    runtimeSchemas[name] = schema;
+  }
   const preparedConfig = ownerHash("prepared-config", canonicalJson(preparedSchema), preparedConfigOwnerModulePaths, input.candidate.files);
   const canonical = ownerHash("canonical", canonicalJson(editorBundle), canonicalOwnerModulePaths, input.candidate.files);
   const runtimeEvidence = ownerHash("runtime-evidence", canonicalJson(runtimeSchemas), runtimeEvidenceOwnerModulePaths, input.candidate.files);

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -76,5 +76,20 @@ describe("RepositoryRepresentationArtifactStore", () => {
     await writeFile(join(root, ".projector/runtime/representations/content", `${projection.contentHash.slice("sha256:v1:".length)}.txt`), "tampered");
 
     await expect(store.read(reference(projection))).rejects.toThrow(/content.*invalid/iu);
+  });
+
+  it("refuses a projection record whose authenticated body changed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-representation-")); roots.push(root);
+    await mkdir(join(root, ".projector"));
+    const store = await RepositoryRepresentationArtifactStore.create(root);
+    const compiler = new RepresentationCompiler({ artifacts: store });
+    const { projection } = await compiler.compile({ source: source(), binding: createStateBinding({ compiledAgainst: state(), valueDependencies: [], queryDependencies: [] }), profileKey: "human-technical@1" });
+    await store.publish(projection);
+    const recordPath = join(root, ".projector/runtime/representations/projections", `${hashFramedDomain("representation-projection-path", projection.id).slice("sha256:v1:".length)}.json`);
+    const record = JSON.parse(await readFile(recordPath, "utf8")) as { projection: { profileVersion: string } };
+    record.projection.profileVersion = `${record.projection.profileVersion}-tampered`;
+    await writeFile(recordPath, JSON.stringify(record));
+
+    await expect(store.read(reference(projection))).rejects.toThrow(/record hash/iu);
   });
 });

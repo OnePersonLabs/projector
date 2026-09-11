@@ -123,6 +123,10 @@ describe("bounded Projector operation runner", () => {
       registered: true,
       reachable: true,
     });
+    expect(inactive.operations.find(({ operation }) => operation === "representation.inspect")).toMatchObject({
+      registered: true,
+      reachable: true,
+    });
     expect(inactive.operations.find(({ operation }) => operation === "application.observe")).toMatchObject({
       registered: false,
       reachable: false,

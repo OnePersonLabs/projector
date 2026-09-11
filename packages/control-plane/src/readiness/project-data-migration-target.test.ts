@@ -1,9 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   withCanonicalHashes,
+  hashFramedDomain,
   type ContentHash,
   type EvidenceRef,
 } from "@projector/core";
@@ -14,8 +16,10 @@ import {
   stringifyTomlDocument,
 } from "@projector/runtime";
 import { afterEach, describe, expect, test } from "vitest";
+import { RepresentationCompiler, createStateBinding, type CanonicalRepresentationSource } from "@projector/engine";
 
 import { observePreparedMigrationTarget } from "./project-data-migration-target.js";
+import { RepositoryRepresentationArtifactStore } from "../representation/artifact-store.js";
 import {
   canonicalOwnerModulePaths,
   createReleaseCandidateProjectDataFormat,
@@ -72,7 +76,47 @@ describe("prepared migration target observation", () => {
       signal: new AbortController().signal,
     })).rejects.toThrow(/psychord-missing.*authenticated artifact root/iu);
   });
+
+  test("rejects a retained representation record whose authenticated body is invalid", async () => {
+    const fixture = await preparedTarget();
+    const store = await RepositoryRepresentationArtifactStore.create(fixture.root);
+    const compiler = new RepresentationCompiler({ artifacts: store });
+    const sourceBody = {
+      sourceEntityIds: ["concept:initial"],
+      statements: [{ id: "concept:initial", text: "Retain exact meaning.", normativeForce: "require" as const, negated: false, scope: ["."], exceptions: [], dependencies: [], conceptIds: ["concept:initial"], protectedLiterals: [] }],
+      scenarios: [],
+    };
+    const source: CanonicalRepresentationSource = { ...sourceBody, sourceSemanticHash: hashFramedDomain("canonical-representation-source", sourceBody) };
+    const { projection } = await compiler.compile({
+      source,
+      binding: createStateBinding({
+        compiledAgainst: { gitBase: "a".repeat(40), worktreeDigest: hash("1"), canonicalProjectorDigest: fixture.canonicalRootDigest, toolchainDigest: hash("2") },
+        valueDependencies: [],
+        queryDependencies: [],
+      }),
+      profileKey: "human-technical@1",
+    });
+    await store.publish(projection);
+    const actualRecordRelative = `.projector/runtime/representations/projections/${hashFramedDomain("representation-projection-path", projection.id).slice("sha256:v1:".length)}.json`;
+    const recordPath = join(fixture.root, ...actualRecordRelative.split("/"));
+    const record = JSON.parse(await readFile(recordPath, "utf8")) as { projection: { status: string } };
+    record.projection.status = "invalid";
+    await writeFile(recordPath, JSON.stringify(record));
+    const contentRelative = `.projector/runtime/representations/content/${projection.contentHash.slice("sha256:v1:".length)}.txt`;
+    await expect(observePreparedMigrationTarget({
+      repositoryRoot: fixture.root,
+      targetFormat: fixture.format,
+      authenticatedFiles: await Promise.all([actualRecordRelative, contentRelative].map((path) => authenticatedFile(fixture.root, path))),
+      signal: new AbortController().signal,
+    })).rejects.toThrow(/record hash/iu);
+  });
 });
+
+async function authenticatedFile(root: string, path: string) {
+  const bytes = await readFile(join(root, ...path.split("/")));
+  const status = await stat(join(root, ...path.split("/")));
+  return { path, length: status.size, sha256: createHash("sha256").update(bytes).digest("hex") };
+}
 
 async function preparedTarget(document = concept("concept:initial")) {
   const root = await mkdtemp(join(tmpdir(), "projector-prepared-target-"));

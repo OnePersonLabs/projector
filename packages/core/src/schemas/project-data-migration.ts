@@ -8,8 +8,11 @@ export const projectDataFormatSnapshotApiVersion = "projector.project-data-forma
 export const projectDataMigrationManifestApiVersion = "projector.project-data-migration-manifest/v1" as const;
 export const projectDataMigrationChainApiVersion = "projector.data-migration-chain/v1" as const;
 export const projectDataMigrationDraftApiVersion = "projector.project-data-migration-draft/v1" as const;
-export const pendingProjectDataMigrationApiVersion = "projector.pending-project-data-migration/v1" as const;
-export const projectDataMigrationReceiptApiVersion = "projector.project-data-migration-receipt/v1" as const;
+export const pendingProjectDataMigrationApiVersion = "projector.pending-project-data-migration/v2" as const;
+export const legacyProjectDataMigrationReceiptApiVersion = "projector.project-data-migration-receipt/v1" as const;
+export const projectDataMigrationReceiptApiVersion = "projector.project-data-migration-receipt/v2" as const;
+export const legacyUnversionedProjectDataSourceApiVersion = "projector.legacy-unversioned-project-data-source/v1" as const;
+export const projectDataLegacyIngressManifestApiVersion = "projector.project-data-legacy-ingress-manifest/v1" as const;
 
 export const PortableRelativePathSchema = z.string().min(1).max(1_024).regex(
   /^(?!\/)(?!.*:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!.*[. ](?:\/|$))(?!.*(?:^|\/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\.[^/]*)?(?:\/|$))(?!(?:\.|\.\.)(?:\/|$))(?!.*\/(?:\.|\.\.)(?:\/|$))[^/](?:.*[^/])?$/u,
@@ -39,6 +42,49 @@ export const ProjectDataMigrationArtifactRefSchema = z.strictObject({
 });
 
 export type ProjectDataMigrationArtifactRef = z.infer<typeof ProjectDataMigrationArtifactRefSchema>;
+
+const legacyUnversionedProjectDataSourceBodySchema = z.strictObject({
+  apiVersion: z.literal(legacyUnversionedProjectDataSourceApiVersion),
+  config: z.strictObject({
+    apiVersion: z.literal("projector.config/v1"),
+    path: z.literal(".projector/config.json"),
+    versionBinding: z.literal("absent"),
+  }),
+  canonical: z.strictObject({
+    envelopeApiVersion: z.literal("projector/v2"),
+    layout: z.literal("canonical-json"),
+  }),
+});
+
+export type LegacyUnversionedProjectDataSourceInput = z.infer<typeof legacyUnversionedProjectDataSourceBodySchema>;
+
+export function hashLegacyUnversionedProjectDataSource(input: LegacyUnversionedProjectDataSourceInput) {
+  return hashFramedDomain("legacy-unversioned-project-data-source:v1", legacyUnversionedProjectDataSourceBodySchema.parse(input));
+}
+
+export const LegacyUnversionedProjectDataSourceSchema = legacyUnversionedProjectDataSourceBodySchema.extend({
+  sourceHash: ContentHashSchema,
+}).superRefine(({ sourceHash, ...body }, context) => {
+  if (sourceHash !== hashLegacyUnversionedProjectDataSource(body)) {
+    context.addIssue({ code: "custom", path: ["sourceHash"], message: "sourceHash does not authenticate the legacy source descriptor" });
+  }
+});
+
+export type LegacyUnversionedProjectDataSource = z.infer<typeof LegacyUnversionedProjectDataSourceSchema>;
+
+export function createLegacyUnversionedProjectDataSource(
+  input: LegacyUnversionedProjectDataSourceInput,
+): LegacyUnversionedProjectDataSource {
+  const body = legacyUnversionedProjectDataSourceBodySchema.parse(input);
+  return LegacyUnversionedProjectDataSourceSchema.parse({ ...body, sourceHash: hashLegacyUnversionedProjectDataSource(body) });
+}
+
+export const ProjectDataMigrationSourceAuthoritySchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("release-format"), snapshotHash: ContentHashSchema }),
+  z.strictObject({ kind: z.literal("legacy-unversioned"), sourceHash: ContentHashSchema }),
+]);
+
+export type ProjectDataMigrationSourceAuthority = z.infer<typeof ProjectDataMigrationSourceAuthoritySchema>;
 
 const ProjectDataFormatSnapshotBodySchema = z.strictObject({
   apiVersion: z.literal(projectDataFormatSnapshotApiVersion),
@@ -82,6 +128,39 @@ export const ProjectDataFormatSnapshotSchema = ProjectDataFormatSnapshotBodySche
 });
 
 export type ProjectDataFormatSnapshot = z.infer<typeof ProjectDataFormatSnapshotSchema>;
+
+const projectDataLegacyIngressManifestBodySchema = z.strictObject({
+  apiVersion: z.literal(projectDataLegacyIngressManifestApiVersion),
+  id: stableId,
+  source: LegacyUnversionedProjectDataSourceSchema,
+  targetVersion: PackageVersionSchema,
+  targetSnapshotHash: ContentHashSchema,
+  transforms: z.array(ProjectDataMigrationArtifactRefSchema).min(1).max(256),
+  validations: z.array(ProjectDataMigrationArtifactRefSchema).min(1).max(256),
+});
+
+export type ProjectDataLegacyIngressManifestInput = z.infer<typeof projectDataLegacyIngressManifestBodySchema>;
+
+export function hashProjectDataLegacyIngressManifest(input: ProjectDataLegacyIngressManifestInput) {
+  return hashFramedDomain("project-data-legacy-ingress-manifest:v1", projectDataLegacyIngressManifestBodySchema.parse(input));
+}
+
+export const ProjectDataLegacyIngressManifestSchema = projectDataLegacyIngressManifestBodySchema.extend({
+  manifestHash: ContentHashSchema,
+}).superRefine(({ manifestHash, ...body }, context) => {
+  if (manifestHash !== hashProjectDataLegacyIngressManifest(body)) {
+    context.addIssue({ code: "custom", path: ["manifestHash"], message: "manifestHash does not authenticate the legacy ingress manifest" });
+  }
+});
+
+export type ProjectDataLegacyIngressManifest = z.infer<typeof ProjectDataLegacyIngressManifestSchema>;
+
+export function createProjectDataLegacyIngressManifest(
+  input: ProjectDataLegacyIngressManifestInput,
+): ProjectDataLegacyIngressManifest {
+  const body = projectDataLegacyIngressManifestBodySchema.parse(input);
+  return ProjectDataLegacyIngressManifestSchema.parse({ ...body, manifestHash: hashProjectDataLegacyIngressManifest(body) });
+}
 
 type ParsedSemVer = {
   readonly core: readonly [bigint, bigint, bigint];
@@ -224,7 +303,7 @@ export const PendingProjectDataMigrationSchema = z.strictObject({
   apiVersion: z.literal(pendingProjectDataMigrationApiVersion),
   attemptId: stableId,
   migrationId: stableId,
-  sourceSnapshotHash: ContentHashSchema,
+  sourceAuthority: ProjectDataMigrationSourceAuthoritySchema,
   targetSnapshotHash: ContentHashSchema,
   manifestHash: ContentHashSchema,
   backup: projectDataMigrationBackupRefSchema,
@@ -240,7 +319,7 @@ const projectDataMigrationReceiptBodyFields = {
   attemptId: stableId,
   migrationId: stableId,
   manifestHash: ContentHashSchema,
-  sourceSnapshotHash: ContentHashSchema,
+  sourceAuthority: ProjectDataMigrationSourceAuthoritySchema,
   targetSnapshotHash: ContentHashSchema,
   journalId: stableId,
   journalHash: ContentHashSchema,
@@ -273,12 +352,12 @@ export type ProjectDataMigrationReceiptInput = z.infer<typeof projectDataMigrati
 
 export function hashProjectDataMigrationReceipt(input: ProjectDataMigrationReceiptInput) {
   return hashFramedDomain(
-    "project-data-migration-receipt:v1",
+    "project-data-migration-receipt:v2",
     projectDataMigrationReceiptBodySchema.parse(input),
   );
 }
 
-export const ProjectDataMigrationReceiptSchema = z.strictObject({
+const CurrentProjectDataMigrationReceiptSchema = z.strictObject({
   ...projectDataMigrationReceiptBodyFields,
   receiptHash: ContentHashSchema,
 }).superRefine((receipt, context) => {
@@ -293,11 +372,38 @@ export const ProjectDataMigrationReceiptSchema = z.strictObject({
   }
 });
 
-export type ProjectDataMigrationReceipt = z.infer<typeof ProjectDataMigrationReceiptSchema>;
+const LegacyProjectDataMigrationReceiptSchema = z.strictObject({
+  apiVersion: z.literal(legacyProjectDataMigrationReceiptApiVersion),
+  attemptId: stableId,
+  migrationId: stableId,
+  manifestHash: ContentHashSchema,
+  sourceSnapshotHash: ContentHashSchema,
+  targetSnapshotHash: ContentHashSchema,
+  journalId: stableId,
+  journalHash: ContentHashSchema,
+  backup: projectDataMigrationBackupRefSchema,
+  outcome: z.literal("completed"),
+  completedAt: z.iso.datetime({ offset: true }),
+  receiptHash: ContentHashSchema,
+}).superRefine((receipt, context) => {
+  if (!requireAttemptJournalIdentity(receipt, context)) return;
+  const { receiptHash, ...body } = receipt;
+  if (receiptHash !== hashFramedDomain("project-data-migration-receipt:v1", body)) {
+    context.addIssue({ code: "custom", path: ["receiptHash"], message: "receiptHash does not authenticate the historical receipt body" });
+  }
+});
 
-export function createProjectDataMigrationReceipt(input: ProjectDataMigrationReceiptInput): ProjectDataMigrationReceipt {
+export const ProjectDataMigrationReceiptSchema = z.union([
+  CurrentProjectDataMigrationReceiptSchema,
+  LegacyProjectDataMigrationReceiptSchema,
+]);
+
+export type ProjectDataMigrationReceipt = z.infer<typeof ProjectDataMigrationReceiptSchema>;
+export type CurrentProjectDataMigrationReceipt = z.infer<typeof CurrentProjectDataMigrationReceiptSchema>;
+
+export function createProjectDataMigrationReceipt(input: ProjectDataMigrationReceiptInput): CurrentProjectDataMigrationReceipt {
   const body = projectDataMigrationReceiptBodySchema.parse(input);
-  return ProjectDataMigrationReceiptSchema.parse({
+  return CurrentProjectDataMigrationReceiptSchema.parse({
     ...body,
     receiptHash: hashProjectDataMigrationReceipt(body),
   });
