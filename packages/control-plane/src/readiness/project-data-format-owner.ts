@@ -75,7 +75,7 @@ export function createReleaseCandidateProjectDataFormat(input: {
   if (preparedSchema === undefined) throw new Error("Prepared config JSON Schema is unavailable");
   const editorBundle = createProjectorEditorSchemaBundle();
   const runtimeDescriptor = createPsychordRuntimeEvidenceSchemaDescriptor();
-  const runtimeSchemas = Object.fromEntries(Object.entries(runtimeDescriptor.schemas).sort(([left], [right]) => left.localeCompare(right)).map(
+  const runtimeSchemas: Record<string, unknown> = Object.fromEntries(Object.entries(runtimeDescriptor.schemas).sort(([left], [right]) => left.localeCompare(right)).map(
     ([name, schema]) => [name, z.toJSONSchema(schema, { target: "draft-2020-12", reused: "ref", cycles: "ref", io: "input" })],
   ));
   runtimeSchemas.DurableRepresentationArtifactRecord = z.toJSONSchema(DurableRepresentationArtifactRecordSchema, {
