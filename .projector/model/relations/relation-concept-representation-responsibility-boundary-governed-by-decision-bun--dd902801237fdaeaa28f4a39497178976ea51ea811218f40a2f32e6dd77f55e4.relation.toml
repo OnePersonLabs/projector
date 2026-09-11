@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:concept:representation-responsibility-boundary:governed-by:decision:bundled-operation-runner"
+key = "relation:relation:concept:representation-responsibility-boundary:governed-by:decision:bundled-operation-runner"
+lifecycle = "active"
+
+[payload]
+fromId = "concept:representation-responsibility-boundary"
+toId = "decision:bundled-operation-runner"
+type = "governed-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []

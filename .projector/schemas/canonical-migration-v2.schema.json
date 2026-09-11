@@ -1,0 +1,238 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "$ref": "#/definitions/__schema0"
+    },
+    "schemaVersion": {
+      "$ref": "#/definitions/__schema1"
+    },
+    "kind": {
+      "$ref": "#/definitions/__schema2"
+    },
+    "id": {
+      "$ref": "#/definitions/__schema3"
+    },
+    "key": {
+      "$ref": "#/definitions/__schema4"
+    },
+    "lifecycle": {
+      "$ref": "#/definitions/__schema5"
+    },
+    "payload": {
+      "$ref": "#/definitions/__schema6"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "schemaVersion",
+    "kind",
+    "id",
+    "key",
+    "lifecycle",
+    "payload"
+  ],
+  "additionalProperties": {
+    "not": {}
+  },
+  "definitions": {
+    "__schema0": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema1": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema2": {
+      "type": "string",
+      "enum": [
+        "migration"
+      ]
+    },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        {
+          "pattern": "^[^\\s\\\\/\\x00]"
+        },
+        {
+          "pattern": "[^\\s\\\\/\\x00]$"
+        },
+        {
+          "pattern": "^[^\\\\/\\x00]+$"
+        },
+        {
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        }
+      ]
+    },
+    "__schema4": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema5": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema6": {
+      "type": "object",
+      "properties": {
+        "sourceLensRef": {
+          "$ref": "#/definitions/__schema7"
+        },
+        "targetLensRef": {
+          "$ref": "#/definitions/__schema7"
+        },
+        "phase": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "proposed"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "prepared"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "dual-running"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "cutover"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "cleanup"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "complete"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "rolled-back"
+              ]
+            }
+          ]
+        },
+        "entryCriteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exitCriteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "compatibilityStrategy": {
+          "type": "string"
+        },
+        "allowedTemporaryDivergenceIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/__schema3"
+          }
+        },
+        "generatedOutputOverlays": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "validationObligations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rollbackPlan": {
+          "type": "string"
+        },
+        "compensationPlan": {
+          "type": "string"
+        },
+        "cleanupResidueDetector": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceLensRef",
+        "targetLensRef",
+        "phase",
+        "entryCriteria",
+        "exitCriteria",
+        "compatibilityStrategy",
+        "allowedTemporaryDivergenceIds",
+        "validationObligations",
+        "rollbackPlan",
+        "cleanupResidueDetector"
+      ],
+      "additionalProperties": {
+        "not": {}
+      },
+      "not": {
+        "required": [
+          "__projector_toml_null"
+        ]
+      }
+    },
+    "__schema7": {
+      "type": "object",
+      "properties": {
+        "lensId": {
+          "$ref": "#/definitions/__schema3"
+        },
+        "version": {
+          "type": "string"
+        },
+        "semanticHash": {
+          "type": "string",
+          "pattern": "^sha256:v1:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "lensId",
+        "version",
+        "semanticHash"
+      ],
+      "additionalProperties": {
+        "not": {}
+      },
+      "not": {
+        "required": [
+          "__projector_toml_null"
+        ]
+      }
+    }
+  },
+  "not": {
+    "required": [
+      "__projector_toml_null"
+    ]
+  }
+}

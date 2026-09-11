@@ -1,0 +1,49 @@
+#:schema ../../schemas/canonical-concept-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "concept"
+id = "concept:reconstruction-authority"
+key = "reconstruction-authority"
+lifecycle = "active"
+
+[payload]
+kind = "policy"
+name = "Conceptual authority through reconstruction"
+aliases = [ "fresh-repository-control" ]
+statement = """Projector retains accepted conceptual meaning, unrealized commitments, and architectural rationale independently \
+  of any current implementation. It can govern a fresh repository whose implementation replaces the \
+  old one. Historical code, specifications, and commit history provide evidence for explicit acceptance \
+  or revision; their existence does not grant them authority.
+
+Reconstruction preserves Psychord specification meaning: intended behavior, constraints, relationships, \
+  exceptions, rationale, and future commitments. Wording, document organization, and implementation \
+  may change. Resolve conflicting or ambiguous evidence explicitly and retain provenance; implementation \
+  absence or difficulty does not authorize conceptual loss.
+
+Before rejecting Projector, distinguish a failed premise from a failed design, implementation, or evaluation. \
+  Assess whether a plausible bounded correction can fulfill the intended purpose and change the decision. \
+  Seek reasonable engineering confidence from relevant evidence; do not require a completed Psychord \
+  rebuild or universal proof.
+
+Rejecting Projector completes this effort only if a viable alternative route to building Psychord from \
+  scratch is delivered under the same conceptual-preservation standard. Both routes must address coherence \
+  as interacting specifications grow, bounded context, progressive disclosure, and retrieval of applicable \
+  existing meaning before planning changes. A small-task baseline success or a hypothetical tool combination \
+  does not establish that alternative.
+
+Projector is a standalone conceptual control plane for complex software projects. Psychord is its motivating \
+  and first demanding use case, not the scope of its machinery. Keep project configuration and accepted \
+  conceptual artifacts with the project repository so accepted meaning, relationships, decisions, lenses, \
+  and provenance remain portable. Reconcile this with established storage and caching decisions; do \
+  not force derived indexes, caches, local execution state, or live capabilities into Git or redesign \
+  their storage merely to satisfy repository portability.
+
+The user selected delivery of a promising working Projector while accepting that remaining limits may \
+  emerge during Psychord redevelopment. Use lean delivery: complete useful changes, verify relevant \
+  behavior, consolidate concrete adversarial-review repairs, and ship. Do not require an additional \
+  comparative trial or proof of long-term superiority before delivery. Decompose implementation work \
+  without reducing the accepted design or deleting its future commitments."""
+sourceClass = "authored"
+confidence = 1
+tags = [ "reconstruction", "conceptual-authority" ]
+evidence = []

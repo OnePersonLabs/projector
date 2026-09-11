@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:concept:safe-project-data-readiness:governed-by:decision:project-data-readiness-and-migration"
+key = "relation:relation:concept:safe-project-data-readiness:governed-by:decision:project-data-readiness-and-migration"
+lifecycle = "active"
+
+[payload]
+fromId = "concept:safe-project-data-readiness"
+toId = "decision:project-data-readiness-and-migration"
+type = "governed-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []

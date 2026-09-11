@@ -1,0 +1,45 @@
+#:schema ../../schemas/canonical-behavioral-scenario-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "behavioral-scenario"
+id = "scenario:detect-new-consumer"
+key = "detect-new-consumer"
+lifecycle = "active"
+
+[payload]
+title = "Detect a newly relevant consumer"
+aliases = []
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/knowledge/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/cli/src/knowledge-cli.test.ts"
+
+[[payload.steps]]
+role = "precondition"
+statement = "A saved context includes a relation or selector query, even if its result was empty."
+
+[[payload.steps]]
+role = "trigger"
+statement = "A new consumer or binding changes that query result outside Projector."
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Reconciliation identifies the affected context as stale and a new context includes the consumer with \
+  an inspectable reason."""
+
+[[payload.steps]]
+role = "forbidden-outcome"
+statement = "An empty prior result is treated as permanent proof that no consumer exists."

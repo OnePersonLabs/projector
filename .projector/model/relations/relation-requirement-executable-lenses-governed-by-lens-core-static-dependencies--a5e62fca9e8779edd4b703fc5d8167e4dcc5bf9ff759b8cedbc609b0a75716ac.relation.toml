@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:requirement:executable-lenses:governed-by:lens:core-static-dependencies"
+key = "relation:relation:requirement:executable-lenses:governed-by:lens:core-static-dependencies"
+lifecycle = "active"
+
+[payload]
+fromId = "requirement:executable-lenses"
+toId = "lens:core-static-dependencies"
+type = "governed-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []

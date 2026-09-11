@@ -1,0 +1,70 @@
+#:schema ../schemas/canonical-architecture-concern-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "architecture-concern"
+id = "concern:cross-platform-validation-sandbox"
+key = "cross-platform-validation-sandbox"
+lifecycle = "resolved"
+
+[payload]
+title = "Preserve validation integrity under host execution"
+question = """How does controlled validation preserve change integrity and honest evidence under the configured host \
+  permissions on native Windows and direct WSL?"""
+sourceClass = "authored"
+materiality = "blocking-now"
+activationReasons = []
+relatedConceptIds = [ "concept:controlled-validation-isolation" ]
+relatedRequirementIds = [ "requirement:executable-lenses", "requirement:runtime-evidence-legibility", "requirement:scoped-invalidation", "requirement:scoped-reconsideration" ]
+decisionIds = [ "decision:windows-wsl-bubblewrap" ]
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/runtime/src/execution/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/change-lifecycle/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/knowledge/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/coverage/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/cli/src/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "plugins/projector/scripts/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "plugins/projector/hooks/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "scripts/build-plugin-runtime.mjs"

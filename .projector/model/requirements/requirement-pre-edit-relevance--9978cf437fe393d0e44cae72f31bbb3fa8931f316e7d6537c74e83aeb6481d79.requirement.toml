@@ -1,0 +1,62 @@
+#:schema ../../schemas/canonical-requirement-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "requirement"
+id = "requirement:pre-edit-relevance"
+key = "pre-edit-relevance"
+lifecycle = "active"
+
+[payload]
+title = "Determine relevance before choosing edits"
+aliases = [ "relevance before editing", "request-first context" ]
+statement = """Given a requested outcome, retrieve existing meaning, constraints, decisions, and distant consumers \
+  before choosing implementation paths. Traverse typed canonical relations and implementation bindings \
+  with explicit reasons and bounds. Distinguish candidate interpretations and unknown frontiers from \
+  confirmed identity or absence. Post-edit impact analysis does not replace this step."""
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/knowledge/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/engine/src/relevance/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/engine/src/context/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/cli/src/knowledge-cli.ts"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/cli/src/mcp-cli.ts"
+
+[[payload.origin]]
+kind = "user-request"
+locator = "projector-recovered-premise:2026-09-09"
+description = """Assistant synthesis of the user-directed recovered vision; implementation and economic advantage require \
+  separate evidence."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/03-knowledge/relevance-and-change-cognition.md"
+contentHash = "sha256:v1:7630d0d66c3c9eea8affd2dbf17adf2bdc24bb076f7536edeb4164ba698728fa"
+description = "Historical proposal supporting this meaning; not automatic authority."

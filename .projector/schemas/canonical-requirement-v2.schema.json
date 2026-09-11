@@ -1,0 +1,1069 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "$ref": "#/definitions/__schema0"
+    },
+    "schemaVersion": {
+      "$ref": "#/definitions/__schema1"
+    },
+    "kind": {
+      "$ref": "#/definitions/__schema2"
+    },
+    "id": {
+      "$ref": "#/definitions/__schema3"
+    },
+    "key": {
+      "$ref": "#/definitions/__schema4"
+    },
+    "lifecycle": {
+      "$ref": "#/definitions/__schema5"
+    },
+    "payload": {
+      "$ref": "#/definitions/__schema6"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "schemaVersion",
+    "kind",
+    "id",
+    "key",
+    "lifecycle",
+    "payload"
+  ],
+  "additionalProperties": {
+    "not": {}
+  },
+  "definitions": {
+    "__schema0": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema1": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema2": {
+      "type": "string",
+      "enum": [
+        "requirement"
+      ]
+    },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        {
+          "pattern": "^[^\\s\\\\/\\x00]"
+        },
+        {
+          "pattern": "[^\\s\\\\/\\x00]$"
+        },
+        {
+          "pattern": "^[^\\\\/\\x00]+$"
+        },
+        {
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        }
+      ]
+    },
+    "__schema4": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema5": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "candidate"
+          ]
+        },
+        {
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        },
+        {
+          "type": "string",
+          "enum": [
+            "deprecated"
+          ]
+        },
+        {
+          "type": "string",
+          "enum": [
+            "rejected"
+          ]
+        },
+        {
+          "type": "string",
+          "enum": [
+            "superseded"
+          ]
+        }
+      ]
+    },
+    "__schema6": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "statement": {
+          "type": "string"
+        },
+        "sourceClass": {
+          "type": "string",
+          "enum": [
+            "authored",
+            "derived",
+            "observed",
+            "inferred"
+          ]
+        },
+        "scope": {
+          "$ref": "#/definitions/__schema7"
+        },
+        "origin": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "user-request"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "linear"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "github-issue"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "document"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "external"
+                    ]
+                  }
+                ]
+              },
+              "locator": {
+                "type": "string"
+              },
+              "contentHash": {
+                "$ref": "#/definitions/__schema9"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "locator"
+            ],
+            "additionalProperties": {
+              "not": {}
+            },
+            "not": {
+              "required": [
+                "__projector_toml_null"
+              ]
+            }
+          }
+        },
+        "realizations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "selector": {
+                "$ref": "#/definitions/__schema10"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "git"
+                        ]
+                      },
+                      "locator": {
+                        "type": "string",
+                        "allOf": [
+                          {
+                            "pattern": "^git:(?:[a-f0-9]{40}|[a-f0-9]{64}):[^/\\\\\r\n  ](?:[^\\\\\r\n  ]*[^/\\\\\r\n  ])?$"
+                          },
+                          {
+                            "not": {
+                              "pattern": "^git:(?:[a-f0-9]{40}|[a-f0-9]{64}):[A-Za-z]:"
+                            }
+                          },
+                          {
+                            "not": {
+                              "pattern": "//"
+                            }
+                          },
+                          {
+                            "not": {
+                              "pattern": "(?:^git:(?:[a-f0-9]{40}|[a-f0-9]{64}):|/)(?:\\.|\\.\\.)(?:/|$)"
+                            }
+                          }
+                        ]
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "locator"
+                    ],
+                    "additionalProperties": {
+                      "not": {}
+                    },
+                    "not": {
+                      "required": [
+                        "__projector_toml_null"
+                      ]
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "content"
+                        ]
+                      },
+                      "locator": {
+                        "type": "string"
+                      },
+                      "contentHash": {
+                        "$ref": "#/definitions/__schema9"
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "locator",
+                      "contentHash"
+                    ],
+                    "additionalProperties": {
+                      "not": {}
+                    },
+                    "not": {
+                      "required": [
+                        "__projector_toml_null"
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "selector",
+              "origin"
+            ],
+            "additionalProperties": {
+              "not": {}
+            },
+            "not": {
+              "required": [
+                "__projector_toml_null"
+              ]
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evidenceId": {
+                "$ref": "#/definitions/__schema3"
+              },
+              "stance": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "supports"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "contradicts"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "context"
+                    ]
+                  }
+                ]
+              },
+              "weight": {
+                "type": "number"
+              },
+              "applicationPredicate": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "$ref": "#/definitions/__schema11"
+                  },
+                  "adapter": {
+                    "$ref": "#/definitions/__schema12"
+                  },
+                  "scenario": {
+                    "$ref": "#/definitions/__schema13"
+                  },
+                  "case": {
+                    "$ref": "#/definitions/__schema14"
+                  },
+                  "predicateId": {
+                    "$ref": "#/definitions/__schema3"
+                  },
+                  "assertionIds": {
+                    "$ref": "#/definitions/__schema15"
+                  },
+                  "observationRole": {
+                    "$ref": "#/definitions/__schema16"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "adapter",
+                  "scenario",
+                  "case",
+                  "predicateId",
+                  "assertionIds",
+                  "observationRole"
+                ],
+                "additionalProperties": {
+                  "not": {}
+                },
+                "not": {
+                  "required": [
+                    "__projector_toml_null"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "evidenceId",
+              "stance"
+            ],
+            "additionalProperties": {
+              "not": {}
+            },
+            "not": {
+              "required": [
+                "__projector_toml_null"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "title",
+        "aliases",
+        "statement",
+        "sourceClass",
+        "scope",
+        "origin",
+        "evidence"
+      ],
+      "additionalProperties": {
+        "not": {}
+      },
+      "not": {
+        "required": [
+          "__projector_toml_null"
+        ]
+      }
+    },
+    "__schema7": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "all"
+              ]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema7"
+              }
+            }
+          },
+          "required": [
+            "op",
+            "items"
+          ],
+          "additionalProperties": {
+            "not": {}
+          },
+          "not": {
+            "required": [
+              "__projector_toml_null"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "any"
+              ]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema7"
+              }
+            }
+          },
+          "required": [
+            "op",
+            "items"
+          ],
+          "additionalProperties": {
+            "not": {}
+          },
+          "not": {
+            "required": [
+              "__projector_toml_null"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "not"
+              ]
+            },
+            "item": {
+              "$ref": "#/definitions/__schema7"
+            }
+          },
+          "required": [
+            "op",
+            "item"
+          ],
+          "additionalProperties": {
+            "not": {}
+          },
+          "not": {
+            "required": [
+              "__projector_toml_null"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "atom"
+              ]
+            },
+            "field": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "path"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "language"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "artifact-role"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "concept"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "concept-kind"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "requirement"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "scenario"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "lens"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "surface"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "package"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "package-kind"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "operation"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "platform"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "migration-phase"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "risk"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "tag"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "control-ownership"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "control-mutation"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "ast-pattern"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "relation"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "causal-origin"
+                  ]
+                }
+              ]
+            },
+            "matcher": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "equals"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "in"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "glob"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "regex"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "contains"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "exists"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "matches-structural-query"
+                  ]
+                }
+              ]
+            },
+            "value": {
+              "$ref": "#/definitions/__schema8"
+            }
+          },
+          "required": [
+            "op",
+            "field",
+            "matcher",
+            "value"
+          ],
+          "additionalProperties": {
+            "not": {}
+          },
+          "not": {
+            "required": [
+              "__projector_toml_null"
+            ]
+          }
+        }
+      ]
+    },
+    "__schema8": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "__projector_toml_null": {
+              "enum": [
+                true
+              ]
+            }
+          },
+          "required": [
+            "__projector_toml_null"
+          ],
+          "additionalProperties": {
+            "not": {}
+          }
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/__schema8"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema8"
+          },
+          "not": {
+            "required": [
+              "__projector_toml_null"
+            ]
+          }
+        }
+      ]
+    },
+    "__schema9": {
+      "type": "string",
+      "pattern": "^sha256:v1:[0-9a-f]{64}$"
+    },
+    "__schema10": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "all"
+              ]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema10"
+              }
+            }
+          },
+          "required": [
+            "op",
+            "items"
+          ],
+          "additionalProperties": {
+            "not": {}
+          },
+          "not": {
+            "required": [
+              "__projector_toml_null"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "any"
+              ]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema10"
+              }
+            }
+          },
+          "required": [
+            "op",
+            "items"
+          ],
+          "additionalProperties": {
+            "not": {}
+          },
+          "not": {
+            "required": [
+              "__projector_toml_null"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "not"
+              ]
+            },
+            "item": {
+              "$ref": "#/definitions/__schema10"
+            }
+          },
+          "required": [
+            "op",
+            "item"
+          ],
+          "additionalProperties": {
+            "not": {}
+          },
+          "not": {
+            "required": [
+              "__projector_toml_null"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "atom"
+              ]
+            },
+            "field": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "path"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "artifact-role"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "surface"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "package"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "package-kind"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "tag"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "control-ownership"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "control-mutation"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "causal-origin"
+                  ]
+                }
+              ]
+            },
+            "matcher": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "equals"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "in"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "glob"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "regex"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "contains"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "exists"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "matches-structural-query"
+                  ]
+                }
+              ]
+            },
+            "value": {
+              "$ref": "#/definitions/__schema8"
+            }
+          },
+          "required": [
+            "op",
+            "field",
+            "matcher",
+            "value"
+          ],
+          "additionalProperties": {
+            "not": {}
+          },
+          "not": {
+            "required": [
+              "__projector_toml_null"
+            ]
+          }
+        }
+      ]
+    },
+    "__schema11": {
+      "type": "string",
+      "enum": [
+        "application-observation"
+      ]
+    },
+    "__schema12": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "additionalProperties": {
+        "not": {}
+      },
+      "not": {
+        "required": [
+          "__projector_toml_null"
+        ]
+      }
+    },
+    "__schema13": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/__schema3"
+        },
+        "semanticHash": {
+          "$ref": "#/definitions/__schema9"
+        }
+      },
+      "required": [
+        "id",
+        "semanticHash"
+      ],
+      "additionalProperties": {
+        "not": {}
+      },
+      "not": {
+        "required": [
+          "__projector_toml_null"
+        ]
+      }
+    },
+    "__schema14": {
+      "type": "string"
+    },
+    "__schema15": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "__schema16": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "prior"
+          ]
+        },
+        {
+          "type": "string",
+          "enum": [
+            "latest"
+          ]
+        }
+      ]
+    }
+  },
+  "not": {
+    "required": [
+      "__projector_toml_null"
+    ]
+  }
+}

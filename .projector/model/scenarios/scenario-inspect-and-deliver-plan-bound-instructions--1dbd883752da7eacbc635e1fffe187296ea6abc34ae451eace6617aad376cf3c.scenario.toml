@@ -1,0 +1,71 @@
+#:schema ../../schemas/canonical-behavioral-scenario-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "behavioral-scenario"
+id = "scenario:inspect-and-deliver-plan-bound-instructions"
+key = "inspect-and-deliver-plan-bound-instructions"
+lifecycle = "active"
+
+[payload]
+title = "Inspect and deliver exact plan-bound instructions"
+aliases = []
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/representation/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/cli/src/operation-runner.ts"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "plugins/projector/**"
+
+[[payload.steps]]
+role = "precondition"
+statement = """A planned change has exact rendered instructions and durable provenance; approval may be absent, current \
+  or stale."""
+
+[[payload.steps]]
+role = "trigger"
+statement = "A fresh installed session requests bounded inspection or authorized delivery of that exact artifact."
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """The runner returns exact selected text and separately reports artifact integrity, dependency freshness \
+  including relevant dirty edits and profile or query membership, semantic fidelity, approval status \
+  and delivery stage. Inspection works before approval; execution proceeds only with current authenticated \
+  authority."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Operation discovery reports registered handler reachability separately from bounded project readiness \
+  and directly observed host capabilities, without converting handler presence into an enforcement or \
+  availability claim."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Interrupted delivery remains recoverable without fabricating consumption or rerunning committed effects, \
+  and missing advisory notes neither authorize mutation nor block authenticated recovery."""
+
+[[payload.steps]]
+role = "forbidden-outcome"
+statement = """A matching content hash, unchanged HEAD, prior approval, stored session consistency or successful delivery \
+  is reported as current authorized behavioral completion."""
+
+[[payload.steps]]
+role = "forbidden-outcome"
+statement = """A mismatched repository, plan revision, capsule, kernel, rendered text or stale representation profile \
+  reaches execution."""

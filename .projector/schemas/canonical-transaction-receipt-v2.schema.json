@@ -1,0 +1,238 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "$ref": "#/definitions/__schema0"
+    },
+    "schemaVersion": {
+      "$ref": "#/definitions/__schema1"
+    },
+    "kind": {
+      "$ref": "#/definitions/__schema2"
+    },
+    "id": {
+      "$ref": "#/definitions/__schema3"
+    },
+    "key": {
+      "$ref": "#/definitions/__schema4"
+    },
+    "lifecycle": {
+      "$ref": "#/definitions/__schema5"
+    },
+    "payload": {
+      "$ref": "#/definitions/__schema6"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "schemaVersion",
+    "kind",
+    "id",
+    "key",
+    "lifecycle",
+    "payload"
+  ],
+  "additionalProperties": {
+    "not": {}
+  },
+  "definitions": {
+    "__schema0": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema1": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema2": {
+      "type": "string",
+      "enum": [
+        "transaction-receipt"
+      ]
+    },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        {
+          "pattern": "^[^\\s\\\\/\\x00]"
+        },
+        {
+          "pattern": "[^\\s\\\\/\\x00]$"
+        },
+        {
+          "pattern": "^[^\\\\/\\x00]+$"
+        },
+        {
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        }
+      ]
+    },
+    "__schema4": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema5": {
+      "type": "string",
+      "enum": [
+        "committed"
+      ]
+    },
+    "__schema6": {
+      "type": "object",
+      "properties": {
+        "planId": {
+          "$ref": "#/definitions/__schema3"
+        },
+        "semanticChangeId": {
+          "$ref": "#/definitions/__schema3"
+        },
+        "riskClass": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "R0"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "R1"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "R2"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "R3"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "R4"
+              ]
+            }
+          ]
+        },
+        "beforeState": {
+          "$ref": "#/definitions/__schema7"
+        },
+        "afterState": {
+          "$ref": "#/definitions/__schema7"
+        },
+        "changedCanonicalEntityIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/__schema3"
+          }
+        },
+        "changedRequirementIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/__schema3"
+          }
+        },
+        "changedScenarioIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/__schema3"
+          }
+        },
+        "changedUnitIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/__schema3"
+          }
+        },
+        "validationSummaryHash": {
+          "$ref": "#/definitions/__schema8"
+        },
+        "certificateHash": {
+          "$ref": "#/definitions/__schema8"
+        },
+        "rollbackRef": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "planId",
+        "riskClass",
+        "beforeState",
+        "afterState",
+        "changedCanonicalEntityIds",
+        "changedRequirementIds",
+        "changedScenarioIds",
+        "changedUnitIds",
+        "validationSummaryHash",
+        "createdAt"
+      ],
+      "additionalProperties": {
+        "not": {}
+      },
+      "not": {
+        "required": [
+          "__projector_toml_null"
+        ]
+      }
+    },
+    "__schema7": {
+      "type": "object",
+      "properties": {
+        "gitBase": {
+          "type": "string"
+        },
+        "worktreeDigest": {
+          "$ref": "#/definitions/__schema8"
+        },
+        "canonicalProjectorDigest": {
+          "$ref": "#/definitions/__schema8"
+        },
+        "toolchainDigest": {
+          "$ref": "#/definitions/__schema8"
+        },
+        "pinnedExternalSnapshotDigest": {
+          "$ref": "#/definitions/__schema8"
+        }
+      },
+      "required": [
+        "gitBase",
+        "worktreeDigest",
+        "canonicalProjectorDigest",
+        "toolchainDigest"
+      ],
+      "additionalProperties": {
+        "not": {}
+      },
+      "not": {
+        "required": [
+          "__projector_toml_null"
+        ]
+      }
+    },
+    "__schema8": {
+      "type": "string",
+      "pattern": "^sha256:v1:[0-9a-f]{64}$"
+    }
+  },
+  "not": {
+    "required": [
+      "__projector_toml_null"
+    ]
+  }
+}

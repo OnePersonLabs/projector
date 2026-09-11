@@ -1,0 +1,71 @@
+#:schema ../../schemas/canonical-requirement-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "requirement"
+id = "requirement:scoped-invalidation"
+key = "scoped-invalidation"
+lifecycle = "active"
+
+[payload]
+title = "Reuse knowledge with scoped invalidation"
+aliases = [ "stale knowledge", "dependency-scoped reuse" ]
+statement = """Bind retained reasoning and derived artifacts to the exact semantic values and query results they used, \
+  including empty queries and selector membership. Traverse exact derivation dependencies before versioned \
+  impact rules after a known delta; do not substitute pre-edit relevance for that dependency proof. \
+  Reuse unaffected knowledge despite unrelated changes. Backdate only when the registered signature \
+  profile proves all required preserved dimensions; unchanged structure does not prove behavioral equivalence \
+  or waive required validation. Changed dependencies or new consumers invalidate affected reasoning. \
+  Unknown profiles, missing baselines and open populations remain unknown and can be rebuilt without \
+  making runtime caches canonical."""
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/engine/src/state/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/engine/src/query/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/engine/src/invalidation/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/knowledge/**"
+
+[[payload.origin]]
+kind = "user-request"
+locator = "projector-recovered-premise:2026-09-09"
+description = """Assistant synthesis of the user-directed recovered vision; implementation and economic advantage require \
+  separate evidence."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/05-projections/derivations-and-invalidation.md"
+contentHash = "sha256:v1:d9138ea33f193fb42d96d25e952bc29e5400b18494f1dbc0b4f9a4b49477b703"
+description = "Historical proposal supporting this meaning; not automatic authority."
+
+[[payload.origin]]
+kind = "user-request"
+locator = "conversation:2026-09-09:architectural-reasons-and-harness-assimilation"
+description = """The user explicitly requires architectural choices, rejected options and reasons to survive, and requests \
+  useful harness practices be assimilated without flattening Projector into instructions."""
+
+[[payload.origin]]
+kind = "external"
+locator = "https://openai.com/index/harness-engineering/"
+description = """Motivating integration evidence; not authority for Projector-specific design or claimed implementation."""

@@ -1,0 +1,86 @@
+#:schema ../schemas/canonical-architecture-decision-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "architecture-decision"
+id = "decision:bundled-operation-runner"
+key = "bundled-operation-runner"
+lifecycle = "active"
+
+[payload]
+concernId = "concern:installed-operation-interface"
+title = "Use one bundled JavaScript operation runner"
+decision = """Expose supported Projector workflows through one versioned discriminated operation request/result contract. \
+  The installed JavaScript runner loads the packaged TypeScript services in-process, derives package \
+  identity from the packaged root manifest, checks readiness and shared operation access inside every \
+  operation, propagates the caller AbortSignal, and reports structured unavailable and recovery actions. \
+  Capability discovery is derived from the registered operation handlers, bounded readiness metadata \
+  and directly observed host capabilities; a registered handler establishes reachability only and cannot \
+  establish host enforcement or operational readiness. Skills and hooks call this runner. Markdown explains \
+  the contract but typed schemas and handlers own it. Do not preserve wrapper-to-CLI subprocess chains, \
+  standalone MCP delivery, or task17 host dispatch merely for obsolete names. Preserve an old adapter \
+  only when a current consumer and requirement need it."""
+selectedOptionKey = "bundled-in-process-operation-runner"
+authorityRecordId = "authority:bundled-operation-runner"
+appliedPreferences = []
+supersedesDecisionIds = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/core/src/schemas/operations.ts"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/core/src/schemas/registry.ts"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/core/src/index.ts"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/core/src/domain/contracts.ts"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/cli/src/operation-runner.ts"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/readiness/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "plugins/projector/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "scripts/build-plugin-runtime.mjs"
+
+[[payload.governanceBasis]]
+kind = "adopted-standard"
+authorityRecordId = "authority:bundled-operation-runner"
+
+[[payload.consequences]]
+kind = "introduce-constraint"
+targetId = "concept:representation-responsibility-boundary"
+explanation = """The shared runner must preserve the distinction among reading, instruction inspection, authorization \
+  and observed delivery."""

@@ -1,0 +1,4 @@
+#:schema schemas/projector-config-v1.schema.json
+apiVersion = "projector.config/v1"
+enabled = true
+projectorVersion = "2.1.0"

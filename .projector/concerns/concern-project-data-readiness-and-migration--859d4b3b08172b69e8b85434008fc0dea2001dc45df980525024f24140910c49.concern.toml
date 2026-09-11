@@ -1,0 +1,112 @@
+#:schema ../schemas/canonical-architecture-concern-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "architecture-concern"
+id = "concern:project-data-readiness-and-migration"
+key = "project-data-readiness-and-migration"
+lifecycle = "resolved"
+
+[payload]
+title = "Prepare project data safely before operations"
+question = """How should installed Projector operations detect, coordinate, migrate, back up, publish, and recover \
+  project data before strict current loaders run?"""
+sourceClass = "authored"
+materiality = "blocking-now"
+activationReasons = []
+relatedConceptIds = [ "concept:reconstruction-authority", "concept:safe-project-data-readiness" ]
+relatedRequirementIds = [ "requirement:durable-meaning", "requirement:reverse-reconciliation", "requirement:scoped-invalidation" ]
+decisionIds = [ "decision:project-data-readiness-and-migration" ]
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = ".projector/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/runtime/src/access/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/runtime/src/activation/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/runtime/src/journal/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/runtime/src/migrations/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/runtime/src/sqlite/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/runtime/src/worktrees/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/readiness/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/migrations/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/cli/src/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "plugins/projector/hooks/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "plugins/projector/scripts/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "scripts/build-plugin-runtime.mjs"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "scripts/*migration*"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "scripts/*release*"
