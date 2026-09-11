@@ -25,7 +25,10 @@
   },
   "devDependencies": {
     "@projector/analyzers": "workspace:*",
+    "@projector/control-plane": "workspace:*",
     "@projector/core": "workspace:*",
+    "@projector/engine": "workspace:*",
+    "@projector/runtime": "workspace:*",
     "@projector/testkit": "workspace:*",
     "@types/node": "^24.2.1",
     "fast-check": "^4.2.0",

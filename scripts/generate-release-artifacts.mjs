@@ -3,8 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { hashFramedDomain } from "../packages/core/dist/index.js";
-import { deriveAcceptanceInventory, PACKED_LIFECYCLE_OBLIGATION_IDS, traceabilityEntryHash, traceabilityInventoryHash, validateTraceabilityTestReferences } from "../packages/testkit/dist/index.js";
+import { hashFramedDomain } from "@projector/core";
+import { deriveAcceptanceInventory, PACKED_LIFECYCLE_OBLIGATION_IDS, traceabilityEntryHash, traceabilityInventoryHash, validateTraceabilityTestReferences } from "@projector/testkit";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const execute = promisify(execFile);
