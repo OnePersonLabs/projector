@@ -22,11 +22,11 @@ async function fixture(): Promise<string> {
 
 function receipt() {
   return createProjectDataMigrationReceipt({
-    apiVersion: "projector.project-data-migration-receipt/v1",
+    apiVersion: "projector.project-data-migration-receipt/v2",
     attemptId: "migration-attempt:legacy-to-toml:001",
     migrationId: "migration:legacy-to-toml",
     manifestHash: hash("1"),
-    sourceSnapshotHash: hash("2"),
+    sourceAuthority: { kind: "legacy-unversioned", sourceHash: hash("2") },
     targetSnapshotHash: hash("3"),
     journalId: "migration-attempt:legacy-to-toml:001",
     journalHash: hash("4"),

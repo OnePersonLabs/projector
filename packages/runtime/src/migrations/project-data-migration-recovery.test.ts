@@ -85,10 +85,10 @@ async function fixture() {
 
 function pendingMarker(backup = defaultBackup, targetSnapshotHash = hash("3")): PendingProjectDataMigration {
   return {
-    apiVersion: "projector.pending-project-data-migration/v1",
+    apiVersion: "projector.pending-project-data-migration/v2",
     attemptId: "migration-attempt:legacy-to-toml:001",
     migrationId: "migration:legacy-to-toml",
-    sourceSnapshotHash: hash("2"),
+    sourceAuthority: { kind: "release-format", snapshotHash: hash("2") },
     targetSnapshotHash,
     manifestHash: hash("1"),
     backup,
@@ -158,11 +158,11 @@ async function committedEvidence() {
   await transaction.commit();
   const exact = await fixtureValue.journal.readExact(marker.attemptId);
   const receipt = createProjectDataMigrationReceipt({
-    apiVersion: "projector.project-data-migration-receipt/v1",
+    apiVersion: "projector.project-data-migration-receipt/v2",
     attemptId: marker.attemptId,
     migrationId: marker.migrationId,
     manifestHash: marker.manifestHash,
-    sourceSnapshotHash: marker.sourceSnapshotHash,
+    sourceAuthority: marker.sourceAuthority,
     targetSnapshotHash: marker.targetSnapshotHash,
     journalId: exact.record.entry.transactionId,
     journalHash: exact.contentHash,

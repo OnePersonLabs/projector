@@ -180,10 +180,10 @@ async function committedFixture() {
   const candidate = candidateInventory();
   const targetFormat = createReleaseCandidateProjectDataFormat({ candidate });
   const marker: PendingProjectDataMigration = {
-    apiVersion: "projector.pending-project-data-migration/v1",
+    apiVersion: "projector.pending-project-data-migration/v2",
     attemptId: "migration-attempt:real-recovery:001",
     migrationId: "migration:legacy-to-toml",
-    sourceSnapshotHash: hash("1"),
+    sourceAuthority: { kind: "release-format", snapshotHash: hash("1") },
     targetSnapshotHash: targetFormat.snapshotHash,
     manifestHash: hash("2"),
     backup: { id: backup.backupId, location: backup.backupLocation, manifestHash: backup.manifestHash },

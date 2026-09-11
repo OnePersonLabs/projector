@@ -46,6 +46,16 @@ describe("release candidate project-data format owner", () => {
     });
     expect(changed.canonical.schemaBundleHash).not.toBe(initial.canonical.schemaBundleHash);
   });
+
+  test("changes runtime format identity when the durable representation owner changes", () => {
+    const candidate = inventory();
+    const initial = createReleaseCandidateProjectDataFormat({ candidate });
+    const ownerPath = runtimeEvidenceOwnerModulePaths.find((path) => path.endsWith("/schemas/representation-artifact.js"))!;
+    const changed = createReleaseCandidateProjectDataFormat({
+      candidate: { ...candidate, files: candidate.files.map((file) => file.path === ownerPath ? { ...file, digest: hash("f") } : file) },
+    });
+    expect(changed.runtimeEvidence.schemaHash).not.toBe(initial.runtimeEvidence.schemaHash);
+  });
 });
 
 function inventory(): ValidatedReleaseCandidateInventory {

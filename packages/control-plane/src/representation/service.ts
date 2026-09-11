@@ -19,7 +19,7 @@ import { RepositoryRepresentationArtifactStore } from "./artifact-store.js";
 const factStatusSchema = z.enum(["valid", "invalid", "unavailable"]);
 const freshnessStatusSchema = z.enum(["current", "stale", "unknown"]);
 
-export const RepresentationInspectionOutputSchema = z.strictObject({
+const representationInspectionFields = {
   kind: z.literal("representation-inspection"),
   changeSelector: z.string().min(1),
   view: z.enum(["summary", "content"]),
@@ -46,13 +46,13 @@ export const RepresentationInspectionOutputSchema = z.strictObject({
     approvalSelector: z.string().min(1).optional(),
     reason: z.string().min(1),
   }),
-  delivery: z.strictObject({
-    stage: z.literal("inspection-service"),
-    deliveredToRunnerBoundary: z.literal(false),
-    agentUnderstandingEstablished: z.literal(false),
-    behavioralCompletionEstablished: z.literal(false),
-  }),
-}).superRefine((value, context) => {
+} as const;
+
+function validateInspectionOutput(value: {
+  readonly view: "summary" | "content";
+  readonly renderedText?: string | undefined;
+  readonly artifactIntegrity: { readonly status: "valid" | "invalid" | "unavailable" };
+}, context: z.RefinementCtx): void {
   if (value.view === "summary" && value.renderedText !== undefined) {
     context.addIssue({ code: "custom", path: ["renderedText"], message: "the summary view cannot expose rendered text" });
   }
@@ -62,9 +62,45 @@ export const RepresentationInspectionOutputSchema = z.strictObject({
   if (value.renderedText !== undefined && value.artifactIntegrity.status !== "valid") {
     context.addIssue({ code: "custom", path: ["renderedText"], message: "invalid or unavailable artifacts cannot expose rendered text" });
   }
-});
+}
+
+export const RepresentationInspectionOutputSchema = z.strictObject({
+  ...representationInspectionFields,
+  delivery: z.strictObject({
+    stage: z.literal("inspection-service"),
+    deliveredToRunnerBoundary: z.literal(false),
+    agentUnderstandingEstablished: z.literal(false),
+    behavioralCompletionEstablished: z.literal(false),
+  }),
+}).superRefine(validateInspectionOutput);
 
 export type RepresentationInspectionOutput = z.infer<typeof RepresentationInspectionOutputSchema>;
+
+export const RepresentationInspectionOperationOutputSchema = z.strictObject({
+  ...representationInspectionFields,
+  delivery: z.strictObject({
+    stage: z.literal("operation-runner"),
+    deliveredToRunnerBoundary: z.literal(true),
+    agentUnderstandingEstablished: z.literal(false),
+    behavioralCompletionEstablished: z.literal(false),
+  }),
+}).superRefine(validateInspectionOutput);
+
+export type RepresentationInspectionOperationOutput = z.infer<typeof RepresentationInspectionOperationOutputSchema>;
+
+export function projectRepresentationInspectionOperation(
+  inspection: RepresentationInspectionOutput,
+): RepresentationInspectionOperationOutput {
+  return RepresentationInspectionOperationOutputSchema.parse({
+    ...RepresentationInspectionOutputSchema.parse(inspection),
+    delivery: {
+      stage: "operation-runner",
+      deliveredToRunnerBoundary: true,
+      agentUnderstandingEstablished: false,
+      behavioralCompletionEstablished: false,
+    },
+  });
+}
 
 function selectCapsule(capture: LifecycleCaptureRecord, capsuleId?: string): ExecutionCapsule {
   if (capsuleId === undefined) {

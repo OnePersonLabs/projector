@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildPluginRuntime, checkedBuildDirectory, pluginBuildOptions } from "./build-plugin-runtime.mjs";
+import { releaseVersion } from "./build-release-package.mjs";
 
 const execute = promisify(execFile);
 const executeShell = promisify(exec);
@@ -26,7 +27,7 @@ describe("standalone plugin assembly", () => {
     expect(result.root).toBe(plugin);
     expect(result.nodeRuntime).toEqual({ executable: "node", resolution: "host-path" });
     expect(await readdir(join(plugin, "runtime"))).toEqual(["projector"]);
-    expect(JSON.parse(await readFile(join(plugin, "runtime/projector/package.json"), "utf8"))).toMatchObject({ name: "@onepersonlabs/projector", version: "2.1.0" });
+    expect(JSON.parse(await readFile(join(plugin, "runtime/projector/package.json"), "utf8"))).toMatchObject({ name: "@onepersonlabs/projector", version: releaseVersion });
     await expect(access(join(plugin, ".mcp.json"))).rejects.toMatchObject({ code: "ENOENT" });
     const hostNode = await execute("node", ["--version"], { cwd: plugin, env: { ...process.env, NODE_PATH: "" }, encoding: "utf8" });
     expect(hostNode.stdout.trim()).toBe(process.version);
@@ -54,7 +55,7 @@ describe("standalone plugin assembly", () => {
     child.stdout.on("data", (chunk) => { stdout += chunk; }); child.stderr.on("data", (chunk) => { stderr += chunk; });
     const exitCode = await new Promise((resolveExit, reject) => { child.once("error", reject); child.once("exit", resolveExit); });
     expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
-    expect(JSON.parse(stdout)).toMatchObject({ status: "succeeded", operation: "init", package: { name: "@onepersonlabs/projector", version: "2.1.0" }, output: { created: true, readiness: { status: "ready" } } });
+    expect(JSON.parse(stdout)).toMatchObject({ status: "succeeded", operation: "init", package: { name: "@onepersonlabs/projector", version: releaseVersion }, output: { created: true, readiness: { status: "ready" } } });
     expect(await readFile(join(repository, ".projector/config.toml"), "utf8")).toContain("projectorVersion");
 
     if (process.platform === "win32") {

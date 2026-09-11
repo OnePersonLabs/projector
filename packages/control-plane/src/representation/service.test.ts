@@ -9,7 +9,7 @@ import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
-import { RepositoryRepresentationInspectionService } from "./service.js";
+import { RepositoryRepresentationInspectionService, projectRepresentationInspectionOperation } from "./service.js";
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("representation-inspection-test", "placeholder");
@@ -73,6 +73,9 @@ describe("RepositoryRepresentationInspectionService", () => {
         delivery: { stage: "inspection-service", deliveredToRunnerBoundary: false, agentUnderstandingEstablished: false, behavioralCompletionEstablished: false },
       });
       expect(summary).not.toHaveProperty("renderedText");
+      expect(projectRepresentationInspectionOperation(summary)).toMatchObject({
+        delivery: { stage: "operation-runner", deliveredToRunnerBoundary: true, agentUnderstandingEstablished: false, behavioralCompletionEstablished: false },
+      });
 
       const content = await inspection.inspect({ changeSelector: captured.capture.semanticChangeId, capsuleId: capsule.id, approvalSelector: approval.id, view: "content" });
       expect(content.renderedText).toContain("src/greeting.mjs");

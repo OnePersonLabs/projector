@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createReleaseCandidateProjectDataFormat } from "../packages/control-plane/src/index.js";
 
 import { buildSourceSeveredReleaseBundle } from "./build-source-severed-release-bundle.mjs";
+import { releaseVersion } from "./build-release-package.mjs";
 import { validateReleaseCandidate } from "./release-candidate.mjs";
 
 const roots: string[] = [];
@@ -23,7 +24,7 @@ describe("source-severed release candidate", () => {
     const manifest = JSON.parse(await readFile(join(candidate, "manifest.json"), "utf8"));
 
     expect(built.manifestHash).toBe(validated.manifestHash);
-    expect(manifest.release).toMatchObject({ name: "@onepersonlabs/projector", version: "2.1.0" });
+    expect(manifest.release).toMatchObject({ name: "@onepersonlabs/projector", version: releaseVersion });
     expect(manifest.files.map(({ path }: { path: string }) => path)).toEqual(expect.arrayContaining([
       manifest.tarballPath,
       "plugin/projector/.codex-plugin/plugin.json",
