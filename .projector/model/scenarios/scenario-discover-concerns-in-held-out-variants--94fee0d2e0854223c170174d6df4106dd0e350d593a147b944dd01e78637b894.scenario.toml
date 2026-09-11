@@ -1,0 +1,47 @@
+#:schema ../../schemas/canonical-behavioral-scenario-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "behavioral-scenario"
+id = "scenario:discover-concerns-in-held-out-variants"
+key = "discover-concerns-in-held-out-variants"
+lifecycle = "active"
+
+[payload]
+title = "Held-out concern-discovery robustness"
+aliases = [ "scenario:63:held-out-concern-discovery-robustness" ]
+sourceClass = "authored"
+realizations = []
+evidence = []
+
+[payload.scope]
+op = "atom"
+field = "requirement"
+matcher = "equals"
+value = "requirement:scoped-reconsideration"
+
+[[payload.steps]]
+role = "precondition"
+statement = """Acceptance case \"Held-out concern-discovery robustness\": the source fixture and declared dependencies \
+  are available; this case does not imply implementation or proof."""
+
+[[payload.steps]]
+role = "trigger"
+statement = "Run requirement-delta fixtures and mutation-generated variants not named in built-in concern rules."
+
+[[payload.steps]]
+role = "trigger"
+statement = """Measure concern recall, irrelevant-concern rate, decision-question count, correctly deferred concerns, \
+  stale-decision detection, and current-research correctness. Fixture-specific names MUST NOT be necessary \
+  for success."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Concern discovery is evaluated on the listed held-out measurements without requiring fixture-specific \
+  names."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/12-delivery/acceptance-architecture.md"
+contentHash = "sha256:v1:5c3b61124058d6743e05a658b5a63da8b930cbc1b716948bcba2170c7f91e74b"
+description = """Full acceptance case \"Held-out concern-discovery robustness\", starting line 56; immutable Git blob \
+  05cc5c84adbe05846b4c779d6d055783f2c321b1. Hash binds original Git bytes."""
