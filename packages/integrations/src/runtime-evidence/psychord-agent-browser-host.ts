@@ -360,10 +360,9 @@ async function fetchServedArtifacts(plan: PsychordObservationPlan, signal: Abort
 }
 
 async function observeCurrentness(commands: PsychordCommandRunner, plan: PsychordObservationPlan, env: Readonly<Record<string, string>>, signal: AbortSignal): Promise<PsychordCurrentnessObservation> {
-  const head = (await runChecked(commands, { executable: "git", args: ["rev-parse", "HEAD"], cwd: plan.repository.root, env, timeoutMs: plan.limits.timeoutMs, maxOutputBytes: plan.limits.maximumOutputBytes, signal })).stdout.trim();
   const dependencies = await Promise.all(plan.dependencies.map(async (pin) => await observeDependency(plan, pin)));
   const observedWorktreeDigest = await capturePsychordWorktreeDigest(commands, plan, env, signal);
-  const stale = head !== plan.repository.gitHead || observedWorktreeDigest !== plan.repository.worktreeDigest || dependencies.some(({ status }) => status === "stale");
+  const stale = observedWorktreeDigest !== plan.repository.worktreeDigest || dependencies.some(({ status }) => status === "stale");
   const unavailable = dependencies.some(({ status }) => status === "unavailable");
   return { status: unavailable ? "unknown" : stale ? "stale" : "current", observedWorktreeDigest, dependencies };
 }
@@ -379,14 +378,23 @@ async function observeDependency(plan: PsychordObservationPlan, pin: PsychordDep
 
 export async function capturePsychordWorktreeDigest(commands: PsychordCommandRunner, plan: Pick<PsychordObservationPlan, "repository" | "limits">, env: Readonly<Record<string, string>>, signal: AbortSignal): Promise<ContentHash> {
   const request = (args: readonly string[]) => runChecked(commands, { executable: "git", args, cwd: plan.repository.root, env, timeoutMs: plan.limits.timeoutMs, maxOutputBytes: plan.limits.maximumOutputBytes, signal });
-  const [head, diff, untracked] = await Promise.all([
-    request(["rev-parse", "HEAD"]),
-    request(["diff", "--binary", "--no-ext-diff", "HEAD", "--"]),
+  const [tree, diff, untracked] = await Promise.all([
+    request(["ls-tree", "-r", "-z", "HEAD"]),
+    request(["diff", "--binary", "--no-ext-diff", "HEAD", "--", ".", ":(exclude).projector", ":(exclude).projector/**"]),
     request(["ls-files", "--others", "--exclude-standard", "-z"]),
   ]);
-  const paths = untracked.stdout.split("\0").filter(Boolean).sort();
+  const applicationTree = tree.stdout.split("\0").filter((entry) => {
+    const separator = entry.indexOf("\t");
+    return separator >= 0 && !isProjectorMetadataPath(entry.slice(separator + 1));
+  }).join("\0");
+  const paths = untracked.stdout.split("\0").filter((path) => path.length > 0 && !isProjectorMetadataPath(path)).sort();
   const untrackedHashes = await Promise.all(paths.map(async (path) => [path, sha256(await readFile(resolveWithin(plan.repository.root, path)))] as const));
-  return hashFramedDomain("psychord-worktree@1", JSON.stringify({ head: head.stdout.trim(), diff: diff.stdout, untracked: untrackedHashes }));
+  return hashFramedDomain("psychord-application-worktree@2", JSON.stringify({ tree: applicationTree, diff: diff.stdout, untracked: untrackedHashes }));
+}
+
+function isProjectorMetadataPath(path: string): boolean {
+  const normalized = path.replaceAll("\\", "/");
+  return normalized === ".projector" || normalized.startsWith(".projector/");
 }
 
 async function runChecked(runner: PsychordCommandRunner, request: PsychordCommandRequest): Promise<PsychordCommandResult> {

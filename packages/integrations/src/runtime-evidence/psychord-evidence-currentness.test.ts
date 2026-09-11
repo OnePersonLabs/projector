@@ -46,7 +46,7 @@ it("reobserves repository, dependency, and build bytes without rerunning browser
       return { exitCode: 0, signal: null, stdout, stderr: "", durationMs: 1 };
     },
   };
-  const worktreeDigest = digest(head, "");
+  const worktreeDigest = digest("", "");
   const plan = createPsychordApplicationObservationPlan({
     runId: "currentness-run",
     case: "no-input",
@@ -64,11 +64,30 @@ it("reobserves repository, dependency, and build bytes without rerunning browser
     },
     limits: { timeoutMs: 1_000, cleanupTimeoutMs: 1_000, maximumOutputBytes: 4_096, maximumDiagnosticBytes: 4_096 },
   });
-  const observe = () => observePsychordEvidenceCurrentness({ commands: runner, plan, environment: {}, signal: new AbortController().signal });
+  const observePlan = (currentPlan = plan) => observePsychordEvidenceCurrentness({ commands: runner, plan: currentPlan, environment: {}, signal: new AbortController().signal });
+  const observe = () => observePlan();
 
   const current = await observe();
   expect(current).toMatchObject({ status: "current", repository: { status: "current" }, dependencies: [{ status: "current" }], buildArtifacts: [{ status: "current" }] });
   expect(() => PsychordEvidenceCurrentnessSchema.parse({ ...current, reasons: ["fabricated"] })).toThrow(/reasons/u);
+  const retiredDigest = hashFramedDomain("psychord-worktree@1", JSON.stringify({ head, diff: "", untracked: [] }));
+  await expect(observePlan(createPsychordApplicationObservationPlan({
+    runId: plan.runId,
+    scenario: plan.scenario,
+    case: "no-input",
+    ...plan.adapter.input,
+    repository: { ...plan.adapter.input.repository, worktreeDigest: retiredDigest },
+  }))).resolves.toMatchObject({ status: "stale", repository: { status: "stale" } });
+  await mkdir(join(root, ".projector/model"), { recursive: true });
+  await writeFile(join(root, ".projector/model/evidence.toml"), "evidence = true\n");
+  const priorRunner = runner.run;
+  runner.run = async (request) => {
+    const result = await priorRunner(request);
+    if (request.args.join(" ").startsWith("ls-files ")) return { ...result, stdout: ".projector/model/evidence.toml\0" };
+    if (request.args.join(" ") === "rev-parse HEAD") return { ...result, stdout: `${"b".repeat(40)}\n` };
+    return result;
+  };
+  await expect(observe()).resolves.toMatchObject({ status: "current", repository: { expectedGitHead: head, observedGitHead: "b".repeat(40), status: "current" } });
   const outside = await mkdtemp(join(tmpdir(), "projector-psychord-currentness-outside-"));
   roots.push(outside);
   const outsideSource = join(outside, "outside.ts");
@@ -95,8 +114,8 @@ it("reobserves repository, dependency, and build bytes without rerunning browser
   await expect(observe()).resolves.toMatchObject({ status: "stale", repository: { status: "stale" } });
 });
 
-function digest(head: string, diff: string): ContentHash {
-  return hashFramedDomain("psychord-worktree@1", JSON.stringify({ head, diff, untracked: [] }));
+function digest(tree: string, diff: string): ContentHash {
+  return hashFramedDomain("psychord-application-worktree@2", JSON.stringify({ tree, diff, untracked: [] }));
 }
 function hash(value: string): ContentHash { return `sha256:v1:${createHash("sha256").update(value).digest("hex")}`; }
 function sha256(bytes: Uint8Array): ContentHash { return `sha256:v1:${createHash("sha256").update(bytes).digest("hex")}`; }

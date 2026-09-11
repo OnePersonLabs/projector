@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { canonicalDocumentEnvelopeSchemaForKind, withCanonicalHashes, type BehavioralScenario, type ContentHash, type EvidenceRef } from "@projector/core";
+import { canonicalDocumentEnvelopeSchemaForKind, hydrateCanonicalDocumentWire, withCanonicalHashes, type BehavioralScenario, type ContentHash, type EvidenceRef } from "@projector/core";
 import {
   capturePsychordWorktreeDigest,
   createPsychordApplicationObservationPlan,
@@ -17,6 +17,7 @@ import {
   type PsychordApplicationObservationPlan,
   type PsychordObservationPlan,
 } from "@projector/integrations/runtime-evidence";
+import { parseTomlDocument } from "@projector/runtime";
 import { expect, it } from "vitest";
 
 import {
@@ -185,7 +186,7 @@ for (const caseName of ["no-input", "keep-reload-replay", "save-failure"] as con
   }, 150_000);
 }
 
-real("reobserves unchanged-HEAD dirty source, controller, and missing build bytes in an isolated Psychord clone", async () => {
+real("keeps attached Projector evidence current while detecting dirty source, controller, and missing build bytes", async () => {
   const runner = new FiniteNativeCommandRunner();
   const environment = commandEnvironment();
   const signal = AbortSignal.timeout(60_000);
@@ -199,10 +200,11 @@ real("reobserves unchanged-HEAD dirty source, controller, and missing build byte
     await writeFile(join(root, controllerLocator), await readFile(hostFile));
     const runId = `psychord-real-currentness-${randomUUID()}`;
     const head = (await runner.run({ executable: "git", args: ["rev-parse", "HEAD"], cwd: root, env: environment, timeoutMs: 5_000, maxOutputBytes: 4_096, signal })).stdout.trim();
+    const scenario = hydrateCanonicalDocumentWire(parseTomlDocument(await readFile(join(root, ".projector/model/scenarios/scenario-keep-reload-replay-owned-moment--9c1e2ad3d203e2c2b9a840364f70b786f86c48bdf5f58883f4bd82d80a827083.scenario.toml"), "utf8")));
     const base: PsychordObservationPlan = {
       runId,
       case: "no-input",
-      scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: JSON.parse(await readFile(join(root, ".projector/model/scenarios/9c1e2ad3d203e2c2b9a840364f70b786f86c48bdf5f58883f4bd82d80a827083.scenario.json"), "utf8")).semanticHash as ContentHash },
+      scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenario.semanticHash },
       repository: { root, gitHead: head, worktreeDigest: sha256(Buffer.alloc(0)) },
       dependencies: await dependencyPins(root, controllerLocator),
       ownedArtifactRoot: join(root, ".projector/runtime/application-evidence"),
@@ -214,17 +216,29 @@ real("reobserves unchanged-HEAD dirty source, controller, and missing build byte
     const observe = () => observePsychordEvidenceCurrentness({ commands: runner, plan, environment, signal });
     await expect(observe()).resolves.toMatchObject({ status: "current", repository: { observedGitHead: head, status: "current" } });
 
+    await mkdir(join(root, ".projector/runtime/application-evidence/attached"), { recursive: true });
+    const attachedEvidencePath = ".projector/runtime/application-evidence/attached/evidence.json";
+    await writeFile(join(root, attachedEvidencePath), "{}\n");
+    const addMetadata = await runner.run({ executable: "git", args: ["add", "--force", "--", attachedEvidencePath], cwd: root, env: environment, timeoutMs: 5_000, maxOutputBytes: 4_096, signal });
+    expect(addMetadata).toMatchObject({ exitCode: 0, signal: null });
+    const commitMetadata = await runner.run({ executable: "git", args: ["-c", "user.name=Projector Test", "-c", "user.email=projector@example.invalid", "commit", "--quiet", "-m", "attach application evidence"], cwd: root, env: environment, timeoutMs: 5_000, maxOutputBytes: 4_096, signal });
+    expect(commitMetadata).toMatchObject({ exitCode: 0, signal: null });
+    const attached = await observe();
+    expect(attached).toMatchObject({ status: "current", repository: { expectedGitHead: head, status: "current" } });
+    expect(attached.repository.observedGitHead).not.toBe(head);
+    const attachedHead = attached.repository.observedGitHead;
+
     const sourcePath = join(root, "src/ui/App.tsx");
     const source = await readFile(sourcePath);
     await writeFile(sourcePath, Buffer.concat([source, Buffer.from("\n// relevant unchanged-HEAD evidence edit\n")]));
     const dirty = await observe();
-    expect(dirty).toMatchObject({ status: "stale", repository: { observedGitHead: head, status: "stale" } });
+    expect(dirty).toMatchObject({ status: "stale", repository: { observedGitHead: attachedHead, status: "stale" } });
     expect(dirty.dependencies).toContainEqual(expect.objectContaining({ role: "source", locator: "src/ui/App.tsx", status: "stale" }));
     await writeFile(sourcePath, source);
 
     await writeFile(join(root, controllerLocator), "export const changedController = true;\n");
     const changedController = await observe();
-    expect(changedController).toMatchObject({ status: "stale", repository: { observedGitHead: head, status: "stale" } });
+    expect(changedController).toMatchObject({ status: "stale", repository: { observedGitHead: attachedHead, status: "stale" } });
     expect(changedController.dependencies).toContainEqual(expect.objectContaining({ role: "controller", locator: controllerLocator, status: "stale" }));
 
     const documentPath = join(root, "dist/index.html");
