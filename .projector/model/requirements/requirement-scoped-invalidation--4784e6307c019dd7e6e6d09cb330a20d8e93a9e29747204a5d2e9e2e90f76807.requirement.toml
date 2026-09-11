@@ -175,6 +175,15 @@ description = """Historical contextual risk and governance-impact meaning, inter
   rather than old confinement/network delivery prescriptions. Source range 47-60; immutable Git blob \
   abe3e4a838844c9b3166569f501d8d9bd0a47c96; content hash is SHA-256 of exact blob bytes."""
 
+[[payload.origin]]
+kind = "document"
+locator = "git:2af21351ca06af4943e73692ae4ea26700467b19:packages/engine/src/state/index.ts"
+contentHash = "sha256:v1:53f94810dba93edb69239d4dd8887459d35a9048f312bcdf55bab1b136d52fdf"
+description = """Accepted second source-absent increment: observed old/current values and query membership explain scoped \
+  currentness while unrelated edits retain reuse. Independent same-HEAD value and query-membership changes \
+  exercised this distinction. This does not establish exhaustive dependency inference, universal equivalence \
+  or economic advantage."""
+
 [[payload.realizations]]
 [payload.realizations.selector]
 op = "atom"

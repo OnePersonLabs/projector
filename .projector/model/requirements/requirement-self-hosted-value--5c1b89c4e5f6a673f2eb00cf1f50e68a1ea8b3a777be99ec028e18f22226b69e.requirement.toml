@@ -145,6 +145,44 @@ contentHash = "sha256:v1:3fc9c1438493914aeb6a800216454f48d3b8f6e8aba691017645312
 description = """P4 conditional evaluation commitments; immutable Git blob df7829584f81b9537531be04ae6a1714526b3eb9. \
   Accepted without requiring a new comparative trial or telemetry subsystem."""
 
+[[payload.origin]]
+kind = "document"
+locator = "git:a0e246be61d2c91c6bd44edcab06c3acb503b645:packages/control-plane/src/coverage/continuation.ts"
+contentHash = "sha256:v1:eeb0e7792d4154e94a3568db2a9f7936517d6fbe9131d3118c783b6f19e83f74"
+description = """Accepted P2 realization: installed cleanup exposes bounded saved-context/lifecycle continuation, stable \
+  evidence paging and authenticated recovery routing. A published partial result does not conceal an \
+  unfinished journal. Source-absent implementation and independent fresh-process controls exercised \
+  these paths. This records implementation provenance, not automatic fulfillment of broader audit, composition \
+  or multi-packet obligations."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:2af21351ca06af4943e73692ae4ea26700467b19:packages/engine/src/state/index.ts"
+contentHash = "sha256:v1:53f94810dba93edb69239d4dd8887459d35a9048f312bcdf55bab1b136d52fdf"
+description = """Accepted second source-absent increment: observed old/current values and query membership explain scoped \
+  currentness while unrelated edits retain reuse. Independent same-HEAD value and query-membership changes \
+  exercised this distinction. This does not establish exhaustive dependency inference, universal equivalence \
+  or economic advantage."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:ce7d2e92378921dfdce97f23bca076d795bc31af:packages/engine/src/representation/index.ts"
+contentHash = "sha256:v1:14b500eeee082a4c597c86608187875705680128397acc3b5b096963a017c62f"
+description = """Accepted P3 local correction: preserve the immutable historical machine-invariant@1 descriptor while \
+  selecting @2 separately. The observed hash-regression repair is protected by its historical fixed-hash \
+  regression and installed reconciliation preserving prior capture/approval, refusing bad binding, missing \
+  artifact and already-current cases. A fresh replacement remains unapproved. No new policy/classifier \
+  is inferred from this local repair; conditional paired probes remain conditional."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "user:2026-09-11:source-absent-realization-accounting"
+description = """Accept the two completed source-absent increments and their independent controls as bounded functional \
+  self-development. Main integration and the tested correction are real; total model, setup, repair \
+  and review costs and a matched ordinary-agent comparison were not completely measured. Comparative \
+  economics remains unproved. Preserve all P4 conditional matching, reveal, regression, accumulated-code \
+  and cost-category requirements unchanged."""
+
 [[payload.realizations]]
 [payload.realizations.selector]
 op = "atom"
