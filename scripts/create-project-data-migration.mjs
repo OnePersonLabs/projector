@@ -81,6 +81,8 @@ export async function createRepositoryProjectDataMigration(options = {}) {
   const targetSnapshot = createReleaseCandidateProjectDataFormat({
     candidate: { packageIdentity: { name: candidate.manifest.release.name, version: candidate.manifest.release.version }, files: candidate.files },
   });
+  const targetFormatPath = join(root, "release/project-data-format-target.json");
+  await writeImmutable(targetFormatPath, `${canonicalJson(targetSnapshot)}\n`);
   let draft;
   try {
     draft = ProjectDataMigrationDraftSchema.parse(await readStrictJsonFile(draftPath, "project-data migration draft"));
@@ -138,8 +140,6 @@ async function ensureLegacyIngressManifest(root, targetSnapshot) {
     config: { apiVersion: "projector.config/v1", path: ".projector/config.json", versionBinding: "absent" },
     canonical: { envelopeApiVersion: "projector/v2", layout: "canonical-json" },
   });
-  const targetFormatPath = join(root, "release/project-data-format-target.json");
-  await writeImmutable(targetFormatPath, `${canonicalJson(targetSnapshot)}\n`);
   const manifest = createProjectDataLegacyIngressManifest({
     apiVersion: "projector.project-data-legacy-ingress-manifest/v1",
     id: `migration:legacy-unversioned-to-${targetSnapshot.packageIdentity.version}`,
