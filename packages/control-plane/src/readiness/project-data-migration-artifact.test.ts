@@ -42,6 +42,11 @@ describe("packaged project-data migration artifacts", () => {
     });
 
     expect(artifact.id).toBe("migration-artifact:example-transform");
+    await writeFile(path, artifactSource(
+      "migration-artifact:example-transform",
+      "transform",
+      "{ apiVersion: 'projector.project-data-migration-transform-result/v1', status: 'substituted' }",
+    ), "utf8");
     await expect(artifact.run({} as never)).resolves.toEqual({
       apiVersion: "projector.project-data-migration-transform-result/v1",
       status: "prepared",
