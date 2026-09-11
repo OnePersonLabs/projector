@@ -15,7 +15,44 @@ statement = """Retain architectural decisions about patterns, libraries, platfor
   only affected decisions when those inputs or scope change; preserve the historical influence of adopted \
   soft preferences. New non-advisory consequences require actual linked canonical products in the same \
   accepted transaction. Neither an old approval nor repeating existing code proves that the decision \
-  remains suitable. Unsupported or stale validity evidence stays explicit."""
+  remains suitable. Unsupported or stale validity evidence stays explicit.
+
+Agents and model providers may submit structured proposals but cannot silently promote governance, change \
+  authority, validators or scope, persist exceptions, redefine identity, or perform highest-risk or \
+  external actions. General orchestration, modernization, watch mode, and external adapters remain future \
+  capabilities until a real consumer reopens them; external adapters then require explicit capability, \
+  observability, relevance, impact, drift, snapshot, and open-world evidence.
+
+Material mutable option sets or constraints require fresh-enough concern-scoped evidence: current capabilities, \
+  support/security/lifecycle, changed alternatives, uncertain official constraints, contradictory local \
+  evidence or significant long-lived technology commitments. Verify the current viable options, not \
+  remembered choices decorated with citations. Do not research merely because time passed or perform \
+  a periodic repository-wide best-practices crawl. Record source, capture date, available source date/version, \
+  excerpt hash or concise excerpt, confidence and applicability; prefer official/primary evidence. Offline \
+  cached evidence exposes freshness. If policy requires unavailable fresh evidence for a blocking decision, \
+  block automatic acceptance; an explicit user decision may proceed with recorded uncertainty within \
+  actual authorization and remaining hard constraints. Research does not prove local implementation \
+  or force migration.
+
+Hard constraints dominate preferences; explicitly adopted project preferences govern shared recommendations \
+  over softer organization/user preferences. Conflicting soft preferences remain visible and nonblocking \
+  unless explicitly promoted into constraints. Retain material preference influence by semantic hash; \
+  later personal changes do not retroactively revise accepted project architecture unless adopted as \
+  assumptions. Option evaluation should use a tradeoff matrix and eliminate infeasible options before \
+  optional weighted ranking; expose weights rather than claiming objective probability. Deferral needs \
+  a neutral/compatibility-preserving route, rationale, scope, preserved options, forbidden commitments, \
+  revisit triggers and risk/unknowns. A guardrail that commits to an option is a temporary decision, \
+  not concealed neutrality.
+
+Modernization uses this same concern/evaluation/authority/consequence system. Trigger it from observed \
+  divergence, agent difficulty, surprises/missed relevance, broad invalidation, duplication, unsupported \
+  dependencies, security/support issues, slow feedback, erosion, repeated overlays, platform incompatibility \
+  or user request. Identify the problem before technology, with current/target state, observed cost, \
+  alternatives, evidence/counterevidence, affected meaning/relevance/units, compatibility, phases, rollback, \
+  cleanup, risk and confidence. Reject fashion-driven changes when current fit costs less, support is \
+  immature, migration exceeds recurring pain, scale benefits are speculative, rationale mismatches local \
+  constraints, or reversibility/evidence is weak. Approved modernization becomes a semantic change with \
+  appropriate transition obligations; it is not persisted-format upgrade readiness."""
 sourceClass = "authored"
 evidence = []
 
@@ -56,3 +93,64 @@ description = """The user explicitly requires architectural choices, rejected op
 kind = "external"
 locator = "https://openai.com/index/harness-engineering/"
 description = """Motivating integration evidence; not authority for Projector-specific design or claimed implementation."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/orchestration-and-models.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-architecture.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/implementation-plan.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/03-knowledge/architecture-evidence-and-consequences.md"
+contentHash = "sha256:v1:e6112714f853390c65416f04d71db961f0fbca21eab860bb4922a84d2b0e5b16"
+description = """Historical scoped current research, preference and neutral-deferral conditions including recorded uncertainty. \
+  Source range 3-61; immutable Git blob 32bb772dde201947629c10b148613debe37a0941; content hash is SHA-256 \
+  of exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/09-evolution/modernization-and-surfaces.md"
+contentHash = "sha256:v1:ff986a014ff0cd8b7be189b106e183b54096efb5b3e55e82e5809be5f7981209"
+description = """Historical friction-driven modernization, rejection reasons and snapshot/open-world surface conditions; \
+  distinct from persisted-data upgrades. Source range 3-102; immutable Git blob a46c14c6a463bb973f562517fe6240e48f1fcc75; \
+  content hash is SHA-256 of exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/09-evolution/historical-evaluation-and-research.md"
+contentHash = "sha256:v1:3f08636c635ee41916526fd47de9bda4846c47daf4e6680c6c49b2ddcbfc0e20"
+description = """Historical evidence independence, possible relevance, shadow evaluation and concern-scoped research; \
+  feasibility and uncertainty limits retained. Source range 3-63; immutable Git blob 139f6fc5d1063609d12f6edce0d6fe8e92eaba79; \
+  content hash is SHA-256 of exact blob bytes."""
+
+[[payload.realizations]]
+[payload.realizations.selector]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/engine/src/architecture/index.ts"
+
+[payload.realizations.origin]
+kind = "git"
+locator = "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:packages/engine/src/architecture/index.ts"
+description = """Observed implementation surface for requirement:scoped-reconsideration; the selector is evaluated from \
+  repository facts."""

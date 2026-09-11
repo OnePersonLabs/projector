@@ -16,7 +16,45 @@ statement = """Bind retained reasoning and derived artifacts to the exact semant
   profile proves all required preserved dimensions; unchanged structure does not prove behavioral equivalence \
   or waive required validation. Changed dependencies or new consumers invalidate affected reasoning. \
   Unknown profiles, missing baselines and open populations remain unknown and can be rebuilt without \
-  making runtime caches canonical."""
+  making runtime caches canonical.
+
+Bind mutation authority to the exact session, plan and approval hash, value and query dependencies, \
+  operations, semantic and write scope, risk, expiry, and representation profile. A relevant changed \
+  or unprovable dependency invalidates authority; an unrelated repository-root digest change triggers \
+  validation and may rebind without blanket invalidation. Execution mode changes permission only and \
+  cannot weaken meaning or proof. Stale approval cannot replay.
+
+For mutating transforms, bind applicability, preconditions, touched units and write scope to dependency-scoped \
+  state before preview and apply. Preserve composition dependencies and exclusive claims, fail on unresolved \
+  semantic anchors or unresolved overlapping claims, and verify declared postconditions with structured \
+  evidence. Apply the complete transform and convergence obligations of executable lenses and the upstream-first \
+  repair discipline of reverse reconciliation. Public enforcement of the complete composition and repair \
+  policy remains explicitly unrealized by this ingestion; reconsider it when a named supported planning \
+  or repair consumer requires those decisions, rather than treating internal contracts or file mappings \
+  as fulfillment.
+
+Plans are immutable revisions: a changed plan receives a new identity rather than modifying what approvals \
+  or packets reference. Partial execution preserves dependency integrity. Changed repository, canonical, \
+  toolchain or external-snapshot state requires explicit refresh/rebase: recompute snapshot identity, \
+  validate/rebind dependency-scoped state, identify still-valid assumptions and closures, recompile \
+  stale capsules/packets, carry forward completed work only where its proof remains valid, emit a new \
+  immutable revision and invalidate stale approvals. Canonical-governance conflicts block governed execution \
+  until explicitly resolved; automatic semantic Git conflict resolution is not required.
+
+If the global snapshot alone changed while bound dependencies and query fingerprints remain current, \
+  a lightweight rebind may emit a new immutable revision without recomputing unaffected analysis. Explain \
+  this separately from semantic rebase changing relevance, impact, assumptions or packets. Bounded saved-context/lifecycle \
+  continuation and relevant query/profile currentness explanations that retain independently current \
+  work remain required release behavior. Unrestricted multi-packet checkpoint orchestration beyond exercised \
+  consumers remains explicitly unrealized; reconsider it when a real supported multi-packet plan loses \
+  valid completed work or risks stale authority.
+
+Risk is contextual, including uncertainty, unresolved identity/ownership, weak coverage or validation, \
+  stale observations, open frontiers and limited rollback. Increased uncertainty must never reduce risk \
+  or approval requirements. The highest-risk destructive, production-security, billing, identity or \
+  irreversible-release actions are not autonomous. Actual authorization and host-configured permissions \
+  still govern; historical risk tables do not create permission or revive Projector-owned confinement. \
+  Conflicting policy inputs fail explicitly instead of relying on ambiguous precedence."""
 sourceClass = "authored"
 evidence = []
 
@@ -69,3 +107,83 @@ description = """The user explicitly requires architectural choices, rejected op
 kind = "external"
 locator = "https://openai.com/index/harness-engineering/"
 description = """Motivating integration evidence; not authority for Projector-specific design or claimed implementation."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/hosts-and-mcp.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/orchestration-and-models.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/10-operation/cli-modes-and-security.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-core.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-representation.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/05-projections/derivations-and-invalidation.md"
+contentHash = "sha256:v1:d9138ea33f193fb42d96d25e952bc29e5400b18494f1dbc0b4f9a4b49477b703"
+description = """Historical source evidence at lines 218-259; immutable Git blob cf6ef40eab7b5d382e30e0d11cd00ec97f9506b9. \
+  Content hash is SHA-256 of the exact Git blob bytes. Preserve useful conditions through explicit acceptance; \
+  historical implementation prescriptions are not authority."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/05-projections/runtime-and-representations.md"
+contentHash = "sha256:v1:a1aa287be9740885d83c0b5509f5274d57d80794b3a7d615f3cbf97282d841a0"
+description = """Historical source evidence at lines 5-58 and 82-93; immutable Git blob 452e6b736a082992b65f0b286b60a7c4a515d93c. \
+  Content hash is SHA-256 of the exact Git blob bytes. Preserve useful conditions through explicit acceptance; \
+  historical implementation prescriptions are not authority."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/07-change/plans.md"
+contentHash = "sha256:v1:67a92413adb5e88b993d5104f755e674a4b9a4e243d2ef491947e6987ed2d39c"
+description = """Historical immutable continuation, dependency integrity, rebase and rebind evidence. Source range 5-51; \
+  Git blob c69544cc71bc2c4bf1b3ab3fbfb78a0c08fbfe25; content hash is SHA-256 of exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/03-knowledge/risk-and-execution-policy.md"
+contentHash = "sha256:v1:940550eed6cba1181611b16e901950cb61f679a9c5a14af36eda932978deac10"
+description = """Historical contextual risk and governance-impact meaning, interpreted under current accepted host authorization \
+  rather than old confinement/network delivery prescriptions. Source range 47-60; immutable Git blob \
+  abe3e4a838844c9b3166569f501d8d9bd0a47c96; content hash is SHA-256 of exact blob bytes."""
+
+[[payload.realizations]]
+[payload.realizations.selector]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/engine/src/state/index.ts"
+
+[payload.realizations.origin]
+kind = "git"
+locator = "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:packages/engine/src/state/index.ts"
+description = """Observed implementation surface for requirement:scoped-invalidation; the selector is evaluated from \
+  repository facts."""

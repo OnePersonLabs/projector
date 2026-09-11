@@ -1,0 +1,59 @@
+#:schema ../../schemas/canonical-requirement-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "requirement"
+id = "requirement:governed-migration-overlays"
+key = "governed-migration-overlays"
+lifecycle = "active"
+
+[payload]
+title = "Expose governed lens-transition phases and residue"
+aliases = []
+statement = """A general lens or compatibility migration overlay exposes proposed, prepared, dual-running, cutover, \
+  cleanup, complete and rolled-back phases to selectors. Phase may temporarily alter applicable rules, \
+  projection expectations or compatibility obligations. A migration definition must identify source \
+  and target lenses, entry/exit criteria, compatibility strategy, allowed temporary divergences, generated-output \
+  overlays if any, validation obligations, rollback/compensation and a cleanup residue detector. Completion \
+  and residue follow explicit exit criteria rather than age. Generated-output overlays also retain reverse \
+  reconciliation's owner, rationale, invalidation and exit discipline.
+
+This general capability is distinct from accepted persisted project-data readiness and upgrades; it \
+  neither replaces their decision nor proves implementation. General overlays remain active but explicitly \
+  unrealized until a concrete incompatible lens/compatibility transition has a supported selector/cleanup \
+  consumer and an observed residue or cutover failure. Do not create an overlay instance or realization \
+  merely because its type exists. Preserve required rollback and optional compensation-plan detail for \
+  concrete instances; their actual acceptance supplies authority."""
+sourceClass = "authored"
+realizations = []
+evidence = []
+
+[payload.scope]
+op = "any"
+
+[[payload.scope.items]]
+op = "atom"
+field = "requirement"
+matcher = "equals"
+value = "requirement:scoped-invalidation"
+
+[[payload.scope.items]]
+op = "atom"
+field = "requirement"
+matcher = "equals"
+value = "requirement:reverse-reconciliation"
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/06-reconciliation/reconciliation-and-divergence.md"
+contentHash = "sha256:v1:aa322881e51538f7a9ec4a3c4a3195d50c495faf14ee598f03eb9288e22f8856"
+description = """Historical general lens-transition invariant, not a persisted-data upgrade or an accepted overlay instance. \
+  Source range 165-211; Git blob 04fdadb79ebfc5108b500d559e7fd6f5761138f2; content hash is SHA-256 of \
+  exact blob bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/decisions/8e351edf78b532b4d4fbc05e3f5c3faf0778d6add11491f518a1cc468ce48c03.decision.json"
+contentHash = "sha256:v1:f3c4d29686f50318549bb73cbd7c96ae1aabebfa44c756980af1e88d36a204f4"
+description = """Accepted lifetime shared operation access, exclusive migration access, retained writer leases without \
+  nested acquisition, and limits for nonparticipating legacy code. Source range complete accepted record; \
+  Git blob 99353cb632158429efb49b5bb111d2f2e274800c; content hash is SHA-256 of exact blob bytes."""

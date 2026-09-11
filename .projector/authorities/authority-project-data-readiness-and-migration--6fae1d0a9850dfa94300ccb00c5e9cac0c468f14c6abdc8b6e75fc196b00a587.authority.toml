@@ -15,10 +15,17 @@ rationale = """The user requires installed Projector operations to prepare compa
   and configuration updated last. Existing transaction journals and receipts are durable recovery evidence, \
   not disposable caches. A new version marker cannot stop an older already-running process that does \
   not participate in the new protocol; the legacy transition therefore requires an explicit supported \
-  restart/quiescence disposition and a held-old-process negative test before promotion."""
+  restart/quiescence disposition and a held-old-process negative test before promotion.
+
+Reaffirmed for this canonical meaning transaction after reviewing the durable-meaning and reverse-reconciliation \
+  revisions. They preserve exclusive access, authenticated backup, Pending, journal, receipt, recovery, \
+  and release-selected migration ownership; this transaction changes no source authority, target descriptor, \
+  or access assumption. Current retained context knowledge_context_6204acbaff99f456aa7e24800a87b41d \
+  (sha256:v1:5290553931fc3960115742786629db7b6204acbaff99f456aa7e24800a87b41d) supplies the exact current \
+  repository and canonical observation. This reaffirmation does not claim complete implementation or \
+  economic advantage."""
 assumptions = [ "All compatible installed runners honor the shared operation-access protocol after the converted baseline.", "The host can resolve a writable user Codex data directory for verified backups.", "The existing writer lease and transaction journal remain the canonical mutation exclusion and recovery mechanisms inside ordinary governed writes.", "The one-time legacy conversion can require a supported process or session restart because older code cannot be retroactively fenced." ]
 assessmentConfidence = "high"
-evidence = []
 governanceRiskClass = "R2"
 decidedBy = "user"
 createdAt = "2026-09-10T00:00:00Z"
@@ -94,3 +101,7 @@ securitySupport = 0
 reversibility = 1
 migrationCost = 0
 counterEvidence = 0
+
+[[payload.evidence]]
+evidenceId = "knowledge_context_6204acbaff99f456aa7e24800a87b41d"
+stance = "supports"

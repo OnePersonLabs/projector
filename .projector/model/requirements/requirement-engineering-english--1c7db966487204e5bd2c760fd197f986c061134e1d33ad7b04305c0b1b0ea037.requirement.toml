@@ -15,7 +15,23 @@ statement = """Keep human-readable engineering statements precise and concise wh
   machinery. Ordinary conceptual reading, inspection of plan-bound instructions, and authorized execution \
   remain distinct operations: reading requires no invented mutation approval, an internally consistent \
   or historical artifact is not thereby current, and inspection or delivery does not authorize execution. \
-  Do not maintain competing specifications that require manual synchronization."""
+  Do not maintain competing specifications that require manual synchronization.
+
+Every human or agent projection binds the source semantic hash and profile. Compact context preserves \
+  exact identifiers, tokens, numbers, units, scope, order, negation, conditions, exceptions, biconditionals, \
+  and cardinality. Ambiguous, weaker, or measured net-negative compression falls back to the least-compressed \
+  adequate form with weaker-capability disclosure. Style checks and prose cannot establish truth, equivalence, \
+  or hard-rule enforcement.
+
+Representation machinery and deterministic operation primitives have separate responsibilities: compact \
+  representation never grants mutation authority. Prefer a suitable registered deterministic operation \
+  over an equivalent raw handwritten edit, within its authorized scope and the accepted host-operation \
+  runner. Retain operation categories reached by supported workflows; the historical mandatory primitive \
+  catalog and separate command or CLI delivery prescription are superseded by the registered runner. \
+  Unsupported insert, rename, Markdown-editing, or workflow primitives remain explicitly unrealized, \
+  and are reconsidered only when an actual supported workflow requires the missing operation and its \
+  preview, state, effect, evidence, and recovery contract. This does not revive Projector-owned confinement, \
+  mandatory WSL, or the historical network enum."""
 sourceClass = "authored"
 evidence = []
 
@@ -45,3 +61,48 @@ kind = "user-request"
 locator = "projector-recovered-premise:2026-09-09"
 description = """Assistant synthesis of the user-directed recovered vision; implementation and economic advantage require \
   separate evidence."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/hosts-and-mcp.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/orchestration-and-models.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-representation.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md"
+description = """Recovered historical design evidence; retained conditions and limits require explicit acceptance through \
+  this proposal."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/05-projections/runtime-and-representations.md"
+contentHash = "sha256:v1:a1aa287be9740885d83c0b5509f5274d57d80794b3a7d615f3cbf97282d841a0"
+description = """Historical source evidence at lines 5-58 and 82-93; immutable Git blob 452e6b736a082992b65f0b286b60a7c4a515d93c. \
+  Content hash is SHA-256 of the exact Git blob bytes. Preserve useful conditions through explicit acceptance; \
+  historical implementation prescriptions are not authority."""
+
+[[payload.realizations]]
+[payload.realizations.selector]
+op = "atom"
+field = "path"
+matcher = "equals"
+value = "packages/engine/src/representation/index.ts"
+
+[payload.realizations.origin]
+kind = "git"
+locator = "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:packages/engine/src/representation/index.ts"
+description = """Observed implementation surface for requirement:engineering-english; the selector is evaluated from \
+  repository facts."""
