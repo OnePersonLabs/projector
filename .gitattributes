@@ -1,4 +1,5 @@
 # Preserve authenticated release artifacts and deterministic generated inventories.
+.projector/**/*.toml text eol=lf
 release/**/*.json text eol=lf
 release/**/*.mjs text eol=lf
 release/**/*.md text eol=lf
