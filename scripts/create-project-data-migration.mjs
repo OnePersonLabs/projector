@@ -58,7 +58,7 @@ export async function createRepositoryProjectDataMigration(options = {}) {
   const sourcePath = options.sourcePath ?? targetFormatPath;
   const draftPath = options.draftPath ?? join(root, "release/project-data-migration-draft.json");
   const migrationsRoot = options.migrationsRoot ?? join(root, "release/project-data-migrations");
-  const candidateRoot = options.candidateRoot ?? join(root, ".temp/release-candidate");
+  const candidateRoot = options.candidateRoot ?? join(root, ".projector/runtime/project-data-authoring/release-candidate");
   const sealingDraftPath = `${draftPath}.sealing`;
   try {
     await lstat(draftPath);

@@ -4,14 +4,14 @@ import { describe, expect, it } from "vitest";
 import { SUBSYSTEM_CLOSURE_STAGES, createSubsystemClosureReceipt, evaluateSubsystemClosure } from "./subsystem-closure.js";
 
 const observations = SUBSYSTEM_CLOSURE_STAGES.map((stage) => ({
-  obligationId: `representation.${stage}.v1`, stage, producer: stage === "authority" ? "spec-lint" : "packed-public-conformance",
-  entrypoint: stage === "authority" ? "PROJECTOR_SPEC" : "projector",
+  obligationId: `representation.${stage}.v1`, stage, producer: stage === "authority" ? "fixture-authority-probe" : "fixture-consumer-probe",
+  entrypoint: stage === "authority" ? "fixture:authority" : "fixture:operations",
   observedOutputHash: hashFramedDomain("closure-output", stage), failureHash: hashFramedDomain("closure-failure", stage),
   severedEdgeRejected: true,
 }));
 
 describe("generic subsystem closure control", () => {
-  it("closes only a revision-bound contract with independently observed positive and negative evidence for every stage", () => {
+  it("accepts a complete revision-bound observation fixture for every stage", () => {
     const receipt = createSubsystemClosureReceipt({ subsystemId: "representation", revision: "abc123", worktreeDigest: hashFramedDomain("worktree", "clean"), observations });
     expect(evaluateSubsystemClosure({ subsystemId: "representation", requiredObligationIds: observations.map(({ obligationId }) => obligationId) }, receipt)).toEqual({ status: "closed", blockers: [] });
   });
