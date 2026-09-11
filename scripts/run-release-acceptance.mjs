@@ -79,7 +79,82 @@ export async function observeRepresentationClosure({ core, engine, testkit, inve
 }
 async function runInstalledRepresentationClosure(installedProjector, inventory, sourceRevision, worktreeDigest) {
   const [core, engine, testkit] = await Promise.all(["core", "engine", "testkit"].map((name) => import(pathToFileURL(join(installedProjector, `exports/${name}.js`)).href)));
-  return observeRepresentationClosure({ core, engine, testkit, inventory, sourceRevision, worktreeDigest });
+  const base = await observeRepresentationClosure({ core, engine, testkit, inventory, sourceRevision, worktreeDigest });
+  const observedLinks = await observeInstalledRepresentationLinks({ packagedRoot: installedProjector });
+  const receipt = testkit.createSubsystemClosureReceipt({ subsystemId: "representation", revision: sourceRevision, worktreeDigest, observations: [...base.receipt.observations, ...observedLinks] });
+  const evaluation = testkit.evaluateSubsystemClosure({ subsystemId: "representation", requiredObligationIds: testkit.SUBSYSTEM_CLOSURE_STAGES.map((stage) => `representation.${stage}.v1`), expectedRevision: sourceRevision, expectedWorktreeDigest: worktreeDigest }, receipt);
+  return { ...base, receipt, evaluation };
+}
+
+/** Fresh processes consume an isolated copy of the actual package. Only exercised links are returned. */
+export async function observeInstalledRepresentationLinks({ packagedRoot }) {
+  const temporary = await mkdtemp(join(tmpdir(), "projector-representation-links-"));
+  const isolatedPackage = join(temporary, "package"), root = join(temporary, "repository");
+  try {
+    const rejectLinks = async (directory) => {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        if (entry.isSymbolicLink()) throw new Error(`representation package cannot depend on a source link: ${join(directory, entry.name)}`);
+        if (entry.isDirectory()) await rejectLinks(join(directory, entry.name));
+      }
+    };
+    if ((await lstat(packagedRoot)).isSymbolicLink()) throw new Error("representation package root cannot be a source link");
+    await rejectLinks(packagedRoot);
+    await cp(packagedRoot, isolatedPackage, { recursive: true });
+    const operationsPath = join(isolatedPackage, "exports/operations.js"), operationBytes = await readFile(operationsPath);
+    const [core, runtime] = await Promise.all(["core", "runtime"].map((name) => import(pathToFileURL(join(isolatedPackage, `exports/${name}.js`)).href)));
+    const check = (condition, message) => { if (!condition) throw new Error(`installed representation link: ${message}`); };
+    await mkdir(join(root, "src"), { recursive: true }); await mkdir(join(root, "test"));
+    await writeFile(join(root, "package.json"), '{"type":"module"}\n');
+    const before = "export const greet = () => 'hello';\n", after = "export const greet = (name) => `hello ${name}`;\n";
+    await writeFile(join(root, "src/greeting.mjs"), before);
+    await writeFile(join(root, "test/greeting.test.mjs"), "import assert from 'node:assert/strict'; import { greet } from '../src/greeting.mjs'; assert.equal(greet('Ada'), 'hello Ada');\n");
+    const requirement = { key: "greeting", title: "Greeting", statement: "The greeting includes the supplied name.", aliases: [] };
+    const scenario = { key: "greet-name", title: "Greet a name", steps: [{ role: "precondition", statement: "A caller supplies a name." }, { role: "trigger", statement: "The caller requests a greeting." }, { role: "expected-outcome", statement: "The greeting includes that name." }] };
+    const placeholder = core.hashFramedDomain("release-link-probe", "initial");
+    for (const [kind, record, id] of [["requirement", requirement, "requirement:greeting"], ["behavioral-scenario", scenario, "scenario:greet-name"]]) {
+      const payload = { ...record, id, aliases: [], status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, origin: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder };
+      await new runtime.CanonicalFileRepository(root).write(core.withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key: record.key, lifecycle: "active", payload }));
+    }
+    await initializeGit(root);
+    const childCode = `import { pathToFileURL } from 'node:url'; const { createBundledProjectorOperationRunner, createInstalledProjectorApplicationEvidenceHost } = await import(pathToFileURL(process.argv[1]).href); const runner=await createBundledProjectorOperationRunner({packagedRoot:process.argv[2],codexDataRoot:process.argv[4],applicationEvidence:createInstalledProjectorApplicationEvidenceHost}); const result=await runner.execute(JSON.parse(process.argv[3]),{signal:new AbortController().signal,environment:process.env}); console.log(JSON.stringify(result)); process.exitCode=result.exitCode;`;
+    const invoke = async (operation, input) => {
+      const request = { apiVersion: "projector.operation/v1", operation, repositoryRoot: root, requestId: `representation-link:${operation}`, input };
+      const processResult = await command(process.execPath, ["--input-type=module", "-e", childCode, operationsPath, isolatedPackage, JSON.stringify(request), join(temporary, "codex")], { cwd: root, env: { ...process.env, NODE_PATH: "" }, timeout: 60_000 });
+      let result; try { result = JSON.parse(processResult.stdout); } catch { /* A severed export cannot return an operation envelope. */ }
+      return { process: processResult, ...(result === undefined ? {} : { result }) };
+    };
+    const succeeded = (observed) => { check(observed.process.exitCode === 0 && observed.result?.status === "succeeded", JSON.stringify(observed)); return observed.result.output; };
+    succeeded(await invoke("init", {}));
+    const proposal = { apiVersion: "projector.change-proposal/v1", requirements: [requirement], scenarios: [scenario], architecture: null, edits: [{ path: "src/greeting.mjs", before, after }], validation: { independentNodeTests: ["test/greeting.test.mjs"], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"] };
+    const capture = succeeded(await invoke("change.capture", { request: "Change the greeting.", proposal: core.ChangeProposalSchema.parse(proposal) }));
+    const plan = succeeded(await invoke("change.plan", { changeSelector: capture.selector }));
+    const delivered = succeeded(await invoke("representation.inspect", { changeSelector: capture.selector, view: "content" }));
+    check(plan.immutablePlanHash === capture.immutablePlanHash && delivered.association.planHash === plan.immutablePlanHash && delivered.association.planId === plan.plan.id, "representation is not bound to the captured public plan");
+    check(delivered.artifactIntegrity.status === "valid" && delivered.semanticFidelity.status === "valid" && delivered.dependencyFreshness.status === "current", "fresh representation failed integrity, fidelity or currentness");
+    check(typeof delivered.renderedText === "string" && core.hashFramedDomain("representation-artifact", delivered.renderedText) === delivered.association.representation.contentHash, "delivered bytes do not match the capsule content hash");
+    check(delivered.delivery.stage === "operation-runner" && delivered.delivery.deliveredToRunnerBoundary === true && delivered.delivery.agentUnderstandingEstablished === false && delivered.delivery.behavioralCompletionEstablished === false, "delivery assurance does not name the actual runner boundary");
+    const wrongCapsule = await invoke("representation.inspect", { changeSelector: capture.selector, capsuleId: `${delivered.association.capsuleId}:severed`, view: "content" });
+    check(wrongCapsule.process.exitCode !== 0 && wrongCapsule.result?.status === "failed" && wrongCapsule.result?.error?.message === "requested capsule is not bound to the authenticated lifecycle plan" && !wrongCapsule.result?.output?.renderedText, "severed capsule association was accepted");
+    const contentPath = join(root, ".projector/runtime/representations/content", `${delivered.association.representation.contentHash.slice("sha256:v1:".length)}.txt`), exactBytes = await readFile(contentPath);
+    await writeFile(contentPath, "release negative: artifact bytes severed");
+    let tampered;
+    try { tampered = succeeded(await invoke("representation.inspect", { changeSelector: capture.selector, view: "content" })); }
+    finally { await writeFile(contentPath, exactBytes); }
+    check(tampered.artifactIntegrity.status === "invalid" && tampered.semanticFidelity.status === "invalid" && tampered.renderedText === undefined, "downstream reader leaked unauthenticated instructions");
+    await rename(operationsPath, `${operationsPath}.severed`);
+    let severedPackage;
+    try { severedPackage = await invoke("representation.inspect", { changeSelector: capture.selector, view: "content" }); }
+    finally { await rename(`${operationsPath}.severed`, operationsPath); }
+    check(severedPackage.process.exitCode !== 0 && severedPackage.result === undefined && severedPackage.process.stderr.includes("ERR_MODULE_NOT_FOUND"), "severed packaged export found a source fallback");
+    check((await readFile(operationsPath)).equals(operationBytes), "packaged export did not restore exactly");
+    const restored = succeeded(await invoke("representation.inspect", { changeSelector: capture.selector, view: "content" }));
+    check(restored.renderedText === delivered.renderedText && restored.artifactIntegrity.status === "valid", "fresh process failed to consume restored exact bytes");
+    return [
+      { stage: "public-composition", output: { capture, plan, association: delivered.association, fidelity: delivered.semanticFidelity }, negative: wrongCapsule, entrypoint: "change.capture / change.plan / representation.inspect capsule association" },
+      { stage: "downstream-consumer", output: delivered, negative: tampered, entrypoint: "representation.inspect content / operation-runner delivery" },
+      { stage: "packed-release", output: { exportBytesHash: sha(operationBytes), delivered: restored }, negative: severedPackage, entrypoint: "source-absent copied package exports/operations.js in fresh process" },
+    ].map(({ stage, output, negative, entrypoint }) => ({ obligationId: `representation.${stage}.v1`, stage, producer: "release-acceptance", entrypoint, observedOutputHash: core.hashFramedDomain("release-stage-output", output), failureHash: core.hashFramedDomain("release-stage-negative", negative), severedEdgeRejected: true }));
+  } finally { await rm(temporary, { recursive: true, force: true }); }
 }
 
 async function persistEvidence(evidence) { const root = join(repositoryRoot, "release/evidence"); await mkdir(root, { recursive: true }); const bytes = `${JSON.stringify(evidence, null, 2)}\n`; const contentPath = join(root, `${evidence.contentHash.slice("sha256:v1:".length)}.json`); try { await writeFile(contentPath, bytes, { flag: "wx" }); } catch (error) { if (error.code !== "EEXIST" || await readFile(contentPath, "utf8") !== bytes) throw error; } const current = { version: 1, evidenceHash: evidence.contentHash, manifest: contentPath.slice(repositoryRoot.length + 1), sourceRevision: evidence.sourceRevision, worktreeDigest: evidence.worktreeDigest, buildDigest: evidence.buildDigest, tarballDigest: evidence.tarballDigest }; const temporary = join(root, `.current-${process.pid}.tmp`); await writeFile(temporary, `${JSON.stringify(current, null, 2)}\n`, { flag: "wx" }); await rename(temporary, join(root, "current.json")); return current; }

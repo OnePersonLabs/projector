@@ -3,7 +3,7 @@ import * as core from "@projector/core";
 import * as engine from "@projector/engine";
 import * as testkit from "@projector/testkit";
 // @ts-expect-error release entrypoint is an executable JavaScript module
-import { observeRepresentationClosure } from "./run-release-acceptance.mjs";
+import { observeRepresentationClosure, observeInstalledRepresentationLinks } from "./run-release-acceptance.mjs";
 
 const id = "scenario:verify-representation-end-to-end-closure";
 const owner = { id, title: "Preserve representation closure", steps: [
@@ -16,6 +16,22 @@ const inventory = [{ id, owner, title: owner.title, semanticHash: core.hashFrame
 const input = { core, engine, testkit, inventory, sourceRevision: "fixture-revision", worktreeDigest: core.hashFramedDomain("fixture-worktree", "test") };
 
 describe("release representation observations", () => {
+  it.skipIf(!process.env.PROJECTOR_TEST_PACKAGED_ROOT)("exercises installed composition, delivery and severed-package controls without claiming recovery or dogfood", async () => {
+    const observations = await observeInstalledRepresentationLinks({ packagedRoot: process.env.PROJECTOR_TEST_PACKAGED_ROOT });
+    expect(observations.map((item: { stage: string }) => item.stage)).toEqual(["public-composition", "downstream-consumer", "packed-release"]);
+    for (const observation of observations) {
+      expect(observation.severedEdgeRejected).toBe(true);
+      expect(observation.observedOutputHash).not.toBe(observation.failureHash);
+    }
+    const base = await observeRepresentationClosure(input);
+    const receipt = testkit.createSubsystemClosureReceipt({ subsystemId: "representation", revision: input.sourceRevision, worktreeDigest: input.worktreeDigest, observations: [...base.receipt.observations, ...observations] });
+    const result = testkit.evaluateSubsystemClosure({ subsystemId: "representation", requiredObligationIds: testkit.SUBSYSTEM_CLOSURE_STAGES.map((stage) => `representation.${stage}.v1`) }, receipt);
+    expect(result.status).toBe("open");
+    expect(result.blockers.join(" ")).toContain("invalidation-recovery");
+    expect(result.blockers.join(" ")).toContain("dogfood");
+    expect(result.blockers.join(" ")).not.toContain("downstream-consumer");
+  }, 90_000);
+
   it("exercises owner authority and fidelity but leaves unsupported installed links open", async () => {
     const result = await observeRepresentationClosure(input);
     expect(result.fidelityFailure.rejected).toBe(true);
