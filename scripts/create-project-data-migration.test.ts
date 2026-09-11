@@ -73,6 +73,31 @@ describe("create-project-data-migration", () => {
     expect(JSON.parse(await readFile(join(migrationsRoot, "chain-through-2.1.0.json"), "utf8"))).toMatchObject({ manifests: [{ id: "migration:2.0.0-to-2.1.0" }] });
   });
 
+  test("creates a reviewable changed-format draft with mechanical adapters and preserves authored code", async () => {
+    const fixture = await authoringFixture();
+    await rm(fixture.input.draftPath);
+    await writeFile(join(fixture.candidateRoot, ...canonicalOwnerModulePaths[0]!.split("/")), "changed canonical format owner\n");
+    await publishCandidateManifest(fixture.candidateRoot);
+    const artifactRoot = join(fixture.root, "release/project-data-migrations/artifacts");
+    await mkdir(artifactRoot, { recursive: true });
+    const authoredPath = join(artifactRoot, "2.0.0-to-2.1.0-validation.mjs");
+    const authored = `export const projectDataMigrationArtifact = { apiVersion: "projector.project-data-migration-artifact/v1", id: "validation:2.0.0-to-2.1.0", kind: "validation", async run(context) { await context.validateTarget(); return { apiVersion: "projector.project-data-migration-validation-result/v1", status: "passed" }; } };\n`;
+    await writeFile(authoredPath, authored);
+    const result = await createRepositoryProjectDataMigration({
+      repositoryRoot: fixture.root, sourcePath: fixture.input.sourcePath, draftPath: fixture.input.draftPath,
+      candidateRoot: fixture.candidateRoot, readReleaseIdentity: async () => ({ name: "@onepersonlabs/projector", version: "2.1.0" }),
+      buildCandidate: async () => undefined,
+    });
+    expect(result.status).toBe("draft-created");
+    expect(await readFile(authoredPath, "utf8")).toBe(authored);
+    const draft = ProjectDataMigrationDraftSchema.parse(JSON.parse(await readFile(fixture.input.draftPath, "utf8")));
+    const transform = await readFile(join(artifactRoot, "2.0.0-to-2.1.0-transform.mjs"));
+    expect(draft.operations).toEqual([]);
+    expect(draft.customTransforms).toEqual([{ id: "transform:2.0.0-to-2.1.0", relativePath: "project-data/migrations/artifacts/2.0.0-to-2.1.0-transform.mjs", contentHash: hashBytes(transform) }]);
+    expect(draft.validations[0]?.contentHash).toBe(hashBytes(Buffer.from(authored)));
+    await expect(access(join(fixture.root, "release/project-data-migrations/2.0.0-to-2.1.0.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   test("restores the exact authored draft when final candidate verification fails", async () => {
     const fixture = await authoringFixture();
     const transformPath = canonicalOwnerModulePaths[0]!;

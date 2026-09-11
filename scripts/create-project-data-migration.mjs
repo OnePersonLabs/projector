@@ -210,6 +210,17 @@ async function readAuthoredMigrationArtifacts(root, from, to) {
     { kind: "transforms", id: `transform:${prefix}`, name: `${prefix}-transform.mjs` },
     { kind: "validations", id: `validation:${prefix}`, name: `${prefix}-validation.mjs` },
   ];
+  const directory = join(root, "release/project-data-migrations/artifacts");
+  await mkdir(directory, { recursive: true });
+  for (const spec of specs) {
+    const transform = spec.kind === "transforms";
+    const kind = transform ? "transform" : "validation";
+    const method = transform ? "prepareTarget" : "validateTarget";
+    const status = transform ? "prepared" : "passed";
+    const bytes = `export const projectDataMigrationArtifact = Object.freeze({\n  apiVersion: "projector.project-data-migration-artifact/v1",\n  id: ${JSON.stringify(spec.id)},\n  kind: ${JSON.stringify(kind)},\n  async run(context) {\n    if (context.signal.aborted) throw context.signal.reason;\n    if (context.source.kind !== "release-format") throw new Error("This adapter requires an authenticated released-format source");\n    await context.${method}();\n    if (context.signal.aborted) throw context.signal.reason;\n    return { apiVersion: "projector.project-data-migration-${kind}-result/v1", status: ${JSON.stringify(status)} };\n  },\n});\n`;
+    try { await writeExclusive(join(directory, spec.name), bytes); }
+    catch (error) { if (error?.code !== "EEXIST") throw error; }
+  }
   return readArtifactSpecs(root, specs);
 }
 
