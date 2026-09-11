@@ -82,6 +82,16 @@ export {
   type ProjectDataFormatDimension,
 } from "./readiness/project-data-migration-authoring.js";
 export {
+  ProjectDataMigrationTransformResultSchema,
+  ProjectDataMigrationValidationResultSchema,
+  loadProjectDataMigrationArtifact,
+  type LoadedProjectDataMigrationArtifact,
+  type ProjectDataMigrationArtifactContext,
+  type ProjectDataMigrationSourceObservation,
+  type ProjectDataMigrationTransformResult,
+  type ProjectDataMigrationValidationResult,
+} from "./readiness/project-data-migration-artifact.js";
+export {
   RepositoryRepresentationArtifactStore,
   type DurableRepresentationArtifact,
 } from "./representation/artifact-store.js";
