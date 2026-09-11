@@ -1,49 +1,60 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
+import { hashFramedDomain, toCanonicalDocumentWire, withCanonicalHashes } from "@projector/core";
+import { createRequire } from "node:module";
+const { stringify: stringifyToml } = createRequire(new URL("../packages/testkit/package.json", import.meta.url))("smol-toml");
 import { deriveAcceptanceInventory } from "../packages/testkit/src/index.js";
-import { buildTraceabilityManifest, resolveTraceabilityAuthority, validateTraceabilityAuthority, validateTraceabilityAuthorityShape } from "./generate-release-artifacts.mjs";
+import { buildTraceabilityManifest, readCanonicalReleaseSources, resolveTraceabilityAuthority, validateTraceabilityAuthority, validateTraceabilityAuthorityShape } from "./generate-release-artifacts.mjs";
 
-const scenarioPaths = ["PROJECTOR_SPEC/12-delivery/acceptance-core.md", "PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md", "PROJECTOR_SPEC/12-delivery/acceptance-representation.md", "PROJECTOR_SPEC/12-delivery/acceptance-architecture.md"];
-
-async function inventory() {
-  return deriveAcceptanceInventory({
-    scenarios: await Promise.all(scenarioPaths.map(async (path) => ({ path, text: await readFile(path, "utf8") }))),
-    testing: { path: "PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md", text: await readFile("PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md", "utf8") },
-  });
+function source(key: string) {
+  const id = `scenario:${key}`;
+  const payload = { id, key, title: key, aliases: key === "compact" ? ["scenario:56:compact-context-preserves-critical-tokens-and-avoids-false-compression"] : [], status: "active", sourceClass: "authored", scope: { op: "atom", field: "requirement", matcher: "equals", value: "requirement:engineering-english" }, steps: [{ role: "trigger", statement: `Exercise ${key}.` }, { role: "expected-outcome", statement: `Preserve the complete ${key} conditions.` }], semanticHash: hashFramedDomain("fixture", key), discoveryHash: hashFramedDomain("fixture", key), realizations: [], evidence: [] };
+  return { path: `.projector/model/scenarios/${key}.scenario.toml`, text: stringifyToml(toCanonicalDocumentWire(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id, key, lifecycle: "active", payload }))) };
 }
-
-describe("explicit release traceability authority", () => {
-  it("is bijective to every exact obligation ID and resolves by ID rather than title keywords", async () => {
-    const items = await inventory();
-    const authority = JSON.parse(await readFile("release/traceability-authority.json", "utf8"));
-    const observed = new Set(Object.values(authority.obligations).map((entry: any) => entry.testRef));
-    expect(validateTraceabilityAuthority(items, authority, observed)).toBeUndefined();
-
-    const item = items[0]!;
-    expect(resolveTraceabilityAuthority({ ...item, title: "manual sandbox lifecycle keyword bait" }, authority)).toEqual(authority.obligations[item.id]);
-    const { [item.id]: omitted, ...incomplete } = authority.obligations; void omitted;
-    expect(() => validateTraceabilityAuthority(items, { ...authority, obligations: incomplete }, observed)).toThrow(/exact obligation.*missing/iu);
+function fixture() {
+  const inventory = deriveAcceptanceInventory({ canonical: [source("compact"), source("closure")], legacyMappings: [{ legacyId: "scenario:56:compact-context-preserves-critical-tokens-and-avoids-false-compression", ownerIds: ["scenario:compact", "scenario:closure"] }] });
+  const tests = [{ publicFacade: "projector/engine", testRef: "tests/public.test.ts#exact positive" }, { publicFacade: "projector/engine", testRef: "tests/public.test.ts#exact negative" }];
+  const authority = { version: 2, obligations: Object.fromEntries(inventory.map(({ id, legacyIds }) => [id, { obligationId: id, legacyIds, tests }])) };
+  return { inventory, authority, tests };
+}
+describe("canonical release traceability test bindings", () => {
+  it("requires every canonical split owner and never resolves through legacy or title keywords", () => {
+    const { inventory, authority, tests } = fixture(); const observed = new Set(tests.map(({ testRef }) => testRef));
+    expect(validateTraceabilityAuthority(inventory, authority, observed)).toBeUndefined();
+    const item = inventory[0]!;
+    expect(resolveTraceabilityAuthority({ ...item, title: "unrelated keyword bait" }, authority)).toEqual(authority.obligations[item.id]);
+    const { [item.id]: omitted, ...missing } = authority.obligations; void omitted;
+    expect(() => validateTraceabilityAuthorityShape(inventory, { ...authority, obligations: missing })).toThrow(/missing/iu);
+    expect(() => validateTraceabilityAuthorityShape(inventory, { version: 1, obligations: authority.obligations })).toThrow(/unsupported shape/iu);
   });
-
-  it("rejects a broad describe anchor even when its file is source controlled", async () => {
-    const items = await inventory();
-    const authority = JSON.parse(await readFile("release/traceability-authority.json", "utf8"));
-    const first = items[0]!;
-    const exact = authority.obligations[first.id];
-    const collapsed = { ...authority, obligations: { ...authority.obligations, [first.id]: { ...exact, testRef: exact.testRef.split("#")[0] + "#" + exact.testRef.split("#")[1].split(" ").slice(0, 3).join(" ") } } };
-    const observed = new Set(Object.values(authority.obligations).map((entry: any) => entry.testRef));
-    expect(() => validateTraceabilityAuthority(items, collapsed, observed)).toThrow(/exact.*identity/iu);
+  it("requires every exact assertion and rejects duplicate, empty, or behavior-bearing bindings", () => {
+    const { inventory, authority, tests } = fixture();
+    expect(() => validateTraceabilityAuthority(inventory, authority, new Set([tests[0]!.testRef]))).toThrow(/exact assertion identity/iu);
+    const id = inventory[0]!.id;
+    for (const entry of [{ obligationId: id, tests: [] }, { obligationId: id, tests: [tests[0], tests[0]] }, { obligationId: id, tests, statement: "a parallel behavior definition" }]) expect(() => validateTraceabilityAuthorityShape(inventory, { ...authority, obligations: { ...authority.obligations, [id]: entry } })).toThrow(/binding/iu);
   });
-
-  it("rejects malformed authority before test collection can consume its paths", async () => {
-    const items = await inventory();
-    expect(() => validateTraceabilityAuthorityShape(items, { version: 1, obligations: null })).toThrow(/unsupported shape/iu);
+  it("binds every exact test to full canonical conditions and semantic hashes deterministically", () => {
+    const { inventory, authority } = fixture(); const texts = new Map([["tests/public.test.ts", "exact observed source\n"]]);
+    const manifest = buildTraceabilityManifest(inventory, authority, texts);
+    expect(manifest.version).toBe(3); expect(manifest.entries).toHaveLength(4);
+    for (const item of inventory) {
+      const entries = manifest.entries.filter((entry: { id: string }) => entry.id === item.id);
+      expect(entries).toHaveLength(2);
+      expect(entries.every((entry: { owner: unknown; semanticHash: string }) => JSON.stringify(entry.owner) === JSON.stringify(item.owner) && entry.semanticHash === item.semanticHash)).toBe(true);
+    }
+    expect(buildTraceabilityManifest([...inventory].reverse(), authority, texts)).toEqual(manifest);
+    expect(() => buildTraceabilityManifest(inventory, authority, new Map())).toThrow(/source is missing/iu);
   });
-
-  it("renders the checked-in manifest deterministically from the explicit authority", async () => {
-    const items = await inventory(); const authority = JSON.parse(await readFile("release/traceability-authority.json", "utf8")); const sourceTexts = new Map<string, string>();
-    for (const { testRef } of Object.values(authority.obligations) as any[]) { const path = testRef.split("#", 1)[0]; if (!sourceTexts.has(path)) sourceTexts.set(path, await readFile(path, "utf8")); }
-    const first = buildTraceabilityManifest(items, authority, sourceTexts); const second = buildTraceabilityManifest(items, authority, sourceTexts);
-    expect(first).toEqual(second); expect(first).toEqual(JSON.parse(await readFile("release/traceability.json", "utf8")));
+  it("loads accepted TOML owners and rejects a legacy/draft file instead of falling back", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-canonical-release-"));
+    try {
+      await mkdir(join(root, ".projector/model/requirements"), { recursive: true }); await mkdir(join(root, ".projector/model/scenarios"), { recursive: true });
+      const canonical = source("compact"); await writeFile(join(root, canonical.path), canonical.text);
+      expect(deriveAcceptanceInventory({ canonical: await readCanonicalReleaseSources(root) })).toHaveLength(1);
+      await writeFile(join(root, ".projector/model/scenarios/draft.json"), "{}");
+      await expect(readCanonicalReleaseSources(root)).rejects.toThrow(/migration is required/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

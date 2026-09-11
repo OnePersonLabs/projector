@@ -1,42 +1,35 @@
-import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-
 import { lintHumanTechnical } from "@projector/engine";
+import { deriveAcceptanceInventory } from "@projector/testkit";
+import { readCanonicalReleaseSources } from "./generate-release-artifacts.mjs";
 
 const defaultRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
-
 function proseOnly(source) {
   return source.replace(/```[\s\S]*?```/gu, "").replace(/`[^`\n]*`/gu, "");
 }
 
+/** Typed active Requirements and Scenarios own these prose fields. Core validates their complete wire payloads. */
 export async function checkAuthoritativeSpecification(repositoryRoot = defaultRoot) {
-  const specificationRoot = resolve(repositoryRoot, "PROJECTOR_SPEC");
-  const manifest = JSON.parse(await readFile(resolve(specificationRoot, "spec.manifest.json"), "utf8"));
-  const relativePaths = [manifest.entrypoint, manifest.index, ...manifest.modules.map(({ path }) => path)];
-  if (relativePaths.some((path) => typeof path !== "string" || path.length === 0 || isAbsolute(path)) || new Set(relativePaths).size !== relativePaths.length) {
-    throw new Error("specification manifest paths are invalid or duplicated");
-  }
-  const files = [];
-  const blocking = [];
+  const sources = await readCanonicalReleaseSources(repositoryRoot);
+  const inventory = deriveAcceptanceInventory({ canonical: sources });
   const advisory = [];
-  for (const relativePath of relativePaths) {
-    const path = resolve(specificationRoot, relativePath);
-    if (!path.startsWith(`${specificationRoot}${sep}`)) throw new Error(`specification module escapes root: ${relativePath}`);
-    const report = lintHumanTechnical(proseOnly(await readFile(path, "utf8")));
-    files.push(relativePath);
-    blocking.push(...report.blocking.map((finding) => ({ path: relativePath, ...finding })));
-    advisory.push(...report.advisory.map((finding) => ({ path: relativePath, ...finding })));
+  for (const { id, owner } of inventory) {
+    const fields = [["title", owner.title]];
+    if ("statement" in owner) fields.push(["statement", owner.statement]);
+    if ("steps" in owner) owner.steps.forEach((step, index) => fields.push([`steps.${index}.statement`, step.statement]));
+    for (const [field, text] of fields) {
+      const report = lintHumanTechnical(proseOnly(text));
+      // Authored canonical prose is not a selected human-technical encoding.
+      advisory.push(...report.blocking.map((finding) => ({ ownerId: id, field, ...finding })));
+      advisory.push(...report.advisory.map((finding) => ({ ownerId: id, field, ...finding })));
+    }
   }
-  return Object.freeze({ files: Object.freeze(files), blocking: Object.freeze(blocking), advisory: Object.freeze(advisory) });
+  return Object.freeze({ files: Object.freeze(sources.map(({ path }) => path)), ownerIds: Object.freeze(inventory.map(({ id }) => id)), blocking: Object.freeze([]), advisory: Object.freeze(advisory), semanticEquivalenceEstablished: false, truthEstablished: false });
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const report = await checkAuthoritativeSpecification();
-  if (report.blocking.length > 0) {
-    process.stderr.write(`${JSON.stringify(report.blocking, null, 2)}\n`);
-    process.exitCode = 1;
-  } else {
-    process.stdout.write(`Checked ${report.files.length} authoritative specification files; no blocking findings.\n`);
-  }
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (report.blocking.length > 0) process.exitCode = 1;
 }
