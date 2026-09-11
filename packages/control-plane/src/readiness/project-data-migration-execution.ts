@@ -314,6 +314,10 @@ async function prepareTarget(
     });
     return;
   }
+  // Editor schemas are release-owned persisted format. Replace them only in the
+  // disposable staging tree so the immutable ordinary installer can verify the
+  // complete new bundle rather than accepting files from the source release.
+  await rm(join(stagingRoot, ".projector", "schemas"), { recursive: true, force: true });
   await installProjectorEditorSchemaBundle(stagingRoot);
   await writeFile(
     join(stagingRoot, ".projector/config.toml"),
