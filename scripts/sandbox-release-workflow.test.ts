@@ -23,7 +23,7 @@ describe("manual source-severed release workflow", () => {
     const buildCommands = [
       "pnpm verify",
       "pnpm release:artifacts:check",
-      "node scripts/build-source-severed-release-bundle.mjs \"${{ runner.temp }}/projector-release-candidate\"",
+      "node scripts/build-source-severed-release-bundle.mjs \"${{ runner.temp }}/projector/release-candidate\"",
     ];
     const positions = buildCommands.map((command) => workflow.indexOf(`run: ${command}`));
     expect(positions.every((position) => position >= 0)).toBe(true);
@@ -34,7 +34,7 @@ describe("manual source-severed release workflow", () => {
     expect(acceptanceJob).toContain("needs: build-candidate");
     expect(acceptanceJob).toContain("actions/download-artifact@v4");
     expect(workflow).not.toContain(".temp/release-candidate");
-    expect(workflow).toContain("${{ runner.temp }}/projector-release-candidate");
+    expect(workflow).toContain("${{ runner.temp }}/projector/release-candidate");
     expect(acceptanceJob).not.toContain("actions/checkout");
     expect(acceptanceJob).toContain("ubuntu-24.04");
     expect(acceptanceJob).toContain("windows-2025");

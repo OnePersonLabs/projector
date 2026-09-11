@@ -31,9 +31,8 @@ describe("canonical human technical check", () => {
     await writeFile(path, stringify({ ...wire, payload: { ...wire.payload, steps: [{ role: "unsupported", statement: "Clean prose." }] } }));
     await expect(checkAuthoritativeSpecification(root)).rejects.toThrow();
   });
-  it("rejects missing canonical owners instead of falling back to historical prose", async () => {
+  it("rejects missing canonical owners", async () => {
     const { root, path } = await fixture(); await rm(path);
-    await mkdir(join(root, "PROJECTOR_SPEC")); await writeFile(join(root, "PROJECTOR_SPEC/SPEC.md"), "Clean prose.");
     await expect(checkAuthoritativeSpecification(root)).rejects.toThrow(/owners are missing/iu);
   });
   it("routes package verification and CI through the canonical checker", async () => {

@@ -5,14 +5,24 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type Requirement } from "@projector/core";
+import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type EvidenceRef, type Requirement } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
+import {
+  createPsychordApplicationObservationPlan,
+  createStrictPsychordApplicationObserver,
+  psychordObservationAdapterId,
+  psychordObservationAdapterVersion,
+  type PsychordApplicationObservationPlan,
+  type PsychordObservationPlan,
+  type PsychordObservationResult,
+} from "@projector/integrations/runtime-evidence";
 import { CanonicalFileRepository, FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
 import { RepositoryChangeLifecycleService } from "./service.js";
 import { ChangeLifecycleStore } from "./store.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
+import { createDurablePsychordObservationArtifactService } from "../application-evidence/psychord.js";
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "placeholder");
@@ -82,6 +92,54 @@ function authority(id: string, subjectId: string): AuthorityRecord {
   };
 }
 
+function stripDerived<T extends Record<string, unknown>>(payload: T) {
+  const { semanticHash: _semanticHash, discoveryHash: _discoveryHash, ...authored } = payload;
+  return authored;
+}
+
+function psychordPlan(root: string, runId: string, scenarioSemanticHash: `sha256:v1:${string}`): PsychordObservationPlan {
+  return {
+    runId, case: "no-input", scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenarioSemanticHash },
+    repository: { root, gitHead: "a".repeat(40), worktreeDigest: hashFramedDomain("test", "worktree") },
+    dependencies: [{ role: "source", locator: "src/greeting.mjs", contentHash: hashFramedDomain("test", "source") }], ownedArtifactRoot: join(root, ".projector", "runtime", "application-evidence-test"),
+    representativeInput: { code: "KeyA", holdMs: 1_000 },
+    server: { expectedOrigin: "http://127.0.0.1:43123", readinessNonce: "nonce", readinessPath: "/.projector-ready", applicationPath: "/",
+      expectedBuildArtifacts: [{ role: "application-document", buildLocator: "dist/index.html", requestPath: "/", contentHash: hashFramedDomain("test", "build") }] },
+    limits: { timeoutMs: 10_000, cleanupTimeoutMs: 1_000, maximumOutputBytes: 4_096, maximumDiagnosticBytes: 4_096 },
+  };
+}
+
+function psychordResult(plan: PsychordObservationPlan): PsychordObservationResult {
+  return {
+    adapterId: psychordObservationAdapterId, adapterVersion: psychordObservationAdapterVersion, runId: plan.runId, case: plan.case, scenario: plan.scenario,
+    operationalStatus: "completed", outcome: "passed", currentness: "current", assurance: "supporting",
+    host: { expectedOrigin: plan.server.expectedOrigin, actualOrigin: plan.server.expectedOrigin,
+      readiness: { url: `${plan.server.expectedOrigin}${plan.server.readinessPath}`, status: 200, nonce: plan.server.readinessNonce }, browserContextId: "browser:owned",
+      buildArtifacts: [{ role: "application-document", locator: "dist/index.html", contentHash: hashFramedDomain("test", "build") }],
+      servedArtifacts: [{ role: "application-document", locator: `${plan.server.expectedOrigin}/`, contentHash: hashFramedDomain("test", "build") }],
+      ownedResources: [{ kind: "browser-context", handle: "browser:owned", runId: plan.runId }],
+      browserCommands: [{ argvHash: hashFramedDomain("test", "argv"), exitCode: 0, signal: null, durationMs: 5, rootExitObserved: true, stdio: "closed", descendantState: "not-observed" }] },
+    currentnessObservation: { status: "current", observedWorktreeDigest: plan.repository.worktreeDigest,
+      dependencies: plan.dependencies.map(({ role, locator, contentHash }) => ({ role, locator, expectedHash: contentHash, observedHash: contentHash, status: "current" })) },
+    assertions: ["run-binding", "endpoint-binding", "readiness-binding", "build-binding", "served-byte-binding", "fresh-browser-storage", "owned-resource-binding", "pinned-dependency-profile", "bounded-loopback-plan", "currentness-binding", "no-input-controls", "no-input-player", "no-input-persistence"].map((id) => ({ id, passed: true, detail: `${id} passed` })),
+    observations: { precondition: { sound: "disabled", controls: { listen: false, keep: false, clear: false }, archiveCount: 0, replay: "idle", playerNoteCount: 0, activeVoiceCount: 0, playerEvents: [] } },
+    diagnostics: [], cleanup: { complete: true, resources: [{ kind: "browser-context", handle: "browser:owned", outcome: "released" }], diagnostics: [] }, limitations: ["The fixture does not prove acoustic output."],
+  };
+}
+
+function psychordCurrentness(plan: PsychordApplicationObservationPlan) {
+  return { status: "current" as const, repository: { expectedGitHead: plan.adapter.input.repository.gitHead, observedGitHead: plan.adapter.input.repository.gitHead,
+    expectedWorktreeDigest: plan.adapter.input.repository.worktreeDigest, observedWorktreeDigest: plan.adapter.input.repository.worktreeDigest, status: "current" as const },
+    dependencies: plan.adapter.input.dependencies.map(({ role, locator, contentHash }) => ({ role, locator, expectedHash: contentHash, observedHash: contentHash, status: "current" as const })),
+    buildArtifacts: plan.adapter.input.server.expectedBuildArtifacts.map(({ role, buildLocator, contentHash }) => ({ role, locator: buildLocator, expectedHash: contentHash, observedHash: contentHash, status: "current" as const })), reasons: [] };
+}
+
+function psychordEvidenceReference(plan: PsychordApplicationObservationPlan, evidenceId: string, observationRole: "prior" | "latest") {
+  return { evidenceId, stance: "supports" as const, applicationPredicate: { kind: "application-observation" as const,
+    adapter: { id: psychordObservationAdapterId, version: psychordObservationAdapterVersion }, scenario: plan.scenario, case: plan.case,
+    predicateId: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"], observationRole } };
+}
+
 describe("repository change lifecycle service", () => {
   it("honors caller cancellation across capture, plan, approve, and recover", async () => {
     const root = await repository();
@@ -120,6 +178,59 @@ describe("repository change lifecycle service", () => {
       const service = await RepositoryChangeLifecycleService.create(root, { applicationEvidence });
       await expect(service.capture({ request: "Change greeting.", proposal: selected })).rejects.toThrow(/application evidence is unknown/iu);
       expect(await readdir(join(root, ".projector", "runtime", "change-lifecycles", "captures")).catch(() => [])).toHaveLength(0);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("admits only a current same-predicate evidence replacement without changing normative meaning", async () => {
+    const root = await repository();
+    try {
+      const canonical = new CanonicalFileRepository(root);
+      const scenario = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario" as const,
+        id: "scenario:keep-reload-replay-owned-moment", key: "keep-reload-replay-owned-moment", lifecycle: "active",
+        payload: { id: "scenario:keep-reload-replay-owned-moment", key: "keep-reload-replay-owned-moment", title: "Keep and replay", aliases: [], status: "active" as const,
+          sourceClass: "authored" as const, scope: { op: "atom" as const, field: "path" as const, matcher: "equals" as const, value: "src/greeting.mjs" },
+          steps: [{ role: "expected-outcome" as const, statement: "No input is represented as player activity." }], evidence: [], discoveryHash: placeholder, semanticHash: placeholder } });
+      await canonical.write(scenario);
+      const artifactRoot = join(root, ".projector", "runtime", "application-evidence-test");
+      await mkdir(artifactRoot, { recursive: true });
+      const artifacts = createDurablePsychordObservationArtifactService({ storageRoot: artifactRoot, observer: createStrictPsychordApplicationObserver({
+        async observeApplication(plan): Promise<PsychordObservationResult> { return psychordResult(plan); },
+      }) });
+      const oldPlan = createPsychordApplicationObservationPlan(psychordPlan(root, "old", scenario.semanticHash));
+      const newPlan = createPsychordApplicationObservationPlan(psychordPlan(root, "new", scenario.semanticHash));
+      const oldPublished = await artifacts.observeAndPublish(oldPlan, { signal: new AbortController().signal });
+      const newPublished = await artifacts.observeAndPublish(newPlan, { signal: new AbortController().signal });
+      expect(oldPublished.status).toBe("published");
+      expect(newPublished.status).toBe("published");
+      const oldReference = psychordEvidenceReference(oldPlan, oldPublished.artifactSetId, "latest");
+      const ordinaryReference = { evidenceId: "evidence:reviewed-design", stance: "context" as const, weight: 0.5 };
+      const requirement = (await canonical.read("requirement", "requirement:legacy-greeting"))!;
+      await canonical.write(withCanonicalHashes({ ...requirement, payload: { ...requirement.payload, evidence: [ordinaryReference, oldReference] } }));
+      await exec("git", ["add", "."], { cwd: root });
+      await exec("git", ["commit", "-qm", "bind stale evidence"], { cwd: root });
+
+      let newStatus: "current" | "stale" = "stale";
+      const applicationEvidence = { artifacts, currentness: { async observe(plan: PsychordApplicationObservationPlan) {
+        const current = psychordCurrentness(plan);
+        return plan.runId === "old" || newStatus === "stale" ? { ...current, status: "stale" as const, repository: { ...current.repository, status: "stale" as const, observedWorktreeDigest: hashFramedDomain("test", "changed") }, reasons: ["source changed"] } : current;
+      } } };
+      const context = await (await RepositoryKnowledgeService.create({ repositoryRoot: root, applicationEvidence })).context({ request: "Replace stale application evidence without changing the requirement.", entities: [requirement.id] });
+      const currentRequirement = (await canonical.read("requirement", requirement.id))!;
+      const replacement = (evidence: EvidenceRef[], statement = currentRequirement.payload.statement) => ({
+        apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"],
+        identityResolution: { contextId: context.id, contextHash: context.contentHash, outcome: "reuse-existing", selectedEntityIds: [requirement.id], rationale: "Preserve the same requirement while replacing stale evidence." },
+        canonicalMutations: [{ kind: "requirement", operation: "revise", expectedSemanticHash: currentRequirement.semanticHash, expectedDocumentHash: currentRequirement.canonicalDocumentHash, rationale: "Retain prior evidence history and attach its current same-predicate successor.",
+          payload: stripDerived({ ...currentRequirement.payload, statement, evidence }) }],
+      });
+      const missing = psychordEvidenceReference(newPlan, "psychord-missing-replacement", "latest");
+      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, missing]) })).rejects.toThrow(/application evidence is unknown/iu);
+      const newReference = psychordEvidenceReference(newPlan, newPublished.artifactSetId, "latest");
+      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, newReference]) })).rejects.toThrow(/application evidence is unknown/iu);
+      newStatus = "current";
+      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, newReference], "A weaker greeting is acceptable.") })).rejects.toThrow(/application evidence is unknown/iu);
+      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, { ...newReference, applicationPredicate: { ...newReference.applicationPredicate, assertionIds: ["easier-assertion"] } }]) })).rejects.toThrow(/application evidence is unknown/iu);
+      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([{ ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, newReference]) })).rejects.toThrow(/application evidence is unknown/iu);
+      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, newReference]) })).resolves.toMatchObject({ compiled: { executionKind: "canonical-only" } });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
