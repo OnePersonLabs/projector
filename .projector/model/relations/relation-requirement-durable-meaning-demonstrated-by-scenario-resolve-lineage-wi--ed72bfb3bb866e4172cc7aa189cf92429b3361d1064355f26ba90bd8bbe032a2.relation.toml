@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:requirement:durable-meaning:demonstrated-by:scenario:resolve-lineage-without-resurrecting-identity"
+key = "relation:relation:requirement:durable-meaning:demonstrated-by:scenario:resolve-lineage-without-resurrecting-identity"
+lifecycle = "active"
+
+[payload]
+fromId = "requirement:durable-meaning"
+toId = "scenario:resolve-lineage-without-resurrecting-identity"
+type = "demonstrated-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []
