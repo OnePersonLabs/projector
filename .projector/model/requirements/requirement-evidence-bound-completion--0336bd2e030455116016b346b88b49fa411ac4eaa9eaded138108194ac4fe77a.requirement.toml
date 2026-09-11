@@ -70,7 +70,7 @@ value = "packages/control-plane/src/coverage/**"
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "packages/cli/src/coverage-cli.test.ts"
+value = "packages/control-plane/src/coverage/service.test.ts"
 
 [[payload.origin]]
 kind = "user-request"

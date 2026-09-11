@@ -44,7 +44,17 @@ Reopen affected design when observed evidence shows maintenance cost near/exceed
   or growing model/rule complexity without declining marginal reasoning/review cost. These are evidence-driven \
   design feedback, not defects to hide with more rules or relabel as optional. They do not require a \
   new economic trial, universal superiority proof or completed Psychord rebuild before delivery; use \
-  the already required real-work measurements and disclose missing evidence."""
+  the already required real-work measurements and disclose missing evidence.
+
+If a correction/shadow-lens decision uses paired probes, specify both expected outcomes independently; \
+  both must be correct. Count invalid pairs and oracle errors separately.
+
+Comparative claims require matched initial states, equal tasks/tools/models/resources/reveals, accumulated \
+  code preserved through fresh-agent checkpoints, and separate new-behavior/regression grading by predeclared \
+  independent oracles. Retain failures, setup errors, timeouts, unavailable and aborted attempts. Report \
+  observed setup, retrieval/context, model/tool, deterministic, evidence, human review/repair and canonical-maintenance \
+  costs with units/pricing provenance; missing costs are unavailable. These are optional protocols, \
+  not delivery prerequisites or required paid trials."""
 sourceClass = "authored"
 evidence = []
 
@@ -61,13 +71,13 @@ value = "packages/control-plane/src/knowledge/**"
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "packages/cli/src/knowledge-cli.test.ts"
+value = "packages/cli/src/operation-runner.test.ts"
 
 [[payload.scope.items]]
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "scripts/knowledge-acceptance.mjs"
+value = "scripts/run-release-acceptance.mjs"
 
 [[payload.scope.items]]
 op = "atom"
@@ -121,15 +131,29 @@ description = """Historical grouped redesign feedback, subordinate to accepted l
   comparative trial. Source range 64-93; immutable Git blob 45e984369b5f6f3c4e177fc517a618055838c995; \
   content hash is SHA-256 of exact blob bytes."""
 
+[[payload.origin]]
+kind = "document"
+locator = "git:f00166064d34aa65a27b397224544e3ee541c71e:.borg/ingest-2026-09-09/spec-deltas/P3.patch"
+contentHash = "sha256:v1:08d45b3fd1841ec3dc0b98052176e260762eb1426c6e4c91f04b51ee022a4612"
+description = """P3 conditional evaluation commitments; immutable Git blob 4ba9d58c31092fb2cc3c704be93ff573f85fa023. \
+  Accepted without requiring a new comparative trial or telemetry subsystem."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:f00166064d34aa65a27b397224544e3ee541c71e:.borg/ingest-2026-09-09/spec-deltas/P4.patch"
+contentHash = "sha256:v1:3fc9c1438493914aeb6a800216454f48d3b8f6e8aba691017645312d198320c6"
+description = """P4 conditional evaluation commitments; immutable Git blob df7829584f81b9537531be04ae6a1714526b3eb9. \
+  Accepted without requiring a new comparative trial or telemetry subsystem."""
+
 [[payload.realizations]]
 [payload.realizations.selector]
 op = "atom"
 field = "path"
 matcher = "equals"
-value = "scripts/knowledge-acceptance.mjs"
+value = "scripts/run-release-acceptance.mjs"
 
 [payload.realizations.origin]
 kind = "git"
-locator = "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:scripts/knowledge-acceptance.mjs"
-description = """Observed implementation surface for requirement:self-hosted-value; the selector is evaluated from repository \
-  facts."""
+locator = "git:470753ada8c2e7c71c73345942db32a0a9081c7d:scripts/run-release-acceptance.mjs"
+description = """Observed retained release-acceptance consumer after standalone CLI retirement; this binding does not \
+  establish comparative advantage."""

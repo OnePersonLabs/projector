@@ -53,13 +53,7 @@ value = "packages/engine/src/context/**"
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "packages/cli/src/knowledge-cli.ts"
-
-[[payload.scope.items]]
-op = "atom"
-field = "path"
-matcher = "glob"
-value = "packages/cli/src/mcp-cli.ts"
+value = "packages/cli/src/operation-runner.ts"
 
 [[payload.origin]]
 kind = "user-request"
