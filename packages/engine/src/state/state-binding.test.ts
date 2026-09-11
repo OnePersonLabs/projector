@@ -162,6 +162,7 @@ describe("dependency-scoped validation", () => {
 
     expect(validation.status).toBe("stale");
     expect(validation.changedQueryDependencyIds).toEqual(["checkout-consumers"]);
+    expect(validation.observations).toContainEqual(expect.objectContaining({ kind: "query", status: "stale", basis: "unavailable", reason: expect.stringMatching(/version/i) }));
   });
 
   it("fails closed for an unknown query program against the same StateDigest", async () => {
@@ -175,6 +176,7 @@ describe("dependency-scoped validation", () => {
 
     expect(validation.status).toBe("unavailable");
     expect(validation.changedQueryDependencyIds).toEqual([]);
+    expect(validation.observations).toContainEqual(expect.objectContaining({ kind: "query", status: "unknown", basis: "unavailable" }));
   });
 
   it("rejects a forged dependency digest against the same StateDigest", async () => {
@@ -232,6 +234,8 @@ describe("dependency-scoped validation", () => {
     expect(validation.changedQueryDependencyIds).toEqual([]);
     expect(validation.rebound?.compiledAgainst).toEqual(newState);
     expect(validation.rebound?.dependencyDigest).toBe(binding.dependencyDigest);
+    expect(validation.observations).toContainEqual(expect.objectContaining({ kind: "value", status: "current", basis: "observed", dependency: valueDependency, currentVersionHash: valueDependency.versionHash }));
+    expect(validation.observations).toContainEqual(expect.objectContaining({ kind: "query", status: "current", basis: "unchanged-dependency-keys", currentResult: binding.queryDependencies[0]!.priorResult }));
   });
 
   it("marks a changed value dependency stale", async () => {
@@ -241,6 +245,7 @@ describe("dependency-scoped validation", () => {
 
     expect(validation.status).toBe("stale");
     expect(validation.changedValueDependencyIds).toEqual(["concept:checkout"]);
+    expect(validation.observations).toContainEqual(expect.objectContaining({ kind: "value", status: "stale", dependency: valueDependency, currentVersionHash: hash("checkout-v2") }));
   });
 
   it("invalidates when the result set changes even though selected value hashes are unchanged", async () => {
@@ -282,6 +287,7 @@ describe("dependency-scoped validation", () => {
     const validation = await validator.validate(binding, newState, context(newState));
 
     expect(validation.status).toBe("suspect");
+    expect(validation.observations).toContainEqual(expect.objectContaining({ kind: "query", status: "unknown", currentResult: expect.objectContaining({ observability, resultCount: 0 }), reason: expect.stringContaining("open population") }));
   });
 
   it("accepts an empty bounded result when the registered boundary has no assumptions", async () => {

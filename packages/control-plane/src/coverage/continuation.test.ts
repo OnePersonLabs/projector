@@ -79,7 +79,40 @@ test("cleanup preserves current independent context branches and explains change
   const independent = retained.branches.find(({ interpretation }) => interpretation.entityId === "concept:independent")!;
   expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ id: `${retained.id}:${independent.id}`, status: "current" }));
   expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ status: "stale", reason: expect.stringContaining("Bound query semantics or result changed: knowledge-relations:concept:local") }));
+  const query = report.continuation!.evidence.find(({ dependency }) => dependency?.kind === "query" && dependency.dependency.query.id === "knowledge-relations:concept:local")!;
+  expect(query.dependency).toMatchObject({ kind: "query", status: "stale", basis: "evaluated", dependency: { priorResult: { resultCount: 0, observability: "closed" } }, currentResult: { resultCount: 1, observability: "closed" } });
   expect(report.continuation!.nextAction).toMatchObject({ operation: "context", input: { entities: expect.arrayContaining(["concept:local", "concept:independent"]), persist: true } });
+});
+
+test("cleanup explains same-HEAD semantic changes and rebinds independently current dependencies", async () => {
+  const root = await repository();
+  const writer = new CanonicalFileRepository(root);
+  const retained = await (await RepositoryKnowledgeService.create(root)).context({ request: "Continue greeting", entities: ["requirement:greeting"], persist: true });
+  const request = { scope: ".", contextId: retained.id, evidenceLimit: 50 };
+  const branchId = `${retained.id}:${retained.branches[0]!.id}`;
+  const initial = await inspectRepositoryCoverage(root, request, "cleanup");
+  expect(initial.continuation!.evidence.find(({ id }) => id === branchId)?.binding?.status).toBe("current");
+  await writeFile(join(root, "unrelated.txt"), "A separate work item.\n");
+  const rebound = await inspectRepositoryCoverage(root, request, "cleanup");
+  const binding = rebound.continuation!.evidence.find(({ id }) => id === branchId)!.binding!;
+  expect(binding.status).toBe("rebound");
+  expect(binding.currentState.gitBase).toBe(binding.compiledAgainst.gitBase);
+  expect(binding.currentState.worktreeDigest).not.toBe(binding.compiledAgainst.worktreeDigest);
+  expect(rebound.continuation!.evidence).toContainEqual(expect.objectContaining({ status: "current", dependency: expect.objectContaining({ kind: "value", basis: "observed", dependency: expect.objectContaining({ id: "requirement:greeting" }) }) }));
+  const record = (await writer.read("requirement", "requirement:greeting"))!;
+  if (record.kind !== "requirement") throw new Error("Expected the accepted greeting requirement");
+  await writer.write(withCanonicalHashes({ ...record, payload: { ...record.payload, statement: "The greeting includes the name and a welcome." } }));
+  const stale = await inspectRepositoryCoverage(root, request, "cleanup");
+  expect(stale.continuation!.evidence).toContainEqual(expect.objectContaining({ status: "stale", dependency: expect.objectContaining({ kind: "value", basis: "observed", dependency: expect.objectContaining({ id: "requirement:greeting", versionHash: record.payload.semanticHash }) }) }));
+  expect(stale.continuation!.evidence).toContainEqual(expect.objectContaining({ status: "current", dependency: expect.objectContaining({ kind: "query", basis: "evaluated" }) }));
+  await writer.delete("requirement", "requirement:greeting");
+  const unknown = await inspectRepositoryCoverage(root, request, "cleanup");
+  expect(unknown.continuation!.context?.status).toBe("unknown");
+  const missing = unknown.continuation!.evidence.find(({ dependency }) => dependency?.kind === "value" && dependency.dependency.id === "requirement:greeting")!;
+  expect(missing).toMatchObject({ status: "unknown", availability: "unobservable", dependency: { basis: "observed", reason: expect.stringContaining("unavailable") } });
+  expect(missing.dependency).not.toHaveProperty("currentVersionHash");
+  expect(unknown.continuation!.nextAction?.operation).toBe("context");
+  expect((await exec("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim()).toBe(retained.capturedState.gitBase);
 });
 
 test("cleanup distinguishes an absent required context from unobservable advisory notes", async () => {
@@ -165,6 +198,33 @@ test("cleanup retains failed validation outcomes and routes missing representati
   expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ owner: "lifecycle", outcome: "partial" }));
   expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ owner: "representation", availability: "missing", required: true, inspect: expect.objectContaining({ operation: "representation.inspect" }) }));
   await expect(access(artifactRoot)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("cleanup recovers committed unpublished success after a same-HEAD edit without replaying effects", async () => {
+  const root = await repository();
+  const lifecycle = await RepositoryChangeLifecycleService.create(root);
+  const captured = await lifecycle.capture({ request: "Implement the accepted greeting", proposal });
+  const approval = await lifecycle.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+  const publish = vi.spyOn(ChangeLifecycleStore.prototype, "writeArtifact").mockRejectedValueOnce(new Error("publication interrupted"));
+  await expect(lifecycle.apply(approval.id)).rejects.toThrow("publication interrupted");
+  publish.mockRestore();
+  const store = await ChangeLifecycleStore.create(root);
+  const [attempt] = await store.attemptsForApproval(approval.id);
+  const prepared = await store.readPreparedSuccess(attempt!.id);
+  const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: root })).stdout;
+  await writeFile(join(root, "unrelated.txt"), "Independent work after the commit.\n");
+  const report = await inspectRepositoryCoverage(root, { scope: ".", approvalSelector: approval.id, evidenceLimit: 50 }, "cleanup");
+  expect(report.continuation).toMatchObject({ lifecycle: { status: "recovery-required" }, nextAction: { operation: "change.recover", input: { approvalSelector: approval.id } } });
+  expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ id: attempt!.id, reason: expect.stringContaining("journal phase: committed") }));
+  expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ id: `${attempt!.id}:prepared-success`, status: "current" }));
+  const fresh = await RepositoryChangeLifecycleService.create(root);
+  expect(await fresh.recover(approval.id)).toMatchObject([{ action: "finalized" }]);
+  expect(await fresh.recover(approval.id)).toEqual([]);
+  expect((await fresh.resume(approval.id)).outcome).toBe("success");
+  expect(await store.readPreparedSuccess(attempt!.id)).toEqual(prepared);
+  expect((await store.attemptsForApproval(approval.id)).map(({ id }) => id)).toEqual([attempt!.id]);
+  expect((await exec("git", ["rev-parse", "HEAD"], { cwd: root })).stdout).toBe(head);
+  expect(await readFile(join(root, "src/greeting.mjs"), "utf8")).toBe(proposal.edits[0]!.after);
 });
 
 test("cleanup detects an unclosed journal even when a partial result was published", async () => {

@@ -452,8 +452,25 @@ export const StateBindingValidationSchema: z.ZodType = z.lazy(() => strictObject
   "changedValueDependencyIds": z.array(z.union([EntityIdSchema, z.string()])),
   "changedQueryDependencyIds": z.array(z.string()),
   "reasons": z.array(z.string()),
-  "rebound": StateBindingSchema.optional()
+  "rebound": StateBindingSchema.optional(),
+  "observations": z.array(StateDependencyObservationSchema).optional()
 }));
+
+export const StateDependencyObservationSchema: z.ZodType = z.lazy(() => z.union([strictObject({
+  "kind": z.literal("value"),
+  "dependency": StateValueDependencyRefSchema,
+  "status": z.union([z.literal("current"), z.literal("stale"), z.literal("unknown")]),
+  "basis": z.union([z.literal("same-snapshot"), z.literal("observed")]),
+  "currentVersionHash": ContentHashSchema.optional(),
+  "reason": z.string()
+}), strictObject({
+  "kind": z.literal("query"),
+  "dependency": StateQueryDependencySchema,
+  "status": z.union([z.literal("current"), z.literal("stale"), z.literal("unknown")]),
+  "basis": z.union([z.literal("same-snapshot"), z.literal("unchanged-dependency-keys"), z.literal("evaluated"), z.literal("unavailable")]),
+  "currentResult": StateQueryResultFingerprintSchema.optional(),
+  "reason": z.string()
+})]));
 
 export const ValidationResultSchema: z.ZodType = z.lazy(() => strictObject({
   "validatorId": z.string(),
