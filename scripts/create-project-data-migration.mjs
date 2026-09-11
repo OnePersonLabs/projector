@@ -6,6 +6,8 @@ import {
   ProjectDataFormatSnapshotSchema,
   ProjectDataMigrationChainSchema,
   ProjectDataMigrationDraftSchema,
+  createLegacyUnversionedProjectDataSource,
+  createProjectDataLegacyIngressManifest,
   canonicalJson,
 } from "../packages/core/dist/index.js";
 import {
@@ -18,6 +20,7 @@ import {
 import { buildSourceSeveredReleaseBundle } from "./build-source-severed-release-bundle.mjs";
 import { readAuthoredReleaseIdentity } from "./release-identity.mjs";
 import { validateReleaseCandidate } from "./release-candidate.mjs";
+import { hashBytes } from "./release-candidate.mjs";
 import { selectProjectDataMigrationReleaseVersion, synchronizeWorkspaceReleaseVersion } from "./project-data-migration-workflow.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -70,6 +73,7 @@ export async function createRepositoryProjectDataMigration(options = {}) {
     const synchronized = await (options.synchronizeVersion ?? synchronizeWorkspaceReleaseVersion)(root, selection.version);
     return { status: "version-prepared", version: selection.version, changedPaths: synchronized.changedPaths };
   }
+  await ensureLegacyIngressManifest(root, sourceSnapshot);
   const buildCandidate = options.buildCandidate ?? buildSourceSeveredReleaseBundle;
   await buildCandidate(candidateRoot, { allowPendingProjectDataMigration: true });
   const candidate = await validateReleaseCandidate(candidateRoot);
@@ -85,10 +89,19 @@ export async function createRepositoryProjectDataMigration(options = {}) {
     }
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
-    draft = createProjectDataMigrationDraft({ sourceSnapshot, targetSnapshot });
+    const changes = compareProjectDataFormats(sourceSnapshot, targetSnapshot);
+    const authoredArtifacts = changes.length === 0
+      ? { transforms: [], validations: [] }
+      : await readAuthoredMigrationArtifacts(root, sourceSnapshot.packageIdentity.version, targetSnapshot.packageIdentity.version);
+    draft = createProjectDataMigrationDraft({
+      sourceSnapshot,
+      targetSnapshot,
+      customTransforms: authoredArtifacts.transforms,
+      validations: authoredArtifacts.validations,
+    });
     await mkdir(dirname(draftPath), { recursive: true });
     await writeExclusive(draftPath, `${canonicalJson(draft)}\n`);
-    if (compareProjectDataFormats(sourceSnapshot, targetSnapshot).length > 0) {
+    if (changes.length > 0) {
       return { status: "draft-created", version: selection.version, draftPath: resolve(draftPath), targetSnapshot };
     }
   }
@@ -115,6 +128,49 @@ export async function createRepositoryProjectDataMigration(options = {}) {
     throw error;
   }
   return { status: "sealed", version: selection.version, manifest: result.manifest, outputPath: result.outputPath, chainPath: resolve(chainPath) };
+}
+
+async function ensureLegacyIngressManifest(root, targetSnapshot) {
+  const ingressPath = join(root, "release/project-data-legacy-ingress.json");
+  const artifacts = await readAuthoredMigrationArtifacts(root, "legacy-unversioned", targetSnapshot.packageIdentity.version);
+  const source = createLegacyUnversionedProjectDataSource({
+    apiVersion: "projector.legacy-unversioned-project-data-source/v1",
+    config: { apiVersion: "projector.config/v1", path: ".projector/config.json", versionBinding: "absent" },
+    canonical: { envelopeApiVersion: "projector/v2", layout: "canonical-json" },
+  });
+  const manifest = createProjectDataLegacyIngressManifest({
+    apiVersion: "projector.project-data-legacy-ingress-manifest/v1",
+    id: `migration:legacy-unversioned-to-${targetSnapshot.packageIdentity.version}`,
+    source,
+    targetVersion: targetSnapshot.packageIdentity.version,
+    targetSnapshotHash: targetSnapshot.snapshotHash,
+    transforms: artifacts.transforms,
+    validations: artifacts.validations,
+  });
+  await mkdir(dirname(ingressPath), { recursive: true });
+  await writeImmutable(ingressPath, `${canonicalJson(manifest)}\n`);
+  return { ingressPath, manifest };
+}
+
+async function readAuthoredMigrationArtifacts(root, from, to) {
+  const prefix = `${from}-to-${to}`;
+  const specs = [
+    { kind: "transforms", id: `transform:${prefix}`, name: `${prefix}-transform.mjs` },
+    { kind: "validations", id: `validation:${prefix}`, name: `${prefix}-validation.mjs` },
+  ];
+  const result = { transforms: [], validations: [] };
+  for (const spec of specs) {
+    const sourcePath = join(root, "release/project-data-migrations/artifacts", spec.name);
+    const metadata = await lstat(sourcePath);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error(`Migration artifact must be a regular file: ${sourcePath}`);
+    const bytes = await readFile(sourcePath);
+    result[spec.kind].push({
+      id: spec.id,
+      relativePath: `project-data/migrations/artifacts/${spec.name}`,
+      contentHash: hashBytes(bytes),
+    });
+  }
+  return result;
 }
 
 async function readStrictJsonFile(path, label) {

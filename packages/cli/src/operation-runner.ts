@@ -34,6 +34,7 @@ import {
   RepositoryCoverageOutputSchema,
   RepositoryChangeLifecycleService,
   RepositoryRepresentationInspectionService,
+  RepresentationInspectionOperationOutputSchema,
   RepresentationInspectionOutputSchema,
   RepositoryKnowledgeService,
   initializePreparedProject,
@@ -45,6 +46,7 @@ import {
   projectLifecyclePlan,
   projectLifecycleRecovery,
   projectLifecycleResume,
+  projectRepresentationInspectionOperation,
   withProjectOperationAccess,
   type PreparedProjectInitializationResult,
   type PsychordApplicationEvidenceHost,
@@ -465,18 +467,18 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
     defineProjectorOperationHandler({
       operation: "representation.inspect",
       inputSchema: ProjectorOperationInputSchemas["representation.inspect"],
-      outputSchema: RepresentationInspectionOutputSchema,
+      outputSchema: RepresentationInspectionOperationOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const service = await RepositoryRepresentationInspectionService.create(repositoryRoot, {
           applicationEvidence: applicationEvidenceFor(repositoryRoot, context),
         });
-        return RepresentationInspectionOutputSchema.parse(await service.inspect({
+        return projectRepresentationInspectionOperation(RepresentationInspectionOutputSchema.parse(await service.inspect({
           changeSelector: input.changeSelector,
           view: input.view,
           ...(input.capsuleId === undefined ? {} : { capsuleId: input.capsuleId }),
           ...(input.approvalSelector === undefined ? {} : { approvalSelector: input.approvalSelector }),
           signal: context.signal,
-        }));
+        })));
       },
     }),
   ];

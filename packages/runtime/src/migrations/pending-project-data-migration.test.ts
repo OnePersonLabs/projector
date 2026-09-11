@@ -26,10 +26,10 @@ async function fixture(): Promise<{ repositoryRoot: string; markerPath: string }
 
 function marker(phase: PendingProjectDataMigration["phase"] = "backed-up"): PendingProjectDataMigration {
   return {
-    apiVersion: "projector.pending-project-data-migration/v1",
+    apiVersion: "projector.pending-project-data-migration/v2",
     attemptId: "migration-attempt:2.1.0:2.2.0:001",
     migrationId: "migration:2.1.0:2.2.0",
-    sourceSnapshotHash: hashA,
+    sourceAuthority: { kind: "release-format", snapshotHash: hashA },
     targetSnapshotHash: hashB,
     manifestHash: hashA,
     backup: {

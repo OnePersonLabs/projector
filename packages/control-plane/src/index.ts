@@ -87,6 +87,9 @@ export {
 } from "./representation/artifact-store.js";
 export {
   RepositoryRepresentationInspectionService,
+  RepresentationInspectionOperationOutputSchema,
   RepresentationInspectionOutputSchema,
+  projectRepresentationInspectionOperation,
+  type RepresentationInspectionOperationOutput,
   type RepresentationInspectionOutput,
 } from "./representation/service.js";

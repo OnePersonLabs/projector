@@ -6,6 +6,7 @@ import type {
 } from "@projector/core";
 import {
   ProjectDataFormatSnapshotSchema,
+  canonicalJson,
   createProjectDataMigrationReceipt,
   projectDataMigrationReceiptApiVersion,
 } from "@projector/core";
@@ -133,7 +134,7 @@ export async function reconcileCompletedProjectDataMigration(
         attemptId: pending.attemptId,
         migrationId: pending.migrationId,
         manifestHash: pending.manifestHash,
-        sourceSnapshotHash: pending.sourceSnapshotHash,
+        sourceAuthority: pending.sourceAuthority,
         targetSnapshotHash: pending.targetSnapshotHash,
         journalId: pending.attemptId,
         journalHash: exactJournal.contentHash,
@@ -193,11 +194,13 @@ function receiptMismatch(
   receipt: ProjectDataMigrationReceipt,
 ): string | undefined {
   if (
+    receipt.apiVersion !== projectDataMigrationReceiptApiVersion ||
     receipt.migrationId !== pending.migrationId ||
     receipt.attemptId !== pending.attemptId ||
     receipt.journalId !== pending.attemptId ||
     receipt.manifestHash !== pending.manifestHash ||
-    receipt.sourceSnapshotHash !== pending.sourceSnapshotHash ||
+    !("sourceAuthority" in receipt) ||
+    canonicalJson(receipt.sourceAuthority) !== canonicalJson(pending.sourceAuthority) ||
     receipt.targetSnapshotHash !== pending.targetSnapshotHash
   ) {
     return "Terminal migration receipt does not bind the Pending migration identities and snapshots";
@@ -218,7 +221,7 @@ function samePendingBinding(left: PendingProjectDataMigration, right: PendingPro
     left.attemptId === right.attemptId &&
     left.migrationId === right.migrationId &&
     left.manifestHash === right.manifestHash &&
-    left.sourceSnapshotHash === right.sourceSnapshotHash &&
+    canonicalJson(left.sourceAuthority) === canonicalJson(right.sourceAuthority) &&
     left.targetSnapshotHash === right.targetSnapshotHash &&
     left.stagingLocation === right.stagingLocation &&
     left.createdAt === right.createdAt &&

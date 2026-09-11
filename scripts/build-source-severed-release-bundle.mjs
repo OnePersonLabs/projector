@@ -40,6 +40,11 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot, options = {
       await mkdir(join(candidateRoot, "project-data"), { recursive: true });
       await cp(formatBaseline, join(candidateRoot, "project-data/format-baseline.json"));
     }
+    const legacyIngress = join(repositoryRoot, "release/project-data-legacy-ingress.json");
+    if (await access(legacyIngress).then(() => true, (error) => error?.code === "ENOENT" ? false : Promise.reject(error))) {
+      await mkdir(join(candidateRoot, "project-data"), { recursive: true });
+      await cp(legacyIngress, join(candidateRoot, "project-data/legacy-ingress.json"));
+    }
 
     const [{ stdout: packedManifestSource }, { stdout: sourceRevision }] = await Promise.all([
       execute("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }),

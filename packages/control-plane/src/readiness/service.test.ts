@@ -75,10 +75,10 @@ describe("project readiness metadata inspection", () => {
     await mkdir(join(root, ".projector"));
     await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     await writeFile(join(root, ".projector", "pending-project-data-migration.json"), JSON.stringify({
-      apiVersion: "projector.pending-project-data-migration/v1",
+      apiVersion: "projector.pending-project-data-migration/v2",
       attemptId: "migration-attempt:prepared-data:001",
       migrationId: "migration:prepared-data",
-      sourceSnapshotHash: `sha256:v1:${"1".repeat(64)}`,
+      sourceAuthority: { kind: "release-format", snapshotHash: `sha256:v1:${"1".repeat(64)}` },
       targetSnapshotHash: `sha256:v1:${"2".repeat(64)}`,
       manifestHash: `sha256:v1:${"3".repeat(64)}`,
       backup: {
