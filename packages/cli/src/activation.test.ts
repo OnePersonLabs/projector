@@ -103,7 +103,7 @@ describe("explicit Projector project activation", () => {
     expect(await inspectProjectActivation(root)).toMatchObject({
       status: "enabled",
       configPath: ".projector/config.toml",
-      config: { apiVersion: "projector.config/v1", enabled: true, projectorVersion: "2.1.0" },
+      config: { apiVersion: "projector.config/v1", enabled: true, projectorVersion: "2.1.1" },
     });
     await expect(executeProjector(["audit"], { cwd: root })).resolves.not.toMatchObject({ exitCode: 5 });
   });
