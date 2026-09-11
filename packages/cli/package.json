@@ -1,15 +1,12 @@
 {
   "name": "@projector/cli",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "private": true,
   "type": "module",
-  "bin": {
-    "projector": "./dist/cli.js"
-  },
   "exports": {
-    ".": {
-      "types": "./dist/cli.d.ts",
-      "default": "./dist/cli.js"
+    "./operations": {
+      "types": "./dist/operation-runner.d.ts",
+      "default": "./dist/operation-runner.js"
     }
   },
   "scripts": {

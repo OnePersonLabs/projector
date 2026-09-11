@@ -2335,10 +2335,10 @@
         "discoveryHash": "sha256:v1:6f49f98d02791a371b84e6b999099ca5199e89ae3aeda43e9362b68722dcdb33",
         "semanticHash": "sha256:v1:01c0aff71b5b3bb344f80d9bddeff1d75aba5f975d22133652426ff9e6dc5aea"
       },
-      "publicFacade": "projector/cli",
-      "testRef": "packages/cli/src/cli.test.ts#minimal CLI entrypoint blocks canonical governance conflicts before public mutation work begins",
-      "testSourceDigest": "sha256:v1:70b2c699c205660db4134111c254cad254e17781ae870a8305f152228c798c70",
-      "mappingHash": "sha256:v1:e3dbc741a3a6ca98f2fb82591817e6ece2b53bfee0685d80b5f9102d93a615c0"
+      "publicFacade": "projector/engine",
+      "testRef": "packages/engine/src/governance/execution-policy.test.ts#risk policy blocks canonical governance conflicts in mutation modes",
+      "testSourceDigest": "sha256:v1:7285b784103ddff6cff6aa4248aff0f8f4e001fbf72a6df1f1f80b83907548c1",
+      "mappingHash": "sha256:v1:bf63a9af3c4fad2cce16e91f225f61c9dc9a29bb5d83b82708cd5613eccd2c8a"
     },
     {
       "id": "scenario:bound-context-despite-weak-similarity-neighbors",
@@ -5034,10 +5034,10 @@
         "discoveryHash": "sha256:v1:625cc013a127ed91f37efee6325af0ee048af99bcb673e4bc68dc74d23d6944a",
         "semanticHash": "sha256:v1:717105d2bf1b85e0f29e3d045013fdc61ef9fbbbedff311cf0e75558fdb1046c"
       },
-      "publicFacade": "projector/cli",
-      "testRef": "packages/cli/src/run-cli.test.ts#projector run host boundary resolves an authenticated built session and detects a fake host's committed-clean write",
-      "testSourceDigest": "sha256:v1:b195fa443aa4ca68adb43ef8e9bcb27ca4fc808d063acb81b715e546f7589f1d",
-      "mappingHash": "sha256:v1:b6d9424ffcf2c4c477ccccf6a713460ac699d2bf34a27ca75222c8fa3313caa0"
+      "publicFacade": "projector/control-plane",
+      "testRef": "packages/control-plane/src/representation/service.test.ts#RepositoryRepresentationInspectionService separates exact artifact, currentness, fidelity, approval, and delivery across reset",
+      "testSourceDigest": "sha256:v1:dc3f9a00fcd5ccc6ad441bde7ef89c65f8e5321e8b2d1687d07bde5902b2b403",
+      "mappingHash": "sha256:v1:ab98fc4ed7474046524530b6e5012b123cbda8b81b5d8a624ee3b026a3506d32"
     },
     {
       "id": "scenario:inspect-isolated-application-behavior",
@@ -5548,8 +5548,8 @@
       },
       "publicFacade": "projector",
       "testRef": "scripts/sandbox-release-workflow.test.ts#manual source-severed release workflow has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job",
-      "testSourceDigest": "sha256:v1:ee683ce850cda0e1b4e26b05ddc46987c4baba1debf7ae4e3cc89b2b957cfe09",
-      "mappingHash": "sha256:v1:d290bbf5f8ad49780286e936b0ab0966f305cb291271237ca0f9e5c4545d8d77"
+      "testSourceDigest": "sha256:v1:da76bcfa9e551240a0782311965dfc3a4dea8462c8f6e7e38a8d17c52c48649d",
+      "mappingHash": "sha256:v1:7fd0c7b0eaab49f45c16f09f85857de47257adc65feb52b50b8234a1feed95d5"
     },
     {
       "id": "scenario:merge-independent-canonical-entities-locally",

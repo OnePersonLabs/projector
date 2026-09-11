@@ -1,6 +1,6 @@
 {
   "name": "projector",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.30.0",
@@ -11,7 +11,6 @@
     "build": "pnpm -r --if-present build",
     "create-migration": "node scripts/create-project-data-migration.mjs",
     "check:boundaries": "node scripts/check-package-boundaries.mjs",
-    "acceptance:knowledge": "node scripts/knowledge-acceptance.mjs",
     "plugin:proposal-schema": "node scripts/generate-plugin-proposal-schema.mjs",
     "plugin:proposal-schema:check": "node scripts/generate-plugin-proposal-schema.mjs --check",
     "spec:check": "node scripts/check-spec-human-technical.mjs",

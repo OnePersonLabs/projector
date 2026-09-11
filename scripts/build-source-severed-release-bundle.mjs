@@ -57,7 +57,7 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot, options = {
     ]);
     const packedManifest = JSON.parse(packedManifestSource);
     const pluginManifest = JSON.parse(await readFile(join(candidateRoot, "plugin/projector/.codex-plugin/plugin.json"), "utf8"));
-    if (packedManifest.name !== releasePackageName || packedManifest.version !== releaseVersion || packedManifest.bin?.projector !== "./bin/projector.js") throw new Error("packed release identity does not match the candidate");
+    if (packedManifest.name !== releasePackageName || packedManifest.version !== releaseVersion || packedManifest.bin !== undefined || packedManifest.exports?.["."] !== undefined || packedManifest.exports?.["./cli"] !== undefined || packedManifest.exports?.["./operations"] === undefined) throw new Error("packed operation-only release identity does not match the candidate");
     if (pluginManifest.name !== "projector" || pluginManifest.version !== releaseVersion) throw new Error("plugin release identity does not match the candidate");
 
     const files = await inventoryCandidateFiles(candidateRoot);

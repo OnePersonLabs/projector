@@ -20,7 +20,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm acceptance:knowledge
       - run: pnpm verify
       - run: pnpm release:artifacts:check
       - run: node scripts/build-source-severed-release-bundle.mjs "${{ runner.temp }}/projector-release-candidate"

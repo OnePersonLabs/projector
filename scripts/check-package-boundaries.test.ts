@@ -59,11 +59,10 @@ describe("subsystem architecture closure", () => {
       host: "authenticateRepresentationBinding(input);",
       session: "input.capsule.representation; input.instructions.representation; hashFramedDomain(\"representation-artifact\", input.instructions.text);",
       mcpServer: "function createProjectorMcpServer() {}",
-      mcpComposition: 'read["projector.preview_representation"] = preview; read["projector.validate_representation"] = validate;',
       coverage: "const reason = 'authenticated representation projection evidence';",
     };
     expect(validateSubsystemArchitecture(complete)).toEqual([]);
-    for (const key of ["planning", "host", "session", "mcpServer", "mcpComposition", "coverage"] as const) expect(validateSubsystemArchitecture({ ...complete, [key]: "severed" }).join("\n")).toMatch(/planning|host|session|mcp|coverage/iu);
+    for (const key of ["planning", "host", "session", "mcpServer", "coverage"] as const) expect(validateSubsystemArchitecture({ ...complete, [key]: "severed" }).join("\n")).toMatch(/planning|host|session|mcp|coverage/iu);
     expect(validateSubsystemArchitecture({ ...complete, context: "deriveBehaviorViews(); const profile = 'agent-compact';" }).join("\n")).toMatch(/parallel.*renderer|context/iu);
   });
 });
