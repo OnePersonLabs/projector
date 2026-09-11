@@ -8,9 +8,8 @@ import * as controlPlane from "@projector/control-plane";
 import { describe, expect, it } from "vitest";
 import * as core from "@projector/core";
 import * as engine from "@projector/engine";
-import * as testkit from "@projector/testkit";
 // @ts-expect-error release entrypoint is an executable JavaScript module
-import { observeRepresentationClosure, observeInstalledRepresentationLinks, observeRepresentationProfileRecovery } from "./run-release-acceptance.mjs";
+import { verifyRepresentationProjection, observeInstalledRepresentationLinks, observeRepresentationProfileRecovery } from "./run-release-acceptance.mjs";
 
 const id = "scenario:verify-representation-end-to-end-closure";
 const owner = { id, title: "Preserve representation closure", steps: [
@@ -20,7 +19,7 @@ const owner = { id, title: "Preserve representation closure", steps: [
   { role: "forbidden-outcome", statement: "Do not weaken the authorization boundary." },
 ] };
 const inventory = [{ id, owner, title: owner.title, semanticHash: core.hashFramedDomain("fixture-owner", owner), legacyIds: ["scenario:56:representation"] }];
-const input = { core, engine, testkit, inventory, sourceRevision: "fixture-revision", worktreeDigest: core.hashFramedDomain("fixture-worktree", "test") };
+const input = { core, engine, inventory, sourceRevision: "fixture-revision", worktreeDigest: core.hashFramedDomain("fixture-worktree", "test") };
 
 describe("release representation observations", () => {
   it("exercises public profile recovery and three rejection controls without claiming packaged delivery", async () => {
@@ -46,38 +45,33 @@ describe("release representation observations", () => {
       const recovered = await observeRepresentationProfileRecovery({ root, core, engine, controlPlane, proposal, reconcile: (input: { changeSelector: string; approvalSelector?: string }) => service.reconcile(input) });
       expect(recovered.result.profile).toMatchObject({ fromVersion: "1", toVersion: "2" });
       expect(recovered.result.delivery).toMatchObject({ stage: "reconciliation-service", deliveredToRunnerBoundary: false });
-      expect(recovered.observation.stage).toBe("invalidation-recovery");
-      expect(recovered.observation.severedEdgeRejected).toBe(true);
+      expect(Object.values(recovered.negatives).every(({ rejected }) => rejected)).toBe(true);
+      expect(recovered.preservedHistory.length).toBeGreaterThan(0);
     } finally { await rm(root, { recursive: true, force: true }); }
   }, 30_000);
 
-  it.skipIf(!process.env.PROJECTOR_TEST_PACKAGED_ROOT)("exercises installed composition, delivery and severed-package controls and profile recovery without claiming dogfood", async () => {
-    const observations = await observeInstalledRepresentationLinks({ packagedRoot: process.env.PROJECTOR_TEST_PACKAGED_ROOT });
-    expect(observations.map((item: { stage: string }) => item.stage)).toEqual(["public-composition", "downstream-consumer", "packed-release", "invalidation-recovery"]);
-    for (const observation of observations) {
-      expect(observation.severedEdgeRejected).toBe(true);
-      expect(observation.observedOutputHash).not.toBe(observation.failureHash);
-    }
-    const base = await observeRepresentationClosure(input);
-    const receipt = testkit.createSubsystemClosureReceipt({ subsystemId: "representation", revision: input.sourceRevision, worktreeDigest: input.worktreeDigest, observations: [...base.receipt.observations, ...observations] });
-    const result = testkit.evaluateSubsystemClosure({ subsystemId: "representation", requiredObligationIds: testkit.SUBSYSTEM_CLOSURE_STAGES.map((stage) => `representation.${stage}.v1`) }, receipt);
-    expect(result.status).toBe("open");
-    expect(result.blockers.join(" ")).not.toContain("invalidation-recovery");
-    expect(result.blockers.join(" ")).toContain("dogfood");
-    expect(result.blockers.join(" ")).not.toContain("downstream-consumer");
+  it.skipIf(!process.env.PROJECTOR_TEST_PACKAGED_ROOT)("exercises installed composition, delivery, profile recovery, and severed-package controls", async () => {
+    const result = await observeInstalledRepresentationLinks({ packagedRoot: process.env.PROJECTOR_TEST_PACKAGED_ROOT });
+    expect(result.publicComposition.fidelity.status).toBe("valid");
+    expect(result.contentIntegrity.delivered.artifactIntegrity.status).toBe("valid");
+    expect(result.contentIntegrity.wrongCapsule.result?.status).toBe("failed");
+    expect(result.contentIntegrity.tampered.renderedText).toBeUndefined();
+    expect(result.packagedExport.severedPackage.result).toBeUndefined();
+    expect(result.packagedExport.restored.artifactIntegrity.status).toBe("valid");
+    expect(result.profileRecovery.result.replacement).toMatchObject({ artifactStatus: "valid", dependencyStatus: "current", approvalStatus: "not-supplied" });
+    expect(Object.values(result.profileRecovery.negatives).every(({ rejected }: { rejected: boolean }) => rejected)).toBe(true);
   }, 90_000);
 
-  it("exercises owner authority and fidelity but leaves unsupported installed links open", async () => {
-    const result = await observeRepresentationClosure(input);
-    expect(result.fidelityFailure.rejected).toBe(true);
-    expect(result.receipt.observations.map((item: {stage: string}) => item.stage)).toEqual(["authority", "observability"]);
-    expect(result.evaluation.status).toBe("open");
-    for (const stage of ["public-composition", "downstream-consumer", "invalidation-recovery", "dogfood", "packed-release"]) expect(result.evaluation.blockers.join(" ")).toContain(stage);
-    const changed = await observeRepresentationClosure({ ...input, inventory: [{ ...inventory[0], owner: { ...owner, steps: [...owner.steps, { role: "expected-outcome", statement: "Retain the explicit exception." }] } }] });
-    expect(changed.receipt.observations[0].observedOutputHash).not.toBe(result.receipt.observations[0].observedOutputHash);
+  it("directly exercises canonical owner authority, fidelity, and telemetry", async () => {
+    const result = await verifyRepresentationProjection(input);
+    expect(result.fidelity.assurance).toBe("exact");
+    expect(Object.values(result.negatives).every(({ rejected }) => rejected)).toBe(true);
+    expect(result.telemetry.some(({ event }: { event: string }) => event === "representation.compiled")).toBe(true);
+    const changed = await verifyRepresentationProjection({ ...input, inventory: [{ ...inventory[0], owner: { ...owner, steps: [...owner.steps, { role: "expected-outcome", statement: "Retain the explicit exception." }] } }] });
+    expect(changed.projection.contentHash).not.toBe(result.projection.contentHash);
   });
   it("rejects a missing canonical owner instead of using historical headings", async () => {
-    await expect(observeRepresentationClosure({ ...input, inventory: [] })).rejects.toThrow("accepted canonical closure scenario missing");
+    await expect(verifyRepresentationProjection({ ...input, inventory: [] })).rejects.toThrow("accepted canonical closure scenario missing");
   });
   it("refuses to certify a negative control that unexpectedly succeeds", async () => {
     class BrokenValidator extends engine.RepresentationCompiler {
@@ -86,6 +80,6 @@ describe("release representation observations", () => {
         return super.validateCandidate(input);
       }
     }
-    await expect(observeRepresentationClosure({ ...input, engine: { ...engine, RepresentationCompiler: BrokenValidator } })).rejects.toThrow("negative control unexpectedly passed");
+    await expect(verifyRepresentationProjection({ ...input, engine: { ...engine, RepresentationCompiler: BrokenValidator } })).rejects.toThrow("negative control unexpectedly passed");
   });
 });

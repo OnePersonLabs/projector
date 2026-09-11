@@ -1,5 +1,7 @@
 # Projector agent instructions
 
+The conceptual model owns intended behavior; code and implementation plans are revisable realizations. Feed implementation discoveries back into the model when they change accepted meaning. Critically assess a revision by the behavior, constraints, data safety, and recovery guarantees it preserves, not by fidelity to an earlier procedure. Use focused behavioral checks and reuse applicable results; add or repeat verification for a concrete failure risk or changed dependency. A report, hash, or review pass is not an additional product outcome.
+
 Before choosing edit paths for product, architecture, feature, or cleanup work, read the installed Projector skill's `operation-contract.md`, then run its sibling `../../scripts/projector-operation.mjs` with a strict `projector.operation/v1` `context` request containing the absolute repository root, the requested outcome, and `persist: true`. Inspect the relevant meaning, architectural obligations, and unknowns. Use a focused request with `entities` only after selecting an existing meaning; use the bounded context policy when the full dependency proof is needed.
 
 Keep the returned context ID. Before reusing it in another session, and after edits made outside Projector, send a strict `reconcile` operation with that ID through the same runner. Distinguish stale reasoning from a violated predicate. Refresh affected context when its dependencies changed.

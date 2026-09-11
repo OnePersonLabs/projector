@@ -9,28 +9,15 @@ lifecycle = "approved"
 [payload]
 subjectId = "concern:persisted-project-artifact-format"
 conclusion = "migrate"
-rationale = """The user explicitly selected TOML on September 10, 2026 for human-authored Projector configuration and \
-  canonical artifacts, while retaining JSON for useful machine or external contracts and SQLite for \
-  suitable derived state. Readability includes stable identity-derived filenames, deliberate ordering, \
-  multiline prose, local versioned editor schemas, and ordinary edits that do not require manual fingerprint \
-  repair. Semantic hashes compare normalized parsed values; exact bytes remain separately bound only \
-  where reviewed mutation, executable input, or recovery requires equality. This authority selects a \
-  format boundary, not correctness, acceptance, provenance, authorization, or universal editor support. \
-  Reaffirmed after the engineering-English requirement revision and integrated shared-schema expansion \
-  at main 7b0b01c. Current context knowledge_context_13c8d763d659dcf5a80b04a3f3234cb2 (sha256:v1:d558411000e407401e0f779b6c4e5ed913c8d763d659dcf5a80b04a3f3234cb2) \
-  records assessment sha256:v1:5b502ac61ec3e574da27a7f48f831d91d14a71dc9ec3a7ddfa0582ace72e0a02: the \
-  requirement-change trigger fired while the format scope and durable-meaning dependency remained current \
-  and no assumption was invalidated. Core typecheck, 43 focused contract tests, and package boundaries \
-  passed. The new typed schemas remain inside the accepted schema-authority boundary. This does not \
-  claim that TOML conversion, editor delivery, readiness, or migration is complete.
-
-Reaffirmed for this canonical meaning transaction after reviewing the durable-meaning and engineering-English \
-  revisions. They preserve the accepted strict TOML authored-wire ownership, derived runtime hashes, \
-  and release-selected format boundary; this transaction changes no format schema, persistence codec, \
-  or format assumption. Current retained context knowledge_context_6204acbaff99f456aa7e24800a87b41d \
-  (sha256:v1:5290553931fc3960115742786629db7b6204acbaff99f456aa7e24800a87b41d) supplies the exact current \
-  repository and canonical observation. This reaffirmation does not claim complete implementation or \
-  economic advantage."""
+rationale = """The user selected TOML on September 10, 2026 for human-authored configuration and canonical artifacts, \
+  JSON for useful machine or external contracts, and SQLite for suitable derived state. Readability \
+  requires stable identity-derived filenames, deliberate ordering, multiline prose, local versioned \
+  editor schemas, and ordinary edits without manual fingerprint repair. Semantic hashes compare normalized \
+  parsed values. Exact bytes remain bound where reviewed mutation, executable input or recovery requires \
+  equality; they do not establish correctness or universal editor support. The September 11 user-authorized \
+  projection and verification pivot preserves these format and schema choices. It revises development \
+  procedures without changing persistence codecs, accepted semantic identity or data safety. This reassessment \
+  retains the existing decision and assumptions; it does not infer that unobserved assumptions are proved."""
 assumptions = [ "The executable typed contracts remain the sole schema authority.", "Projector can package exact generated schemas and copy them into an adopting repository during initialization or preparation.", "A maintained TOML implementation can round-trip every supported typed value on Node 24.", "Machine-owned journals, receipts, external contracts, and derived SQLite state remain useful in JSON or SQLite rather than being converted for appearance." ]
 assessmentConfidence = "high"
 governanceRiskClass = "R2"

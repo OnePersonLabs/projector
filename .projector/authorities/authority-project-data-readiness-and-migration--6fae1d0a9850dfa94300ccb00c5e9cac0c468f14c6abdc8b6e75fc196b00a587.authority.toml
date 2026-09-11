@@ -9,21 +9,16 @@ lifecycle = "approved"
 [payload]
 subjectId = "concern:project-data-readiness-and-migration"
 conclusion = "migrate"
-rationale = """The user requires installed Projector operations to prepare compatible project data automatically before \
-  strict loaders run, with numeric SemVer chains, checksummed immutable migrations, exclusive migration \
-  access, a verified full backup under the user's Codex data directory, recoverable staging and publication, \
-  and configuration updated last. Existing transaction journals and receipts are durable recovery evidence, \
-  not disposable caches. A new version marker cannot stop an older already-running process that does \
-  not participate in the new protocol; the legacy transition therefore requires an explicit supported \
-  restart/quiescence disposition and a held-old-process negative test before promotion.
-
-Reaffirmed for this canonical meaning transaction after reviewing the durable-meaning and reverse-reconciliation \
-  revisions. They preserve exclusive access, authenticated backup, Pending, journal, receipt, recovery, \
-  and release-selected migration ownership; this transaction changes no source authority, target descriptor, \
-  or access assumption. Current retained context knowledge_context_6204acbaff99f456aa7e24800a87b41d \
-  (sha256:v1:5290553931fc3960115742786629db7b6204acbaff99f456aa7e24800a87b41d) supplies the exact current \
-  repository and canonical observation. This reaffirmation does not claim complete implementation or \
-  economic advantage."""
+rationale = """Installed operations prepare compatible project data before strict loaders run, using numeric SemVer \
+  chains, immutable authenticated migrations, exclusive access, recoverable staging and publication, \
+  and configuration updated last. One verified pre-upgrade backup under the user Codex data directory \
+  preserves the exact starting state, including uncommitted data, across the entire migration chain \
+  and Pending recovery. It is not recreated for each version script. Transaction journals and receipts \
+  preserve actual recovery state. An older process that does not participate in the protocol needs a \
+  supported restart or quiescence route; the real held-old-process check protects that boundary. The \
+  September 11 user-authorized pivot removes redundant development certification, not these upgrade, \
+  backup or recovery guarantees. The existing decision and assumptions remain justified after the durable-meaning \
+  revision."""
 assumptions = [ "All compatible installed runners honor the shared operation-access protocol after the converted baseline.", "The host can resolve a writable user Codex data directory for verified backups.", "The existing writer lease and transaction journal remain the canonical mutation exclusion and recovery mechanisms inside ordinary governed writes.", "The one-time legacy conversion can require a supported process or session restart because older code cannot be retroactively fenced." ]
 assessmentConfidence = "high"
 governanceRiskClass = "R2"

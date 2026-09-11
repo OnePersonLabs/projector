@@ -721,7 +721,7 @@
       "tests": [
         {
           "publicFacade": "projector",
-          "testRef": "packages/testkit/src/release-acceptance.test.ts#public release acceptance authority binds verified traceability, subsystem closure, full benchmark results, and same-run packed lifecycle artifacts"
+          "testRef": "packages/testkit/src/release-acceptance.test.ts#public release acceptance authority binds verified traceability, full benchmark results, and same-run packed lifecycle artifacts"
         }
       ]
     },
@@ -1128,11 +1128,11 @@
         },
         {
           "publicFacade": "projector/testkit",
-          "testRef": "packages/testkit/src/subsystem-closure.test.ts#generic subsystem closure control closes only a revision-bound contract with independently observed positive and negative evidence for every stage"
+          "testRef": "scripts/run-release-acceptance.test.ts#release representation observations directly exercises canonical owner authority, fidelity, and telemetry"
         },
         {
           "publicFacade": "projector/testkit",
-          "testRef": "packages/testkit/src/subsystem-closure.test.ts#generic subsystem closure control rejects missing, duplicate, self-asserted, stale, and non-severable evidence"
+          "testRef": "scripts/run-release-acceptance.test.ts#release representation observations exercises public profile recovery and three rejection controls without claiming packaged delivery"
         }
       ]
     }

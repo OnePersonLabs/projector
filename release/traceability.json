@@ -75,7 +75,7 @@
     {
       "id": "requirement:durable-meaning",
       "title": "Durable conceptual operations",
-      "semanticHash": "sha256:v1:7ef162d41905f74d8ef6c0abeb85a3e7429eee9f7f25e33ef382623b7ec161ef",
+      "semanticHash": "sha256:v1:72b089e52ceb67b0674dc5391b796ade9660b93face457d99b45a2bec2d50a08",
       "legacyIds": [],
       "owner": {
         "id": "requirement:durable-meaning",
@@ -86,7 +86,7 @@
           "stable meaning",
           "semantic identity"
         ],
-        "statement": "Retain accepted meaning under stable identities across changes and sessions. Reuse an existing Requirement or Scenario when it owns the meaning. Treat wording, aliases, paths, and similarity as discovery evidence; they cannot by themselves prove semantic equivalence or authorize a new identity. Preserve explicit split, merge, replacement, and deletion history.\n\nKeep the semantic core provider-neutral. Agent and model output remains a candidate until deterministic policy or explicit acceptance promotes it; resampling cannot mutate accepted architecture or redefine identity. Fine-grained storage, filenames, sharding, wording, and implementation replacement do not change stable identity, meaning, relations, or lineage.",
+        "statement": "Retain accepted meaning under stable identities across changes and sessions. Reuse an existing Requirement or Scenario when it owns the meaning. Treat wording, aliases, paths, and similarity as discovery evidence; they cannot by themselves prove semantic equivalence or authorize a new identity. Preserve explicit split, merge, replacement, and deletion history.\n\nKeep the semantic core provider-neutral. Agent and model output remains a candidate until deterministic policy or explicit acceptance promotes it; resampling cannot mutate accepted architecture or redefine identity. Fine-grained storage, filenames, sharding, wording, and implementation replacement do not change stable identity, meaning, relations, or lineage.\n\nThe conceptual model owns intended behavior. Code and implementation plans are revisable realizations. Incremental projection is a practical efficiency choice, not a requirement to preserve generated code. Planning and implementation inform each other. Feed discoveries back into an explicit model revision when intended behavior changes. Critically assess revisions against preserved behavior, constraints, data safety and recovery, rather than conformance to an earlier procedure. Keep unresolved meaning explicit. Evaluate projection, verification and maintenance effort together; a report or internally consistent model does not establish net benefit.",
         "status": "active",
         "sourceClass": "authored",
         "scope": {
@@ -143,6 +143,11 @@
             "kind": "document",
             "locator": "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md",
             "description": "Recovered historical design evidence; retained conditions and limits require explicit acceptance through this proposal."
+          },
+          {
+            "kind": "user-request",
+            "locator": "user:2026-09-11:projection-feedback-proportionate-verification",
+            "description": "The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete behavior rather than create repetitive certification overhead. Preserve required behavior, critical review, data safety, authority and recovery."
           }
         ],
         "realizations": [
@@ -162,17 +167,17 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:1b39a4b6f97a07735c0dd4c6701b95129a667ed1ebba68971622bdac02237d0f",
-        "semanticHash": "sha256:v1:7ef162d41905f74d8ef6c0abeb85a3e7429eee9f7f25e33ef382623b7ec161ef"
+        "semanticHash": "sha256:v1:72b089e52ceb67b0674dc5391b796ade9660b93face457d99b45a2bec2d50a08"
       },
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository derives the same root from document identity regardless of write order or storage path",
-      "testSourceDigest": "sha256:v1:98191f5bf9425e874812465f6b89085462acf07b36a35f2a4d2d16f08a51eb7c",
-      "mappingHash": "sha256:v1:d5fb5d4c6d9fadfa668920e6a1d2fbf7893e8762f457fb7bcaa52640f2c817d4"
+      "testSourceDigest": "sha256:v1:1a04a1e24c76c0c626ae0419cd47042697235fb5b6b9baf4ba00ce4c8d752329",
+      "mappingHash": "sha256:v1:4c9e4e6676a275d86a9979be0a2c703f3490b4423a8c415391974b359ed45f75"
     },
     {
       "id": "requirement:engineering-english",
       "title": "Express one meaning for humans and agents",
-      "semanticHash": "sha256:v1:caa7b29df9c428ff170d3150a2cb70609df17165dcaf503883387d47f01d7640",
+      "semanticHash": "sha256:v1:ba114615396f246efe52d739e0fc71f25d2a9739e6ed5a3d512277fafa02428c",
       "legacyIds": [],
       "owner": {
         "id": "requirement:engineering-english",
@@ -182,7 +187,7 @@
           "simplified engineering English",
           "controlled English"
         ],
-        "statement": "Keep human-readable engineering statements precise and concise while preserving identity, normative force, negation, scope, quantifiers, conditions, exceptions, dependency order, and scenario roles. Derive compact agent context and exact execution instructions from the same accepted meaning and rendering/provenance machinery. Ordinary conceptual reading, inspection of plan-bound instructions, and authorized execution remain distinct operations: reading requires no invented mutation approval, an internally consistent or historical artifact is not thereby current, and inspection or delivery does not authorize execution. Do not maintain competing specifications that require manual synchronization.\n\nEvery human or agent projection binds the source semantic hash and profile. Compact context preserves exact identifiers, tokens, numbers, units, scope, order, negation, conditions, exceptions, biconditionals, and cardinality. Ambiguous, weaker, or measured net-negative compression falls back to the least-compressed adequate form with weaker-capability disclosure. Style checks and prose cannot establish truth, equivalence, or hard-rule enforcement.\n\nRepresentation machinery and deterministic operation primitives have separate responsibilities: compact representation never grants mutation authority. Prefer a suitable registered deterministic operation over an equivalent raw handwritten edit, within its authorized scope and the accepted host-operation runner. Retain operation categories reached by supported workflows; the historical mandatory primitive catalog and separate command or CLI delivery prescription are superseded by the registered runner. Unsupported insert, rename, Markdown-editing, or workflow primitives remain explicitly unrealized, and are reconsidered only when an actual supported workflow requires the missing operation and its preview, state, effect, evidence, and recovery contract. This does not revive Projector-owned confinement, mandatory WSL, or the historical network enum.",
+        "statement": "Keep human-readable engineering statements precise and concise while preserving identity, normative force, negation, scope, quantifiers, conditions, exceptions, dependency order, and scenario roles. Derive compact agent context and exact execution instructions from the same accepted meaning and rendering/provenance machinery. Ordinary conceptual reading, inspection of plan-bound instructions, and authorized execution remain distinct operations: reading requires no invented mutation approval, an internally consistent or historical artifact is not thereby current, and inspection or delivery does not authorize execution. Do not maintain competing specifications that require manual synchronization.\n\nEvery human or agent projection binds the source semantic hash and profile. Compact context preserves exact identifiers, tokens, numbers, units, scope, order, negation, conditions, exceptions, biconditionals, and cardinality. Ambiguous, weaker, or measured net-negative compression falls back to the least-compressed adequate form with weaker-capability disclosure. Style checks and prose cannot establish truth, equivalence, or hard-rule enforcement.\n\nRepresentation machinery and deterministic operation primitives have separate responsibilities: compact representation never grants mutation authority. Prefer a suitable registered deterministic operation over an equivalent raw handwritten edit, within its authorized scope and the accepted host-operation runner. Retain operation categories reached by supported workflows; the historical mandatory primitive catalog and separate command or CLI delivery prescription are superseded by the registered runner. Unsupported insert, rename, Markdown-editing, or workflow primitives remain explicitly unrealized, and are reconsidered only when an actual supported workflow requires the missing operation and its preview, state, effect, evidence, and recovery contract. This does not revive Projector-owned confinement, mandatory WSL, or the historical network enum.\n\nVerify representation behavior through direct fidelity, association, currentness and recovery checks. A real installed host exercise checks delivery and the resulting action where automated tests cannot observe the host. Reuse relevant checks when their dependencies remain unchanged. Do not require a newly certified seven-stage report or a transcript parser for every release. Hashes identify exact inputs and outputs; they do not establish truth or agent understanding. Amend verification methods when a critically reviewed alternative preserves the consequential failure protections with less total effort.",
         "status": "active",
         "sourceClass": "authored",
         "scope": {
@@ -239,6 +244,11 @@
             "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/05-projections/runtime-and-representations.md",
             "contentHash": "sha256:v1:a1aa287be9740885d83c0b5509f5274d57d80794b3a7d615f3cbf97282d841a0",
             "description": "Historical source evidence at lines 5-58 and 82-93; immutable Git blob 452e6b736a082992b65f0b286b60a7c4a515d93c. Content hash is SHA-256 of the exact Git blob bytes. Preserve useful conditions through explicit acceptance; historical implementation prescriptions are not authority."
+          },
+          {
+            "kind": "user-request",
+            "locator": "user:2026-09-11:projection-feedback-proportionate-verification",
+            "description": "The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete behavior rather than create repetitive certification overhead. Preserve required behavior, critical review, data safety, authority and recovery."
           }
         ],
         "realizations": [
@@ -258,12 +268,12 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:72cd2e19bb0ef375cda47cdc1f6190f316d4ce701675156f9a57121b193bf8bb",
-        "semanticHash": "sha256:v1:caa7b29df9c428ff170d3150a2cb70609df17165dcaf503883387d47f01d7640"
+        "semanticHash": "sha256:v1:ba114615396f246efe52d739e0fc71f25d2a9739e6ed5a3d512277fafa02428c"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation does not grant exact assurance when punctuation changes advisory force or scope",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:4459d3bd707ac718c389b1559a5b8d194d3e7042bc46c2e4c379036c7dfa7d78"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:530f0266de3f8a7ac8ee2c0bda77c2e86369cd42644afb2c2e95efe77f2d658d"
     },
     {
       "id": "requirement:evidence-bound-completion",
@@ -3310,8 +3320,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:b31f76d370bb070e36adc68289c5f67e8268fbc792e087843f4f64c875f6bc55"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:99fae1b18a9f07503d21283332f7fe2b02c22e6dcac548a66b41d1167a2e90f7"
     },
     {
       "id": "scenario:detect-new-consumer",
@@ -4046,8 +4056,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation invalidates when the result set changes even though selected value hashes are unchanged",
-      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
-      "mappingHash": "sha256:v1:8949812597824348bc2325b90aac884fb62d97ef422515d501f62441674eb76c"
+      "testSourceDigest": "sha256:v1:0c038431911f2e107e166e3d8a4a890af279d16ed5e1fa5da0899686ab2bd167",
+      "mappingHash": "sha256:v1:6ab0184655d094e43a11eb2e7863c34ff7b88db3453a70cbfcb15905c119ed87"
     },
     {
       "id": "scenario:discover-concerns-in-held-out-variants",
@@ -4556,8 +4566,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation falls back for measured net-negative compact output but selects compact for measured positive utility",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:713c169850b094c60a3ff3f7d2b582e6ec748abbf30cbc2f921f47a0d1936a8f"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:afec48a1f430a8adf0f2b80aafdaf58d62b8d929d09286415daf15e9b0fc27ff"
     },
     {
       "id": "scenario:fall-back-when-compression-cost-exceeds-saving",
@@ -4644,8 +4654,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation selects compact by measured net instruction efficiency and falls back when compact fidelity is unsafe",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:c6cc91ee53fd549a61b647da383752ebd908f18638ee803227d4698c7d2156be"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:401d47a7f04dadc255967cadba995fc18bd7a6b4400f07b8faffb95108956836"
     },
     {
       "id": "scenario:heuristic-signature-cannot-prove-behavior",
@@ -5042,8 +5052,8 @@
       },
       "publicFacade": "projector/control-plane",
       "testRef": "packages/control-plane/src/representation/service.test.ts#RepositoryRepresentationInspectionService separates exact artifact, currentness, fidelity, approval, and delivery across reset",
-      "testSourceDigest": "sha256:v1:dc3f9a00fcd5ccc6ad441bde7ef89c65f8e5321e8b2d1687d07bde5902b2b403",
-      "mappingHash": "sha256:v1:ab98fc4ed7474046524530b6e5012b123cbda8b81b5d8a624ee3b026a3506d32"
+      "testSourceDigest": "sha256:v1:1fa23628655604328d12e990d8112c7ce75d7b7b09def73e67e978d2e63691f5",
+      "mappingHash": "sha256:v1:60dd40613be88e01ff025abd69f37caccaa8115e19a471a09ea7510ec8508e31"
     },
     {
       "id": "scenario:inspect-isolated-application-behavior",
@@ -5360,8 +5370,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation keeps style lint separate from semantic truth and reports blocking mechanics deterministically",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:5df25817bf473cfe3a8fa76ca22f3e2718e78bfef2f00ae77f169becdb782b23"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:9655fa693b190f03320fc7e1446da13ce1aa4db87ff64a77c0dc62a653a229fa"
     },
     {
       "id": "scenario:lint-human-technical-prose-without-equivalence-claim",
@@ -5618,8 +5628,8 @@
       },
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository updates one canonical entity without rewriting an unrelated entity",
-      "testSourceDigest": "sha256:v1:98191f5bf9425e874812465f6b89085462acf07b36a35f2a4d2d16f08a51eb7c",
-      "mappingHash": "sha256:v1:d55c7a1e9d6df28b3db4ac8f9453bad3dd2ad848f7fb94778560d8b5e93245ac"
+      "testSourceDigest": "sha256:v1:1a04a1e24c76c0c626ae0419cd47042697235fb5b6b9baf4ba00ce4c8d752329",
+      "mappingHash": "sha256:v1:394c92d1078477f2fc7b0c213d08d00d4c35a7d04d0b8cc19c46b07549f3d5be"
     },
     {
       "id": "scenario:prefer-semantic-precedent-over-file-proximity",
@@ -5906,8 +5916,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation accepts the exact machine kernel and preserves every protected literal",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:bab9abc187a3f840a2bef1f2eb2f3abe2e1e7b0d091f18c36e16cb90ac941594"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:ad5410421865f24b7f40432455982d91a4acee969b1500e63f212cdf082657ac"
     },
     {
       "id": "scenario:preserve-critical-tokens-during-compaction",
@@ -5976,8 +5986,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation falls back for measured net-negative compact output but selects compact for measured positive utility",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:e94c84cf98fccc9bca9c9658d24474e16fd1032b2a3c15ae2cf2dbf918296686"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:475ea3b200ea41f3d068ded93241bf41148f7a0759dd324b51ee17299ee37002"
     },
     {
       "id": "scenario:preserve-critical-tokens-during-compaction",
@@ -6046,8 +6056,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation keeps style lint separate from semantic truth and reports blocking mechanics deterministically",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:d51b471f2349a20788d4fa13429acac5e4fff5d8a4eca795daee0181c89e73fe"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:f7ebcd40dc24d7302e561e14f115da80ea6e0080451f35347b48fb7752dc01e4"
     },
     {
       "id": "scenario:preserve-critical-tokens-during-compaction",
@@ -6116,8 +6126,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects invented compact abbreviations unless measured utility and clarity are supplied",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:3296d4409d987ebccd46096a9afe2447d5825de3bba9e5beca3c290351f9b352"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:c2fa6a35b43cdce2b43ecbb37f7af066b02967ba922d4452b15382b6def3eeb2"
     },
     {
       "id": "scenario:preserve-independent-facts-after-partial-analyzer-failure",
@@ -6314,8 +6324,8 @@
       },
       "publicFacade": "projector/runtime",
       "testRef": "packages/runtime/src/persistence/canonical-repository.test.ts#CanonicalFileRepository derives the same root from document identity regardless of write order or storage path",
-      "testSourceDigest": "sha256:v1:98191f5bf9425e874812465f6b89085462acf07b36a35f2a4d2d16f08a51eb7c",
-      "mappingHash": "sha256:v1:fa2744afa803d9cc8768aa7df03b093eb1809aa22d2a20a7803f3b9ce7568bcd"
+      "testSourceDigest": "sha256:v1:1a04a1e24c76c0c626ae0419cd47042697235fb5b6b9baf4ba00ce4c8d752329",
+      "mappingHash": "sha256:v1:653b7340b88fd0ad785ad36c8bc12f626b1b4bcdd1a6cd5e8a6b6d10426b1fdd"
     },
     {
       "id": "scenario:preserve-one-source-across-projections",
@@ -6389,8 +6399,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation compiles all built-ins from one canonical source while keeping rendered content behind the artifact port",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:5acb44111c9bd9179b252288feb1c71bf7ca5b9a9d0c89c872b7d40ef91d930b"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:cb5c82c418cdd1aebe994fdb230dfd3cf755dcb33329c0b38f5480b2bf375b77"
     },
     {
       "id": "scenario:preserve-valid-work-across-plan-revisions",
@@ -6609,8 +6619,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation detects a query program version replacement against the same StateDigest",
-      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
-      "mappingHash": "sha256:v1:5e6e6aca043a5a77a168156ef27eb6d57484bc0582180537e171d286e6cd73f7"
+      "testSourceDigest": "sha256:v1:0c038431911f2e107e166e3d8a4a890af279d16ed5e1fa5da0899686ab2bd167",
+      "mappingHash": "sha256:v1:adc649203c84c23a67475a37a98922401cb9c027e18e6c4cc6249d95128993a1"
     },
     {
       "id": "scenario:recover-every-transaction-journal-phase",
@@ -6826,13 +6836,13 @@
         "semanticHash": "sha256:v1:f52864b6338e97aa854a6077839166ab8f7abc477f6800197f21a8b76d28b7ed"
       },
       "publicFacade": "projector",
-      "testRef": "packages/testkit/src/release-acceptance.test.ts#public release acceptance authority binds verified traceability, subsystem closure, full benchmark results, and same-run packed lifecycle artifacts",
-      "testSourceDigest": "sha256:v1:e3aa9a530cf778d90880083ea01ce3ea68c0b3cf02a597c07381789570b0dce3",
+      "testRef": "packages/testkit/src/release-acceptance.test.ts#public release acceptance authority binds verified traceability, full benchmark results, and same-run packed lifecycle artifacts",
+      "testSourceDigest": "sha256:v1:c53b83b9cd980ce5bc0798f8037f0973ff7f79461a6e9a3b33d3c4f985b5a03d",
       "requiredArtifactIds": [
         "packed-held-out-lifecycle",
         "packed-held-out-lifecycle-transcript"
       ],
-      "mappingHash": "sha256:v1:d185ef58bc6ca7ad8e72bdad6b03d3a8f72438f25bb79709b6145aa90c59a9fa"
+      "mappingHash": "sha256:v1:0d35433304a4e22fb9bc3deeacc50e27906bc7cf9482a7011e88c5a0a5c2b52b"
     },
     {
       "id": "scenario:recover-sandbox-rationale",
@@ -7806,8 +7816,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped cache refuses an entry that omits consumed value hashes",
-      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
-      "mappingHash": "sha256:v1:1850e205524bb5b1bac1fd3175bb2852af2155f327a429a1ce785b971b5d1f83"
+      "testSourceDigest": "sha256:v1:0c038431911f2e107e166e3d8a4a890af279d16ed5e1fa5da0899686ab2bd167",
+      "mappingHash": "sha256:v1:97217e046c96974f5868968bf489b8f11b05f93b86802be1bfb0be6333ae3d84"
     },
     {
       "id": "scenario:reject-stale-bound-value-dependency",
@@ -7884,8 +7894,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation marks a changed value dependency stale",
-      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
-      "mappingHash": "sha256:v1:4b1f394b213db16b09847c611df8ddfa6902406d2fe0bb901f142e5b62cf5ad5"
+      "testSourceDigest": "sha256:v1:0c038431911f2e107e166e3d8a4a890af279d16ed5e1fa5da0899686ab2bd167",
+      "mappingHash": "sha256:v1:03b7a225305cf275c5407134ea43847d525cf77e20c1c70272f2165998ef0a34"
     },
     {
       "id": "scenario:reject-undeclared-governance-cycles",
@@ -8057,8 +8067,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation rejects dropped scope, guards, order, identities, literals, and swapped Gherkin roles",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:c5e11899b0eb1c76306737caa044a52a7da1c76621d27530907b15d06cf76add"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:9b5fa0326b179b6be176dceb26bd447bf05c739e33dd45a5a297b52196d87bee"
     },
     {
       "id": "scenario:reject-weakened-representation-semantics",
@@ -8157,8 +8167,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation selects compact by measured net instruction efficiency and falls back when compact fidelity is unsafe",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:420c2ff996d23989935b6d34c8971b44a1d87b504d5499818a8da6ba27f10a9e"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:e58a6a1e4f668b56ff50b9edc8bd719ebca38dc562bd6a756537d5d252c3a510"
     },
     {
       "id": "scenario:reopen-completion-obligation",
@@ -8948,8 +8958,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation rebinds an unrelated root change without recomputing semantic work",
-      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
-      "mappingHash": "sha256:v1:b824e0063e788b884428425225ddb204ba098207c1ee297bc34d1a310d07aae7"
+      "testSourceDigest": "sha256:v1:0c038431911f2e107e166e3d8a4a890af279d16ed5e1fa5da0899686ab2bd167",
+      "mappingHash": "sha256:v1:29cd8bacc60a1f9fc96c1823d6f4b40b4aee8fdfe415812e3be458aaa91ddf90"
     },
     {
       "id": "scenario:reuse-identity-for-synonymous-request",
@@ -9278,8 +9288,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped cache refuses an entry that omits consumed value hashes",
-      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
-      "mappingHash": "sha256:v1:a309df3c6da0b4d1368d2efc1fed1639f71323734ceb5bad08acd7d9dd8426b3"
+      "testSourceDigest": "sha256:v1:0c038431911f2e107e166e3d8a4a890af279d16ed5e1fa5da0899686ab2bd167",
+      "mappingHash": "sha256:v1:a326ef82416af53d599d3e1257d3977f4d42dba857bf401e3dda41d6b3769e6d"
     },
     {
       "id": "scenario:reuse-local-caches-after-unrelated-leaf-change",
@@ -9344,8 +9354,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation rebinds an unrelated root change without recomputing semantic work",
-      "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
-      "mappingHash": "sha256:v1:b72b5c6a773ace7d9391fb48168877dcc93546db4b606a346f416b4d329ea137"
+      "testSourceDigest": "sha256:v1:0c038431911f2e107e166e3d8a4a890af279d16ed5e1fa5da0899686ab2bd167",
+      "mappingHash": "sha256:v1:277406dc75e356747f130b73fbcb1018c6d8f3edcbb871d0e2793154608641b6"
     },
     {
       "id": "scenario:revalidate-after-analyzer-or-signature-profile-change",
@@ -10149,15 +10159,15 @@
     },
     {
       "id": "scenario:verify-representation-end-to-end-closure",
-      "title": "Verify representation end-to-end closure",
-      "semanticHash": "sha256:v1:d6fb1f0270e59284dc85bf781ff5d6b6156c78abe30e4fb76d65d541eaf1e62e",
+      "title": "Verify representation through proportionate behavioral checks",
+      "semanticHash": "sha256:v1:88557aa098cf124c40f5ac11d6b6c0a40cc4ec44549051b289d3a6eb38b53b9a",
       "legacyIds": [
         "scenario:56:compact-context-preserves-critical-tokens-and-avoids-false-compression"
       ],
       "owner": {
         "id": "scenario:verify-representation-end-to-end-closure",
         "key": "verify-representation-end-to-end-closure",
-        "title": "Verify representation end-to-end closure",
+        "title": "Verify representation through proportionate behavioral checks",
         "aliases": [],
         "status": "active",
         "sourceClass": "authored",
@@ -10170,19 +10180,19 @@
         "steps": [
           {
             "role": "precondition",
-            "statement": "The exact packed Projector artifact and an authenticated semantic change are available; representation closure evaluates the complete composed subsystem rather than only compact rendering or operation reachability."
+            "statement": "The installed Projector artifact and a concrete planned change are available. Accepted meaning and the relevant execution authority, profile and dependency bindings can be inspected."
           },
           {
             "role": "trigger",
-            "statement": "Run the public packed Projector artifact through the Representation closure contract. Compile an authenticated semantic change. Attach the selected projection to its Execution Capsule. Consume the exact artifact through the supported host and registered bundled-operation representation handler. Change the profile and reconcile every dependent projection, context, and capsule. Observe dedicated fidelity, fallback, and instruction-efficiency telemetry."
+            "statement": "Exercise public capture, plan and representation inspection. Check that the exact selected instructions match their change and capsule. Validate fidelity and explicit fallback behavior. Change a relevant profile or dependency and reconcile affected projections, context and capsules before reuse. Use a real installed host exercise to observe delivery and the resulting action."
           },
           {
             "role": "expected-outcome",
-            "statement": "all seven stable `representation.*.v1` closure obligations have revision- and worktree-bound positive evidence. Each obligation also has a negative control that rejects a severed edge. The subsystem remains open if projection composition is missing or host instructions are free-form. A generic content reader, skipped refresh, document-parse coverage proxy, or default zero release metric also blocks release."
+            "statement": "Direct behavioral checks reject wrong associations, altered instruction bytes, stale authority and missing required artifacts. Profile reconciliation preserves historical records and creates no automatic approval. Applicable recovery checks preserve unfinished work. Relevant fidelity and telemetry failures remain observable. One coherent installed workflow covers host wiring; existing checks may be reused when their relevant dependencies are unchanged. Required failures remain blocking, while missing procedural certificates do not create a new product obligation."
           },
           {
             "role": "forbidden-outcome",
-            "statement": "Registered handler presence, a fixed closure boolean, fabricated positive/negative observations, or a test-binding remap is used as evidence that the representation edges were exercised."
+            "statement": "A registered handler, content hash, fabricated observation, self-authored certificate or test-binding remap substitutes for exercising the required behavior. Correct delivery is claimed as proof of agent understanding. A cheaper method silently drops a consequential failure protection. Universal seven-stage receipt collection or repeated unchanged host certification is imposed solely because a previous procedure required it."
           }
         ],
         "origin": [
@@ -10203,29 +10213,34 @@
             "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/model/concepts/01561d6546adb32a8afb29429380b0ecdec1bd6a9dd562fbea23a395381ca5b8.concept.json",
             "contentHash": "sha256:v1:a4dd211d265700ff82bf503b4cedf13661ad8d9ec3aea6f147004e754a9634c3",
             "description": "Accepted host integrity preserves exact authority, state, provenance, cancellation and recovery without confinement or hostile same-user protection. Immutable Git blob 3ccfee51b0a75179711d6ded3324b17b8279da61; exact-byte SHA-256."
+          },
+          {
+            "kind": "user-request",
+            "locator": "user:2026-09-11:projection-feedback-proportionate-verification",
+            "description": "The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete behavior rather than create repetitive certification overhead. Preserve required behavior, critical review, data safety, authority and recovery."
           }
         ],
         "realizations": [],
         "evidence": [],
-        "discoveryHash": "sha256:v1:850f5a7ee2b3c1db26047827d6e72c8043cc3673b1caa698c3d23ec1f4501440",
-        "semanticHash": "sha256:v1:d6fb1f0270e59284dc85bf781ff5d6b6156c78abe30e4fb76d65d541eaf1e62e"
+        "discoveryHash": "sha256:v1:01b9f2bca5871e01c6a3a35a5d273f6b1f1ee8234419811c43c88d0c226ce3a4",
+        "semanticHash": "sha256:v1:88557aa098cf124c40f5ac11d6b6c0a40cc4ec44549051b289d3a6eb38b53b9a"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation derives the projection source from the complete authenticated semantic change instead of caller-authored representation input",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:cc06d5f554deb22f851e90f87551131868f6e05bd91fe95d17042c8ca4f36c4c"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:97508e56fc477c32f9742654a4513180793e02461b8ed58e3c366337b70aa787"
     },
     {
       "id": "scenario:verify-representation-end-to-end-closure",
-      "title": "Verify representation end-to-end closure",
-      "semanticHash": "sha256:v1:d6fb1f0270e59284dc85bf781ff5d6b6156c78abe30e4fb76d65d541eaf1e62e",
+      "title": "Verify representation through proportionate behavioral checks",
+      "semanticHash": "sha256:v1:88557aa098cf124c40f5ac11d6b6c0a40cc4ec44549051b289d3a6eb38b53b9a",
       "legacyIds": [
         "scenario:56:compact-context-preserves-critical-tokens-and-avoids-false-compression"
       ],
       "owner": {
         "id": "scenario:verify-representation-end-to-end-closure",
         "key": "verify-representation-end-to-end-closure",
-        "title": "Verify representation end-to-end closure",
+        "title": "Verify representation through proportionate behavioral checks",
         "aliases": [],
         "status": "active",
         "sourceClass": "authored",
@@ -10238,19 +10253,19 @@
         "steps": [
           {
             "role": "precondition",
-            "statement": "The exact packed Projector artifact and an authenticated semantic change are available; representation closure evaluates the complete composed subsystem rather than only compact rendering or operation reachability."
+            "statement": "The installed Projector artifact and a concrete planned change are available. Accepted meaning and the relevant execution authority, profile and dependency bindings can be inspected."
           },
           {
             "role": "trigger",
-            "statement": "Run the public packed Projector artifact through the Representation closure contract. Compile an authenticated semantic change. Attach the selected projection to its Execution Capsule. Consume the exact artifact through the supported host and registered bundled-operation representation handler. Change the profile and reconcile every dependent projection, context, and capsule. Observe dedicated fidelity, fallback, and instruction-efficiency telemetry."
+            "statement": "Exercise public capture, plan and representation inspection. Check that the exact selected instructions match their change and capsule. Validate fidelity and explicit fallback behavior. Change a relevant profile or dependency and reconcile affected projections, context and capsules before reuse. Use a real installed host exercise to observe delivery and the resulting action."
           },
           {
             "role": "expected-outcome",
-            "statement": "all seven stable `representation.*.v1` closure obligations have revision- and worktree-bound positive evidence. Each obligation also has a negative control that rejects a severed edge. The subsystem remains open if projection composition is missing or host instructions are free-form. A generic content reader, skipped refresh, document-parse coverage proxy, or default zero release metric also blocks release."
+            "statement": "Direct behavioral checks reject wrong associations, altered instruction bytes, stale authority and missing required artifacts. Profile reconciliation preserves historical records and creates no automatic approval. Applicable recovery checks preserve unfinished work. Relevant fidelity and telemetry failures remain observable. One coherent installed workflow covers host wiring; existing checks may be reused when their relevant dependencies are unchanged. Required failures remain blocking, while missing procedural certificates do not create a new product obligation."
           },
           {
             "role": "forbidden-outcome",
-            "statement": "Registered handler presence, a fixed closure boolean, fabricated positive/negative observations, or a test-binding remap is used as evidence that the representation edges were exercised."
+            "statement": "A registered handler, content hash, fabricated observation, self-authored certificate or test-binding remap substitutes for exercising the required behavior. Correct delivery is claimed as proof of agent understanding. A cheaper method silently drops a consequential failure protection. Universal seven-stage receipt collection or repeated unchanged host certification is imposed solely because a previous procedure required it."
           }
         ],
         "origin": [
@@ -10271,29 +10286,34 @@
             "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/model/concepts/01561d6546adb32a8afb29429380b0ecdec1bd6a9dd562fbea23a395381ca5b8.concept.json",
             "contentHash": "sha256:v1:a4dd211d265700ff82bf503b4cedf13661ad8d9ec3aea6f147004e754a9634c3",
             "description": "Accepted host integrity preserves exact authority, state, provenance, cancellation and recovery without confinement or hostile same-user protection. Immutable Git blob 3ccfee51b0a75179711d6ded3324b17b8279da61; exact-byte SHA-256."
+          },
+          {
+            "kind": "user-request",
+            "locator": "user:2026-09-11:projection-feedback-proportionate-verification",
+            "description": "The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete behavior rather than create repetitive certification overhead. Preserve required behavior, critical review, data safety, authority and recovery."
           }
         ],
         "realizations": [],
         "evidence": [],
-        "discoveryHash": "sha256:v1:850f5a7ee2b3c1db26047827d6e72c8043cc3673b1caa698c3d23ec1f4501440",
-        "semanticHash": "sha256:v1:d6fb1f0270e59284dc85bf781ff5d6b6156c78abe30e4fb76d65d541eaf1e62e"
+        "discoveryHash": "sha256:v1:01b9f2bca5871e01c6a3a35a5d273f6b1f1ee8234419811c43c88d0c226ce3a4",
+        "semanticHash": "sha256:v1:88557aa098cf124c40f5ac11d6b6c0a40cc4ec44549051b289d3a6eb38b53b9a"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/representation/index.test.ts#semantic representation compilation emits dedicated representation telemetry for accepted projections and fallback decisions",
-      "testSourceDigest": "sha256:v1:ef31484246201a76cf86f925e409355021539f84b95f8592feb14440b7f6a09e",
-      "mappingHash": "sha256:v1:59aadc32fd3cdc1cf78da31bc3be9d3ce5579ba1e161f4eb9a6a117cd7bd067c"
+      "testSourceDigest": "sha256:v1:68899ea03f8bf44901c92114776527a24b7fff3668734e218aaa0dc08252e725",
+      "mappingHash": "sha256:v1:85ec9fc640023cffa9baf1c4d11f7796e8f76d07eecab8fec2921ae6d9cc8e13"
     },
     {
       "id": "scenario:verify-representation-end-to-end-closure",
-      "title": "Verify representation end-to-end closure",
-      "semanticHash": "sha256:v1:d6fb1f0270e59284dc85bf781ff5d6b6156c78abe30e4fb76d65d541eaf1e62e",
+      "title": "Verify representation through proportionate behavioral checks",
+      "semanticHash": "sha256:v1:88557aa098cf124c40f5ac11d6b6c0a40cc4ec44549051b289d3a6eb38b53b9a",
       "legacyIds": [
         "scenario:56:compact-context-preserves-critical-tokens-and-avoids-false-compression"
       ],
       "owner": {
         "id": "scenario:verify-representation-end-to-end-closure",
         "key": "verify-representation-end-to-end-closure",
-        "title": "Verify representation end-to-end closure",
+        "title": "Verify representation through proportionate behavioral checks",
         "aliases": [],
         "status": "active",
         "sourceClass": "authored",
@@ -10306,19 +10326,19 @@
         "steps": [
           {
             "role": "precondition",
-            "statement": "The exact packed Projector artifact and an authenticated semantic change are available; representation closure evaluates the complete composed subsystem rather than only compact rendering or operation reachability."
+            "statement": "The installed Projector artifact and a concrete planned change are available. Accepted meaning and the relevant execution authority, profile and dependency bindings can be inspected."
           },
           {
             "role": "trigger",
-            "statement": "Run the public packed Projector artifact through the Representation closure contract. Compile an authenticated semantic change. Attach the selected projection to its Execution Capsule. Consume the exact artifact through the supported host and registered bundled-operation representation handler. Change the profile and reconcile every dependent projection, context, and capsule. Observe dedicated fidelity, fallback, and instruction-efficiency telemetry."
+            "statement": "Exercise public capture, plan and representation inspection. Check that the exact selected instructions match their change and capsule. Validate fidelity and explicit fallback behavior. Change a relevant profile or dependency and reconcile affected projections, context and capsules before reuse. Use a real installed host exercise to observe delivery and the resulting action."
           },
           {
             "role": "expected-outcome",
-            "statement": "all seven stable `representation.*.v1` closure obligations have revision- and worktree-bound positive evidence. Each obligation also has a negative control that rejects a severed edge. The subsystem remains open if projection composition is missing or host instructions are free-form. A generic content reader, skipped refresh, document-parse coverage proxy, or default zero release metric also blocks release."
+            "statement": "Direct behavioral checks reject wrong associations, altered instruction bytes, stale authority and missing required artifacts. Profile reconciliation preserves historical records and creates no automatic approval. Applicable recovery checks preserve unfinished work. Relevant fidelity and telemetry failures remain observable. One coherent installed workflow covers host wiring; existing checks may be reused when their relevant dependencies are unchanged. Required failures remain blocking, while missing procedural certificates do not create a new product obligation."
           },
           {
             "role": "forbidden-outcome",
-            "statement": "Registered handler presence, a fixed closure boolean, fabricated positive/negative observations, or a test-binding remap is used as evidence that the representation edges were exercised."
+            "statement": "A registered handler, content hash, fabricated observation, self-authored certificate or test-binding remap substitutes for exercising the required behavior. Correct delivery is claimed as proof of agent understanding. A cheaper method silently drops a consequential failure protection. Universal seven-stage receipt collection or repeated unchanged host certification is imposed solely because a previous procedure required it."
           }
         ],
         "origin": [
@@ -10339,29 +10359,34 @@
             "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/model/concepts/01561d6546adb32a8afb29429380b0ecdec1bd6a9dd562fbea23a395381ca5b8.concept.json",
             "contentHash": "sha256:v1:a4dd211d265700ff82bf503b4cedf13661ad8d9ec3aea6f147004e754a9634c3",
             "description": "Accepted host integrity preserves exact authority, state, provenance, cancellation and recovery without confinement or hostile same-user protection. Immutable Git blob 3ccfee51b0a75179711d6ded3324b17b8279da61; exact-byte SHA-256."
+          },
+          {
+            "kind": "user-request",
+            "locator": "user:2026-09-11:projection-feedback-proportionate-verification",
+            "description": "The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete behavior rather than create repetitive certification overhead. Preserve required behavior, critical review, data safety, authority and recovery."
           }
         ],
         "realizations": [],
         "evidence": [],
-        "discoveryHash": "sha256:v1:850f5a7ee2b3c1db26047827d6e72c8043cc3673b1caa698c3d23ec1f4501440",
-        "semanticHash": "sha256:v1:d6fb1f0270e59284dc85bf781ff5d6b6156c78abe30e4fb76d65d541eaf1e62e"
+        "discoveryHash": "sha256:v1:01b9f2bca5871e01c6a3a35a5d273f6b1f1ee8234419811c43c88d0c226ce3a4",
+        "semanticHash": "sha256:v1:88557aa098cf124c40f5ac11d6b6c0a40cc4ec44549051b289d3a6eb38b53b9a"
       },
       "publicFacade": "projector/testkit",
-      "testRef": "packages/testkit/src/subsystem-closure.test.ts#generic subsystem closure control closes only a revision-bound contract with independently observed positive and negative evidence for every stage",
-      "testSourceDigest": "sha256:v1:5754c5daa57bfffa3cd490912c1fa0959dafccd5220b3bd410ea8fb393a5fcd8",
-      "mappingHash": "sha256:v1:f64971b4badfb3baf987021ad2d586453055e13970f1fad198492b2aa08ce0b9"
+      "testRef": "scripts/run-release-acceptance.test.ts#release representation observations directly exercises canonical owner authority, fidelity, and telemetry",
+      "testSourceDigest": "sha256:v1:273403e7f86cfb2ef170060ea4520d1e818fe0fbf6e417f597aa71f9f5b26cb5",
+      "mappingHash": "sha256:v1:3493280e63be366e3f8dddf346fcb937b70a783cc5efb69b79378d0348d21541"
     },
     {
       "id": "scenario:verify-representation-end-to-end-closure",
-      "title": "Verify representation end-to-end closure",
-      "semanticHash": "sha256:v1:d6fb1f0270e59284dc85bf781ff5d6b6156c78abe30e4fb76d65d541eaf1e62e",
+      "title": "Verify representation through proportionate behavioral checks",
+      "semanticHash": "sha256:v1:88557aa098cf124c40f5ac11d6b6c0a40cc4ec44549051b289d3a6eb38b53b9a",
       "legacyIds": [
         "scenario:56:compact-context-preserves-critical-tokens-and-avoids-false-compression"
       ],
       "owner": {
         "id": "scenario:verify-representation-end-to-end-closure",
         "key": "verify-representation-end-to-end-closure",
-        "title": "Verify representation end-to-end closure",
+        "title": "Verify representation through proportionate behavioral checks",
         "aliases": [],
         "status": "active",
         "sourceClass": "authored",
@@ -10374,19 +10399,19 @@
         "steps": [
           {
             "role": "precondition",
-            "statement": "The exact packed Projector artifact and an authenticated semantic change are available; representation closure evaluates the complete composed subsystem rather than only compact rendering or operation reachability."
+            "statement": "The installed Projector artifact and a concrete planned change are available. Accepted meaning and the relevant execution authority, profile and dependency bindings can be inspected."
           },
           {
             "role": "trigger",
-            "statement": "Run the public packed Projector artifact through the Representation closure contract. Compile an authenticated semantic change. Attach the selected projection to its Execution Capsule. Consume the exact artifact through the supported host and registered bundled-operation representation handler. Change the profile and reconcile every dependent projection, context, and capsule. Observe dedicated fidelity, fallback, and instruction-efficiency telemetry."
+            "statement": "Exercise public capture, plan and representation inspection. Check that the exact selected instructions match their change and capsule. Validate fidelity and explicit fallback behavior. Change a relevant profile or dependency and reconcile affected projections, context and capsules before reuse. Use a real installed host exercise to observe delivery and the resulting action."
           },
           {
             "role": "expected-outcome",
-            "statement": "all seven stable `representation.*.v1` closure obligations have revision- and worktree-bound positive evidence. Each obligation also has a negative control that rejects a severed edge. The subsystem remains open if projection composition is missing or host instructions are free-form. A generic content reader, skipped refresh, document-parse coverage proxy, or default zero release metric also blocks release."
+            "statement": "Direct behavioral checks reject wrong associations, altered instruction bytes, stale authority and missing required artifacts. Profile reconciliation preserves historical records and creates no automatic approval. Applicable recovery checks preserve unfinished work. Relevant fidelity and telemetry failures remain observable. One coherent installed workflow covers host wiring; existing checks may be reused when their relevant dependencies are unchanged. Required failures remain blocking, while missing procedural certificates do not create a new product obligation."
           },
           {
             "role": "forbidden-outcome",
-            "statement": "Registered handler presence, a fixed closure boolean, fabricated positive/negative observations, or a test-binding remap is used as evidence that the representation edges were exercised."
+            "statement": "A registered handler, content hash, fabricated observation, self-authored certificate or test-binding remap substitutes for exercising the required behavior. Correct delivery is claimed as proof of agent understanding. A cheaper method silently drops a consequential failure protection. Universal seven-stage receipt collection or repeated unchanged host certification is imposed solely because a previous procedure required it."
           }
         ],
         "origin": [
@@ -10407,18 +10432,23 @@
             "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/model/concepts/01561d6546adb32a8afb29429380b0ecdec1bd6a9dd562fbea23a395381ca5b8.concept.json",
             "contentHash": "sha256:v1:a4dd211d265700ff82bf503b4cedf13661ad8d9ec3aea6f147004e754a9634c3",
             "description": "Accepted host integrity preserves exact authority, state, provenance, cancellation and recovery without confinement or hostile same-user protection. Immutable Git blob 3ccfee51b0a75179711d6ded3324b17b8279da61; exact-byte SHA-256."
+          },
+          {
+            "kind": "user-request",
+            "locator": "user:2026-09-11:projection-feedback-proportionate-verification",
+            "description": "The user explicitly authorized an immediate corrective pivot: code is a revisable projection of conceptual meaning, implementation discoveries may defensibly amend the plan, and verification must protect concrete behavior rather than create repetitive certification overhead. Preserve required behavior, critical review, data safety, authority and recovery."
           }
         ],
         "realizations": [],
         "evidence": [],
-        "discoveryHash": "sha256:v1:850f5a7ee2b3c1db26047827d6e72c8043cc3673b1caa698c3d23ec1f4501440",
-        "semanticHash": "sha256:v1:d6fb1f0270e59284dc85bf781ff5d6b6156c78abe30e4fb76d65d541eaf1e62e"
+        "discoveryHash": "sha256:v1:01b9f2bca5871e01c6a3a35a5d273f6b1f1ee8234419811c43c88d0c226ce3a4",
+        "semanticHash": "sha256:v1:88557aa098cf124c40f5ac11d6b6c0a40cc4ec44549051b289d3a6eb38b53b9a"
       },
       "publicFacade": "projector/testkit",
-      "testRef": "packages/testkit/src/subsystem-closure.test.ts#generic subsystem closure control rejects missing, duplicate, self-asserted, stale, and non-severable evidence",
-      "testSourceDigest": "sha256:v1:5754c5daa57bfffa3cd490912c1fa0959dafccd5220b3bd410ea8fb393a5fcd8",
-      "mappingHash": "sha256:v1:c72958aee0cb52a8af3a1a9f8a5920d921efe4ad5a342818d0de6e080e6b499c"
+      "testRef": "scripts/run-release-acceptance.test.ts#release representation observations exercises public profile recovery and three rejection controls without claiming packaged delivery",
+      "testSourceDigest": "sha256:v1:273403e7f86cfb2ef170060ea4520d1e818fe0fbf6e417f597aa71f9f5b26cb5",
+      "mappingHash": "sha256:v1:f017d0754c0880f0dcb35cba567344c9f2d7f7368d1c5b723adf7652cf61b088"
     }
   ],
-  "inventoryHash": "sha256:v1:6b1ac46f370a4ced7c76a6260766ccb2cf00ce6c589e17e207e7f85aa140da50"
+  "inventoryHash": "sha256:v1:05a0395c120317bceba3f3b9a2a1570ecc50477db58e00001f81716e27da7926"
 }
