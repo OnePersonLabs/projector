@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "relation"
+id = "relation:requirement:engineering-english:demonstrated-by:scenario:verify-representation-end-to-end-closure"
+key = "relation:relation:requirement:engineering-english:demonstrated-by:scenario:verify-representation-end-to-end-closure"
+lifecycle = "active"
+
+[payload]
+fromId = "requirement:engineering-english"
+toId = "scenario:verify-representation-end-to-end-closure"
+type = "demonstrated-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []

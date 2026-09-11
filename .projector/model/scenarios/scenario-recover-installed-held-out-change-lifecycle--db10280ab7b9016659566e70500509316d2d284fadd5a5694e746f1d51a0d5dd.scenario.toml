@@ -1,0 +1,145 @@
+#:schema ../../schemas/canonical-behavioral-scenario-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "behavioral-scenario"
+id = "scenario:recover-installed-held-out-change-lifecycle"
+key = "recover-installed-held-out-change-lifecycle"
+lifecycle = "active"
+
+[payload]
+title = "Installed held-out change lifecycle"
+aliases = [ "scenario:19:installed-held-out-change-lifecycle", "adversary:33:installed-source-severed-lifecycle-interruption-recovery-and-identity-continuity" ]
+sourceClass = "authored"
+realizations = []
+evidence = []
+
+[payload.scope]
+op = "atom"
+field = "requirement"
+matcher = "equals"
+value = "requirement:reverse-reconciliation"
+
+[[payload.steps]]
+role = "precondition"
+statement = """The exact production tarball and plugin are installed in a disposable ordinary Git repository without \
+  Projector source-checkout access."""
+
+[[payload.steps]]
+role = "trigger"
+statement = """Install the exact production tarball and copy the Projector plugin into a disposable ordinary Git repository. \
+  Deny the installed processes all Projector source-checkout access. Request a non-fixture exact-text \
+  behavior change with an existing Git-base independent validator and one proposed supplemental validator."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """The installed skill invokes the registered operation runner and returns the preview and exact immutable \
+  plan hash. A substituted hash is rejected; execution requires current authenticated exact approval \
+  within actual authorization, without an invented new human approval when already authorized. After \
+  exact approval, apply reaches the authenticated validating journal phase with durable target mutation."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """A full-process-tree `SIGKILL` leaves an open invocation and stale writer lease. Recovery restores exact \
+  before-bytes. Resume uses the same approval in a new attempt. It emits authenticated observation, \
+  certificate, and receipt evidence."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Predicted and observed paths match exactly. Independent validation uses immutable Git-base bytes. No \
+  Planning Surprise, unknown, or fixture fallback appears. A second resume returns the same certificate \
+  and receipt."""
+
+[[payload.steps]]
+role = "precondition"
+statement = """Adversarial evaluation must exercise this class and reject false success: Installed source-severed lifecycle \
+  interruption, recovery, and identity continuity."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Use fake host processes and golden capability/packet/context outputs. Default tests MUST NOT require \
+  paid models or installed Codex/Claude hosts."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Test stale dependency-bound capability rejection, safe rebinding after unrelated root changes, out-of-scope \
+  write detection, interrupted session recovery, and direct host writes observed outside Projector tools."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """The packed release test MUST install the exact production tarball. It MUST copy the installed plugin \
+  shell into a disposable ordinary Git repository. The test MUST deny access to the Projector source \
+  checkout and clear source module resolution. It MUST reject installed-package symlinks, deny network \
+  access, and prove the plugin contains no absolute source reference."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """The test MUST use a held-out natural request and strict proposal that do not invoke the mandatory fixture \
+  intent. It MUST exercise the installed skill and registered bundled operation runner, retain exact \
+  captured semantic/plan identity, reject a substituted plan hash, and consume the exact authenticated \
+  approved hash."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """During host validation, the test MUST observe the authenticated journal in `validating` after durable \
+  target mutation. It then sends `SIGKILL` to the complete apply process tree. The test MUST wait for \
+  the production writer lease to become stale. It MUST recover exact before-bytes and resume the same \
+  approval. The final certificate and receipt MUST reach a fixed point."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """The packed evidence MUST authenticate the open interrupted invocation, recovery and resume trace, and \
+  semantic, plan, and approval identities. It MUST authenticate exact tracked-source independent-validator \
+  execution and predicted and observed path equality. It MUST also prove that no Planning Surprise, \
+  unknown, or fixture execution occurred."""
+
+[[payload.steps]]
+role = "forbidden-outcome"
+statement = """Disposable source-severed test isolation is represented as a mandatory production confinement backend, \
+  a paid-model prerequisite, or proof that native host execution blocks hostile same-user access."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = "Unit evaluation must cover: receipts/certificates."
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/12-delivery/acceptance-core.md"
+contentHash = "sha256:v1:5471e7090610ccdf0d8e567ec2ea1cbba53dc726f6ea53d51f9cac52d994d0fc"
+description = """Historical acceptance conditions, lines 140-150; immutable Git blob 804692b98650789629c95b699fa20de3b026d634. \
+  Content hash is SHA-256 of exact source blob bytes. Source conditions require reviewed disposition, \
+  not automatic authority."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/decisions/f1d7f82a89ecaa14199107b9aed7953eba0a14e39b42672b61b3f24db1322d51.decision.json"
+contentHash = "sha256:v1:623673cf17762ec9d36c6e364e59e739ee940eb58bf4c1333f37deb6ee3f9210"
+description = """Accepted registered in-process runner supersedes standalone MCP and wrapper-to-CLI delivery prescriptions. \
+  Immutable Git blob d307af7324bdae70577cbec60042b4fc8ed05db1; exact-byte SHA-256."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/model/concepts/01561d6546adb32a8afb29429380b0ecdec1bd6a9dd562fbea23a395381ca5b8.concept.json"
+contentHash = "sha256:v1:a4dd211d265700ff82bf503b4cedf13661ad8d9ec3aea6f147004e754a9634c3"
+description = """Accepted host integrity preserves exact authority, state, provenance, cancellation and recovery without \
+  confinement or hostile same-user protection. Immutable Git blob 3ccfee51b0a75179711d6ded3324b17b8279da61; \
+  exact-byte SHA-256."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md"
+contentHash = "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e"
+description = """Exact adversary condition 33; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157. Hash binds \
+  original Git bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md"
+contentHash = "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e"
+description = """Complete Host tests section with explicit installed-runner supersession; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157. \
+  Hash binds original Git bytes."""
+
+[[payload.origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md"
+contentHash = "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e"
+description = "Unit coverage family 31; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157."
