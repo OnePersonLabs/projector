@@ -13,7 +13,7 @@ Before implementation, identify the smallest public workflow that exercises the 
 
 During implementation, reuse the canonical schemas, identity, relevance, state binding, lens, and lifecycle components. Add a regression when it demonstrates a material failure. Run affected tests and rebuild packages before testing consumers that import their `dist` outputs.
 
-After a coherent change, run `pnpm build`, `pnpm verify`, applicable public acceptance commands, and `git diff --check`, using the workspace's required command wrapper. Do not repeat the full gate after every small edit. Report unsupported platform capabilities; do not turn an unavailable safety mechanism into a success result.
+After a coherent change, run `pnpm build`, `pnpm verify`, applicable public acceptance commands, and `git diff --check`. Do not repeat the full gate after every small edit. Report unsupported platform capabilities; do not turn an unavailable safety mechanism into a success result.
 
 Have the reviewer inspect the integrated diff and supported public paths once. Consolidate material findings into one repair batch, then request targeted closure. A blocker needs a concrete requirement, reproducible supported path, and material consequence. Do not prolong review for style or hypothetical internal misuse.
 
