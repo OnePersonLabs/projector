@@ -5491,8 +5491,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "scripts/check-spec-human-technical.test.ts#canonical human technical check checks typed owner prose without a Markdown manifest and does not claim semantic equivalence",
-      "testSourceDigest": "sha256:v1:2c283503fc6ab24d5c0f3985359117377674704b770c5c3c7c169e42994171a9",
-      "mappingHash": "sha256:v1:ab80e42cc26a3f0c4d0883f876dcaaaf30d20d22a62747ef6c5275b8a62795e9"
+      "testSourceDigest": "sha256:v1:f1cd8f559101ebe99dd6d74937f4589b97b6e6a4c20e8dd148c01df4e722f554",
+      "mappingHash": "sha256:v1:8df734b5db95682b7561c6f2dcd0aae67d7c71e074cb4c7a599fad3efe33d68d"
     },
     {
       "id": "scenario:lint-human-technical-prose-without-equivalence-claim",
@@ -5559,8 +5559,8 @@
       },
       "publicFacade": "projector/engine",
       "testRef": "scripts/check-spec-human-technical.test.ts#canonical human technical check keeps authored prose style advisory with its stable owner and exact field",
-      "testSourceDigest": "sha256:v1:2c283503fc6ab24d5c0f3985359117377674704b770c5c3c7c169e42994171a9",
-      "mappingHash": "sha256:v1:704ca0e52e21abba98b4c91eccadcf8bf0c4e7604f57255ad6306e2d7c57ff8c"
+      "testSourceDigest": "sha256:v1:f1cd8f559101ebe99dd6d74937f4589b97b6e6a4c20e8dd148c01df4e722f554",
+      "mappingHash": "sha256:v1:92f7bb0ec51074c0c890e07f7bf88d339bcb4f2c79ea699f2be5cee959a0dd5c"
     },
     {
       "id": "scenario:manual-release-tests-exact-candidate-without-source-checkout",
@@ -5617,8 +5617,8 @@
       },
       "publicFacade": "projector",
       "testRef": "scripts/sandbox-release-workflow.test.ts#manual source-severed release workflow has only a manual trigger and accepts one uploaded candidate in a fresh no-checkout job",
-      "testSourceDigest": "sha256:v1:da76bcfa9e551240a0782311965dfc3a4dea8462c8f6e7e38a8d17c52c48649d",
-      "mappingHash": "sha256:v1:7fd0c7b0eaab49f45c16f09f85857de47257adc65feb52b50b8234a1feed95d5"
+      "testSourceDigest": "sha256:v1:9079480687cb78aecfb0d91afc833a639ca319457ce35bc824f2bac704b3467f",
+      "mappingHash": "sha256:v1:811bf20fab9914c0bd1493d6f3a58c04ba2fe4ddb392cfa40e2448ad269d5c38"
     },
     {
       "id": "scenario:merge-independent-canonical-entities-locally",

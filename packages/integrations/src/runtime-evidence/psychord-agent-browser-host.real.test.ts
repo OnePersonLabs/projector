@@ -4,7 +4,8 @@ import { readdir, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, join, relative } from "node:path";
 
-import type { ContentHash } from "@projector/core";
+import { hydrateCanonicalDocumentWire, type ContentHash } from "@projector/core";
+import { parseTomlDocument } from "@projector/runtime";
 import { expect, it } from "vitest";
 
 import {
@@ -18,7 +19,7 @@ import { createPsychordApplicationObserver, type PsychordDependencyPin, type Psy
 
 const real = process.env.PROJECTOR_RUN_REAL_PSYCHORD === "1" ? it : it.skip;
 const psychordRoot = process.env.PROJECTOR_PSYCHORD_ROOT ?? "C:/dev/projects/psychord-omega";
-const nodeExecutable = process.env.PROJECTOR_NODE_EXECUTABLE ?? "C:/Users/zethj/AppData/Local/Temp/projector-wrap-up-node24-20260910/node-v24.19.0-win-x64/node.exe";
+const nodeExecutable = process.env.PROJECTOR_NODE_EXECUTABLE ?? process.execPath;
 const pnpmCli = process.env.PROJECTOR_PNPM_CLI ?? "C:/Users/zethj/AppData/Roaming/npm/node_modules/pnpm/bin/pnpm.cjs";
 const agentBrowserExecutable = process.env.PROJECTOR_AGENT_BROWSER_EXECUTABLE ?? "C:/Users/zethj/AppData/Roaming/npm/node_modules/agent-browser/bin/agent-browser-win32-x64.exe";
 const chromeExecutable = process.env.PROJECTOR_CHROME_EXECUTABLE ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
@@ -82,7 +83,7 @@ for (const caseName of ["keep-reload-replay", "save-failure"] as const) {
     const runId = `psychord-real-${caseName}-${randomUUID()}`;
     const port = await allocatePort();
     const dependencies = await dependencyPins();
-    const scenario = JSON.parse(await readFile(join(psychordRoot, ".projector/model/scenarios/9c1e2ad3d203e2c2b9a840364f70b786f86c48bdf5f58883f4bd82d80a827083.scenario.json"), "utf8")) as { semanticHash: ContentHash };
+    const scenario = hydrateCanonicalDocumentWire(parseTomlDocument(await readFile(join(psychordRoot, ".projector/model/scenarios/scenario-keep-reload-replay-owned-moment--9c1e2ad3d203e2c2b9a840364f70b786f86c48bdf5f58883f4bd82d80a827083.scenario.toml"), "utf8")));
     const plan: PsychordObservationPlan = {
       runId,
       case: caseName,
