@@ -556,6 +556,7 @@ function coverageHandler<TOperation extends "coverage" | "complete" | "cleanup",
     outputSchema,
     execute: async ({ repositoryRoot, input }, context) => outputSchema.parse(
       await inspectRepositoryCoverage(repositoryRoot, {
+        ...input,
         scope: input.scope ?? ".",
         ...(input.budgetTokens === undefined ? {} : { budgetTokens: input.budgetTokens }),
         ...(input.budgetCost === undefined ? {} : { budgetCost: input.budgetCost }),

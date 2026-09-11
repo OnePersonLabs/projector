@@ -81,7 +81,15 @@ export const ProjectorOperationInputSchemas = Object.freeze({
   "change.resume": z.strictObject({ approvalSelector: z.string().min(1) }),
   coverage: z.strictObject(boundedInspectionInput),
   complete: z.strictObject(boundedInspectionInput),
-  cleanup: z.strictObject(boundedInspectionInput),
+  cleanup: z.strictObject({
+    ...boundedInspectionInput,
+    contextId: z.string().min(1).optional(),
+    changeSelector: z.string().min(1).optional(),
+    approvalSelector: z.string().min(1).optional(),
+    evidenceOffset: z.number().int().nonnegative().optional(),
+    evidenceLimit: z.number().int().positive().max(50).optional(),
+    evidenceIdentity: ContentHashSchema.optional(),
+  }),
   verify: z.strictObject({}),
   "representation.inspect": z.strictObject({
     changeSelector: z.string().min(1),
