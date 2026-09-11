@@ -29,10 +29,12 @@ export async function buildReleasePackage(stagingRoot, packDestination) {
   const releasedBaseline = join(repositoryRoot, "release/project-data-format-baseline.json");
   const releasedTarget = join(repositoryRoot, "release/project-data-format-target.json");
   const releasedMigrations = join(repositoryRoot, "release/project-data-migrations");
+  const releasedFormats = join(repositoryRoot, "release/project-data-formats");
   const releasedLegacyIngress = join(repositoryRoot, "release/project-data-legacy-ingress.json");
   if (await exists(releasedBaseline)) { await mkdir(join(stagingRoot, "project-data"), { recursive: true }); await cp(releasedBaseline, join(stagingRoot, "project-data/format-baseline.json")); }
   if (await exists(releasedTarget)) { await mkdir(join(stagingRoot, "project-data"), { recursive: true }); await cp(releasedTarget, join(stagingRoot, "project-data/format-target.json")); }
   if (await exists(releasedMigrations)) { await mkdir(join(stagingRoot, "project-data"), { recursive: true }); await cp(releasedMigrations, join(stagingRoot, "project-data/migrations"), { recursive: true }); }
+  if (await exists(releasedFormats)) { await mkdir(join(stagingRoot, "project-data"), { recursive: true }); await cp(releasedFormats, join(stagingRoot, "project-data/formats"), { recursive: true }); }
   if (await exists(releasedLegacyIngress)) { await mkdir(join(stagingRoot, "project-data"), { recursive: true }); await cp(releasedLegacyIngress, join(stagingRoot, "project-data/legacy-ingress.json")); }
   const packageJson = { name: releasePackageName, version: releaseVersion, description: "Local semantic governance and change execution kernel", type: "module", engines: { node: ">=24 <25" }, exports: Object.fromEntries(Object.keys(exportTargets).map((subpath) => { const base = `./exports/${subpath.slice(2).replaceAll("/", "-")}`; return [subpath, { types: `${base}.d.ts`, default: `${base}.js` }]; })), files: ["dist", "exports", "project-data"], dependencies: Object.fromEntries([...bundledNames.map((name) => [name, releaseVersion]), ["@types/node", "^24.13.3"], ["smol-toml", "1.8.0"], ["undici-types", "^7.18.2"], ["zod", "^4.0.15"]]), bundledDependencies: [...bundledNames, "@types/node", "smol-toml", "undici-types", "zod"], publishConfig: { access: "public" } }; await writeFile(join(stagingRoot, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
   const npmArguments = ["pack", "--json", "--pack-destination", packDestination];

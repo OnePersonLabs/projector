@@ -61,7 +61,7 @@ async function main() {
     const runner = await createBundledProjectorOperationRunner({
       packagedRoot,
       applicationEvidence: createInstalledProjectorApplicationEvidenceHost,
-      ...(request.operation === "application.observe" ? { applicationObservation: createInstalledPsychordObservationFactory() } : {}),
+      applicationObservation: createInstalledPsychordObservationFactory(),
     });
     const result = await runner.execute(request, { signal: cancellation.signal, environment: process.env });
     process.stdout.write(`${JSON.stringify(result)}\n`);

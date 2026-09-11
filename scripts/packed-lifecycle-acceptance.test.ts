@@ -51,7 +51,7 @@ function evidence() {
     version: 1,
     runId: "01234567-89ab-4def-8123-456789abcdef",
     request: "Trim surrounding label whitespace while preserving existing callers.",
-    activation: { initialized: true, projectEnabled: true, config: { apiVersion: "projector.config/v1", enabled: true, projectorVersion: "2.1.0" } },
+    activation: { initialized: true, projectEnabled: true, package: { name: "@onepersonlabs/projector", version: "2.1.2" }, config: { apiVersion: "projector.config/v1", enabled: true, projectorVersion: "2.1.2" } },
     artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", candidateManifestHash: "sha256:v1:candidate", pluginBundleHash: "sha256:v1:plugin", installedSymlinkCount: 0, pluginSymlinkCount: 0, nodePathEmpty: true, execution: "trusted-host" },
     plan: { changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan", planId: "plan_abc", predictedChangedPaths: ["src/format-label.mjs", "test/trim-label.test.mjs"] },
     pause: { status: "approval-required", changeSelector: "semantic_change_abc", planHash: "sha256:v1:plan" },
@@ -85,6 +85,10 @@ describe("packed held-out lifecycle evidence", () => {
 
   it("accepts one source-severed approval/interruption/recovery proof with closed impact", () => {
     expect(verifyPackedLifecycleEvidence(evidence())).toMatch(/^sha256:v1:[a-f0-9]{64}$/u);
+    const wrongPackage = evidence(); wrongPackage.activation.package.name = "@other/projector";
+    expect(() => verifyPackedLifecycleEvidence(wrongPackage)).toThrow(/package|activate/iu);
+    const wrongVersion = evidence(); wrongVersion.activation.config.projectorVersion = "2.1.1";
+    expect(() => verifyPackedLifecycleEvidence(wrongVersion)).toThrow(/version|activate/iu);
   });
 
   it("rejects a broken trace chain or unexplained observed impact", () => {
