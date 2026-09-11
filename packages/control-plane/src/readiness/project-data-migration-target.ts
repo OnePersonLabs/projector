@@ -24,6 +24,7 @@ import {
 } from "@projector/runtime";
 
 import { createDurablePsychordObservationArtifactService } from "../application-evidence/psychord.js";
+import { validateRetainedRepresentationArtifacts } from "../representation/artifact-store.js";
 
 const maximumConfigBytes = 16 * 1024;
 
@@ -55,6 +56,11 @@ export async function observePreparedMigrationTarget(input: {
   const canonical = await new CanonicalFileRepository(input.repositoryRoot).snapshot();
   throwIfAborted(input.signal);
   await validateRuntimeEvidence(input.repositoryRoot, canonical.documents, input.authenticatedFiles, input.signal);
+  await validateRetainedRepresentationArtifacts({
+    repositoryRoot: input.repositoryRoot,
+    authenticatedFiles: input.authenticatedFiles,
+    signal: input.signal,
+  });
   const sqlite = await inspectExistingSqliteDerivedState(
     join(input.repositoryRoot, ".projector", "state.db"),
     canonical.rootDigest,

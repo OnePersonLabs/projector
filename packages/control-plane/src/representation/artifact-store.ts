@@ -1,31 +1,32 @@
+import { createHash } from "node:crypto";
 import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import {
+  DurableRepresentationArtifactRecordSchema,
   RepresentationProjectionSchema,
   canonicalJson,
+  createDurableRepresentationArtifactRecord,
   hashFramedDomain,
   type ContentHash,
   type RepresentationProjection,
   type RepresentationProjectionRef,
 } from "@projector/core";
 import { RepositoryPathService } from "@projector/runtime";
-import { z } from "zod";
 
 const root = ".projector/runtime/representations";
 const maximumArtifactBytes = 8 * 1024 * 1024;
-const apiVersion = "projector.representation-artifact/v1" as const;
-
-const recordSchema = z.strictObject({
-  apiVersion: z.literal(apiVersion),
-  projection: RepresentationProjectionSchema,
-  recordHash: z.string().regex(/^sha256:v1:[a-f0-9]{64}$/u),
-});
 
 export interface DurableRepresentationArtifact {
   readonly projection: RepresentationProjection;
   readonly content: string;
   readonly recordHash: ContentHash;
+}
+
+export interface AuthenticatedRepresentationFile {
+  readonly path: string;
+  readonly length: number;
+  readonly sha256: string;
 }
 
 function projectionPath(projectionId: string): string {
@@ -121,8 +122,7 @@ export class RepositoryRepresentationArtifactStore {
     if (content === undefined || hashFramedDomain("representation-artifact", content) !== projection.contentHash) {
       throw new Error("representation projection content is missing or invalid");
     }
-    const basis = { apiVersion, projection };
-    const record = { ...basis, recordHash: hashFramedDomain("durable-representation-artifact", basis) };
+    const record = createDurableRepresentationArtifactRecord(projection);
     await writeExact(this.paths, projectionPath(projection.id), canonicalJson(record));
   }
 
@@ -134,9 +134,7 @@ export class RepositoryRepresentationArtifactStore {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
       throw error;
     }
-    const record = recordSchema.parse(JSON.parse(source)) as { apiVersion: typeof apiVersion; projection: RepresentationProjection; recordHash: ContentHash };
-    const basis = { apiVersion: record.apiVersion, projection: record.projection };
-    if (record.recordHash !== hashFramedDomain("durable-representation-artifact", basis)) throw new Error("representation artifact record hash is invalid");
+    const record = DurableRepresentationArtifactRecordSchema.parse(JSON.parse(source)) as { projection: RepresentationProjection; recordHash: ContentHash };
     assertProjection(record.projection);
     const expected = {
       projectionId: record.projection.id,
@@ -149,5 +147,54 @@ export class RepositoryRepresentationArtifactStore {
     const content = await this.get(reference.contentHash);
     if (content === undefined || hashFramedDomain("representation-artifact", content) !== reference.contentHash) throw new Error("representation artifact content is missing or invalid");
     return { projection: record.projection, content, recordHash: record.recordHash };
+  }
+}
+
+/** Validates every retained file in the durable representation namespace. */
+export async function validateRetainedRepresentationArtifacts(input: {
+  readonly repositoryRoot: string;
+  readonly authenticatedFiles: readonly AuthenticatedRepresentationFile[];
+  readonly signal: AbortSignal;
+}): Promise<void> {
+  const files = input.authenticatedFiles
+    .filter(({ path }) => path === root || path.startsWith(`${root}/`))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const contents = new Map<ContentHash, string>();
+  const projections: RepresentationProjection[] = [];
+  const paths = await RepositoryPathService.create(input.repositoryRoot);
+  for (const file of files) {
+    input.signal.throwIfAborted();
+    const source = await readBounded((await paths.resolveRead(file.path)).realTarget);
+    if (Buffer.byteLength(source) !== file.length || createHash("sha256").update(source).digest("hex") !== file.sha256) {
+      throw new Error(`retained representation artifact changed during validation: ${file.path}`);
+    }
+    const contentMatch = /^\.projector\/runtime\/representations\/content\/([a-f0-9]{64})\.txt$/u.exec(file.path);
+    if (contentMatch !== null) {
+      const contentHash = `sha256:v1:${contentMatch[1]}` as ContentHash;
+      if (hashFramedDomain("representation-artifact", source) !== contentHash) {
+        throw new Error(`retained representation content filename does not authenticate its bytes: ${file.path}`);
+      }
+      contents.set(contentHash, source);
+      continue;
+    }
+    if (!/^\.projector\/runtime\/representations\/projections\/[a-f0-9]{64}\.json$/u.test(file.path)) {
+      throw new Error(`unsupported retained representation artifact path: ${file.path}`);
+    }
+    let value: unknown;
+    try { value = JSON.parse(source); }
+    catch { throw new Error(`retained representation record is malformed JSON: ${file.path}`); }
+    const record = DurableRepresentationArtifactRecordSchema.parse(value) as { projection: RepresentationProjection };
+    if (canonicalJson(record) !== source) throw new Error(`retained representation record is not canonical JSON: ${file.path}`);
+    assertProjection(record.projection);
+    if (projectionPath(record.projection.id) !== file.path) {
+      throw new Error(`retained representation record path does not match its projection: ${file.path}`);
+    }
+    projections.push(record.projection);
+  }
+  for (const projection of projections) {
+    const content = contents.get(projection.contentHash);
+    if (content === undefined || hashFramedDomain("representation-artifact", content) !== projection.contentHash) {
+      throw new Error(`retained representation ${projection.id} is missing authenticated content`);
+    }
   }
 }

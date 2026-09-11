@@ -33,6 +33,8 @@ import {
   RepositoryCompletionOutputSchema,
   RepositoryCoverageOutputSchema,
   RepositoryChangeLifecycleService,
+  RepositoryRepresentationInspectionService,
+  RepresentationInspectionOutputSchema,
   RepositoryKnowledgeService,
   initializePreparedProject,
   inspectProjectReadiness,
@@ -459,6 +461,23 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
           applicationEvidence: applicationEvidenceFor(repositoryRoot, context),
         }),
       ),
+    }),
+    defineProjectorOperationHandler({
+      operation: "representation.inspect",
+      inputSchema: ProjectorOperationInputSchemas["representation.inspect"],
+      outputSchema: RepresentationInspectionOutputSchema,
+      execute: async ({ repositoryRoot, input }, context) => {
+        const service = await RepositoryRepresentationInspectionService.create(repositoryRoot, {
+          applicationEvidence: applicationEvidenceFor(repositoryRoot, context),
+        });
+        return RepresentationInspectionOutputSchema.parse(await service.inspect({
+          changeSelector: input.changeSelector,
+          view: input.view,
+          ...(input.capsuleId === undefined ? {} : { capsuleId: input.capsuleId }),
+          ...(input.approvalSelector === undefined ? {} : { approvalSelector: input.approvalSelector }),
+          signal: context.signal,
+        }));
+      },
     }),
   ];
   if (input.applicationObservation !== undefined) {

@@ -38,7 +38,7 @@ Resolve `node` through the host `PATH`; Projector requires Node 24 on native Win
    node <projector-operation.mjs> <plan-request.json>
    ```
 
-5. Inspect the returned preview, `changeSelector`, and exact `immutablePlanHash`. Check every meaning revision, authority change, affected obligation, and unknown against the user's authorization. Within the user's authorization for local changes, the agent may approve that inspected plan. Ask only when a material decision or action exceeds that authorization. Approval always names the exact reviewed hash; it does not authorize a changed plan or broader scope.
+5. Inspect the returned preview, `changeSelector`, and exact `immutablePlanHash`. Use `representation.inspect` with that selector when the plan has a bound representation; request `summary` first and `content` only when the exact rendered instructions are needed. Check artifact integrity, live dependency freshness, semantic fidelity, and plan/capsule association separately. Inspection creates no execution authority. Check every meaning revision, authority change, affected obligation, and unknown against the user's authorization. Within the user's authorization for local changes, the agent may approve that inspected plan. Ask only when a material decision or action exceeds that authorization. Approval always names the exact reviewed hash; it does not authorize a changed plan or broader scope.
 6. After that review and authorization, send `change.approve` with the change selector and exact plan hash, then send `change.apply` with the returned approval selector:
 
    ```sh

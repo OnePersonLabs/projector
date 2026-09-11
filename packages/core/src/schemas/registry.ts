@@ -16,6 +16,9 @@ import { CanonicalDocumentEnvelopeByKindSchema, CanonicalDocumentEnvelopeSchema,
 import { PreparedProjectorConfigSchema } from "./project-config.js";
 import {
   PendingProjectDataMigrationSchema,
+  LegacyUnversionedProjectDataSourceSchema,
+  ProjectDataLegacyIngressManifestSchema,
+  ProjectDataMigrationSourceAuthoritySchema,
   ProjectDataFormatSnapshotSchema,
   ProjectDataMigrationArtifactRefSchema,
   ProjectDataMigrationChainSchema,
@@ -24,6 +27,7 @@ import {
   ProjectDataMigrationReceiptSchema,
   PortableRelativePathSchema,
 } from "./project-data-migration.js";
+import { DurableRepresentationArtifactRecordSchema } from "./representation-artifact.js";
 
 export interface ContractRegistration {
   readonly schema?: z.ZodType;
@@ -77,6 +81,7 @@ export const normativeContractNames = [
   "DerivationInput",
   "DerivationRecord",
   "DeveloperPreference",
+  "DurableRepresentationArtifactRecord",
   "Divergence",
   "EffectiveRuleBundle",
   "EntityId",
@@ -105,6 +110,7 @@ export const normativeContractNames = [
   "LensContributionRole",
   "LensExample",
   "LensRef",
+  "LegacyUnversionedProjectDataSource",
   "LineageRecord",
   "MigrationBinding",
   "MigrationOverlay",
@@ -125,11 +131,13 @@ export const normativeContractNames = [
   "ProjectionUnit",
   "PreparedProjectorConfig",
   "ProjectDataFormatSnapshot",
+  "ProjectDataLegacyIngressManifest",
   "ProjectDataMigrationArtifactRef",
   "ProjectDataMigrationChain",
   "ProjectDataMigrationDraft",
   "ProjectDataMigrationManifest",
   "ProjectDataMigrationReceipt",
+  "ProjectDataMigrationSourceAuthority",
   "RecognizerBinding",
   "Relation",
   "RelationType",
@@ -244,6 +252,9 @@ const schemaExports: Record<string, z.ZodType> = {
   CanonicalDocumentWireByKindSchema,
   PreparedProjectorConfigSchema,
   PendingProjectDataMigrationSchema,
+  LegacyUnversionedProjectDataSourceSchema,
+  ProjectDataLegacyIngressManifestSchema,
+  ProjectDataMigrationSourceAuthoritySchema,
   ProjectDataFormatSnapshotSchema,
   ProjectDataMigrationArtifactRefSchema,
   ProjectDataMigrationChainSchema,
@@ -251,6 +262,7 @@ const schemaExports: Record<string, z.ZodType> = {
   ProjectDataMigrationManifestSchema,
   ProjectDataMigrationReceiptSchema,
   PortableRelativePathSchema,
+  DurableRepresentationArtifactRecordSchema,
 };
 
 export const contractRegistry: Readonly<Record<string, ContractRegistration>> =

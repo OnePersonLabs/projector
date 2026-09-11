@@ -23,6 +23,8 @@ import {
   ProjectDataMigrationChainSchema,
   ProjectDataMigrationManifestSchema,
   ProjectDataMigrationReceiptSchema,
+  LegacyUnversionedProjectDataSourceSchema,
+  ProjectDataLegacyIngressManifestSchema,
   PortableRelativePathSchema,
   ProjectorOperationRequestSchema,
   RealizationBindingSchema,
@@ -35,6 +37,8 @@ import {
   createProjectorOperationResultSchema,
   createProjectorOperationRequestSchema,
   createProjectDataMigrationReceipt,
+  createLegacyUnversionedProjectDataSource,
+  createProjectDataLegacyIngressManifest,
   createProjectDataMigrationManifest,
   hashProjectDataMigrationManifest,
   hashProjectDataFormatSnapshot,
@@ -70,13 +74,13 @@ describe("normative contract registry", () => {
   });
 
   it("represents every exported normative declaration exactly once", () => {
-    expect(Object.keys(contractRegistry)).toHaveLength(167);
+    expect(Object.keys(contractRegistry)).toHaveLength(171);
     expect(validateContractRegistry()).toEqual([]);
   });
 
   it("exports strict JSON Schemas whose references resolve", () => {
     const schemas = exportContractJsonSchemas();
-    expect(Object.keys(schemas)).toHaveLength(158);
+    expect(Object.keys(schemas)).toHaveLength(162);
     expect(validateJsonSchemaReferences(schemas)).toEqual([]);
     for (const schema of Object.values(schemas)) {
       expect(schema).toMatchObject({ $schema: expect.any(String) });
@@ -318,7 +322,16 @@ describe("normative contract registry", () => {
     const context = { apiVersion: "projector.operation/v1", operation: "context", repositoryRoot: "C:/repo", input: { request: "Explain checkout.", entities: ["requirement:checkout"], persist: false } };
     expect(ProjectorOperationRequestSchema.safeParse(context).success).toBe(true);
     expect(ProjectorOperationRequestSchema.safeParse({ ...context, input: { ...context.input, compact: true } }).success).toBe(false);
-    expect(ProjectorOperationRequestSchema.safeParse({ ...context, operation: "representation.inspect" }).success).toBe(false);
+    expect(ProjectorOperationRequestSchema.safeParse({
+      ...context,
+      operation: "representation.inspect",
+      input: { changeSelector: "semantic_change_fixture", view: "summary" },
+    }).success).toBe(true);
+    expect(ProjectorOperationRequestSchema.safeParse({
+      ...context,
+      operation: "representation.inspect",
+      input: { changeSelector: "semantic_change_fixture", view: "summary", selector: "invented" },
+    }).success).toBe(false);
     expect(ProjectorOperationRequestSchema.safeParse({ ...context, operation: "application.observe" }).success).toBe(false);
     const applicationRequestSchema = createProjectorOperationRequestSchema("application.observe", z.strictObject({ plan: z.strictObject({ schemaVersion: z.literal("test-application-plan@1"), runId: z.string() }) }));
     const applicationRequest = { apiVersion: "projector.operation/v1", operation: "application.observe", repositoryRoot: ".", input: { plan: { schemaVersion: "test-application-plan@1", runId: "run:1" } } };
@@ -416,7 +429,7 @@ describe("normative contract registry", () => {
     expect(ProjectDataMigrationDraftSchema.safeParse(draft).success).toBe(true);
     expect(ProjectDataMigrationDraftSchema.safeParse({ ...draft, approvalId: "invented" }).success).toBe(false);
 
-    const pending = { apiVersion: "projector.pending-project-data-migration/v1", attemptId: "migration-attempt:prepared-data-001", migrationId: manifest.id, sourceSnapshotHash: hash, targetSnapshotHash: hash, manifestHash: hash, backup: { id: "backup:2.1.0", location: { kind: "codex-data-relative", path: "projector/backups/2.1.0" }, manifestHash: hash }, stagingLocation: ".projector.staging/2.2.0", phase: "staged", createdAt: "2026-09-10T12:00:00Z" };
+    const pending = { apiVersion: "projector.pending-project-data-migration/v2", attemptId: "migration-attempt:prepared-data-001", migrationId: manifest.id, sourceAuthority: { kind: "release-format", snapshotHash: hash }, targetSnapshotHash: hash, manifestHash: hash, backup: { id: "backup:2.1.0", location: { kind: "codex-data-relative", path: "projector/backups/2.1.0" }, manifestHash: hash }, stagingLocation: ".projector.staging/2.2.0", phase: "staged", createdAt: "2026-09-10T12:00:00Z" };
     expect(PendingProjectDataMigrationSchema.safeParse(pending).success).toBe(true);
     expect(PendingProjectDataMigrationSchema.safeParse({ ...pending, markerHash: hash }).success).toBe(false);
     const invalidPaths = ["../escape", "./staging", "/absolute", "C:/absolute", "a/../b", "a\\b", "migrations/step.mjs:payload", ".projector.staging/state:stream", "state.", "state ", "CON", "con.txt", "nested/PRN.log", "nested/COM1"];
@@ -427,11 +440,11 @@ describe("normative contract registry", () => {
     const validPending = PendingProjectDataMigrationSchema.parse(pending);
     const contentHash = ContentHashSchema.parse(hash);
     const receipt = createProjectDataMigrationReceipt({
-      apiVersion: "projector.project-data-migration-receipt/v1",
+      apiVersion: "projector.project-data-migration-receipt/v2",
       attemptId: validPending.attemptId,
       migrationId: manifest.id,
       manifestHash: contentHash,
-      sourceSnapshotHash: contentHash,
+      sourceAuthority: { kind: "release-format", snapshotHash: contentHash },
       targetSnapshotHash: contentHash,
       journalId: validPending.attemptId,
       journalHash: ContentHashSchema.parse(`sha256:v1:${"b".repeat(64)}`),
@@ -445,8 +458,26 @@ describe("normative contract registry", () => {
     expect(ProjectDataMigrationReceiptSchema.safeParse({ ...receipt, targetPaths: [] }).success).toBe(false);
     expect(ProjectDataMigrationReceiptSchema.safeParse({ ...receipt, approvalId: "invented" }).success).toBe(false);
 
+    const legacySource = createLegacyUnversionedProjectDataSource({
+      apiVersion: "projector.legacy-unversioned-project-data-source/v1",
+      config: { apiVersion: "projector.config/v1", path: ".projector/config.json", versionBinding: "absent" },
+      canonical: { envelopeApiVersion: "projector/v2", layout: "canonical-json" },
+    });
+    const ingress = createProjectDataLegacyIngressManifest({
+      apiVersion: "projector.project-data-legacy-ingress-manifest/v1",
+      id: "migration:legacy-unversioned-to-2.1.0",
+      source: legacySource,
+      targetVersion: "2.1.0",
+      targetSnapshotHash: contentHash,
+      transforms: [ref],
+      validations: [{ ...ref, id: "validation:legacy-to-2.1.0" }],
+    });
+    expect(LegacyUnversionedProjectDataSourceSchema.safeParse({ ...legacySource, config: { ...legacySource.config, path: ".projector/config.toml" } }).success).toBe(false);
+    expect(ProjectDataLegacyIngressManifestSchema.safeParse(ingress).success).toBe(true);
+    expect(ProjectDataLegacyIngressManifestSchema.safeParse({ ...ingress, targetSnapshotHash: `sha256:v1:${"b".repeat(64)}` }).success).toBe(false);
+
     const exported = exportContractJsonSchemas();
-    for (const name of ["ProjectDataFormatSnapshot", "ProjectDataMigrationManifest", "ProjectDataMigrationChain", "ProjectDataMigrationDraft", "PendingProjectDataMigration", "ProjectDataMigrationReceipt"]) {
+    for (const name of ["LegacyUnversionedProjectDataSource", "ProjectDataLegacyIngressManifest", "ProjectDataFormatSnapshot", "ProjectDataMigrationManifest", "ProjectDataMigrationChain", "ProjectDataMigrationDraft", "PendingProjectDataMigration", "ProjectDataMigrationReceipt"]) {
       expect(exported[name]).toMatchObject({ $schema: expect.any(String) });
     }
     const portablePathPattern = (exported.PortableRelativePath as { pattern?: string }).pattern;
