@@ -84,6 +84,9 @@ export async function createRepositoryProjectDataMigration(options = {}) {
     legacyBaseline = sourceSnapshot;
   }
   await ensureLegacyIngressManifest(root, legacyBaseline);
+  const formatsRoot = join(root, "release/project-data-formats");
+  await mkdir(formatsRoot, { recursive: true });
+  await writeImmutable(join(formatsRoot, `${sourceSnapshot.packageIdentity.version}.json`), `${canonicalJson(sourceSnapshot)}\n`);
   const buildCandidate = options.buildCandidate ?? buildSourceSeveredReleaseBundle;
   await buildCandidate(candidateRoot, { allowPendingProjectDataMigration: true });
   const candidate = await validateReleaseCandidate(candidateRoot);

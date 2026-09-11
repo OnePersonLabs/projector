@@ -106,7 +106,7 @@ export function verifyPackedLifecycleEvidence(evidence) {
   assert(evidence?.version === 1, "has an unsupported version");
   assert(typeof evidence.runId === "string" && /^[0-9a-f]{8}-[0-9a-f-]{27}$/iu.test(evidence.runId), "has no authenticated run identity");
   assert(typeof evidence.request === "string" && evidence.request.length > 0 && evidence.request !== "repair-governed-state", "uses a fixture-only request");
-  assert(evidence.activation?.initialized === true && evidence.activation?.projectEnabled === true && evidence.activation?.config?.apiVersion === "projector.config/v1" && evidence.activation?.config?.enabled === true && evidence.activation?.config?.projectorVersion === "2.1.0", "did not explicitly activate the held-out repository");
+  assert(evidence.activation?.initialized === true && evidence.activation?.projectEnabled === true && evidence.activation?.package?.name === "@onepersonlabs/projector" && typeof evidence.activation?.package?.version === "string" && evidence.activation.package.version.length > 0 && evidence.activation?.config?.apiVersion === "projector.config/v1" && evidence.activation?.config?.enabled === true && evidence.activation?.config?.projectorVersion === evidence.activation.package.version, "did not explicitly activate the held-out repository with the authenticated package version");
   const boundary = evidence.artifactBoundary;
   assert(boundary?.checkoutDependency === "none-declared" && boundary.checkoutPathInput === null && boundary.checkoutAbsenceObservation === "not-claimed" && typeof boundary.candidateManifestHash === "string" && typeof boundary.pluginBundleHash === "string" && boundary.installedSymlinkCount === 0 && boundary.pluginSymlinkCount === 0 && boundary.nodePathEmpty === true && boundary.execution === "trusted-host", "did not prove checkout-independent installed-artifact execution");
   assert(evidence.plan?.changeSelector === evidence.pause?.changeSelector && evidence.plan?.planHash === evidence.pause?.planHash, "does not match planned and approval-required identity");
@@ -356,10 +356,11 @@ export async function runPackedLifecycleAcceptance(input) {
   };
   const initializationRequest = { apiVersion: "projector.operation/v1", operation: "init", repositoryRoot: repository, requestId: `${runId}:init`, input: {} };
   const initializedEnvelope = json(await launch(process.execPath, [operationEntry], { cwd: repository, env: environment, stdin: `${canonical(initializationRequest)}\n` }).completed, "explicit held-out repository activation");
-  assert(initializedEnvelope.package?.name === "@onepersonlabs/projector" && initializedEnvelope.package?.version === "2.1.0", "did not execute the installed operation package");
   const initialized = succeededOutput(initializedEnvelope, "initialization");
   const { parse: parseToml } = await import(pathToFileURL(join(installedProjector, "node_modules/smol-toml/dist/index.js")).href);
   const activationConfig = parseToml(await readFile(join(repository, ".projector", "config.toml"), "utf8"));
+  const expectedPackage = candidate.manifest.release;
+  assert(initializedEnvelope.readiness?.status === "ready" && initializedEnvelope.readiness?.package?.name === expectedPackage.name && initializedEnvelope.readiness?.package?.version === expectedPackage.version && initialized.readiness?.package?.name === expectedPackage.name && initialized.readiness?.package?.version === expectedPackage.version && activationConfig.projectorVersion === expectedPackage.version, "did not execute and activate the authenticated candidate package");
 
   const capturedEnvelope = await agentResult("change.capture", { request, proposal }, "agent held-out capture");
   const captured = succeededOutput(capturedEnvelope, "capture");
@@ -403,7 +404,7 @@ export async function runPackedLifecycleAcceptance(input) {
     version: 1,
     runId,
     request,
-    activation: { initialized: initialized.created === true, projectEnabled: initialized.readiness?.status === "ready", config: activationConfig },
+    activation: { initialized: initialized.created === true, projectEnabled: initialized.readiness?.status === "ready", package: initializedEnvelope.readiness.package, config: activationConfig },
     artifactBoundary: { checkoutDependency: "none-declared", checkoutPathInput: null, checkoutAbsenceObservation: "not-claimed", candidateManifestHash: candidate.manifestHash, pluginBundleHash: hashCanonical(copiedPluginFiles), installedSymlinkCount: await countSymlinks(installedProjector), pluginSymlinkCount: await countSymlinks(pluginRoot), nodePathEmpty: environment.NODE_PATH === "", execution: "trusted-host" },
     plan: { changeSelector: pause.selector, planHash: pause.immutablePlanHash, planId: pause.plan.id, predictedChangedPaths: expectedPaths, preview: pause.preview },
     pause: { status: "approval-required", changeSelector: pause.selector, planHash: pause.immutablePlanHash },

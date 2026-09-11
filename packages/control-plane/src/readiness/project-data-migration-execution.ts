@@ -86,7 +86,7 @@ export function createPackagedProjectDataMigrationService(input: {
           mode: "exclusive",
           ...(request.signal === undefined ? {} : { signal: request.signal }),
         }, async (access) => {
-          const selection = await selectMigration(packagedRoot, repositoryRoot, targetFormat);
+          const selection = await selectPackagedProjectDataMigration(packagedRoot, repositoryRoot, targetFormat);
           if (selection === undefined) return;
           selectedForResult = selection;
           const paths = await RepositoryPathService.create(repositoryRoot);
@@ -238,7 +238,7 @@ type SelectedMigration = {
   }[];
 };
 
-async function selectMigration(packagedRoot: string, repositoryRoot: string, target: ProjectDataFormatSnapshot): Promise<SelectedMigration | undefined> {
+export async function selectPackagedProjectDataMigration(packagedRoot: string, repositoryRoot: string, target: ProjectDataFormatSnapshot): Promise<SelectedMigration | undefined> {
   const legacyPath = join(repositoryRoot, ".projector/config.json");
   if (await exists(legacyPath)) {
     const ingress = await readCanonicalFile(join(packagedRoot, "project-data/legacy-ingress.json"), ProjectDataLegacyIngressManifestSchema, "legacy ingress manifest");
@@ -283,21 +283,40 @@ async function selectMigration(packagedRoot: string, repositoryRoot: string, tar
   const match = /^projectorVersion\s*=\s*"([^"]+)"/mu.exec(configSource);
   if (match === null) throw new Error("Prepared config omits projectorVersion");
   if (match[1] === target.packageIdentity.version) return undefined;
-  const baseline = await readCanonicalFile(join(packagedRoot, "project-data/format-baseline.json"), ProjectDataFormatSnapshotSchema, "packaged format baseline");
   const chain = await readCanonicalFile(join(packagedRoot, `project-data/migrations/chain-through-${target.packageIdentity.version}.json`), ProjectDataMigrationChainSchema, "packaged migration chain");
-  const manifest = chain.manifests.find((candidate) => candidate.fromVersion === match[1] && candidate.toVersion === target.packageIdentity.version);
-  if (manifest === undefined || manifest.sourceSnapshotHash !== baseline.snapshotHash || manifest.targetSnapshotHash !== target.snapshotHash) {
+  const start = chain.manifests.findIndex((candidate) => candidate.fromVersion === match[1]);
+  const manifests = start < 0 ? [] : chain.manifests.slice(start);
+  if (manifests.length === 0 || manifests.at(-1)?.targetSnapshotHash !== target.snapshotHash) {
     throw new Error(`Packaged migration chain does not connect ${match[1]} to ${target.packageIdentity.version}`);
   }
+  const baseline = await readCanonicalFile(join(packagedRoot, "project-data/format-baseline.json"), ProjectDataFormatSnapshotSchema, "packaged format baseline");
+  const sourceFormat = match[1] === baseline.packageIdentity.version
+    ? baseline
+    : await readCanonicalFile(join(packagedRoot, `project-data/formats/${match[1]}.json`), ProjectDataFormatSnapshotSchema, `packaged ${match[1]} format`);
+  if (sourceFormat.packageIdentity.version !== match[1] || manifests[0]!.sourceSnapshotHash !== sourceFormat.snapshotHash) {
+    throw new Error(`Packaged source format does not authenticate migration edge from ${match[1]}`);
+  }
+  const steps: SelectedMigration["steps"][number][] = [];
+  for (const edge of manifests) {
+    const stepTarget = edge.targetSnapshotHash === target.snapshotHash
+      ? target
+      : await readCanonicalFile(join(packagedRoot, `project-data/formats/${edge.toVersion}.json`), ProjectDataFormatSnapshotSchema, `packaged ${edge.toVersion} format`);
+    if (stepTarget.snapshotHash !== edge.targetSnapshotHash) throw new Error(`Packaged format descriptor does not match migration edge ${edge.id}`);
+    steps.push({ targetFormat: stepTarget, transforms: edge.kind === "transform" ? edge.transforms : [], validations: edge.kind === "transform" ? edge.validations : [] });
+  }
+  const manifest = manifests.length === 1 ? manifests[0]! : {
+    id: `migration:${match[1]}-through-${target.packageIdentity.version}`,
+    manifestHash: hashFramedDomain("project-data-release-format-through-chain/v1", {
+      manifestHashes: manifests.map(({ manifestHash }) => manifestHash),
+      sourceSnapshotHash: sourceFormat.snapshotHash,
+      targetSnapshotHash: target.snapshotHash,
+    }),
+  };
   return {
     manifest,
-    sourceAuthority: { kind: "release-format", snapshotHash: baseline.snapshotHash },
-    sourceFormat: baseline,
-    steps: [{
-      targetFormat: target,
-      transforms: manifest.kind === "transform" ? manifest.transforms : [],
-      validations: manifest.kind === "transform" ? manifest.validations : [],
-    }],
+    sourceAuthority: { kind: "release-format", snapshotHash: sourceFormat.snapshotHash },
+    sourceFormat,
+    steps,
   };
 }
 

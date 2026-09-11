@@ -75,6 +75,11 @@ describe("source-severed release candidate", () => {
         throw error;
       }
     };
+    expect(await invoke("status", {})).toMatchObject({
+      status: "succeeded",
+      operation: "status",
+      output: { operations: expect.arrayContaining([{ operation: "application.observe", registered: true, reachable: true, reason: expect.any(String) }]) },
+    });
     expect(await invoke("init", {})).toMatchObject({ status: "succeeded", operation: "init", output: { created: true, readiness: { status: "ready" } } });
     expect(await invoke("context", { request: "Preserve label formatting behavior." })).toMatchObject({ status: "succeeded", operation: "context", output: { persisted: true } });
     const proposal = {

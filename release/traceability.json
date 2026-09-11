@@ -8254,8 +8254,8 @@
       },
       "publicFacade": "projector",
       "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence recomputes completion hashes and derives oracle/fixed-point outcomes instead of trusting flags",
-      "testSourceDigest": "sha256:v1:c5b2c11ee269a1ac1186df81e7c1308a20cfbfc78e890f714530ff7869ecf260",
-      "mappingHash": "sha256:v1:9679dff2fd29945982e3a49d26f86e962fb3e519144fba5f2de3bf8008a31980"
+      "testSourceDigest": "sha256:v1:9bfaccaab01cbf475d6e6381cc062febb33bc370124dddaf4da42699b70c7511",
+      "mappingHash": "sha256:v1:ed9c7d053e33e8b8d859f3e87734ce87463be29da5193822c9a6e3a5a4a4a7af"
     },
     {
       "id": "scenario:repair-generated-client-through-upstream-source",
