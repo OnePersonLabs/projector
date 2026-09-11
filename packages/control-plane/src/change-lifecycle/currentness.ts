@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { hashFramedDomain, type StateBinding } from "@projector/core";
 import type { StateBindingValidation } from "@projector/core";
-import { DependencyScopedStateBindingValidator } from "@projector/engine";
+import { currentBuiltInRepresentationProfile, DependencyScopedStateBindingValidator } from "@projector/engine";
 import { RepositoryPathService } from "@projector/runtime";
 
 import type { CompiledRepositoryChange } from "./compiler.js";
@@ -40,6 +40,9 @@ export async function validateCompiledRepositoryChangeCurrentness(input: {
         if (dependency.id.startsWith("independent-validator:")) return (await observation.independentValidator(dependency.id.slice("independent-validator:".length))).contentHash;
         if (dependency.id === "canonical-root") return observation.canonical.rootDigest;
         if (dependency.id === "projector.local-repository") return observation.state.toolchainDigest;
+        if (dependency.kind === "representation-profile") {
+          return currentBuiltInRepresentationProfile(dependency.id)?.semanticHash;
+        }
         if (dependency.id.startsWith("proposal:")) return input.compiled.proposalHash;
         if (dependency.id === "repository-impact-proof") {
           const snapshot = buildRepositoryImpactSnapshot(observation);

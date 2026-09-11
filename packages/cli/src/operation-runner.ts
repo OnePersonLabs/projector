@@ -21,8 +21,10 @@ import {
   type ProjectorOperationRequestFor,
 } from "@projector/core";
 import {
-  KnowledgeContextResultSchema,
-  KnowledgeReconciliationResultSchema,
+  KnowledgeContextOperationOutputSchema,
+  KnowledgeReconciliationOperationOutputSchema,
+  projectKnowledgeContext,
+  projectKnowledgeReconciliation,
   LifecycleApplyOutputSchema,
   LifecycleApprovalOutputSchema,
   LifecycleCaptureOutputSchema,
@@ -35,9 +37,12 @@ import {
   RepositoryCoverageOutputSchema,
   RepositoryChangeLifecycleService,
   RepositoryRepresentationInspectionService,
+  RepositoryRepresentationProfileReconciliationService,
   createPackagedProjectDataMigrationService,
   RepresentationInspectionOperationOutputSchema,
   RepresentationInspectionOutputSchema,
+  RepresentationProfileReconciliationOperationOutputSchema,
+  RepresentationProfileReconciliationOutputSchema,
   RepositoryKnowledgeService,
   initializePreparedProject,
   inspectProjectReadiness,
@@ -49,6 +54,7 @@ import {
   projectLifecycleRecovery,
   projectLifecycleResume,
   projectRepresentationInspectionOperation,
+  projectRepresentationProfileReconciliationOperation,
   withProjectOperationAccess,
   type PreparedProjectInitializationResult,
   type PsychordApplicationEvidenceHost,
@@ -359,11 +365,11 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
     defineProjectorOperationHandler({
       operation: "context",
       inputSchema: ProjectorOperationInputSchemas.context,
-      outputSchema: KnowledgeContextResultSchema,
+      outputSchema: KnowledgeContextOperationOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const { signal } = context;
         const service = await RepositoryKnowledgeService.create({ repositoryRoot, applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
-        return service.context({
+        return projectKnowledgeContext(await service.context({
           request: input.request,
           signal,
           ...(input.entities === undefined ? {} : { entities: input.entities }),
@@ -378,17 +384,17 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
             ...(input.policy.minimumScore === undefined ? {} : { minimumScore: input.policy.minimumScore }),
             ...(input.policy.maxContextCost === undefined ? {} : { maxContextCost: input.policy.maxContextCost }),
           } }),
-        });
+        }), input.view);
       },
     }),
     defineProjectorOperationHandler({
       operation: "reconcile",
       inputSchema: ProjectorOperationInputSchemas.reconcile,
-      outputSchema: KnowledgeReconciliationResultSchema,
+      outputSchema: KnowledgeReconciliationOperationOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const { signal } = context;
         const service = await RepositoryKnowledgeService.create({ repositoryRoot, applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
-        return service.reconcile(input.contextId, { signal });
+        return projectKnowledgeReconciliation(await service.reconcile(input.contextId, { signal }), input.view);
       },
     }),
     defineProjectorOperationHandler({
@@ -483,6 +489,21 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
           changeSelector: input.changeSelector,
           view: input.view,
           ...(input.capsuleId === undefined ? {} : { capsuleId: input.capsuleId }),
+          ...(input.approvalSelector === undefined ? {} : { approvalSelector: input.approvalSelector }),
+          signal: context.signal,
+        })));
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "representation.reconcile",
+      inputSchema: ProjectorOperationInputSchemas["representation.reconcile"],
+      outputSchema: RepresentationProfileReconciliationOperationOutputSchema,
+      execute: async ({ repositoryRoot, input }, context) => {
+        const service = await RepositoryRepresentationProfileReconciliationService.create(repositoryRoot, {
+          applicationEvidence: applicationEvidenceFor(repositoryRoot, context),
+        });
+        return projectRepresentationProfileReconciliationOperation(RepresentationProfileReconciliationOutputSchema.parse(await service.reconcile({
+          changeSelector: input.changeSelector,
           ...(input.approvalSelector === undefined ? {} : { approvalSelector: input.approvalSelector }),
           signal: context.signal,
         })));

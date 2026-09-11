@@ -332,6 +332,16 @@ describe("normative contract registry", () => {
       operation: "representation.inspect",
       input: { changeSelector: "semantic_change_fixture", view: "summary", selector: "invented" },
     }).success).toBe(false);
+    expect(ProjectorOperationRequestSchema.safeParse({
+      ...context,
+      operation: "representation.reconcile",
+      input: { changeSelector: "semantic_change_fixture", approvalSelector: "lifecycle_approval_fixture" },
+    }).success).toBe(true);
+    expect(ProjectorOperationRequestSchema.safeParse({
+      ...context,
+      operation: "representation.reconcile",
+      input: { changeSelector: "semantic_change_fixture", view: "content" },
+    }).success).toBe(false);
     expect(ProjectorOperationRequestSchema.safeParse({ ...context, operation: "application.observe" }).success).toBe(false);
     const applicationRequestSchema = createProjectorOperationRequestSchema("application.observe", z.strictObject({ plan: z.strictObject({ schemaVersion: z.literal("test-application-plan@1"), runId: z.string() }) }));
     const applicationRequest = { apiVersion: "projector.operation/v1", operation: "application.observe", repositoryRoot: ".", input: { plan: { schemaVersion: "test-application-plan@1", runId: "run:1" } } };

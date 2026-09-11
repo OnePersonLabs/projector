@@ -75,12 +75,17 @@ const ALL_DIMENSIONS: PreservationDimension[] = [
   "condition-guard", "exception", "dependency-order", "behavior-step-role", "concept-identity", "identifier-literal",
 ];
 
-function profile(key: string, target: SemanticRepresentationProfile["target"], optimization: SemanticRepresentationProfile["optimization"]): SemanticRepresentationProfile {
+function profile(
+  key: string,
+  target: SemanticRepresentationProfile["target"],
+  optimization: SemanticRepresentationProfile["optimization"],
+  status: SemanticRepresentationProfile["status"] = "active",
+): SemanticRepresentationProfile {
   const value = {
     id: `profile:${key.slice(0, key.lastIndexOf("@"))}`,
     key: key.slice(0, key.lastIndexOf("@")),
     version: key.slice(key.lastIndexOf("@") + 1),
-    status: "active" as const,
+    status,
     target,
     selector: { op: "all" as const, items: [] },
     optimization,
@@ -97,9 +102,29 @@ export const BUILT_IN_REPRESENTATION_PROFILES = Object.freeze({
   "human-technical@1": profile("human-technical@1", "human-technical", "clarity-first"),
   "behavior-gherkin@1": profile("behavior-gherkin@1", "behavior-spec", "clarity-first"),
   "agent-compact@1": profile("agent-compact@1", "agent-context", "token-first"),
+  "agent-compact@2": profile("agent-compact@2", "agent-context", "token-first"),
   "machine-invariant@1": profile("machine-invariant@1", "machine-invariant", "machine-first"),
 });
 export type BuiltInRepresentationProfileKey = keyof typeof BUILT_IN_REPRESENTATION_PROFILES;
+
+const CURRENT_BUILT_IN_REPRESENTATION_PROFILE_KEYS = new Set<BuiltInRepresentationProfileKey>([
+  "human-technical@1",
+  "behavior-gherkin@1",
+  "agent-compact@2",
+  "machine-invariant@1",
+]);
+
+export function currentBuiltInRepresentationProfile(profileId: string): SemanticRepresentationProfile | undefined {
+  const current = Object.entries(BUILT_IN_REPRESENTATION_PROFILES)
+    .filter(([key, value]) => CURRENT_BUILT_IN_REPRESENTATION_PROFILE_KEYS.has(key as BuiltInRepresentationProfileKey) && value.id === profileId)
+    .map(([, value]) => value);
+  if (current.length > 1) throw new TypeError(`built-in representation profile has multiple current versions: ${profileId}`);
+  return current[0];
+}
+
+function isAgentCompactProfileKey(key: BuiltInRepresentationProfileKey): boolean {
+  return key === "agent-compact@1" || key === "agent-compact@2";
+}
 
 export interface HumanTechnicalLintFinding { readonly rule: string; readonly count: number }
 export interface HumanTechnicalLintReport {
@@ -242,7 +267,7 @@ function render(source: CanonicalRepresentationSource, key: BuiltInRepresentatio
     }).join("\n\n");
     return `${scenarios}\n\n# invariant-kernel: ${canonicalJson(source.statements.map(kernel))}`;
   }
-  if (key === "agent-compact@1") {
+  if (isAgentCompactProfileKey(key)) {
     const statements = source.statements.map((statement) => [
       `${statement.normativeForce === "forbid" ? "FORBID" : statement.normativeForce.toUpperCase()}${statement.negated ? " NOT" : ""} ${statement.id}`,
       statement.cardinality?.toUpperCase(), statement.connective?.toUpperCase(),
@@ -504,7 +529,7 @@ function parseCandidate(candidate: string, profileKey: BuiltInRepresentationProf
     candidate = candidate.trim().replaceAll("\r\n", "\n");
     if (profileKey === "machine-invariant@1") return parseMachineCandidate(candidate);
     if (profileKey === "behavior-gherkin@1") return parseGherkinCandidate(candidate);
-    if (profileKey === "agent-compact@1") return parseCompactCandidate(candidate);
+    if (isAgentCompactProfileKey(profileKey)) return parseCompactCandidate(candidate);
     return parseHumanCandidate(candidate);
   } catch (error) {
     throw new RepresentationFidelityError("normative-force", `candidate cannot be deterministically parsed or proved: ${error instanceof Error ? error.message : String(error)}`);
@@ -636,7 +661,7 @@ function assertCandidate(
       }
     }
   }
-  if (profileKey === "agent-compact@1") {
+  if (isAgentCompactProfileKey(profileKey)) {
     const structural = new Set(["FORBID", "NOT", "MUST", "IFF", "IF", "ORDER", "SCOPE", "TITLE", "ONE", "MORE", "MOST", "ALL", "NONE", "AND", "OR"]);
     const protectedAcronyms = new Set(source.statements.flatMap(({ protectedLiterals }) => protectedLiterals)
       .flatMap((literal) => literal.match(/\b[A-Z]{2,5}\b/gu) ?? []));
@@ -731,12 +756,20 @@ export class RepresentationCompiler {
     if (input.binding.valueDependencies.some(({ kind, id }) => kind === "canonical-entity" && memberKeys.has(String(id)))) {
       throw new TypeError("representation source members must occur exactly once in typed bound value dependencies");
     }
+    const existingProfileDependencies = input.binding.valueDependencies
+      .filter(({ kind, id }) => kind === "representation-profile" && id === selected.id);
+    if (existingProfileDependencies.length > 1
+      || (existingProfileDependencies.length === 1 && existingProfileDependencies[0]!.versionHash !== selected.semanticHash)) {
+      throw new TypeError("selected representation profile dependency is duplicated or stale");
+    }
     const boundState = createStateBinding({
       compiledAgainst: input.binding.compiledAgainst,
       valueDependencies: [
         ...input.binding.valueDependencies,
         ...members.map((member) => ({ kind: "canonical-entity" as const, id: `${member.kind}:${member.id}`, versionHash: member.semanticHash, role: `representation-source:${member.kind}` })),
-        { kind: "representation-profile" as const, id: selected.id, versionHash: selected.semanticHash, role: "representation-profile" },
+        ...(existingProfileDependencies.length === 0
+          ? [{ kind: "representation-profile" as const, id: selected.id, versionHash: selected.semanticHash, role: "representation-profile" }]
+          : []),
       ],
       queryDependencies: input.binding.queryDependencies,
     });
@@ -780,22 +813,22 @@ export class RepresentationCompiler {
     try {
       requested = await this.compile({ ...input, profileKey: input.requestedProfileKey });
     } catch (error) {
-      if (input.requestedProfileKey !== "agent-compact@1" || !(error instanceof RepresentationFidelityError)) throw error;
+      if (!isAgentCompactProfileKey(input.requestedProfileKey) || !(error instanceof RepresentationFidelityError)) throw error;
     }
     const efficiency = requested?.projection.tokenAccounting?.estimatedNetInstructionEfficiency
       ?? requested?.projection.tokenAccounting?.estimatedNetTokens ?? Number.NEGATIVE_INFINITY;
-    if (input.requestedProfileKey !== "agent-compact@1" && requested !== undefined) return requested;
+    if (!isAgentCompactProfileKey(input.requestedProfileKey) && requested !== undefined) return requested;
     if (requested !== undefined && efficiency > 0) return requested;
     const tiers: Array<{ tier: RepresentationFallbackTier; profileKey: BuiltInRepresentationProfileKey }> = [
       { tier: "exact-machine-plus-advisory-compact", profileKey: "machine-invariant@1" },
-      { tier: "less-aggressive-compact", profileKey: "agent-compact@1" },
+      { tier: "less-aggressive-compact", profileKey: input.requestedProfileKey },
       { tier: "human-technical", profileKey: "human-technical@1" },
     ];
     for (const { tier, profileKey } of tiers) {
       if (this.ports.fallbackGate?.(tier) === false) continue;
       const { candidate: omittedCandidate, ...fallbackInput } = input; void omittedCandidate;
       const accepted = tier === "less-aggressive-compact"
-        ? await this.compileRendered({ ...input, profileKey: "agent-compact@1" }, renderLessAggressiveCompact(normalizedSource(input.source)), "less-aggressive-compact")
+        ? await this.compileRendered({ ...input, profileKey: input.requestedProfileKey }, renderLessAggressiveCompact(normalizedSource(input.source)), "less-aggressive-compact")
         : profileKey === input.requestedProfileKey && requested !== undefined ? requested : await this.compile({ ...fallbackInput, profileKey });
       const base = { ...accepted.projection, status: "fallback-used" as const };
       const projection = deepFreeze({ ...base, semanticHash: hashFramedDomain("representation-projection", { ...base, semanticHash: undefined }) });

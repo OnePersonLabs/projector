@@ -8,7 +8,7 @@ import {
   canonicalJson,
   type ExecutionCapsule,
 } from "@projector/core";
-import { BUILT_IN_REPRESENTATION_PROFILES, executionCapsuleHash, executionPlanHash } from "@projector/engine";
+import { currentBuiltInRepresentationProfile, executionCapsuleHash, executionPlanHash } from "@projector/engine";
 import { z } from "zod";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
@@ -117,7 +117,7 @@ function errorReason(error: unknown): string {
 }
 
 function staleReason(reason: string): boolean {
-  return /\b(?:stale|changed|mismatch|does not match|different repository states|binding is suspect|binding is violated)\b/iu.test(reason);
+  return /\b(?:stale|changed|mismatch|does not match|different repository states|binding is suspect|binding is violated|dependencies are violated)\b/iu.test(reason);
 }
 
 export class RepositoryRepresentationInspectionService {
@@ -180,9 +180,9 @@ export class RepositoryRepresentationInspectionService {
       freshness = { status: staleReason(reason) ? "stale" : "unknown", reasons: [reason] };
     }
     if (freshness.status === "current" && durable !== undefined) {
-      const profile = Object.values(BUILT_IN_REPRESENTATION_PROFILES).find(({ id, version }) => id === reference.profileId && version === reference.profileVersion);
+      const profile = currentBuiltInRepresentationProfile(reference.profileId);
       const boundProfile = durable.projection.boundState.valueDependencies.find(({ kind, id }) => kind === "representation-profile" && id === reference.profileId);
-      if (profile === undefined || boundProfile?.versionHash !== profile.semanticHash) {
+      if (profile === undefined || reference.profileVersion !== profile.version || boundProfile?.versionHash !== profile.semanticHash) {
         freshness = { status: "stale", ...(freshness.currentState === undefined ? {} : { currentState: freshness.currentState }), reasons: ["selected representation profile version or semantic hash changed"] };
       }
     }

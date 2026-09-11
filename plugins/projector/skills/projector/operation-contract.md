@@ -20,17 +20,18 @@ The script also accepts the same single JSON object on standard input. A request
 }
 ```
 
-Supported built-in operations are `status`, `init`, `context`, `reconcile`, `change.capture`, `change.plan`, `change.approve`, `change.apply`, `change.recover`, `change.resume`, `representation.inspect`, `coverage`, `complete`, `cleanup`, and `verify`. The installed Windows entry also composes `application.observe` for the Psychord adapter. The typed schemas and registered handlers own each operation's exact input and output. Do not add undeclared fields.
+Supported built-in operations are `status`, `init`, `context`, `reconcile`, `change.capture`, `change.plan`, `change.approve`, `change.apply`, `change.recover`, `change.resume`, `representation.inspect`, `representation.reconcile`, `coverage`, `complete`, `cleanup`, and `verify`. The installed Windows entry also composes `application.observe` for the Psychord adapter. The typed schemas and registered handlers own each operation's exact input and output. Do not add undeclared fields.
 
 Common inputs are:
 
-- `context`: `{ "request": "...", "persist": true }`; optional `entities`, `namedTargets`, `operation`, and bounded `policy` refine retrieval.
-- `reconcile`: `{ "contextId": "..." }`.
+- `context`: `{ "request": "...", "persist": true }`; optional `entities`, `namedTargets`, `operation`, and bounded `policy` refine retrieval. Optional `view: "agent" | "full"` selects transport disclosure; the default is `agent`.
+- `reconcile`: `{ "contextId": "..." }`; optional `view: "agent" | "full"` selects transport disclosure; the default is `agent`.
 - `change.capture`: `{ "request": "...", "proposal": { ... }, "contextId": "..." }`.
 - `change.plan`: `{ "changeSelector": "..." }`.
 - `change.approve`: `{ "changeSelector": "...", "planHash": "sha256:v1:..." }`.
 - `change.apply`, `change.recover`, `change.resume`: `{ "approvalSelector": "..." }`.
 - `representation.inspect`: `{ "changeSelector": "...", "view": "summary" | "content" }`; optional `capsuleId` selects one capsule and optional `approvalSelector` authenticates an existing approval without creating authority.
+- `representation.reconcile`: `{ "changeSelector": "..." }`; optional `approvalSelector` authenticates the historical approval. It replaces stale profile-bound projections and capsules with a distinct current, unapproved lifecycle capture. It never modifies or transfers the historical approval.
 - `coverage`, `complete`, `cleanup`: optional `scope`, `budgetTokens`, `budgetCost`, and `questionOffset`.
 - `cleanup` also accepts an existing `contextId`, `changeSelector`, or `approvalSelector` to inspect bounded continuation. Optional `evidenceLimit` (1--50, default 10), `evidenceOffset`, and `evidenceIdentity` page its evidence. Follow the returned `continuation.drillDown` request; if evidence changed, restart at offset zero without the old identity. `continuation.nextAction` is an invocable request, not an approval or proof of completion. Per-item `inspect` requests use the existing reconciliation and representation services.
 - `status`, `init`, and `verify`: `{}`.
@@ -48,6 +49,8 @@ The script emits one `projector.operation-result/v1` JSON result and exits with 
 
 Cleanup continuation separates current, stale, and unknown bindings from governance and historical lifecycle outcomes. It prioritizes recovery of unfinished effects, including a published partial result whose journal remains open. Required prepared-success and representation artifacts are authenticated by their existing owners. Advisory notes remain unobservable when those owners do not name any; cleanup creates no note registry, progress store, approval, or prepared-success evidence. Evidence limits bound disclosure, not repository observation, and lifecycle execution still performs its own exact authority and repository-wide recovery checks.
 
-A successful `context` result places the saved context identity at `output.id`, candidate interpretation at `output.interpretation`, and retained semantic items at `output.branches[].context.items`. Inspect `output.unknowns` and branch frontiers and obligations before relying on the retained context. Focus an existing meaning with `input.entities`; the operation accepts no CLI flags.
+A successful `context` result places the saved context identity at `output.id`, candidate interpretation at `output.interpretation`, and selected semantic items at `output.branches[].context.items`. The default agent view omits internal closure graphs and state-binding transcripts. It includes whole semantic records only, with byte and sample limits; an oversized record is deferred rather than truncated. Inspect every `*Disclosure` total/included/omitted count, branch frontier and obligation counts, and `safety` totals before relying on displayed evidence. Safety totals include blocked decisions and unknown or violated observations in omitted branches. An empty sample with a nonzero total does not mean absence or conformance.
+
+Focus an existing meaning with `input.entities`. If required content or proof is omitted, merge `output.fullEvidence.inputPatch` into the original input, preserving `request`, `entities`, `namedTargets`, `policy`, `operation`, and `persist`. The patch selects `"view": "full"`; it is not a complete request. Full view returns the unprojected current service result. Reconciliation likewise accepts `{"contextId":"...","view":"full"}` and returns that exact drill-down input in its agent view. Full disclosure does not enlarge retrieval policy or close an unresolved frontier. Both views perform the same current observation; changing view neither changes persisted proof nor creates execution authority. Context IDs and `contentHash` identify the full retained evidence, not the projected JSON. Reconciliation still separates binding status from governance and application-evidence status. The operation accepts no CLI flags.
 
 Always provide the intended repository explicitly. The operation entry keeps no hidden workspace binding. Retain context IDs, proposal files, selectors, reviewed plan hashes, receipts, and recovery records in their actual owners; the entry is not a second progress store.

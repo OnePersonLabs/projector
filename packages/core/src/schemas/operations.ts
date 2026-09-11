@@ -22,6 +22,7 @@ export const ProjectorOperationSchema = z.enum([
   "cleanup",
   "verify",
   "representation.inspect",
+  "representation.reconcile",
   "application.observe",
 ]);
 
@@ -65,6 +66,7 @@ export const ProjectorOperationInputSchemas = Object.freeze({
   status: z.strictObject({}),
   init: z.strictObject({}),
   context: z.strictObject({
+    view: z.enum(["agent", "full"]).optional(),
     request: z.string().min(1).max(4_096),
     entities: z.array(z.string().min(1).max(512)).max(64).optional(),
     namedTargets: z.array(z.string().min(1).max(1_024)).max(64).optional(),
@@ -72,7 +74,7 @@ export const ProjectorOperationInputSchemas = Object.freeze({
     persist: z.boolean().optional(),
     policy: knowledgePolicy.optional(),
   }),
-  reconcile: z.strictObject({ contextId: z.string().min(1) }),
+  reconcile: z.strictObject({ contextId: z.string().min(1), view: z.enum(["agent", "full"]).optional() }),
   "change.capture": z.strictObject({ request: z.string().min(1), proposal: ChangeProposalSchema, contextId: z.string().min(1).optional() }),
   "change.plan": z.strictObject({ changeSelector: z.string().min(1) }),
   "change.approve": z.strictObject({ changeSelector: z.string().min(1), planHash: ContentHashSchema }),
@@ -97,6 +99,10 @@ export const ProjectorOperationInputSchemas = Object.freeze({
     approvalSelector: z.string().min(1).optional(),
     view: z.enum(["summary", "content"]),
   }),
+  "representation.reconcile": z.strictObject({
+    changeSelector: z.string().min(1),
+    approvalSelector: z.string().min(1).optional(),
+  }),
 });
 
 export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation", [
@@ -115,6 +121,7 @@ export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation",
   createProjectorOperationRequestSchema("cleanup", ProjectorOperationInputSchemas.cleanup),
   createProjectorOperationRequestSchema("verify", ProjectorOperationInputSchemas.verify),
   createProjectorOperationRequestSchema("representation.inspect", ProjectorOperationInputSchemas["representation.inspect"]),
+  createProjectorOperationRequestSchema("representation.reconcile", ProjectorOperationInputSchemas["representation.reconcile"]),
 ]);
 
 export type ProjectorOperationRequest = z.infer<typeof ProjectorOperationRequestSchema>;

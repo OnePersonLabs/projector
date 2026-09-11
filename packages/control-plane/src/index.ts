@@ -41,6 +41,7 @@ export type {
   KnowledgeReconciliationResult,
 } from "./knowledge/types.js";
 export { KnowledgeContextResultSchema, KnowledgeReconciliationResultSchema } from "./knowledge/types.js";
+export { KnowledgeContextOperationOutputSchema, KnowledgeReconciliationOperationOutputSchema, projectKnowledgeContext, projectKnowledgeReconciliation } from "./knowledge/transport.js";
 export { inspectRepositoryCoverage, type RepositoryCoverageRequest } from "./coverage/service.js";
 export type { CompletionQuestion } from "./coverage/issues.js";
 export {
@@ -107,3 +108,11 @@ export {
   type RepresentationInspectionOperationOutput,
   type RepresentationInspectionOutput,
 } from "./representation/service.js";
+export {
+  RepositoryRepresentationProfileReconciliationService,
+  RepresentationProfileReconciliationOperationOutputSchema,
+  RepresentationProfileReconciliationOutputSchema,
+  projectRepresentationProfileReconciliationOperation,
+  type RepresentationProfileReconciliationOperationOutput,
+  type RepresentationProfileReconciliationOutput,
+} from "./representation/profile-reconciliation.js";

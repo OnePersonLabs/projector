@@ -1,14 +1,18 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { hashFramedDomain, withCanonicalHashes, type BehavioralScenario, type Requirement } from "@projector/core";
+import { canonicalJson, createDurableRepresentationArtifactRecord, hashFramedDomain, withCanonicalHashes, type BehavioralScenario, type RepresentationProjection, type Requirement } from "@projector/core";
+import { createStateBinding } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
+import { ChangeLifecycleStore } from "../change-lifecycle/store.js";
+import { RepositoryKnowledgeService } from "../knowledge/service.js";
+import { RepositoryRepresentationProfileReconciliationService } from "./profile-reconciliation.js";
 import { RepositoryRepresentationInspectionService, projectRepresentationInspectionOperation } from "./service.js";
 
 const exec = promisify(execFile);
@@ -55,6 +59,73 @@ async function repository(): Promise<string> {
 }
 
 describe("RepositoryRepresentationInspectionService", () => {
+  it("reconciles an authenticated profile upgrade into a distinct current unapproved capture", async () => {
+    const root = await repository();
+    try {
+      const request = `Change the greeting while preserving its exact accepted name behavior and repository boundary. ${"Retain authenticated intent. ".repeat(40)}`;
+      const knowledge = await RepositoryKnowledgeService.create(root);
+      const context = await knowledge.context({ request, entities: ["requirement:greeting"], operation: "change", persist: true });
+      const historicalLifecycle = await RepositoryChangeLifecycleService.create(root, { representationProfileKey: "agent-compact@1" });
+      const historical = await historicalLifecycle.capture({ request, proposal: proposal(), knowledgeContextId: context.id });
+      const approval = await historicalLifecycle.approve(historical.capture.semanticChangeId, historical.capture.planHash);
+      const store = await ChangeLifecycleStore.create(root);
+      const oldCapture = canonicalJson(await store.readCapture(historical.capture.semanticChangeId));
+      const oldApproval = canonicalJson(await store.readApproval(approval.id));
+      const approvalFiles = await readdir(join(root, ".projector/runtime/change-lifecycles/approvals"));
+
+      const result = await (await RepositoryRepresentationProfileReconciliationService.create(root)).reconcile({
+        changeSelector: historical.capture.semanticChangeId,
+        approvalSelector: approval.id,
+      });
+
+      expect(result).toMatchObject({
+        profile: { id: "profile:agent-compact", fromVersion: "1", toVersion: "2" },
+        historical: { changeSelector: historical.capture.semanticChangeId, planHash: historical.capture.planHash, approvalStatus: "authenticated-stale" },
+        context: { status: expect.stringMatching(/current|rebound/u), contextId: context.id, observedContextId: expect.stringMatching(/^knowledge_context_/u) },
+        reconciliation: { status: "reconciled" },
+        replacement: { artifactStatus: "valid", dependencyStatus: "current", approvalStatus: "not-supplied" },
+        automaticApprovalCreated: false,
+        delivery: { stage: "reconciliation-service", deliveredToRunnerBoundary: false },
+      });
+      expect(result.replacement.changeSelector).not.toBe(historical.capture.semanticChangeId);
+      expect(result.replacement.planHash).not.toBe(historical.capture.planHash);
+      expect(result.invalidation.invalidatedIds).toEqual(expect.arrayContaining([
+        historical.compiled.representation.projectionId,
+        ...historical.capture.capsules.map(({ id }) => id),
+      ]));
+      expect(result.invalidation.preservedCanonicalEntityIds).toEqual(expect.arrayContaining(["requirement:greeting"]));
+      expect(canonicalJson(await store.readCapture(historical.capture.semanticChangeId))).toBe(oldCapture);
+      expect(canonicalJson(await store.readApproval(approval.id))).toBe(oldApproval);
+      expect(await readdir(join(root, ".projector/runtime/change-lifecycles/approvals"))).toEqual(approvalFiles);
+      await expect((await RepositoryRepresentationInspectionService.create(root)).inspect({
+        changeSelector: historical.capture.semanticChangeId,
+        approvalSelector: approval.id,
+        view: "summary",
+      })).resolves.toMatchObject({ dependencyFreshness: { status: "stale" }, executionAuthorization: { status: "authenticated-stale" } });
+      await expect((await RepositoryRepresentationProfileReconciliationService.create(root)).reconcile({
+        changeSelector: result.replacement.changeSelector,
+      })).rejects.toThrow(/already current/iu);
+
+      const oldReference = historical.capture.capsules[0]!.representation!;
+      const recordPath = join(root, ".projector/runtime/representations/projections", `${hashFramedDomain("representation-projection-path", oldReference.projectionId).slice("sha256:v1:".length)}.json`);
+      const record = JSON.parse(await readFile(recordPath, "utf8")) as { projection: RepresentationProjection };
+      const staleBinding = createStateBinding({
+        compiledAgainst: record.projection.boundState.compiledAgainst,
+        valueDependencies: record.projection.boundState.valueDependencies.map((dependency) => dependency.kind === "representation-profile"
+          ? { ...dependency, versionHash: hashFramedDomain("tampered-historical-profile", null) }
+          : dependency),
+        queryDependencies: record.projection.boundState.queryDependencies,
+      });
+      const { semanticHash: _oldSemanticHash, ...projectionBasis } = record.projection;
+      const tamperedProjection = { ...projectionBasis, boundState: staleBinding } as Omit<RepresentationProjection, "semanticHash">;
+      const projection = { ...tamperedProjection, semanticHash: hashFramedDomain("representation-projection", tamperedProjection) } as RepresentationProjection;
+      await writeFile(recordPath, canonicalJson(createDurableRepresentationArtifactRecord(projection)));
+      await expect((await RepositoryRepresentationProfileReconciliationService.create(root)).reconcile({
+        changeSelector: historical.capture.semanticChangeId,
+      })).rejects.toThrow(/historical representation profile binding is invalid/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("separates exact artifact, currentness, fidelity, approval, and delivery across reset", async () => {
     const root = await repository();
     try {
