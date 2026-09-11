@@ -3,54 +3,92 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import {
-  CanonicalDocumentWireSchemasByKind,
-  CanonicalKindSchema,
-  hashFramedDomain,
-  type CanonicalDocumentWire,
-  type CanonicalKind,
-  type ContentHash,
-} from "@projector/core";
+import { CanonicalDocumentWireSchemasByKind, CanonicalKindSchema, canonicalJson, hydrateCanonicalDocumentWire, hashFramedDomain, type CanonicalDocumentWire, type CanonicalKind, type ContentHash, type CanonicalDocumentEnvelope } from "@projector/core";
 import { parse as parseToml } from "smol-toml";
 import { validateBenchmarkMetrics, type BenchmarkGateResult } from "./benchmark.js";
 import type { SubsystemClosureReceipt } from "./subsystem-closure.js";
 
 export type AcceptanceStratum = "scenario" | "property" | "adversary";
-export interface AcceptanceInventoryItem { readonly id: string; readonly stratum: AcceptanceStratum; readonly ordinal: number; readonly title: string; readonly sourcePath: string; readonly sourceDigest: ContentHash }
+/** Complete accepted owner, never a heading or a test-authored behavior definition. */
+export interface AcceptanceInventoryItem {
+  readonly id: string;
+  readonly title: string;
+  readonly semanticHash: ContentHash;
+  readonly legacyIds: readonly string[];
+  readonly owner: CanonicalDocumentEnvelope["payload"];
+}
 export interface AcceptanceSource { readonly path: string; readonly text: string }
 export interface TraceabilityEntry extends AcceptanceInventoryItem { readonly publicFacade: string; readonly testRef: string; readonly testSourceDigest: ContentHash; readonly requiredArtifactIds?: readonly string[]; readonly mappingHash: ContentHash }
-export interface TraceabilityManifest { readonly version: 2; readonly entries: readonly TraceabilityEntry[]; readonly inventoryHash: ContentHash }
+export interface TraceabilityManifest { readonly version: 3; readonly entries: readonly TraceabilityEntry[]; readonly inventoryHash: ContentHash }
 export interface VerifiedTraceability { readonly verified: true; readonly inventoryHash: ContentHash; readonly runEvidenceHash: ContentHash; readonly rawOutput?: string; readonly contentHash: ContentHash }
+/** Fixed migration aliases, not IDs generated from source order. */
 export const PACKED_LIFECYCLE_OBLIGATION_IDS = Object.freeze(new Set([
   "scenario:19:installed-held-out-change-lifecycle",
   "adversary:33:installed-source-severed-lifecycle-interruption-recovery-and-identity-continuity",
 ]));
 const PACKED_LIFECYCLE_ARTIFACT_IDS = Object.freeze(["packed-held-out-lifecycle", "packed-held-out-lifecycle-transcript"]);
 const execute = promisify(execFile);
-
-const slug = (value: string) => value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
 const portableText = (text: string) => text.replace(/\r\n?/gu, "\n");
-const sourceDigest = (path: string, text: string) => hashFramedDomain("acceptance-authoritative-source", { path, text: portableText(text) });
-function inventoryItem(stratum: AcceptanceStratum, ordinal: number, title: string, source: AcceptanceSource): AcceptanceInventoryItem { return { id: `${stratum}:${String(ordinal).padStart(2, "0")}:${slug(title)}`, stratum, ordinal, title, sourcePath: source.path, sourceDigest: sourceDigest(source.path, source.text) }; }
+const legacyIdentity = /^(scenario|property|adversary):[0-9]+:[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
-export function deriveAcceptanceInventory(input: { readonly scenarios: readonly AcceptanceSource[]; readonly testing: AcceptanceSource }): readonly AcceptanceInventoryItem[] {
-  let scenarioOrdinal = 0;
-  const scenarioSources = input.scenarios.map((source) => ({ ...source, text: portableText(source.text) }));
-  const testing = { ...input.testing, text: portableText(input.testing.text) };
-  const scenarios = scenarioSources.flatMap((source) => [...source.text.matchAll(/^## (.+)$/gmu)].map((match) => match[1]!).filter((title) => !/^Relevance and Semantic Identity Acceptance Scenarios$/u.test(title)).map((title) => inventoryItem("scenario", ++scenarioOrdinal, title, source)));
-  const propertySection = /## Property-based tests\s+Mandatory properties include:\s+([\s\S]*?)\n## /u.exec(testing.text)?.[1];
-  if (propertySection === undefined) throw new Error("authoritative property inventory is missing");
-  const properties = [...propertySection.matchAll(/^- (.+)$/gmu)].map((match) => match[1]!).map((title, index) => inventoryItem("property", index + 1, title, testing));
-  const adversarySection = /## Anti-self-deception tests\s+Mandatory adversarial classes:\s+([\s\S]*?)\n## /u.exec(testing.text)?.[1];
-  if (adversarySection === undefined) throw new Error("authoritative adversary inventory is missing");
-  const adversaries = [...adversarySection.matchAll(/^\d+\. (.+)$/gmu)].map((match) => match[1]!).map((title, index) => inventoryItem("adversary", index + 1, title, testing));
-  if (scenarios.length !== 63 || properties.length !== 27 || adversaries.length !== 33) throw new Error(`authoritative acceptance inventory mismatch: ${scenarios.length}/63 scenarios, ${properties.length}/27 properties, ${adversaries.length}/33 adversaries`);
-  return Object.freeze([...scenarios, ...properties, ...adversaries]);
+export function requiresPackedLifecycleArtifacts(item: Pick<AcceptanceInventoryItem, "id" | "legacyIds">): boolean {
+  return item.id === "scenario:recover-installed-held-out-change-lifecycle" || item.legacyIds.some((id) => PACKED_LIFECYCLE_OBLIGATION_IDS.has(id));
 }
 
-const inventoryBody = (entries: readonly Pick<AcceptanceInventoryItem, "id" | "stratum" | "ordinal" | "title" | "sourcePath" | "sourceDigest">[]) => entries.map(({ id, stratum, ordinal, title, sourcePath, sourceDigest }) => ({ id, stratum, ordinal, title, sourcePath, sourceDigest }));
-export function traceabilityInventoryHash(inventory: readonly AcceptanceInventoryItem[]): ContentHash { return hashFramedDomain("release-traceability-inventory", inventoryBody(inventory)); }
-export function traceabilityEntryHash(entry: Omit<TraceabilityEntry, "mappingHash">): ContentHash { return hashFramedDomain("release-traceability-entry", entry); }
+export function deriveAcceptanceInventory(input: { readonly canonical: readonly AcceptanceSource[]; readonly legacyMappings?: readonly { readonly legacyId: string; readonly ownerIds: readonly string[] }[] }): readonly AcceptanceInventoryItem[] {
+  if (!Array.isArray(input.canonical) || input.canonical.length === 0) throw new Error("accepted canonical release owners are missing; Markdown and proposal drafts are not inventory authority");
+  const seen = new Set<string>();
+  const inventory: AcceptanceInventoryItem[] = [];
+  for (const source of input.canonical) {
+    let document: CanonicalDocumentEnvelope;
+    try { document = hydrateCanonicalDocumentWire(parseToml(source.text)); }
+    catch (cause) { throw new Error(`release canonical owner is invalid: ${source.path}`, { cause }); }
+    if (document.kind !== "requirement" && document.kind !== "behavioral-scenario") throw new Error(`unsupported release owner kind: ${document.kind}`);
+    if (seen.has(document.id)) throw new Error(`duplicate canonical release owner: ${document.id}`);
+    seen.add(document.id);
+    if (document.lifecycle !== "active") continue;
+    const owner = document.payload;
+    const aliases = owner.aliases as string[];
+    const legacyIds = aliases.filter((alias) => legacyIdentity.test(alias)).sort();
+    // Canonical aliases remain intact; explicit source splits are attached below without changing discovery meaning.
+    inventory.push({ id: document.id, title: owner.title as string, semanticHash: document.semanticHash, legacyIds, owner });
+  }
+  if (inventory.length === 0) throw new Error("accepted canonical release inventory is empty");
+  const byId = new Map(inventory.map((item) => [item.id, item]));
+  for (const mapping of input.legacyMappings ?? []) {
+    if (!legacyIdentity.test(mapping.legacyId) || mapping.ownerIds.length === 0 || new Set(mapping.ownerIds).size !== mapping.ownerIds.length) throw new Error("invalid explicit legacy acceptance mapping");
+    for (const id of mapping.ownerIds) {
+      const item = byId.get(id);
+      if (item === undefined) throw new Error(`legacy acceptance mapping has no active canonical owner: ${id}`);
+      byId.set(id, { ...item, legacyIds: [...new Set([...item.legacyIds, mapping.legacyId])].sort() });
+    }
+  }
+  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+const inventoryBody = (entries: readonly AcceptanceInventoryItem[]) => entries.map(({ id, title, semanticHash, legacyIds, owner }) => ({ id, title, semanticHash, legacyIds, owner })).sort((a, b) => a.id.localeCompare(b.id));
+export function traceabilityInventoryHash(inventory: readonly AcceptanceInventoryItem[]): ContentHash { return hashFramedDomain("canonical-release-traceability-inventory:v1", inventoryBody(inventory)); }
+export function traceabilityEntryHash(entry: Omit<TraceabilityEntry, "mappingHash">): ContentHash { return hashFramedDomain("canonical-release-traceability-entry:v1", entry); }
+export interface AcceptanceTestBinding { readonly publicFacade: string; readonly testRef: string }
+export interface AcceptanceTestBindings { readonly version: 2; readonly obligations: Readonly<Record<string, { readonly obligationId: string; readonly legacyIds: readonly string[]; readonly tests: readonly AcceptanceTestBinding[] }>> }
+/** Test routing only: no statements, owner selection, or semantic overrides are accepted here. */
+export function validateAcceptanceTestBindings(inventory: readonly AcceptanceInventoryItem[], unparsed: unknown): AcceptanceTestBindings {
+  const authority = unparsed as AcceptanceTestBindings | null;
+  if (authority?.version !== 2 || canonicalJson(Object.keys(authority).sort()) !== canonicalJson(["obligations", "version"]) || authority.obligations === null || typeof authority.obligations !== "object" || Array.isArray(authority.obligations)) throw new Error("traceability authority has an unsupported shape");
+  const expected = inventory.map(({ id }) => id).sort(); const actual = Object.keys(authority.obligations).sort();
+  if (canonicalJson(expected) !== canonicalJson(actual)) throw new Error("traceability exact obligation IDs have missing or extra canonical owners");
+  for (const id of expected) {
+    const entry = authority.obligations[id];
+    if (entry === null || typeof entry !== "object" || canonicalJson(Object.keys(entry).sort()) !== canonicalJson(["legacyIds", "obligationId", "tests"]) || entry.obligationId !== id || !Array.isArray(entry.legacyIds) || entry.legacyIds.some((alias: string) => !legacyIdentity.test(alias)) || new Set(entry.legacyIds).size !== entry.legacyIds.length || canonicalJson([...entry.legacyIds].sort()) !== canonicalJson(inventory.find((item) => item.id === id)!.legacyIds) || !Array.isArray(entry.tests) || entry.tests.length === 0) throw new Error(`traceability canonical owner binding is invalid for ${id}`);
+    const seen = new Set<string>();
+    for (const test of entry.tests) {
+      if (test === null || typeof test !== "object" || canonicalJson(Object.keys(test).sort()) !== canonicalJson(["publicFacade", "testRef"]) || typeof test.publicFacade !== "string" || !test.publicFacade.trim() || typeof test.testRef !== "string" || test.testRef.split("#").length !== 2 || test.testRef.split("#").some((part: string) => !part.trim()) || seen.has(test.testRef)) throw new Error(`traceability exact test binding is invalid for ${id}`);
+      seen.add(test.testRef);
+    }
+  }
+  return authority;
+}
+
 export function verifyTraceabilityAssertionIdentity(testRef: string, result: { readonly status?: unknown; readonly assertionResults?: unknown }): void {
   const exactTestIdentity = testRef.split("#", 2)[1];
   const assertions = Array.isArray(result.assertionResults) ? result.assertionResults as { fullName?: unknown; status?: unknown }[] : [];
@@ -58,20 +96,22 @@ export function verifyTraceabilityAssertionIdentity(testRef: string, result: { r
 }
 
 function validateManifestStructure(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[]): void {
-  if (manifest.version !== 2 || manifest.inventoryHash !== traceabilityInventoryHash(inventory)) throw new Error("traceability inventory hash is stale");
-  if (manifest.entries.length !== inventory.length) throw new Error("traceability entry count is incomplete");
-  const expected = new Map(inventory.map((item) => [item.id, item])); const seen = new Set<string>();
+  if (manifest.version !== 3 || manifest.inventoryHash !== traceabilityInventoryHash(inventory)) throw new Error("traceability inventory hash is stale");
+  if (inventory.length === 0 || manifest.entries.length === 0) throw new Error("traceability inventory is empty");
+  const expected = new Map(inventory.map((item) => [item.id, item])); const seen = new Set<string>(); const observedOwners = new Set<string>();
   for (const entry of manifest.entries) {
     const item = expected.get(entry.id);
-    if (item === undefined || seen.has(entry.id)) throw new Error(`duplicate, relabeled, or unknown traceability identity ${entry.id}`);
-    seen.add(entry.id);
-    if (entry.stratum !== item.stratum || entry.ordinal !== item.ordinal || entry.title !== item.title || entry.sourcePath !== item.sourcePath || entry.sourceDigest !== item.sourceDigest) throw new Error(`stale or relabeled traceability mapping ${entry.id}`);
+    const assertionKey = canonicalJson([entry.id, entry.testRef]);
+    if (item === undefined || seen.has(assertionKey)) throw new Error(`duplicate, relabeled, or unknown traceability identity ${entry.id}`);
+    seen.add(assertionKey); observedOwners.add(entry.id);
+    if (canonicalJson(inventoryBody([entry])) !== canonicalJson(inventoryBody([item]))) throw new Error(`stale or relabeled traceability mapping ${entry.id}`);
     const { mappingHash, ...body } = entry;
     const requiredArtifactIds = entry.requiredArtifactIds ?? [];
     if (entry.publicFacade.length === 0 || !entry.testRef.includes("#") || entry.testSourceDigest.length === 0 || requiredArtifactIds.some((id) => id.length === 0) || new Set(requiredArtifactIds).size !== requiredArtifactIds.length || mappingHash !== traceabilityEntryHash(body)) throw new Error(`unauthenticated traceability mapping ${entry.id}`);
-    const expectedArtifacts = PACKED_LIFECYCLE_OBLIGATION_IDS.has(entry.id) ? PACKED_LIFECYCLE_ARTIFACT_IDS : [];
+    const expectedArtifacts = requiresPackedLifecycleArtifacts(entry) ? PACKED_LIFECYCLE_ARTIFACT_IDS : [];
     if (JSON.stringify([...requiredArtifactIds].sort()) !== JSON.stringify([...expectedArtifacts].sort())) throw new Error(`traceability artifact routing is not bound to exact obligation identity ${entry.id}`);
   }
+  if (observedOwners.size !== expected.size) throw new Error("traceability canonical owner coverage is incomplete");
 }
 
 export async function validateTraceabilityTestReferences(repositoryRoot: string, testRefs: readonly string[]): Promise<readonly string[]> {
@@ -106,7 +146,12 @@ export async function validateTraceabilityTestReferences(repositoryRoot: string,
 export async function verifyTraceabilityManifest(manifest: TraceabilityManifest, inventory: readonly AcceptanceInventoryItem[], input: { readonly repositoryRoot: string }): Promise<VerifiedTraceability> {
   validateManifestStructure(manifest, inventory);
   if (Object.keys(input).some((key) => key !== "repositoryRoot")) throw new Error("caller-supplied traceability results are forbidden");
-  const root = resolve(input.repositoryRoot); const testFiles = await validateTraceabilityTestReferences(root, manifest.entries.map(({ testRef }) => testRef)); const exactNames = [...new Set(manifest.entries.map(({ testRef }) => testRef.split("#", 2)[1]!))].sort(); const testNamePattern = `^(?:${exactNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")})$`; const vitest = resolve(root, "node_modules/vitest/vitest.mjs"); let reporterOutput: string; try { ({ stdout: reporterOutput } = await execute(process.execPath, [vitest, "run", ...testFiles, "--testNamePattern", testNamePattern, "--reporter=json"], { cwd: root, encoding: "utf8", maxBuffer: 20_000_000 })); } catch (error) { throw new Error("authoritative mapped Vitest execution failed", { cause: error }); }
+  const root = resolve(input.repositoryRoot);
+  const authority = validateAcceptanceTestBindings(inventory, JSON.parse(await readFile(resolve(root, "release/traceability-authority.json"), "utf8")));
+  const expectedAssertions = Object.values(authority.obligations).flatMap(({ obligationId, tests }) => tests.map(({ publicFacade, testRef }) => canonicalJson([obligationId, publicFacade, testRef]))).sort();
+  const actualAssertions = manifest.entries.map(({ id, publicFacade, testRef }) => canonicalJson([id, publicFacade, testRef])).sort();
+  if (canonicalJson(expectedAssertions) !== canonicalJson(actualAssertions)) throw new Error("traceability exact test bindings differ from current authority");
+  const testFiles = await validateTraceabilityTestReferences(root, manifest.entries.map(({ testRef }) => testRef)); const exactNames = [...new Set(manifest.entries.map(({ testRef }) => testRef.split("#", 2)[1]!))].sort(); const testNamePattern = `^(?:${exactNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")})$`; const vitest = resolve(root, "node_modules/vitest/vitest.mjs"); let reporterOutput: string; try { ({ stdout: reporterOutput } = await execute(process.execPath, [vitest, "run", ...testFiles, "--testNamePattern", testNamePattern, "--reporter=json"], { cwd: root, encoding: "utf8", maxBuffer: 20_000_000 })); } catch (error) { throw new Error("authoritative mapped Vitest execution failed", { cause: error }); }
   let report: { success?: unknown; numTotalTests?: unknown; numPassedTests?: unknown; numFailedTests?: unknown; testResults?: unknown }; try { report = JSON.parse(reporterOutput) as typeof report; } catch { throw new Error("authoritative Vitest JSON reporter output is invalid"); }
   if (report.success !== true || !Number.isSafeInteger(report.numTotalTests) || !Number.isSafeInteger(report.numPassedTests) || Number(report.numPassedTests) < new Set(manifest.entries.map(({ testRef }) => testRef)).size || report.numFailedTests !== 0 || !Array.isArray(report.testResults) || report.testResults.length === 0) throw new Error("traceability Vitest reporter contains failed or incomplete run evidence");
   const results = report.testResults as { name?: unknown; status?: unknown; assertionResults?: unknown }[];
