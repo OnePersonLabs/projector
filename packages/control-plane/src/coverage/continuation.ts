@@ -1,4 +1,4 @@
-import { ContentHashSchema, ProjectorOperationInputSchemas, ProjectorOperationRequestSchema, hashFramedDomain, type StateBindingValidation } from "@projector/core";
+import { ContentHashSchema, ProjectorOperationInputSchemas, ProjectorOperationRequestSchema, StateDependencyObservationSchema, StateDigestSchema, hashFramedDomain, type StateBindingValidation, type StateDependencyObservation, type StateDigest } from "@projector/core";
 import { z } from "zod";
 import { FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
 
@@ -14,6 +14,8 @@ const evidenceSchema = z.strictObject({
   status: freshnessSchema, availability: z.enum(["present", "missing", "unobservable"]),
   required: z.boolean(), reason: z.string(),
   outcome: z.enum(["success", "failure", "partial"]).optional(),
+  dependency: (StateDependencyObservationSchema as z.ZodType<StateDependencyObservation>).optional(),
+  binding: z.strictObject({ status: z.enum(["current", "rebound", "stale", "suspect", "unavailable"]), compiledAgainst: StateDigestSchema as z.ZodType<StateDigest>, currentState: StateDigestSchema as z.ZodType<StateDigest> }).optional(),
   inspect: ProjectorOperationRequestSchema.optional(),
 });
 
@@ -76,9 +78,17 @@ export async function inspectRepositoryContinuation(repositoryRoot: string, requ
       const reconciled = await service.reconcile(retained.id, { signal });
       context = { contextId: retained.id, status: freshness(reconciled.status), governance: reconciled.governance.status };
       for (const item of [{ id: "discovery", validation: reconciled.discoveryValidation }, ...reconciled.branches.map(({ branchId, validation }) => ({ id: branchId, validation }))]) {
-        evidence.push({ id: `${retained.id}:${item.id}`, owner: "knowledge", status: freshness(item.validation.status), availability: "present", required: true, reason: item.validation.reasons.join("; ") || "Bound values and query results remain current.", inspect: operation("reconcile", { contextId: retained.id }) });
-        for (const id of item.validation.changedValueDependencyIds) evidence.push({ id: `${item.id}:value:${id}`, owner: "knowledge", status: freshness(item.validation.status), availability: "present", required: true, reason: `Bound value or profile changed: ${id}` });
-        for (const id of item.validation.changedQueryDependencyIds) evidence.push({ id: `${item.id}:query:${id}`, owner: "knowledge", status: freshness(item.validation.status), availability: "present", required: true, reason: `Bound query semantics or result changed: ${id}` });
+        const bound = item.id === "discovery" ? retained.discoveryBinding : retained.branches.find(({ id }) => id === item.id)!.closure.boundState;
+        evidence.push({ id: `${retained.id}:${item.id}`, owner: "knowledge", status: freshness(item.validation.status), availability: "present", required: true, reason: item.validation.reasons.join("; ") || "Bound values and query results remain current.", binding: { status: item.validation.status, compiledAgainst: bound.compiledAgainst, currentState: item.validation.currentState }, inspect: operation("reconcile", { contextId: retained.id }) });
+        for (const observation of item.validation.observations ?? []) {
+          const id = observation.kind === "value" ? observation.dependency.id : observation.dependency.query.id;
+          const changed = observation.kind === "value" ? `Bound value or profile changed: ${id}` : `Bound query semantics or result changed: ${id}`;
+          evidence.push({ id: `${item.id}:${observation.kind}:${id}:${hashFramedDomain("continuation-dependency-role", observation.dependency.role)}`, owner: "knowledge", status: observation.status, availability: observation.status === "unknown" ? "unobservable" : "present", required: true, reason: observation.status === "stale" ? `${changed}; ${observation.reason}` : observation.reason, dependency: observation });
+        }
+        if (item.validation.observations === undefined) {
+          for (const id of item.validation.changedValueDependencyIds) evidence.push({ id: `${item.id}:value:${id}`, owner: "knowledge", status: freshness(item.validation.status), availability: "present", required: true, reason: `Bound value or profile changed: ${id}` });
+          for (const id of item.validation.changedQueryDependencyIds) evidence.push({ id: `${item.id}:query:${id}`, owner: "knowledge", status: freshness(item.validation.status), availability: "present", required: true, reason: `Bound query semantics or result changed: ${id}` });
+        }
       }
       for (const message of reconciled.governance.reasons) evidence.push({ id: hashFramedDomain("continuation-governance", message), owner: "knowledge", status: "unknown", availability: "present", required: true, reason: message });
       for (const message of retained.unknowns) evidence.push({ id: hashFramedDomain("continuation-retained-unknown", message), owner: "knowledge", status: "unknown", availability: "unobservable", required: false, reason: `Retained context boundary: ${message}` });

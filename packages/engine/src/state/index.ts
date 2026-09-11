@@ -7,6 +7,7 @@ import {
   type StateBindingValidation,
   type StateBindingValidator,
   type StateDigest,
+  type StateDependencyObservation,
   type StateQueryDependency,
   type StateQueryReader,
   type StateQueryResultFingerprint,
@@ -122,6 +123,30 @@ const cannotProveEmptyAbsence = (fingerprint: StateQueryResultFingerprint): bool
     || fingerprint.observability === "sampled"
   );
 
+function queryObservation(
+  dependency: StateQueryDependency,
+  currentResult: StateQueryResultFingerprint,
+  basis: "same-snapshot" | "unchanged-dependency-keys" | "evaluated",
+): StateDependencyObservation {
+  const unavailable = dependency.priorResult.observability === "unavailable" || currentResult.observability === "unavailable";
+  const changed = !sameFingerprint(dependency.priorResult, currentResult);
+  const incomplete = dependency.priorResult.unavailableLanes.length > 0 || currentResult.unavailableLanes.length > 0
+    || cannotProveEmptyAbsence(dependency.priorResult) || cannotProveEmptyAbsence(currentResult);
+  const status = unavailable ? "unknown" : changed ? "stale" : incomplete ? "unknown" : "current";
+  return { kind: "query", dependency, currentResult, basis, status, reason: unavailable
+    ? "A required prior or current query observation is unavailable."
+    : changed ? "The query fingerprint changed; compare result membership, query semantics and observation boundaries."
+    : incomplete ? "Matching query fingerprints cannot prove an empty open population or unavailable observation lanes."
+    : basis === "evaluated" ? "Re-evaluation preserved the bound query fingerprint."
+    : basis === "same-snapshot" ? "The snapshot and registered query semantics remain unchanged."
+    : "Registered query semantics and all declared dependency keys remain unchanged." };
+}
+
+function failedQueryObservation(dependency: StateQueryDependency, error: unknown): StateDependencyObservation {
+  return { kind: "query", dependency, status: error instanceof QueryProgramVersionError && dependency.priorResult.observability !== "unavailable" ? "stale" : "unknown", basis: "unavailable",
+    reason: error instanceof Error ? error.message : `query ${dependency.query.id} could not be observed` };
+}
+
 export class DependencyScopedStateBindingValidator implements StateBindingValidator {
   private readonly values: StateValueDependencyReader;
   private readonly queries: InspectableStateQueryReader;
@@ -134,6 +159,7 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
   }
 
   async validate(binding: StateBinding, currentState: StateDigest, context: AdapterContext): Promise<StateBindingValidation> {
+    const observations: StateDependencyObservation[] = [];
     let normalizedBinding: StateBinding;
     try {
       normalizedBinding = createStateBinding(binding);
@@ -157,6 +183,7 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
     }
 
     if (sameState(binding.compiledAgainst, currentState)) {
+      for (const dependency of normalizedBinding.valueDependencies) observations.push({ kind: "value", dependency, status: "current", basis: "same-snapshot", currentVersionHash: dependency.versionHash, reason: "The exact compiled snapshot remains unchanged." });
       const changedQueryDependencyIds: string[] = [];
       const unavailableQueryDependencyIds: string[] = [];
       const suspectQueryDependencyIds: string[] = [];
@@ -170,13 +197,16 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
         try {
           if (this.queries.assertCurrent !== undefined) {
             this.queries.assertCurrent(dependency.query);
+            observations.push(queryObservation(dependency, dependency.priorResult, "same-snapshot"));
           } else {
             const current = normalizeFingerprint(await this.queries.evaluate(dependency.query, context));
+            observations.push(queryObservation(dependency, current, "evaluated"));
             if (current.observability === "unavailable") unavailableQueryDependencyIds.push(dependency.query.id);
             else if (!sameFingerprint(current, dependency.priorResult)) changedQueryDependencyIds.push(dependency.query.id);
             else if (current.unavailableLanes.length > 0 || cannotProveEmptyAbsence(current)) suspectQueryDependencyIds.push(dependency.query.id);
           }
         } catch (error) {
+          observations.push(failedQueryObservation(dependency, error));
           if (error instanceof QueryProgramVersionError) {
             changedQueryDependencyIds.push(dependency.query.id);
             reasons.push(error.message);
@@ -193,6 +223,7 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
       if (unavailableQueries.length > 0) reasons.push(`query dependencies unavailable: ${unavailableQueries.join(", ")}`);
       if (suspectQueries.length > 0) reasons.push(`query observation boundary is incomplete: ${suspectQueries.join(", ")}`);
       const result = {
+        observations,
         currentState: structuredClone(currentState),
         changedValueDependencyIds: [],
         changedQueryDependencyIds: changedQueries,
@@ -214,13 +245,15 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
     for (const dependency of normalizedBinding.valueDependencies) {
       try {
         const currentHash = await this.values.readVersionHash(dependency, currentState, context);
+        observations.push({ kind: "value", dependency, status: currentHash === undefined ? "unknown" : currentHash === dependency.versionHash ? "current" : "stale", basis: "observed", ...(currentHash === undefined ? {} : { currentVersionHash: currentHash }), reason: currentHash === undefined ? "The bound value or profile is unavailable in the current observation." : currentHash === dependency.versionHash ? "The observed value or profile hash matches its binding." : "The observed value or profile hash differs from its binding." });
         if (currentHash === undefined) {
           unavailableValueDependencyIds.push(dependency.id);
         } else if (currentHash !== dependency.versionHash) {
           changedValueDependencyIds.push(dependency.id);
         }
-      } catch {
+      } catch (error) {
         unavailableValueDependencyIds.push(dependency.id);
+        observations.push({ kind: "value", dependency, status: "unknown", basis: "observed", reason: error instanceof Error ? error.message : `value ${dependency.id} could not be observed` });
       }
     }
 
@@ -243,6 +276,7 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
       try {
         this.queries.assertCurrent?.(dependency.query);
       } catch (error) {
+        observations.push(failedQueryObservation(dependency, error));
         if (error instanceof QueryProgramVersionError) {
           changedQueryDependencyIds.push(dependency.query.id);
           reasons.push(error.message);
@@ -258,6 +292,7 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
         && changedKeySet !== undefined
         && dependency.priorResult.dependencyKeys.every((key) => !changedKeySet.has(key));
       if (isProvablyUnchanged) {
+        observations.push(queryObservation(dependency, dependency.priorResult, "unchanged-dependency-keys"));
         if (dependency.priorResult.observability === "unavailable") unavailableQueryDependencyIds.push(dependency.query.id);
         else if (cannotProveEmptyAbsence(dependency.priorResult)) suspectQueryDependencyIds.push(dependency.query.id);
         reboundQueryDependencies.push(dependency);
@@ -266,6 +301,7 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
 
       try {
         const current = normalizeFingerprint(await this.queries.evaluate(dependency.query, context));
+        observations.push(queryObservation(dependency, current, "evaluated"));
         reboundQueryDependencies.push({ ...dependency, priorResult: current });
         if (current.observability === "unavailable") {
           unavailableQueryDependencyIds.push(dependency.query.id);
@@ -277,6 +313,7 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
           suspectQueryDependencyIds.push(dependency.query.id);
         }
       } catch (error) {
+        observations.push(failedQueryObservation(dependency, error));
         if (error instanceof QueryProgramVersionError) {
           changedQueryDependencyIds.push(dependency.query.id);
           reasons.push(error.message);
@@ -303,6 +340,7 @@ export class DependencyScopedStateBindingValidator implements StateBindingValida
     if (suspectQueries.length > 0) reasons.push(`query absence is not proof-eligible: ${suspectQueries.join(", ")}`);
 
     const base = {
+      observations,
       currentState: structuredClone(currentState),
       changedValueDependencyIds: changedValues,
       changedQueryDependencyIds: changedQueries,

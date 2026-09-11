@@ -529,7 +529,27 @@ export interface StateBindingValidation {
   changedQueryDependencyIds: string[];
   reasons: string[];
   rebound?: StateBinding;
+  observations?: StateDependencyObservation[];
 }
+
+/** Observed dependency evidence does not confer approval or semantic fidelity. */
+export type StateDependencyObservation =
+  | {
+    kind: "value";
+    dependency: StateValueDependencyRef;
+    status: "current" | "stale" | "unknown";
+    basis: "same-snapshot" | "observed";
+    currentVersionHash?: ContentHash;
+    reason: string;
+  }
+  | {
+    kind: "query";
+    dependency: StateQueryDependency;
+    status: "current" | "stale" | "unknown";
+    basis: "same-snapshot" | "unchanged-dependency-keys" | "evaluated" | "unavailable";
+    currentResult?: StateQueryResultFingerprint;
+    reason: string;
+  };
 
 export interface ValidationResult {
   validatorId: string;
