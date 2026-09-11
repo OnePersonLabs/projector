@@ -42,6 +42,7 @@ export async function observePreparedMigrationTarget(input: {
   readonly targetFormat: ProjectDataFormatSnapshot;
   readonly authenticatedFiles: readonly ProjectBackupManifestFile[];
   readonly signal: AbortSignal;
+  readonly requireSqlite?: boolean;
 }): Promise<ObservedPreparedMigrationTarget> {
   throwIfAborted(input.signal);
   const target = ProjectDataFormatSnapshotSchema.parse(input.targetFormat);
@@ -61,17 +62,19 @@ export async function observePreparedMigrationTarget(input: {
     authenticatedFiles: input.authenticatedFiles,
     signal: input.signal,
   });
-  const sqlite = await inspectExistingSqliteDerivedState(
+  if (input.requireSqlite !== false) {
+    const sqlite = await inspectExistingSqliteDerivedState(
     join(input.repositoryRoot, ".projector", "state.db"),
     canonical.rootDigest,
     { signal: input.signal },
-  );
-  if (sqlite.status !== "valid") throw new Error("Prepared target is missing its validated SQLite derived state");
-  if (
-    sqlite.schemaVersion !== target.sqlite.schemaVersion ||
-    sqlite.migrationSetHash !== target.sqlite.migrationSetHash
-  ) {
-    throw new Error("SQLite state does not match the sealed target release format");
+    );
+    if (sqlite.status !== "valid") throw new Error("Prepared target is missing its validated SQLite derived state");
+    if (
+      sqlite.schemaVersion !== target.sqlite.schemaVersion ||
+      sqlite.migrationSetHash !== target.sqlite.migrationSetHash
+    ) {
+      throw new Error("SQLite state does not match the sealed target release format");
+    }
   }
 
   return { format: target, canonicalRootDigest: canonical.rootDigest };

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { cp, lstat, mkdir, mkdtemp, open, readFile, readdir, rm } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 
 import {
@@ -23,9 +23,14 @@ import {
   FileTransactionJournal,
   PendingProjectDataMigrationStore,
   RepositoryPathService,
+  SqliteDerivedStore,
   WriterLeaseManager,
   createProjectBackup,
   inspectLegacyUnversionedProjectData,
+  installProjectorEditorSchemaBundle,
+  prepareObservedLegacyUnversionedProjectData,
+  rebuildDerivedStore,
+  stringifyTomlDocument,
   withProjectOperationAccess,
   type ProjectBackupManifestFile,
 } from "@projector/runtime";
@@ -70,18 +75,20 @@ export function createPackagedProjectDataMigrationService(input: {
         return { status: "reconciled", attemptId: recovered.attemptId, migrationId: recovered.migrationId };
       }
 
-      const selection = await selectMigration(packagedRoot, repositoryRoot, targetFormat);
-      if (selection === undefined) return { status: "not-required" };
       const attemptId = `migration-attempt:${randomUUID()}`;
       const stagingRoot = await mkdtemp(join(repositoryRoot, ".projector-migration-stage-"));
       const stagingLocation = relative(repositoryRoot, stagingRoot).replaceAll("\\", "/");
       let committed = false;
+      let selectedForResult: SelectedMigration | undefined;
       try {
         await withProjectOperationAccess(repositoryRoot, {
           operation: "project-data-migration",
           mode: "exclusive",
           ...(request.signal === undefined ? {} : { signal: request.signal }),
         }, async (access) => {
+          const selection = await selectMigration(packagedRoot, repositoryRoot, targetFormat);
+          if (selection === undefined) return;
+          selectedForResult = selection;
           const paths = await RepositoryPathService.create(repositoryRoot);
           const lease = await new WriterLeaseManager(paths, { staleAfterMs: writerLeaseStaleAfterMs })
             .acquireProjectDataMigration({
@@ -111,35 +118,28 @@ export function createPackagedProjectDataMigrationService(input: {
             if (source.kind === "release-format") {
               await prepareStageFromBackup(repositoryRoot, stagingRoot, backup.manifest.files);
             }
-            await runArtifacts(packagedRoot, selection.transforms, "transform", {
-              sourceAuthority: selection.sourceAuthority,
-              targetFormat,
-              source,
-              stagingRoot,
-              signal: access.signal,
-            });
-            if (source.kind === "legacy-unversioned") {
-              await mergeRetainedBackupFiles(repositoryRoot, stagingRoot, backup.manifest.files, new Set(selection.retiredPaths));
+            let stagedSource: ProjectDataMigrationSourceObservation = source;
+            for (const step of selection.steps) {
+              const artifactContext = {
+                sourceAuthority: selection.sourceAuthority,
+                targetFormat: step.targetFormat,
+                source: stagedSource,
+                stagingRoot,
+                signal: access.signal,
+                prepareTarget: async () => prepareTarget(stagedSource, stagingRoot, step.targetFormat),
+                validateTarget: async () => validateStagedTarget(stagingRoot, step.targetFormat, access.signal),
+              };
+              await runArtifacts(packagedRoot, step.transforms, "transform", artifactContext);
+              if (stagedSource.kind === "legacy-unversioned") {
+                await mergeRetainedBackupFiles(repositoryRoot, stagingRoot, backup.manifest.files, new Set(stagedSource.retiredPaths));
+              }
+              await runArtifacts(packagedRoot, step.validations, "validation", artifactContext);
+              await validateStagedTarget(stagingRoot, step.targetFormat, access.signal);
+              stagedSource = { kind: "release-format", snapshot: step.targetFormat };
             }
-            await runArtifacts(packagedRoot, selection.validations, "validation", {
-              sourceAuthority: selection.sourceAuthority,
-              targetFormat,
-              source,
-              stagingRoot,
-              signal: access.signal,
-            });
             const stagedFiles = await inventoryProjectorFiles(stagingRoot);
             const stagedSnapshot = await new CanonicalFileRepository(stagingRoot).snapshot();
-            await observePreparedMigrationTarget({
-              repositoryRoot: stagingRoot,
-              targetFormat,
-              authenticatedFiles: [...stagedFiles.values()].map(({ path, bytes }) => ({
-                path,
-                length: bytes.byteLength,
-                sha256: rawSha256(bytes),
-              })),
-              signal: access.signal,
-            });
+            await validateStagedTarget(stagingRoot, targetFormat, access.signal, stagedFiles);
             await assertOwned();
             const marker: PendingProjectDataMigration = {
               apiVersion: "projector.pending-project-data-migration/v2",
@@ -185,7 +185,8 @@ export function createPackagedProjectDataMigrationService(input: {
               await transaction.writeFile(path, staged.bytes);
               await assertOwned();
             }
-            for (const path of selection.retiredPaths) {
+            const retiredPaths = source.kind === "legacy-unversioned" ? source.retiredPaths : [];
+            for (const path of retiredPaths) {
               if (sourceFiles.has(path)) await transaction.deleteFile(path);
               await assertOwned();
             }
@@ -204,6 +205,7 @@ export function createPackagedProjectDataMigrationService(input: {
             await lease.release();
           }
         });
+        if (selectedForResult === undefined) return { status: "not-required" };
         const recovered = await createPreparedProjectDataMigrationRecoveryService({
           targetFormat,
           codexDataRoot: input.codexDataRoot,
@@ -211,7 +213,7 @@ export function createPackagedProjectDataMigrationService(input: {
         if (recovered.status !== "reconciled") {
           throw new Error(recovered.status === "no-pending" ? "Committed migration lost its Pending marker" : recovered.reason);
         }
-        return { status: "migrated", attemptId, migrationId: selection.manifest.id };
+        return { status: "migrated", attemptId, migrationId: selectedForResult.manifest.id };
       } finally {
         if (!committed) {
           // A published Pending/journal is retained for authenticated recovery; staging is disposable only before effects.
@@ -229,24 +231,52 @@ type SelectedMigration = {
   manifest: { id: string; manifestHash: ContentHash };
   sourceAuthority: ProjectDataMigrationSourceAuthority;
   sourceFormat?: ProjectDataFormatSnapshot;
-  transforms: readonly ProjectDataMigrationArtifactRef[];
-  validations: readonly ProjectDataMigrationArtifactRef[];
-  retiredPaths: readonly string[];
+  steps: readonly {
+    targetFormat: ProjectDataFormatSnapshot;
+    transforms: readonly ProjectDataMigrationArtifactRef[];
+    validations: readonly ProjectDataMigrationArtifactRef[];
+  }[];
 };
 
 async function selectMigration(packagedRoot: string, repositoryRoot: string, target: ProjectDataFormatSnapshot): Promise<SelectedMigration | undefined> {
   const legacyPath = join(repositoryRoot, ".projector/config.json");
   if (await exists(legacyPath)) {
-    const manifest = await readCanonicalFile(join(packagedRoot, "project-data/legacy-ingress.json"), ProjectDataLegacyIngressManifestSchema, "legacy ingress manifest");
-    if (manifest.targetSnapshotHash !== target.snapshotHash) throw new Error("Legacy ingress does not target the packaged format");
+    const ingress = await readCanonicalFile(join(packagedRoot, "project-data/legacy-ingress.json"), ProjectDataLegacyIngressManifestSchema, "legacy ingress manifest");
     const source = await inspectLegacyUnversionedProjectData(repositoryRoot);
-    if (source.descriptor.sourceHash !== manifest.source.sourceHash) throw new Error("Legacy source does not match the packaged ingress authority");
+    if (source.descriptor.sourceHash !== ingress.source.sourceHash) throw new Error("Legacy source does not match the packaged ingress authority");
+    const baseline = await readCanonicalFile(join(packagedRoot, "project-data/format-baseline.json"), ProjectDataFormatSnapshotSchema, "packaged format baseline");
+    if (baseline.snapshotHash !== ingress.targetSnapshotHash) throw new Error("Legacy ingress does not target the packaged released baseline");
+    const steps: SelectedMigration["steps"][number][] = [{ targetFormat: baseline, transforms: ingress.transforms, validations: ingress.validations }];
+    let manifest: { id: string; manifestHash: ContentHash } = ingress;
+    if (ingress.targetSnapshotHash !== target.snapshotHash) {
+      const chain = await readCanonicalFile(join(packagedRoot, `project-data/migrations/chain-through-${target.packageIdentity.version}.json`), ProjectDataMigrationChainSchema, "packaged migration chain");
+      if (chain.manifests[0]?.sourceSnapshotHash !== ingress.targetSnapshotHash || chain.manifests.at(-1)?.targetSnapshotHash !== target.snapshotHash) {
+        throw new Error("Packaged SemVer chain does not continue the legacy ingress baseline to the target format");
+      }
+      for (const edge of chain.manifests) {
+        const stepTarget = edge.targetSnapshotHash === target.snapshotHash
+          ? target
+          : await readCanonicalFile(join(packagedRoot, `project-data/formats/${edge.toVersion}.json`), ProjectDataFormatSnapshotSchema, `packaged ${edge.toVersion} format`);
+        if (stepTarget.snapshotHash !== edge.targetSnapshotHash) throw new Error(`Packaged format descriptor does not match migration edge ${edge.id}`);
+        steps.push({
+          targetFormat: stepTarget,
+          transforms: edge.kind === "transform" ? edge.transforms : [],
+          validations: edge.kind === "transform" ? edge.validations : [],
+        });
+      }
+      manifest = {
+        id: `migration:legacy-unversioned-through-${target.packageIdentity.version}`,
+        manifestHash: hashFramedDomain("project-data-legacy-through-chain/v1", {
+          ingressManifestHash: ingress.manifestHash,
+          chainManifestHashes: chain.manifests.map(({ manifestHash }) => manifestHash),
+          targetSnapshotHash: target.snapshotHash,
+        }),
+      };
+    }
     return {
       manifest,
-      sourceAuthority: { kind: "legacy-unversioned", sourceHash: manifest.source.sourceHash },
-      transforms: manifest.transforms,
-      validations: manifest.validations,
-      retiredPaths: source.retiredPaths,
+      sourceAuthority: { kind: "legacy-unversioned", sourceHash: ingress.source.sourceHash },
+      steps,
     };
   }
   const configSource = await readFile(join(repositoryRoot, ".projector/config.toml"), "utf8");
@@ -263,10 +293,62 @@ async function selectMigration(packagedRoot: string, repositoryRoot: string, tar
     manifest,
     sourceAuthority: { kind: "release-format", snapshotHash: baseline.snapshotHash },
     sourceFormat: baseline,
-    transforms: manifest.kind === "transform" ? manifest.transforms : [],
-    validations: manifest.kind === "transform" ? manifest.validations : [],
-    retiredPaths: [],
+    steps: [{
+      targetFormat: target,
+      transforms: manifest.kind === "transform" ? manifest.transforms : [],
+      validations: manifest.kind === "transform" ? manifest.validations : [],
+    }],
   };
+}
+
+async function prepareTarget(
+  source: ProjectDataMigrationSourceObservation,
+  stagingRoot: string,
+  targetFormat: ProjectDataFormatSnapshot,
+): Promise<void> {
+  if (source.kind === "legacy-unversioned") {
+    await prepareObservedLegacyUnversionedProjectData({
+      source,
+      stagingRoot,
+      targetProjectorVersion: targetFormat.packageIdentity.version,
+    });
+    return;
+  }
+  await installProjectorEditorSchemaBundle(stagingRoot);
+  await writeFile(
+    join(stagingRoot, ".projector/config.toml"),
+    stringifyTomlDocument({
+      apiVersion: targetFormat.preparedConfig.apiVersion,
+      enabled: true,
+      projectorVersion: targetFormat.packageIdentity.version,
+    }, { schemaPath: "schemas/projector-config-v1.schema.json" }),
+    "utf8",
+  );
+  const canonical = new CanonicalFileRepository(stagingRoot);
+  const snapshot = await canonical.snapshot();
+  const database = new SqliteDerivedStore(join(stagingRoot, ".projector/state.db"));
+  try { await rebuildDerivedStore(canonical, database); }
+  finally { database.close(); }
+  if ((await canonical.snapshot()).rootDigest !== snapshot.rootDigest) throw new Error("Target preparation changed canonical meaning");
+}
+
+async function validateStagedTarget(
+  stagingRoot: string,
+  targetFormat: ProjectDataFormatSnapshot,
+  signal: AbortSignal,
+  existingFiles?: Map<string, { path: string; bytes: Buffer }>,
+): Promise<void> {
+  const stagedFiles = existingFiles ?? await inventoryProjectorFiles(stagingRoot);
+  await observePreparedMigrationTarget({
+    repositoryRoot: stagingRoot,
+    targetFormat,
+    authenticatedFiles: [...stagedFiles.values()].map(({ path, bytes }) => ({
+      path,
+      length: bytes.byteLength,
+      sha256: rawSha256(bytes),
+    })),
+    signal,
+  });
 }
 
 async function observeSource(
@@ -277,7 +359,13 @@ async function observeSource(
 ): Promise<ProjectDataMigrationSourceObservation> {
   if (selection.sourceAuthority.kind === "legacy-unversioned") return inspectLegacyUnversionedProjectData(repositoryRoot);
   if (selection.sourceFormat === undefined) throw new Error("Released migration source format is unavailable");
-  await observePreparedMigrationTarget({ repositoryRoot, targetFormat: selection.sourceFormat, authenticatedFiles, signal });
+  await observePreparedMigrationTarget({
+    repositoryRoot,
+    targetFormat: selection.sourceFormat,
+    authenticatedFiles,
+    signal,
+    requireSqlite: false,
+  });
   return { kind: "release-format", snapshot: selection.sourceFormat };
 }
 

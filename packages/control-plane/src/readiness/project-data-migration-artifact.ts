@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import {
   ProjectDataMigrationArtifactRefSchema,
@@ -42,6 +41,10 @@ export interface ProjectDataMigrationArtifactContext {
   readonly source: ProjectDataMigrationSourceObservation;
   readonly stagingRoot: string;
   readonly signal: AbortSignal;
+  /** Applies the release-owned transformation only inside caller-owned staging. */
+  readonly prepareTarget: () => Promise<void>;
+  /** Runs strict target-owner validation only against caller-owned staging. */
+  readonly validateTarget: () => Promise<void>;
 }
 
 export interface LoadedProjectDataMigrationArtifact<TKind extends "transform" | "validation"> {
@@ -72,7 +75,8 @@ export async function loadProjectDataMigrationArtifact<TKind extends "transform"
   const bytes = await readArtifact(path);
   const observedHash = `sha256:v1:${createHash("sha256").update(bytes).digest("hex")}`;
   if (observedHash !== reference.contentHash) throw new Error(`Migration artifact content hash does not match its manifest reference: ${reference.relativePath}`);
-  const imported = await import(`${pathToFileURL(path).href}?contentHash=${reference.contentHash.slice("sha256:v1:".length)}`) as Record<string, unknown>;
+  const exactModuleUrl = `data:text/javascript;base64,${bytes.toString("base64")}`;
+  const imported = await import(exactModuleUrl) as Record<string, unknown>;
   const moduleResult = z.strictObject({
     projectDataMigrationArtifact: z.strictObject({
       apiVersion: z.literal(artifactApiVersion),
