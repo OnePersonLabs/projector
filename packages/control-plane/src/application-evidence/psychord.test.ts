@@ -204,7 +204,7 @@ it("is durably incomplete while observation has no terminal result, then publish
     artifacts: service,
     currentness: { async observe(currentPlan) {
       const current = currentnessFor(currentPlan);
-      return { ...current, status: "stale" as const, repository: { ...current.repository, observedGitHead: "b".repeat(40), status: "stale" as const }, reasons: ["stale: repository Git/worktree binding"] };
+      return { ...current, status: "stale" as const, repository: { ...current.repository, observedWorktreeDigest: hash("changed worktree"), status: "stale" as const }, reasons: ["stale: repository application-worktree binding"] };
     } },
   });
   await expect(staleAssessment.assess(assessmentRequest(plan, [evidenceReference(plan, published.artifactSetId, "prior")]), { signal: new AbortController().signal })).resolves.toMatchObject({ fulfillment: { status: "unknown" }, observations: [{ eligibility: "open", reuseCurrentness: { status: "stale" } }] });
@@ -225,7 +225,7 @@ it("is durably incomplete while observation has no terminal result, then publish
     },
     (currentPlan: PsychordApplicationObservationPlan) => {
       const current = currentnessFor(currentPlan);
-      return { ...current, repository: { ...current.repository, observedGitHead: "b".repeat(40) } };
+      return { ...current, repository: { ...current.repository, observedWorktreeDigest: hash("changed worktree") } };
     },
   ]) {
     const rejectingAssessment = createPsychordApplicationEvidenceAssessmentService({

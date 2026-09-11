@@ -31,8 +31,8 @@ const observedRepository = z.strictObject({
 }).superRefine((value, context) => {
   const unavailable = value.observedGitHead === undefined || value.observedWorktreeDigest === undefined;
   const expected = unavailable ? "unavailable"
-    : value.observedGitHead === value.expectedGitHead && value.observedWorktreeDigest === value.expectedWorktreeDigest ? "current" : "stale";
-  if (value.status !== expected) context.addIssue({ code: "custom", path: ["status"], message: "repository status does not match its expected and observed Git/worktree values" });
+    : value.observedWorktreeDigest === value.expectedWorktreeDigest ? "current" : "stale";
+  if (value.status !== expected) context.addIssue({ code: "custom", path: ["status"], message: "repository status does not match its expected and observed application-worktree values" });
 });
 
 export const PsychordEvidenceCurrentnessSchema = z.strictObject({
@@ -82,7 +82,7 @@ export async function observePsychordEvidenceCurrentness(input: {
   input.signal.throwIfAborted();
   const repositoryStatus = gitHead === undefined || worktreeDigest === undefined
     ? "unavailable"
-    : gitHead !== adapterInput.repository.gitHead || worktreeDigest !== adapterInput.repository.worktreeDigest ? "stale" : "current";
+    : worktreeDigest !== adapterInput.repository.worktreeDigest ? "stale" : "current";
   const repository = {
     expectedGitHead: adapterInput.repository.gitHead,
     ...(gitHead === undefined ? {} : { observedGitHead: gitHead }),
@@ -103,7 +103,7 @@ function currentnessReasons(observations: ReadonlyArray<{ readonly status: "curr
     if (observation.status === "current") return [];
     const detail = observation.locator !== undefined
       ? `${observation.status}: ${observation.role} ${observation.locator}`
-      : `${observation.status}: repository Git/worktree binding`;
+      : `${observation.status}: repository application-worktree binding`;
     return [detail.slice(0, 4_096)];
   });
 }
