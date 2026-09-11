@@ -25,7 +25,7 @@ value = "packages/control-plane/src/knowledge/**"
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "packages/cli/src/knowledge-cli.test.ts"
+value = "packages/control-plane/src/knowledge/service.test.ts"
 
 [[payload.steps]]
 role = "precondition"

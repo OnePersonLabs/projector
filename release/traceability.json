@@ -268,7 +268,7 @@
     {
       "id": "requirement:evidence-bound-completion",
       "title": "Expose remaining design obligations progressively",
-      "semanticHash": "sha256:v1:29271b9b716896e7f73dbae7e802bc2a4159528a4dde2a853ae6e0337a1b06f7",
+      "semanticHash": "sha256:v1:3b20824d87a7723ed0915913ff4d1accdd1cc4ef471ac543046840cf7af08885",
       "legacyIds": [],
       "owner": {
         "id": "requirement:evidence-bound-completion",
@@ -291,7 +291,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/coverage-cli.test.ts"
+              "value": "packages/control-plane/src/coverage/service.test.ts"
             }
           ]
         },
@@ -379,12 +379,12 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:346ca1edcf32964ad5e87449255ffcf3cfc50b811e500e1fa388f063fc7e32b1",
-        "semanticHash": "sha256:v1:29271b9b716896e7f73dbae7e802bc2a4159528a4dde2a853ae6e0337a1b06f7"
+        "semanticHash": "sha256:v1:3b20824d87a7723ed0915913ff4d1accdd1cc4ef471ac543046840cf7af08885"
       },
       "publicFacade": "projector/control-plane",
       "testRef": "packages/control-plane/src/coverage/service.test.ts#observed progressive coverage keeps a standalone future scenario visible until it gains observed members without claiming conformance",
       "testSourceDigest": "sha256:v1:b29c4f464e0c6008e178c360c2fde3342ed8abcd8e156cd6cebb4ddcdde5010c",
-      "mappingHash": "sha256:v1:ccc93289460eff2ecc4db40b6349d31f61d0f01a7de35b8bcc3952ee4561b9a8"
+      "mappingHash": "sha256:v1:77f6017e8f90f92ea074035efa203825461f28108b2bd9d0cdc70f7e7b690ae2"
     },
     {
       "id": "requirement:executable-lenses",
@@ -573,7 +573,7 @@
     {
       "id": "requirement:pre-edit-relevance",
       "title": "Determine relevance before choosing edits",
-      "semanticHash": "sha256:v1:91a252b6241269a7eb05bfea3de5d710faa26c0fa40b3af6f426ebca2b6d56ae",
+      "semanticHash": "sha256:v1:0e359ddc8ceaf60a200fbac6c57eee27754cee54f6171204b49b8099d2a1c789",
       "legacyIds": [],
       "owner": {
         "id": "requirement:pre-edit-relevance",
@@ -611,13 +611,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.ts"
-            },
-            {
-              "op": "atom",
-              "field": "path",
-              "matcher": "glob",
-              "value": "packages/cli/src/mcp-cli.ts"
+              "value": "packages/cli/src/operation-runner.ts"
             }
           ]
         },
@@ -688,12 +682,12 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:c0348719dad4343797fe821c8130d5b5cffcfce3e3968f6d61a4c1e639775538",
-        "semanticHash": "sha256:v1:91a252b6241269a7eb05bfea3de5d710faa26c0fa40b3af6f426ebca2b6d56ae"
+        "semanticHash": "sha256:v1:0e359ddc8ceaf60a200fbac6c57eee27754cee54f6171204b49b8099d2a1c789"
       },
       "publicFacade": "projector/control-plane",
       "testRef": "packages/control-plane/src/knowledge/service.test.ts#RepositoryKnowledgeService directly addresses accepted aliases and follows typed canonical relations",
       "testSourceDigest": "sha256:v1:598efad3984e33693c1680865404f5ea7c3c13547240c95fe4024a88060a313e",
-      "mappingHash": "sha256:v1:5723ee88bb8ab479082b76474b5c836f1f0e60931f35dee5f774472cc89b849d"
+      "mappingHash": "sha256:v1:584d3050aed12479983bec4dd75edd9d87178674e94db9cf5d6f112735b7ba46"
     },
     {
       "id": "requirement:reverse-reconciliation",
@@ -1238,7 +1232,7 @@
     {
       "id": "requirement:self-hosted-value",
       "title": "Demonstrate cumulative value on Projector itself",
-      "semanticHash": "sha256:v1:1588c5e6809086ed8e492b2157ba64505700d5baf88e9a9f4d168034f83afc14",
+      "semanticHash": "sha256:v1:574d52a4b0dfbcd14360ad14e80a7f55899b3f101426ae9dde442fe79904f599",
       "legacyIds": [],
       "owner": {
         "id": "requirement:self-hosted-value",
@@ -1249,7 +1243,7 @@
           "ordinary-agent baseline",
           "knowledge economics"
         ],
-        "statement": "Use Projector knowledge to guide a real change and a subsequent change in a fresh session, detect deliberately stale knowledge, and compare the combined setup, retrieval, repair, and maintenance cost with a capable ordinary agent using search, code, tests, and concise notes. Passing self-authored tests does not prove economic advantage. Retire historical planning material only after useful intent and rationale are recoverable through the working system.\n\nMeasure the semantic machinery itself, including cache behavior, invalidation and backdating, identity and relevance quality, context and representation cost, deterministic mutation, rollback, analyzer limits, and benchmark outcomes. The goal is lower marginal reasoning and review cost; model growth faster than useful application is debt. Do not fabricate absent measures as zero. Release remains manual, source-independent, and non-publishing until an explicit later action; passing self-authored tests or a historical checklist does not prove economic advantage or full release completeness.\n\nWhere feasible, inferred enforcement should be evaluated against repository history and semantic perturbations before activation. Check independent persistence of examples, later fixes/co-change/migration direction, shared ancestry, alternative explanations from tests/incidents, intentional variants and nearby generated cases. Separate exogenous evidence from changes caused by Projector: a migration demanded by a lens cannot independently support that lens. Shadow evaluation reports true positives, intentional variants wrongly flagged, possible prevented defects, transform applicability and false positives; pair small-sample percentages with counts and uncertainty. Evaluation never silently changes governance. Broad historical-evaluation automation remains unrealized until a named consumer and trustworthy history/perturbation evidence justify it; required release controls and actual source-absent self-development measurements are not deferred.\n\nReopen affected design when observed evidence shows maintenance cost near/exceeding ordinary review; systematically missed dependencies despite claimed coverage; rebuild needing hidden history; overclaimed signatures; correlated conformance missing shared bugs; governance cycles/ad hoc ordering; impractical canonical collaboration; conflicts needing prompt surgery; ordinary instructions/codemods nearly matching held-out results; repository-sized capsules; package-tree duplication for relevance; recurring synonymous identities; unsafe or globally stale bindings; lossy or net-negative representation; reduced task success from compression; endogenous authority dominance; unactionable divergence; routine forbidden generated-output patches; dishonest interruption recovery; adoption needing manual ontology authoring; or growing model/rule complexity without declining marginal reasoning/review cost. These are evidence-driven design feedback, not defects to hide with more rules or relabel as optional. They do not require a new economic trial, universal superiority proof or completed Psychord rebuild before delivery; use the already required real-work measurements and disclose missing evidence.",
+        "statement": "Use Projector knowledge to guide a real change and a subsequent change in a fresh session, detect deliberately stale knowledge, and compare the combined setup, retrieval, repair, and maintenance cost with a capable ordinary agent using search, code, tests, and concise notes. Passing self-authored tests does not prove economic advantage. Retire historical planning material only after useful intent and rationale are recoverable through the working system.\n\nMeasure the semantic machinery itself, including cache behavior, invalidation and backdating, identity and relevance quality, context and representation cost, deterministic mutation, rollback, analyzer limits, and benchmark outcomes. The goal is lower marginal reasoning and review cost; model growth faster than useful application is debt. Do not fabricate absent measures as zero. Release remains manual, source-independent, and non-publishing until an explicit later action; passing self-authored tests or a historical checklist does not prove economic advantage or full release completeness.\n\nWhere feasible, inferred enforcement should be evaluated against repository history and semantic perturbations before activation. Check independent persistence of examples, later fixes/co-change/migration direction, shared ancestry, alternative explanations from tests/incidents, intentional variants and nearby generated cases. Separate exogenous evidence from changes caused by Projector: a migration demanded by a lens cannot independently support that lens. Shadow evaluation reports true positives, intentional variants wrongly flagged, possible prevented defects, transform applicability and false positives; pair small-sample percentages with counts and uncertainty. Evaluation never silently changes governance. Broad historical-evaluation automation remains unrealized until a named consumer and trustworthy history/perturbation evidence justify it; required release controls and actual source-absent self-development measurements are not deferred.\n\nReopen affected design when observed evidence shows maintenance cost near/exceeding ordinary review; systematically missed dependencies despite claimed coverage; rebuild needing hidden history; overclaimed signatures; correlated conformance missing shared bugs; governance cycles/ad hoc ordering; impractical canonical collaboration; conflicts needing prompt surgery; ordinary instructions/codemods nearly matching held-out results; repository-sized capsules; package-tree duplication for relevance; recurring synonymous identities; unsafe or globally stale bindings; lossy or net-negative representation; reduced task success from compression; endogenous authority dominance; unactionable divergence; routine forbidden generated-output patches; dishonest interruption recovery; adoption needing manual ontology authoring; or growing model/rule complexity without declining marginal reasoning/review cost. These are evidence-driven design feedback, not defects to hide with more rules or relabel as optional. They do not require a new economic trial, universal superiority proof or completed Psychord rebuild before delivery; use the already required real-work measurements and disclose missing evidence.\n\nIf a correction/shadow-lens decision uses paired probes, specify both expected outcomes independently; both must be correct. Count invalid pairs and oracle errors separately.\n\nComparative claims require matched initial states, equal tasks/tools/models/resources/reveals, accumulated code preserved through fresh-agent checkpoints, and separate new-behavior/regression grading by predeclared independent oracles. Retain failures, setup errors, timeouts, unavailable and aborted attempts. Report observed setup, retrieval/context, model/tool, deterministic, evidence, human review/repair and canonical-maintenance costs with units/pricing provenance; missing costs are unavailable. These are optional protocols, not delivery prerequisites or required paid trials.",
         "status": "active",
         "sourceClass": "authored",
         "scope": {
@@ -1265,13 +1259,13 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/cli/src/operation-runner.test.ts"
             },
             {
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "scripts/knowledge-acceptance.mjs"
+              "value": "scripts/run-release-acceptance.mjs"
             },
             {
               "op": "atom",
@@ -1319,6 +1313,18 @@
             "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/benchmarks-and-redesign-criteria.md",
             "contentHash": "sha256:v1:e2025997c4b115c640e4552a9bbe8864984ce9be4fe7a853105802e48cadaba2",
             "description": "Historical grouped redesign feedback, subordinate to accepted lean delivery and absence of a new mandatory comparative trial. Source range 64-93; immutable Git blob 45e984369b5f6f3c4e177fc517a618055838c995; content hash is SHA-256 of exact blob bytes."
+          },
+          {
+            "kind": "document",
+            "locator": "git:f00166064d34aa65a27b397224544e3ee541c71e:.borg/ingest-2026-09-09/spec-deltas/P3.patch",
+            "contentHash": "sha256:v1:08d45b3fd1841ec3dc0b98052176e260762eb1426c6e4c91f04b51ee022a4612",
+            "description": "P3 conditional evaluation commitments; immutable Git blob 4ba9d58c31092fb2cc3c704be93ff573f85fa023. Accepted without requiring a new comparative trial or telemetry subsystem."
+          },
+          {
+            "kind": "document",
+            "locator": "git:f00166064d34aa65a27b397224544e3ee541c71e:.borg/ingest-2026-09-09/spec-deltas/P4.patch",
+            "contentHash": "sha256:v1:3fc9c1438493914aeb6a800216454f48d3b8f6e8aba691017645312d198320c6",
+            "description": "P4 conditional evaluation commitments; immutable Git blob df7829584f81b9537531be04ae6a1714526b3eb9. Accepted without requiring a new comparative trial or telemetry subsystem."
           }
         ],
         "realizations": [
@@ -1327,23 +1333,23 @@
               "op": "atom",
               "field": "path",
               "matcher": "equals",
-              "value": "scripts/knowledge-acceptance.mjs"
+              "value": "scripts/run-release-acceptance.mjs"
             },
             "origin": {
               "kind": "git",
-              "locator": "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:scripts/knowledge-acceptance.mjs",
-              "description": "Observed implementation surface for requirement:self-hosted-value; the selector is evaluated from repository facts."
+              "locator": "git:470753ada8c2e7c71c73345942db32a0a9081c7d:scripts/run-release-acceptance.mjs",
+              "description": "Observed retained release-acceptance consumer after standalone CLI retirement; this binding does not establish comparative advantage."
             }
           }
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:7e15a679f4f3f046e463fa430ca1c668723b688c9bbbc7b4e7ae8a30aaf09210",
-        "semanticHash": "sha256:v1:1588c5e6809086ed8e492b2157ba64505700d5baf88e9a9f4d168034f83afc14"
+        "semanticHash": "sha256:v1:574d52a4b0dfbcd14360ad14e80a7f55899b3f101426ae9dde442fe79904f599"
       },
       "publicFacade": "projector/testkit",
       "testRef": "packages/testkit/src/benchmark.test.ts#release benchmark inventory rejects binary assertion proxies and metrics without an authenticated executed case corpus",
       "testSourceDigest": "sha256:v1:bf668b4228d7ec520b8a70d4d23bb00101e90755570b554ec18e147f28c13186",
-      "mappingHash": "sha256:v1:75dcd08d1da56ef5c3259fbe96b893e37b31c8df964e3156c099ed8006ced17c"
+      "mappingHash": "sha256:v1:d04873c79dca7cc6564f0077156e6936aaa5b542bbe193569f428c7871e52bde"
     },
     {
       "id": "scenario:accept-simple-decision-without-synthetic-rule",
@@ -1466,7 +1472,7 @@
     {
       "id": "scenario:alternate-conforming-code",
       "title": "Accept another conforming implementation",
-      "semanticHash": "sha256:v1:3f22f3b44ace6a4ccfc9a5781e94c79c7473065c72bf48ae6d061ae063ec8839",
+      "semanticHash": "sha256:v1:b0631b7b1f53a5b45ea7e2b01b1c276c41769f5d746c015eec1ab3d141432a27",
       "legacyIds": [
         "adversary:09:multiple-valid-handwritten-implementations",
         "property:10:hard-rule-composition-is-order-independent",
@@ -1498,7 +1504,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/control-plane/src/knowledge/service.test.ts"
             }
           ]
         },
@@ -1617,17 +1623,17 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:dc4245dd503f820f3d183901ca06bb47597491edffaa2b4506239dfec5798b7e",
-        "semanticHash": "sha256:v1:3f22f3b44ace6a4ccfc9a5781e94c79c7473065c72bf48ae6d061ae063ec8839"
+        "semanticHash": "sha256:v1:b0631b7b1f53a5b45ea7e2b01b1c276c41769f5d746c015eec1ab3d141432a27"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/governance/selectors-rules.test.ts#hard rule compilation is order-independent and sorts higher authority before specificity and stable ID",
       "testSourceDigest": "sha256:v1:5071420ed5632a9658058b99fee91679de65a10979c24a9238e889c074c5c940",
-      "mappingHash": "sha256:v1:ea7b09b06b16be2874d5d5873e307fa9bfbcc9987040c820ae596f1d34583dbb"
+      "mappingHash": "sha256:v1:462b26a75c0a97fa3dde899b74a32f206cb3bf567fdfbcd7fb70963088863e30"
     },
     {
       "id": "scenario:alternate-conforming-code",
       "title": "Accept another conforming implementation",
-      "semanticHash": "sha256:v1:3f22f3b44ace6a4ccfc9a5781e94c79c7473065c72bf48ae6d061ae063ec8839",
+      "semanticHash": "sha256:v1:b0631b7b1f53a5b45ea7e2b01b1c276c41769f5d746c015eec1ab3d141432a27",
       "legacyIds": [
         "adversary:09:multiple-valid-handwritten-implementations",
         "property:10:hard-rule-composition-is-order-independent",
@@ -1659,7 +1665,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/control-plane/src/knowledge/service.test.ts"
             }
           ]
         },
@@ -1778,17 +1784,17 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:dc4245dd503f820f3d183901ca06bb47597491edffaa2b4506239dfec5798b7e",
-        "semanticHash": "sha256:v1:3f22f3b44ace6a4ccfc9a5781e94c79c7473065c72bf48ae6d061ae063ec8839"
+        "semanticHash": "sha256:v1:b0631b7b1f53a5b45ea7e2b01b1c276c41769f5d746c015eec1ab3d141432a27"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/identity/index.test.ts#semantic identity resolution uses coordinated modification for multiple owners and merge only for an explicit merge assessment",
       "testSourceDigest": "sha256:v1:27af943ce8ccf73973ede7124412cc2d768631c49825c14b88806f252c22fb56",
-      "mappingHash": "sha256:v1:a465e79069488b7670f371e0ab8fcdcc83d6a6fc1c3130c1f56f42701dd75898"
+      "mappingHash": "sha256:v1:1c69bb514ad596b86bc07251afe4aaddd144c86ee812c8c69f3ab9ed8290476e"
     },
     {
       "id": "scenario:alternate-conforming-code",
       "title": "Accept another conforming implementation",
-      "semanticHash": "sha256:v1:3f22f3b44ace6a4ccfc9a5781e94c79c7473065c72bf48ae6d061ae063ec8839",
+      "semanticHash": "sha256:v1:b0631b7b1f53a5b45ea7e2b01b1c276c41769f5d746c015eec1ab3d141432a27",
       "legacyIds": [
         "adversary:09:multiple-valid-handwritten-implementations",
         "property:10:hard-rule-composition-is-order-independent",
@@ -1820,7 +1826,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/control-plane/src/knowledge/service.test.ts"
             }
           ]
         },
@@ -1939,12 +1945,12 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:dc4245dd503f820f3d183901ca06bb47597491edffaa2b4506239dfec5798b7e",
-        "semanticHash": "sha256:v1:3f22f3b44ace6a4ccfc9a5781e94c79c7473065c72bf48ae6d061ae063ec8839"
+        "semanticHash": "sha256:v1:b0631b7b1f53a5b45ea7e2b01b1c276c41769f5d746c015eec1ab3d141432a27"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles binds selector membership, rule applicability, reverse traversal, and enumeration queries",
       "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
-      "mappingHash": "sha256:v1:cea1757f08c1b59254d133237f307dacbb733f3dbe39334917b483e9849718c1"
+      "mappingHash": "sha256:v1:c2594e128c0232fbd07787d52aaa4e5a40334e1d80c3adbbab2967aa769ac954"
     },
     {
       "id": "scenario:backdate-recursive-contracts-as-proof-group",
@@ -3310,7 +3316,7 @@
     {
       "id": "scenario:detect-new-consumer",
       "title": "Detect a newly relevant consumer",
-      "semanticHash": "sha256:v1:364a139ded113437da60a4d308b6aa43aa1b5dd7c5cb09d83ebb0887d1d0f325",
+      "semanticHash": "sha256:v1:eca5b35a1fd405dc5aa2af91101525364cced39f8cb05ada30be0c7d630000fc",
       "legacyIds": [
         "adversary:25:missing-negative-space-query-dependency-incorrectly-preserving-stale-relevance-after-a-newly-matching-entity-edge-appears",
         "property:05:adding-an-entity-relation-membership-that-changes-a-bound-query-result-invalidates-revalidates-the-binding-even-when-every-previously-returned-entity-hash-is-unchanged",
@@ -3344,7 +3350,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/control-plane/src/knowledge/service.test.ts"
             }
           ]
         },
@@ -3484,17 +3490,17 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:b6a8d430fff74e22569950e106053084edd8dfd9c4f92f2cb88f17b9cf80b5de",
-        "semanticHash": "sha256:v1:364a139ded113437da60a4d308b6aa43aa1b5dd7c5cb09d83ebb0887d1d0f325"
+        "semanticHash": "sha256:v1:eca5b35a1fd405dc5aa2af91101525364cced39f8cb05ada30be0c7d630000fc"
       },
       "publicFacade": "projector",
       "testRef": "packages/control-plane/src/change-lifecycle/query-programs.test.ts#change query programs reruns identity and reverse-import negative space against current observations",
       "testSourceDigest": "sha256:v1:d73a9b7e6037e9f930dd97ac92923bef614cee456dfad3b3a13478e551af7f9e",
-      "mappingHash": "sha256:v1:33b3bc76185ed1134cc90d9d14790bb12edcb3fdbd174f4aaefc9a48934470d8"
+      "mappingHash": "sha256:v1:c2ea0ec0710f796ee06eaa63131790440d9131c4cbceb5f15d7e0fbdb75204b9"
     },
     {
       "id": "scenario:detect-new-consumer",
       "title": "Detect a newly relevant consumer",
-      "semanticHash": "sha256:v1:364a139ded113437da60a4d308b6aa43aa1b5dd7c5cb09d83ebb0887d1d0f325",
+      "semanticHash": "sha256:v1:eca5b35a1fd405dc5aa2af91101525364cced39f8cb05ada30be0c7d630000fc",
       "legacyIds": [
         "adversary:25:missing-negative-space-query-dependency-incorrectly-preserving-stale-relevance-after-a-newly-matching-entity-edge-appears",
         "property:05:adding-an-entity-relation-membership-that-changes-a-bound-query-result-invalidates-revalidates-the-binding-even-when-every-previously-returned-entity-hash-is-unchanged",
@@ -3528,7 +3534,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/control-plane/src/knowledge/service.test.ts"
             }
           ]
         },
@@ -3668,17 +3674,17 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:b6a8d430fff74e22569950e106053084edd8dfd9c4f92f2cb88f17b9cf80b5de",
-        "semanticHash": "sha256:v1:364a139ded113437da60a4d308b6aa43aa1b5dd7c5cb09d83ebb0887d1d0f325"
+        "semanticHash": "sha256:v1:eca5b35a1fd405dc5aa2af91101525364cced39f8cb05ada30be0c7d630000fc"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles uses both prior and current selector membership so additions and removals invalidate",
       "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
-      "mappingHash": "sha256:v1:0b97111e047bef1d047289239031be7242589587712228954bb7a38721a68963"
+      "mappingHash": "sha256:v1:45d1295fd88641081e3a43535fe9a017633ae5fdcbdc920cb496a718fcbf2a44"
     },
     {
       "id": "scenario:detect-new-consumer",
       "title": "Detect a newly relevant consumer",
-      "semanticHash": "sha256:v1:364a139ded113437da60a4d308b6aa43aa1b5dd7c5cb09d83ebb0887d1d0f325",
+      "semanticHash": "sha256:v1:eca5b35a1fd405dc5aa2af91101525364cced39f8cb05ada30be0c7d630000fc",
       "legacyIds": [
         "adversary:25:missing-negative-space-query-dependency-incorrectly-preserving-stale-relevance-after-a-newly-matching-entity-edge-appears",
         "property:05:adding-an-entity-relation-membership-that-changes-a-bound-query-result-invalidates-revalidates-the-binding-even-when-every-previously-returned-entity-hash-is-unchanged",
@@ -3712,7 +3718,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/control-plane/src/knowledge/service.test.ts"
             }
           ]
         },
@@ -3852,17 +3858,17 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:b6a8d430fff74e22569950e106053084edd8dfd9c4f92f2cb88f17b9cf80b5de",
-        "semanticHash": "sha256:v1:364a139ded113437da60a4d308b6aa43aa1b5dd7c5cb09d83ebb0887d1d0f325"
+        "semanticHash": "sha256:v1:eca5b35a1fd405dc5aa2af91101525364cced39f8cb05ada30be0c7d630000fc"
       },
       "publicFacade": "projector/engine/architecture",
       "testRef": "packages/engine/src/relevance/index.test.ts#bounded four-band Relevance Closure recompiles newly relevant membership and replaces the negative-space StateBinding proof",
       "testSourceDigest": "sha256:v1:c1becab899cfc233543a9cfff19708f1c083fb2f1467969f5e48108d3b0cc776",
-      "mappingHash": "sha256:v1:b40ba7a9fa36777c367bce49905c983f0da1ed0a6d388bcb92324e3b1ac3be44"
+      "mappingHash": "sha256:v1:efaeed9921d5ee99c0108602cc56a207346e77a7dc4a006c203d69da585ef879"
     },
     {
       "id": "scenario:detect-new-consumer",
       "title": "Detect a newly relevant consumer",
-      "semanticHash": "sha256:v1:364a139ded113437da60a4d308b6aa43aa1b5dd7c5cb09d83ebb0887d1d0f325",
+      "semanticHash": "sha256:v1:eca5b35a1fd405dc5aa2af91101525364cced39f8cb05ada30be0c7d630000fc",
       "legacyIds": [
         "adversary:25:missing-negative-space-query-dependency-incorrectly-preserving-stale-relevance-after-a-newly-matching-entity-edge-appears",
         "property:05:adding-an-entity-relation-membership-that-changes-a-bound-query-result-invalidates-revalidates-the-binding-even-when-every-previously-returned-entity-hash-is-unchanged",
@@ -3896,7 +3902,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/control-plane/src/knowledge/service.test.ts"
             }
           ]
         },
@@ -4036,12 +4042,12 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:b6a8d430fff74e22569950e106053084edd8dfd9c4f92f2cb88f17b9cf80b5de",
-        "semanticHash": "sha256:v1:364a139ded113437da60a4d308b6aa43aa1b5dd7c5cb09d83ebb0887d1d0f325"
+        "semanticHash": "sha256:v1:eca5b35a1fd405dc5aa2af91101525364cced39f8cb05ada30be0c7d630000fc"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation invalidates when the result set changes even though selected value hashes are unchanged",
       "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
-      "mappingHash": "sha256:v1:3e80965d25bb6a4e99d407794e97ea1238e7c4f720efd54e04b01d69dfcf103f"
+      "mappingHash": "sha256:v1:8949812597824348bc2325b90aac884fb62d97ef422515d501f62441674eb76c"
     },
     {
       "id": "scenario:discover-concerns-in-held-out-variants",
@@ -8157,7 +8163,7 @@
     {
       "id": "scenario:reopen-completion-obligation",
       "title": "Reopen only the completion issue affected by new facts",
-      "semanticHash": "sha256:v1:5fdff4205e3d88281809cac86d2d2ec82c5987ad0fbe7fa2adc05b81fc3ca66b",
+      "semanticHash": "sha256:v1:d6a357e500a51020986025f5149117dc390fecca5d2022494115675595069df9",
       "legacyIds": [
         "property:12:lowering-evidence-coverage-cannot-produce-a-stronger-completion-claim"
       ],
@@ -8183,7 +8189,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/coverage-cli.test.ts"
+              "value": "packages/control-plane/src/coverage/service.test.ts"
             }
           ]
         },
@@ -8250,12 +8256,12 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:14664cc296752c33cf2c07c5ff3040bc32dd1f8f865620ae75214d383a54b673",
-        "semanticHash": "sha256:v1:5fdff4205e3d88281809cac86d2d2ec82c5987ad0fbe7fa2adc05b81fc3ca66b"
+        "semanticHash": "sha256:v1:d6a357e500a51020986025f5149117dc390fecca5d2022494115675595069df9"
       },
       "publicFacade": "projector",
       "testRef": "scripts/packed-lifecycle-acceptance.test.ts#packed held-out lifecycle evidence recomputes completion hashes and derives oracle/fixed-point outcomes instead of trusting flags",
       "testSourceDigest": "sha256:v1:9bfaccaab01cbf475d6e6381cc062febb33bc370124dddaf4da42699b70c7511",
-      "mappingHash": "sha256:v1:ed9c7d053e33e8b8d859f3e87734ce87463be29da5193822c9a6e3a5a4a4a7af"
+      "mappingHash": "sha256:v1:e60ae2764e42201f0d6760445526dcfa8a18930434ee8e42c28389a0d657f07c"
     },
     {
       "id": "scenario:repair-generated-client-through-upstream-source",
@@ -8650,7 +8656,7 @@
     {
       "id": "scenario:reuse-after-reset",
       "title": "Reuse accepted meaning after a fresh start",
-      "semanticHash": "sha256:v1:755cece6cd64e0fa221bcd7c7abfd541e409742b723e51d996a8699c4e23ebaa",
+      "semanticHash": "sha256:v1:31383c8f5f3155e4c013d5f224db232ed3a5b505dac0f025955155d113ee98e8",
       "legacyIds": [
         "adversary:23:unrelated-root-state-mutation-incorrectly-staling-scoped-work",
         "property:03:unrelated-canonical-worktree-changes-do-not-invalidate-a-statebinding-whose-value-dependencies-and-query-result-fingerprints-remain-unchanged",
@@ -8680,7 +8686,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/control-plane/src/knowledge/service.test.ts"
             }
           ]
         },
@@ -8789,17 +8795,17 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:271627adcdeb0489590d0690b4ff89ee7cbf1edaa43f556fb5b8fb3a119947c5",
-        "semanticHash": "sha256:v1:755cece6cd64e0fa221bcd7c7abfd541e409742b723e51d996a8699c4e23ebaa"
+        "semanticHash": "sha256:v1:31383c8f5f3155e4c013d5f224db232ed3a5b505dac0f025955155d113ee98e8"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/invalidation/invalidation.test.ts#Impact Rules, selector membership, closure provenance, and oracles keeps unrelated work valid under an unrelated root mutation",
       "testSourceDigest": "sha256:v1:8b60ef625c6a869139f77d3600ffd1b23723daba5c75ec858757676492577289",
-      "mappingHash": "sha256:v1:6b9925e5d0f13fac05bbf2654031e7ef55e5cd6952d6f974fbc6ffbee38b42a0"
+      "mappingHash": "sha256:v1:3ff80217469c8728a77e781860c582f9062d333d637c89db392f35c94569a78d"
     },
     {
       "id": "scenario:reuse-after-reset",
       "title": "Reuse accepted meaning after a fresh start",
-      "semanticHash": "sha256:v1:755cece6cd64e0fa221bcd7c7abfd541e409742b723e51d996a8699c4e23ebaa",
+      "semanticHash": "sha256:v1:31383c8f5f3155e4c013d5f224db232ed3a5b505dac0f025955155d113ee98e8",
       "legacyIds": [
         "adversary:23:unrelated-root-state-mutation-incorrectly-staling-scoped-work",
         "property:03:unrelated-canonical-worktree-changes-do-not-invalidate-a-statebinding-whose-value-dependencies-and-query-result-fingerprints-remain-unchanged",
@@ -8829,7 +8835,7 @@
               "op": "atom",
               "field": "path",
               "matcher": "glob",
-              "value": "packages/cli/src/knowledge-cli.test.ts"
+              "value": "packages/control-plane/src/knowledge/service.test.ts"
             }
           ]
         },
@@ -8938,12 +8944,12 @@
         ],
         "evidence": [],
         "discoveryHash": "sha256:v1:271627adcdeb0489590d0690b4ff89ee7cbf1edaa43f556fb5b8fb3a119947c5",
-        "semanticHash": "sha256:v1:755cece6cd64e0fa221bcd7c7abfd541e409742b723e51d996a8699c4e23ebaa"
+        "semanticHash": "sha256:v1:31383c8f5f3155e4c013d5f224db232ed3a5b505dac0f025955155d113ee98e8"
       },
       "publicFacade": "projector/engine",
       "testRef": "packages/engine/src/state/state-binding.test.ts#dependency-scoped validation rebinds an unrelated root change without recomputing semantic work",
       "testSourceDigest": "sha256:v1:8157f02a39561a50d95b23f21993152cae2c4a4429a799c1576645a0aff5f22a",
-      "mappingHash": "sha256:v1:6e27d229a3bf6dbd838bd7ccdc917b83175d1d1dbc900724a072b3a2d83154f8"
+      "mappingHash": "sha256:v1:b824e0063e788b884428425225ddb204ba098207c1ee297bc34d1a310d07aae7"
     },
     {
       "id": "scenario:reuse-identity-for-synonymous-request",
@@ -10414,5 +10420,5 @@
       "mappingHash": "sha256:v1:c72958aee0cb52a8af3a1a9f8a5920d921efe4ad5a342818d0de6e080e6b499c"
     }
   ],
-  "inventoryHash": "sha256:v1:b9e61b5aef5e66b88e4f854804523d043b67f9cef9af1348c28dabc09229bf8b"
+  "inventoryHash": "sha256:v1:6b1ac46f370a4ced7c76a6260766ccb2cf00ce6c589e17e207e7f85aa140da50"
 }

@@ -6,6 +6,6 @@ This file is generated from accepted canonical semantic owners and exact test bi
 - Legacy scenarios: 63
 - Property classes: 27
 - Adversary classes: 33
-- Inventory hash: `sha256:v1:b9e61b5aef5e66b88e4f854804523d043b67f9cef9af1348c28dabc09229bf8b`
+- Inventory hash: `sha256:v1:6b1ac46f370a4ced7c76a6260766ccb2cf00ce6c589e17e207e7f85aa140da50`
 
 Run `pnpm release:acceptance` to execute the mapped tests and validate the packed artifact, installed workflow, benchmarks, rebuild, conformance, and durable release evidence.
