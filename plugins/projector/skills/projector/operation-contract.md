@@ -35,6 +35,12 @@ Common inputs are:
 - `status`, `init`, and `verify`: `{}`.
 - `application.observe`: `{ "plan": { ... } }`, where `plan` is the strict Psychord application observation plan. Its repository root must equal the request root and `ownedArtifactRoot` must be `<repository>/.projector/runtime/application-evidence`.
 
+The optional `context` policy is a strict object with these fields: `maxCandidates` and `maxEntries` are positive integers up to 10,000; `maxDepth` is a nonnegative integer up to 1,000; `maxTraversalCost` and `maxContextCost` are positive integers up to 10,000,000; and `minimumScore` is a number from 0 through 1. Omit a bound to use the product default. For a full bounded dependency proof, a request may use:
+
+```json
+"policy": { "maxCandidates": 32, "maxEntries": 10000, "maxDepth": 1000, "maxTraversalCost": 10000000, "minimumScore": 0.3, "maxContextCost": 10000000 }
+```
+
 The Psychord host uses its running Node executable, resolves the package-declared pnpm CLI and agent-browser 0.31.1 native executable from their ordinary `PATH` installations, and resolves Chrome from its standard Windows installation. The existing `PROJECTOR_NODE_EXECUTABLE`, `PROJECTOR_PNPM_CLI`, `PROJECTOR_AGENT_BROWSER_EXECUTABLE`, and `PROJECTOR_CHROME_EXECUTABLE` overrides select nondefault installations. Every resolved file must also appear as an exact `toolchain` dependency pin in the plan; an override does not bypass that binding.
 
 The script emits one `projector.operation-result/v1` JSON result and exits with that result's `exitCode`. Read `status`, `readiness`, `error`, `action`, and the operation-owned `output` separately. `registered` means a handler is reachable; it does not prove project readiness or host enforcement. `unavailable`, `recovery-required`, `cancelled`, and failed results are not successful evidence. A successful delivery to this process boundary does not prove that an agent understood or acted on returned instructions.
