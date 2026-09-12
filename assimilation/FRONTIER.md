@@ -15,3 +15,7 @@ The user has settled two apparent conflicts: cost-conscious routing never silent
 Select one consequential candidate from the topic notes, retrieve relevant current Projector context, and determine whether a self-contained change intent brief is warranted. A brief may stop at design; it grants neither Projector identity nor implementation authority. Do not create new learned-model infrastructure, a new change store, automatic model routing, or a broad Projector rewrite by inference from the chats.
 
 This pass verifies bounded fidelity and navigation, not lossless compression, global coherence at arbitrary scale, or token savings. The retrieved Projector context frontiers were still open; present-state claims need fresh or reconciled evidence before a canonical change.
+
+## Queued assimilation
+
+- [3D code-evidence view from Code Ontology Companion](queue/code-ontology-3d-view.md): investigate and adapt its navigable static graph for this repository's languages and Rust. This is queued intake, not an accepted Projector change or an implementation claim.
