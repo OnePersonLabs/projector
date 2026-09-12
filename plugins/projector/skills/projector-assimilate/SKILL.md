@@ -24,7 +24,7 @@ Recover current meaning and the next useful action from the saved files, not the
 
 ## Assimilate at an economical scale
 
-Inventory before deep reading. Partition by source units and material questions. Account for inspected, unread, unavailable, and excluded material. Recognize common ancestry among branched chats so repeated text gains no extra authority; a later local revision does not automatically settle sibling branches.
+Inventory before deep reading. Partition by source units and material questions. Account for inspected, unread, unavailable, and excluded material. Recognize common ancestry among branched chats so repeated text gains no extra authority; a later local revision does not automatically settle sibling branches. Before calling two claims contradictory, compare their scope, time, branch, and intended state. Historical snapshots and alternative explorations can coexist; resolve incompatible claims about the same intended state without forcing unrelated branches to agree.
 
 Extract the outcome, mechanism, assumptions, constraints, counterexamples, and applicability of a promising idea. Compare it with the working synthesis and, where relevant, observed project state. Adapt across domains where useful. Distinguish user intent, assistant proposals, observed facts, and historical snapshots. Deduplicate without erasing qualifications. Preserve a rejected mechanism's surviving obligation. Ask about a material choice only after available evidence cannot resolve it.
 
@@ -41,6 +41,8 @@ Translate “concept file” or “conceptbase” in older storage proposals int
 Check meaningful links and compare the synthesis against source-backed commitments, corrections, minority ideas, and interactions. Then read only the index and topic notes with intake hidden: remove source chronology, source-ID scaffolding, and dependencies on missing files while retaining every material qualification. A cold reader should recover the relevant design and know when to expand or ask a question. “Lossless conceptual squash” is the fidelity objective, not a guarantee established by readable prose. State consequential missing evidence as a limitation, without turning the topic note into an archive inventory.
 
 ## Hand a mature change to Projector
+
+If assimilation reveals a needed change to a project capability, including this skill or its supporting workflow, route that prospective change through Projector before editing its implementation. Read [the handoff reference](references/change-handoff.md) at that boundary. Capturing sources and revising assimilation's own topic notes are intake work and do not themselves require a canonical change.
 
 When the endpoint permits taking a mature candidate into Projector, prepare a self-contained change intent brief using [the handoff reference](references/change-handoff.md). Do not invent accepted identities, semantic hashes, approval, or implementation evidence. For a design-only endpoint, provide the brief and stop there.
 

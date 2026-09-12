@@ -28,6 +28,7 @@ export {
   type RepositoryIntentReviewSummary,
 } from "./change-lifecycle/transport.js";
 export { RepositoryKnowledgeService } from "./knowledge/service.js";
+export { checkRepository, RepositoryCheckOutputSchema } from "./repository-check/service.js";
 export {
   KnowledgeApplicationEvidenceAssessmentSchema,
   type KnowledgeApplicationEvidenceAssessment,

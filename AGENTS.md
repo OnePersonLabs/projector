@@ -6,6 +6,10 @@ Before choosing edit paths for product, architecture, feature, or cleanup work, 
 
 Keep the returned context ID. Before reusing it in another session, and after edits made outside Projector, send a strict `reconcile` operation with that ID through the same runner. Distinguish stale reasoning from a violated predicate. Refresh affected context when its dependencies changed.
 
+Recognize proposed behavior, architecture, requirement, and shipped-skill changes from the conversation, including agent suggestions and targets discovered later in a turn. Consult the actual target's Projector model before dependent implementation; use `$projector-change` for revised meaning and carry forward existing authorization. Planning and speculative ideas are not acceptance. Creating or revising the assimilation capability is product work; ordinary assimilation intake and topic notes remain independent of Projector concept records.
+
+Session and prompt repository checks only observe changes. Offer `$projector-reconcile` before deeper unsolicited investigation. After acceptance, delegate it, keep the main task moving on independent work, relay material questions through the root's `request_user_input`, and coordinate overlapping edits before mutation.
+
 Accepted product meaning lives in typed `.projector/model/` records; executable architecture lives in `.projector/lenses/`, `.projector/decisions/`, and `.projector/authorities/`. When the bundled operation runner cannot run, inspect those records directly and state the limitation. Treat every record as a claim to check against the user's intent and current evidence. A stored status, generated report, or passing self-authored test is not proof of implementation or economic advantage.
 
 Executable contract and schema authority lives in `packages/core/`. Canonical records retain immutable historical provenance; consult a cited source only to resolve a concrete missing rationale. Preserve provenance when revising accepted meaning. Do not revive historical delivery plans or add `ChangeCase` or another parallel workflow store.

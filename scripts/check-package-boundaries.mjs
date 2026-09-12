@@ -200,6 +200,8 @@ async function main() {
       "RepositoryCompletionOutputSchema",
       "RepositoryCoverageMode",
       "RepositoryCoverageOutputSchema",
+      "RepositoryCheckOutputSchema",
+      "checkRepository",
       "RepositoryCoverageRequest",
       "RepositoryCoverageResult",
       "RepositoryImpactReport",

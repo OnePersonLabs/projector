@@ -68,6 +68,34 @@ describe("standalone plugin assembly", () => {
       });
       expect(JSON.parse(executedHook.stdout)).toMatchObject({ hookSpecificOutput: { hookEventName: "SessionStart" } });
     }
+
+    const runHook = async (event) => {
+      const child = spawn(process.execPath, [join(plugin, "hooks/projector-session.mjs")], { cwd: repository, env, stdio: ["pipe", "pipe", "pipe"] });
+      let output = ""; let errors = "";
+      child.stdout.on("data", (chunk) => { output += chunk; });
+      child.stderr.on("data", (chunk) => { errors += chunk; });
+      child.stdin.end(JSON.stringify({ ...event, cwd: repository, session_id: "installed-boundary-trial" }));
+      const code = await new Promise((resolveExit, reject) => { child.once("error", reject); child.once("exit", resolveExit); });
+      expect({ code, errors }).toEqual({ code: 0, errors: "" });
+      return JSON.parse(output).hookSpecificOutput;
+    };
+    const startup = await runHook({ hook_event_name: "SessionStart", source: "resume" });
+    expect(startup.additionalContext).toContain("Offer $projector-reconcile");
+    const cachePath = join(repository, ".projector/runtime/repository-check/state.json");
+    const baseline = JSON.parse(await readFile(cachePath, "utf8"));
+    await writeFile(join(repository, ".gitignore"), ".projector/runtime/\n");
+    await writeFile(join(repository, "notes.md"), "External change arriving between prompts\n");
+    await execute("git", ["add", "."], { cwd: repository });
+    await execute("git", ["-c", "user.name=Trial", "-c", "user.email=trial@example.invalid", "commit", "-qm", "External update"], { cwd: repository });
+    const prompt = await runHook({ hook_event_name: "UserPromptSubmit", prompt: "Continue the original task" });
+    expect(prompt.additionalContext).toContain("new evidence");
+    const changed = JSON.parse(await readFile(cachePath, "utf8"));
+    expect(changed.observation.head).not.toBe(baseline.observation.head);
+    expect(changed.pending.findingId).toBe(baseline.pending.findingId);
+    expect(changed.offeredSessions).toHaveLength(1);
+    const again = await runHook({ hook_event_name: "UserPromptSubmit", prompt: "Continue" });
+    expect(again.additionalContext).not.toContain("Offer $projector-reconcile");
+    expect(await readFile(cachePath, "utf8")).toBe(JSON.stringify(changed));
   }, 30_000);
 
   it("preserves nonempty output, source ancestors, supplied inputs, and linked directories", async () => {

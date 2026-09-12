@@ -20,9 +20,11 @@ The script also accepts the same single JSON object on standard input. A request
 }
 ```
 
-Supported built-in operations are `status`, `init`, `context`, `reconcile`, `change.capture`, `change.plan`, `change.approve`, `change.apply`, `change.recover`, `change.resume`, `representation.inspect`, `representation.reconcile`, `coverage`, `complete`, `cleanup`, and `verify`. The installed Windows entry also composes `application.observe` for the Psychord adapter. The typed schemas and registered handlers own each operation's exact input and output. Do not add undeclared fields.
+Supported built-in operations are `status`, `init`, `context`, `reconcile`, `repository.check`, `change.capture`, `change.plan`, `change.approve`, `change.apply`, `change.recover`, `change.resume`, `representation.inspect`, `representation.reconcile`, `coverage`, `complete`, `cleanup`, and `verify`. The installed Windows entry also composes `application.observe` for the Psychord adapter. The typed schemas and registered handlers own each operation's exact input and output. Do not add undeclared fields.
 
 Common inputs are:
+
+- `repository.check`: optional `mode: "full" | "commit-only"` (default `full`), `sessionId`, and `handled: { "findingId": "...", "evidenceIdentity": "sha256:v1:..." }`. Full checks compare bounded local Git and file observations; commit-only checks reuse the observation when HEAD is unchanged. Output status is `unchanged`, `changed`, `no previous observation`, or `incomplete`, with pending finding anchors, bounded paths, limitations, `offer`, and `nextAction`. Observation and pending investigation are separate. A handled request performs a full check and acknowledges only the exact current finding; it never accepts design or proves conformance. Session IDs coalesce offers, not permission. No remote fetch or full source analysis occurs.
 
 - `context`: `{ "request": "...", "persist": true }`; optional `entities`, `namedTargets`, `operation`, and bounded `policy` refine retrieval. Optional `view: "agent" | "full"` selects transport disclosure; the default is `agent`.
 - `reconcile`: `{ "contextId": "..." }`; optional `view: "agent" | "full"` selects transport disclosure; the default is `agent`.

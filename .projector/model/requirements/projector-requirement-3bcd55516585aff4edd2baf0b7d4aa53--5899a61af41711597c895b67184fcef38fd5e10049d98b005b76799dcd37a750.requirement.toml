@@ -1,0 +1,31 @@
+#:schema ../../schemas/canonical-requirement-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "requirement"
+id = "projector-requirement_3bcd55516585aff4edd2baf0b7d4aa53"
+key = "delegated-drift-investigation"
+lifecycle = "active"
+
+[payload]
+title = "Investigate accepted drift requests outside the main context"
+aliases = []
+statement = """After the user accepts an investigation offer or requests reconciliation, delegate a compact assignment \
+  to a dedicated subagent using existing Projector services. Compare saved reasoning dependencies against \
+  current evidence when available; otherwise inspect current design and state that files alone cannot \
+  recover historical intent. Preserve work and return concise findings with evidence references. Investigation \
+  does not authorize repair or new accepted meaning. Root continues independent work; coordinate overlapping \
+  files and decisions before writes. Subagents relay material questions with options and recommendations \
+  to the root, which uses request_user_input and relays answers. Retain unanswered questions and update \
+  an existing investigation for new evidence rather than duplicating it."""
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+items = []
+
+[[payload.origin]]
+kind = "document"
+locator = "proposal:sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99"
+contentHash = "sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99"
+description = "Structured interpretation proposed for approval; not a verbatim user request."
