@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { canonicalJson, hashFramedDomain, normalizeRepositoryRelativePath, type ValidatorBinding } from "@projector/core";
 import type { ExternalGovernanceValidatorFinding } from "@projector/engine";
-import { createValidatorLauncher, validatorExecutionDescription, RepositoryPathService, type ProcessLauncher } from "@projector/runtime";
+import { NativeProcessLauncher, RepositoryPathService, type ProcessLauncher } from "@projector/runtime";
 import { z } from "zod";
 
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
@@ -65,7 +65,7 @@ export class KnowledgeValidatorRun {
       if (binding.version !== captured.contentHash && binding.version !== `git:${captured.objectId}`) throw new Error("repository-node binding.version must equal the tracked validator contentHash or git:<tracked-blob-object-id>");
       if (binding.requiredIndependenceGroup !== undefined && binding.requiredIndependenceGroup !== "tracked-git-base") throw new Error(`unsupported independence group ${binding.requiredIndependenceGroup}`);
       const evidenceIds = [`evidence_${hashFramedDomain("knowledge-validator-identity", { validatorId, unitId, path: captured.path, objectId: captured.objectId, introductionCommit: captured.introductionCommit, contentHash: captured.contentHash }).slice(-32)}`];
-      this.launcher ??= (this.host.createLauncher ?? (async () => createValidatorLauncher()))();
+      this.launcher ??= (this.host.createLauncher ?? (async () => new NativeProcessLauncher()))();
       const launcher = await this.launcher;
       const paths = await RepositoryPathService.create(this.observation.repositoryRoot);
       const target = (await paths.resolveRead(input.path)).realTarget;
@@ -89,7 +89,7 @@ export class KnowledgeValidatorRun {
         unitId,
         validatorId,
         ...output,
-        reason: `${output.reason} ${validatorExecutionDescription(launcher)}`,
+        reason: `${output.reason} Executed under the configured host permissions; this result does not establish filesystem confinement, network denial, or hostile same-user protection.`,
         evidenceIds,
       };
     } catch (error) {

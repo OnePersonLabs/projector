@@ -9,19 +9,7 @@ lifecycle = "approved"
 [payload]
 subjectId = "concern:cross-platform-validation-sandbox"
 conclusion = "normalize"
-rationale = """The user selected Codex's unelevated read-only sandbox for Windows repository validators on 2026-09-12, \
-  accepting write restrictions with read and network limitations. Use codex sandbox with the built-in \
-  :read-only permission profile and windows.sandbox=unelevated. Operations and direct WSL retain native \
-  execution; no model call, login, administrator setup, WSL bridge, or private security fork is required. \
-  Missing or failed sandbox execution must not retry unsandboxed. Local Codex 0.154.0 probes demonstrated \
-  denied writes inside and outside the fixture, expected existing-validator results with unchanged bytes, \
-  output limits, and timeout/cancellation cleanup of three owned fixture processes. Node piped child stdio \
-  failed with EPERM; inherited child stdio worked. These observations do not establish read isolation, \
-  network denial, immutable overlays, quotas, or hostile same-user protection. Preserve exact source/state/version, \
-  authorization, provenance, cancellation, and recovery obligations.
-
-Historical rationale retained for provenance, superseded for Windows validator backend selection: \
-  The user revised the execution direction on 2026-09-10: use each supported host's native Node runner \
+rationale = """The user revised the execution direction on 2026-09-10: use each supported host's native Node runner \
   and configured permissions, preserve exact mutation and validator integrity, cancellation, truthful \
   observations and recovery, and stop requiring Projector-owned confinement or a Windows-to-WSL bridge. \
   Earlier evaluated alternatives and bounded probe results remain in authenticated record history and \
@@ -36,7 +24,7 @@ Reaffirmed for this canonical meaning transaction after reviewing the runtime-ev
   knowledge_context_6204acbaff99f456aa7e24800a87b41d (sha256:v1:5290553931fc3960115742786629db7b6204acbaff99f456aa7e24800a87b41d) \
   supplies the exact current repository and canonical observation. This reaffirmation does not claim \
   complete implementation or economic advantage."""
-assumptions = [ "The host supplies operation permissions; native Windows repository validation additionally requires Codex's unelevated read-only command sandbox.", "The supported workspace is trusted; same-user or host code can interfere with ordinary-process collection.", "Validators must not require Node child processes with piped stdio under the unelevated backend; inherited stdio is supported.", "Exact validator bytes, reviewed writes, source/state/version binding, cancellation and recovery remain required.", "Unsupported CPU, memory, network, or read-isolation controls are reported as unsupported and never silently claimed." ]
+assumptions = [ "The host supplies and enforces the permissions under which Projector runs.", "The supported workspace is trusted; same-user or host code can interfere with ordinary-process collection.", "Exact validator bytes, reviewed writes, source/state/version binding, cancellation and recovery remain enforceable without a Projector confinement backend.", "Unsupported CPU, memory, network, or filesystem-isolation controls are reported as unsupported and never silently claimed." ]
 assessmentConfidence = "high"
 governanceRiskClass = "R2"
 decidedBy = "user"
