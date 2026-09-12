@@ -76,6 +76,7 @@ describe("Codex CLI ChatGPT-subscription provider", () => {
       expect(response).toEqual({ value: { label: "ok" }, provider: "codex-cli-chatgpt", model: "gpt-test", providerRevision: "codex-cli 0.147.0", inputTokens: 30, outputTokens: 5, rawResponseHash: hashFramedDomain("structured-model-response-value", { label: "ok" }), attempt: 1 });
       const calls = (await readFile(fake.calls, "utf8")).trim().split("\n").map((line) => JSON.parse(line)); const invocation = calls.at(-1);
       expect(invocation.args).toEqual(expect.arrayContaining(["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only", "--output-schema", "--output-last-message", "--json", "--cd", root, "--model", "gpt-test", "-"]));
+      expect(invocation.args.includes('windows.sandbox="unelevated"')).toBe(process.platform === "win32");
       expect(invocation.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
       for (const feature of DISABLED_CODEX_EXEC_FEATURES) expect(invocation.args.some((value: string, index: number) => value === "--disable" && invocation.args[index + 1] === feature)).toBe(true);
       expect(invocation.env).toMatchObject({ PATH: process.env.PATH, HOME: root }); expect(invocation.env).not.toHaveProperty("OPENAI_API_KEY"); expect(invocation.env).not.toHaveProperty("UNRELATED");

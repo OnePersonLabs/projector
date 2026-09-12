@@ -22,10 +22,10 @@ import {
   ExactTextPatchTransform,
   FileTransactionJournal,
   GovernedWorktreeRuntime,
-  NativeProcessLauncher,
+  createValidatorLauncher,
   RepositoryPathService,
   WriterLeaseManager,
-  configuredHostAssumptions,
+  validatorExecutionAssumptions,
   type ExactTextPatchInput,
   type FileTransaction,
   type GovernedWorktreeSession,
@@ -450,7 +450,7 @@ async function runNodeValidators(
         exactResolvedPath: contentPath,
         observedResult: { exitCode: execution.exitCode, signal: execution.signal, stdout: execution.stdout, stderr: execution.stderr },
         enforcedBounds: { timeoutMs: 30_000, maxOutputBytes: 256 * 1_024, callerCancellation: true },
-        hostAssumptions: configuredHostAssumptions,
+        hostAssumptions: validatorExecutionAssumptions(launcher),
       },
       startedAt,
       completedAt: now(),
@@ -468,7 +468,7 @@ export async function executeCompiledRepositoryChange(
   const capsule: ExecutionCapsule = packet.capsule;
   if (input.approval.capsuleId !== capsule.id) throw new Error("execution approval belongs to another capsule");
 
-  const launcher = input.compiled.executionKind === "canonical-only" ? undefined : new NativeProcessLauncher();
+  const launcher = input.compiled.executionKind === "canonical-only" ? undefined : createValidatorLauncher();
   const paths = await RepositoryPathService.create(input.repositoryRoot);
   const journal = new FileTransactionJournal(paths);
   const leaseStaleAfterMs = input.leaseStaleAfterMs ?? 30_000;

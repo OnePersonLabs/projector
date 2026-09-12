@@ -7,9 +7,9 @@ key = "cross-platform-validation-sandbox"
 lifecycle = "resolved"
 
 [payload]
-title = "Preserve validation integrity under host execution"
+title = "Preserve validation integrity with unelevated Windows write restrictions"
 question = """How does controlled validation preserve change integrity and honest evidence under the configured host \
-  permissions on native Windows and direct WSL?"""
+  permissions, using Codex's unelevated read-only profile for Windows validators and native execution for direct WSL?"""
 sourceClass = "authored"
 materiality = "blocking-now"
 activationReasons = []

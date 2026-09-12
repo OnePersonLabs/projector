@@ -6,6 +6,8 @@ Projector keeps accepted product meaning, architectural decisions and their reas
 
 The plugin runs independently of this checkout on native Windows and direct WSL. Install Node 24 through the host's normal PATH. Each host has its own plugin installation; Windows does not require a WSL bridge.
 
+Windows repository validators also require the native Codex CLI on PATH. They use `codex sandbox --permission-profile :read-only` with `windows.sandbox="unelevated"`; no model call, login, or administrator setup is needed. Missing or failed sandbox execution blocks validation. The profile restricts writes but does not establish read isolation or network denial. Node child processes with piped stdio are unsupported by this backend; validators can use inherited stdio. Operations and direct WSL execution retain their native host permissions.
+
 For the configured local `personal` marketplace, install or refresh with `codex plugin add projector@personal`. Use the built `plugin/projector` directory as that marketplace's Projector source. Trust the installed hooks through Codex and start a fresh session after refreshing. Installation does not establish that a project is initialized or that its checks pass.
 
 The installed `projector` skill's `operation-contract.md` describes the versioned request protocol and locates its sibling `../../scripts/projector-operation.mjs`. Invoke that runner with `node`, passing one UTF-8 JSON request file or the same object on standard input. For example, the context request for this repository is:

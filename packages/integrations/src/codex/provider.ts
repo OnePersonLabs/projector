@@ -175,7 +175,8 @@ export function createCodexExecProvider(options: CodexExecProviderOptions): Code
     try {
       await writeFile(schemaPath, schemaText, { encoding: "utf8", mode: 0o600, flag: "wx" });
       const disabledFeatures = DISABLED_CODEX_EXEC_FEATURES.flatMap((feature) => ["--disable", feature]);
-      const result = await invoke(cwd, ["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only", ...disabledFeatures, "--color", "never", "--output-schema", schemaPath, "--output-last-message", outputPath, "--json", "--cd", cwd, "--model", model, "-"], timeoutMs, control?.signal, prompt);
+      const windowsSandbox = process.platform === "win32" ? ["-c", 'windows.sandbox="unelevated"'] : [];
+      const result = await invoke(cwd, ["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only", ...windowsSandbox, ...disabledFeatures, "--color", "never", "--output-schema", schemaPath, "--output-last-message", outputPath, "--json", "--cd", cwd, "--model", model, "-"], timeoutMs, control?.signal, prompt);
       if (result.exitCode !== 0) throw new CodexExecProviderError("process-failed", `Codex CLI structured execution failed with exit code ${result.exitCode}`);
       const usage = parseUsage(result.stdout); if (usage.inputTokens > request.maxInputTokens! || usage.outputTokens > request.maxOutputTokens!) throw new CodexExecProviderError("token-budget", "Codex CLI exceeded the declared token budget");
       const raw = await boundedRead(outputPath, maximumOutputBytes); let value: T; try { value = JSON.parse(raw) as T; } catch { throw new CodexExecProviderError("malformed-response", "Codex CLI returned malformed structured JSON"); }
