@@ -1,0 +1,30 @@
+#:schema ../../schemas/canonical-behavioral-scenario-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "behavioral-scenario"
+id = "projector-scenario_2abeee80cd0dae371c8deb189aede82d"
+key = "preserve-pending-check-finding"
+lifecycle = "active"
+
+[payload]
+title = "Keep unresolved findings after repeat checks"
+aliases = []
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+items = []
+
+[[payload.steps]]
+role = "precondition"
+statement = "A repository change has been observed but not investigated."
+
+[[payload.steps]]
+role = "trigger"
+statement = "Session and prompt hooks repeat, or the same dirty file changes again."
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """Keep pending findings distinct from observations, coalesce offers, detect changed bytes on a full check \
+  and report incomplete evidence honestly."""

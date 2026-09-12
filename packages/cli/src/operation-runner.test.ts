@@ -140,6 +140,7 @@ describe("bounded Projector operation runner", () => {
       registered: true,
       reachable: true,
     });
+    expect(inactive.operations.find(({ operation }) => operation === "repository.check")).toMatchObject({ registered: true, reachable: true });
     expect(inactive.operations.find(({ operation }) => operation === "representation.inspect")).toMatchObject({
       registered: true,
       reachable: true,
@@ -174,6 +175,10 @@ describe("bounded Projector operation runner", () => {
       status: "succeeded",
       output: { created: true, readiness: { status: "ready" } },
     });
+    await expect(runner.execute({ ...request("repository.check", { mode: "commit-only", sessionId: "session" }), repositoryRoot: root })).resolves.toMatchObject({
+      status: "succeeded", output: { status: "incomplete", offer: false },
+    });
+    expect(applicationEvidence).not.toHaveBeenCalled();
     await expect(runner.execute({ ...request("verify"), repositoryRoot: root })).resolves.toMatchObject({
       status: "succeeded",
       readiness: { status: "ready" },
@@ -658,4 +663,11 @@ describe("bounded Projector operation runner", () => {
       .rejects.toThrow(/exceeds 16384 bytes/iu);
     await expect(stat(join(oversizedRoot, "package.json"))).resolves.toMatchObject({ isFile: expect.any(Function) });
   });
+});
+
+test("repository.check accepts only declared observation and exact handling inputs", () => {
+  expect(ProjectorOperationRequestSchema.parse(request("repository.check"))).toMatchObject({ input: {} });
+  expect(ProjectorOperationRequestSchema.safeParse(request("repository.check", { mode: "all" })).success).toBe(false);
+  expect(ProjectorOperationRequestSchema.safeParse(request("repository.check", { handled: { findingId: "finding" } })).success).toBe(false);
+  expect(ProjectorOperationRequestSchema.safeParse(request("repository.check", { acceptDesign: true })).success).toBe(false);
 });

@@ -4,5 +4,4 @@ dist/
 *.tsbuildinfo
 .temp/
 *Zone.Identifier
-/.borg/
 

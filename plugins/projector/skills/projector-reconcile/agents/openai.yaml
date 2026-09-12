@@ -1,0 +1,5 @@
+interface:
+  display_name: "Projector Reconcile"
+  short_description: "Investigate changes without derailing the main task"
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,32 @@
+#:schema ../../schemas/canonical-requirement-v2.schema.json
+apiVersion = "projector/v2"
+schemaVersion = "2.0.0"
+kind = "requirement"
+id = "projector-requirement_79c7928e16eb5643c8b6778091634417"
+key = "boundary-repository-change-check"
+lifecycle = "active"
+
+[payload]
+title = "Offer investigation of changes at conversation boundaries"
+aliases = []
+statement = """At session start perform a bounded deterministic local repository check; at user prompt submission first \
+  compare the current commit to the cached observation and perform the bounded check when it changes. \
+  Observe revision, staged changes, working file bytes, deletions and nonignored new files, including \
+  canonical Projector records and excluding disposable runtime data. Return unchanged, changed, no previous \
+  observation, or incomplete with bounded paths, limitations and next action. Store per-checkout observations \
+  separately from pending investigation; observing again must not dismiss unresolved findings. Coalesce \
+  repeated offers and updates. No models, full source analysis, Git history traversal, network access \
+  or interruption of running work belong in the hook. Changed files are evidence, not proof of semantic \
+  drift. Offer before deeper analysis."""
+sourceClass = "authored"
+evidence = []
+
+[payload.scope]
+op = "any"
+items = []
+
+[[payload.origin]]
+kind = "document"
+locator = "proposal:sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99"
+contentHash = "sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99"
+description = "Structured interpretation proposed for approval; not a verbatim user request."

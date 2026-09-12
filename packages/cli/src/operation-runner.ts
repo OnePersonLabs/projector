@@ -35,6 +35,8 @@ import {
   RepositoryCleanupOutputSchema,
   RepositoryCompletionOutputSchema,
   RepositoryCoverageOutputSchema,
+  RepositoryCheckOutputSchema,
+  checkRepository,
   RepositoryChangeLifecycleService,
   RepositoryRepresentationInspectionService,
   RepositoryRepresentationProfileReconciliationService,
@@ -362,6 +364,12 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
     environment: context.environment,
   });
   const handlers: AnyProjectorOperationHandler[] = [
+    defineProjectorOperationHandler({
+      operation: "repository.check",
+      inputSchema: ProjectorOperationInputSchemas["repository.check"],
+      outputSchema: RepositoryCheckOutputSchema,
+      execute: ({ repositoryRoot, input }, context) => checkRepository(repositoryRoot, input, { signal: context.signal }),
+    }),
     defineProjectorOperationHandler({
       operation: "context",
       inputSchema: ProjectorOperationInputSchemas.context,
