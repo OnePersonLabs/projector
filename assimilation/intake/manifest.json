@@ -1,0 +1,722 @@
+{
+  "sources": [
+    {
+      "key": "weco",
+      "id": "6aa4e055-2d1c-83ea-8d36-1d0e17b5531d",
+      "title": "Branch · ✅(v3 handoff prompts) Formalize Work Economics",
+      "completePagination": true,
+      "turns": [
+        "0fd8ec43-3be1-48e4-8758-f13bbba583a0",
+        "5ba4c034-67b3-41af-a2b3-c74c67c2552a",
+        "bbb21cb0-2d21-4331-8ba4-1e4d01ef13b3",
+        "bbb21bbe-f144-4cd7-bc25-4f628a311c3d"
+      ],
+      "attachments": [
+        {
+          "name": "projector-handoff-quality-frontier-execution.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-6DaMwt\\projector-handoff-quality-frontier-execution.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-6DaMwt\\projector-handoff-quality-frontier-execution.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\2d9da2e65612ffa801aede3145c383e868becaca5e737edcb8e837504c9bd417.md",
+          "sha256": "2d9da2e65612ffa801aede3145c383e868becaca5e737edcb8e837504c9bd417",
+          "bytes": 22096
+        },
+        {
+          "name": "projector-handoff-persistent-conception-and-semantic-dynamics.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-mFoCjH\\projector-handoff-persistent-conception-and-semantic-dynamics.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-mFoCjH\\projector-handoff-persistent-conception-and-semantic-dynamics.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\97da6f22c4fb32cbd356f8ce9113ca46728f76c2eea7b6956f7db93588d91bc1.md",
+          "sha256": "97da6f22c4fb32cbd356f8ce9113ca46728f76c2eea7b6956f7db93588d91bc1",
+          "bytes": 28403
+        },
+        {
+          "name": "projector-handoff-concept-references-and-semantic-context-compilation.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-kGzg05\\projector-handoff-concept-references-and-semantic-context-compilation.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-kGzg05\\projector-handoff-concept-references-and-semantic-context-compilation.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\53fb8467034b623e56b8287071620236587ff09f5914961f047950b6cd99f03d.md",
+          "sha256": "53fb8467034b623e56b8287071620236587ff09f5914961f047950b6cd99f03d",
+          "bytes": 21161
+        },
+        {
+          "name": "projector-handoff-project-steward-and-orbital-materialization.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-bF8eao\\projector-handoff-project-steward-and-orbital-materialization.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-bF8eao\\projector-handoff-project-steward-and-orbital-materialization.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\d2e506b421a2fbc43a393361e22beffb3a6f57f8531ef1afdb8d9e7348208771.md",
+          "sha256": "d2e506b421a2fbc43a393361e22beffb3a6f57f8531ef1afdb8d9e7348208771",
+          "bytes": 22118
+        },
+        {
+          "name": "projector-handoff-rebuildable-neural-system-conception.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-wdOyCe\\projector-handoff-rebuildable-neural-system-conception.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-wdOyCe\\projector-handoff-rebuildable-neural-system-conception.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\e3f1a70c409fb10911410263217649ccaeaac07588d73f2021fabb6f089f3bdf.md",
+          "sha256": "e3f1a70c409fb10911410263217649ccaeaac07588d73f2021fabb6f089f3bdf",
+          "bytes": 30466
+        },
+        {
+          "name": "projector-handoff-project-steward-and-compiled-change.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-dyS77Q\\projector-handoff-project-steward-and-compiled-change.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-dyS77Q\\projector-handoff-project-steward-and-compiled-change.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\10773a1edfac52df4eb03ec403712f833858c257596d7c496e72ce88c522cf7c.md",
+          "sha256": "10773a1edfac52df4eb03ec403712f833858c257596d7c496e72ce88c522cf7c",
+          "bytes": 21925
+        },
+        {
+          "name": "projector-handoff-work-economics-and-plugin-boundaries-1.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-Iw4Gpk\\projector-handoff-work-economics-and-plugin-boundaries-1.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-Iw4Gpk\\projector-handoff-work-economics-and-plugin-boundaries-1.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\5332fa8eacfef80799773e6e09d38b29c8a49930236579286f52554828ea36da.md",
+          "sha256": "5332fa8eacfef80799773e6e09d38b29c8a49930236579286f52554828ea36da",
+          "bytes": 23714
+        },
+        {
+          "name": "SKILL.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-TZ24tk\\SKILL.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-TZ24tk\\SKILL.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\8c425b9f80c7fde29e59dc0f45a71dbfc3bb2274d369bc36a2fb9ad645273331.md",
+          "sha256": "8c425b9f80c7fde29e59dc0f45a71dbfc3bb2274d369bc36a2fb9ad645273331",
+          "bytes": 4085
+        },
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v2.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-xRAbEK\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v2.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-xRAbEK\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v2.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\91792609c5f3b63e73a7d5ba78382bd0294c96d473a503dd33f6a54d624e44bd.md",
+          "sha256": "91792609c5f3b63e73a7d5ba78382bd0294c96d473a503dd33f6a54d624e44bd",
+          "bytes": 15980
+        },
+        {
+          "name": "PROJECTOR_SYNTHESIS_PROMPT.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-4SEd76\\PROJECTOR_SYNTHESIS_PROMPT.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-4SEd76\\PROJECTOR_SYNTHESIS_PROMPT.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\3a776b66d3696dd9a7cdaa8395e13102d4c98a783d763848624d4ec95661ee6b.md",
+          "sha256": "3a776b66d3696dd9a7cdaa8395e13102d4c98a783d763848624d4ec95661ee6b",
+          "bytes": 25586
+        }
+      ]
+    },
+    {
+      "key": "nature",
+      "id": "6aa4d050-5f3c-83ea-ba40-ad2b8fcde352",
+      "title": "Continue Nature Of Concepts",
+      "completePagination": true,
+      "turns": [
+        "2c9ef03f-57be-46e9-b916-2e173f047fa3"
+      ],
+      "attachments": [
+        {
+          "name": "projector_s_model_research_checkpoint_2026-09-10.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-iQG6IA\\projector_s_model_research_checkpoint_2026-09-10.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-iQG6IA\\projector_s_model_research_checkpoint_2026-09-10.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\d5b8ba6c3e37b6ec191dc45b8deced0e6ee7b724cc66a527dc7b7b4c2f7064ea.md",
+          "sha256": "d5b8ba6c3e37b6ec191dc45b8deced0e6ee7b724cc66a527dc7b7b4c2f7064ea",
+          "bytes": 24939
+        },
+        {
+          "name": "projector-handoff-quality-frontier-execution.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-oWT90f\\projector-handoff-quality-frontier-execution.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-oWT90f\\projector-handoff-quality-frontier-execution.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\2d9da2e65612ffa801aede3145c383e868becaca5e737edcb8e837504c9bd417.md",
+          "sha256": "2d9da2e65612ffa801aede3145c383e868becaca5e737edcb8e837504c9bd417",
+          "bytes": 22096
+        },
+        {
+          "name": "projector-handoff-persistent-conception-and-semantic-dynamics.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-VshqrT\\projector-handoff-persistent-conception-and-semantic-dynamics.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-VshqrT\\projector-handoff-persistent-conception-and-semantic-dynamics.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\97da6f22c4fb32cbd356f8ce9113ca46728f76c2eea7b6956f7db93588d91bc1.md",
+          "sha256": "97da6f22c4fb32cbd356f8ce9113ca46728f76c2eea7b6956f7db93588d91bc1",
+          "bytes": 28403
+        },
+        {
+          "name": "projector-handoff-concept-references-and-semantic-context-compilation.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-iFmyOx\\projector-handoff-concept-references-and-semantic-context-compilation.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-iFmyOx\\projector-handoff-concept-references-and-semantic-context-compilation.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\53fb8467034b623e56b8287071620236587ff09f5914961f047950b6cd99f03d.md",
+          "sha256": "53fb8467034b623e56b8287071620236587ff09f5914961f047950b6cd99f03d",
+          "bytes": 21161
+        },
+        {
+          "name": "projector-handoff-project-steward-and-orbital-materialization.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-u0U4gu\\projector-handoff-project-steward-and-orbital-materialization.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-u0U4gu\\projector-handoff-project-steward-and-orbital-materialization.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\d2e506b421a2fbc43a393361e22beffb3a6f57f8531ef1afdb8d9e7348208771.md",
+          "sha256": "d2e506b421a2fbc43a393361e22beffb3a6f57f8531ef1afdb8d9e7348208771",
+          "bytes": 22118
+        },
+        {
+          "name": "projector-handoff-rebuildable-neural-system-conception.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-T1iTgH\\projector-handoff-rebuildable-neural-system-conception.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-T1iTgH\\projector-handoff-rebuildable-neural-system-conception.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\e3f1a70c409fb10911410263217649ccaeaac07588d73f2021fabb6f089f3bdf.md",
+          "sha256": "e3f1a70c409fb10911410263217649ccaeaac07588d73f2021fabb6f089f3bdf",
+          "bytes": 30466
+        },
+        {
+          "name": "PROJECTOR_QUALITY_FRONTIER_EXECUTION_PROPOSAL.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-R94eJa\\PROJECTOR_QUALITY_FRONTIER_EXECUTION_PROPOSAL.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-R94eJa\\PROJECTOR_QUALITY_FRONTIER_EXECUTION_PROPOSAL.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\0f71d8aa59447c1fe05600bfae6b30bc855080ba9be28ee02a9eb945e856bbd1.md",
+          "sha256": "0f71d8aa59447c1fe05600bfae6b30bc855080ba9be28ee02a9eb945e856bbd1",
+          "bytes": 47289
+        },
+        {
+          "name": "projector-handoff-work-economics-and-plugin-boundaries.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-v7jghx\\projector-handoff-work-economics-and-plugin-boundaries.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-v7jghx\\projector-handoff-work-economics-and-plugin-boundaries.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\5332fa8eacfef80799773e6e09d38b29c8a49930236579286f52554828ea36da.md",
+          "sha256": "5332fa8eacfef80799773e6e09d38b29c8a49930236579286f52554828ea36da",
+          "bytes": 23714
+        },
+        {
+          "name": "projector-handoff-project-steward-and-compiled-change.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-Vfm4eF\\projector-handoff-project-steward-and-compiled-change.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-Vfm4eF\\projector-handoff-project-steward-and-compiled-change.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\10773a1edfac52df4eb03ec403712f833858c257596d7c496e72ce88c522cf7c.md",
+          "sha256": "10773a1edfac52df4eb03ec403712f833858c257596d7c496e72ce88c522cf7c",
+          "bytes": 21925
+        },
+        {
+          "name": "PROJECTOR_PERSISTENT_SYSTEM_CONCEPTION_PROPOSAL.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-eR7s2d\\PROJECTOR_PERSISTENT_SYSTEM_CONCEPTION_PROPOSAL.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-eR7s2d\\PROJECTOR_PERSISTENT_SYSTEM_CONCEPTION_PROPOSAL.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\676114ed50e10c158f6563f2ee771579b56989583baf509ade6b2edf3a2f2d3b.md",
+          "sha256": "676114ed50e10c158f6563f2ee771579b56989583baf509ade6b2edf3a2f2d3b",
+          "bytes": 41358
+        }
+      ]
+    },
+    {
+      "key": "dynamics",
+      "id": "6aa4a1d3-e970-83e9-99ab-1337a64aa9ae",
+      "title": "✅Branch · Architecting Agentic Development",
+      "completePagination": true,
+      "turns": [
+        "bbb214f6-a5df-4377-bcba-fbdf586aa820",
+        "bbb212d2-01cb-42c7-88d7-a2bccc4a8f88",
+        "bbb21695-1ab9-46d6-9363-b82bf5714a27",
+        "bbb21738-baac-4a7c-9a22-827aec187b1d",
+        "87c4146b-c457-4c61-90f7-f4e3761a7aba",
+        "bbb2174c-0129-48df-9c33-00c58d102de8",
+        "bbb21280-c04d-45de-b5c3-74c2fee287db",
+        "bbb217e6-57a6-4e10-b94a-ba0cece15e8f",
+        "bbb21877-fac3-48e0-8f60-72377b46557c",
+        "bbb215a2-9652-48d9-9252-518a24a8a042",
+        "bbb21a5d-ae23-49ce-a09c-badcf0e87c25",
+        "bbb218ee-6df3-4cc5-ad12-ac54ef01f6e5",
+        "bbb2141a-3f3f-4976-9ed0-b47ee5868989",
+        "bbb213bf-6ab0-450a-a93b-699c642cfe77",
+        "bbb215e9-571d-49b4-bc46-c47d129db98f",
+        "bbb21d4d-9a78-42b8-9975-f5191d8ca0d9"
+      ],
+      "attachments": [
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1(1).md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-t26U84\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1(1).md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-t26U84\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1(1).md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098.md",
+          "sha256": "328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098",
+          "bytes": 16920
+        },
+        {
+          "name": "Nature-Of-Concepts.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-XY7xAM\\Nature-Of-Concepts.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-XY7xAM\\Nature-Of-Concepts.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\7076b2ac4e74c31a5998e993a9eff633354179236b96a9aed71e24838a869cf6.md",
+          "sha256": "7076b2ac4e74c31a5998e993a9eff633354179236b96a9aed71e24838a869cf6",
+          "bytes": 56953
+        }
+      ]
+    },
+    {
+      "key": "quality",
+      "id": "6aa36edb-b760-83ea-bdfd-f7cb69f13bc1",
+      "title": "✅Choosing Codex Settings",
+      "completePagination": true,
+      "turns": [
+        "bbb217cd-dbcf-4eff-b12d-c26187b10585",
+        "bbb219d8-baa8-4967-9937-d812add2378c",
+        "620d68e1-1ff5-42f1-8811-d2af9ee781f8",
+        "c7db8f61-d080-4456-90e2-f4530412a9cd",
+        "56df1630-eea3-47f6-8cea-dc686ddda7b0",
+        "126741e8-515e-4165-b70a-fa750c176b44"
+      ],
+      "attachments": [
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1(1).md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-8T27qf\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1(1).md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-8T27qf\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1(1).md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098.md",
+          "sha256": "328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098",
+          "bytes": 16920
+        }
+      ]
+    },
+    {
+      "key": "orbital",
+      "id": "6aa45e91-e7e0-83e9-af83-e0ba9d3439ca",
+      "title": "✅projector refactoring orbital cannons",
+      "completePagination": true,
+      "turns": [
+        "bbb21d1f-7096-4c30-8d5c-b9ee46726688",
+        "bbb21f28-3c48-40a1-9eb6-fddfac8aec51"
+      ],
+      "attachments": [
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1(1).md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-GOKvzV\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1(1).md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-GOKvzV\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1(1).md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098.md",
+          "sha256": "328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098",
+          "bytes": 16920
+        }
+      ]
+    },
+    {
+      "key": "baseline",
+      "id": "6a74ff2b-b618-83ea-8980-0cb9243c7b87",
+      "title": "Spec Synthesis Review",
+      "completePagination": true,
+      "turns": [
+        "5bb60d85-fc5e-4ad6-a06c-14b876f3a24f",
+        "d84cccfd-ec13-4e5a-bc52-7357df162310",
+        "0abfd0fd-bd00-48c0-a23e-6b5249781932",
+        "dc59ce51-6f85-4a90-b225-3625237629ec",
+        "4dd2c4a7-a557-4304-b7ad-6fd305fd28c8",
+        "bbb21dcc-9172-4528-a433-fcee8c4f3205",
+        "bbb216be-3cdf-48fc-bd90-b682ba20dda8",
+        "5dd45eeb-ac36-4dfa-b673-1366aa2d2680",
+        "bbb21b84-6a34-4845-b468-7b8f04532249",
+        "bbb21c6a-46c9-4a13-b63b-8b06a98cf25d",
+        "adfbf54c-6845-4277-b00c-d326012d00ae",
+        "24976d5e-4bb5-4dac-b682-104ebabdea55",
+        "ce37b48b-2897-49cb-9071-de3e954fa58e"
+      ],
+      "attachments": []
+    },
+    {
+      "key": "value",
+      "id": "6aa48849-68a4-83e9-9bf9-f05d432188bf",
+      "title": "✅Assess Repository Value",
+      "completePagination": true,
+      "turns": [
+        "bbb21774-fd36-4f0d-97c8-dd9997671c14",
+        "bbb21a9e-341c-465d-a345-24211c3c1ee9",
+        "bbb214f6-5800-48d2-9d47-48a22bdb7cfb",
+        "bbb2109b-fe27-4f95-aacb-c9d48274a03c"
+      ],
+      "attachments": [
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-oucMrl\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-oucMrl\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098.md",
+          "sha256": "328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098",
+          "bytes": 16920
+        },
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v2.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-GTCjWI\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v2.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-GTCjWI\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v2.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\91792609c5f3b63e73a7d5ba78382bd0294c96d473a503dd33f6a54d624e44bd.md",
+          "sha256": "91792609c5f3b63e73a7d5ba78382bd0294c96d473a503dd33f6a54d624e44bd",
+          "bytes": 15980
+        }
+      ]
+    },
+    {
+      "key": "borg",
+      "id": "6aa45b00-4c6c-83e9-b24b-302d57ca6d93",
+      "title": "✅ borg deep research AI Agent Architecture",
+      "completePagination": true,
+      "turns": [
+        "bbb21218-99cb-4b17-907e-98cf18f5a574",
+        "bbb2139f-d2ac-49dc-899b-0ebb7a075cce"
+      ],
+      "attachments": [
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-LrN7N1\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-LrN7N1\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098.md",
+          "sha256": "328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098",
+          "bytes": 16920
+        }
+      ]
+    },
+    {
+      "key": "orbital_research",
+      "id": "6aa45ef0-0f08-83e9-a018-6252d7e0ada2",
+      "title": "✅projector refactoring orbital cannons - deep research",
+      "completePagination": true,
+      "turns": [
+        "bbb21e64-a49e-4cad-9e91-4098a87c3119",
+        "bbb2182c-b57a-4a52-8163-021366b84a45",
+        "bbb21104-9afb-4f84-8525-29d94b98430e"
+      ],
+      "attachments": [
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-cTbfYv\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-cTbfYv\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098.md",
+          "sha256": "328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098",
+          "bytes": 16920
+        }
+      ]
+    },
+    {
+      "key": "conception",
+      "id": "6aa497ba-d758-83ea-b92c-8b1be485abde",
+      "title": "✅Branch · Architecting Agentic Development",
+      "completePagination": true,
+      "turns": [
+        "bbb21e9b-74e0-4153-9747-7c4df411459e",
+        "bbb21695-1ab9-46d6-9363-b82bf5714a27",
+        "bbb21738-baac-4a7c-9a22-827aec187b1d",
+        "87c4146b-c457-4c61-90f7-f4e3761a7aba",
+        "bbb2174c-0129-48df-9c33-00c58d102de8",
+        "bbb21280-c04d-45de-b5c3-74c2fee287db",
+        "bbb217e6-57a6-4e10-b94a-ba0cece15e8f",
+        "bbb21877-fac3-48e0-8f60-72377b46557c",
+        "bbb215a2-9652-48d9-9252-518a24a8a042",
+        "bbb21a5d-ae23-49ce-a09c-badcf0e87c25",
+        "bbb218ee-6df3-4cc5-ad12-ac54ef01f6e5",
+        "bbb2141a-3f3f-4976-9ed0-b47ee5868989",
+        "bbb213bf-6ab0-450a-a93b-699c642cfe77",
+        "bbb215e9-571d-49b4-bc46-c47d129db98f",
+        "bbb21d4d-9a78-42b8-9975-f5191d8ca0d9"
+      ],
+      "attachments": [
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-uwc6ta\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-uwc6ta\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098.md",
+          "sha256": "328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098",
+          "bytes": 16920
+        },
+        {
+          "name": "Nature-Of-Concepts.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-0P854J\\Nature-Of-Concepts.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-0P854J\\Nature-Of-Concepts.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\7076b2ac4e74c31a5998e993a9eff633354179236b96a9aed71e24838a869cf6.md",
+          "sha256": "7076b2ac4e74c31a5998e993a9eff633354179236b96a9aed71e24838a869cf6",
+          "bytes": 56953
+        }
+      ]
+    },
+    {
+      "key": "views",
+      "id": "6aa463d2-1760-83e9-bdde-77915f3db432",
+      "title": "✅Markdown reference convention",
+      "completePagination": true,
+      "turns": [
+        "bbb218e1-3826-4d80-a2a9-be29f694979a",
+        "bbb2195f-7732-4adc-849e-8be421336bdf",
+        "bbb21177-2cbf-4cdd-94bf-a2ab534d8e2f"
+      ],
+      "attachments": [
+        {
+          "name": "PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "path": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-0xvhJF\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "original": "C:\\Users\\zethj\\AppData\\Local\\Temp\\codex-file-preview-0xvhJF\\PROJECTOR_SOURCE_HANDOFF_PROMPT_v3-1.md",
+          "captured": "C:\\dev\\projects\\projector\\assimilation\\intake\\attachments\\328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098.md",
+          "sha256": "328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098",
+          "bytes": 16920
+        }
+      ]
+    },
+    {
+      "key": "sense",
+      "id": "6aa457c4-7644-83e9-80f8-1c9ceebaf4c5",
+      "title": "❓Evaluate Conceptual Sense",
+      "completePagination": true,
+      "turns": [
+        "bbb21603-e5f3-4272-8c87-0f0569c72e7c"
+      ],
+      "attachments": []
+    }
+  ],
+  "units": [
+    {
+      "id": "0fd8ec43-3be1-48e4-8758-f13bbba583a0",
+      "path": "turns/0fd8ec43-3be1-48e4-8758-f13bbba583a0.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "5ba4c034-67b3-41af-a2b3-c74c67c2552a",
+      "path": "turns/5ba4c034-67b3-41af-a2b3-c74c67c2552a.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21cb0-2d21-4331-8ba4-1e4d01ef13b3",
+      "path": "turns/bbb21cb0-2d21-4331-8ba4-1e4d01ef13b3.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21bbe-f144-4cd7-bc25-4f628a311c3d",
+      "path": "turns/bbb21bbe-f144-4cd7-bc25-4f628a311c3d.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "2c9ef03f-57be-46e9-b916-2e173f047fa3",
+      "path": "turns/2c9ef03f-57be-46e9-b916-2e173f047fa3.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb214f6-a5df-4377-bcba-fbdf586aa820",
+      "path": "turns/bbb214f6-a5df-4377-bcba-fbdf586aa820.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb212d2-01cb-42c7-88d7-a2bccc4a8f88",
+      "path": "turns/bbb212d2-01cb-42c7-88d7-a2bccc4a8f88.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21695-1ab9-46d6-9363-b82bf5714a27",
+      "path": "turns/bbb21695-1ab9-46d6-9363-b82bf5714a27.md",
+      "possibleTruncation": true
+    },
+    {
+      "id": "bbb21738-baac-4a7c-9a22-827aec187b1d",
+      "path": "turns/bbb21738-baac-4a7c-9a22-827aec187b1d.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "87c4146b-c457-4c61-90f7-f4e3761a7aba",
+      "path": "turns/87c4146b-c457-4c61-90f7-f4e3761a7aba.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb2174c-0129-48df-9c33-00c58d102de8",
+      "path": "turns/bbb2174c-0129-48df-9c33-00c58d102de8.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21280-c04d-45de-b5c3-74c2fee287db",
+      "path": "turns/bbb21280-c04d-45de-b5c3-74c2fee287db.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb217e6-57a6-4e10-b94a-ba0cece15e8f",
+      "path": "turns/bbb217e6-57a6-4e10-b94a-ba0cece15e8f.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21877-fac3-48e0-8f60-72377b46557c",
+      "path": "turns/bbb21877-fac3-48e0-8f60-72377b46557c.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb215a2-9652-48d9-9252-518a24a8a042",
+      "path": "turns/bbb215a2-9652-48d9-9252-518a24a8a042.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21a5d-ae23-49ce-a09c-badcf0e87c25",
+      "path": "turns/bbb21a5d-ae23-49ce-a09c-badcf0e87c25.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb218ee-6df3-4cc5-ad12-ac54ef01f6e5",
+      "path": "turns/bbb218ee-6df3-4cc5-ad12-ac54ef01f6e5.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb2141a-3f3f-4976-9ed0-b47ee5868989",
+      "path": "turns/bbb2141a-3f3f-4976-9ed0-b47ee5868989.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb213bf-6ab0-450a-a93b-699c642cfe77",
+      "path": "turns/bbb213bf-6ab0-450a-a93b-699c642cfe77.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb215e9-571d-49b4-bc46-c47d129db98f",
+      "path": "turns/bbb215e9-571d-49b4-bc46-c47d129db98f.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21d4d-9a78-42b8-9975-f5191d8ca0d9",
+      "path": "turns/bbb21d4d-9a78-42b8-9975-f5191d8ca0d9.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb217cd-dbcf-4eff-b12d-c26187b10585",
+      "path": "turns/bbb217cd-dbcf-4eff-b12d-c26187b10585.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb219d8-baa8-4967-9937-d812add2378c",
+      "path": "turns/bbb219d8-baa8-4967-9937-d812add2378c.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "620d68e1-1ff5-42f1-8811-d2af9ee781f8",
+      "path": "turns/620d68e1-1ff5-42f1-8811-d2af9ee781f8.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "c7db8f61-d080-4456-90e2-f4530412a9cd",
+      "path": "turns/c7db8f61-d080-4456-90e2-f4530412a9cd.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "56df1630-eea3-47f6-8cea-dc686ddda7b0",
+      "path": "turns/56df1630-eea3-47f6-8cea-dc686ddda7b0.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "126741e8-515e-4165-b70a-fa750c176b44",
+      "path": "turns/126741e8-515e-4165-b70a-fa750c176b44.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21d1f-7096-4c30-8d5c-b9ee46726688",
+      "path": "turns/bbb21d1f-7096-4c30-8d5c-b9ee46726688.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21f28-3c48-40a1-9eb6-fddfac8aec51",
+      "path": "turns/bbb21f28-3c48-40a1-9eb6-fddfac8aec51.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "5bb60d85-fc5e-4ad6-a06c-14b876f3a24f",
+      "path": "turns/5bb60d85-fc5e-4ad6-a06c-14b876f3a24f.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "d84cccfd-ec13-4e5a-bc52-7357df162310",
+      "path": "turns/d84cccfd-ec13-4e5a-bc52-7357df162310.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "0abfd0fd-bd00-48c0-a23e-6b5249781932",
+      "path": "turns/0abfd0fd-bd00-48c0-a23e-6b5249781932.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "dc59ce51-6f85-4a90-b225-3625237629ec",
+      "path": "turns/dc59ce51-6f85-4a90-b225-3625237629ec.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "4dd2c4a7-a557-4304-b7ad-6fd305fd28c8",
+      "path": "turns/4dd2c4a7-a557-4304-b7ad-6fd305fd28c8.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21dcc-9172-4528-a433-fcee8c4f3205",
+      "path": "turns/bbb21dcc-9172-4528-a433-fcee8c4f3205.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb216be-3cdf-48fc-bd90-b682ba20dda8",
+      "path": "turns/bbb216be-3cdf-48fc-bd90-b682ba20dda8.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "5dd45eeb-ac36-4dfa-b673-1366aa2d2680",
+      "path": "turns/5dd45eeb-ac36-4dfa-b673-1366aa2d2680.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21b84-6a34-4845-b468-7b8f04532249",
+      "path": "turns/bbb21b84-6a34-4845-b468-7b8f04532249.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21c6a-46c9-4a13-b63b-8b06a98cf25d",
+      "path": "turns/bbb21c6a-46c9-4a13-b63b-8b06a98cf25d.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "adfbf54c-6845-4277-b00c-d326012d00ae",
+      "path": "turns/adfbf54c-6845-4277-b00c-d326012d00ae.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "24976d5e-4bb5-4dac-b682-104ebabdea55",
+      "path": "turns/24976d5e-4bb5-4dac-b682-104ebabdea55.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "ce37b48b-2897-49cb-9071-de3e954fa58e",
+      "path": "turns/ce37b48b-2897-49cb-9071-de3e954fa58e.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21774-fd36-4f0d-97c8-dd9997671c14",
+      "path": "turns/bbb21774-fd36-4f0d-97c8-dd9997671c14.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21a9e-341c-465d-a345-24211c3c1ee9",
+      "path": "turns/bbb21a9e-341c-465d-a345-24211c3c1ee9.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb214f6-5800-48d2-9d47-48a22bdb7cfb",
+      "path": "turns/bbb214f6-5800-48d2-9d47-48a22bdb7cfb.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb2109b-fe27-4f95-aacb-c9d48274a03c",
+      "path": "turns/bbb2109b-fe27-4f95-aacb-c9d48274a03c.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21218-99cb-4b17-907e-98cf18f5a574",
+      "path": "turns/bbb21218-99cb-4b17-907e-98cf18f5a574.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb2139f-d2ac-49dc-899b-0ebb7a075cce",
+      "path": "turns/bbb2139f-d2ac-49dc-899b-0ebb7a075cce.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21e64-a49e-4cad-9e91-4098a87c3119",
+      "path": "turns/bbb21e64-a49e-4cad-9e91-4098a87c3119.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb2182c-b57a-4a52-8163-021366b84a45",
+      "path": "turns/bbb2182c-b57a-4a52-8163-021366b84a45.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21104-9afb-4f84-8525-29d94b98430e",
+      "path": "turns/bbb21104-9afb-4f84-8525-29d94b98430e.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21e9b-74e0-4153-9747-7c4df411459e",
+      "path": "turns/bbb21e9b-74e0-4153-9747-7c4df411459e.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb218e1-3826-4d80-a2a9-be29f694979a",
+      "path": "turns/bbb218e1-3826-4d80-a2a9-be29f694979a.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb2195f-7732-4adc-849e-8be421336bdf",
+      "path": "turns/bbb2195f-7732-4adc-849e-8be421336bdf.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21177-2cbf-4cdd-94bf-a2ab534d8e2f",
+      "path": "turns/bbb21177-2cbf-4cdd-94bf-a2ab534d8e2f.md",
+      "possibleTruncation": false
+    },
+    {
+      "id": "bbb21603-e5f3-4272-8c87-0f0569c72e7c",
+      "path": "turns/bbb21603-e5f3-4272-8c87-0f0569c72e7c.md",
+      "possibleTruncation": true
+    }
+  ]
+}

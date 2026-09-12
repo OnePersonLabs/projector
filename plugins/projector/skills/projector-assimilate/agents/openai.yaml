@@ -1,0 +1,5 @@
+interface:
+  display_name: "Projector assimilate"
+  short_description: "Synthesize large source piles into Projector change intent"
+policy:
+  allow_implicit_invocation: true
