@@ -27,9 +27,7 @@ For every supported operation, report observed host capabilities rather than inf
   transport, and mandatory Projector-owned sandbox or WSL bridge are superseded delivery mechanisms \
   once installed callers use the shared runner and host execution. Do not retain their names as operational \
   shims. Preserve context, planning, exact approval, apply, recover, resume, reconciliation, and truthful \
-  capability results through the shared runner. Windows repository validators additionally use Codex's \
-  unelevated read-only permission profile, without elevated setup or an unsandboxed fallback. Disclose \
-  its read and network limits and unsupported Node piped child stdio separately from write restrictions.
+  capability results through the shared runner.
 
 Surface adapters disclose their real capabilities and enumeration limits; plan/apply/validate methods \
   are optional, and read-only or unavailable APIs must not fake writable implementations. External observations \
