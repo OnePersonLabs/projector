@@ -597,7 +597,7 @@ describe("repository change lifecycle service", () => {
         executedContentHash: expect.stringMatching(/^sha256:v1:/u),
         executionSource: "exact-live-tracked-validator",
         hostAssumptions: {
-          permissions: "configured-host",
+          permissions: process.platform === "win32" ? "codex-unelevated-read-only" : "configured-host",
           filesystemConfinement: false,
           networkDenial: false,
           hostileSameUserProtection: false,

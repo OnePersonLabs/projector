@@ -7,7 +7,7 @@ key = "recover-sandbox-rationale"
 lifecycle = "active"
 
 [payload]
-title = "Recover the host-execution decision after a fresh start"
+title = "Recover the native Windows validator sandbox decision after a fresh start"
 aliases = []
 sourceClass = "authored"
 evidence = []
@@ -74,12 +74,14 @@ statement = "The agent requests current Projector context for the affected host-
 
 [[payload.steps]]
 role = "expected-outcome"
-statement = """Context exposes the native host-execution decision, retained source/state/version/authorization/cancellation/recovery \
-  guarantees, trust limits, prior rejected confinement routes, and typed reconsideration conditions."""
+statement = """Context exposes the Codex unelevated read-only Windows validator decision, native operation and direct WSL \
+  execution, retained source/state/version/authorization/cancellation/recovery guarantees, read and network \
+  limits, the piped-child-process limitation, and typed reconsideration conditions. Unavailable Windows \
+  sandbox execution blocks validation without retrying unsandboxed."""
 
 [[payload.steps]]
 role = "forbidden-outcome"
-statement = """The agent silently restores mandatory Projector confinement or claims that ordinary host execution enforces \
+statement = """The agent silently restores a WSL bridge or private confinement backend, or claims that unelevated or ordinary host execution enforces \
   denied network, hidden paths, immutable overlays, quotas, or hostile same-user protection."""
 
 [[payload.origin]]

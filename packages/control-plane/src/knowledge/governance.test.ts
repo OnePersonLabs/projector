@@ -201,6 +201,24 @@ async function validatorFixture() {
 }
 
 describe("public durable repository validators", () => {
+  it.skipIf(process.platform !== "win32")("denies validator writes through the default Windows host", async () => {
+    const { root, lens } = await validatorFixture();
+    const source = `let denied = false; try { require('node:fs').writeFileSync('src/value.mjs', 'tampered'); } catch (error) { if (error.code !== 'EPERM' && error.code !== 'EACCES') throw error; denied = true; } process.stdout.write(JSON.stringify({status: denied ? 'satisfied' : 'violated', reason: denied ? 'write denied' : 'write escaped'}));`;
+    await writeFile(join(root, "validators/check.cjs"), source);
+    await git(root, ["add", "validators/check.cjs"]);
+    await git(root, ["commit", "-qm", "write-denial validator"]);
+    const version = `git:${await git(root, ["rev-parse", "HEAD:validators/check.cjs"])}`;
+    await canonical(root, "projection-lens", {
+      ...lens,
+      validators: [{ ...lens.validators[0]!, version }],
+      expectedProjections: lens.expectedProjections.map((projection) => ({ ...projection, expectation: { kind: "predicate-constrained", predicateIds: [], validatorIds: [`validator:positive@${version}`] } })),
+    });
+    const service = await RepositoryKnowledgeService.create({ repositoryRoot: root });
+    const inspected = await service.context({ request: "inspect", entities: ["lens:validator"] });
+    expect(await readFile(join(root, "src/value.mjs"), "utf8")).toBe("export const value = 1;\n");
+    expect(inspected.branches[0]?.governanceEvaluations?.[0]?.status).toBe("conformant");
+  });
+
   it("executes the pinned tracked validator through the native host with explicit trust limits", async () => {
     const { root } = await validatorFixture();
     const service = await RepositoryKnowledgeService.create({ repositoryRoot: root, createLauncher: async () => new NativeProcessLauncher() });
