@@ -1,14 +1,14 @@
 {
-  "name": "personal",
+  "name": "projector",
   "interface": {
-    "displayName": "Personal"
+    "displayName": "Projector"
   },
   "plugins": [
     {
       "name": "projector",
       "source": {
         "source": "local",
-        "path": "./plugins/projector"
+        "path": "./.temp/local-marketplace/plugins/projector"
       },
       "policy": {
         "installation": "AVAILABLE",

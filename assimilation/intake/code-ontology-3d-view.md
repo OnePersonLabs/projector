@@ -1,6 +1,6 @@
 # Pending source intake: 3D code-evidence view
 
-Status: queued. Source: the installed `$code-ontology-companion:manage-code-ontology` skill named in the user's request. Resolve its current installed path when work resumes; no version is pinned. This source has not been fully ingested, compared with the working synthesis, or accepted as a Projector change.
+Status: queued. Source: the installed `$code-ontology-companion:manage-code-ontology` skill named in the user's request. This source has not been fully ingested, compared with the working synthesis, or accepted as a Projector change.
 
 ## Desired outcome
 
@@ -8,6 +8,7 @@ Give a developer a navigable spatial view of source structure, dependencies, imp
 
 ## Initial coverage and source evidence
 
+- The initial inspection used the installed `0.6.0` bundle at `C:\Users\zethj\.codex\plugins\cache\openai-curated-remote\code-ontology-companion\0.6.0\skills\manage-code-ontology\`. Its `assets/workbench.js` SHA-256 is `b8661f642bb2653430bd5665fffda66e81a1d068fca745ec79bd013eabf052e3`. This identifies the bytes behind the source-backed claims below; a future pass can inspect a newer donor and record that source separately.
 - Inspected: the donor skill, workspace-setup guidance, root license, workbench HTML, and selected workbench JavaScript locations. `assets/workbench.css`, the full graph-generation path in `scripts/code_ontology_core.py`, ontology semantics, tests, and release sources remain unread. The donor was not run against this repository.
 - Continue with `assets/workbench.js`, `assets/workbench.html`, `assets/workbench.css`, `scripts/code_ontology_core.py`, `references/ontology-model.md`, and relevant tests or release sources before choosing what to reuse.
 - The installed skill describes a static source snapshot and an offline 3D workbench. The workbench source shows bounded visible neighborhoods (160 nodes, 480 edges), search and language/type filters, structure/impact/changes views, source-detail and quality panels, direction/depth controls, keyboard operation, reduced-motion handling, and 2D/text alternatives. These are source-backed candidates, not measured usability or correctness claims.
