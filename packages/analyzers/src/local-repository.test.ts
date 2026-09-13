@@ -5,8 +5,9 @@ import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { DerivedObservationBudget, hashFramedDomain } from "@projector/core";
 
-import { analyzeLocalRepository } from "./index.js";
+import { analyzeJavaScript, analyzeLocalRepository, normalizeJavaScriptSemantics } from "./index.js";
 
 const execFileAsync = promisify(execFile);
 const fixtureRoot = new URL("../../../fixtures/misplaced-repository-script/", import.meta.url);
@@ -77,6 +78,45 @@ afterEach(async () => {
 });
 
 describe("local repository analyzer", () => {
+  it("admits lexical allocations incrementally and shares the derived allowance across normalization calls", () => {
+    const bounded = new DerivedObservationBudget(4096);
+    expect(() => normalizeJavaScriptSemantics(";".repeat(1_000_000), bounded, "punctuation.ts")).toThrow(expect.objectContaining({
+      code: "observation-limit-exceeded", limit: "maxDerivedBytes", stage: "javascript-tokens", scope: "punctuation.ts",
+    }));
+    expect(bounded.usedBytes).toBe(0);
+    const shared = new DerivedObservationBudget(512);
+    const retained = Array.from({ length: 6 }, () => normalizeJavaScriptSemantics(";", shared));
+    expect(retained).toEqual(Array(6).fill("10:punctuator:1:;"));
+    expect(shared.usedBytes).toBe(348);
+    expect(() => shared.release(349)).toThrow(expect.objectContaining({ stage: "derived-release" }));
+    expect(shared.usedBytes).toBe(348);
+    expect(() => normalizeJavaScriptSemantics(";", shared)).toThrow(expect.objectContaining({ limit: "maxDerivedBytes" }));
+  });
+
+  it("uses the collected observation's explicit derived limit during semantic analysis", async () => {
+    const root = await fixtureRepository();
+    await expect(analyzeLocalRepository({ repositoryRoot: root, observationLimits: { maxDerivedBytes: 256 } })).rejects.toMatchObject({
+      code: "observation-limit-exceeded", limit: "maxDerivedBytes",
+    });
+  });
+
+  it("reserves derived space before accumulating export syntax facts", () => {
+    const content = "export { a };";
+    expect(() => analyzeJavaScript([{ path: "exports.ts", kind: "file", mediaType: "text/typescript", content,
+      contentHash: hashFramedDomain("test-content", content), generated: false }], new DerivedObservationBudget(1050))).toThrow(expect.objectContaining({
+      code: "observation-limit-exceeded", limit: "maxDerivedBytes", stage: "javascript-export-facts",
+    }));
+  });
+  it("bounds deleted Git object contents used for move inference", async () => {
+    const root = await fixtureRepository();
+    await writeFile(join(root, "large.ts"), "x".repeat(4096));
+    await execFileAsync("git", ["add", "large.ts"], { cwd: root });
+    await execFileAsync("git", ["-c", "user.name=Projector Test", "-c", "user.email=projector@example.invalid", "commit", "--quiet", "-m", "large source"], { cwd: root });
+    await unlink(join(root, "large.ts"));
+    await expect(analyzeLocalRepository({ repositoryRoot: root, observationLimits: { maxFileBytes: 2048 } })).rejects.toMatchObject({
+      code: "observation-limit-exceeded", limit: "maxFileBytes", scope: "large.ts",
+    });
+  });
   it("keeps distinct source and generated copies addressable when their syntax and bytes match", async () => {
     const root = await fixtureRepository();
     await mkdir(join(root, "copies"));
@@ -280,21 +320,14 @@ describe("local repository analyzer", () => {
     }
   });
 
-  it("localizes an unreadable filesystem entry without discarding other artifacts", async () => {
+  it("rejects an unreadable filesystem entry without publishing a partial analysis", async () => {
     const root = await fixtureRepository();
     const unreadable = join(root, "scripts/unreadable.mjs");
     await writeFile(unreadable, "export const unavailable = true;\n");
     const restore = await denyRead(unreadable);
-    const result = await analyzeLocalRepository({ repositoryRoot: root }).finally(restore);
-
-    expect(result.failures).toContainEqual(expect.objectContaining({
-      analyzerId: "projector.filesystem-local",
-      capability: "artifact-content",
-      scope: "scripts/unreadable.mjs",
-      affectedClaimKinds: ["artifact-content", "projection-unit", "source-relationships"],
-    }));
-    expect(result.files.some((file) => file.path === "scripts/build-index.mjs")).toBe(true);
-    expect(result.packageScriptInvocations.some((fact) => fact.scriptName === "build:index")).toBe(true);
+    await expect(analyzeLocalRepository({ repositoryRoot: root }).finally(restore)).rejects.toMatchObject({
+      code: "observation-failed", scope: "scripts/unreadable.mjs",
+    });
   });
 
   it("reports Git outage as unavailable unknown evidence rather than known untracked files", async () => {
@@ -412,39 +445,21 @@ describe("local repository analyzer", () => {
     expect(paths.indexOf("scripts/\uE000.mjs")).toBeLessThan(paths.indexOf("scripts/\u{10000}.mjs"));
   });
 
-  it("reports a nonexistent repository root as unavailable instead of proving an empty repository", async () => {
+  it("rejects a nonexistent repository root instead of proving an empty repository", async () => {
     const parent = await mkdtemp(join(tmpdir(), "projector-missing-root-"));
     temporaryRoots.push(parent);
 
-    const result = await analyzeLocalRepository({ repositoryRoot: join(parent, "does-not-exist") });
-
-    expect(result.surface).toMatchObject({
-      access: "unavailable",
-      enumeration: { observability: "unavailable" },
-      capabilities: { read: false, stableAnchors: false },
-    });
-    expect(result.files).toEqual([]);
-    expect(result.failures).toContainEqual(expect.objectContaining({
-      analyzerId: "projector.filesystem-local",
-      capability: "directory-enumeration",
-      scope: ".",
-      affectedClaimKinds: ["artifact-enumeration", "inventory-completeness"],
-    }));
+    await expect(analyzeLocalRepository({ repositoryRoot: join(parent, "does-not-exist") })).rejects.toMatchObject({ code: "observation-failed" });
   });
 
-  it("keeps a readable root bounded when only one child artifact is unavailable", async () => {
+  it("rejects a readable root when a required child artifact is unavailable", async () => {
     const root = await fixtureRepository();
     const unreadable = join(root, "scripts/child-unavailable.mjs");
     await writeFile(unreadable, "export const childUnavailable = true;\n");
     const restore = await denyRead(unreadable);
-    const result = await analyzeLocalRepository({ repositoryRoot: root }).finally(restore);
-
-    expect(result.surface).toMatchObject({
-      access: "read-only",
-      enumeration: { observability: "bounded" },
-      capabilities: { read: true, stableAnchors: true },
+    await expect(analyzeLocalRepository({ repositoryRoot: root }).finally(restore)).rejects.toMatchObject({
+      code: "observation-failed", scope: "scripts/child-unavailable.mjs",
     });
-    expect(result.failures).toContainEqual(expect.objectContaining({ scope: "scripts/child-unavailable.mjs" }));
   });
 
   it("does not treat pipeline commands or redirection destinations as package-script targets", async () => {
@@ -462,7 +477,7 @@ describe("local repository analyzer", () => {
     expect(redirectTargets).toEqual(["scripts/check-links.mjs"]);
   });
 
-  it("localizes per-file Git history failure without discarding available Git identity", async () => {
+  it("rejects Git history failure without publishing a partial observation", async () => {
     const root = await fixtureRepository();
     const wrapperRoot = await mkdtemp(join(tmpdir(), "projector-git-wrapper-"));
     temporaryRoots.push(wrapperRoot);
@@ -472,19 +487,7 @@ describe("local repository analyzer", () => {
     process.env.PATH = `${wrapperRoot}${delimiter}${originalPath ?? ""}`;
 
     try {
-      const result = await analyzeLocalRepository({ repositoryRoot: root });
-      const identity = result.gitIdentities.find((fact) => fact.path === "scripts/build-index.mjs");
-
-      expect(result.git.availability).toBe("available");
-      expect(identity).toMatchObject({ tracked: true, introductionHistory: "unavailable" });
-      expect(identity?.introductionCommit).toBeUndefined();
-      expect(result.failures).toContainEqual(expect.objectContaining({
-        analyzerId: "projector.git-local",
-        capability: "introduction-history",
-        scope: "scripts/build-index.mjs",
-        recoverable: true,
-        affectedClaimKinds: ["git-introduction-commit"],
-      }));
+      await expect(analyzeLocalRepository({ repositoryRoot: root })).rejects.toMatchObject({ code: "observation-failed", stage: "git-facts" });
     } finally {
       if (originalPath === undefined) delete process.env.PATH;
       else process.env.PATH = originalPath;

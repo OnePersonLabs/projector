@@ -1,17 +1,16 @@
-import { execFile } from "node:child_process";
-import { readFile, readdir } from "node:fs/promises";
-import { join, relative } from "node:path";
-import { promisify } from "node:util";
+import { lstat, opendir } from "node:fs/promises";
+import { relative } from "node:path";
 
-import { AuthorityRecordSchema, ContentHashSchema, canonicalJson, hydrateCanonicalDocumentWire, normalizeRepositoryRelativePath, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type AuthorityReconsiderTrigger, type CanonicalDocumentEnvelope } from "@projector/core";
-import { evaluateSelector, type StateBoundChangeResult } from "@projector/engine";
-import { CanonicalFileRepository, RepositoryPathService, assertSupportedCanonicalVersions, parseTomlDocument } from "@projector/runtime";
+import { AuthorityRecordSchema, ContentHashSchema, ObservationError, canonicalJson, normalizeRepositoryRelativePath, type ArchitectureDecision, type AuthorityRecord, type AuthorityReconsiderTrigger, type CanonicalDocumentEnvelope } from "@projector/core";
+import { checkObservation, observationGit, readObservationFile, GitCommandError } from "@projector/analyzers";
+import { evaluateSelector } from "@projector/engine";
+import { CanonicalFileRepository, RepositoryPathService, currentObservationScope, withObservationScope } from "@projector/runtime";
 import { z } from "zod";
 
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
-import { ChangeLifecycleStore } from "../change-lifecycle/store.js";
+import { runObservationTask } from "../observation/task-runner.js";
+import type { DecisionBaselineReceipt } from "./decision-baseline-data.js";
 
-const execute = promisify(execFile);
 const strings = (values: readonly string[]) => [...new Set(values)].sort();
 const observationSchema = z.strictObject({ key: z.string(), value: z.json() });
 export const KnowledgeDecisionBaselineSchema = z.strictObject({
@@ -99,10 +98,12 @@ function matches(baseline: KnowledgeDecisionBaseline, decision: ArchitectureDeci
 
 /** Reads existing authenticated lifecycle artifacts; no new baseline store or implicit authority write. */
 export class DecisionBaselineReader {
-  private receipts: Promise<readonly { baseline: KnowledgeDecisionBaseline; reference: string; completedAt: string }[]> | undefined;
-  constructor(private readonly observation: ChangeRepositoryObservation) {}
+  private receipts: Promise<readonly DecisionBaselineReceipt[]> | undefined;
+  constructor(private readonly observation: Pick<ChangeRepositoryObservation, "repositoryRoot" | "canonical">) {}
 
   async read(decision: ArchitectureDecision, authority: AuthorityRecord): Promise<DecisionBaselineEvidence> {
+    return withObservationScope({}, async (scope) => {
+    checkObservation(scope.budget, scope.signal, "decision-baseline");
     this.receipts ??= this.readReceipts();
     const matching = (await this.receipts).filter(({ baseline }) => matches(baseline, decision, authority));
     const authorityDocument = this.observation.canonical.documents.find(({ id }) => id === authority.id)?.canonicalDocumentHash;
@@ -111,104 +112,103 @@ export class DecisionBaselineReader {
     const exact = matching.filter(({ baseline }) => baseline.authorityDocumentHash === authorityDocument && baseline.decisionDocumentHash === decisionDocument);
     const candidates = exact.length > 0 ? exact : matching;
     const receipt = candidates[0];
-    if (receipt !== undefined && candidates.some((candidate) => candidate.completedAt === receipt.completedAt && canonicalJson(candidate.baseline.observations) !== canonicalJson(receipt.baseline.observations))) return { kind: "unavailable", reason: "Authenticated reaffirmation baselines have ambiguous ordering; no unique latest observation can be established." };
+    if (receipt !== undefined && candidates.some((candidate) => candidate.completedAt === receipt.completedAt && candidate.observationsIdentity !== receipt.observationsIdentity)) return { kind: "unavailable", reason: "Authenticated reaffirmation baselines have ambiguous ordering; no unique latest observation can be established." };
     if (receipt !== undefined) return { kind: "authenticated-transaction", reference: receipt.reference, baseline: receipt.baseline };
     return this.readGit(decision, authority);
+    });
   }
 
   private async readReceipts() {
-    const results: { baseline: KnowledgeDecisionBaseline; reference: string; completedAt: string }[] = [];
+    const scope = currentObservationScope()!;
     const repository = this.observation.repositoryRoot;
     const paths = await RepositoryPathService.create(repository);
-    let directory: string;
-    let names: string[];
-    try { directory = (await paths.resolveRead(".projector/runtime/change-lifecycles/results")).realTarget; names = (await readdir(directory)).filter((name) => /^[a-f0-9]{64}\.json$/u.test(name)).sort(); }
-    catch { return results; }
-    const store = await ChangeLifecycleStore.create(repository);
-    for (const name of names) {
-      try {
-        const untrusted = JSON.parse(await readFile(join(directory, name), "utf8")) as { attemptId?: unknown };
-        if (typeof untrusted.attemptId !== "string") continue;
-        const record = await store.readAttemptResult<StateBoundChangeResult>(untrusted.attemptId);
-        if (record.outcome !== "success") continue;
-        const approval = await store.readApproval(record.approvalId);
-        const capture = await store.readCapture(approval.semanticChangeId);
-        for (const validation of record.result.validations) {
-          if (validation.validatorId !== "projector.post-change-knowledge" && validation.validatorId !== "projector.canonical-decision-baselines") continue;
-          if (validation.status !== "passed" || !Array.isArray(validation.details.decisionBaselines)) continue;
-          for (const item of validation.details.decisionBaselines) {
-            const parsed = KnowledgeDecisionBaselineSchema.safeParse(item);
-            if (!parsed.success) continue;
-            const baseline = parsed.data;
-            const mutations = capture.proposal.canonicalMutations?.filter((candidate) => (candidate.kind === "authority-record" && candidate.payload.id === baseline.authorityId) || (candidate.kind === "architecture-decision" && candidate.payload.id === baseline.decisionId)) ?? [];
-            const approved = mutations.some((mutation) => {
-              if (!("payload" in mutation)) return false;
-              const payload = mutation.payload as Record<string, unknown>;
-              const envelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: mutation.kind, id: String(payload.id), key: String(payload.key), lifecycle: String(payload.status ?? payload.lifecycle), payload });
-              return envelope.semanticHash === (mutation.kind === "authority-record" ? baseline.authoritySemanticHash : baseline.decisionSemanticHash);
-            });
-            if (!approved || capture.planHash !== approval.planHash) continue;
-            results.push({ baseline, reference: record.receiptHash ?? record.contentHash, completedAt: record.completedAt });
-          }
-        }
-      } catch { /* An unauthenticated result cannot establish a baseline. */ }
-    }
-    return results.sort((left, right) => right.completedAt.localeCompare(left.completedAt) || left.reference.localeCompare(right.reference));
+    const sources: Record<string, string> = {};
+    const resultsRoot = ".projector/runtime/change-lifecycles/results";
+    const collect = async (directory: string): Promise<void> => {
+      checkObservation(scope.budget, scope.signal, "decision-baseline-enumeration", directory);
+      const resolved = await paths.resolveRead(directory);
+      let status;
+      try { status = await lstat(resolved.realTarget); }
+      catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return; throw error; }
+      if (!status.isDirectory() || status.isSymbolicLink()) throw new ObservationError("observation-failed", "decision-baseline-enumeration", directory, "Baseline metadata directory must be a real directory");
+      scope.budget.consume("maxDirectories", 1, "decision-baseline-enumeration", directory);
+      const handle = await opendir(resolved.realTarget);
+      for await (const entry of handle) {
+        checkObservation(scope.budget, scope.signal, "decision-baseline-enumeration", directory);
+        const path = `${directory}/${entry.name}`;
+        if (entry.isDirectory()) { if (path !== resultsRoot) await collect(path); continue; }
+        scope.budget.consume("maxFiles", 1, "decision-baseline-enumeration", path);
+        if (!entry.isFile()) throw new ObservationError("observation-failed", "decision-baseline-enumeration", path, "Baseline metadata must be a regular file");
+        if (!/^[a-f0-9]{64}\.json$/u.test(entry.name)) continue;
+        sources[path] = (await readObservationFile((await paths.resolveRead(path)).realTarget, scope.budget, path, scope.signal)).toString("utf8");
+      }
+    };
+    // All transitive authentication sources are collected before entering the worker.
+    await collect(resultsRoot);
+    if (Object.keys(sources).length === 0) return [];
+    await collect(".projector/runtime/change-lifecycles");
+    await collect(".projector/runtime/journal");
+    const result = await runObservationTask("decision-baseline-data", { kind: "receipts", repositoryRoot: paths.root, sources }, scope);
+    if (result.kind !== "receipts") throw new Error("Decision baseline worker returned another result kind");
+    return result.receipts;
   }
 
   private async git(args: readonly string[]): Promise<string> {
-    const environment: NodeJS.ProcessEnv = {};
-    for (const key of ["PATH", "PATHEXT", "SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG", "LC_ALL"]) if (process.env[key] !== undefined) environment[key] = process.env[key];
-    const nul = process.platform === "win32" ? "NUL" : "/dev/null";
-    const { stdout } = await execute("git", ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", `core.hooksPath=${nul}`, ...args], { cwd: this.observation.repositoryRoot, env: { ...environment, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: nul, GIT_OPTIONAL_LOCKS: "0" }, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 10_000 });
-    return stdout;
+    const scope = currentObservationScope()!;
+    return observationGit(this.observation.repositoryRoot, args, scope.budget, { signal: scope.signal, stage: "decision-baseline-git" });
+  }
+
+  private async parse(sources: readonly { text: string; path: string }[]): Promise<CanonicalDocumentEnvelope[]> {
+    const scope = currentObservationScope()!;
+    const result = await runObservationTask("decision-baseline-data", { kind: "canonical", sources }, scope);
+    if (result.kind !== "canonical") throw new Error("Decision baseline worker returned another result kind");
+    if (result.error !== undefined) throw new Error(result.error);
+    return result.documents;
   }
 
   private async readGit(decision: ArchitectureDecision, authority: AuthorityRecord): Promise<DecisionBaselineEvidence> {
     try {
-      const parse = (text: string, sourcePath: string): CanonicalDocumentEnvelope => {
-        let record: CanonicalDocumentEnvelope;
-        try { record = hydrateCanonicalDocumentWire(parseTomlDocument(text, sourcePath)); }
-        catch (error) { throw new Error(`invalid tracked canonical document at ${sourcePath}: ${error instanceof Error ? error.message : String(error)}`); }
-        assertSupportedCanonicalVersions(record, ` at ${sourcePath}`);
-        return record;
-      };
       const files = new CanonicalFileRepository(this.observation.repositoryRoot);
       if ((await this.git(["rev-parse", "--is-shallow-repository"])).trim() === "true") throw new Error("shallow Git history cannot establish the first authority baseline");
       const path = relative(this.observation.repositoryRoot, files.pathFor("authority-record", authority.id)).replaceAll("\\", "/");
-      const head = parse(await this.git(["show", `HEAD:${path}`]), `HEAD:${path}`);
-      if (head.semanticHash !== authority.semanticHash) throw new Error("current authority is not recorded at Git HEAD");
+      const headSource = { text: await this.git(["show", `HEAD:${path}`]), path: `HEAD:${path}` };
       const history = (await this.git(["log", "--format=%H", "--max-count=257", "HEAD", "--", path])).trim().split(/\s+/u).filter(Boolean);
       if (history.length > 256) throw new Error("authority history exceeds the bounded Git baseline search");
       let anchor: string | undefined;
       let anchorAuthority: AuthorityRecord | undefined;
-      for (const revision of history) {
-        const record = parse(await this.git(["show", `${revision}:${path}`]), `${revision}:${path}`);
+      const historySources = [];
+      for (const revision of history) historySources.push({ text: await this.git(["show", `${revision}:${path}`]), path: `${revision}:${path}` });
+      const [head, ...historyRecords] = await this.parse([headSource, ...historySources]);
+      if (head!.semanticHash !== authority.semanticHash) throw new Error("current authority is not recorded at Git HEAD");
+      for (const [index, record] of historyRecords.entries()) {
         if (record.semanticHash !== authority.semanticHash) continue;
-        anchor = revision;
-        anchorAuthority = AuthorityRecordSchema.parse(record.payload) as AuthorityRecord;
+        anchor = history[index];
+        anchorAuthority = record.payload as unknown as AuthorityRecord;
       }
       if (anchor === undefined) throw new Error("authority has no tracked semantic baseline");
       const trackedPaths = new Set((await this.git(["ls-tree", "-r", "--name-only", "-z", anchor])).split("\0").filter(Boolean));
-      const documents: CanonicalDocumentEnvelope[] = [];
+      const sources: { text: string; path: string; subjectId: string }[] = [];
       for (const subjectId of strings(authority.reconsiderWhen.map(triggerSubjectId).filter((id): id is string => id !== undefined))) {
         const current = this.observation.canonical.documents.find(({ id }) => id === subjectId);
         const kinds = current === undefined ? ["concept", "requirement", "behavioral-scenario", "relation", "rule", "projection-lens"] as const : [current.kind];
         for (const kind of kinds) {
             const subjectPath = relative(this.observation.repositoryRoot, files.pathFor(kind as Parameters<CanonicalFileRepository["pathFor"]>[0], subjectId)).replaceAll("\\", "/");
             if (!trackedPaths.has(subjectPath)) continue;
-            const record = parse(await this.git(["show", `${anchor}:${subjectPath}`]), `${anchor}:${subjectPath}`);
-            if (record.id !== subjectId || typeof record.semanticHash !== "string") throw new Error(`tracked trigger subject ${subjectId} cannot be authenticated`);
-            documents.push(record); break;
+            sources.push({ text: await this.git(["show", `${anchor}:${subjectPath}`]), path: `${anchor}:${subjectPath}`, subjectId }); break;
         }
       }
       const paths = [...trackedPaths].filter((path) => path !== ".projector" && !path.startsWith(".projector/"));
       const decisionPath = relative(this.observation.repositoryRoot, files.pathFor("architecture-decision", decision.id)).replaceAll("\\", "/");
-      const recordedDecision = parse(await this.git(["show", `${anchor}:${decisionPath}`]), `${anchor}:${decisionPath}`);
-      if (recordedDecision.semanticHash !== decision.semanticHash) throw new Error("decision changed without an applicable authority baseline");
+      sources.push({ text: await this.git(["show", `${anchor}:${decisionPath}`]), path: `${anchor}:${decisionPath}`, subjectId: decision.id });
+      const observations = await runObservationTask("decision-baseline-data", { kind: "git-observations", decision, authority: anchorAuthority!, sources, paths }, currentObservationScope()!);
+      if (observations.kind !== "git-observations") throw new Error("Decision baseline worker returned another result kind");
+      if (observations.error !== undefined) throw new Error(observations.error);
       return { kind: "tracked-git-history", reference: anchor, baseline: { decisionId: decision.id, decisionSemanticHash: decision.semanticHash, authorityId: authority.id, authoritySemanticHash: authority.semanticHash,
-        observations: captureDecisionTriggerObservations(decision, anchorAuthority!, documents, paths, "repository") } };
+        observations: observations.observations } };
     } catch (error) {
+      const scope = currentObservationScope()!;
+      checkObservation(scope.budget, scope.signal, "decision-baseline-git");
+      if (error instanceof ObservationError && !(error instanceof GitCommandError)) throw error;
       return { kind: "unavailable", reason: error instanceof Error ? error.message : String(error) };
     }
   }

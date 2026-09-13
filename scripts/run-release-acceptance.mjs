@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 const { parse: parseToml } = createRequire(new URL("../packages/testkit/package.json", import.meta.url))("smol-toml");
 import { runPackedLifecycleAcceptance } from "./packed-lifecycle-acceptance.mjs";
 import { runReleaseBenchmarkAuthority } from "./release-benchmark-authority.mjs";
+import { isReleaseCommandCleanupUnconfirmed } from "./npm-command.mjs";
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/u, "");
@@ -211,9 +212,25 @@ export async function observeRepresentationProfileRecovery({ root, core, engine,
 async function persistEvidence(evidence) { const root = join(repositoryRoot, "release/evidence"); await mkdir(root, { recursive: true }); const bytes = `${JSON.stringify(evidence, null, 2)}\n`; const contentPath = join(root, `${evidence.contentHash.slice("sha256:v1:".length)}.json`); try { await writeFile(contentPath, bytes, { flag: "wx" }); } catch (error) { if (error.code !== "EEXIST" || await readFile(contentPath, "utf8") !== bytes) throw error; } const current = { version: 1, evidenceHash: evidence.contentHash, manifest: contentPath.slice(repositoryRoot.length + 1), sourceRevision: evidence.sourceRevision, worktreeDigest: evidence.worktreeDigest, buildDigest: evidence.buildDigest, tarballDigest: evidence.tarballDigest }; const temporary = join(root, `.current-${process.pid}.tmp`); await writeFile(temporary, `${JSON.stringify(current, null, 2)}\n`, { flag: "wx" }); await rename(temporary, join(root, "current.json")); return current; }
 async function invalidateEvidence(error) { const root = join(repositoryRoot, "release/evidence"); await mkdir(root, { recursive: true }); const current = join(root, "current.json"); try { await rm(join(root, "current.invalid.json"), { force: true }); await rename(current, join(root, "current.invalid.json")); } catch (failure) { if (failure.code !== "ENOENT") throw failure; } await writeFile(join(root, "failure.json"), `${JSON.stringify({ version: 1, status: "invalid", error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`); }
 
-async function main() {
-  const temporary = await mkdtemp(join(tmpdir(), "projector-release-gate-")); const candidateRoot = join(temporary, "release-candidate"); const consumer = join(temporary, "consumer"); const repository = join(temporary, "repository"); const clone = join(temporary, "rebuild-clone"); const cleanMutation = join(temporary, "clean-mutation"); const rawArtifacts = [];
+export async function withReleaseAcceptanceWorkspace(operation) {
+  const temporary = await mkdtemp(join(tmpdir(), "projector-release-gate-"));
+  let preserve = false;
   try {
+    return await operation(temporary);
+  } catch (error) {
+    if (isReleaseCommandCleanupUnconfirmed(error)) {
+      preserve = true;
+      throw new Error(`Release acceptance workspace retained at ${temporary}: descendant cleanup is unconfirmed. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    throw error;
+  } finally {
+    if (!preserve) await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+async function main() {
+  return withReleaseAcceptanceWorkspace(async (temporary) => {
+    const candidateRoot = join(temporary, "release-candidate"); const consumer = join(temporary, "consumer"); const repository = join(temporary, "repository"); const clone = join(temporary, "rebuild-clone"); const cleanMutation = join(temporary, "clean-mutation"); const rawArtifacts = [];
     const traceability = JSON.parse(await readFile(join(repositoryRoot, "release/traceability.json"), "utf8"));
     const localTestkit = await import("@projector/testkit");
     const authority = JSON.parse(await readFile(join(repositoryRoot, "release/traceability-authority.json"), "utf8"));
@@ -245,7 +262,7 @@ async function main() {
     const conformance = testkit.evaluateIndependentConformance({ clean: cleanDerived, incremental: incrementalDerived, rawDocuments: mutationRaw.documents, schemaId: "canonical-envelope-v2", runtimeLane: "node-smol-toml-independent", locality: { changedEntityIds: ["concept:unrelated"], recomputedEntityIds: incrementalDerived.recomputedEntityIds }, evidenceIds: benchmark.rawObservations.map(({ outputHash }) => outputHash) }); if (!conformance.passed) throw new Error(`release conformance failed: ${conformance.reasons.join(", ")}`);
 
     const tarballDigest = sha(await readFile(tarball)); const sourceRevision = required(await command("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot }), "source revision").stdout.trim(); const listed = required(await command("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: repositoryRoot }), "worktree inventory").stdout.split("\0").filter(Boolean).map((path) => join(repositoryRoot, path)); const worktreeDigest = await observedTreeDigest(repositoryRoot, listed, required(await command("git", ["status", "--porcelain=v1"], { cwd: repositoryRoot }), "worktree status").stdout); await verifyInstalledRepresentationDelivery(installedProjector, inventory, sourceRevision, worktreeDigest); const buildFiles = (await Promise.all(["core", "analyzers", "engine", "runtime", "integrations", "testkit", "cli"].map((name) => filesUnder(join(repositoryRoot, `packages/${name}/dist`))))).flat(); const buildDigest = await observedTreeDigest(repositoryRoot, buildFiles); rawArtifacts.push({ id: "tarball", bytesHash: tarballDigest }, { id: "canonical-raw", bytesHash: originalRaw.digest }, { id: "rebuild-raw", bytesHash: rebuiltRaw.digest }); const deviations = JSON.parse(await readFile(join(repositoryRoot, "release/deviations.json"), "utf8")); const evidence = testkit.compileReleaseEvidence({ sourceRevision, worktreeDigest, toolchainDigest: sha(process.version), buildDigest, tarballDigest, rawArtifacts, traceability, traceabilityVerification, inventory, benchmark, rebuildDigest: cleanDerived.derivedDigest, conformance, deviations }); const current = await persistEvidence(evidence); if (current.evidenceHash !== evidence.contentHash || JSON.parse(await readFile(join(repositoryRoot, current.manifest), "utf8")).contentHash !== evidence.contentHash) throw new Error("durable release evidence current pointer disagrees"); await rm(join(repositoryRoot, "release/evidence/failure.json"), { force: true }); process.stdout.write(`${JSON.stringify({ status: "release-accepted", tarballDigest, evidenceHash: evidence.contentHash, packedLifecycleHash: packedLifecycle.evidenceHash, inventoryOwners: inventory.length, exports: publicExports.length, evidencePath: current.manifest })}\n`);
-  } finally { await rm(temporary, { recursive: true, force: true }); }
+  });
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) { try { await main(); } catch (error) { await invalidateEvidence(error); throw error; } }

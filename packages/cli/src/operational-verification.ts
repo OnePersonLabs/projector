@@ -1,19 +1,16 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-import { analyzeLocalRepository } from "@projector/analyzers";
-import { hashFramedDomain, type ContentHash } from "@projector/core";
-import { inspectRepositoryCoverage, type PsychordApplicationEvidenceHost, type RepositoryCoverageResult } from "@projector/control-plane";
+import { collectLocalRepositoryInputs } from "@projector/analyzers";
+import { hashFramedDomain, ObservationError, type ContentHash } from "@projector/core";
+import { inspectRepositoryCoverage, runObservationTask, type PsychordApplicationEvidenceHost, type RepositoryCoverageResult } from "@projector/control-plane";
 import {
-  CanonicalFileRepository,
+  collectCanonicalSnapshotSources,
+  currentObservationScope,
+  withObservationScope,
   createOperationalReport,
   parseOperationalReport,
   unavailableOperationalEvidence,
   type OperationalExitProof,
   type OperationalReport,
 } from "@projector/runtime";
-
-const execFileAsync = promisify(execFile);
 
 export interface ReadOnlyOperationalVerificationOptions {
   readonly signal: AbortSignal;
@@ -26,21 +23,29 @@ export async function runReadOnlyOperationalVerification(
   repositoryRoot: string,
   options: ReadOnlyOperationalVerificationOptions,
 ): Promise<OperationalReport> {
+  return withObservationScope({ signal: options.signal }, () => verifyWithinScope(repositoryRoot, options));
+}
+
+async function verifyWithinScope(repositoryRoot: string, options: ReadOnlyOperationalVerificationOptions): Promise<OperationalReport> {
   const started = Date.now();
   options.signal.throwIfAborted();
   const knowledge = await inspectCanonicalKnowledge(repositoryRoot);
   options.signal.throwIfAborted();
-  const analysis = await analyzeLocalRepository({ repositoryRoot });
+  const scope = currentObservationScope()!;
+  const collected = await collectLocalRepositoryInputs({ repositoryRoot, budget: scope.budget, signal: scope.signal });
+  const analysis = await runObservationTask("analyze-collected", { collected }, scope);
   options.signal.throwIfAborted();
   let coverage: RepositoryCoverageResult | undefined;
   let coverageFailure: string | undefined;
   try {
+    if (knowledge.findings.length > 0) throw new Error("Canonical knowledge is invalid; dependent coverage cannot be evaluated.");
     coverage = await inspectRepositoryCoverage(repositoryRoot, { scope: "." }, "coverage", {
       signal: options.signal,
       applicationEvidence: options.applicationEvidence,
     });
   } catch (error) {
     options.signal.throwIfAborted();
+    if (error instanceof ObservationError) throw error;
     coverageFailure = error instanceof Error ? error.message : String(error);
   }
   options.signal.throwIfAborted();
@@ -108,16 +113,7 @@ export async function runReadOnlyOperationalVerification(
       ? { unavailable: coverageFailure ?? "coverage observation unavailable" }
       : { bindingIdentity: coverage.bindingIdentity, verificationLanes: requiredLanes },
   });
-  let gitHead: string | undefined;
-  try {
-    gitHead = (await execFileAsync("git", ["-C", repositoryRoot, "rev-parse", "HEAD"], {
-      encoding: "utf8",
-      signal: options.signal,
-    })).stdout.trim();
-  } catch (error) {
-    options.signal.throwIfAborted();
-    if (error instanceof Error && error.name === "AbortError") throw error;
-  }
+  const gitHead = analysis.git.availability === "available" ? analysis.git.revision : undefined;
   const evidence = {
     ...unavailableOperationalEvidence("not exercised by local operational composition"),
     toolchainDigest: hashFramedDomain("operational-toolchain", options.toolVersion),
@@ -162,9 +158,13 @@ export async function inspectCanonicalKnowledge(repositoryRoot: string): Promise
   }>;
 }> {
   try {
-    const snapshot = await new CanonicalFileRepository(repositoryRoot).snapshot();
+    const snapshot = await withObservationScope({}, async (scope) => {
+      const sources = await collectCanonicalSnapshotSources(repositoryRoot, scope.budget, scope.signal);
+      return runObservationTask("canonical", { sources }, scope);
+    });
     return { canonicalDigest: snapshot.rootDigest, findings: [] };
   } catch (error) {
+    if (error instanceof ObservationError && error.code === "observation-limit-exceeded") throw error;
     const reason = error instanceof Error ? error.message : String(error);
     return {
       canonicalDigest: hashFramedDomain("unavailable-canonical-knowledge", reason),

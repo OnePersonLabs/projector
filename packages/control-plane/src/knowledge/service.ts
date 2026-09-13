@@ -8,6 +8,7 @@ import {
   type StateBindingValidation,
   type StateQueryDependency,
   type StateValueDependencyRef,
+  type DerivedObservationBudget,
 } from "@projector/core";
 import {
   DependencyScopedStateBindingValidator,
@@ -15,11 +16,12 @@ import {
   compileRelevanceClosure,
   createStateBinding,
 } from "@projector/engine";
+import { currentObservationScope, withObservationScope, withDerivedCacheAdmission, type DerivedCacheWrite } from "@projector/runtime";
 
 import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
 import { KnowledgeGraph } from "./graph.js";
-import { buildRepositoryImpactSnapshot, impactReference, persistRepositoryImpactSnapshot, reconcileRetainedImpact } from "../impact/service.js";
+import { buildRepositoryImpactSnapshot, impactReference, impactSnapshotWrite, readRepositoryImpactSnapshot, reconcileRetainedImpact, type RepositoryImpactSnapshot } from "../impact/service.js";
 import { assessKnowledgeDecisions, knowledgeGovernanceStatus, type KnowledgeDecisionHost } from "./governance.js";
 import { KnowledgeValidatorRun, type KnowledgeValidatorHost } from "./validators.js";
 import {
@@ -28,7 +30,13 @@ import {
   assessKnowledgeApplicationEvidence,
   type PsychordApplicationEvidenceHost,
 } from "./application-evidence.js";
-import { KnowledgeContextStore, finalizeKnowledgeContext } from "./store.js";
+import { KnowledgeContextStore, finalizeKnowledgeContext, knowledgeContextWrite } from "./store.js";
+import { DecisionBaselineReader } from "./decision-baselines.js";
+import { runObservationTask } from "../observation/task-runner.js";
+import type { KnowledgeComputeHost, KnowledgeHostRequest } from "../observation/knowledge-host.js";
+import type { RepositoryObservationData } from "../observation/tasks.js";
+import { assertKnowledgeContextResponseSize } from "./transport.js";
+import { inspectRepositoryContinuation } from "../coverage/continuation.js";
 import {
   KNOWLEDGE_API_VERSION,
   KnowledgeContextResultSchema,
@@ -43,6 +51,28 @@ import {
 
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
+
+export function createKnowledgeComputeHostHandler(observation: ChangeRepositoryObservation, host: KnowledgeDecisionHost & KnowledgeValidatorHost & { readonly applicationEvidence?: PsychordApplicationEvidenceHost } = {}): (request: KnowledgeHostRequest, signal: AbortSignal) => Promise<unknown> {
+  const baselines = new DecisionBaselineReader(observation);
+  let validators: KnowledgeValidatorRun | undefined;
+  return async (request, signal) => {
+    const scope = currentObservationScope()!;
+    const combined = AbortSignal.any([scope.signal, signal, AbortSignal.timeout(Math.max(1, scope.budget.remainingMs()))]);
+    return withObservationScope({ signal: combined }, async () => {
+    switch (request.type) {
+      case "coverage-continuation": return inspectRepositoryContinuation(observation.repositoryRoot, request.request, { signal: combined, ...(host.applicationEvidence === undefined ? {} : { applicationEvidence: host.applicationEvidence }) });
+      case "baseline": return baselines.read(request.decision, request.authority);
+      case "validators": {
+        validators ??= new KnowledgeValidatorRun(observation, combined, host);
+        return { findings: await validators.evaluateAll(request.requests), executed: validators.executed };
+      }
+      case "application-evidence": return assessKnowledgeApplicationEvidence({ observation, ownerIds: request.ownerIds, signal: combined, ...(host.applicationEvidence === undefined ? {} : { host: host.applicationEvidence }) });
+      case "fresh-state": return (await observeChangeRepository(observation.repositoryRoot)).state;
+      case "read-impact": return readRepositoryImpactSnapshot(observation.repositoryRoot, request.reference);
+    }
+    });
+  };
+}
 
 const defaultPolicy: Required<KnowledgeContextPolicy> = {
   maxCandidates: 5,
@@ -144,8 +174,10 @@ const validationRank: Record<StateBindingValidation["status"], number> = {
 export class RepositoryKnowledgeService {
   private constructor(
     readonly repositoryRoot: string,
-    private readonly store: KnowledgeContextStore,
+    private readonly store: KnowledgeContextStore | undefined,
     private readonly host: KnowledgeDecisionHost & KnowledgeValidatorHost & { readonly applicationEvidence?: PsychordApplicationEvidenceHost },
+    private readonly computeHost?: KnowledgeComputeHost,
+    private readonly derivedBudget?: DerivedObservationBudget,
   ) {}
 
   static async create(input: string | ({ readonly repositoryRoot: string; readonly applicationEvidence?: PsychordApplicationEvidenceHost } & KnowledgeDecisionHost & KnowledgeValidatorHost)): Promise<RepositoryKnowledgeService> {
@@ -154,14 +186,36 @@ export class RepositoryKnowledgeService {
   }
 
   async context(input: KnowledgeContextRequest): Promise<KnowledgeContextResult> {
-    input.signal?.throwIfAborted();
-    const observation = await observeChangeRepository(this.repositoryRoot);
-    return this.compileContext(input, observation, new KnowledgeGraph(observation, this.host));
+    return withObservationScope({ ...(input.signal === undefined ? {} : { signal: input.signal }) }, async (scope) => {
+      const observation = await observeChangeRepository(this.repositoryRoot);
+      const { independentValidator: _validator, ...data } = observation;
+      const { signal: _signal, ...request } = input;
+      const prepared = await runObservationTask("knowledge-context", { observation: data, request, now: (this.host.now ?? (() => new Date().toISOString()))(), ...(this.host.acceptedDecisionBaselines === undefined ? {} : { acceptedDecisionBaselines: this.host.acceptedDecisionBaselines }) }, {
+        ...scope, onHostRequest: this.hostRequests(observation),
+      });
+      scope.signal.throwIfAborted();
+      scope.budget.check("context-publication");
+      if (prepared.writes.length > 0) await withDerivedCacheAdmission(this.repositoryRoot, (cache) => cache.publishAll(prepared.writes), { signal: scope.signal, deadline: scope.deadline });
+      return prepared.result;
+    });
+  }
+
+  private hostRequests(observation: ChangeRepositoryObservation): (request: KnowledgeHostRequest, signal: AbortSignal) => Promise<unknown> {
+    return createKnowledgeComputeHostHandler(observation, this.host);
+  }
+
+  static async computeContext(input: Omit<KnowledgeContextRequest, "signal">, observation: RepositoryObservationData, host: KnowledgeDecisionHost, computeHost: KnowledgeComputeHost, derivedBudget?: DerivedObservationBudget): Promise<{ result: KnowledgeContextResult; writes: DerivedCacheWrite[] }> {
+    let impact: RepositoryImpactSnapshot | undefined;
+    const service = new RepositoryKnowledgeService(observation.repositoryRoot, undefined, host, { ...computeHost, stageImpact(snapshot) { impact = snapshot; } }, derivedBudget);
+    const result = await service.compileContext(input, observation, new KnowledgeGraph(observation, host, derivedBudget));
+    if (impact === undefined) throw new Error("Knowledge computation did not produce its impact snapshot");
+    assertKnowledgeContextResponseSize(result, input.view ?? "agent");
+    return { result, writes: result.persisted ? [impactSnapshotWrite(impact), knowledgeContextWrite(result)] : [] };
   }
 
   private async compileContext(
     input: KnowledgeContextRequest,
-    observation: ChangeRepositoryObservation,
+    observation: RepositoryObservationData,
     graph: KnowledgeGraph,
   ): Promise<KnowledgeContextResult> {
     input.signal?.throwIfAborted();
@@ -189,7 +243,9 @@ export class RepositoryKnowledgeService {
     ]);
     const discoveryBinding = createStateBinding({ compiledAgainst: observation.state, valueDependencies: [], queryDependencies: [identity.dependency] });
     const branches: KnowledgeContextBranch[] = [];
-    const validators = new KnowledgeValidatorRun(observation, adapterContext.signal, this.host);
+    const computeHost = this.computeHost;
+    if (computeHost === undefined) throw new Error("Knowledge compilation requires its observation worker host");
+    let validatorsExecuted = false;
     for (const candidate of candidates) {
       const resolution = identityResolution(request, candidate, observation.state, identity.dependency, graph);
       const collectedQueries: StateQueryDependency[] = [];
@@ -208,7 +264,7 @@ export class RepositoryKnowledgeService {
       const closureIds = compilation.closure.entries.map(({ entityId }) => entityId);
       const decisionEvidence = await assessKnowledgeDecisions(graph, graph.relevantDecisions(new Set(closureIds)), operation, adapterContext);
       const decisionIds = decisionEvidence.decisions.map(({ decisionId }) => decisionId);
-      const applicationEvidence = await assessKnowledgeApplicationEvidence({ observation, ownerIds: closureIds, signal: adapterContext.signal, ...(this.host.applicationEvidence === undefined ? {} : { host: this.host.applicationEvidence }) });
+      const applicationEvidence = await computeHost.applicationEvidence(closureIds);
       const closure = rebindClosure(compilation.closure, graph, [identity.dependency, ...collectedQueries, ...decisionEvidence.dependencies], decisionIds, applicationEvidenceDependencies(applicationEvidence));
       const baseContext = await compileContext(closure, graph, { maxCost: selectedPolicy.maxContextCost });
       const contextUnknowns = unique([...baseContext.unknowns, ...graph.authorityUnknowns(closureIds), ...graph.topologyUnknowns(closureIds), ...graph.realizationUnknowns(closureIds), ...decisionEvidence.decisions.flatMap(({ checks }) => checks.filter(({ status }) => status === "unknown").map(({ reason }) => reason)), ...applicationEvidence.flatMap((item) => item.status === "unavailable" ? [item.reason] : [])]);
@@ -223,7 +279,9 @@ export class RepositoryKnowledgeService {
       const compiledContext = { ...contextBasis, contentHash: hashFramedDomain("compiled-semantic-context", contextBasis) };
       const valueDependencies = graph.valueDependencies(closureIds);
       const lensObligations = graph.lensObligations(new Set(closureIds), operation);
-      const validatorFindings = await validators.evaluateAll(graph.validatorRequests(new Set(closureIds), operation));
+      const validation = await computeHost.validators(graph.validatorRequests(new Set(closureIds), operation));
+      validatorsExecuted ||= validation.executed;
+      const validatorFindings = validation.findings;
       const governanceEvaluations = graph.governanceEvaluations(new Set(closureIds), operation, validatorFindings);
       const sourceFingerprint = hashFramedDomain("knowledge-context-sources", { values: valueDependencies.map(({ id, role }) => ({ id, role, sourceHash: graph.sourceHash(id) ?? null })), applicationEvidence: applicationEvidence.map(({ contentHash }) => contentHash) });
       const semanticFingerprint = hashFramedDomain("knowledge-context-semantics", { values: valueDependencies, applicationEvidence: applicationEvidence.map(({ contentHash }) => contentHash) });
@@ -246,10 +304,10 @@ export class RepositoryKnowledgeService {
         queryFingerprint,
       });
     }
-    if (validators.executed) {
-      const after = await observeChangeRepository(this.repositoryRoot);
+    if (validatorsExecuted) {
+      const after = await computeHost.freshState();
       input.signal?.throwIfAborted();
-      if (hashFramedDomain("knowledge-validation-state", after.state) !== hashFramedDomain("knowledge-validation-state", observation.state)) throw new Error("Repository changed while custom validators ran; discard these observations and request fresh context.");
+      if (hashFramedDomain("knowledge-validation-state", after) !== hashFramedDomain("knowledge-validation-state", observation.state)) throw new Error("Repository changed while custom validators ran; discard these observations and request fresh context.");
     }
     const requestOptions = { entities, namedTargets, operation, policy: selectedPolicy };
     const unknowns = unique([
@@ -259,10 +317,7 @@ export class RepositoryKnowledgeService {
     ]);
     const impactSnapshot = buildRepositoryImpactSnapshot(observation, graph);
     input.signal?.throwIfAborted();
-    if (persist) {
-      await persistRepositoryImpactSnapshot(this.repositoryRoot, impactSnapshot);
-      input.signal?.throwIfAborted();
-    }
+    computeHost.stageImpact(impactSnapshot);
     const result = finalizeKnowledgeContext({
       impactBaseline: impactReference(impactSnapshot),
       apiVersion: KNOWLEDGE_API_VERSION,
@@ -285,20 +340,30 @@ export class RepositoryKnowledgeService {
     });
     const parsed = KnowledgeContextResultSchema.parse(result);
     input.signal?.throwIfAborted();
-    return persist ? this.store.write(parsed) : parsed;
+    return parsed;
   }
 
   read(contextId: string): Promise<KnowledgeContextResult> {
-    return this.store.read(contextId);
+    return this.store!.read(contextId);
   }
 
   async reconcile(contextId: string, options: { readonly signal?: AbortSignal } = {}): Promise<KnowledgeReconciliationResult> {
-    options.signal?.throwIfAborted();
-    const retained = await this.store.read(contextId);
-    options.signal?.throwIfAborted();
-    const observation = await observeChangeRepository(this.repositoryRoot);
-    options.signal?.throwIfAborted();
-    const graph = new KnowledgeGraph(observation, this.host);
+    return withObservationScope(options, async (scope) => {
+      const retained = await this.store!.read(contextId);
+      const observation = await observeChangeRepository(this.repositoryRoot);
+      const { independentValidator: _validator, ...data } = observation;
+      return runObservationTask("knowledge-reconcile", { observation: data, retained, now: (this.host.now ?? (() => new Date().toISOString()))(), ...(this.host.acceptedDecisionBaselines === undefined ? {} : { acceptedDecisionBaselines: this.host.acceptedDecisionBaselines }) }, { ...scope, onHostRequest: this.hostRequests(observation) });
+    });
+  }
+
+  static computeReconciliation(retained: KnowledgeContextResult, observation: RepositoryObservationData, host: KnowledgeDecisionHost, computeHost: KnowledgeComputeHost, derivedBudget?: DerivedObservationBudget): Promise<KnowledgeReconciliationResult> {
+    return new RepositoryKnowledgeService(observation.repositoryRoot, undefined, host, computeHost, derivedBudget).reconcileObserved(retained, observation);
+  }
+
+  private async reconcileObserved(retained: KnowledgeContextResult, observation: RepositoryObservationData): Promise<KnowledgeReconciliationResult> {
+    const contextId = retained.id;
+    const options: { signal?: AbortSignal } = {};
+    const graph = new KnowledgeGraph(observation, this.host, this.derivedBudget);
     const adapterContext: AdapterContext = { repositoryRoot: observation.repositoryRoot, stateDigest: observation.state, config: {}, signal: options.signal ?? new AbortController().signal };
     const current = await this.compileContext({
       request: retained.request,
@@ -414,7 +479,7 @@ export class RepositoryKnowledgeService {
           : applicationStatuses.includes("satisfied") ? "satisfied" as const : "not-applicable" as const,
       branches: applicationBranches,
     };
-    const impact = retained.impactBaseline === undefined ? undefined : await reconcileRetainedImpact(this.repositoryRoot, retained.impactBaseline, buildRepositoryImpactSnapshot(observation, graph), unique(retained.branches.flatMap(({ closure }) => closure.entries.filter(({ band }) => band !== "possible").map(({ entityId }) => entityId))), contextId);
+    const impact = retained.impactBaseline === undefined ? undefined : await reconcileRetainedImpact(this.repositoryRoot, retained.impactBaseline, buildRepositoryImpactSnapshot(observation, graph), unique(retained.branches.flatMap(({ closure }) => closure.entries.filter(({ band }) => band !== "possible").map(({ entityId }) => entityId))), contextId, false, (_root, reference) => this.computeHost!.readImpact(reference), this.derivedBudget);
     options.signal?.throwIfAborted();
     const basis = { apiVersion: KNOWLEDGE_API_VERSION, contextId, capturedState: retained.capturedState, currentState: observation.state, status, discoveryValidation, branches, governance, applicationEvidence, ...(impact === undefined ? {} : { impact }), reasons };
     const result = { ...basis, contentHash: hashFramedDomain("knowledge-reconciliation", basis) };

@@ -9,51 +9,54 @@ lifecycle = "active"
 [payload]
 title = "Expose remaining design obligations progressively"
 aliases = []
-statement = """Report finite observed coverage populations and distinguish mapping from fulfillment. Preserve accepted \
-  capabilities before implementation exists. Rank concrete unresolved obligations and repair questions \
-  using observed effect and blocking status, with stable issue identity and state-bound evidence. Accepted \
-  meaning, satisfied predicates or an explicit valid deferral may settle an issue; relevant new facts \
-  reopen it without reopening unrelated decisions. A cleanup plan must identify actionable repairs and \
-  cannot claim execution or a complete design from unavailable evidence.
+statement = """Report finite observed coverage and distinguish mapping from fulfillment. Preserve accepted capabilities \
+  before implementation. Rank concrete unresolved obligations and repair questions by observed effect \
+  and blocking status, with stable identities and state-bound evidence. Accepted meaning, satisfied \
+  predicates or explicit valid deferral may settle an issue; relevant new facts reopen only affected \
+  issues. Cleanup identifies actionable repairs without claiming execution or complete design from unavailable \
+  evidence.
 
-An agent's assertion that work is done is non-normative. Completion requires current bindings, reconciled \
-  affected units, required evidence, allowed unknowns, and explicit unavailable external actions. Evidence \
-  identifies its lane, source, independence, side effects, and assurance; tests produced by the same \
-  packet or sharing the same flawed suite are correlated, and a model cannot solely validate its own \
-  compression. Release proof binds stable obligation IDs to observed results from the same revision \
-  and worktree with distinct negative controls; self-report, caller counts, hash-shaped strings, and \
-  default-zero metrics do not count.
+An agent's completion assertion is non-normative. Completion requires current bindings, reconciled affected \
+  units, required evidence, allowed unknowns and explicit unavailable external actions. Evidence identifies \
+  lane, source, independence, side effects and assurance. Tests from the same packet or flawed suite \
+  are correlated; a model cannot solely validate its own compression. Release proof binds stable obligations \
+  to observations from the same revision/worktree with distinct negative controls. Self-report, caller \
+  counts, hash-shaped strings and default-zero metrics are not proof.
 
-Separate exclusion policy for inventory, inference authority, mutation, reporting, model context, and \
-  coverage denominator. A single ignore rule must not silently erase an artifact from every semantic \
-  role. Vendored code may remain inventoried for dependencies while excluded from mutation and pattern \
-  authority; generated outputs may remain in reconciliation while excluded as independent authority \
-  evidence; secrets or configuration values may be inventoried structurally while excluded from model \
-  context. Apply this obligation together with executable-lens authority and scoped-invalidation obligations.
+Separate exclusions for inventory, inference authority, mutation, reporting, model context and coverage \
+  denominators. One ignore rule cannot silently erase all semantic roles. Vendored code may inform dependencies \
+  while excluded from mutation/pattern authority; generated output may inform reconciliation without \
+  independent authority; secrets/configuration may be structurally inventoried but excluded from model \
+  context. Apply executable-lens authority and scoped invalidation.
 
-Governance audit must expose contradictions, unreachable selectors, excessive exceptions, duplicate \
-  or semantically equivalent rules, overbroad selectors, stale authority triggers, blocking rules without \
-  executable predicates or validators, deterministic mechanics expressed only in prose, transforms lacking \
-  idempotency evidence, disproportionate invalidation, and rule or model growth whose maintenance cost \
-  exceeds prevented divergence. An unavailable or unevaluable check remains unknown rather than passing.
+Governance audit exposes contradictions, unreachable selectors, excessive exceptions, duplicate/equivalent \
+  rules, overbroad selectors, stale authority triggers, blocking rules without predicates/validators, \
+  deterministic mechanics expressed only in prose, transforms without idempotency evidence, disproportionate \
+  invalidation, and model/rule maintenance cost exceeding prevented divergence. Unavailable checks remain \
+  unknown.
 
-These layered-exclusion and complete rule-pressure capabilities remain active but explicitly unrealized \
-  as public workflows by this ingestion: existing types, mappings, and implementation surfaces do not \
-  establish their consumers. Reconsider the exclusion carrier when a supported inventory, coverage, \
-  mutation, or context workflow needs purpose-specific treatment, and reconsider each audit check when \
-  an installed audit or coverage workflow needs its result and conservative unknown disclosure. Preserve \
-  these prerequisites in completion and context until observed consumer evidence justifies realization.
+Layered exclusions and full rule-pressure audit remain active but unrealized public workflows: types, \
+  mappings and partial implementations do not establish consumers. Revisit exclusion carriers when a \
+  supported inventory, coverage, mutation or context workflow needs purpose-specific treatment; revisit \
+  audit checks when installed audit/coverage needs their results and conservative unknown disclosure. \
+  Preserve prerequisites until consumer evidence establishes realization.
 
-Audit, completion, migration and interrupted transactions must yield resumable cleanup/continuation \
-  plans. Required bounded saved-context and lifecycle continuation reports current/stale/unknown evidence, \
-  missing advisory notes/artifacts, unresolved work, recovery-required state and the supported next \
-  action through existing services and the shared runner. Explain relevant query/profile changes while \
-  retaining independently current work, including fresh-session checks. This remains release work; unrestricted \
-  multi-packet limitations do not defer it. Do not create a parallel progress store. Exceptions and \
-  general overlays remain discoverable under their dedicated requirements until actual consumers are \
-  demonstrated. Non-goals limit promises, not future implementation commitments. Coverage preserves \
-  denominator assumptions, open-world limits and unavailable analyzers rather than implying exhaustive \
-  coverage."""
+Audit, completion, migration and interrupted transactions yield resumable cleanup/continuation plans \
+  through existing services and the shared runner: current/stale/unknown evidence, missing advisory \
+  artifacts, unresolved work, recovery status and supported next action. Explain query/profile changes \
+  while retaining independently current work, including fresh-session checks. This remains release work \
+  despite unrestricted multi-packet limitations. Create no parallel progress store. General overlays/exceptions \
+  stay discoverable under their own requirements until consumers are demonstrated. Non-goals limit promises, \
+  not future commitments. Coverage preserves denominator assumptions, open-world limits and unavailable \
+  analyzers. Resumed agents inspect cleanup using retained context/lifecycle selectors before following \
+  a supported next action; unavailable evidence stays explicit.
+
+Bound all observation, including secondary reads and synchronous computation, by finite file/directory/byte/process-output/memory/result/time \
+  limits. Explicit overrides cannot silently widen scope or weaken mutation checks. Limits fail the \
+  scan; transport byte ceilings preserve whole records. Bounded cache collection deletes only after \
+  complete protected-owner discovery; admission counts staging/metadata and cannot exceed capacity. \
+  Reuse immutable schemas, never changing candidate/repository authority. Preserve transaction freshness \
+  checks and drain cancellation before cleanup."""
 sourceClass = "authored"
 evidence = []
 
@@ -172,6 +175,18 @@ description = """Accepted coherent integration of independently prepared release
   between an environment-conditional installed test and regular mapped checks. The final release directly \
   awaits installed checks; the mapped profile check does not claim packaged delivery. Integrated release \
   execution passed. This shared-contract resolution does not establish general automatic conflict resolution."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "conversation:2026-09-13:complete-existing-projector-control-loop"
+description = """The user approved explicit skill, hook, runner, and service ownership; selector-based continuation; \
+  installed consumption and recovery verification."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "conversation:2026-09-13:bounded-observation-approved-plan"
+description = """User explicitly requested implementation of the reviewed complete-or-fail observation and size-bounded \
+  disposable cache plan."""
 
 [[payload.realizations]]
 [payload.realizations.selector]

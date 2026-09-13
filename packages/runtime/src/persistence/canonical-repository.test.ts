@@ -2,10 +2,10 @@ import { mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { withCanonicalHashes, type CanonicalDocumentEnvelope } from "@projector/core";
+import { withCanonicalHashes, DerivedObservationBudget, type CanonicalDocumentEnvelope } from "@projector/core";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { CanonicalFileRepository } from "./canonical-repository.js";
+import { CanonicalFileRepository, parseCanonicalSnapshotSources } from "./canonical-repository.js";
 import { parseTomlDocument, stringifyTomlDocument } from "./toml-codec.js";
 
 const temporaryRoots: string[] = [];
@@ -48,6 +48,18 @@ afterEach(async () => {
 });
 
 describe("CanonicalFileRepository", () => {
+  test("reserves canonical parsing space before expanding malformed TOML", () => {
+    const source = `invalid = [${"0,".repeat(100)}`;
+    expect(() => parseCanonicalSnapshotSources([{ path: "input.concept.toml", relativePath: "model/concepts/input.concept.toml", source }], new DerivedObservationBudget(128)))
+      .toThrow(/maxDerivedBytes/u);
+  });
+  test("rejects canonical source exceeding the observation file limit before parsing", async () => {
+    const root = await temporaryRepository();
+    const repository = new CanonicalFileRepository(root);
+    await repository.write(concept("concept:bounded-source", "A".repeat(2048)));
+    await expect(repository.snapshot({ maxFileBytes: 1024 })).rejects.toThrow(/limit|budget/i);
+  });
+
   test("writes readable TOML paths with a document-relative bundled schema directive", async () => {
     const root = await temporaryRepository();
     const repository = new CanonicalFileRepository(root);

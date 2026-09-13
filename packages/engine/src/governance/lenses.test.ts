@@ -1,4 +1,4 @@
-import type { ProjectionLens, SelectorExpr } from "@projector/core";
+import { DerivedObservationBudget, ObservationError, type ProjectionLens, type SelectorExpr } from "@projector/core";
 import { describe, expect, it } from "vitest";
 
 import { authorityRecord, projectionUnit, tagSelector } from "./test-fixtures.js";
@@ -17,6 +17,16 @@ function separatelyApproved(lenses: ProjectionLens[]) {
 }
 
 describe("minimal repository-script lens", () => {
+  it("rejects membership expansion before exceeding its allowance without charging stabilization repeatedly", () => {
+    const lens = createRepositoryScriptLens({ id: "lens:bounded", status: "shadow", authorityRecordId: "authority:bounded", governanceBasis: [] });
+    const unit = projectionUnit("bounded", { tags: ["repository-automation"] });
+    const pairBytes = 256 + 4 * (lens.id.length + unit.id.length);
+    const budget = new DerivedObservationBudget(pairBytes);
+    expect(compileProjectionLenses({ lenses: [lens], units: [unit], authorityRecords: [], derivedBudget: budget }).memberships[lens.id]).toEqual([unit.id]);
+    expect(budget.usedBytes).toBe(pairBytes);
+    const units = [unit, projectionUnit("overflow", { tags: ["repository-automation"] })];
+    expect(() => compileProjectionLenses({ lenses: [lens], units, authorityRecords: [], derivedBudget: new DerivedObservationBudget(pairBytes) })).toThrow(ObservationError);
+  });
   it("refuses an authority record approved for another lens", () => {
     const record = authorityRecord("authority:trusted", "lens:trusted");
     const lens = createRepositoryScriptLens({ id: "lens:untrusted", status: "active", authorityRecordId: record.id,

@@ -1,42 +1,141 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { describe, expect, it } from "vitest";
+import { setTimeout as delay } from "node:timers/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
+import { executeReleaseCommand, isReleaseCommandCleanupUnconfirmed } from "./npm-command.mjs";
+import { buildReleasePackage } from "./build-release-package.mjs";
 
-import { afterEach, describe, expect, it } from "vitest";
+describe("release staging ownership", () => {
+  it("creates missing parent directories before exclusively allocating new staging", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-staging-parents-test-"));
+    const staging = join(root, "missing", "parents", "projector-release-new");
+    const destination = join(root, "artifacts");
+    try {
+      const signal = AbortSignal.timeout(25);
+      const failure = await buildReleasePackage(staging, destination, { signal })
+        .then(() => undefined, (error: unknown) => error);
+      expect(failure).toBe(signal.reason);
+      expect(signal.aborted).toBe(true);
+      await expect(access(join(staging, "dist"))).resolves.toBeUndefined();
+      await expect(access(destination)).resolves.toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 
-import { buildReleasePackage, releaseVersion } from "./build-release-package.mjs";
-import { installTarball } from "./source-severed-release-acceptance.mjs";
+  it.each(["directory", "file"])("refuses an existing %s on every retry without replacing retained evidence", async (kind) => {
+    const root = await mkdtemp(join(tmpdir(), "projector-staging-ownership-test-"));
+    const staging = join(root, "projector-release-retained");
+    const destination = join(root, "artifacts");
+    const evidence = kind === "directory" ? join(staging, "recovery-evidence.txt") : staging;
+    try {
+      if (kind === "directory") await mkdir(staging);
+      await writeFile(evidence, "retained process recovery evidence");
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        // Bound the old destructive implementation during the regression's RED
+        // run; refusal must happen before copying or launching npm.
+        const failure = await buildReleasePackage(staging, destination, { signal: AbortSignal.timeout(25) })
+          .then(() => undefined, (error: unknown) => error);
+        const retained = await readFile(evidence, "utf8").catch(() => "missing evidence");
+        expect(retained).toBe("retained process recovery evidence");
+        expect(failure).toMatchObject({ code: "RELEASE_STAGING_EXISTS" });
+        await expect(access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
 
-const execute = promisify(execFile);
-const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))));
+describe("owned release subprocesses", () => {
+  it.skipIf(process.platform !== "win32")("reports unconfirmed cleanup promptly when an exited non-Node parent leaves inherited pipes open", async () => {
+    let descendant: number | undefined;
+    let output = "";
+    const command = "$s=New-Object System.Diagnostics.ProcessStartInfo; $s.FileName='" + process.execPath.replaceAll("'", "''")
+      + "'; $s.Arguments='-e \"setTimeout(()=>{},4000)\"'; $s.UseShellExecute=$false; $s.CreateNoWindow=$true; $p=[System.Diagnostics.Process]::Start($s); [Console]::WriteLine($p.Id);";
+    const started = performance.now();
+    try {
+      const failure = await executeReleaseCommand("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+        timeout: 1_200,
+        onStdout: (chunk: string) => {
+          output += chunk;
+          if (output.includes("\n")) descendant = Number(output.trim());
+        },
+      }).then(() => undefined, (error: unknown) => error);
+      expect(failure).toMatchObject({
+        code: "RELEASE_COMMAND_CLEANUP_UNCONFIRMED",
+        stdout: output,
+        cause: { message: "Release command exceeded its 1200ms deadline" },
+      });
+      expect(isReleaseCommandCleanupUnconfirmed(failure)).toBe(true);
+      expect(performance.now() - started).toBeLessThan(3_500);
+      expect(Number.isSafeInteger(descendant)).toBe(true);
+      expect(() => process.kill(descendant!, 0)).not.toThrow();
+    } finally {
+      // This test knows the finite orphan's identity; the release helper cannot
+      // recover that identity from a parent which has already exited.
+      if (descendant !== undefined) {
+        try { process.kill(descendant); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+        await expect.poll(() => {
+          try { process.kill(descendant!, 0); return "alive"; } catch { return "exited"; }
+        }, { timeout: 1_000 }).toBe("exited");
+      } else {
+        await delay(4_500);
+      }
+    }
+  });
 
-describe("scoped Projector release package", () => {
-  it("packs the authored Projector release with only the operation runner and coherent internal versions", async () => {
-    const root = await mkdtemp(join(tmpdir(), "projector release & 100%-")); roots.push(root);
-    const tarball = await buildReleasePackage(join(root, "projector-release-staging"), join(root, "packs & 100%"));
-    const { stdout } = await execute("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" });
-    const manifest = JSON.parse(stdout) as { name: string; version: string; bin?: Record<string, string>; dependencies: Record<string, string>; exports: Record<string, unknown> };
+  it("preserves cleanup uncertainty through nested and cyclic failure wrappers", () => {
+    const uncertain = Object.assign(new Error("unknown descendants"), { code: "RELEASE_COMMAND_CLEANUP_UNCONFIRMED" });
+    const cycle = new Error("wrapper");
+    cycle.cause = cycle;
+    expect(isReleaseCommandCleanupUnconfirmed(new AggregateError([cycle, new Error("outer", { cause: uncertain })]))).toBe(true);
+    expect(isReleaseCommandCleanupUnconfirmed(new AggregateError([cycle, new Error("ordinary failure")]))).toBe(false);
+    expect(isReleaseCommandCleanupUnconfirmed(undefined)).toBe(false);
+  });
 
-    expect(manifest).toMatchObject({ name: "@onepersonlabs/projector", version: releaseVersion });
-    expect(manifest.bin).toBeUndefined();
-    expect(Object.fromEntries(Object.entries(manifest.dependencies).filter(([name]) => name.startsWith("@projector/")))).toEqual(Object.fromEntries(
-      ["core", "analyzers", "engine", "runtime", "integrations", "control-plane", "testkit"].map((name) => [`@projector/${name}`, releaseVersion]),
-    ));
-    expect(Object.keys(manifest.exports)).toEqual(["./operations", "./core", "./analyzers", "./engine", "./engine/architecture", "./engine/coverage", "./engine/modernization", "./runtime", "./integrations", "./integrations/surfaces", "./integrations/models", "./integrations/codex", "./control-plane", "./testkit"]);
-    expect(await readFile(tarball)).not.toHaveLength(0);
-    const { stdout: packedFiles } = await execute("tar", ["-tf", tarball], { encoding: "utf8" });
-    expect(packedFiles).toContain("package/dist/operation-runner.js");
-    expect(packedFiles).not.toMatch(/package\/(?:bin\/projector\.js|dist\/(?:cli|host-cli|knowledge-cli|mcp-cli|policy|upgrade)\.js)/u);
+  it("passes shell metacharacters and spaces as opaque arguments", async () => {
+    const args = ["space value", "& echo injected", "$(anything)", "quote\"value", "%PATH%"];
+    const result = await executeReleaseCommand(process.execPath, ["-e", "process.stdout.write(JSON.stringify(process.argv.slice(1)))", ...args]);
+    expect(JSON.parse(result.stdout)).toEqual(args);
+  });
 
-    const consumer = join(root, "ordinary consumer");
-    await installTarball(consumer, tarball, root);
-    const installed = JSON.parse(await readFile(join(consumer, "node_modules/@onepersonlabs/projector/package.json"), "utf8"));
-    expect(installed).toMatchObject({ name: "@onepersonlabs/projector", version: releaseVersion });
-    expect(JSON.parse(await readFile(join(consumer, "node_modules/@onepersonlabs/projector/project-data/format-baseline.json"), "utf8"))).toMatchObject({
-      packageIdentity: { name: "@onepersonlabs/projector", version: "2.1.0" },
-    });
-  }, 60_000);
+  it("preserves the original spawn failure code", async () => {
+    await expect(executeReleaseCommand("projector-no-such-release-executable", []))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("returns complete bounded command output", async () => {
+    expect(await executeReleaseCommand(process.execPath, ["-e", "process.stdout.write('packed'); process.stderr.write('diagnostic');"]))
+      .toMatchObject({ stdout: "packed", stderr: "diagnostic" });
+  });
+
+  it("kills and drains the owned child tree before cancellation returns", async () => {
+    const controller = new AbortController();
+    let identities: { parent: number; descendant: number } | undefined;
+    let output = "";
+    const code = "const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); console.log(JSON.stringify({parent:process.pid,descendant:child.pid})); setInterval(()=>{},1000);";
+    await expect(executeReleaseCommand(process.execPath, ["-e", code], {
+      signal: controller.signal,
+      onStdout: (chunk: string) => {
+        output += chunk;
+        if (!output.includes("\n")) return;
+        identities = JSON.parse(output.trim());
+        controller.abort(new Error("release cancelled"));
+      },
+    })).rejects.toThrow("release cancelled");
+    expect(identities).toBeDefined();
+    for (const pid of [identities!.parent, identities!.descendant]) expect(() => process.kill(pid, 0)).toThrow();
+  });
+
+  it("drains a command when its own deadline expires", async () => {
+    await expect(executeReleaseCommand(process.execPath, ["-e", "setInterval(()=>{},1000)"], { timeout: 100 }))
+      .rejects.toThrow(/100ms deadline/u);
+  });
+
+  it("terminates an output-flooding child at the configured bound", async () => {
+    await expect(executeReleaseCommand(process.execPath, ["-e", "setInterval(()=>process.stdout.write('x'.repeat(4096)),1)"], { maxBuffer: 1024 }))
+      .rejects.toThrow(/output.*bound/iu);
+  });
 });

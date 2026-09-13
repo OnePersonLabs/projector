@@ -13,10 +13,19 @@ sourceClass = "authored"
 evidence = []
 
 [payload.scope]
+op = "any"
+
+[[payload.scope.items]]
 op = "atom"
 field = "path"
 matcher = "glob"
 value = "packages/integrations/src/runtime-evidence/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "plugins/projector/skills/**"
 
 [[payload.steps]]
 role = "precondition"
@@ -37,3 +46,20 @@ role = "forbidden-outcome"
 statement = """Wrong-build or wrong-endpoint observations, contaminated prior state, missing or unavailable collection, \
   failed setup, interrupted cleanup, or a stored promise are reported as successful behavioral proof; \
   browser evidence is used to claim unobserved acoustic, device, or learning outcomes."""
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """For a supported Psychord adapter, the review skill invokes application.observe with a plan bound to \
+  the intended repository and observes the returned outcome, freshness, owned artifacts and cleanup \
+  before citing scenario evidence."""
+
+[[payload.steps]]
+role = "forbidden-outcome"
+statement = """A registered handler, unavailable observation or unconsumed artifact is counted as successful application \
+  behavior."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "conversation:2026-09-13:complete-existing-projector-control-loop"
+description = """The user approved explicit skill, hook, runner, and service ownership; selector-based continuation; \
+  installed consumption and recovery verification."""

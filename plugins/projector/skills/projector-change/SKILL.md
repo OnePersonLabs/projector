@@ -10,19 +10,21 @@ Projector retains accepted meaning, typed relationships, and architectural oblig
 
 Resolve `node` through the host `PATH`; Projector requires Node 24 on native Windows and direct WSL. The installed plugin bundles Projector JavaScript, not a private Node runtime.
 
+On a new session with a retained context ID, change selector, or approval selector, read the [shared operation contract](../../references/operation-contract.md) and send `cleanup` with those actual anchors before entering the route below. Inspect the bounded continuation evidence, recovery requirement, and `nextAction`; follow `drillDown` when required evidence is omitted. Reconcile saved context before reusing its reasoning. If the anchors are missing, recover them from their durable owners or retrieve fresh context; do not choose a guessed latest selector.
+
 ## Choose the change route
 
 Planning and implementation are a feedback loop. For authorized code changes that realize existing accepted meaning, use ordinary host edits, relevant behavioral checks, and scoped reconciliation as described in step 9. Use the capture/plan/approve/apply route below when revising canonical meaning or requesting Projector-controlled execution; do not replay a completed host edit merely to obtain a certificate. Revise the plan when implementation invalidates its assumptions. Explicitly revise canonical meaning when intended behavior changes, with rationale and provenance; a procedural amendment must not silently drop a required outcome.
 
 ## Canonical revision and controlled execution
 
-1. Read the target repository's agent instructions and the [bundled operation contract](../projector/operation-contract.md). Before choosing edit paths, resolve `../../scripts/projector-operation.mjs` relative to this skill. Write a `projector.operation/v1` request with operation `context`, the absolute repository root, and input `{ "request": "<requested-outcome>", "persist": true }`, then run:
+1. Read the target repository's agent instructions and the [shared operation contract](../../references/operation-contract.md). Consult the [harness guide](../../references/harness-guide.md) when selecting or resuming a lifecycle. Before choosing edit paths, resolve `../../scripts/projector-operation.mjs` relative to this skill. For new work, write a `projector.operation/v1` request with operation `context`, the absolute repository root, and input `{ "request": "<requested-outcome>", "persist": true }`, then run:
 
    ```sh
    node <projector-operation.mjs> <context-request.json>
    ```
 
-   Inspect the operation result's `output.interpretation`, each `output.branches[].context.items`, typed relevance reasons, `lensObligations`, and unknown frontiers. Read the source and tests needed to resolve them. Select an existing meaning before sending a focused `context` request with `input.entities: ["<entity-id>"]`. Preserve `output.id` and `output.contentHash`; a free-text candidate is not an accepted identity. An empty result means knowledge is missing, not that no constraints exist.
+   For resumed work, reuse previously inspected context content only after `cleanup` and `reconcile` show its dependencies remain current. If that content is unavailable to this session, or its dependencies changed or are missing, retrieve fresh context for the requested outcome; a context ID alone does not disclose its meaning. For a `context` result, inspect `output.interpretation`, each `output.branches[].context.items`, typed relevance reasons, `lensObligations`, and unknown frontiers. Read the source and tests needed to resolve them. Select an existing meaning before sending a focused `context` request with `input.entities: ["<entity-id>"]`. Preserve `output.id` and `output.contentHash`; a free-text candidate is not an accepted identity. An empty result means knowledge is missing, not that no constraints exist.
 
    Context is bounded by `input.policy`. Inspect `output.unknowns` and each branch's `frontier`, `closure`, and `context` before relying on its retained items. Budget-stopped expansion is unresolved knowledge. Request focused context or adjust the supported policy bounds when a required direct or governing dependency is not retained. Inspect each branch's `lensObligations` and `governanceEvaluations` for applicability and predicate results. Do not infer that an omitted identity or finding is absent.
 
@@ -49,7 +51,7 @@ Planning and implementation are a feedback loop. For authorized code changes tha
    node <projector-operation.mjs> <apply-request.json>
    ```
 
-7. If apply is interrupted or reports recovery-required, preserve the lifecycle records. Do not hand-edit the target or retry raw apply. Recover and resume the same approval:
+7. If apply is interrupted or reports recovery-required, inspect the last durable result and send `cleanup` with the retained approval selector. Read its continuation and recovery requirement before acting. Preserve the lifecycle records; do not hand-edit the target or retry raw apply. Recover and resume the same approval:
 
    Send `change.recover` with the same approval selector. After a successful recovery result, send `change.resume` with that selector. A new process or session must re-read the durable readiness and lifecycle result; delivery of an earlier result does not prove it was consumed.
 

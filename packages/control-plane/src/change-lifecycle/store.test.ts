@@ -48,6 +48,21 @@ function capsule(): ExecutionCapsule {
 }
 
 describe("change lifecycle store", () => {
+  it("authenticates collected sources without falling back to the live filesystem", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-lifecycle-collected-"));
+    try {
+      const store = await ChangeLifecycleStore.create(root);
+      const capture = await store.capture({ request: "Change value.", proposal, proposalHash, semanticChangeId: "change:1", plan: plan(), capsules: [capsule()], exactPatchInputHash: hash });
+      const relativePath = `.projector/runtime/change-lifecycles/captures/${hashFramedDomain("change-lifecycle-selector", "change:1").slice("sha256:v1:".length)}.json`;
+      const source = await readFile(join(root, relativePath), "utf8");
+      const collected = ChangeLifecycleStore.fromCollectedSources(root, { [relativePath]: source });
+      await writeFile(join(root, relativePath), "corrupt live file");
+      expect(await collected.readCapture("change:1")).toEqual(capture);
+      await expect(ChangeLifecycleStore.fromCollectedSources(root, {}).readCapture("change:1")).rejects.toThrow(/collected.*unavailable/iu);
+      await expect(ChangeLifecycleStore.fromCollectedSources(root, { [relativePath]: source.replace("Change value.", "Changed value.") }).readCapture("change:1")).rejects.toThrow(/authentication/iu);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("persists one immutable authenticated capture and returns it idempotently", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-lifecycle-store-"));
     try {

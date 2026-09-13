@@ -1,6 +1,6 @@
 {
   "name": "projector",
-  "version": "2.1.6",
+  "version": "2.1.9",
   "description": "Reuse durable engineering meaning, inspect architectural lenses before editing, and reconcile saved knowledge with code changes.",
   "author": {
     "name": "Projector contributors"

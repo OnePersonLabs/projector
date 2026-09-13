@@ -1,4 +1,4 @@
-import { BehavioralScenarioSchema, RequirementSchema, deriveEntityId, hashFramedDomain, type BehavioralScenario, type Requirement } from "@projector/core";
+import { BehavioralScenarioSchema, RequirementSchema, deriveEntityId, hashFramedDomain, type BehavioralScenario, type Requirement, type DerivedObservationBudget } from "@projector/core";
 import { InMemoryGraphReader, QueryDependencyRegistry, type RegisteredQueryProgram } from "@projector/engine";
 
 import type { ChangeRepositoryObservation } from "./repository-observer.js";
@@ -54,33 +54,75 @@ export interface CalculatedRepositoryRelevance {
   readonly dependencyKeys: readonly string[];
 }
 
+type RelevanceAnalysis = ChangeRepositoryObservation["analysis"];
+export interface RepositoryRelevanceObservation {
+  readonly analysis: {
+    readonly dependencies: readonly Pick<RelevanceAnalysis["dependencies"][number], "importerPath" | "resolvedPath">[];
+    readonly projectionUnits: readonly Pick<RelevanceAnalysis["projectionUnits"][number], "key" | "id">[];
+    readonly failures: readonly Pick<RelevanceAnalysis["failures"][number], "scope" | "analyzerId" | "capability">[];
+    readonly surface: Pick<RelevanceAnalysis["surface"], "id" | "enumeration">;
+    readonly javaScript: { readonly files: readonly Pick<RelevanceAnalysis["javaScript"]["files"][number], "path" | "unknowns">[] };
+  };
+}
+
 export function calculateRepositoryRelevance(
-  observation: ChangeRepositoryObservation,
+  observation: RepositoryRelevanceObservation,
   editedPaths: readonly string[],
+  budget?: DerivedObservationBudget,
 ): CalculatedRepositoryRelevance {
-  const seeds = unique(editedPaths);
-  const affected = new Set(seeds);
-  let changed = true;
-  while (changed) {
-    changed = false;
+  // Reserve a conservative upper bound for the reverse index, traversal queue,
+  // membership sets, sort buffers, generated identifiers and result records
+  // before constructing them. Source strings remain borrowed from the input.
+  if (budget !== undefined) {
+    const stage = "repository-relevance";
+    budget.reserve(4_096, stage);
+    for (const path of editedPaths) budget.reserve(768 + 8 * path.length, stage);
     for (const dependency of observation.analysis.dependencies) {
-      if (dependency.resolvedPath !== undefined && affected.has(dependency.resolvedPath) && !affected.has(dependency.importerPath)) {
-        affected.add(dependency.importerPath);
-        changed = true;
-      }
+      budget.reserve(896 + 8 * (dependency.importerPath.length + (dependency.resolvedPath?.length ?? 0)), stage);
+    }
+    budget.reserveItems(observation.analysis.projectionUnits.length, 128, stage);
+    for (const failure of observation.analysis.failures) {
+      budget.reserve(512 + 8 * (failure.scope.length + failure.analyzerId.length + failure.capability.length), stage);
+    }
+    budget.reserveItems(observation.analysis.javaScript.files.length, 64, stage);
+    for (const file of observation.analysis.javaScript.files) {
+      for (const unknown of file.unknowns) budget.reserve(512 + 8 * unknown.length, stage);
+    }
+    for (const mechanism of observation.analysis.surface.enumeration.dynamicMechanisms) budget.reserve(512 + 8 * mechanism.length, stage);
+    for (const assumption of observation.analysis.surface.enumeration.assumptions) budget.reserve(64 + 8 * assumption.length, stage);
+  }
+  const seeds = unique(editedPaths);
+  const seedSet = new Set(seeds);
+  const affected = new Set(seeds);
+  const importersByPath = new Map<string, string[]>();
+  for (const dependency of observation.analysis.dependencies) {
+    const resolvedPath = dependency.resolvedPath;
+    if (resolvedPath === undefined) continue;
+    let importers = importersByPath.get(resolvedPath);
+    if (importers === undefined) { importers = []; importersByPath.set(resolvedPath, importers); }
+    importers.push(dependency.importerPath);
+  }
+  const queue = [...seeds];
+  for (let index = 0; index < queue.length; index += 1) {
+    const importers = importersByPath.get(queue[index]!);
+    if (importers === undefined) continue;
+    for (const importer of importers) {
+      if (affected.has(importer)) continue;
+      affected.add(importer);
+      queue.push(importer);
     }
   }
   const paths = [...affected].sort(compare);
   const unitByPath = new Map(observation.analysis.projectionUnits.map((unit) => [unit.key, unit.id]));
   const knownUnitIds = paths.map((path) => unitByPath.get(path) ?? deriveEntityId("projector.proposed-unit", path));
-  const relevantFailures = observation.analysis.failures.filter(({ scope }) => scope === "." || paths.includes(scope));
+  const relevantFailures = observation.analysis.failures.filter(({ scope }) => scope === "." || affected.has(scope));
   const unavailableSurfaceIds = unique([
     ...(observation.analysis.surface.enumeration.observability === "unavailable" ? [observation.analysis.surface.id] : []),
     ...relevantFailures.map(({ analyzerId, capability, scope }) => `unavailable:${hashFramedDomain("repository-change-analyzer-unavailable", { analyzerId, capability, scope }).slice(-24)}`),
   ]);
   const dynamicMechanisms = unique([
     ...observation.analysis.surface.enumeration.dynamicMechanisms,
-    ...observation.analysis.javaScript.files.filter(({ path }) => paths.includes(path)).flatMap(({ unknowns }) => unknowns),
+    ...observation.analysis.javaScript.files.filter(({ path }) => affected.has(path)).flatMap(({ unknowns }) => unknowns),
   ]);
   const possibleFrontierUnitIds = dynamicMechanisms.map((mechanism) => `frontier:${hashFramedDomain("repository-change-dynamic-frontier", mechanism).slice(-24)}`);
   return {
@@ -89,7 +131,7 @@ export function calculateRepositoryRelevance(
     possibleFrontierUnitIds,
     unavailableSurfaceIds,
     reasons: [
-      ...paths.map((path) => ({ unitId: unitByPath.get(path) ?? deriveEntityId("projector.proposed-unit", path), kind: "exact" as const, reason: seeds.includes(path) ? "exact proposed edit" : "transitive static reverse importer" })),
+      ...paths.map((path, index) => ({ unitId: knownUnitIds[index]!, kind: "exact" as const, reason: seedSet.has(path) ? "exact proposed edit" : "transitive static reverse importer" })),
       ...possibleFrontierUnitIds.map((unitId, index) => ({ unitId, kind: "open" as const, reason: `dynamic frontier: ${dynamicMechanisms[index]}` })),
     ],
     observability: observation.analysis.surface.enumeration.observability,
@@ -122,14 +164,14 @@ function identityProgram(observation: ChangeRepositoryObservation): RegisteredQu
   };
 }
 
-function relevanceProgram(observation: ChangeRepositoryObservation): RegisteredQueryProgram {
+function relevanceProgram(observation: ChangeRepositoryObservation, derivedBudget?: DerivedObservationBudget): RegisteredQueryProgram {
   return {
     id: CHANGE_QUERY_PROGRAM_IDS.reverseImporters,
     version: "1",
     kind: "package-dependency",
     normalizeInput: (input) => ({ editedPaths: textArray(input.editedPaths, "edited paths") }),
     evaluate({ input }) {
-      const relevance = calculateRepositoryRelevance(observation, input.editedPaths as string[]);
+      const relevance = calculateRepositoryRelevance(observation, input.editedPaths as string[], derivedBudget);
       return {
         results: [
           ...relevance.knownAffectedUnitIds.map((id) => ({ id, disposition: "known" })),
@@ -174,10 +216,10 @@ function deferralProgram(now: string): RegisteredQueryProgram {
   };
 }
 
-export function createChangeQueryRegistry(input: { readonly observation: ChangeRepositoryObservation; readonly now: string }): QueryDependencyRegistry {
+export function createChangeQueryRegistry(input: { readonly observation: ChangeRepositoryObservation; readonly now: string; readonly derivedBudget?: DerivedObservationBudget }): QueryDependencyRegistry {
   const registry = new QueryDependencyRegistry(new InMemoryGraphReader(), false);
   registry.register(identityProgram(input.observation));
-  registry.register(relevanceProgram(input.observation));
+  registry.register(relevanceProgram(input.observation, input.derivedBudget));
   registry.register(deferralProgram(input.now));
   return registry;
 }

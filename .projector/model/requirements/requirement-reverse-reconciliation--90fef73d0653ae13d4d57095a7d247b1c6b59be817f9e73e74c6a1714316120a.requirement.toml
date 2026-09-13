@@ -47,7 +47,14 @@ Recovery distinguishes incomplete effects from committed-but-unpublished evidenc
   just to republish an already committed result. Safe rollback or historical publication must not depend \
   on missing advisory preparation notes, and missing notes never justify fabricated prepared-success \
   evidence. Governed shared-state mutation follows cooperative worktree ownership; independently owned \
-  observation artifacts do not acquire a new global writer lock from this obligation."""
+  observation artifacts do not acquire a new global writer lock from this obligation.
+
+A Git failure in a Git repository must fail observation instead of broadening into recursive filesystem \
+  enumeration. Recursive observation is available only for confirmed non-Git directories. Resource exhaustion \
+  and cancellation stop observation, drain owned work, and never imply deletion of unseen files. Ordinary \
+  context reconciliation reports observed scope changes without treating retrieval relevance as a plan \
+  prediction. Planning Surprises require an actual retained plan prediction. Incompatible complete baselines \
+  require a fresh baseline rather than false historical sign-off."""
 sourceClass = "authored"
 evidence = []
 
@@ -164,6 +171,12 @@ contentHash = "sha256:v1:f3c4d29686f50318549bb73cbd7c96ae1aabebfa44c756980af1e88
 description = """Accepted lifetime shared operation access, exclusive migration access, retained writer leases without \
   nested acquisition, and limits for nonparticipating legacy code. Source range complete accepted record; \
   Git blob 99353cb632158429efb49b5bb111d2f2e274800c; content hash is SHA-256 of exact blob bytes."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "conversation:2026-09-13:bounded-observation-approved-plan"
+description = """User explicitly requested implementation of the reviewed complete-or-fail observation and size-bounded \
+  disposable cache plan."""
 
 [[payload.realizations]]
 [payload.realizations.selector]

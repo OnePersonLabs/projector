@@ -1,4 +1,5 @@
-import { mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdtemp, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -95,6 +96,42 @@ function handler(
 }
 
 describe("bounded Projector operation runner", () => {
+  test("accepts explicit finite observation limits without widening operation input", async () => {
+    const root = await packagedRoot();
+    const runner = await createProjectorOperationRunner({ packagedRoot: root, ports: ports(), handlers: [handler()] });
+    await expect(runner.execute({ ...request("verify"), observationLimits: { maxFiles: 3 } }))
+      .resolves.toMatchObject({ status: "succeeded", output: { valid: true } });
+    await expect(runner.execute({ ...request("verify"), observationLimits: { maxFiles: 0 } }))
+      .rejects.toThrow();
+  });
+
+  test("recovers a dead non-lifecycle operation through a dedicated public route", async () => {
+    const root = await packagedRoot();
+    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root, applicationEvidence: createInstalledProjectorApplicationEvidenceHost });
+    await runner.execute({ ...request("init"), repositoryRoot: root });
+    const access = join(root, ".projector", "runtime", "operation-access");
+    const requestId = "00000000-0000-4000-8000-000000000003";
+    const exited = spawn(process.execPath, ["--eval", ""]);
+    const processId = exited.pid!;
+    await new Promise<void>((resolve) => exited.once("exit", () => resolve()));
+    const timestamp = "2000-01-01T00:00:00.000Z";
+    await writeFile(join(access, "holders", `${requestId}.json`), `${JSON.stringify({
+      version: 1, requestId, ticket: 2, operation: "reconcile", mode: "shared", processId,
+      createdAt: timestamp, heartbeatAt: timestamp,
+    })}\n`);
+    await writeFile(join(access, "next-ticket"), "2\n");
+
+    await expect(runner.execute({ ...request("context", { request: "Inspect" }), repositoryRoot: root }))
+      .resolves.toMatchObject({ status: "unavailable", readiness: { status: "recovery-required" } });
+    await expect(runner.execute({ ...request("status"), repositoryRoot: root }))
+      .resolves.toMatchObject({ status: "unavailable", readiness: { status: "recovery-required" }, action: { operation: "operation-access.recover" } });
+    await expect(runner.execute({ ...request("operation-access.recover"), repositoryRoot: root }))
+      .resolves.toMatchObject({ status: "succeeded", output: { accessReady: true } });
+    expect(await readdir(join(access, "holders"))).toEqual([]);
+    await expect(runner.execute({ ...request("context", { request: "Inspect" }), repositoryRoot: root }))
+      .resolves.toMatchObject({ status: "succeeded" });
+  });
+
   test("bounds knowledge transport by default and accepts explicit full proof through the same operations", async () => {
     const root = await packagedRoot();
     const runner = await createBundledProjectorOperationRunner({ packagedRoot: root, applicationEvidence: createInstalledProjectorApplicationEvidenceHost });

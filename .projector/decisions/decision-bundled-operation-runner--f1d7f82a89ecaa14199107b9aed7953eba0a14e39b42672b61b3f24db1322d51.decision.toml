@@ -18,7 +18,23 @@ decision = """Expose supported Projector workflows through one versioned discrim
   establish host enforcement or operational readiness. Skills and hooks call this runner. Markdown explains \
   the contract but typed schemas and handlers own it. Do not preserve wrapper-to-CLI subprocess chains, \
   standalone MCP delivery, or task17 host dispatch merely for obsolete names. Preserve an old adapter \
-  only when a current consumer and requirement need it."""
+  only when a current consumer and requirement need it.
+Workflow ownership: canonical records own accepted meaning, constraints, rationale and future commitments. \
+  Skills interpret intent, select workflows, inspect outputs and continue within authorization. Hooks \
+  observe supported events and deliver findings or instructions without granting authority. The runner \
+  validates requests, checks readiness and access, and dispatches to shared services. Shared services \
+  own deterministic behavior, durable state, authority, evidence and recovery. Resume from existing \
+  context, lifecycle and representation owners through cleanup; no parallel progress store or additional \
+  general orchestrator.
+Instruction ownership: the repository root AGENTS.md governs development of Projector itself and routes \
+  shared consumer instructions to plugins/projector/AGENTS.md. The installed plugin AGENTS.md owns the \
+  concise baseline for every consuming repository; skills own workflow-specific judgment and procedures, \
+  and plugin hooks own deterministic lifecycle actions. A separate SessionStart hook injects the complete \
+  installed plugin AGENTS.md for startup, resume, clear and compact, resolving it relative to the installed \
+  hook. Injection does not depend on Git, repository activation, readiness, the operation runner, or \
+  successful repository observation. Missing or unreadable instructions are reported explicitly. Instruction \
+  delivery grants no execution authority and is not evidence of agent consumption; existing context, \
+  freshness, approval and recovery requirements remain in force."""
 selectedOptionKey = "bundled-in-process-operation-runner"
 authorityRecordId = "authority:bundled-operation-runner"
 appliedPreferences = []

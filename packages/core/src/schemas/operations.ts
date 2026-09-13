@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ObservationLimitsOverrideSchema } from "../observation.js";
 
 import { ContentHashSchema } from "./contracts.js";
 import { ChangeProposalSchema } from "./change-proposal.js";
@@ -12,6 +13,7 @@ export const ProjectorOperationSchema = z.enum([
   "context",
   "reconcile",
   "repository.check",
+  "operation-access.recover",
   "change.capture",
   "change.plan",
   "change.approve",
@@ -33,6 +35,7 @@ const requestBase = {
   apiVersion: z.literal(projectorOperationApiVersion),
   repositoryRoot: z.string().min(1),
   requestId: z.string().min(1).optional(),
+  observationLimits: ObservationLimitsOverrideSchema.optional(),
 };
 
 export function createProjectorOperationRequestSchema<
@@ -81,6 +84,7 @@ export const ProjectorOperationInputSchemas = Object.freeze({
     sessionId: z.string().min(1).max(512).optional(),
     handled: z.strictObject({ findingId: z.string().min(1).max(128), evidenceIdentity: ContentHashSchema }).optional(),
   }),
+  "operation-access.recover": z.strictObject({}),
   "change.capture": z.strictObject({ request: z.string().min(1), proposal: ChangeProposalSchema, contextId: z.string().min(1).optional() }),
   "change.plan": z.strictObject({ changeSelector: z.string().min(1) }),
   "change.approve": z.strictObject({ changeSelector: z.string().min(1), planHash: ContentHashSchema }),
@@ -117,6 +121,7 @@ export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation",
   createProjectorOperationRequestSchema("context", ProjectorOperationInputSchemas.context),
   createProjectorOperationRequestSchema("reconcile", ProjectorOperationInputSchemas.reconcile),
   createProjectorOperationRequestSchema("repository.check", ProjectorOperationInputSchemas["repository.check"]),
+  createProjectorOperationRequestSchema("operation-access.recover", ProjectorOperationInputSchemas["operation-access.recover"]),
   createProjectorOperationRequestSchema("change.capture", ProjectorOperationInputSchemas["change.capture"]),
   createProjectorOperationRequestSchema("change.plan", ProjectorOperationInputSchemas["change.plan"]),
   createProjectorOperationRequestSchema("change.approve", ProjectorOperationInputSchemas["change.approve"]),

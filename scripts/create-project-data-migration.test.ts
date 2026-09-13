@@ -1,9 +1,10 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { ProjectDataMigrationDraftSchema, canonicalJson, createLegacyUnversionedProjectDataSource, createProjectDataLegacyIngressManifest, type ProjectDataMigrationDraft } from "@projector/core";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect } from "vitest";
+import { integrationTest as test } from "./testing/integration-test.mjs";
 
 import {
   canonicalOwnerModulePaths,
@@ -13,7 +14,7 @@ import {
 } from "../packages/control-plane/src/readiness/project-data-format-owner.js";
 import { createProjectDataMigrationFile, createRepositoryProjectDataMigration } from "./create-project-data-migration.mjs";
 import { assertProjectDataMigrationReleaseReady } from "./project-data-migration-release-check.mjs";
-import { hashBytes, inventoryCandidateFiles } from "./release-candidate.mjs";
+import { hashBytes, inventoryCandidateFiles, validateReleaseCandidate } from "./release-candidate.mjs";
 
 const roots: string[] = [];
 
@@ -22,6 +23,30 @@ afterEach(async () => {
 });
 
 describe("create-project-data-migration", () => {
+  test("seals with distinct fresh build workspaces and disposes settled owned candidates", async () => {
+    const fixture = await authoringFixture();
+    const builds: string[] = [];
+    const result = await createRepositoryProjectDataMigration({
+      repositoryRoot: fixture.root, sourcePath: fixture.input.sourcePath, draftPath: fixture.input.draftPath,
+      readReleaseIdentity: async () => ({ name: "@onepersonlabs/projector", version: "2.1.0" }),
+      buildCandidate: async (candidateRoot: string, options: { allowPendingProjectDataMigration?: boolean; allowActiveProjectDataMigrationSeal?: boolean }) => {
+        expect(basename(candidateRoot)).toBe("release-candidate");
+        await mkdir(dirname(candidateRoot), { recursive: true });
+        // Mirror the real builder's exclusive output admission, not an overwrite-capable copy.
+        await mkdir(candidateRoot);
+        builds.push(candidateRoot);
+        expect(options).toMatchObject(builds.length === 1 ? { allowPendingProjectDataMigration: true } : { allowActiveProjectDataMigrationSeal: true });
+        await cp(fixture.candidateRoot, candidateRoot, { recursive: true });
+        return validateReleaseCandidate(candidateRoot);
+      },
+    });
+    expect(result.status).toBe("sealed");
+    expect(builds).toHaveLength(2);
+    expect(new Set(builds).size).toBe(2);
+    for (const candidate of builds) await expect(access(dirname(candidate))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(fixture.candidateRoot)).resolves.toBeUndefined();
+  });
+
   test("seals one immutable manifest from a canonical net draft and authenticated candidate", async () => {
     const fixture = await authoringFixture();
     const result = await createProjectDataMigrationFile(fixture.input);
@@ -32,6 +57,42 @@ describe("create-project-data-migration", () => {
     await writeFile(fixture.input.outputPath, "different\n");
     await expect(createProjectDataMigrationFile(fixture.input)).rejects.toThrow(/refusing to replace/iu);
   });
+
+  for (const uncertain of [false, true]) {
+    test(`resumes a failed seal with fresh outputs and ${uncertain ? "retains uncertain" : "cleans settled"} workspaces`, async () => {
+      const fixture = await authoringFixture();
+      const originalDraft = await readFile(fixture.input.draftPath, "utf8");
+      const builds: string[] = [];
+      const options = {
+        repositoryRoot: fixture.root, sourcePath: fixture.input.sourcePath, draftPath: fixture.input.draftPath,
+        readReleaseIdentity: async () => ({ name: "@onepersonlabs/projector", version: "2.1.0" }),
+        buildCandidate: async (candidateRoot: string) => {
+          await mkdir(candidateRoot);
+          builds.push(candidateRoot);
+          await cp(fixture.candidateRoot, candidateRoot, { recursive: true });
+          if (builds.length === 2) {
+            await writeFile(join(dirname(candidateRoot), "retained-staging"), "owned process state");
+            const cause = uncertain
+              ? Object.assign(new Error("tree exit unconfirmed"), { code: "RELEASE_COMMAND_CLEANUP_UNCONFIRMED" })
+              : new Error("validation rejected");
+            throw new Error("final candidate failed", { cause });
+          }
+          return validateReleaseCandidate(candidateRoot);
+        },
+      };
+      await expect(createRepositoryProjectDataMigration(options)).rejects.toThrow("final candidate failed");
+      expect(await readFile(fixture.input.draftPath, "utf8")).toBe(originalDraft);
+      await expect(access(dirname(builds[0]!))).rejects.toMatchObject({ code: "ENOENT" });
+      const failedParent = dirname(builds[1]!);
+      if (uncertain) expect(await readFile(join(failedParent, "retained-staging"), "utf8")).toBe("owned process state");
+      else await expect(access(failedParent)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(createRepositoryProjectDataMigration(options)).resolves.toMatchObject({ status: "sealed" });
+      expect(builds).toHaveLength(4);
+      expect(new Set(builds).size).toBe(4);
+      for (const candidate of builds.slice(2)) await expect(access(dirname(candidate))).rejects.toMatchObject({ code: "ENOENT" });
+      if (uncertain) expect(await readFile(join(failedParent, "retained-staging"), "utf8")).toBe("owned process state");
+    });
+  }
 
   test("rejects a stale self-consistent target after candidate owner bytes change", async () => {
     const fixture = await authoringFixture();

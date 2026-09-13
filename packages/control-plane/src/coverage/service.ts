@@ -1,14 +1,18 @@
-import { canonicalJson, hashFramedDomain, type AdapterContext } from "@projector/core";
+import { canonicalJson, hashFramedDomain, type AdapterContext, type DerivedObservationBudget } from "@projector/core";
+import { withObservationScope } from "@projector/runtime";
 import { assessLensAuthority, createStateBinding, type GovernanceBundleEvaluation } from "@projector/engine";
 import { compileAuthenticatedCoverageSnapshot, REQUIRED_COVERAGE_LANES, type CoverageEvidenceSnapshot, type CoverageLaneEvidence, type RequiredCoverageLaneKey } from "@projector/engine/coverage";
 import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
 import { KnowledgeGraph } from "../knowledge/graph.js";
 import { assessKnowledgeDecisions } from "../knowledge/governance.js";
-import { KnowledgeValidatorRun } from "../knowledge/validators.js";
-import { applicationEvidenceDependencies, applicationEvidenceDisposition, assessKnowledgeApplicationEvidence, assessmentKey, type PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
+import { applicationEvidenceDependencies, applicationEvidenceDisposition, assessmentKey, type PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
+import { createKnowledgeComputeHostHandler } from "../knowledge/service.js";
+import { runObservationTask } from "../observation/task-runner.js";
+import type { RepositoryObservationData } from "../observation/tasks.js";
+import type { KnowledgeComputeHost } from "../observation/knowledge-host.js";
 import { deriveCompletionQuestions } from "./issues.js";
 import { parseRepositoryCoverageResult, type RepositoryCoverageMode, type RepositoryCoverageResult } from "./transport.js";
-import { inspectRepositoryContinuation, type RepositoryContinuationRequest } from "./continuation.js";
+import type { RepositoryContinuationRequest } from "./continuation.js";
 
 export interface RepositoryCoverageRequest extends RepositoryContinuationRequest {
   readonly scope: string;
@@ -20,13 +24,24 @@ const unavailable = (key: RequiredCoverageLaneKey, reason: string): CoverageLane
 
 /** Current observations, never an answer ledger or a completion percentage for behavior. */
 export async function inspectRepositoryCoverage(repositoryRoot: string, request: RepositoryCoverageRequest, mode: RepositoryCoverageMode = "coverage", options: { readonly signal?: AbortSignal; readonly applicationEvidence?: PsychordApplicationEvidenceHost } = {}): Promise<RepositoryCoverageResult> {
-  const signal = options.signal ?? new AbortController().signal;
+  return withObservationScope({ ...(options.signal === undefined ? {} : { signal: options.signal }) }, async (scope) => {
+    const observation = await observeChangeRepository(repositoryRoot);
+    const { independentValidator: _validator, ...data } = observation;
+    return runObservationTask("coverage", { observation: data, request, mode, now: new Date().toISOString() }, {
+      ...scope, onHostRequest: createKnowledgeComputeHostHandler(observation, options),
+    });
+  });
+}
+
+/** All graph expansion and report compilation execute inside the observation worker. */
+export async function computeRepositoryCoverage(observation: RepositoryObservationData, request: RepositoryCoverageRequest, mode: RepositoryCoverageMode, host: KnowledgeComputeHost, now: string, derivedBudget?: DerivedObservationBudget): Promise<RepositoryCoverageResult> {
+  const repositoryRoot = observation.repositoryRoot;
+  const signal = new AbortController().signal;
   signal.throwIfAborted();
   const questionOffset = request.questionOffset ?? 0;
   if (!Number.isSafeInteger(questionOffset) || questionOffset < 0) throw new Error("questionOffset must be a nonnegative safe integer");
-  const observation = await observeChangeRepository(repositoryRoot);
   const { analysis, state: currentState } = observation;
-  const graph = new KnowledgeGraph(observation);
+  const graph = new KnowledgeGraph(observation, { now: () => now, readDecisionBaseline: host.baseline }, derivedBudget);
   const units = graph.units.filter(({ key }) => inside(key, request.scope));
   const unitIds = new Set(units.map(({ id }) => id));
   const artifacts = analysis.artifacts.filter(({ locator }) => inside(locator, request.scope));
@@ -37,11 +52,10 @@ export async function inspectRepositoryCoverage(repositoryRoot: string, request:
   const decisions = graph.decisions.filter(({ id }) => request.scope === "." || graph.implementationBindings(id).some((member) => unitIds.has(String(member.id))));
   const decisionResult = await assessKnowledgeDecisions(graph, decisions, "inspect", context);
   const selectedIds = new Set([...unitIds, ...activeLenses.map(({ id }) => id)]);
-  const validators = new KnowledgeValidatorRun(observation, context.signal);
-  const findings = await validators.evaluateAll(graph.validatorRequests(selectedIds, "inspect"));
-  if (validators.executed) {
-    const after = await observeChangeRepository(repositoryRoot);
-    if (canonicalJson(after.state) !== canonicalJson(currentState)) throw new Error("Repository changed while coverage validators ran; discard these observations and request fresh coverage.");
+  const { findings, executed } = await host.validators(graph.validatorRequests(selectedIds, "inspect"));
+  if (executed) {
+    const after = await host.freshState();
+    if (canonicalJson(after) !== canonicalJson(currentState)) throw new Error("Repository changed while coverage validators ran; discard these observations and request fresh coverage.");
   }
   const evaluations: Array<{ lensId: string; evaluation: GovernanceBundleEvaluation }> = activeLenses.flatMap((lens) => graph.governanceEvaluations(new Set([...unitIds, lens.id]), "inspect", findings).map((evaluation) => ({ lensId: lens.id, evaluation })));
   const authorityProblems: Array<{ ownerId: string; authorityId: string; reasons: string[] }> = [];
@@ -56,13 +70,13 @@ export async function inspectRepositoryCoverage(repositoryRoot: string, request:
     }
   }
   if (graph.lensCompilationUnknown !== undefined) for (const lens of activeLenses.filter(({ id }) => !authorityProblems.some(({ ownerId }) => ownerId === id))) authorityProblems.push({ ownerId: lens.id, authorityId: lens.authorityRecordId, reasons: [graph.lensCompilationUnknown] });
-  const questions = deriveCompletionQuestions({ graph, unitIds, decisions: decisionResult.decisions, evaluations, authorityProblems, includeUnrealized: request.scope === ".", now: new Date().toISOString() });
+  const questions = deriveCompletionQuestions({ graph, unitIds, decisions: decisionResult.decisions, evaluations, authorityProblems, includeUnrealized: request.scope === ".", now });
   const intent = graph.entities.filter(({ accepted, kind, payload }) => accepted && ["concept", "requirement", "scenario"].includes(kind) && "status" in payload && payload.status === "active");
   const mapped = new Set(intent.flatMap(({ id }) => graph.implementationBindings(id).map((member) => String(member.id))).filter((id) => unitIds.has(id)));
   const ruleFindings = evaluations.flatMap(({ evaluation }) => evaluation.findings);
   const identityOwners = new Set(questions.filter(({ kind }) => kind === "identity-overlap").flatMap(({ ownerIds }) => ownerIds));
   const scopedIntent = intent.filter(({ id }) => request.scope === "." || graph.implementationBindings(id).some((member) => unitIds.has(String(member.id))));
-  const applicationEvidenceAssessments = await assessKnowledgeApplicationEvidence({ observation, ownerIds: scopedIntent.filter(({ kind }) => kind === "requirement" || kind === "scenario").map(({ id }) => id), signal, ...(options.applicationEvidence === undefined ? {} : { host: options.applicationEvidence }) });
+  const applicationEvidenceAssessments = await host.applicationEvidence(scopedIntent.filter(({ kind }) => kind === "requirement" || kind === "scenario").map(({ id }) => id));
   signal.throwIfAborted();
   const applicationEvidenceStatus = applicationEvidenceDisposition(applicationEvidenceAssessments);
   const applicationEvidenceReasons = applicationEvidenceAssessments.flatMap((item) => item.status === "unavailable" ? [item.reason] : item.assessment.fulfillment.status === "satisfied" ? [] : [item.assessment.fulfillment.reason]);
@@ -108,7 +122,7 @@ export async function inspectRepositoryCoverage(repositoryRoot: string, request:
   const disclosure = { total: questions.length, included: selectedQuestions.length, omitted: questions.length - selectedQuestions.length, blocking: questions.filter(({ blocking }) => blocking).length };
   const unsupportedContinuation = request.continuationSelector !== undefined;
   const continuation = mode === "cleanup" && (request.contextId !== undefined || request.changeSelector !== undefined || request.approvalSelector !== undefined)
-    ? await inspectRepositoryContinuation(repositoryRoot, {
+    ? await host.continuation({
       scope: request.scope,
       ...(request.contextId === undefined ? {} : { contextId: request.contextId }),
       ...(request.changeSelector === undefined ? {} : { changeSelector: request.changeSelector }),
@@ -116,11 +130,11 @@ export async function inspectRepositoryCoverage(repositoryRoot: string, request:
       ...(request.evidenceOffset === undefined ? {} : { evidenceOffset: request.evidenceOffset }),
       ...(request.evidenceLimit === undefined ? {} : { evidenceLimit: request.evidenceLimit }),
       ...(request.evidenceIdentity === undefined ? {} : { evidenceIdentity: request.evidenceIdentity }),
-    }, options) : undefined;
+    }) : undefined;
   if (continuation !== undefined) {
     signal.throwIfAborted();
-    const after = await observeChangeRepository(repositoryRoot);
-    if (canonicalJson(after.state) !== canonicalJson(currentState)) throw new Error("Repository changed during cleanup continuation inspection; request a fresh cleanup report.");
+    const after = await host.freshState();
+    if (canonicalJson(after) !== canonicalJson(currentState)) throw new Error("Repository changed during cleanup continuation inspection; request a fresh cleanup report.");
   }
   return parseRepositoryCoverageResult(mode, { proofStatement: compiled.snapshot.proofStatement, boundary: compiled.snapshot.boundary, lanes: compiled.snapshot.lanes, unavailableSurfaceIds: [...compiled.snapshot.unavailableSurfaceIds, ...(unsupportedContinuation ? ["cleanup-continuation-execution"] : [])], approvalRequired: false,
     ...(continuation === undefined ? {} : { continuation }),

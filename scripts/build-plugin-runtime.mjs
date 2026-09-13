@@ -1,9 +1,10 @@
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { cp as copyFiles, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildReleasePackage, releasePackageName, releaseVersion } from "./build-release-package.mjs";
+import { isReleaseCommandCleanupUnconfirmed } from "./npm-command.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const pluginSource = join(repositoryRoot, "plugins/projector");
@@ -34,18 +35,24 @@ export async function checkedBuildDirectory(path, protectedPaths = []) {
 
 /** Assemble a plugin containing Projector while resolving Node 24 through the host PATH. */
 export async function buildPluginRuntime(outputRoot, options = {}) {
+  options.signal?.throwIfAborted();
+  const cp = async (source, destination, copyOptions = {}) => {
+    await copyFiles(source, destination, { ...copyOptions, filter: (from, to) => { options.signal?.throwIfAborted(); return copyOptions.filter?.(from, to) ?? true; } });
+    options.signal?.throwIfAborted();
+  };
   const inputPaths = [options.releaseRoot].filter((path) => path !== undefined);
   const target = await checkedBuildDirectory(outputRoot, inputPaths);
   if (inside(await realpath(pluginSource), target) || (options.releaseRoot !== undefined && inside(await realpath(options.releaseRoot), target))) throw new Error("plugin output cannot be inside a copied input");
   await mkdir(target, { recursive: true });
   if ((await readdir(target)).length !== 0) throw new Error(`plugin output must be empty: ${target}`);
   let temporary;
+  let retainTemporary = false;
   try {
     let releaseRoot = options.releaseRoot;
     if (releaseRoot === undefined) {
       temporary = await mkdtemp(join(await realpath(tmpdir()), "projector-plugin-build-"));
       releaseRoot = await checkedBuildDirectory(join(temporary, "projector-release-runtime"));
-      await buildReleasePackage(releaseRoot, join(temporary, "artifacts"));
+      await buildReleasePackage(releaseRoot, join(temporary, "artifacts"), { signal: options.signal });
     }
     const manifest = JSON.parse(await readFile(join(releaseRoot, "package.json"), "utf8"));
     if (manifest.name !== releasePackageName || manifest.version !== releaseVersion || manifest.bin !== undefined || manifest.exports?.["./operations"] === undefined) throw new Error("plugin runtime is not the expected operation-only Projector release");
@@ -57,8 +64,14 @@ export async function buildPluginRuntime(outputRoot, options = {}) {
     await mkdir(join(target, "runtime"), { recursive: true });
     await cp(releaseRoot, join(target, "runtime/projector"), { recursive: true });
     return { root: target, releaseVersion, nodeRuntime: { executable: "node", resolution: "host-path" } };
+  } catch (error) {
+    if (isReleaseCommandCleanupUnconfirmed(error)) {
+      retainTemporary = true;
+      throw new Error(`Plugin cleanup is unconfirmed; retained output ${target}${temporary === undefined ? "" : ` and packaging workspace ${temporary}`} for recovery`, { cause: error });
+    }
+    throw error;
   } finally {
-    if (temporary !== undefined) {
+    if (temporary !== undefined && !retainTemporary) {
       const checked = await checkedBuildDirectory(temporary);
       if (dirname(checked) !== await realpath(tmpdir()) || !basename(checked).startsWith("projector-plugin-build-")) throw new Error("unsafe plugin temporary cleanup path");
       await rm(checked, { recursive: true, force: true });

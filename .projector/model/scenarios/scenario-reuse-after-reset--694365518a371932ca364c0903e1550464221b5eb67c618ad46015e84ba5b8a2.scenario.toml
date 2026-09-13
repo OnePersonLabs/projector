@@ -27,6 +27,18 @@ field = "path"
 matcher = "glob"
 value = "packages/control-plane/src/knowledge/service.test.ts"
 
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "packages/control-plane/src/coverage/**"
+
+[[payload.scope.items]]
+op = "atom"
+field = "path"
+matcher = "glob"
+value = "plugins/projector/skills/**"
+
 [[payload.steps]]
 role = "precondition"
 statement = """Accepted requirements and relations exist in canonical storage. Derived context from an earlier request \
@@ -79,6 +91,26 @@ role = "expected-outcome"
 statement = """Unit evaluation must cover: dependency-scoped `StateBinding` validation/rebinding after unrelated root \
   changes."""
 
+[[payload.steps]]
+role = "precondition"
+statement = """A resumed agent has the actual retained context ID and, when applicable, change and approval selectors \
+  from the earlier work."""
+
+[[payload.steps]]
+role = "trigger"
+statement = "The agent continues that work in a fresh session."
+
+[[payload.steps]]
+role = "expected-outcome"
+statement = """The agent inspects cleanup using those selectors and its current, stale, unknown and recovery-required \
+  evidence; it refreshes affected reasoning or recovers unfinished effects before following an authorized \
+  next action."""
+
+[[payload.steps]]
+role = "forbidden-outcome"
+statement = """The agent guesses a latest selector, treats an earlier result as current authority, or executes nextAction \
+  without inspecting its evidence and authorization."""
+
 [[payload.origin]]
 kind = "document"
 locator = "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/hosts-and-mcp.md"
@@ -129,6 +161,12 @@ kind = "document"
 locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md"
 contentHash = "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e"
 description = "Unit coverage family 24; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157."
+
+[[payload.origin]]
+kind = "user-request"
+locator = "conversation:2026-09-13:complete-existing-projector-control-loop"
+description = """The user approved explicit skill, hook, runner, and service ownership; selector-based continuation; \
+  installed consumption and recovery verification."""
 
 [[payload.realizations]]
 [payload.realizations.selector]

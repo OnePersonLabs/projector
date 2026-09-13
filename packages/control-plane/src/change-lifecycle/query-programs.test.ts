@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { hashFramedDomain, withCanonicalHashes, type Requirement } from "@projector/core";
+import { DerivedObservationBudget, hashFramedDomain, withCanonicalHashes, type Requirement } from "@projector/core";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
 
 import { observeChangeRepository } from "./repository-observer.js";
-import { calculateRepositoryRelevance, CHANGE_QUERY_PROGRAM_IDS, createChangeQueryRegistry } from "./query-programs.js";
+import { calculateRepositoryRelevance, CHANGE_QUERY_PROGRAM_IDS, createChangeQueryRegistry, type RepositoryRelevanceObservation } from "./query-programs.js";
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "placeholder");
@@ -27,6 +27,49 @@ async function repository(): Promise<string> {
 }
 
 describe("change query programs", () => {
+  const relevanceObservation = (dependencies: RepositoryRelevanceObservation["analysis"]["dependencies"]): RepositoryRelevanceObservation => ({
+    analysis: { dependencies, projectionUnits: [], failures: [], javaScript: { files: [] },
+      surface: { id: "surface:test", enumeration: { observability: "closed", method: "fixture", assumptions: [], blindSpots: [], dynamicMechanisms: [] } } },
+  });
+
+  it("traverses a deep reverse-ordered importer chain with linear edge reads", () => {
+    const count = 2_000;
+    const paths = Array.from({ length: count + 1 }, (_, index) => `src/${String(index).padStart(4, "0")}.ts`);
+    let reads = 0;
+    const dependencies = Array.from({ length: count }, (_, index) => {
+      const importer = count - index;
+      return { importerPath: paths[importer]!, get resolvedPath() { reads += 1; return paths[importer - 1]!; } };
+    });
+    const result = calculateRepositoryRelevance(relevanceObservation(dependencies), [paths[0]!]);
+    expect(result.knownAffectedPaths).toEqual(paths);
+    expect(reads).toBeLessThanOrEqual(count * 2);
+    expect(result.reasons[0]?.reason).toBe("exact proposed edit");
+    expect(result.reasons.slice(1).every(({ reason }) => reason === "transitive static reverse importer")).toBe(true);
+  });
+
+  it("preserves deterministic cyclic and duplicate-edge relevance and charges derived allocations", () => {
+    const base = relevanceObservation([
+      { importerPath: "b", resolvedPath: "a" }, { importerPath: "c", resolvedPath: "b" },
+      { importerPath: "a", resolvedPath: "c" }, { importerPath: "b", resolvedPath: "a" },
+      { importerPath: "unresolved" }, { importerPath: "unrelated", resolvedPath: "elsewhere" },
+    ]);
+    const observation = { analysis: { ...base.analysis, projectionUnits: [
+      { key: "a", id: "unit:a" }, { key: "b", id: "unit:b" }, { key: "c", id: "unit:c" },
+    ] } };
+    const expected = {
+      knownAffectedPaths: ["a", "b", "c"], knownAffectedUnitIds: ["unit:a", "unit:b", "unit:c"],
+      possibleFrontierUnitIds: [], unavailableSurfaceIds: [],
+      reasons: [
+        { unitId: "unit:a", kind: "exact", reason: "exact proposed edit" },
+        { unitId: "unit:b", kind: "exact", reason: "transitive static reverse importer" },
+        { unitId: "unit:c", kind: "exact", reason: "exact proposed edit" },
+      ], observability: "closed", assumptions: [], dependencyKeys: ["repository-module-dependencies", "path:a", "path:c"],
+    };
+    expect(calculateRepositoryRelevance(observation, ["c", "a", "a"])).toEqual(expected);
+    expect(() => calculateRepositoryRelevance(observation, ["c", "a"], new DerivedObservationBudget(32)))
+      .toThrow(/maxDerivedBytes/u);
+  });
+
   it("reruns identity and reverse-import negative space against current observations", async () => {
     const root = await repository();
     try {

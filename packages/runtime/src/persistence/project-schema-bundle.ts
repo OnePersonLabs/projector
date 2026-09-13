@@ -17,7 +17,10 @@ export interface ProjectorEditorSchema {
   readonly contents: string;
 }
 
+let editorSchemaBundle: readonly ProjectorEditorSchema[] | undefined;
+
 export function createProjectorEditorSchemaBundle(): readonly ProjectorEditorSchema[] {
+  if (editorSchemaBundle !== undefined) return editorSchemaBundle;
   const schemas = exportContractJsonSchemas();
   const selected = [
     ...Object.entries(CanonicalDocumentWireSchemasByKind).map(([kind, schema]) => [
@@ -31,10 +34,11 @@ export function createProjectorEditorSchemaBundle(): readonly ProjectorEditorSch
     ] as const),
     [".projector/schemas/projector-config-v1.schema.json", taploDraft4Schema(schemas.PreparedProjectorConfig)],
   ] as const;
-  return selected.map(([relativePath, schema]) => {
+  editorSchemaBundle = Object.freeze(selected.map(([relativePath, schema]) => {
     if (schema === undefined) throw new Error(`Core contract registry does not export the schema for ${relativePath}`);
     return Object.freeze({ relativePath, contents: `${JSON.stringify(schema, null, 2)}\n` });
-  });
+  }));
+  return editorSchemaBundle;
 }
 
 export async function installProjectorEditorSchemaBundle(repositoryRoot: string): Promise<void> {

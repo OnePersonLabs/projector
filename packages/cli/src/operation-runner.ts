@@ -5,6 +5,10 @@ import { join } from "node:path";
 
 import {
   PackageIdentitySchema,
+  ObservationError,
+  ObservationLimitsOverrideSchema,
+  ObservationLimitsSchema,
+  DEFAULT_OBSERVATION_LIMITS,
   ProjectReadinessSchema,
   ProjectorOperationInputSchemas,
   ProjectorOperationSchema,
@@ -69,7 +73,7 @@ import {
   observePsychordEvidenceCurrentness,
   type PsychordCommandRunner,
 } from "@projector/integrations/runtime-evidence";
-import { NativeProcessLauncher, OperationalReportSchema } from "@projector/runtime";
+import { NativeProcessLauncher, OperationalReportSchema, withObservationScope } from "@projector/runtime";
 import { z } from "zod";
 
 import { runReadOnlyOperationalVerification } from "./operational-verification.js";
@@ -83,6 +87,7 @@ const operationEnvelopeSchema = z.strictObject({
   operation: ProjectorOperationSchema,
   repositoryRoot: z.string().min(1),
   requestId: z.string().min(1).optional(),
+  observationLimits: ObservationLimitsOverrideSchema.optional(),
   input: z.unknown(),
 }).superRefine((envelope, context) => {
   if (!Object.hasOwn(envelope, "input")) {
@@ -167,7 +172,7 @@ export interface OperationRunnerPorts<
   readonly withProjectOperationAccess: <T>(
     repositoryRoot: string,
     input: {
-      readonly operation: OrdinaryProjectorOperation;
+      readonly operation: Exclude<ProjectorOperation, "init">;
       readonly package: PackageIdentity;
       readonly signal?: AbortSignal;
     },
@@ -380,6 +385,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
         return projectKnowledgeContext(await service.context({
           request: input.request,
           signal,
+          ...(input.view === undefined ? {} : { view: input.view }),
           ...(input.entities === undefined ? {} : { entities: input.entities }),
           ...(input.namedTargets === undefined ? {} : { namedTargets: input.namedTargets }),
           ...(input.operation === undefined ? {} : { operation: input.operation }),
@@ -448,6 +454,12 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
         const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
         return LifecycleApplyOutputSchema.parse(projectLifecycleApply(input.approvalSelector, await service.apply(input.approvalSelector, { signal })));
       },
+    }),
+    defineProjectorOperationHandler({
+      operation: "operation-access.recover",
+      inputSchema: ProjectorOperationInputSchemas["operation-access.recover"],
+      outputSchema: z.strictObject({ accessReady: z.literal(true) }),
+      execute: async () => ({ accessReady: true as const }),
     }),
     defineProjectorOperationHandler({
       operation: "change.recover",
@@ -621,6 +633,27 @@ async function executeOperation<TOutput>(
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       }));
       observedReadiness = readiness;
+      if (readiness.status === "ready") {
+        const access = await ports.withProjectOperationAccess(statusRequest.repositoryRoot, {
+          operation: "status",
+          package: packageIdentity,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        }, async ({ readiness: current, signal }) => {
+          accessSignal = signal;
+          return assembleCapabilityDiscovery(packageIdentity, current, handlers, observedHostCapabilities);
+        });
+        if (access.readiness.status !== "ready") {
+          return readinessResult<TOutput>("status", base, ProjectReadinessSchema.parse(access.readiness), OperationCapabilityDiscoverySchema);
+        }
+        observedReadiness = access.readiness;
+        return validatedExecutionResult<TOutput>(createProjectorOperationResultSchema("status", OperationCapabilityDiscoverySchema), {
+          ...base,
+          status: "succeeded",
+          exitCode: 0,
+          readiness: access.readiness,
+          output: access.value,
+        });
+      }
       const output = assembleCapabilityDiscovery(packageIdentity, readiness, handlers, observedHostCapabilities);
       return validatedExecutionResult<TOutput>(createProjectorOperationResultSchema("status", OperationCapabilityDiscoverySchema), {
         ...base,
@@ -684,12 +717,15 @@ async function executeOperation<TOutput>(
       observedReadiness = readiness;
       accessSignal = signal;
       throwIfAborted(signal);
-      const output = await handler.execute(operationRequest, {
+      const output = await withObservationScope({
+        ...(operationRequest.observationLimits === undefined ? {} : { limits: ObservationLimitsSchema.parse({ ...DEFAULT_OBSERVATION_LIMITS, ...operationRequest.observationLimits }) }),
+        signal,
+      }, async () => handler.execute(operationRequest, {
         package: packageIdentity,
         readiness,
         signal,
         environment: options.environment ?? {},
-      });
+      }));
       throwIfAborted(signal);
       return parseExactJson(handler.outputSchema, output, `Operation ${operation} output`);
     });
@@ -718,7 +754,7 @@ async function executeOperation<TOutput>(
       exitCode: 6,
       readiness,
       error: {
-        code: cancellation === "access" ? "operation-access-lost" : cancelled ? "operation-cancelled" : "operation-failed",
+        code: cancellation === "access" ? "operation-access-lost" : cancelled ? "operation-cancelled" : error instanceof ObservationError ? error.code : "operation-failed",
         message: cancellation === "access"
           ? `Project operation access was lost: ${message(accessSignal?.reason ?? error)}`
           : cancelled ? "Projector operation was cancelled" : message(error),
@@ -837,7 +873,7 @@ function mapReadiness(operation: ProjectorOperation, readiness: ProjectReadiness
         error: { code: readiness.recovery?.code ?? "project-recovery-required", message: reason, retriable: false },
         action: {
           kind: "recovery-required" as const,
-          operation,
+          operation: readiness.recovery?.code === "operation-access-corrupt" ? "operation-access.recover" as const : operation,
           reason: readiness.recovery?.action ?? reason,
         },
       };

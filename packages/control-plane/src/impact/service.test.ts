@@ -1,12 +1,13 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hashFramedDomain, withCanonicalHashes, type AuthorityRecord, type ImpactRule } from "@projector/core";
+import { DerivedObservationBudget, ObservationError, hashFramedDomain, withCanonicalHashes, type AuthorityRecord, type ImpactRule } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
+import { KnowledgeGraph } from "../knowledge/graph.js";
 import { buildRepositoryImpactSnapshot, impactReference, persistRepositoryImpactSnapshot, predictRepositoryImpact, readRepositoryImpactSnapshot, reconcileRepositoryImpact, reconcileRetainedImpact, type RepositoryImpactSnapshot } from "./service.js";
 
 const roots: string[] = [];
@@ -21,10 +22,63 @@ async function repository(): Promise<string> {
 }
 const snapshot = async (root: string) => buildRepositoryImpactSnapshot(await observeChangeRepository(root));
 const unit = (value: RepositoryImpactSnapshot, path: string) => value.files.find((file) => file.path === path)!.unitIds[0]!;
-const rehash = (value: RepositoryImpactSnapshot): RepositoryImpactSnapshot => { const { contentHash: _hash, ...basis } = value; return { ...basis, contentHash: hashFramedDomain("repository-impact@1", basis) }; };
+const rehash = (value: RepositoryImpactSnapshot): RepositoryImpactSnapshot => { const { contentHash: _hash, ...basis } = value; return { ...basis, contentHash: hashFramedDomain(value.version, basis) }; };
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 
 describe("observed derivation impact", () => {
+  it("folds independent event proofs without accumulating full per-event repository results", async () => {
+    const root = await repository();
+    const paths = Array.from({ length: 20 }, (_, index) => `independent-${index}.ts`);
+    for (const path of paths) await writeFile(join(root, path), "export const independent = 1;\n");
+    const before = await snapshot(root);
+    const budget = new DerivedObservationBudget(48_000);
+    const prediction = await predictRepositoryImpact(before, paths, [], budget);
+    expect(prediction.knownAffectedUnitIds).toEqual(paths.map((path) => unit(before, path)).sort());
+    expect(budget.usedBytes).toBeLessThan(48_000);
+  });
+  it("rejects derived record expansion before publishing an oversized impact snapshot", async () => {
+    const observation = await observeChangeRepository(await repository());
+    const graph = new KnowledgeGraph(observation, {}, new DerivedObservationBudget(2048));
+    expect(() => buildRepositoryImpactSnapshot(observation, graph)).toThrow(ObservationError);
+  });
+  it("distinguishes ordinary context changes from an actual plan predicting no changes", async () => {
+    const root = await repository(); const before = await snapshot(root);
+    await writeFile(join(root, "other.ts"), "export const other = 2;\n");
+    const after = await snapshot(root);
+    const ordinary = await reconcileRepositoryImpact(before, after, [], "context:ordinary", [], false);
+    expect(ordinary.observedChangedUnitIds).toContain(unit(before, "other.ts"));
+    expect(ordinary.surprises).toEqual([]);
+    expect(ordinary.candidateRelations).toEqual([]);
+    const planned = await reconcileRepositoryImpact(before, after, [], "plan:empty");
+    expect(planned.surprises).toHaveLength(1);
+    expect(planned.surprises[0]?.unexpectedEntityIds).toContain(unit(before, "other.ts"));
+  });
+
+  it("rejects changed ignore scope and enumeration method without reporting removed files", async () => {
+    const root = await repository(); const before = await snapshot(root);
+    const descriptor = before.observationDescriptor!;
+    for (const changed of [
+      { ...descriptor, ignoreSources: [{ path: ".git/info/exclude", contentHash: "changed-exclusions" }] },
+      { ...descriptor, enumerationMethod: "git-index-and-nonignored-untracked" as const },
+    ]) {
+      const after = rehash({ ...before, observationDescriptor: changed, files: [] });
+      const result = await reconcileRepositoryImpact(before, after, [], "plan:changed-scope");
+      expect(result).toMatchObject({ status: "unavailable", observedChangedUnitIds: [], knownAffectedUnitIds: [], surprises: [], candidateRelations: [] });
+      expect(result.diagnostics.join(" ")).toContain("Capture fresh context");
+    }
+    const largerLimits = rehash({ ...before, observationDescriptor: { ...descriptor, limits: { ...descriptor.limits, maxFiles: descriptor.limits.maxFiles + 1 } } });
+    expect(await reconcileRepositoryImpact(before, largerLimits, [], "plan:compatible-limits")).toMatchObject({ repairRoute: "reuse", observedChangedUnitIds: [], surprises: [] });
+  });
+
+  it("treats authenticated legacy snapshots without observation coverage as unavailable", async () => {
+    const root = await repository(); const current = await snapshot(root);
+    const { observationDescriptor: _descriptor, ...rest } = current;
+    const legacy = rehash({ ...rest, version: "repository-impact@1" });
+    const result = await reconcileRepositoryImpact(legacy, current, [], "plan:legacy");
+    expect(result).toMatchObject({ status: "unavailable", observedChangedUnitIds: [], surprises: [] });
+    expect(result.diagnostics.join(" ")).toContain("legacy proof");
+    expect(await predictRepositoryImpact(legacy, ["value.ts"])).toMatchObject({ status: "unavailable", knownAffectedUnitIds: [] });
+  });
   it("propagates a behavior-only literal change through transitive static consumers and repeats after refresh", async () => {
     const root = await repository(); const before = await snapshot(root);
     const prediction = await predictRepositoryImpact(before, ["value.ts"]);
@@ -46,23 +100,27 @@ describe("observed derivation impact", () => {
     expect(unchanged).toMatchObject({ status: "current", repairRoute: "reuse", knownAffectedUnitIds: [], surprises: [] });
   });
 
-  it("reports outside edits and evidence-only relation candidates through saved context reconciliation", async () => {
+  it("reports saved context changes without inventing a planning prediction", async () => {
     const root = await repository(); const service = await RepositoryKnowledgeService.create(root);
     const retained = await service.context({ request: "Change value", namedTargets: ["value.ts"] });
     const before = await snapshot(root);
     await writeFile(join(root, "value.ts"), "export const value = () => 2;\n");
     await writeFile(join(root, "other.ts"), "export const other = 2;\n");
     const result = await service.reconcile(retained.id);
-    expect(result.impact?.surprises).toHaveLength(1);
-    expect(result.impact?.surprises[0]?.unexpectedEntityIds).toContain(unit(before, "other.ts"));
-    expect(result.impact?.candidateRelations.length).toBeGreaterThan(0);
-    expect(result.impact?.candidateRelations.every(({ sourceClass }) => sourceClass === "inferred")).toBe(true);
-    expect(result.impact?.repairRoute).toBe("widen-analysis");
+    expect(result.impact?.surprises).toEqual([]);
+    expect(result.impact?.observedChangedUnitIds).toContain(unit(before, "other.ts"));
+    expect(result.impact?.candidateRelations).toEqual([]);
+    expect(result.impact?.repairRoute).toBe("revalidate");
+    const actualPlan = await reconcileRepositoryImpact(before, await snapshot(root), [unit(before, "value.ts")], "plan:value");
+    expect(actualPlan.surprises).toHaveLength(1);
+    expect(actualPlan.surprises[0]?.unexpectedEntityIds).toContain(unit(before, "other.ts"));
+    expect(actualPlan.candidateRelations.length).toBeGreaterThan(0);
+    expect(actualPlan.candidateRelations.every(({ sourceClass }) => sourceClass === "inferred")).toBe(true);
     expect((await observeChangeRepository(root)).canonical.documents).toHaveLength(0);
     expect((await service.reconcile(retained.id)).impact?.contentHash).toBe(result.impact?.contentHash);
   });
 
-  it("rejects tampered cached proof and deterministically rebuilds it on fresh persisted capture", async () => {
+  it("rejects tampered cached proof without overwriting corruption during fresh capture", async () => {
     const root = await repository(); const service = await RepositoryKnowledgeService.create(root);
     const context = await service.context({ request: "Value", namedTargets: ["value.ts"] });
     const directory = join(root, ".projector", "runtime", "impact");
@@ -71,13 +129,14 @@ describe("observed derivation impact", () => {
     const tampered = JSON.parse(original) as RepositoryImpactSnapshot;
     await writeFile(path, JSON.stringify({ ...tampered, records: [] }));
     expect((await service.reconcile(context.id)).impact).toMatchObject({ status: "unavailable", repairRoute: "widen-analysis" });
-    const rebuilt = await service.context({ request: "Value", namedTargets: ["value.ts"] });
-    expect(rebuilt.impactBaseline).toEqual(context.impactBaseline);
-    expect(await readFile(path, "utf8")).toBe(original);
+    await expect(service.context({ request: "Value", namedTargets: ["value.ts"] })).rejects.toThrow(/corrupt|mismatch|differ|conflict/i);
+    expect(await readFile(path, "utf8")).not.toBe(original);
+    // Explicitly restoring the original authenticated proof repairs this fixture's corrupted slot.
+    await writeFile(path, original);
     expect((await service.reconcile(context.id)).impact?.status).toBe("current");
     const current = await snapshot(root);
     const { canonical: _canonical, contentHash: _hash, ...incompatible } = current;
-    const malformed = { ...incompatible, contentHash: hashFramedDomain("repository-impact@1", incompatible) };
+    const malformed = { ...incompatible, contentHash: hashFramedDomain(current.version, incompatible) };
     const reference = { version: current.version, contentHash: malformed.contentHash, state: current.state };
     await writeFile(join(directory, `${reference.contentHash.slice("sha256:v1:".length)}.json`), JSON.stringify(malformed));
     const unavailable = await reconcileRetainedImpact(root, reference, current, [], context.id);
@@ -125,6 +184,21 @@ describe("observed derivation impact", () => {
     await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "authority-record", id: authority.id, key: authority.key, lifecycle: "approved", payload: { ...authority } }));
     await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "projection-lens", id: lens.id, key: lens.key, lifecycle: "active", payload: { ...lens } }));
     await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: "relation:possible-impact", key: "relation:relation:possible-impact", lifecycle: "active", payload: { id: "relation:possible-impact", fromId: sourceId, toId: otherId, type: "depends-on", sourceClass: "inferred", confidence: 1, evidence: [], active: true, semanticHash: placeholder } }));
+    const governed = await observeChangeRepository(root);
+    expect(() => new KnowledgeGraph(governed, {}, new DerivedObservationBudget(1))).toThrow(ObservationError);
+    const obligationBudget = new DerivedObservationBudget(2048);
+    const guardedGraph = new KnowledgeGraph(governed, {}, obligationBudget);
+    expect(() => guardedGraph.lensObligations(new Set([lens.id, ...guardedGraph.units.map(({ id }) => id)]), "inspect")).toThrow(ObservationError);
+    const requestBudget = new DerivedObservationBudget(1_000_000);
+    const requestGraph = new KnowledgeGraph(governed, {}, requestBudget);
+    const selected = new Set([lens.id, ...requestGraph.units.map(({ id }) => id)]);
+    const beforeObligations = requestBudget.usedBytes;
+    requestGraph.lensObligations(selected, "inspect");
+    const obligationBytes = requestBudget.usedBytes - beforeObligations;
+    requestBudget.reserve(1_000_000 - requestBudget.usedBytes - obligationBytes, "test-existing-derived-data");
+    let requestError: unknown;
+    try { requestGraph.validatorRequests(selected, "inspect"); } catch (error) { requestError = error; }
+    expect(requestError).toMatchObject({ code: "observation-limit-exceeded", stage: "validator-request" });
     const before = await snapshot(root);
     expect(before.rules).toHaveLength(1);
     expect(before.records.find(({ unitId }) => unitId === sourceId)?.inputs.some(({ id }) => id === otherId)).toBe(false);

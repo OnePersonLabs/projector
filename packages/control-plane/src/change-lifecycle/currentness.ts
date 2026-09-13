@@ -1,14 +1,14 @@
-import { readFile } from "node:fs/promises";
-
-import { hashFramedDomain, type StateBinding } from "@projector/core";
+import type { StateBinding } from "@projector/core";
 import type { StateBindingValidation } from "@projector/core";
 import { currentBuiltInRepresentationProfile, DependencyScopedStateBindingValidator } from "@projector/engine";
-import { RepositoryPathService } from "@projector/runtime";
+import { RepositoryPathService, withObservationScope } from "@projector/runtime";
 
 import type { CompiledRepositoryChange } from "./compiler.js";
-import { buildRepositoryImpactSnapshot, predictRepositoryImpact, repositoryImpactProofHash } from "../impact/service.js";
+import { repositoryImpactProofHash } from "../impact/service.js";
+import { runObservationTask } from "../observation/task-runner.js";
+import { readObservedText, hashObservedText } from "../observation/source.js";
 import { observeChangeRepository } from "./repository-observer.js";
-import { createChangeQueryRegistry } from "./query-programs.js";
+import { evaluateObservedChangeQuery } from "../observation/change-query.js";
 
 export async function validateCompiledRepositoryChangeCurrentness(input: {
   readonly repositoryRoot: string;
@@ -17,12 +17,17 @@ export async function validateCompiledRepositoryChangeCurrentness(input: {
   readonly signal?: AbortSignal;
   readonly now?: () => string;
 }): Promise<StateBindingValidation> {
+  return withObservationScope(input.signal === undefined ? {} : { signal: input.signal }, async () => {
   input.signal?.throwIfAborted();
   const paths = await RepositoryPathService.create(input.repositoryRoot);
   const now = input.now ?? (() => new Date().toISOString());
+  let capturedObservation: ReturnType<typeof observeChangeRepository> | undefined;
   const liveObservation = async () => {
     input.signal?.throwIfAborted();
-    const observation = await observeChangeRepository(input.repositoryRoot);
+    // All dependencies in this validation bind one current observation. A later
+    // capture, approval or execution validation creates a new observation.
+    capturedObservation ??= observeChangeRepository(input.repositoryRoot);
+    const observation = await capturedObservation;
     input.signal?.throwIfAborted();
     return observation;
   };
@@ -32,10 +37,7 @@ export async function validateCompiledRepositoryChangeCurrentness(input: {
         const observation = await liveObservation();
         if (dependency.id.startsWith("path:")) {
           const path = dependency.id.slice("path:".length);
-          let content: string | null;
-          try { content = await readFile((await paths.resolveRead(path)).realTarget, "utf8"); }
-          catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") content = null; else throw error; }
-          return hashFramedDomain("transform-content", content);
+          return hashObservedText(await readObservedText((await paths.resolveRead(path)).realTarget, input.signal), input.signal);
         }
         if (dependency.id.startsWith("independent-validator:")) return (await observation.independentValidator(dependency.id.slice("independent-validator:".length))).contentHash;
         if (dependency.id === "canonical-root") return observation.canonical.rootDigest;
@@ -45,9 +47,12 @@ export async function validateCompiledRepositoryChangeCurrentness(input: {
         }
         if (dependency.id.startsWith("proposal:")) return input.compiled.proposalHash;
         if (dependency.id === "repository-impact-proof") {
-          const snapshot = buildRepositoryImpactSnapshot(observation);
-          const prediction = await predictRepositoryImpact(snapshot, input.compiled.exactPatchInput.edits.filter(({ path }) => !path.startsWith(".projector/")).map(({ path }) => path), input.compiled.canonicalWrites);
-          return repositoryImpactProofHash(snapshot, prediction);
+          return withObservationScope(input.signal === undefined ? {} : { signal: input.signal }, async (scope) => {
+            const { independentValidator: _validator, ...data } = observation;
+            const snapshot = await runObservationTask("build-impact", { observation: data }, scope);
+            const prediction = await runObservationTask("predict-impact", { snapshot, editedPaths: input.compiled.exactPatchInput.edits.filter(({ path }) => !path.startsWith(".projector/")).map(({ path }) => path), canonicalChanges: input.compiled.canonicalWrites }, scope);
+            return repositoryImpactProofHash(snapshot, prediction);
+          });
         }
         if (dependency.id.startsWith("knowledge-context:")) {
           const retained = input.compiled.knowledgeContext;
@@ -57,7 +62,7 @@ export async function validateCompiledRepositoryChangeCurrentness(input: {
         return undefined;
       },
     },
-    queries: { evaluate: async (query, context) => createChangeQueryRegistry({ observation: await liveObservation(), now: now() }).evaluate(query, context) },
+    queries: { evaluate: async (query, context) => evaluateObservedChangeQuery(await liveObservation(), now(), query, context) },
   });
   const observation = await liveObservation();
   const binding = input.binding ?? input.compiled.compiledPlan.plan.boundState;
@@ -70,4 +75,5 @@ export async function validateCompiledRepositoryChangeCurrentness(input: {
   return result.status === "rebound"
     ? { ...result, status: "current", reasons: ["all approval-scoped value and query dependencies remain current"] }
     : result;
+  });
 }

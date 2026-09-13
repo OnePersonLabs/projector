@@ -1,6 +1,6 @@
 # Bundled operation contract
 
-Resolve `../../scripts/projector-operation.mjs` from this file's directory. The script uses Node 24 from the host `PATH`, loads the exact packaged Projector services in-process, and derives package identity from `runtime/projector/package.json`.
+Resolve `../scripts/projector-operation.mjs` from this file's directory. The script uses Node 24 from the host `PATH`, loads the exact packaged Projector services in-process, and derives package identity from `runtime/projector/package.json`.
 
 Write one UTF-8 JSON request file, then run:
 
@@ -20,9 +20,13 @@ The script also accepts the same single JSON object on standard input. A request
 }
 ```
 
-Supported built-in operations are `status`, `init`, `context`, `reconcile`, `repository.check`, `change.capture`, `change.plan`, `change.approve`, `change.apply`, `change.recover`, `change.resume`, `representation.inspect`, `representation.reconcile`, `coverage`, `complete`, `cleanup`, and `verify`. The installed Windows entry also composes `application.observe` for the Psychord adapter. The typed schemas and registered handlers own each operation's exact input and output. Do not add undeclared fields.
+Supported built-in operations are `status`, `init`, `context`, `reconcile`, `repository.check`, `operation-access.recover`, `change.capture`, `change.plan`, `change.approve`, `change.apply`, `change.recover`, `change.resume`, `representation.inspect`, `representation.reconcile`, `coverage`, `complete`, `cleanup`, and `verify`. The installed Windows entry also composes `application.observe` for the Psychord adapter. The typed schemas and registered handlers own each operation's exact input and output. Do not add undeclared fields.
 
 Common inputs are:
+
+Repository observation accepts optional envelope-level `observationLimits` with positive finite integer overrides: `maxFiles` (20,000), `maxDirectories` (20,000), `maxFileBytes` (8 MiB), `maxTotalBytes` (256 MiB), `maxGitOutputBytes` (32 MiB), `timeoutMs` (60,000), `maxWorkerHeapMiB` (512), and `maxDerivedBytes` (64 MiB). Omit fields to retain defaults. Nested and secondary observation work shares the allowance. Git failures never authorize recursive fallback or automatic limit increases. Exhaustion fails explicitly without publishing a partial context or replacing its baseline; narrow the requested scope or explicitly revise the finite allowance.
+
+Agent and full knowledge responses have fixed total ceilings of 1 MiB and 16 MiB respectively. Whole-record projection remains unchanged. An oversized response fails rather than being dumped or partially published. Disposable contexts and impact snapshots have a shared 256 MiB hard storage cap without age expiry; eligible least-recently-used data can be collected, while unfinished lifecycle and recovery evidence remains protected. A missing disposable context calls for fresh context, not historical sign-off. Legacy or exclusion-incompatible snapshots cannot establish additions or deletions against the current observation.
 
 - `repository.check`: optional `mode: "full" | "commit-only"` (default `full`), `sessionId`, and `handled: { "findingId": "...", "evidenceIdentity": "sha256:v1:..." }`. Full checks compare bounded local Git and file observations; commit-only checks reuse the observation when HEAD is unchanged. Output status is `unchanged`, `changed`, `no previous observation`, or `incomplete`, with pending finding anchors, bounded paths, limitations, `offer`, and `nextAction`. Observation and pending investigation are separate. A handled request performs a full check and acknowledges only the exact current finding; it never accepts design or proves conformance. Session IDs coalesce offers, not permission. No remote fetch or full source analysis occurs.
 
@@ -32,6 +36,7 @@ Common inputs are:
 - `change.plan`: `{ "changeSelector": "..." }`.
 - `change.approve`: `{ "changeSelector": "...", "planHash": "sha256:v1:..." }`.
 - `change.apply`, `change.recover`, `change.resume`: `{ "approvalSelector": "..." }`.
+- `operation-access.recover`: `{}`. Explicitly reclaims only recognized expired claims from exited processes; ambiguous access evidence remains recovery-required.
 - `representation.inspect`: `{ "changeSelector": "...", "view": "summary" | "content" }`; optional `capsuleId` selects one capsule and optional `approvalSelector` authenticates an existing approval without creating authority.
 - `representation.reconcile`: `{ "changeSelector": "..." }`; optional `approvalSelector` authenticates the historical approval. It replaces stale profile-bound projections and capsules with a distinct current, unapproved lifecycle capture. It never modifies or transfers the historical approval.
 - `coverage`, `complete`, `cleanup`: optional `scope`, `budgetTokens`, `budgetCost`, and `questionOffset`.
@@ -48,6 +53,8 @@ The optional `context` policy is a strict object with these fields: `maxCandidat
 The Psychord host uses its running Node executable, resolves the package-declared pnpm CLI and agent-browser 0.31.1 native executable from their ordinary `PATH` installations, and resolves Chrome from its standard Windows installation. The existing `PROJECTOR_NODE_EXECUTABLE`, `PROJECTOR_PNPM_CLI`, `PROJECTOR_AGENT_BROWSER_EXECUTABLE`, and `PROJECTOR_CHROME_EXECUTABLE` overrides select nondefault installations. Every resolved file must also appear as an exact `toolchain` dependency pin in the plan; an override does not bypass that binding.
 
 The script emits one `projector.operation-result/v1` JSON result and exits with that result's `exitCode`. Read `status`, `readiness`, `error`, `action`, and the operation-owned `output` separately. `registered` means a handler is reachable; it does not prove project readiness or host enforcement. `unavailable`, `recovery-required`, `cancelled`, and failed results are not successful evidence. A successful delivery to this process boundary does not prove that an agent understood or acted on returned instructions.
+
+`status` checks operation access when project metadata is ready. A corrupt or abandoned access claim returns `recovery-required` with `action.operation: "operation-access.recover"`; inactive projects remain inspection-only.
 
 Cleanup continuation separates current, stale, and unknown bindings from governance and historical lifecycle outcomes. It prioritizes recovery of unfinished effects, including a published partial result whose journal remains open. Required prepared-success and representation artifacts are authenticated by their existing owners. Advisory notes remain unobservable when those owners do not name any; cleanup creates no note registry, progress store, approval, or prepared-success evidence. Evidence limits bound disclosure, not repository observation, and lifecycle execution still performs its own exact authority and repository-wide recovery checks.
 

@@ -377,7 +377,7 @@ async function readClaimRecord(claimPath: string): Promise<PsychordAttemptClaimR
   const ownerPath = join(claimPath, "owner.json");
   const owner = await lstat(ownerPath);
   if (owner.isSymbolicLink() || !owner.isFile()) throw new Error("Psychord observation attempt owner record must be a regular file");
-  assertContainedPath(await realpath(claimPath), await realpath(ownerPath), "Psychord observation attempt owner record");
+  await assertContainedPath(claimPath, ownerPath, "Psychord observation attempt owner record");
   const bytes = await readFile(ownerPath, "utf8");
   const value: unknown = JSON.parse(bytes);
   if (!isRecord(value)) throw new Error("Psychord observation attempt claim is invalid");
@@ -439,7 +439,7 @@ async function assertOwnedDirectory(path: string, label: string): Promise<void> 
 async function assertContainedDirectory(root: string, path: string, label: string): Promise<void> {
   await assertNoSymlinkComponents(path, label);
   await assertOwnedDirectory(path, label);
-  assertContainedPath(await realpath(root), await realpath(path), label);
+  await assertContainedPath(root, path, label);
 }
 async function assertNoSymlinkComponents(path: string, label: string): Promise<void> {
   const absolute = resolve(path);
@@ -451,10 +451,17 @@ async function assertNoSymlinkComponents(path: string, label: string): Promise<v
     if (entry.isSymbolicLink()) throw new Error(`${label} cannot contain symbolic-link or junction components`);
   }
 }
-function assertContainedPath(root: string, path: string, label: string): void {
-  const fromRoot = relative(root, path);
+async function assertContainedPath(root: string, path: string, label: string): Promise<void> {
+  const resolvedRoot = await realpath(root);
+  const resolvedPath = await realpath(path);
+  const fromRoot = relative(resolvedRoot, resolvedPath);
   if (fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRoot)) {
-    throw new Error(`${label} escapes the authenticated artifact root`);
+    // On Windows, concurrent deletion can resolve an open inode into $Extend/$Deleted.
+    // Revalidate the original names: a retired claim remains an actual missing/transient
+    // filesystem result, while an extant path outside its root remains a hard refusal.
+    await lstat(root);
+    await lstat(path);
+    throw new Error(`${label} escapes the authenticated artifact root`, { cause: { root: resolvedRoot, path: resolvedPath, relativePath: fromRoot } });
   }
 }
 

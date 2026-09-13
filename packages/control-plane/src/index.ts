@@ -117,3 +117,4 @@ export {
   type RepresentationProfileReconciliationOperationOutput,
   type RepresentationProfileReconciliationOutput,
 } from "./representation/profile-reconciliation.js";
+export { runObservationTask } from "./observation/task-runner.js";

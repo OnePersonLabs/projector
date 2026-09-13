@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { validateOperationalReport } from "@projector/runtime";
+import { validateOperationalReport, withObservationScope } from "@projector/runtime";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { runReadOnlyOperationalVerification } from "./operational-verification.js";
@@ -29,6 +29,14 @@ afterEach(async () => {
 });
 
 describe("read-only operational verification", () => {
+  test("does not turn an exhausted observation budget into a verification report", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-operation-verify-budget-"));
+    roots.push(root);
+    await writeFile(join(root, "package.json"), '{"name":"fixture"}\n');
+    await expect(withObservationScope({ limits: { maxFileBytes: 1 } }, () =>
+      runReadOnlyOperationalVerification(root, verificationOptions(root))))
+      .rejects.toMatchObject({ code: "observation-limit-exceeded" });
+  });
   test("binds owner coverage evidence and remains unavailable when required lanes retain blind spots", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-operation-verify-ready-"));
     roots.push(root);

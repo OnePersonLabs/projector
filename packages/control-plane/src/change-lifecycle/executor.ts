@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-
 import {
   canonicalJson,
   hashFramedDomain,
@@ -26,6 +24,7 @@ import {
   RepositoryPathService,
   WriterLeaseManager,
   configuredHostAssumptions,
+  withObservationScope,
   type ExactTextPatchInput,
   type FileTransaction,
   type GovernedWorktreeSession,
@@ -38,7 +37,9 @@ import { observeChangeRepository, type ChangeRepositoryObservation } from "./rep
 import { validateCompiledRepositoryChangeCurrentness } from "./currentness.js";
 import type { ChangeLifecycleStore, LifecycleAttemptRecord } from "./store.js";
 import { validateCanonicalDecisionBaselines, validatePostChangeKnowledge } from "./knowledge-validation.js";
-import { buildRepositoryImpactSnapshot, persistRepositoryImpactSnapshot, reconcileRepositoryImpact, type RepositoryImpactReport, type RepositoryImpactSnapshot } from "../impact/service.js";
+import { persistRepositoryImpactSnapshot, type RepositoryImpactReport, type RepositoryImpactSnapshot } from "../impact/service.js";
+import { runObservationTask } from "../observation/task-runner.js";
+import { readObservedText, hashObservedText } from "../observation/source.js";
 
 export interface ExecuteCompiledRepositoryChangeInput {
   readonly repositoryRoot: string;
@@ -113,8 +114,7 @@ class JournalExecutionAdapter implements TransformMutationPort, ChangeTransactio
   }
 
   async readFile(path: string): Promise<string | undefined> {
-    try { return await readFile((await this.paths.resolveScopedRead(path, this.boundary)).realTarget, "utf8"); }
-    catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined; throw error; }
+    return (await readObservedText((await this.paths.resolveScopedRead(path, this.boundary)).realTarget)) ?? undefined;
   }
 
   async assertWritable(path: string): Promise<void> {
@@ -225,14 +225,13 @@ async function observeAppliedRepositoryChange(
   observation: ChangeRepositoryObservation,
   paths: RepositoryPathService,
 ): Promise<RepositoryPostObservation> {
-  const exactWrites = await Promise.all(compiled.exactPatchInput.edits.map(async (edit) => {
-    let content: string | null;
-    try { content = await readFile((await paths.resolveRead(edit.path)).realTarget, "utf8"); }
-    catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") content = null; else throw error; }
-    const expectedAfterHash = hashFramedDomain("transform-content", edit.after);
-    const observedAfterHash = hashFramedDomain("transform-content", content);
-    return { path: edit.path, unitId: edit.unitId, expectedAfterHash, observedAfterHash, matches: content === edit.after };
-  }));
+  const exactWrites = [];
+  for (const edit of compiled.exactPatchInput.edits) {
+    const content = await readObservedText((await paths.resolveRead(edit.path)).realTarget);
+    const expectedAfterHash = await hashObservedText(edit.after);
+    const observedAfterHash = await hashObservedText(content);
+    exactWrites.push({ path: edit.path, unitId: edit.unitId, expectedAfterHash, observedAfterHash, matches: content === edit.after });
+  }
   const beforeFiles = new Map(compiled.baselineObservation.files.map(({ path, contentHash }) => [path, contentHash]));
   const afterFiles = new Map(observation.analysis.files.map(({ path, contentHash }) => [path, contentHash]));
   const observedChangedPaths = [...new Set([...beforeFiles.keys(), ...afterFiles.keys()])]
@@ -392,7 +391,7 @@ async function runNodeValidators(
       continue;
     }
     const contentPath = (await paths.resolveRead(validator.path)).realTarget;
-    const beforeContentHash = hashFramedDomain("transform-content", await readFile(contentPath, "utf8"));
+    const beforeContentHash = await hashObservedText(await readObservedText(contentPath, signal), signal);
     const identityEvidenceId = `evidence_${hashFramedDomain("validator-execution-identity", {
       validatorId,
       expectedContentHash: expected,
@@ -424,7 +423,7 @@ async function runNodeValidators(
       maxOutputBytes: 256 * 1_024,
       signal,
     }));
-    const afterContentHash = hashFramedDomain("transform-content", await readFile(contentPath, "utf8"));
+    const afterContentHash = await hashObservedText(await readObservedText(contentPath, signal), signal);
     const identityCurrent = afterContentHash === beforeContentHash && afterContentHash === expected;
     const passed = execution.exitCode === 0 && identityCurrent;
     results.push({
@@ -508,8 +507,11 @@ export async function executeCompiledRepositoryChange(
       const observationStartedAt = now();
       const observation = await observeChangeRepository(input.repositoryRoot);
       postObservation = await observeAppliedRepositoryChange(input.compiled, observation, paths);
-      refreshedImpact = buildRepositoryImpactSnapshot(observation);
-      const impact = await reconcileRepositoryImpact(input.compiled.derivationImpact.baseline, refreshedImpact, plan.completionCriteria.requiredUnitStates.map(({ unitId }) => unitId), plan.id, input.compiled.exactPatchInput.edits.map(({ path }) => path));
+      const impact = await withObservationScope({ signal: context.signal }, async (scope) => {
+        const { independentValidator: _validator, ...data } = observation;
+        refreshedImpact = await runObservationTask("build-impact", { observation: data }, scope);
+        return runObservationTask("reconcile-impact", { before: input.compiled.derivationImpact.baseline, after: refreshedImpact, predictedUnitIds: plan.completionCriteria.requiredUnitStates.map(({ unitId }) => unitId), planId: plan.id, predictedPaths: input.compiled.exactPatchInput.edits.map(({ path }) => path) }, scope);
+      });
       const modelIntegrity: ValidationResult = {
         validatorId: "projector.canonical-model-integrity",
         status: "passed",

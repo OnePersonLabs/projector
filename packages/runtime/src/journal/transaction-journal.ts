@@ -160,6 +160,15 @@ export function fileTransactionJournalRelativePath(transactionId: string): strin
   return `${journalRoot}/${recordFileName(transactionId)}`;
 }
 
+/** Authenticates a collected source without performing filesystem access. */
+export function parseFileTransactionJournalSource(source: string, transactionId: string, repositoryRoot: string): DurableTransactionRecord {
+  const record = parseRecord(source);
+  if (record.entry.transactionId !== transactionId || record.entry.worktreePath !== repositoryRoot) {
+    throw new JournalRecoveryRequiredError("Journal identity or worktree binding does not match its path");
+  }
+  return record;
+}
+
 export interface RecoveryResult {
   transactionId: string;
   action: "rolled-back" | "recovery-required";
@@ -392,10 +401,7 @@ export class FileTransactionJournal {
   async readExact(transactionId: string): Promise<ExactFileTransactionJournalRecord> {
     const path = await this.recordPath(transactionId);
     const bytes = await readBoundedRegularFile(path, maximumJournalBytes);
-    const record = parseRecord(bytes.toString("utf8"));
-    if (record.entry.transactionId !== transactionId || record.entry.worktreePath !== this.paths.root) {
-      throw new JournalRecoveryRequiredError("Journal identity or worktree binding does not match its path");
-    }
+    const record = parseFileTransactionJournalSource(bytes.toString("utf8"), transactionId, this.paths.root);
     return { record, bytes, contentHash: hashFileTransactionJournalBytes(bytes) };
   }
 

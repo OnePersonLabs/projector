@@ -1,13 +1,10 @@
-import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { promisify } from "node:util";
-
-import { analyzeLocalRepository, type LocalRepositoryAnalysis } from "@projector/analyzers";
-import { hashFramedDomain, type ContentHash, type StateDigest } from "@projector/core";
-import { CanonicalFileRepository, RepositoryPathService, type CanonicalSnapshot } from "@projector/runtime";
+import { collectLocalRepositoryInputs, observationGit, readObservationFile, type LocalRepositoryAnalysis } from "@projector/analyzers";
+import { hashFramedDomain, type ContentHash, type StateDigest, type DerivedObservationBudget } from "@projector/core";
+import { collectCanonicalSnapshotSources, currentObservationScope, withObservationScope, RepositoryPathService, type CanonicalSnapshot } from "@projector/runtime";
 import { compileCanonicalRealizations, type CanonicalRealizationObservation } from "../knowledge/realizations.js";
+import { runObservationTask } from "../observation/task-runner.js";
+import type { RepositoryObservationData } from "../observation/tasks.js";
 
-const execFileAsync = promisify(execFile);
 const operationalPrefix = ".projector/";
 
 function governedPath(path: string): boolean {
@@ -52,25 +49,6 @@ function stateFrom(analysis: LocalRepositoryAnalysis, canonical: CanonicalSnapsh
   };
 }
 
-async function gitBaseFile(repositoryRoot: string, path: string): Promise<string> {
-  if (path.includes(":")) throw new Error(`independent validator path cannot contain colon: ${path}`);
-  const environment: NodeJS.ProcessEnv = {};
-  for (const key of ["PATH", "PATHEXT", "SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG", "LC_ALL"]) {
-    if (process.env[key] !== undefined) environment[key] = process.env[key];
-  }
-  try {
-    const { stdout } = await execFileAsync("git", [
-      "-c", "core.fsmonitor=false",
-      "-c", "core.untrackedCache=false",
-      "-c", `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
-      "show", `HEAD:${path}`,
-    ], { cwd: repositoryRoot, encoding: "utf8", env: { ...environment, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_OPTIONAL_LOCKS: "0" }, maxBuffer: 4 * 1024 * 1024 });
-    return stdout;
-  } catch (error) {
-    throw new Error(`independent validator is unavailable from Git base: ${path}`, { cause: error });
-  }
-}
-
 export interface IndependentValidatorObservation {
   readonly path: string;
   readonly tracked: true;
@@ -89,31 +67,35 @@ export interface ChangeRepositoryObservation {
   independentValidator(path: string): Promise<IndependentValidatorObservation>;
 }
 
-export async function observeChangeRepository(repositoryRoot: string): Promise<ChangeRepositoryObservation> {
-  const [rawAnalysis, canonical, paths] = await Promise.all([
-    analyzeLocalRepository({ repositoryRoot }),
-    new CanonicalFileRepository(repositoryRoot).snapshot(),
-    RepositoryPathService.create(repositoryRoot),
-  ]);
+export function realizeChangeRepositoryData(repositoryRoot: string, rawAnalysis: LocalRepositoryAnalysis, canonical: CanonicalSnapshot, derivedBudget?: DerivedObservationBudget): RepositoryObservationData {
   const filtered = filterOperationalAnalysis(rawAnalysis);
-  const realizations = compileCanonicalRealizations(filtered, canonical);
+  const realizations = compileCanonicalRealizations(filtered, canonical, derivedBudget);
   const analysis = { ...filtered, projectionUnits: [...realizations.units] };
   const state = stateFrom(analysis, canonical);
-  return {
-    repositoryRoot,
-    analysis,
-    realizations: realizations.observations,
-    canonical,
-    state,
+  return { repositoryRoot, analysis, realizations: realizations.observations, canonical, state };
+}
+
+export async function observeChangeRepository(repositoryRoot: string): Promise<ChangeRepositoryObservation> {
+  return withObservationScope({}, async () => {
+    const scope = currentObservationScope()!;
+    // Sequential collection ensures rejection cannot leave a sibling Git child running.
+    const collected = await collectLocalRepositoryInputs({ repositoryRoot, budget: scope.budget, signal: scope.signal });
+    const canonicalSources = await collectCanonicalSnapshotSources(repositoryRoot, scope.budget, scope.signal);
+    const data = await runObservationTask("observe", { collected, canonicalSources }, scope);
+    const paths = await RepositoryPathService.create(repositoryRoot);
+    return {
+    ...data,
     async independentValidator(path) {
-      const identity = analysis.gitIdentities.find((candidate) => candidate.path === path);
-      if (analysis.git.availability !== "available" || identity?.tracked !== true || identity.objectId === undefined || identity.introductionCommit === undefined) {
+      scope.signal.throwIfAborted();
+      scope.budget.check("independent-validator", path);
+      const identity = data.analysis.gitIdentities.find((candidate) => candidate.path === path);
+      if (data.analysis.git.availability !== "available" || identity?.tracked !== true || identity.objectId === undefined || identity.introductionCommit === undefined) {
         throw new Error(`independent validator lacks tracked Git-base identity: ${path}`);
       }
-      const [baseContent, currentContent] = await Promise.all([
-        gitBaseFile(repositoryRoot, path),
-        readFile((await paths.resolveRead(path)).realTarget, "utf8"),
-      ]);
+      if (path.includes(":")) throw new Error(`independent validator path cannot contain colon: ${path}`);
+      const baseContent = await observationGit(repositoryRoot, ["show", `HEAD:${path}`], scope.budget, { signal: scope.signal, stage: "independent-validator" });
+      scope.budget.assertFileBytes(Buffer.byteLength(baseContent), path);
+      const currentContent = (await readObservationFile((await paths.resolveRead(path)).realTarget, scope.budget, path, scope.signal)).toString("utf8");
       if (baseContent !== currentContent) throw new Error(`independent validator must remain unchanged from Git base: ${path}`);
       return {
         path,
@@ -121,8 +103,9 @@ export async function observeChangeRepository(repositoryRoot: string): Promise<C
         objectId: identity.objectId,
         introductionCommit: identity.introductionCommit,
         content: currentContent,
-        contentHash: hashFramedDomain("transform-content", currentContent),
+        contentHash: await runObservationTask("hash-content", { content: currentContent }, scope),
       };
     },
-  };
+    };
+  });
 }

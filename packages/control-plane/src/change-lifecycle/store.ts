@@ -34,7 +34,7 @@ import {
   type PreparedStateBoundChangeSuccess,
   type StateBoundChangeResult,
 } from "@projector/engine";
-import { FileTransactionJournal, RepositoryPathService, type DurableTransactionRecord } from "@projector/runtime";
+import { FileTransactionJournal, RepositoryPathService, fileTransactionJournalRelativePath, parseFileTransactionJournalSource, type DurableTransactionRecord } from "@projector/runtime";
 
 const apiVersion = "projector.change-lifecycle/v1" as const;
 const storeRoot = ".projector/runtime/change-lifecycles";
@@ -204,13 +204,35 @@ export class ChangeLifecycleStore {
   private readonly now: () => string;
   private readonly newId: () => string;
 
-  private constructor(private readonly paths: RepositoryPathService, options: ChangeLifecycleStoreOptions) {
+  private constructor(private readonly paths: RepositoryPathService | undefined, options: ChangeLifecycleStoreOptions,
+    private readonly collected?: { readonly repositoryRoot: string; readonly sources: Readonly<Record<string, string>> }) {
     this.now = options.now ?? (() => new Date().toISOString());
     this.newId = options.newId ?? randomUUID;
   }
 
   static async create(repositoryRoot: string, options: ChangeLifecycleStoreOptions = {}): Promise<ChangeLifecycleStore> {
     return new ChangeLifecycleStore(await RepositoryPathService.create(repositoryRoot), options);
+  }
+
+  /** The ordinary authenticators read only these already-bounded sources. Writes are unavailable. */
+  static fromCollectedSources(repositoryRoot: string, sources: Readonly<Record<string, string>>): ChangeLifecycleStore {
+    return new ChangeLifecycleStore(undefined, {}, { repositoryRoot, sources });
+  }
+
+  private requirePaths(): RepositoryPathService {
+    if (this.paths === undefined) throw new Error("Collected lifecycle sources do not provide filesystem or write access");
+    return this.paths;
+  }
+
+  private collectedSource(path: string): string {
+    const source = this.collected?.sources[path];
+    if (source === undefined) throw Object.assign(new Error(`Collected lifecycle source is unavailable: ${path}`), { code: "ENOENT" });
+    return source;
+  }
+
+  private readTransaction(transactionId: string): Promise<DurableTransactionRecord> {
+    return this.collected === undefined ? new FileTransactionJournal(this.requirePaths()).read(transactionId)
+      : Promise.resolve(parseFileTransactionJournalSource(this.collectedSource(fileTransactionJournalRelativePath(transactionId)), transactionId, this.collected.repositoryRoot));
   }
 
   async capture(input: LifecycleCaptureInput): Promise<LifecycleCaptureRecord> {
@@ -442,7 +464,7 @@ export class ChangeLifecycleStore {
     }
     const attempt = await this.readAttempt(attemptSelector);
     const prepared = await this.readPreparedSuccess(attemptSelector);
-    const transaction = await new FileTransactionJournal(this.paths).read(attempt.transactionId);
+    const transaction = await this.readTransaction(attempt.transactionId);
     if (value.approvalId !== attempt.approvalId || value.transactionId !== attempt.transactionId
       || value.preparedSuccessHash !== prepared.contentHash
       || value.transactionRecordHash !== hashFramedDomain("durable-transaction-record", transaction)
@@ -473,7 +495,7 @@ export class ChangeLifecycleStore {
     }
     if (value.outcome === "success") {
       const prepared = await this.readPreparedSuccess(attemptSelector);
-      const transaction = await new FileTransactionJournal(this.paths).read(prepared.transactionId);
+      const transaction = await this.readTransaction(prepared.transactionId);
       const result = value.result as StateBoundChangeResult;
       if (value.preparedSuccessHash !== prepared.contentHash
         || value.transactionRecordHash !== hashFramedDomain("durable-transaction-record", transaction)
@@ -506,7 +528,7 @@ export class ChangeLifecycleStore {
 
   async incompleteAttemptsForApproval(approvalSelector: string): Promise<LifecycleAttemptRecord[]> {
     const attempts: LifecycleAttemptRecord[] = [];
-    const journal = new FileTransactionJournal(this.paths);
+    const journal = new FileTransactionJournal(this.requirePaths());
     for (const attempt of await this.attemptsForApproval(approvalSelector)) {
       try {
         const result = await this.readAttemptResult(attempt.id);
@@ -571,13 +593,14 @@ export class ChangeLifecycleStore {
   }
 
   private async read(relativePath: string): Promise<string> {
-    return readFile((await this.paths.resolveRead(`${storeRoot}/${relativePath}`)).realTarget, "utf8");
+    if (this.collected !== undefined) return this.collectedSource(`${storeRoot}/${relativePath}`);
+    return readFile((await this.requirePaths().resolveRead(`${storeRoot}/${relativePath}`)).realTarget, "utf8");
   }
 
   private async ensureDirectory(relativePath: string): Promise<string> {
-    const initial = await this.paths.resolveWrite(`${storeRoot}/${relativePath}`);
+    const initial = await this.requirePaths().resolveWrite(`${storeRoot}/${relativePath}`);
     await mkdir(initial.realTarget, { recursive: true });
-    return (await this.paths.resolveWrite(`${storeRoot}/${relativePath}`)).realTarget;
+    return (await this.requirePaths().resolveWrite(`${storeRoot}/${relativePath}`)).realTarget;
   }
 
   private async writeNew(relativePath: string, value: unknown): Promise<void> {
@@ -586,9 +609,9 @@ export class ChangeLifecycleStore {
 
   private async writeTextNew(relativePath: string, content: string): Promise<void> {
     const storedPath = `${storeRoot}/${relativePath}`;
-    const initial = await this.paths.resolveWrite(storedPath);
+    const initial = await this.requirePaths().resolveWrite(storedPath);
     await mkdir(dirname(initial.realTarget), { recursive: true });
-    const destination = (await this.paths.resolveWrite(storedPath)).realTarget;
+    const destination = (await this.requirePaths().resolveWrite(storedPath)).realTarget;
     const temporary = `${destination}.${process.pid}.${Date.now()}.tmp`;
     const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
     try {

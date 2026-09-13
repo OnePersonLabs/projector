@@ -1,6 +1,6 @@
 # Delegated investigation
 
-Read this after user authorization or when assigned the subagent role. Use the installed [operation contract](../../projector/operation-contract.md); exact registered schemas own requests.
+Read this after user authorization or when assigned the subagent role. Use the installed [shared operation contract](../../../references/operation-contract.md); exact registered schemas own requests.
 
 ## Establish the comparison
 

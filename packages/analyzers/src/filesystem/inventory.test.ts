@@ -24,6 +24,62 @@ afterEach(async () => {
 });
 
 describe("repository inventory boundary", () => {
+  it("bounds cumulative bytes and filesystem cardinality without widening on failure", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-inventory-limits-")); temporaryRoots.push(root);
+    await writeFile(join(root, "first.ts"), "123456");
+    await writeFile(join(root, "second.ts"), "abcdef");
+    await expect(inventoryRepository(root, { observationLimits: { maxTotalBytes: 10 } })).rejects.toMatchObject({ limit: "maxTotalBytes" });
+    await expect(inventoryRepository(root, { observationLimits: { maxFiles: 1 } })).rejects.toMatchObject({ limit: "maxFiles" });
+    await mkdir(join(root, "a", "b"), { recursive: true });
+    await expect(inventoryRepository(root, { observationLimits: { maxDirectories: 2 } })).rejects.toMatchObject({ limit: "maxDirectories" });
+    const complete = await inventoryRepository(root, { observationLimits: { maxTotalBytes: 12, maxFiles: 2, maxDirectories: 3 } });
+    expect(complete.entries.map(({ path }) => path)).toEqual(["first.ts", "second.ts"]);
+  });
+
+  it("rejects Git output exhaustion, cancellation and invalid overrides", async () => {
+    const root = await repository(); await writeFile(join(root, "source.ts"), "export const value = true;");
+    await expect(inventoryRepository(root, { observationLimits: { maxGitOutputBytes: 1 } })).rejects.toMatchObject({ limit: "maxGitOutputBytes" });
+    await expect(inventoryRepository(root, { observationLimits: { timeoutMs: 1 } })).rejects.toMatchObject({ limit: "timeoutMs" });
+    await expect(inventoryRepository(root, { signal: AbortSignal.abort() })).rejects.toMatchObject({ code: "observation-failed" });
+    await expect(inventoryRepository(root, { observationLimits: { maxFiles: Infinity } })).rejects.toMatchObject({ stage: "limits" });
+  });
+
+  it("rejects missing Git executable even for an otherwise readable non-Git root", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-inventory-no-executable-")); temporaryRoots.push(root);
+    await writeFile(join(root, "source.ts"), "export const value = true;");
+    const originalPath = process.env.PATH; process.env.PATH = root;
+    try { await expect(inventoryRepository(root)).rejects.toMatchObject({ code: "observation-failed", stage: "git-inventory" }); }
+    finally { if (originalPath === undefined) delete process.env.PATH; else process.env.PATH = originalPath; }
+  });
+
+  it("binds ignored nested ignore files and effective repository exclusion configuration", async () => {
+    const root = await repository(); await mkdir(join(root, "nested"));
+    await writeFile(join(root, ".gitignore"), ".gitignore\n");
+    await writeFile(join(root, "nested", ".gitignore"), "hidden.ts\n");
+    await writeFile(join(root, "nested", "hidden.ts"), "export const hidden = true;");
+    await writeFile(join(root, "nested", "visible.ts"), "export const visible = true;");
+    await writeFile(join(root, "custom-ignore"), "other.ts\n");
+    await execFileAsync("git", ["config", "core.excludesFile", "custom-ignore"], { cwd: root });
+    const before = await inventoryRepository(root);
+    expect(before.entries.map(({ path }) => path)).not.toContain("nested/.gitignore");
+    expect(before.entries.map(({ path }) => path)).not.toContain("nested/hidden.ts");
+    expect(before.observationDescriptor.ignoreSources.map(({ path }) => path)).toEqual(expect.arrayContaining([
+      ".gitignore", "nested/.gitignore", "git:config", "git:info/exclude", "git:effective-config", "git:core.excludesFile:custom-ignore",
+    ]));
+    await writeFile(join(root, "nested", ".gitignore"), "visible.ts\n");
+    const after = await inventoryRepository(root);
+    expect(after.observationDescriptor.ignoreSources).not.toEqual(before.observationDescriptor.ignoreSources);
+    expect(after.entries.map(({ path }) => path)).toContain("nested/hidden.ts");
+    const analysis = await analyzeLocalRepository({ repositoryRoot: root });
+    expect(analysis.git.availability).toBe("available"); expect(analysis.git.revision).toBe("unborn");
+  });
+  it("rejects an oversized file before returning any inventory", async () => {
+    const root = await repository();
+    await writeFile(join(root, "source.ts"), "export const tooLarge = true;");
+    await expect(inventoryRepository(root, { observationLimits: { maxFileBytes: 8 } })).rejects.toMatchObject({
+      code: "observation-limit-exceeded", limit: "maxFileBytes", scope: "source.ts",
+    });
+  });
   it("uses Git's current project boundary while retaining tracked ignored code", async () => {
     const root = await repository();
     await Promise.all([
@@ -76,15 +132,9 @@ describe("repository inventory boundary", () => {
     await writeFile(join(outside, "source.ts"), "export const escaped = true;\n");
     await symlink(outside, join(root, "linked"), process.platform === "win32" ? "junction" : "dir");
 
-    const inventory = await inventoryRepository(root);
-
-    expect(inventory.entries.some(({ path }) => path === "linked/source.ts")).toBe(false);
-    expect(inventory.failures).toContainEqual(expect.objectContaining({
-      analyzerId: "projector.filesystem-local",
-      capability: "symlink-parent",
-      scope: "linked/source.ts",
-      affectedClaimKinds: ["artifact-enumeration", "inventory-completeness", "source-relationships"],
-    }));
+    await expect(inventoryRepository(root)).rejects.toMatchObject({
+      code: "observation-failed", stage: "symlink-parent", scope: "linked/source.ts",
+    });
   });
 
   it("falls back honestly without Git and never inventories operational runtime state", async () => {
@@ -103,20 +153,12 @@ describe("repository inventory boundary", () => {
     expect(inventory.failures).not.toContainEqual(expect.objectContaining({ capability: "git-aware-inventory" }));
   });
 
-  it("reports an unexpected Git inventory failure without discarding readable fallback files", async () => {
+  it("rejects an unexpected Git inventory failure without scanning fallback files", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-inventory-broken-git-"));
     temporaryRoots.push(root);
     await mkdir(join(root, ".git"));
     await writeFile(join(root, "source.ts"), "export const fallback = true;\n");
 
-    const inventory = await inventoryRepository(root);
-
-    expect(inventory.enumeration.method).toBe("recursive-filesystem-fallback");
-    expect(inventory.entries.map(({ path }) => path)).toContain("source.ts");
-    expect(inventory.failures).toContainEqual(expect.objectContaining({
-      analyzerId: "projector.filesystem-local",
-      capability: "git-aware-inventory",
-      affectedClaimKinds: ["artifact-enumeration", "inventory-completeness"],
-    }));
+    await expect(inventoryRepository(root)).rejects.toMatchObject({ code: "observation-failed", stage: "git-inventory" });
   });
 });

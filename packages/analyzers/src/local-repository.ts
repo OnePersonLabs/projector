@@ -1,6 +1,8 @@
 import { posix, resolve } from "node:path";
 
 import {
+  ObservationBudget,
+  DerivedObservationBudget,
   deriveEntityId,
   hashFramedDomain,
   type AnalyzerCapabilities,
@@ -11,11 +13,13 @@ import {
   type SemanticSignature,
   type SourceClass,
   type Surface,
+  type ObservationDescriptor,
+  type ObservationLimits,
 } from "@projector/core";
 
 import { inventoryRepository, type InventoryEntry, type InventoryResult } from "./filesystem/inventory.js";
 import { analyzeDocuments, type ActionsWorkflowFact, type DocumentFact, type MarkdownFact } from "./formats/documents.js";
-import { collectGitFacts, type GitFacts, type GitIdentityFact, type GitMoveFact } from "./git/facts.js";
+import { collectGitFacts, finalizeGitFacts, type GitFacts, type GitIdentityFact, type GitMoveFact } from "./git/facts.js";
 import { compareCodePoint } from "./ordering.js";
 import { type EventContractTopology } from "./topology/index.js";
 import { compileRepositoryTopology, detectMechanicalDivergences, type AnalyzerDivergenceFact } from "./topology/repository.js";
@@ -69,6 +73,7 @@ export interface LocalFileFact {
 }
 
 export interface LocalRepositoryAnalysis {
+  readonly observationDescriptor: ObservationDescriptor;
   readonly surface: Surface;
   readonly capabilities: AnalyzerCapabilities[];
   readonly artifacts: Artifact[];
@@ -93,6 +98,15 @@ export interface AnalyzeLocalRepositoryOptions {
   readonly repositoryRoot: string;
   readonly observedAt?: string;
   readonly observationRevision?: string;
+  readonly observationLimits?: Partial<ObservationLimits>;
+  readonly signal?: AbortSignal;
+  readonly budget?: ObservationBudget;
+}
+
+export interface CollectedLocalRepositoryInputs {
+  readonly options: { readonly repositoryRoot: string; readonly observedAt?: string; readonly observationRevision?: string };
+  readonly inventoryResult: InventoryResult;
+  readonly gitFacts: GitFacts;
 }
 
 const adapterVersion = "2.2.0";
@@ -391,13 +405,34 @@ function buildCapabilities(rootAvailable: boolean, inventoryEnumeration: Invento
 }
 
 export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOptions): Promise<LocalRepositoryAnalysis> {
+  const budget = options.budget ?? new ObservationBudget(options.observationLimits);
+  const result = analyzeCollectedLocalRepository(await collectLocalRepositoryInputs({ ...options, budget }));
+  budget.check("semantic-analysis");
+  return result;
+}
+
+export async function collectLocalRepositoryInputs(options: AnalyzeLocalRepositoryOptions): Promise<CollectedLocalRepositoryInputs> {
   const repositoryRoot = resolve(options.repositoryRoot);
-  const inventoryResult = await inventoryRepository(repositoryRoot);
+  const budget = options.budget ?? new ObservationBudget(options.observationLimits);
+  const signalOption = options.signal === undefined ? {} : { signal: options.signal };
+  const inventoryResult = await inventoryRepository(repositoryRoot, { budget, ...signalOption });
+  const gitFacts = await collectGitFacts(repositoryRoot, inventoryResult.entries.map((entry) => entry.path), {
+    budget, ...signalOption, entries: inventoryResult.entries,
+    confirmedNonGit: inventoryResult.enumeration.method === "recursive-filesystem-fallback",
+  });
+  budget.check("collection");
+  return { options: { repositoryRoot, ...(options.observedAt === undefined ? {} : { observedAt: options.observedAt }),
+    ...(options.observationRevision === undefined ? {} : { observationRevision: options.observationRevision }) }, inventoryResult, gitFacts };
+}
+
+export function analyzeCollectedLocalRepository(collected: CollectedLocalRepositoryInputs,
+  derivedBudget = new DerivedObservationBudget(collected.inventoryResult.observationDescriptor.limits.maxDerivedBytes)): LocalRepositoryAnalysis {
+  const { options, inventoryResult } = collected;
   const inventory = inventoryResult.entries;
   const packageFacts = analyzePackageScripts(inventory);
-  const javaScriptFacts = analyzeJavaScript(inventory);
+  const javaScriptFacts = analyzeJavaScript(inventory, derivedBudget);
   const documentFacts = analyzeDocuments(inventory);
-  const gitFacts = await collectGitFacts(repositoryRoot, inventory.map((entry) => entry.path));
+  const gitFacts = finalizeGitFacts(collected.gitFacts, derivedBudget);
   const hookReachable = hookReachablePaths(javaScriptFacts.files, javaScriptFacts.dependencies);
   const javaScriptByPath = new Map(javaScriptFacts.files.map((facts) => [facts.path, facts]));
   const gitByPath = new Map(gitFacts.identities.map((identity) => [identity.path, identity]));
@@ -462,6 +497,7 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
   for (const entry of inventory) {
     const javaScript = javaScriptByPath.get(entry.path);
     const { role, evidence } = roleFor(entry, javaScript, packageFacts.invocations, javaScriptFacts.testTargets, hookReachable);
+    derivedBudget.reserve(3072 + 4 * entry.path.length + 64 * evidence.length, "local-artifact-facts", entry.path);
     const semanticKey = semanticKeys.get(entry.path)!;
     // Physical source identity is independent of syntax and of whether another
     // file has the same contents. Available Git move evidence preserves the
@@ -552,6 +588,7 @@ export async function analyzeLocalRepository(options: AnalyzeLocalRepositoryOpti
   const topology = compileRepositoryTopology(javaScriptFacts, capabilities, failures);
   const divergences = detectMechanicalDivergences(javaScriptFacts, documentFacts.actions);
   return {
+    observationDescriptor: inventoryResult.observationDescriptor,
     surface,
     capabilities,
     artifacts,

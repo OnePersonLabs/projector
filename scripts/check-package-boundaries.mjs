@@ -151,6 +151,7 @@ async function main() {
     ...validatePackageDependencies(await readWorkspaceGraph(root)),
     ...validatePackageDependencies(await readImportGraph(root)),
     ...validateCuratedExports(controlPlaneFacade, [
+      "runObservationTask",
       "CompletionQuestion",
       "CompletionQuestionSchema",
       "DurableRepresentationArtifact",

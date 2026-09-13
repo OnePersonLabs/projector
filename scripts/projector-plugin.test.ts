@@ -47,6 +47,39 @@ async function installedFixture() {
 }
 
 describe("Projector installed operation entry", () => {
+  test("injects complete installed instructions independently of repository observation", async () => {
+    const { root, pluginRoot, packagedRoot } = await installedFixture();
+    const manifest = JSON.parse(await readFile(join(pluginRoot, "hooks/hooks.json"), "utf8"));
+    const session = manifest.hooks.SessionStart[0];
+    expect(session.matcher).toBe("startup|resume|clear|compact");
+    const injection = session.hooks.find((entry: { command: string }) => entry.command.includes("projector-instructions.mjs"));
+    expect(session.hooks.some((entry: { command: string }) => entry.command.includes("projector-session.mjs"))).toBe(true);
+    const contents = await readFile(join(pluginRoot, "AGENTS.md"), "utf8");
+    expect(contents.length).toBeLessThanOrEqual(injection.additionalContextLimit);
+    const hook = join(pluginRoot, "hooks/projector-instructions.mjs");
+    const repository = join(root, "inactive");
+    await mkdir(repository);
+    for (const cwd of [root, repository]) {
+      for (const source of ["startup", "resume", "clear", "compact"]) {
+        const result = await run(process.execPath, [hook], cwd, JSON.stringify({ hook_event_name: "SessionStart", source, cwd }));
+        expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+        expect(JSON.parse(result.stdout)).toEqual({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: contents } });
+      }
+      expect((await run("git", ["init", "-q"], repository)).exitCode).toBe(0);
+    }
+    await writeFile(join(packagedRoot, "exports/operations.js"), "throw new Error('observation unavailable');");
+    const observation = await run(process.execPath, [join(pluginRoot, "hooks/projector-session.mjs")], repository, JSON.stringify({ hook_event_name: "SessionStart", cwd: repository }));
+    expect(observation.exitCode).toBe(1);
+    const independent = await run(process.execPath, [hook], repository);
+    expect(JSON.parse(independent.stdout).hookSpecificOutput.additionalContext).toBe(contents);
+    await rm(join(pluginRoot, "AGENTS.md"));
+    const missing = await run(process.execPath, [hook], root);
+    expect(missing).toMatchObject({ exitCode: 1, stdout: "", stderr: expect.stringMatching(/cannot read.*AGENTS.md/iu) });
+    await mkdir(join(pluginRoot, "AGENTS.md"));
+    const unreadable = await run(process.execPath, [hook], root);
+    expect(unreadable).toMatchObject({ exitCode: 1, stdout: "", stderr: expect.stringMatching(/cannot read.*AGENTS.md/iu) });
+  });
+
   test("loads one bundled runner from the packaged root and accepts a versioned JSON request on stdin", async () => {
     const { pluginRoot, packagedRoot } = await installedFixture();
     const repositoryRoot = join(pluginRoot, "../repository");

@@ -1,12 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { OperationAccessError, recoverAbandonedProjectOperationAccess, withProjectOperationAccess } from "./operation-access.js";
+import { OperationAccessError, recoverAbandonedProjectOperationAccess, withProjectOperationAccess, tryWithProjectExclusiveAccess } from "./operation-access.js";
 
 const accessModuleUrl = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "operation-access.ts")).href;
 const childProcesses = new Set<ChildProcess>();
@@ -17,6 +17,18 @@ afterEach(() => {
 });
 
 describe("withProjectOperationAccess", () => {
+  it("skips exclusive maintenance atomically while busy without leaving a queued request", async () => {
+    const root = await readyProject();
+    await withProjectOperationAccess(root, { operation: "reader", mode: "shared" }, async () => {
+      expect(await tryWithProjectExclusiveAccess(root, "maintenance", async () => "unexpected")).toEqual({ acquired: false });
+      expect(await readdir(join(root, ".projector/runtime/operation-access/requests"))).toEqual([]);
+    });
+    expect(await tryWithProjectExclusiveAccess(root, "maintenance", async (access) => {
+      await access.assertOwned();
+      return "collected";
+    })).toEqual({ acquired: true, value: "collected" });
+    expect(await readdir(join(root, ".projector/runtime/operation-access/holders"))).toEqual([]);
+  });
   it("identifies the exact machine-owned files for a held claim", async () => {
     const root = await readyProject();
     await withProjectOperationAccess(root, { operation: "migration", mode: "exclusive" }, async (access) => {
@@ -225,6 +237,65 @@ describe("withProjectOperationAccess", () => {
     await expect(readdir(join(access, "holders"))).resolves.toEqual([]);
     await expect(withProjectOperationAccess(root, { operation: "recover", mode: "shared" }, async () => "reachable"))
       .resolves.toBe("reachable");
+  });
+
+  it("recovers an abandoned mutex and interrupted heartbeat for a dead holder", async () => {
+    const root = await readyProject();
+    await withProjectOperationAccess(root, { operation: "initialize-access", mode: "shared" }, async () => undefined);
+    const access = join(root, ".projector", "runtime", "operation-access");
+    const requestId = "00000000-0000-4000-8000-000000000003";
+    const exited = spawn(process.execPath, ["--eval", ""]);
+    const exitedProcessId = exited.pid!;
+    await new Promise<void>((resolve) => exited.once("exit", () => resolve()));
+    const claimPath = join(access, "holders", `${requestId}.json`);
+    await writeClaim(claimPath, { requestId, ticket: 2, operation: "interrupted-reconcile", mode: "shared" }, "2000-01-01T00:00:00.000Z", exitedProcessId);
+    const temporaryPath = join(access, "holders", `.${requestId}.json.11111111-1111-4111-8111-111111111111.tmp`);
+    await writeFile(temporaryPath, await readFile(claimPath));
+    await utimes(temporaryPath, new Date("2000-01-01T00:00:00.000Z"), new Date("2000-01-01T00:00:00.000Z"));
+    await writeFile(join(access, "next-ticket"), "2\n");
+    const mutex = join(access, "mutex");
+    await mkdir(mutex);
+    await utimes(mutex, new Date("2000-01-01T00:00:00.000Z"), new Date("2000-01-01T00:00:00.000Z"));
+
+    await expect(withProjectOperationAccess(root, { operation: "inspect", mode: "shared" }, async () => undefined))
+      .rejects.toMatchObject({ code: "access-corrupt" });
+    await expect(recoverAbandonedProjectOperationAccess(root)).resolves.toEqual({ removedClaimIds: [requestId] });
+    await expect(readdir(join(access, "holders"))).resolves.toEqual([]);
+    await expect(fileExists(mutex)).resolves.toBe(false);
+    await expect(withProjectOperationAccess(root, { operation: "inspect", mode: "shared" }, async () => "reachable"))
+      .resolves.toBe("reachable");
+  });
+
+  it("preserves an abandoned mutex and interrupted heartbeat when the holder process is alive", async () => {
+    const root = await readyProject();
+    await withProjectOperationAccess(root, { operation: "initialize-access", mode: "shared" }, async () => undefined);
+    const access = join(root, ".projector", "runtime", "operation-access");
+    const requestId = "00000000-0000-4000-8000-000000000004";
+    const claimPath = join(access, "holders", `${requestId}.json`);
+    await writeClaim(claimPath, { requestId, ticket: 2, operation: "slow-reconcile", mode: "shared" }, "2000-01-01T00:00:00.000Z", process.pid);
+    const temporaryPath = join(access, "holders", `.${requestId}.json.11111111-1111-4111-8111-111111111111.tmp`);
+    await writeFile(temporaryPath, await readFile(claimPath));
+    await utimes(temporaryPath, new Date("2000-01-01T00:00:00.000Z"), new Date("2000-01-01T00:00:00.000Z"));
+    await writeFile(join(access, "next-ticket"), "2\n");
+    const mutex = join(access, "mutex");
+    await mkdir(mutex);
+    await utimes(mutex, new Date("2000-01-01T00:00:00.000Z"), new Date("2000-01-01T00:00:00.000Z"));
+
+    await expect(recoverAbandonedProjectOperationAccess(root)).rejects.toMatchObject({ code: "access-corrupt" });
+    await expect(fileExists(mutex)).resolves.toBe(true);
+    await expect(fileExists(claimPath)).resolves.toBe(true);
+    await expect(fileExists(temporaryPath)).resolves.toBe(true);
+  });
+
+  it("refuses to guess ownership of an abandoned mutex without an interrupted heartbeat", async () => {
+    const root = await readyProject();
+    await withProjectOperationAccess(root, { operation: "initialize-access", mode: "shared" }, async () => undefined);
+    const mutex = join(root, ".projector", "runtime", "operation-access", "mutex");
+    await mkdir(mutex);
+    await utimes(mutex, new Date("2000-01-01T00:00:00.000Z"), new Date("2000-01-01T00:00:00.000Z"));
+
+    await expect(recoverAbandonedProjectOperationAccess(root)).rejects.toMatchObject({ code: "access-corrupt", message: expect.stringMatching(/manual recovery/iu) });
+    await expect(fileExists(mutex)).resolves.toBe(true);
   });
 
   it("refuses to remove an expired claim while its recorded process is alive", async () => {
