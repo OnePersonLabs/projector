@@ -25,7 +25,7 @@ Full available bytes were read from these retained manifest captures. Duplicate 
 - `d2e506b421a2fbc43a393361e22beffb3a6f57f8531ef1afdb8d9e7348208771.md`: project-steward/orbital-materialization handoff.
 - `10773a1edfac52df4eb03ec403712f833858c257596d7c496e72ce88c522cf7c.md`: project-steward/compiled-change handoff.
 
-These reside in `assimilation/intake/attachments/`. Their inherited citations are source claims; no cited websites or Projector code were freshly verified here.
+These reside in `.assimilate/intake/attachments/`. Their inherited citations are source claims; no cited websites or Projector code were freshly verified here.
 
 ## Unavailable artifact contents and fidelity boundaries
 

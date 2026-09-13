@@ -1,11 +1,11 @@
 # Assimilation workspace and intake
 
-Read this when the pile is large, branched, likely to outlive a context, or when resuming a campaign. The repository-local `assimilation/` directory owns the working synthesis and durable intake. It is separate from Projector's `.projector/` accepted model, runtime, and authorities.
+Read this when the pile is large, branched, likely to outlive a context, or when resuming a campaign. The repository-local `.assimilate/` directory owns the working synthesis and durable intake. It is separate from Projector's `.projector/` accepted model, runtime, and authorities.
 
 The usual navigational shape is:
 
 ```text
-assimilation/
+.assimilate/
   INDEX.md              brief entry and links to topic notes
   FRONTIER.md           one active outcome, material unknowns, next action
   topics/               cohesive Markdown notes in the working synthesis

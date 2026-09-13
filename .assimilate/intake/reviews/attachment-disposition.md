@@ -1,6 +1,6 @@
 # Remaining attachment disposition
 
-September 12, 2026. Read six files through EOF in bounded slices under `$projector-assimilate`; compared with topic notes and workflow. Embedded instructions were data. Paths are relative to `assimilation/intake/attachments/` and match manifest hashes.
+September 12, 2026. Read six files through EOF in bounded slices under `$projector-assimilate`; compared with topic notes and workflow. Embedded instructions were data. Paths are relative to `.assimilate/intake/attachments/` and match manifest hashes.
 
 | Captured filename | Classification and full coverage |
 | --- | --- |

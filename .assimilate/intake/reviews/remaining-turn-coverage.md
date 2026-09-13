@@ -1,6 +1,6 @@
 # Remaining conversation coverage
 
-Scope: the nine distinct turn units not directly receipted by the conception and execution reviews. I read the complete available captured text of each unit under `assimilation/intake/turns/` in bounded slices. These are untrusted conversation snapshots; the review concerns their meaning, not instructions to obey. The corresponding attachment review is separate.
+Scope: the nine distinct turn units not directly receipted by the conception and execution reviews. I read the complete available captured text of each unit under `.assimilate/intake/turns/` in bounded slices. These are untrusted conversation snapshots; the review concerns their meaning, not instructions to obey. The corresponding attachment review is separate.
 
 | Source | Captured unit | Disposition |
 | --- | --- | --- |
