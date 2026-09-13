@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { hashFramedDomain, withCanonicalHashes, type CanonicalDocumentEnvelope, type RealizationBinding } from "@projector/core";
+import { DerivedObservationBudget, hashFramedDomain, withCanonicalHashes, type CanonicalDocumentEnvelope, type RealizationBinding } from "@projector/core";
 import { evaluateSelectorMembership, projectionUnitSelectorSubject } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import { observeChangeRepository } from "../change-lifecycle/repository-observer
 import { inspectRepositoryCoverage } from "../coverage/service.js";
 import { KnowledgeGraph } from "./graph.js";
 import { RepositoryKnowledgeService } from "./service.js";
+import { compileCanonicalRealizations } from "./realizations.js";
 
 const roots: string[] = [];
 const origin: RealizationBinding["origin"] = { kind: "content", locator: "fixture:accepted-realization", contentHash: hashFramedDomain("realization-test-source", "accepted-realization") };
@@ -35,6 +36,18 @@ const requirement = (realizations?: RealizationBinding[]) => ({ id: "requirement
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 }))); });
 
 describe("canonical realization composition", () => {
+  it("bounds accepted-owner by unit expansion without returning partial realization memberships", async () => {
+    const root = await repository();
+    for (let index = 0; index < 24; index += 1) await file(root, `src/value-${index}.ts`);
+    const raw = await observeChangeRepository(root);
+    for (let index = 0; index < 24; index += 1) {
+      await canonical(root, "requirement", { ...requirement([{ selector: { op: "atom", field: "path", matcher: "glob", value: "src/**" }, origin }]), id: `requirement:bounded-${index}`, key: `bounded-${index}` });
+    }
+    const accepted = await new CanonicalFileRepository(root).snapshot();
+    let failure: unknown;
+    try { compileCanonicalRealizations(raw.analysis, accepted, new DerivedObservationBudget(128_000)); } catch (error) { failure = error; }
+    expect(failure).toMatchObject({ code: "observation-limit-exceeded", limit: "maxDerivedBytes", stage: "realization-membership" });
+  });
   it("preserves the explicit five-glob set and stales a moved realization at unchanged HEAD", async () => {
     const root = await repository();
     for (const path of ["packages/control-plane/src/knowledge/service.ts", "packages/engine/src/relevance/index.ts", "packages/engine/src/context/index.ts", "packages/cli/src/knowledge-cli.ts", "packages/cli/src/mcp-cli.ts", "packages/runtime/src/unrelated.ts"]) await file(root, path);

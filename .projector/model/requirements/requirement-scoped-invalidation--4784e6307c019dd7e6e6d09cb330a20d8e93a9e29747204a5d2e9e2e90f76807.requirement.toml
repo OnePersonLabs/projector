@@ -9,52 +9,54 @@ lifecycle = "active"
 [payload]
 title = "Reuse knowledge with scoped invalidation"
 aliases = [ "stale knowledge", "dependency-scoped reuse" ]
-statement = """Bind retained reasoning and derived artifacts to the exact semantic values and query results they used, \
-  including empty queries and selector membership. Traverse exact derivation dependencies before versioned \
-  impact rules after a known delta; do not substitute pre-edit relevance for that dependency proof. \
-  Reuse unaffected knowledge despite unrelated changes. Backdate only when the registered signature \
-  profile proves all required preserved dimensions; unchanged structure does not prove behavioral equivalence \
-  or waive required validation. Changed dependencies or new consumers invalidate affected reasoning. \
-  Unknown profiles, missing baselines and open populations remain unknown and can be rebuilt without \
-  making runtime caches canonical.
+statement = """Bind retained reasoning and derived artifacts to their exact semantic values and query results, including \
+  empty queries and selector membership. After a known delta, traverse exact derivation dependencies \
+  before versioned impact rules; pre-edit relevance is not dependency proof. Reuse unaffected knowledge \
+  despite unrelated changes. Backdate only when the registered signature profile proves every required \
+  preserved dimension; unchanged structure proves neither behavior nor validation. Changed dependencies \
+  or new consumers invalidate affected reasoning. Unknown profiles, missing baselines and open populations \
+  remain unknown; rebuilding them does not make runtime caches canonical.
 
-Bind mutation authority to the exact session, plan and approval hash, value and query dependencies, \
-  operations, semantic and write scope, risk, expiry, and representation profile. A relevant changed \
-  or unprovable dependency invalidates authority; an unrelated repository-root digest change triggers \
-  validation and may rebind without blanket invalidation. Execution mode changes permission only and \
-  cannot weaken meaning or proof. Stale approval cannot replay.
+Bind mutation authority to the exact session, plan and approval hash, value/query dependencies, operations, \
+  semantic/write scope, risk, expiry and representation profile. Relevant changed or unprovable dependencies \
+  invalidate authority. Unrelated root-digest changes trigger validation and may rebind without blanket \
+  invalidation. Execution mode changes permission only, never meaning or proof. Stale approvals cannot \
+  replay.
 
-For mutating transforms, bind applicability, preconditions, touched units and write scope to dependency-scoped \
-  state before preview and apply. Preserve composition dependencies and exclusive claims, fail on unresolved \
-  semantic anchors or unresolved overlapping claims, and verify declared postconditions with structured \
-  evidence. Apply the complete transform and convergence obligations of executable lenses and the upstream-first \
-  repair discipline of reverse reconciliation. Public enforcement of the complete composition and repair \
-  policy remains explicitly unrealized by this ingestion; reconsider it when a named supported planning \
-  or repair consumer requires those decisions, rather than treating internal contracts or file mappings \
-  as fulfillment.
+Bind transform applicability, preconditions, touched units and write scope to dependency-scoped state \
+  before preview and apply. Preserve composition dependencies and exclusive claims; fail on unresolved \
+  semantic anchors or overlapping claims. Verify declared postconditions with structured evidence. Preserve \
+  executable-lens composition/convergence and reverse-reconciliation upstream-first repair obligations. \
+  Full composition/repair enforcement remains unrealized until a named public planning or repair consumer \
+  exercises it; internal types and mappings are not fulfillment.
 
-Plans are immutable revisions: a changed plan receives a new identity rather than modifying what approvals \
-  or packets reference. Partial execution preserves dependency integrity. Changed repository, canonical, \
-  toolchain or external-snapshot state requires explicit refresh/rebase: recompute snapshot identity, \
-  validate/rebind dependency-scoped state, identify still-valid assumptions and closures, recompile \
-  stale capsules/packets, carry forward completed work only where its proof remains valid, emit a new \
-  immutable revision and invalidate stale approvals. Canonical-governance conflicts block governed execution \
-  until explicitly resolved; automatic semantic Git conflict resolution is not required.
+Plans are immutable revisions. Partial execution preserves dependency integrity. Changed repository, \
+  canonical, toolchain or external state requires explicit refresh/rebase: recompute snapshot identity, \
+  validate/rebind scoped state, retain valid assumptions/closures, recompile stale capsules/packets, \
+  carry completed work only with valid proof, emit a new revision and invalidate stale approvals. Governance \
+  conflicts block execution pending resolution; automatic semantic Git conflict resolution is not required. \
+  A changed global snapshot with current bound values/queries permits lightweight immutable rebind without \
+  recomputing unaffected analysis; explain it separately from semantic rebase.
 
-If the global snapshot alone changed while bound dependencies and query fingerprints remain current, \
-  a lightweight rebind may emit a new immutable revision without recomputing unaffected analysis. Explain \
-  this separately from semantic rebase changing relevance, impact, assumptions or packets. Bounded saved-context/lifecycle \
-  continuation and relevant query/profile currentness explanations that retain independently current \
-  work remain required release behavior. Unrestricted multi-packet checkpoint orchestration beyond exercised \
-  consumers remains explicitly unrealized; reconsider it when a real supported multi-packet plan loses \
-  valid completed work or risks stale authority.
+Bounded saved-context/lifecycle continuation and query/profile currentness explanations must retain \
+  independently valid work. Unrestricted multi-packet checkpoint orchestration remains unrealized; revisit \
+  when a supported multi-packet plan loses valid work or risks stale authority.
 
-Risk is contextual, including uncertainty, unresolved identity/ownership, weak coverage or validation, \
-  stale observations, open frontiers and limited rollback. Increased uncertainty must never reduce risk \
-  or approval requirements. The highest-risk destructive, production-security, billing, identity or \
-  irreversible-release actions are not autonomous. Actual authorization and host-configured permissions \
-  still govern; historical risk tables do not create permission or revive Projector-owned confinement. \
-  Conflicting policy inputs fail explicitly instead of relying on ambiguous precedence."""
+Risk includes uncertainty, unresolved identity/ownership, weak coverage/validation, stale observations, \
+  open frontiers and limited rollback. More uncertainty never reduces risk or approvals. Highest-risk \
+  destructive, production-security, billing, identity or irreversible-release actions are not autonomous. \
+  Actual authorization and host permissions govern; historical risk tables grant neither permission \
+  nor confinement. Conflicting policies fail explicitly.
+
+Repository observation must complete its declared inventory within explicit finite resource limits or \
+  fail without publishing a usable partial snapshot or replacing a previous baseline. Completeness of \
+  inventory does not imply semantic completeness for unsupported constructs. Bind snapshots to versioned \
+  enumeration scope and effective exclusion inputs; incompatible observations require fresh context \
+  and cannot establish file additions or removals. Derived contexts and impact snapshots are disposable, \
+  size-bounded caches without age-based expiration. Evict least-recently-used eligible entries while \
+  preserving live operations and unfinished/recoverable lifecycle dependencies; admission fails when \
+  safe capacity cannot be established. Durable approvals, receipts, journals, canonical meaning and \
+  embedded historical lifecycle proof are not cache eviction targets."""
 sourceClass = "authored"
 evidence = []
 
@@ -183,6 +185,12 @@ description = """Accepted second source-absent increment: observed old/current v
   currentness while unrelated edits retain reuse. Independent same-HEAD value and query-membership changes \
   exercised this distinction. This does not establish exhaustive dependency inference, universal equivalence \
   or economic advantage."""
+
+[[payload.origin]]
+kind = "user-request"
+locator = "conversation:2026-09-13:bounded-observation-approved-plan"
+description = """User explicitly requested implementation of the reviewed complete-or-fail observation and size-bounded \
+  disposable cache plan."""
 
 [[payload.realizations]]
 [payload.realizations.selector]

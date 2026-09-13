@@ -6,7 +6,8 @@ import { promisify } from "node:util";
 
 import { hashFramedDomain, withCanonicalHashes } from "@projector/core";
 import { CanonicalFileRepository, FileTransactionJournal } from "@projector/runtime";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, vi } from "vitest";
+import { integrationTest as test } from "../../../../scripts/testing/integration-test.mjs";
 
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
@@ -120,6 +121,23 @@ test("cleanup distinguishes an absent required context from unobservable advisor
   const report = await inspectRepositoryCoverage(root, { scope: ".", contextId: "knowledge_context_00000000000000000000000000000000" }, "cleanup");
   expect(report.continuation).toMatchObject({ context: { status: "unknown", governance: "unknown" }, advisoryNotes: { status: "unobservable" }, counts: { current: 0, stale: 0, unknown: 1 }, nextAction: { operation: "context" } });
   expect(report.continuation!.evidence[0]).toMatchObject({ availability: "missing", required: true });
+});
+
+test("cleanup refreshes an approved plan after its exact source dependency changes", async () => {
+  const root = await repository();
+  const service = await RepositoryChangeLifecycleService.create(root);
+  const captured = await service.capture({ request: "Implement the accepted greeting", proposal });
+  const approval = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+  await writeFile(join(root, "src/greeting.mjs"), "export const greet = () => 'changed independently';\n");
+
+  const report = await inspectRepositoryCoverage(root, { scope: ".", approvalSelector: approval.id, evidenceLimit: 50 }, "cleanup");
+  expect(report.continuation).toMatchObject({
+    lifecycle: { approvalSelector: approval.id, planFreshness: "stale", status: "unresolved" },
+    nextAction: { operation: "context", input: { request: captured.capture.request, persist: true } },
+  });
+  expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ owner: "representation", status: "stale", required: true }));
+  expect(report.continuation!.nextAction?.operation).not.toMatch(/^change\.(apply|resume)$/);
+  await expect((await ChangeLifecycleStore.create(root)).attemptsForApproval(approval.id)).resolves.toEqual([]);
 });
 
 const scenario = { key: "greet-name", title: "Greet a name", steps: [

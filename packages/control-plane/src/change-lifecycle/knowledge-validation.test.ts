@@ -6,7 +6,8 @@ import { promisify } from "node:util";
 import { hashFramedDomain, parseChangeProposal, withCanonicalHashes, type AuthorityRecord, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { expect, it } from "vitest";
+import { expect } from "vitest";
+import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
 
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { compileRepositoryChange } from "./compiler.js";

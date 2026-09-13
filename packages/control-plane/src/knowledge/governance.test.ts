@@ -7,7 +7,8 @@ import { promisify } from "node:util";
 import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type CanonicalDocumentEnvelope, type Concept, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository, NativeProcessLauncher, parseTomlDocument, stringifyTomlDocument, type ProcessLauncher, type ProcessLaunchRequest } from "@projector/runtime";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect } from "vitest";
+import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
 import { RepositoryKnowledgeService } from "./service.js";
@@ -176,12 +177,14 @@ describe("public architectural decision validity", () => {
 function protocolLauncher(calls: ProcessLaunchRequest[]): ProcessLauncher {
   return { capabilities: { cpuLimits: false, memoryLimits: false }, async launch(request) {
     calls.push(request);
-    expect(request).toMatchObject({ env: {}, timeoutMs: 30_000 });
+    expect(request.env).toEqual({});
+    expect(request.timeoutMs).toBeGreaterThan(0);
+    expect(request.timeoutMs).toBeLessThanOrEqual(30_000);
     expect(request).not.toHaveProperty("network");
     expect(request).not.toHaveProperty("readRoots");
     expect(request).not.toHaveProperty("writeRoots");
     expect(request.args[0]).toBe(join(request.cwd, "validators/check.cjs"));
-    const { stdout, stderr } = await execute(process.execPath, [request.args[0]!, request.args[1]!], { cwd: request.cwd, env: {}, timeout: request.timeoutMs });
+    const { stdout, stderr } = await execute(process.execPath, [request.args[0]!, request.args[1]!], { cwd: request.cwd, env: {}, timeout: request.timeoutMs, signal: request.signal });
     return { exitCode: 0, signal: null, stdout, stderr, durationMs: 0 };
   } };
 }

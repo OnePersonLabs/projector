@@ -6,6 +6,13 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/projector-instructions.mjs\"",
+            "statusMessage": "Loading Projector instructions",
+            "additionalContextLimit": 8192,
+            "timeout": 12
+          },
+          {
+            "type": "command",
             "command": "node \"${PLUGIN_ROOT}/hooks/projector-session.mjs\"",
             "statusMessage": "Loading Projector context",
             "additionalContextLimit": 768,

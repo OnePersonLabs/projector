@@ -30,6 +30,7 @@ import {
 import { z } from "zod";
 
 import { comparePackageVersions } from "./version-order.js";
+import { maintainDerivedCache } from "../knowledge/cache-maintenance.js";
 
 const legacyConfigPath = join(".projector", "config.json");
 const preparedConfigPath = join(".projector", "config.toml");
@@ -174,8 +175,12 @@ export async function withProjectOperationAccess<T>(
   const initial = await inspectProjectReadiness(repositoryRoot, input);
   if (initial.status !== "ready") return { readiness: initial };
   try {
-    if (input.operation === "change.recover") {
+    if (input.operation === "change.recover" || input.operation === "operation-access.recover") {
       await recoverAbandonedProjectOperationAccess(repositoryRoot, input.signal);
+    }
+    if (input.operation === "context" || input.operation === "change.capture" || input.operation === "change.plan") {
+      // Collection cannot upgrade a held shared claim; a busy collector simply yields to queued work.
+      await maintainDerivedCache(repositoryRoot, input.signal === undefined ? {} : { signal: input.signal });
     }
     return await withRuntimeOperationAccess(
       repositoryRoot,
@@ -197,7 +202,7 @@ export async function withProjectOperationAccess<T>(
         ...(error.code === "access-corrupt" ? {
           recovery: {
             code: "operation-access-corrupt",
-            action: "Recover the recognized operation-access claim through Projector recovery before retrying",
+            action: "Run operation-access.recover to reclaim a recognized abandoned claim before retrying",
           },
         } : {}),
       }),

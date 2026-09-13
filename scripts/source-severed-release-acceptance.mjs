@@ -7,20 +7,23 @@ import { promisify } from "node:util";
 
 import { runPackedLifecycleAcceptance } from "./packed-lifecycle-acceptance.mjs";
 import { canonicalJson, hashBytes, hashCanonical, releasePackageName, validateReleaseCandidate } from "./release-candidate.mjs";
-import { resolveNpmCommand } from "./npm-command.mjs";
+import { executeReleaseCommand, isReleaseCommandCleanupUnconfirmed, resolveNpmCommand } from "./npm-command.mjs";
 
 const execute = promisify(execFile);
 
-export async function installTarball(consumer, tarball, temporaryRoot) {
+export async function installTarball(consumer, tarball, temporaryRoot, options = {}) {
+  options.signal?.throwIfAborted();
   await mkdir(consumer, { recursive: true });
   await writeFile(join(consumer, "package.json"), `${canonicalJson({ private: true, type: "module" })}\n`);
   const isolatedNpmConfig = join(temporaryRoot, "empty-npmrc");
   await writeFile(isolatedNpmConfig, "");
   const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith("npm_config_")));
   environment.NPM_CONFIG_USERCONFIG = isolatedNpmConfig;
-  const npmArguments = ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock", tarball];
+  environment.NPM_CONFIG_CACHE = join(temporaryRoot, "npm-cache");
+  environment.NPM_CONFIG_UPDATE_NOTIFIER = "false";
+  const npmArguments = ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock", tarball];
   const { executable, arguments: arguments_ } = await resolveNpmCommand(npmArguments);
-  await execute(executable, arguments_, { cwd: consumer, env: environment, encoding: "utf8", maxBuffer: 20_000_000 });
+  await executeReleaseCommand(executable, arguments_, { cwd: consumer, env: environment, signal: options.signal, maxBuffer: 20_000_000 });
 }
 
 export async function runSourceSeveredReleaseAcceptance(candidateRoot) {
@@ -44,6 +47,7 @@ export async function runSourceSeveredReleaseAcceptance(candidateRoot) {
   await rm(resultsRoot, { recursive: true, force: true });
   await mkdir(resultsRoot, { recursive: true });
   const temporary = await mkdtemp(join(tmpdir(), "projector-source-severed-release-"));
+  let retainTemporary = false;
   try {
     const packed = await runPackedLifecycleAcceptance({
       temporaryRoot: join(temporary, "acceptance"),
@@ -72,8 +76,14 @@ export async function runSourceSeveredReleaseAcceptance(candidateRoot) {
     const revalidated = await validateReleaseCandidate(root);
     if (revalidated.manifestHash !== candidate.manifestHash) throw new Error("release candidate inputs changed during acceptance");
     return { status: "source-severed-release-accepted", runId: packed.runId, manifestHash: candidate.manifestHash, evidenceHash: packed.evidenceHash, transcriptHash: packed.transcriptHash, resultsRoot };
+  } catch (error) {
+    if (isReleaseCommandCleanupUnconfirmed(error)) {
+      retainTemporary = true;
+      throw new Error(`Release cleanup is unconfirmed; retained acceptance workspace ${temporary} for recovery`, { cause: error });
+    }
+    throw error;
   } finally {
-    await rm(temporary, { recursive: true, force: true });
+    if (!retainTemporary) await rm(temporary, { recursive: true, force: true });
   }
 }
 

@@ -7,7 +7,8 @@ import { promisify } from "node:util";
 import { canonicalJson, createDurableRepresentationArtifactRecord, hashFramedDomain, withCanonicalHashes, type BehavioralScenario, type RepresentationProjection, type Requirement } from "@projector/core";
 import { createStateBinding } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
 import { ChangeLifecycleStore } from "../change-lifecycle/store.js";

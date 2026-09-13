@@ -29,7 +29,14 @@ decision = """Give every public operation a bounded metadata readiness inspectio
   dependencies into the packaged plugin, and block outgoing revisions or release artifacts when persisted \
   owner changes are unexplained. Ordinary edits to canonical content are not format migrations. Cooperative \
   locks do not prove that legacy code is quiescent; the first conversion requires a supported restart \
-  disposition and held-old-runner corruption-negative evidence."""
+  disposition and held-old-runner corruption-negative evidence.
+
+Bounded observation and disposable-cache eviction preserve these readiness, backup, migration and recovery \
+  guarantees. Run cache collection only through nonblocking exclusive access outside ordinary shared \
+  claims; never upgrade a held shared claim. Authenticate the complete protected lifecycle dependency \
+  set before eviction. Capacity exhaustion fails cache admission and cannot authorize deletion of recovery \
+  evidence. Incompatible analysis baselines require fresh context, not migration of historical approvals \
+  or replay of committed effects."""
 selectedOptionKey = "bounded-readiness-exclusive-recoverable-migration"
 authorityRecordId = "authority:project-data-readiness-and-migration"
 appliedPreferences = []

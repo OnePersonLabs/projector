@@ -1,4 +1,4 @@
-import { AnalyzerFailureSchema, ContentHashSchema, StateDigestSchema } from "@projector/core";
+import { AnalyzerFailureSchema, ContentHashSchema, StateDigestSchema, ObservationError } from "@projector/core";
 import { z } from "zod";
 import {
   KNOWLEDGE_API_VERSION, KnowledgeContextResultSchema, KnowledgeReconciliationResultSchema,
@@ -14,6 +14,20 @@ const contentBudget = 32_000;
 const branchBudget = 48_000;
 const messageBudget = 2_048;
 const sampleLimit = 12;
+export const KNOWLEDGE_RESPONSE_LIMITS = Object.freeze({ agent: 1024 * 1024, full: 16 * 1024 * 1024 });
+
+function boundedResponse<T>(value: T, view: "agent" | "full"): T {
+  if (bytes(value) > KNOWLEDGE_RESPONSE_LIMITS[view]) {
+    throw new ObservationError("observation-limit-exceeded", "response", ".",
+      `Knowledge ${view} response exceeds its ${KNOWLEDGE_RESPONSE_LIMITS[view]} byte limit; request a narrower context.`);
+  }
+  return value;
+}
+
+/** Called before cache admission so an unusable public response cannot publish a new baseline. */
+export function assertKnowledgeContextResponseSize(report: KnowledgeContextResult, view: "agent" | "full" = "agent"): void {
+  projectKnowledgeContext(report, view);
+}
 const countSchema = z.strictObject({ total: z.number().int().nonnegative(), included: z.number().int().nonnegative(), omitted: z.number().int().nonnegative() });
 const stringsSchema = z.strictObject({ values: z.array(z.string()), disclosure: countSchema });
 const bindingStatusSchema = z.enum(["current", "rebound", "stale", "suspect", "unavailable"]);
@@ -132,7 +146,7 @@ function evaluations(values: NonNullable<KnowledgeContextBranch["governanceEvalu
 
 /** Only the public transport is projected; saved context identities and hashes still name full proof. */
 export function projectKnowledgeContext(report: KnowledgeContextResult, view: "agent" | "full" = "agent") {
-  if (view === "full") return report;
+  if (view === "full") return boundedResponse(report, view);
   const candidates = sample(report.interpretation.candidates, 4_096);
   const interpretationUnknowns = sample(report.interpretation.unknowns);
   const unknowns = sample(report.unknowns);
@@ -165,7 +179,7 @@ export function projectKnowledgeContext(report: KnowledgeContextResult, view: "a
     };
   });
   const branches = sample(projected, branchBudget);
-  return KnowledgeContextAgentViewSchema.parse({
+  return boundedResponse(KnowledgeContextAgentViewSchema.parse({
     apiVersion: report.apiVersion, view: "agent", id: report.id, request: report.request,
     persisted: report.persisted, contentHash: report.contentHash, capturedState: report.capturedState,
     interpretation: { status: report.interpretation.status, candidates: candidates.values, candidateDisclosure: candidates.disclosure,
@@ -175,7 +189,7 @@ export function projectKnowledgeContext(report: KnowledgeContextResult, view: "a
     analyzerFailures: failures.values, analyzerFailureDisclosure: failures.disclosure,
     safety: safety(report.branches),
     fullEvidence: { operation: "context", inputPatch: { view: "full" }, note: "Merge inputPatch into the original context input; it is not a complete request. Preserve request, entities, namedTargets, policy, operation and persist. The saved context and contentHash identify full retained evidence; omitted content is not an absent constraint." },
-  });
+  }), view);
 }
 
 function validation(value: KnowledgeReconciliationResult["discoveryValidation"]) {
@@ -187,7 +201,7 @@ function validation(value: KnowledgeReconciliationResult["discoveryValidation"])
     changedQueryDependencyIds: queries.values, changedQueryDependencyDisclosure: queries.disclosure };
 }
 export function projectKnowledgeReconciliation(report: KnowledgeReconciliationResult, view: "agent" | "full" = "agent") {
-  if (view === "full") return report;
+  if (view === "full") return boundedResponse(report, view);
   const reasons = sample(report.reasons);
   const branches = sample(report.branches.map((branch) => ({ branchId: branch.branchId, validation: validation(branch.validation) })), 8_000);
   const governanceReasons = sample(report.governance.reasons);
@@ -206,7 +220,7 @@ export function projectKnowledgeReconciliation(report: KnowledgeReconciliationRe
   }), 24_000);
   const applications = sample(report.applicationEvidence.branches, 4_096);
   const impact = report.impact;
-  return KnowledgeReconciliationAgentViewSchema.parse({
+  return boundedResponse(KnowledgeReconciliationAgentViewSchema.parse({
     apiVersion: report.apiVersion, view: "agent", contextId: report.contextId, contentHash: report.contentHash,
     capturedState: report.capturedState, currentState: report.currentState, status: report.status,
     discoveryValidation: validation(report.discoveryValidation), branches: branches.values, branchDisclosure: branches.disclosure,
@@ -223,5 +237,5 @@ export function projectKnowledgeReconciliation(report: KnowledgeReconciliationRe
       surpriseCount: impact.surprises.length, candidateRelationCount: impact.candidateRelations.length, diagnostics: sample(impact.diagnostics),
     } }),
     fullEvidence: { operation: "reconcile", input: { contextId: report.contextId, view: "full" } },
-  });
+  }), view);
 }

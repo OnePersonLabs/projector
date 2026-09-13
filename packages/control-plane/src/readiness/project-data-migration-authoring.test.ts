@@ -2,7 +2,8 @@ import {
   hashFramedDomain,
   type ContentHash,
 } from "@projector/core";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
+import { integrationTest as test } from "../../../../scripts/testing/integration-test.mjs";
 
 import {
   compareProjectDataFormats,

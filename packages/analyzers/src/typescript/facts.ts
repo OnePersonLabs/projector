@@ -1,6 +1,6 @@
 import { extname, posix } from "node:path";
 
-import { hashFramedDomain, type AnalyzerFailure, type ContentHash, type SourceClass } from "@projector/core";
+import { DerivedObservationBudget, hashFramedDomain, type AnalyzerFailure, type ContentHash, type SourceClass } from "@projector/core";
 
 import type { InventoryEntry } from "../filesystem/inventory.js";
 import { compareCodePoint } from "../ordering.js";
@@ -124,8 +124,9 @@ const operators = [
   ">>>=", "===", "!==", "**=", ">>>", "<<=", ">>=", "=>", "==", "!=", "<=", ">=", "++", "--", "&&", "||", "??", "?.", "**", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<", ">>", "...",
 ].sort((left, right) => right.length - left.length);
 
-function pushLineBreak(tokens: Token[]): void {
-  if (tokens.at(-1)?.kind !== "line-break") tokens.push({ kind: "line-break", value: "\n" });
+function pushLineBreak(tokens: Token[], budget: DerivedObservationBudget, scope: string): number {
+  if (tokens.at(-1)?.kind !== "line-break") { budget.reserve(66, "javascript-tokens", scope); tokens.push({ kind: "line-break", value: "\n" }); return 66; }
+  return 0;
 }
 
 function canStartRegex(previous: Token | undefined): boolean {
@@ -169,9 +170,18 @@ function scanRegex(content: string, start: number): number {
   return start + 1;
 }
 
-function lexJavaScript(content: string): Token[] {
+function lexJavaScript(content: string, budget: DerivedObservationBudget, scope: string): { tokens: Token[]; reservedBytes: number } {
   const tokens: Token[] = [];
+  let reservedBytes = 0;
+  let previous: Token | undefined;
+  const pushToken = (kind: TokenKind, start: number, end: number): void => {
+    const bytes = 64 + 2 * (end - start);
+    budget.reserve(bytes, "javascript-tokens", scope); reservedBytes += bytes;
+    const token = { kind, value: content.slice(start, end) };
+    tokens.push(token); previous = token;
+  };
   let index = 0;
+  try {
   while (index < content.length) {
     const character = content[index]!;
     const next = content[index + 1];
@@ -181,13 +191,13 @@ function lexJavaScript(content: string): Token[] {
         if (content[index] === "\n" || content[index] === "\r") hasLineBreak = true;
         index += 1;
       }
-      if (hasLineBreak) pushLineBreak(tokens);
+      if (hasLineBreak) reservedBytes += pushLineBreak(tokens, budget, scope);
       continue;
     }
     if (character === "/" && next === "/") {
       index += 2;
       while (index < content.length && content[index] !== "\n" && content[index] !== "\r") index += 1;
-      pushLineBreak(tokens);
+      reservedBytes += pushLineBreak(tokens, budget, scope);
       continue;
     }
     if (character === "/" && next === "*") {
@@ -198,18 +208,18 @@ function lexJavaScript(content: string): Token[] {
         index += 1;
       }
       index = Math.min(index + 2, content.length);
-      if (hasLineBreak) pushLineBreak(tokens);
+      if (hasLineBreak) reservedBytes += pushLineBreak(tokens, budget, scope);
       continue;
     }
     if (character === "'" || character === "\"") {
       const end = scanQuoted(content, index, character);
-      tokens.push({ kind: "string", value: content.slice(index, end) });
+      pushToken("string", index, end);
       index = end;
       continue;
     }
     if (character === "`") {
       const end = scanQuoted(content, index, character);
-      tokens.push({ kind: "template", value: content.slice(index, end) });
+      pushToken("template", index, end);
       index = end;
       continue;
     }
@@ -217,43 +227,58 @@ function lexJavaScript(content: string): Token[] {
       const start = index;
       index += 1;
       while (index < content.length && /[\w$]/u.test(content[index]!)) index += 1;
-      tokens.push({ kind: "identifier", value: content.slice(start, index) });
+      pushToken("identifier", start, index);
       continue;
     }
     if (/\d/u.test(character)) {
       const start = index;
       index += 1;
       while (index < content.length && /[\w.]/u.test(content[index]!)) index += 1;
-      tokens.push({ kind: "number", value: content.slice(start, index) });
+      pushToken("number", start, index);
       continue;
     }
-    const previous = [...tokens].reverse().find((token) => token.kind !== "line-break");
     if (character === "/" && canStartRegex(previous)) {
       const end = scanRegex(content, index);
       if (end > index + 1) {
-        tokens.push({ kind: "regex", value: content.slice(index, end) });
+        pushToken("regex", index, end);
         index = end;
         continue;
       }
     }
     const operator = operators.find((candidate) => content.startsWith(candidate, index));
     if (operator !== undefined) {
-      tokens.push({ kind: "punctuator", value: operator });
+      pushToken("punctuator", index, index + operator.length);
       index += operator.length;
       continue;
     }
-    tokens.push({ kind: "punctuator", value: character });
+    pushToken("punctuator", index, index + 1);
     index += 1;
   }
   while (tokens[0]?.kind === "line-break") tokens.shift();
   while (tokens.at(-1)?.kind === "line-break") tokens.pop();
-  return tokens;
+  return { tokens, reservedBytes };
+  } catch (error) { budget.release(reservedBytes); throw error; }
 }
 
-export function normalizeJavaScriptSemantics(content: string): string {
-  return lexJavaScript(content)
-    .map((token) => `${token.kind.length}:${token.kind}:${token.value.length}:${token.value}`)
-    .join("|");
+function normalizeTokens(tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): string {
+  const parts: string[] = []; let length = Math.max(0, tokens.length - 1);
+  let reservedBytes = 0;
+  try {
+  for (const token of tokens) {
+    const size = String(token.kind.length).length + token.kind.length + String(token.value.length).length + token.value.length + 3;
+    budget.reserve(32 + 2 * size, "javascript-normalization", scope);
+    reservedBytes += 32 + 2 * size;
+    parts.push(`${token.kind.length}:${token.kind}:${token.value.length}:${token.value}`); length += size;
+  }
+  budget.reserveString(length, "javascript-normalization", scope);
+  return parts.join("|");
+  } finally { budget.release(reservedBytes); }
+}
+
+export function normalizeJavaScriptSemantics(content: string, budget = new DerivedObservationBudget(), scope = "."): string {
+  const lexed = lexJavaScript(content, budget, scope);
+  try { return normalizeTokens(lexed.tokens, budget, scope); }
+  finally { budget.release(lexed.reservedBytes); }
 }
 
 function stringLiteralValue(raw: string): string {
@@ -269,12 +294,14 @@ function stringLiteralValue(raw: string): string {
   return body.replace(/\\([\\'])/gu, "$1");
 }
 
-function significantTokens(tokens: readonly Token[]): Token[] {
+function significantTokens(tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): Token[] {
+  budget.reserveItems(tokens.length, 8, "javascript-token-view", scope);
   return tokens.filter((token) => token.kind !== "line-break");
 }
 
-function extractExports(tokens: readonly Token[]): string[] {
-  const significant = significantTokens(tokens);
+function extractExports(tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): string[] {
+  const significant = significantTokens(tokens, budget, scope);
+  try {
   const exports = new Set<string>();
   for (let index = 0; index < significant.length; index += 1) {
     if (significant[index]?.kind !== "identifier" || significant[index]?.value !== "export") continue;
@@ -283,22 +310,25 @@ function extractExports(tokens: readonly Token[]): string[] {
     if (significant[cursor]?.value === "async") cursor += 1;
     if (!["function", "class", "const", "let", "var"].includes(significant[cursor]?.value ?? "")) continue;
     const name = significant[cursor + 1];
-    if (name?.kind === "identifier") exports.add(name.value);
+    if (name?.kind === "identifier" && !exports.has(name.value)) { budget.reserve(64 + 2 * name.value.length, "javascript-exports", scope); exports.add(name.value); }
   }
   return [...exports].sort(compareCodePoint);
+  } finally { budget.release(tokens.length * 8); }
 }
 
-function extractTestNames(tokens: readonly Token[]): string[] {
-  const significant = significantTokens(tokens);
+function extractTestNames(tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): string[] {
+  const significant = significantTokens(tokens, budget, scope);
+  try {
   const names = new Set<string>();
   for (let index = 0; index < significant.length - 2; index += 1) {
     const token = significant[index];
     if (token?.kind !== "identifier" || !["test", "it"].includes(token.value)) continue;
     if (significant[index - 1]?.value === "." || significant[index + 1]?.value !== "(") continue;
     const name = significant[index + 2];
-    if (name?.kind === "string") names.add(stringLiteralValue(name.value));
+    if (name?.kind === "string") { budget.reserve(64 + 2 * name.value.length, "javascript-tests", scope); names.add(stringLiteralValue(name.value)); }
   }
   return [...names].sort(compareCodePoint);
+  } finally { budget.release(tokens.length * 8); }
 }
 
 interface ImportSyntax {
@@ -313,32 +343,41 @@ function sourceLocation(content: string, offset: number, endOffset: number): Sou
   return { line: lines.length, column: (lines.at(-1)?.length ?? 0) + 1, offset, endOffset };
 }
 
-function parseNamedBindings(body: string, statementTypeOnly: boolean): ImportBindingFact[] {
-  return body.split(",").map((part) => part.trim()).filter(Boolean).map((part) => {
+function parseNamedBindings(body: string, statementTypeOnly: boolean, budget: DerivedObservationBudget, scope: string): ImportBindingFact[] {
+  const bindings: ImportBindingFact[] = [];
+  for (let start = 0; start < body.length;) {
+    const comma = body.indexOf(",", start), end = comma < 0 ? body.length : comma;
+    budget.reserveString(end - start, "javascript-import-bindings", scope);
+    const part = body.slice(start, end).trim(); start = end + 1;
+    if (!part) continue;
+    budget.reserve(160 + 4 * part.length, "javascript-import-bindings", scope);
     const typeOnly = statementTypeOnly || part.startsWith("type ");
     const normalized = part.replace(/^type\s+/u, "");
     const [imported = "", local = imported] = normalized.split(/\s+as\s+/u);
-    return { imported: imported.trim(), local: local.trim(), typeOnly };
-  }).sort((left, right) => compareCodePoint(left.imported, right.imported) || compareCodePoint(left.local, right.local));
+    bindings.push({ imported: imported.trim(), local: local.trim(), typeOnly });
+  }
+  return bindings.sort((left, right) => compareCodePoint(left.imported, right.imported) || compareCodePoint(left.local, right.local));
 }
 
-function extractImportSyntax(tokens: readonly Token[]): ImportSyntax[] {
+function extractImportSyntax(tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): ImportSyntax[] {
   const imports: ImportSyntax[] = [];
-  const values = significantTokens(tokens);
+  const values = significantTokens(tokens, budget, scope);
+  try {
   for (let index = 0; index < values.length; index += 1) {
     if (values[index]?.kind !== "identifier" || values[index]?.value !== "import" || values[index + 1]?.value === "(" || values[index - 1]?.value === ".") continue;
-    if (values[index + 1]?.kind === "string") { imports.push({ specifier: stringLiteralValue(values[index + 1]!.value), bindings: [], typeOnly: false }); continue; }
+    if (values[index + 1]?.kind === "string") { budget.reserve(192 + 2 * values[index + 1]!.value.length, "javascript-imports", scope); imports.push({ specifier: stringLiteralValue(values[index + 1]!.value), bindings: [], typeOnly: false }); continue; }
     let cursor = index + 1;
     const typeOnly = values[cursor]?.value === "type";
     if (typeOnly) cursor += 1;
     const clauseStart = cursor;
     while (cursor < values.length && values[cursor]?.value !== "from" && values[cursor]?.value !== ";") cursor += 1;
     if (values[cursor]?.value !== "from" || values[cursor + 1]?.kind !== "string") continue;
+    budget.reserveItems(cursor - clauseStart, 8, "javascript-import-clause", scope);
     const clause = values.slice(clauseStart, cursor);
     const bindings: ImportBindingFact[] = [];
-    if (clause[0]?.kind === "identifier" && clause[0]?.value !== "type") bindings.push({ imported: "default", local: clause[0]!.value, typeOnly });
+    if (clause[0]?.kind === "identifier" && clause[0]?.value !== "type") { budget.reserve(128 + 2 * clause[0]!.value.length, "javascript-import-bindings", scope); bindings.push({ imported: "default", local: clause[0]!.value, typeOnly }); }
     for (let part = 0; part < clause.length; part += 1) {
-      if (clause[part]?.value === "*" && clause[part + 1]?.value === "as" && clause[part + 2]?.kind === "identifier") bindings.push({ imported: "*", local: clause[part + 2]!.value, typeOnly });
+      if (clause[part]?.value === "*" && clause[part + 1]?.value === "as" && clause[part + 2]?.kind === "identifier") { budget.reserve(128 + 2 * clause[part + 2]!.value.length, "javascript-import-bindings", scope); bindings.push({ imported: "*", local: clause[part + 2]!.value, typeOnly }); }
       if (clause[part]?.value !== "{") continue;
       part += 1;
       while (part < clause.length && clause[part]?.value !== "}") {
@@ -347,16 +386,19 @@ function extractImportSyntax(tokens: readonly Token[]): ImportSyntax[] {
         const imported = clause[part]?.kind === "identifier" ? clause[part]!.value : undefined;
         if (imported !== undefined) {
           const local = clause[part + 1]?.value === "as" && clause[part + 2]?.kind === "identifier" ? clause[part + 2]!.value : imported;
-          bindings.push({ imported, local, typeOnly: bindingTypeOnly });
+          budget.reserve(128 + 2 * (imported.length + local.length), "javascript-import-bindings", scope); bindings.push({ imported, local, typeOnly: bindingTypeOnly });
         }
         while (part < clause.length && ![",", "}"].includes(clause[part]?.value ?? "")) part += 1;
         if (clause[part]?.value === ",") part += 1;
       }
     }
+    budget.reserve(192 + 2 * values[cursor + 1]!.value.length, "javascript-imports", scope);
     imports.push({ specifier: stringLiteralValue(values[cursor + 1]!.value), bindings: bindings.sort((a, b) => compareCodePoint(a.imported, b.imported) || compareCodePoint(a.local, b.local)), typeOnly });
+    budget.release((cursor - clauseStart) * 8);
     index = cursor + 1;
   }
   return imports;
+  } finally { budget.release(tokens.length * 8); }
 }
 
 function packageScopes(entries: readonly InventoryEntry[]): Map<string, string> {
@@ -387,31 +429,47 @@ function maskCommentsAndLiterals(content: string): string {
   return result;
 }
 
-function extractDeclarations(content: string, scopeKey: string): SemanticDeclarationFact[] {
+function extractDeclarations(content: string, scopeKey: string, budget: DerivedObservationBudget, scope: string): SemanticDeclarationFact[] {
   const declarations: SemanticDeclarationFact[] = [];
+  budget.reserveString(content.length, "javascript-syntax-mask", scope);
+  try {
   const syntax = maskCommentsAndLiterals(content);
   const pattern = /\b(export\s+)?(default\s+)?(?:declare\s+)?(?:async\s+)?(function|class|interface|type|enum|namespace|const|let|var)\s+([A-Za-z_$][\w$]*)/gu;
   for (const match of syntax.matchAll(pattern)) {
+    budget.reserve(640 + 2 * (scopeKey.length + match[0].length), "javascript-declarations", scope);
     const rawKind = match[3]!;
     const kind: SemanticDeclarationFact["kind"] = ["const", "let", "var"].includes(rawKind) ? "variable" : rawKind as SemanticDeclarationFact["kind"];
     const name = match[4]!;
     const exported = match[1] !== undefined;
     const isDefault = match[2] !== undefined;
-    const tail = content.slice((match.index ?? 0) + match[0].length).split(/\r?\n/u)[0] ?? "";
+    const tailStart = (match.index ?? 0) + match[0].length;
+    const nextLine = content.indexOf("\n", tailStart);
+    const tail = content.slice(tailStart, nextLine < 0 ? content.length : nextLine);
     const overload = rawKind === "function" && /^[^{]*;/u.test(tail);
     const semantic = { scopeKey, name, kind, exported, default: isDefault, overload };
     const semanticHash = hashFramedDomain("typescript-semantic-declaration", semantic);
     declarations.push({ id: `ts_decl_${hashFramedDomain("typescript-semantic-declaration-identity", { scopeKey, name, kind }).slice(-32)}`, ...semantic, location: sourceLocation(content, match.index ?? 0, (match.index ?? 0) + match[0].length), semanticHash });
   }
   return declarations.sort((left, right) => compareCodePoint(left.id, right.id) || left.location.offset - right.location.offset);
+  } finally { budget.release(24 + 2 * content.length); }
 }
 
-function extractExportFacts(content: string, declarations: readonly SemanticDeclarationFact[]): ExportFact[] {
-  const facts: ExportFact[] = declarations.filter(({ exported }) => exported).map((declaration) => ({ exportedName: declaration.default ? "default" : declaration.name, localName: declaration.name, typeOnly: declaration.kind === "type" || declaration.kind === "interface", default: declaration.default, wildcard: false, location: declaration.location }));
+function extractExportFacts(content: string, declarations: readonly SemanticDeclarationFact[], budget: DerivedObservationBudget, scope: string): ExportFact[] {
+  const facts: ExportFact[] = [];
+  for (const declaration of declarations) if (declaration.exported) {
+    budget.reserve(192, "javascript-export-facts", scope);
+    facts.push({ exportedName: declaration.default ? "default" : declaration.name, localName: declaration.name, typeOnly: declaration.kind === "type" || declaration.kind === "interface", default: declaration.default, wildcard: false, location: declaration.location });
+  }
   const named = /\bexport\s+(type\s+)?\{([^}]*)\}(?:\s+from\s+(["'])([^"']+)\3)?/gu;
-  for (const match of content.matchAll(named)) for (const binding of parseNamedBindings(match[2] ?? "", match[1] !== undefined)) facts.push({ exportedName: binding.local, localName: binding.imported, ...(match[4] === undefined ? {} : { from: match[4] }), typeOnly: binding.typeOnly, default: binding.local === "default", wildcard: false, location: sourceLocation(content, match.index ?? 0, (match.index ?? 0) + match[0].length) });
+  for (const match of content.matchAll(named)) for (const binding of parseNamedBindings(match[2] ?? "", match[1] !== undefined, budget, scope)) {
+    budget.reserve(256 + 2 * (match[4]?.length ?? 0), "javascript-export-facts", scope);
+    facts.push({ exportedName: binding.local, localName: binding.imported, ...(match[4] === undefined ? {} : { from: match[4] }), typeOnly: binding.typeOnly, default: binding.local === "default", wildcard: false, location: sourceLocation(content, match.index ?? 0, (match.index ?? 0) + match[0].length) });
+  }
   const wildcard = /\bexport\s+\*\s+from\s+(["'])([^"']+)\1/gu;
-  for (const match of content.matchAll(wildcard)) facts.push({ from: match[2]!, typeOnly: false, default: false, wildcard: true, location: sourceLocation(content, match.index ?? 0, (match.index ?? 0) + match[0].length) });
+  for (const match of content.matchAll(wildcard)) {
+    budget.reserve(256 + 2 * match[2]!.length, "javascript-export-facts", scope);
+    facts.push({ from: match[2]!, typeOnly: false, default: false, wildcard: true, location: sourceLocation(content, match.index ?? 0, (match.index ?? 0) + match[0].length) });
+  }
   return facts.sort((left, right) => compareCodePoint(left.exportedName ?? "*", right.exportedName ?? "*") || left.location.offset - right.location.offset);
 }
 
@@ -420,11 +478,12 @@ function fileParticipantId(scopeKey: string, declarations: readonly SemanticDecl
   return `ts_participant_${hashFramedDomain("typescript-participant", { scopeKey, anchor: anchors.length > 0 ? anchors : normalizedSemantics }).slice(-32)}`;
 }
 
-function extractEvents(tokens: readonly Token[], content: string, scopeKey: string, participantId: string, artifactHash: ContentHash): { events: EventSyntaxFact[]; uncertainties: EventUncertaintyFact[]; unknowns: string[] } {
+function extractEvents(tokens: readonly Token[], content: string, scopeKey: string, participantId: string, artifactHash: ContentHash, budget: DerivedObservationBudget, scope: string): { events: EventSyntaxFact[]; uncertainties: EventUncertaintyFact[]; unknowns: string[] } {
   const events: EventSyntaxFact[] = [];
   const uncertainties: EventUncertaintyFact[] = [];
   const unknowns: string[] = [];
-  const values = significantTokens(tokens);
+  const values = significantTokens(tokens, budget, scope);
+  try {
   for (let index = 0; index < values.length - 4; index += 1) {
     if (values[index]?.kind !== "identifier" || values[index + 1]?.value !== "." || values[index + 2]?.kind !== "identifier" || values[index + 3]?.value !== "(") continue;
     const receiver = values[index]!.value;
@@ -433,19 +492,22 @@ function extractEvents(tokens: readonly Token[], content: string, scopeKey: stri
     const argument = values[index + 4];
     const role = ["emit", "publish", "dispatchEvent"].includes(operation) ? "producer" as const : "consumer" as const;
     if (argument?.kind !== "string") {
+      budget.reserve(512 + 2 * (receiver.length + operation.length + scopeKey.length + participantId.length), "javascript-event-facts", scope);
       const evidenceId = `event_uncertainty_${hashFramedDomain("event-uncertainty", { receiver, role, scopeKey, participantId }).slice(-32)}`;
       uncertainties.push({ receiver, role, scopeKey, participantId, evidenceId, artifactHash });
       unknowns.push(`dynamic event name for ${receiver}.${operation}`);
       continue;
     }
+    budget.reserve(768 + 2 * (argument.value.length + receiver.length + scopeKey.length + participantId.length), "javascript-event-facts", scope);
     const semanticKey = stringLiteralValue(argument.value);
     const subjectId = `event_${hashFramedDomain("event-subject", { receiver, semanticKey }).slice(-32)}`;
     const offset = content.indexOf(argument.value);
     const location = sourceLocation(content, Math.max(0, offset), Math.max(0, offset) + argument.value.length);
     events.push({ subjectId, semanticKey, receiver, scopeKey, participantId, role, dynamic: false, location, evidenceId: `event_evidence_${hashFramedDomain("event-evidence", { participantId, role, semanticKey, location }).slice(-32)}`, artifactHash });
   }
-  if (values.some((token, index) => token.value === "import" && values[index + 1]?.value === "(")) unknowns.push("dynamic import cannot prove a static dependency");
+  if (values.some((token, index) => token.value === "import" && values[index + 1]?.value === "(")) { budget.reserve(128, "javascript-event-facts", scope); unknowns.push("dynamic import cannot prove a static dependency"); }
   return { events: events.sort((left, right) => compareCodePoint(left.subjectId, right.subjectId) || compareCodePoint(left.participantId, right.participantId) || compareCodePoint(left.role, right.role)), uncertainties: uncertainties.sort((left, right) => compareCodePoint(left.receiver, right.receiver) || compareCodePoint(left.participantId, right.participantId)), unknowns: [...new Set(unknowns)].sort(compareCodePoint) };
+  } finally { budget.release(tokens.length * 8); }
 }
 
 function resolveLocalImport(importerPath: string, specifier: string, paths: ReadonlySet<string>): string | undefined {
@@ -457,7 +519,9 @@ function resolveLocalImport(importerPath: string, specifier: string, paths: Read
   return candidates.find((candidate) => paths.has(candidate));
 }
 
-export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScriptFacts {
+export function analyzeJavaScript(entries: readonly InventoryEntry[], budget = new DerivedObservationBudget()): JavaScriptFacts {
+  budget.reserveItems(entries.length, 128, "javascript-file-index");
+  let scratchBytes = entries.length * 128;
   const sourceEntries = entries.filter((entry) => entry.kind === "file" && sourceExtensions.some((extension) => entry.path.endsWith(extension))).sort((left, right) => compareCodePoint(left.path, right.path));
   const paths = new Set(entries.filter((entry) => entry.kind === "file").map((entry) => entry.path));
   const scopes = packageScopes(entries);
@@ -469,29 +533,33 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScrip
   const failures: AnalyzerFailure[] = [];
 
   for (const entry of sourceEntries) {
-    const tokens = lexJavaScript(entry.content);
-    const normalizedSemantics = normalizeJavaScriptSemantics(entry.content);
+    const lexed = lexJavaScript(entry.content, budget, entry.path), tokens = lexed.tokens;
+    try {
+    const normalizedSemantics = normalizeTokens(tokens, budget, entry.path);
     const scopeKey = scopes.get(entry.path) ?? "local-repository";
-    const declarations = extractDeclarations(entry.content, scopeKey);
-    const exportFacts = extractExportFacts(entry.content, declarations);
-    const exports = [...new Set(extractExports(tokens))].sort(compareCodePoint);
+    const declarations = extractDeclarations(entry.content, scopeKey, budget, entry.path);
+    const exportFacts = extractExportFacts(entry.content, declarations, budget, entry.path);
+    const exports = [...new Set(extractExports(tokens, budget, entry.path))].sort(compareCodePoint);
     const participantId = fileParticipantId(scopeKey, declarations, normalizedSemantics);
-    const extractedEvents = extractEvents(tokens, entry.content, scopeKey, participantId, entry.contentHash);
-    events.push(...extractedEvents.events);
-    eventUncertainties.push(...extractedEvents.uncertainties);
+    const extractedEvents = extractEvents(tokens, entry.content, scopeKey, participantId, entry.contentHash, budget, entry.path);
+    budget.reserveItems(extractedEvents.events.length + extractedEvents.uncertainties.length, 8, "javascript-event-index", entry.path);
+    for (const event of extractedEvents.events) events.push(event);
+    for (const uncertainty of extractedEvents.uncertainties) eventUncertainties.push(uncertainty);
+    budget.reserve(256 + 2 * entry.path.length, "javascript-file-facts", entry.path);
     files.push({
       path: entry.path,
       exports,
       lifecycleExports: exports.filter((name) => lifecycleNames.has(name)),
-      testNames: extractTestNames(tokens),
+      testNames: extractTestNames(tokens, budget, entry.path),
       normalizedSemantics,
       scopeKey,
       declarations,
       exportFacts,
       unknowns: extractedEvents.unknowns,
     });
-    for (const syntax of extractImportSyntax(tokens)) {
+    for (const syntax of extractImportSyntax(tokens, budget, entry.path)) {
       const resolvedPath = resolveLocalImport(entry.path, syntax.specifier, paths);
+      budget.reserve(256 + 2 * (entry.path.length + syntax.specifier.length + (resolvedPath?.length ?? 0)) + 32 * syntax.bindings.length, "javascript-dependencies", entry.path);
       dependencies.push({
         sourceClass: "derived",
         importerPath: entry.path,
@@ -502,6 +570,7 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScrip
         typeOnly: syntax.typeOnly,
       });
       if (syntax.specifier.startsWith(".") && resolvedPath === undefined) {
+        budget.reserve(256 + 2 * (entry.path.length + syntax.specifier.length), "javascript-failures", entry.path);
         failures.push({
           analyzerId: "projector.javascript-local",
           capability: "module-resolution",
@@ -512,39 +581,48 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScrip
         });
       }
     }
+    } finally { budget.release(lexed.reservedBytes); }
   }
 
   const groupedDependencies = new Map<string, ModuleDependencyFact>();
   for (const dependency of dependencies) {
+    const indexBytes = 128 + 2 * (dependency.importerPath.length + dependency.specifier.length);
+    budget.reserve(indexBytes, "javascript-dependency-index", dependency.importerPath); scratchBytes += indexBytes;
     const key = `${dependency.importerPath}\u0000${dependency.specifier}`;
     const existing = groupedDependencies.get(key);
     if (existing === undefined) groupedDependencies.set(key, dependency);
     else {
+      budget.reserveItems(existing.bindings.length + dependency.bindings.length, 128, "javascript-binding-index", dependency.importerPath);
       const bindings = [...new Map([...existing.bindings, ...dependency.bindings].map((binding) => [`${binding.imported}\u0000${binding.local}\u0000${binding.typeOnly}`, binding])).values()]
         .sort((left, right) => compareCodePoint(left.imported, right.imported) || compareCodePoint(left.local, right.local));
       groupedDependencies.set(key, { ...existing, ...(existing.resolvedPath === undefined && dependency.resolvedPath !== undefined ? { resolvedPath: dependency.resolvedPath } : {}), bindings, importedBindings: [...new Set(bindings.map(({ imported }) => imported))].sort(compareCodePoint), typeOnly: existing.typeOnly && dependency.typeOnly });
     }
   }
+  budget.reserveItems(groupedDependencies.size, 8, "javascript-dependency-index");
   const normalizedDependencies = [...groupedDependencies.values()].sort((left, right) => compareCodePoint(left.importerPath, right.importerPath) || compareCodePoint(left.specifier, right.specifier));
   const testTargets = dependencies
     .filter((dependency): dependency is ModuleDependencyFact & { resolvedPath: string } =>
       /\.test\.(?:mjs|js|cjs|mts|ts)$/u.test(dependency.importerPath) && dependency.resolvedPath !== undefined)
-    .map((dependency): TestTargetFact => ({
+    .map((dependency): TestTargetFact => { budget.reserve(128, "javascript-test-targets", dependency.importerPath); return ({
       sourceClass: "derived",
       testPath: dependency.importerPath,
       targetPath: dependency.resolvedPath,
-    }))
+    }); })
     .sort((left, right) => compareCodePoint(left.testPath, right.testPath) || compareCodePoint(left.targetPath, right.targetPath));
   files.sort((left, right) => compareCodePoint(left.path, right.path));
   interface ContractSymbol { semanticKey: string; declaration: SemanticDeclarationFact; exportPath: string; location: SourceLocationFact }
   const declarationsByScope = new Map<string, Map<string, SemanticDeclarationFact>>();
   for (const file of files) {
+    budget.reserveItems(file.declarations.length, 128, "javascript-declaration-index", file.path);
+    scratchBytes += file.declarations.length * 128;
     const declarations = declarationsByScope.get(file.scopeKey) ?? new Map<string, SemanticDeclarationFact>();
     for (const declaration of file.declarations.filter(({ kind, name }) => ["interface", "type", "class"].includes(kind) || name.endsWith("Schema"))) declarations.set(declaration.name, declaration);
     declarationsByScope.set(file.scopeKey, declarations);
   }
   const packageExports = new Map<string, Map<string, ContractSymbol>>();
   for (const file of files) {
+    budget.reserveItems(file.declarations.length + file.exportFacts.length, 192, "javascript-export-index", file.path);
+    scratchBytes += (file.declarations.length + file.exportFacts.length) * 192;
     const exported = packageExports.get(file.scopeKey) ?? new Map<string, ContractSymbol>();
     for (const declaration of file.declarations.filter(({ exported, kind, name }) => exported && (["interface", "type", "class"].includes(kind) || name.endsWith("Schema")))) exported.set(declaration.name, { semanticKey: declaration.name, declaration, exportPath: file.path, location: declaration.location });
     for (const fact of file.exportFacts) {
@@ -556,6 +634,7 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScrip
   }
   for (const [scopeKey, exported] of [...packageExports.entries()].sort(([left], [right]) => compareCodePoint(left, right))) {
     for (const symbol of [...exported.values()].sort((left, right) => compareCodePoint(left.semanticKey, right.semanticKey))) {
+      budget.reserve(768 + 2 * (symbol.semanticKey.length + scopeKey.length), "javascript-contract-facts", symbol.exportPath);
       const exportFile = files.find(({ path }) => path === symbol.exportPath)!;
       const sourceEntry = sourceEntries.find(({ path }) => path === symbol.exportPath)!;
       const participantId = fileParticipantId(scopeKey, exportFile.declarations, exportFile.normalizedSemantics);
@@ -573,6 +652,7 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScrip
       for (const binding of dependency.bindings) {
         const symbol = exports.get(binding.imported);
         if (symbol === undefined) continue;
+        budget.reserve(768 + 2 * (symbol.semanticKey.length + sourceScope.length), "javascript-contract-facts", file.path);
         const subjectId = `contract_${hashFramedDomain("public-contract-subject", { scopeKey: sourceScope, semanticKey: symbol.semanticKey }).slice(-32)}`;
         contracts.push({ subjectId, semanticKey: symbol.semanticKey, scopeKey: sourceScope, participantId, role: "consumer", location: sourceLocation(sourceEntry.content, 0, 0), evidenceId: `contract_evidence_${hashFramedDomain("contract-import-evidence", { participantId, sourceScope, imported: binding.imported, local: binding.local }).slice(-32)}`, artifactHash: sourceEntry.contentHash });
       }
@@ -580,5 +660,6 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[]): JavaScrip
   }
   events.sort((left, right) => compareCodePoint(left.subjectId, right.subjectId) || compareCodePoint(left.participantId, right.participantId) || compareCodePoint(left.role, right.role));
   contracts.sort((left, right) => compareCodePoint(left.subjectId, right.subjectId) || compareCodePoint(left.participantId, right.participantId) || compareCodePoint(left.role, right.role));
+  budget.release(scratchBytes);
   return { files, dependencies: normalizedDependencies, testTargets, events, eventUncertainties, contracts, failures };
 }

@@ -1,15 +1,3 @@
-# Projector agent instructions
+# Projector development
 
-The conceptual model owns intended behavior; code and implementation plans are revisable realizations. Feed implementation discoveries back into the model when they change accepted meaning. Critically assess a revision by the behavior, constraints, data safety, and recovery guarantees it preserves, not by fidelity to an earlier procedure. Use focused behavioral checks and reuse applicable results; add or repeat verification for a concrete failure risk or changed dependency. A report, hash, or review pass is not an additional product outcome.
-
-Before choosing edit paths for product, architecture, feature, or cleanup work, read the installed Projector skill's `operation-contract.md`, then run its sibling `../../scripts/projector-operation.mjs` with a strict `projector.operation/v1` `context` request containing the absolute repository root, the requested outcome, and `persist: true`. Inspect the relevant meaning, architectural obligations, and unknowns. Use a focused request with `entities` only after selecting an existing meaning; use the bounded context policy when the full dependency proof is needed.
-
-Keep the returned context ID. Before reusing it in another session, and after edits made outside Projector, send a strict `reconcile` operation with that ID through the same runner. Distinguish stale reasoning from a violated predicate. Refresh affected context when its dependencies changed.
-
-Recognize proposed behavior, architecture, requirement, and shipped-skill changes from the conversation, including agent suggestions and targets discovered later in a turn. Consult the actual target's Projector model before dependent implementation; use `$projector-change` for revised meaning and carry forward existing authorization. Planning and speculative ideas are not acceptance. Creating or revising the assimilation capability is product work; ordinary assimilation intake and topic notes remain independent of Projector concept records.
-
-Session and prompt repository checks only observe changes. Offer `$projector-reconcile` before deeper unsolicited investigation. After acceptance, delegate it, keep the main task moving on independent work, relay material questions through the root's `request_user_input`, and coordinate overlapping edits before mutation.
-
-Accepted product meaning lives in typed `.projector/model/` records; executable architecture lives in `.projector/lenses/`, `.projector/decisions/`, and `.projector/authorities/`. When the bundled operation runner cannot run, inspect those records directly and state the limitation. Treat every record as a claim to check against the user's intent and current evidence. A stored status, generated report, or passing self-authored test is not proof of implementation or economic advantage.
-
-Executable contract and schema authority lives in `packages/core/`. Canonical records retain immutable historical provenance; consult a cited source only to resolve a concrete missing rationale. Preserve provenance when revising accepted meaning. Do not revive historical delivery plans or add `ChangeCase` or another parallel workflow store.
+This file governs development of Projector itself. Put instructions for every repository using the plugin in `plugins/projector/AGENTS.md`, workflow-specific guidance in the owning skill, and deterministic lifecycle actions in plugin hooks. Keep repository implementation conventions here; executable contract and schema authority belongs in `packages/core/`.

@@ -1,4 +1,4 @@
-import { lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -21,6 +21,7 @@ import { buildSourceSeveredReleaseBundle } from "./build-source-severed-release-
 import { readAuthoredReleaseIdentity } from "./release-identity.mjs";
 import { validateReleaseCandidate } from "./release-candidate.mjs";
 import { hashBytes } from "./release-candidate.mjs";
+import { isReleaseCommandCleanupUnconfirmed } from "./npm-command.mjs";
 import { selectProjectDataMigrationReleaseVersion, synchronizeWorkspaceReleaseVersion } from "./project-data-migration-workflow.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -58,7 +59,6 @@ export async function createRepositoryProjectDataMigration(options = {}) {
   const sourcePath = options.sourcePath ?? targetFormatPath;
   const draftPath = options.draftPath ?? join(root, "release/project-data-migration-draft.json");
   const migrationsRoot = options.migrationsRoot ?? join(root, "release/project-data-migrations");
-  const candidateRoot = options.candidateRoot ?? join(root, ".projector/runtime/project-data-authoring/release-candidate");
   const sealingDraftPath = `${draftPath}.sealing`;
   try {
     await lstat(draftPath);
@@ -88,7 +88,29 @@ export async function createRepositoryProjectDataMigration(options = {}) {
   await mkdir(formatsRoot, { recursive: true });
   await writeImmutable(join(formatsRoot, `${sourceSnapshot.packageIdentity.version}.json`), `${canonicalJson(sourceSnapshot)}\n`);
   const buildCandidate = options.buildCandidate ?? buildSourceSeveredReleaseBundle;
-  await buildCandidate(candidateRoot, { allowPendingProjectDataMigration: true });
+  const ownedWorkspaces = [];
+  const buildFreshCandidate = async (phase, buildOptions, explicitRoot) => {
+    let workspace;
+    if (explicitRoot === undefined) {
+      const parent = options.candidateRoot === undefined
+        ? join(root, ".projector/runtime/project-data-authoring")
+        : dirname(resolve(options.candidateRoot));
+      await mkdir(parent, { recursive: true });
+      workspace = { path: await mkdtemp(join(parent, `${phase}-`)), retain: false };
+      ownedWorkspaces.push(workspace);
+    }
+    const output = explicitRoot ?? join(workspace.path, "release-candidate");
+    try {
+      await buildCandidate(output, { ...buildOptions, signal: options.signal });
+    } catch (error) {
+      if (workspace !== undefined && isReleaseCommandCleanupUnconfirmed(error)) workspace.retain = true;
+      throw error;
+    }
+    return output;
+  };
+  try {
+  // An explicitly supplied first output remains caller-owned. Never remove or overwrite it.
+  const candidateRoot = await buildFreshCandidate("draft", { allowPendingProjectDataMigration: true }, options.candidateRoot);
   const candidate = await validateReleaseCandidate(candidateRoot);
   if (candidate.manifest.release.version !== selection.version) throw new Error("Built release candidate does not use the selected release version");
   const targetSnapshot = createReleaseCandidateProjectDataFormat({
@@ -132,7 +154,7 @@ export async function createRepositoryProjectDataMigration(options = {}) {
   const previousTarget = await readOptionalFile(targetFormatPath);
   try {
     await replaceCurrentTarget(targetFormatPath, `${canonicalJson(targetSnapshot)}\n`);
-    await buildCandidate(candidateRoot, { allowActiveProjectDataMigrationSeal: true });
+    await buildFreshCandidate("seal", { allowActiveProjectDataMigrationSeal: true });
     await rm(sealingDraftPath);
     await syncDirectoryIfSupported(dirname(draftPath));
   } catch (error) {
@@ -142,6 +164,12 @@ export async function createRepositoryProjectDataMigration(options = {}) {
     throw error;
   }
   return { status: "sealed", version: selection.version, manifest: result.manifest, outputPath: result.outputPath, chainPath: resolve(chainPath) };
+  } finally {
+    // Only exact mkdtemp-owned parents are disposable, and only after their build settled.
+    for (const workspace of ownedWorkspaces) {
+      if (!workspace.retain) await rm(workspace.path, { recursive: true, force: true });
+    }
+  }
 }
 
 async function readOptionalFile(path) {

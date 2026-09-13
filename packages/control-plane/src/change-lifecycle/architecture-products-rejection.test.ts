@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hashFramedDomain, withCanonicalHashes, type CanonicalDocumentEnvelope } from "@projector/core";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
 import { RepositoryChangeLifecycleService } from "./service.js";
 
 const scope = { op: "atom", field: "path", matcher: "glob", value: "src/**" } as const;

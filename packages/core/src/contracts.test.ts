@@ -56,6 +56,19 @@ import {
 } from "./index.js";
 
 describe("normative contract registry", () => {
+  it("reuses schema exports without letting one consumer corrupt later validation", () => {
+    const schemas = exportContractJsonSchemas();
+    expect(exportContractJsonSchemas()).toBe(schemas);
+    const visit = (value: unknown): void => {
+      if (value === null || typeof value !== "object") return;
+      expect(Object.isFrozen(value)).toBe(true);
+      for (const child of Object.values(value)) visit(child);
+    };
+    visit(schemas);
+    expect(() => Object.assign(schemas.PreparedProjectorConfig!, { type: "null" })).toThrow(TypeError);
+    expect(exportContractJsonSchemas().PreparedProjectorConfig).toMatchObject({ type: "object" });
+  });
+
   it("models command network access as declared need rather than enforced denial", () => {
     const command = {
       id: "test",

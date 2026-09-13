@@ -1,15 +1,58 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, access, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import * as runtime from "@projector/runtime";
 import * as controlPlane from "@projector/control-plane";
 import { describe, expect, it } from "vitest";
+import { integrationTest } from "./testing/integration-test.mjs";
 import * as core from "@projector/core";
 import * as engine from "@projector/engine";
 // @ts-expect-error release entrypoint is an executable JavaScript module
-import { verifyRepresentationProjection, observeInstalledRepresentationLinks, observeRepresentationProfileRecovery } from "./run-release-acceptance.mjs";
+import { verifyRepresentationProjection, observeInstalledRepresentationLinks, observeRepresentationProfileRecovery, withReleaseAcceptanceWorkspace } from "./run-release-acceptance.mjs";
+
+describe("release acceptance workspace ownership", () => {
+  it("retains working artifacts and reports their exact root when descendant cleanup is unconfirmed", async () => {
+    let workspace = "";
+    const uncertainty = Object.assign(new Error("descendant may still be active"), { code: "RELEASE_COMMAND_CLEANUP_UNCONFIRMED" });
+    const failure = new Error("candidate build failed", { cause: new AggregateError([new Error("other failure"), uncertainty]) });
+    try {
+      const result = await withReleaseAcceptanceWorkspace(async (root: string) => {
+        workspace = root;
+        await writeFile(join(root, "active-artifact.txt"), "owned descendant state");
+        throw failure;
+      }).catch((error: unknown) => error);
+      expect(await readFile(join(workspace, "active-artifact.txt"), "utf8")).toBe("owned descendant state");
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toContain(workspace);
+      expect(result.cause).toBe(failure);
+    } finally {
+      if (workspace) await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("removes its workspace after success", async () => {
+    let workspace = "";
+    await expect(withReleaseAcceptanceWorkspace(async (root: string) => {
+      workspace = root;
+      await writeFile(join(root, "artifact.txt"), "complete");
+      return "accepted";
+    })).resolves.toBe("accepted");
+    await expect(access(workspace)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("removes its workspace after an ordinary failure and preserves that error", async () => {
+    let workspace = "";
+    const failure = new Error("ordinary release rejection");
+    await expect(withReleaseAcceptanceWorkspace(async (root: string) => {
+      workspace = root;
+      await writeFile(join(root, "artifact.txt"), "rejected");
+      throw failure;
+    })).rejects.toBe(failure);
+    await expect(access(workspace)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
 
 const id = "scenario:verify-representation-end-to-end-closure";
 const owner = { id, title: "Preserve representation closure", steps: [
@@ -22,7 +65,7 @@ const inventory = [{ id, owner, title: owner.title, semanticHash: core.hashFrame
 const input = { core, engine, inventory, sourceRevision: "fixture-revision", worktreeDigest: core.hashFramedDomain("fixture-worktree", "test") };
 
 describe("release representation observations", () => {
-  it("exercises public profile recovery and three rejection controls without claiming packaged delivery", async () => {
+  integrationTest("exercises public profile recovery and three rejection controls without claiming packaged delivery", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-release-profile-"));
     try {
       await mkdir(join(root, "src")); await mkdir(join(root, "test"));
@@ -48,7 +91,7 @@ describe("release representation observations", () => {
       expect(Object.values(recovered.negatives).every(({ rejected }) => rejected)).toBe(true);
       expect(recovered.preservedHistory.length).toBeGreaterThan(0);
     } finally { await rm(root, { recursive: true, force: true }); }
-  }, 30_000);
+  });
 
   it.skipIf(!process.env.PROJECTOR_TEST_PACKAGED_ROOT)("exercises installed composition, delivery, profile recovery, and severed-package controls", async () => {
     const result = await observeInstalledRepresentationLinks({ packagedRoot: process.env.PROJECTOR_TEST_PACKAGED_ROOT });

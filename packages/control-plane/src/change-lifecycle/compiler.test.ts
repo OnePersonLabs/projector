@@ -7,13 +7,29 @@ import { promisify } from "node:util";
 import { deriveEntityId, hashFramedDomain, hashSemantic, parseChangeProposal, withCanonicalHashes, type AuthorityRecord, type BehavioralScenario, type ChangeProposal, type Requirement } from "@projector/core";
 import { createRepositoryScriptLens, executionPlanHash } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as repositoryObserver from "./repository-observer.js";
+import { validateCompiledRepositoryChangeCurrentness } from "./currentness.js";
 
 import { compileRepositoryChange } from "./compiler.js";
 import type { KnowledgeContextResult } from "../knowledge/types.js";
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "placeholder");
+
+it("uses one fresh observation per currentness check, not one per dependency", async () => {
+  const root = await repository();
+  try {
+    const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Personalize the greeting", proposal: proposal() });
+    const observer = vi.spyOn(repositoryObserver, "observeChangeRepository");
+    try {
+      await validateCompiledRepositoryChangeCurrentness({ repositoryRoot: root, compiled });
+      expect(observer).toHaveBeenCalledTimes(1);
+      await validateCompiledRepositoryChangeCurrentness({ repositoryRoot: root, compiled });
+      expect(observer).toHaveBeenCalledTimes(2);
+    } finally { observer.mockRestore(); }
+  } finally { await rm(root, { recursive: true, force: true, maxRetries: 5 }); }
+}, 30_000);
 
 function approvedAuthority(id: string, subjectId: string): AuthorityRecord {
   return { id, key: id, subjectId, status: "approved", conclusion: "preserve", rationale: "Explicitly adopt the bounded rule.", alternatives: [], assumptions: [], reconsiderWhen: [{ type: "manual-review" }], vector: { explicitDecisionAlignment: 1, productConstraintFit: 1, semanticFit: 1, independentOccurrence: 1, historicalStability: 0, independentValidationSupport: 1, boundaryCoherence: 1, maintenanceOutcome: 0, platformCompatibility: 1, externalRationale: 0, ecosystemHealth: 0, securitySupport: 0, reversibility: 1, migrationCost: 0, counterEvidence: 0 }, assessmentConfidence: "high", evidence: [], governanceRiskClass: "R1", decidedBy: "user", createdAt: "2026-09-09T00:00:00.000Z", semanticHash: placeholder };

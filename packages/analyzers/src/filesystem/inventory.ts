@@ -1,47 +1,29 @@
-import { execFile } from "node:child_process";
-import { lstat, readFile, readdir, readlink } from "node:fs/promises";
+import { lstat, opendir, readlink } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { promisify } from "node:util";
-
-import { hashFramedDomain, type AnalyzerFailure, type ContentHash } from "@projector/core";
-
+import { ObservationBudget, ObservationError, hashFramedDomain, type AnalyzerFailure, type ContentHash,
+  type ObservationDescriptor, type ObservationLimits } from "@projector/core";
 import { compareCodePoint } from "../ordering.js";
+import { checkObservation, GitCommandError, observationFailure, observationGit, observationMap, readObservationFile } from "./observation-io.js";
 
 export interface InventoryEntry {
-  readonly path: string;
-  readonly kind: "file" | "symlink";
-  readonly mediaType: string;
-  readonly content: string;
-  readonly contentHash: ContentHash;
-  readonly generated: boolean;
-  readonly generatedReason?: "source-marker";
-  readonly symlinkTarget?: string;
+  readonly path: string; readonly kind: "file" | "symlink"; readonly mediaType: string;
+  readonly content: string; readonly contentHash: ContentHash; readonly generated: boolean;
+  readonly generatedReason?: "source-marker"; readonly symlinkTarget?: string;
 }
-
 export interface InventoryResult {
-  readonly entries: InventoryEntry[];
-  readonly failures: AnalyzerFailure[];
+  readonly entries: InventoryEntry[]; readonly failures: AnalyzerFailure[];
   readonly rootAvailability: "available" | "unavailable";
+  readonly observationDescriptor: ObservationDescriptor;
   readonly enumeration: {
     readonly method: "git-index-and-nonignored-untracked" | "recursive-filesystem-fallback";
-    readonly assumptions: readonly string[];
-    readonly blindSpots: readonly string[];
+    readonly assumptions: readonly string[]; readonly blindSpots: readonly string[];
   };
 }
-
-const ignoredDirectories = new Set([".git", ".worktrees", "node_modules"]);
+export interface InventoryOptions { readonly observationLimits?: Partial<ObservationLimits>; readonly budget?: ObservationBudget; readonly signal?: AbortSignal; }
 const excludedPrefixes = [".git", ".worktrees", ".projector/runtime"] as const;
-const execFileAsync = promisify(execFile);
-const safeGitConfig = [
-  "-c", "core.fsmonitor=false",
-  "-c", "core.untrackedCache=false",
-  "-c", `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
-] as const;
-
-function repositoryPath(root: string, absolutePath: string): string {
-  return relative(root, absolutePath).split(sep).join("/");
-}
-
+const fallbackDirectories = new Set([".git", ".worktrees", "node_modules"]);
+function repositoryPath(root: string, absolute: string): string { return relative(root, absolute).split(sep).join("/"); }
+export function isExcludedInventoryPath(path: string): boolean { return excludedPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)); }
 function mediaType(path: string): string {
   if (path.endsWith(".json")) return "application/json";
   if (/\.ya?ml$/u.test(path)) return "application/yaml";
@@ -51,219 +33,127 @@ function mediaType(path: string): string {
   if (path.endsWith(".md")) return "text/markdown";
   return "application/octet-stream";
 }
-
-function isGenerated(content: string): boolean {
-  return /(?:@generated|generated file|do not edit)/iu.test(content.slice(0, 1024));
+function missing(error: unknown): boolean { return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"; }
+async function confirmedNonGit(root: string, error: unknown): Promise<boolean> {
+  if (!(error instanceof GitCommandError) || !/not a git repository/iu.test(error.stderr)) return false;
+  for (let directory = root; ; directory = dirname(directory)) {
+    try { await lstat(join(directory, ".git")); return false; }
+    catch (markerError) { if (!missing(markerError)) return false; }
+    if (dirname(directory) === directory) return true;
+  }
 }
 
-function failure(scope: string, capability: string, error: unknown, affectedClaimKinds: string[]): AnalyzerFailure {
-  return {
-    analyzerId: "projector.filesystem-local",
-    capability,
-    scope,
-    message: error instanceof Error ? error.message : String(error),
-    recoverable: true,
-    affectedClaimKinds,
+export async function inventoryRepository(repositoryRoot: string, options: InventoryOptions = {}): Promise<InventoryResult> {
+  const root = resolve(repositoryRoot), budget = options.budget ?? new ObservationBudget(options.observationLimits);
+  const signal = options.signal;
+  const entries: InventoryEntry[] = [], ignoreSources: ObservationDescriptor["ignoreSources"] = [];
+  const countedFiles = new Set<string>(), countedDirectories = new Set<string>();
+  const countFile = (path: string): void => {
+    if (!countedFiles.has(path)) { budget.consume("maxFiles", 1, "file-enumeration", path); countedFiles.add(path); }
   };
-}
-
-function gitEnvironment(): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = {};
-  for (const key of ["PATH", "PATHEXT", "SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG", "LC_ALL"]) {
-    if (process.env[key] !== undefined) environment[key] = process.env[key];
-  }
-  return {
-    ...environment,
-    LANG: "C",
-    LC_ALL: "C",
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
-    GIT_OPTIONAL_LOCKS: "0",
+  const countDirectory = (path: string): void => {
+    if (!countedDirectories.has(path)) { budget.consume("maxDirectories", 1, "directory-enumeration", path); countedDirectories.add(path); }
   };
-}
-
-async function isConfirmedNonGitRepository(root: string, error: unknown): Promise<boolean> {
-  const stderr = typeof error === "object" && error !== null && "stderr" in error
-    ? String((error as { stderr?: unknown }).stderr ?? "")
-    : "";
-  if (!/not a git repository/iu.test(stderr)) return false;
-  try {
-    await lstat(join(root, ".git"));
-    return false;
-  } catch (markerError) {
-    return typeof markerError === "object" && markerError !== null && "code" in markerError &&
-      (markerError as { code?: unknown }).code === "ENOENT";
-  }
-}
-
-async function gitInventoryPaths(root: string): Promise<string[]> {
-  const { stdout } = await execFileAsync(
-    "git",
-    [...safeGitConfig, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-    { cwd: root, encoding: "utf8", env: gitEnvironment(), maxBuffer: 16 * 1024 * 1024, timeout: 30_000 },
-  );
-  return [...new Set(stdout.split("\0").filter(Boolean))]
-    .filter((path) => !isExcluded(path))
-    .sort(compareCodePoint);
-}
-
-function isExcluded(path: string): boolean {
-  return excludedPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
-}
-
-function resolveInventoryPath(root: string, path: string): string | undefined {
-  if (path.length === 0 || path.includes("\0") || isAbsolute(path)) return undefined;
-  const absolutePath = resolve(root, ...path.split("/"));
-  const fromRoot = relative(root, absolutePath);
-  return fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)
-    ? undefined
-    : absolutePath;
-}
-
-async function hasSymlinkParent(root: string, absolutePath: string, cache: Map<string, boolean>): Promise<boolean> {
-  const parent = dirname(absolutePath);
-  if (parent === root) return false;
-  const cached = cache.get(parent);
-  if (cached !== undefined) return cached;
-  if (await hasSymlinkParent(root, parent, cache)) {
-    cache.set(parent, true);
-    return true;
-  }
-  const symlink = (await lstat(parent)).isSymbolicLink();
-  cache.set(parent, symlink);
-  return symlink;
-}
-
-export async function inventoryRepository(repositoryRoot: string): Promise<InventoryResult> {
-  const root = resolve(repositoryRoot);
-  const entries: InventoryEntry[] = [];
-  const failures: AnalyzerFailure[] = [];
-  let rootAvailability: InventoryResult["rootAvailability"] = "available";
-
-  async function inspect(path: string, absolutePath: string, symlinkParents?: Map<string, boolean>): Promise<void> {
+  let method: InventoryResult["enumeration"]["method"] = "git-index-and-nonignored-untracked";
+  let output = "";
+  try { output = await observationGit(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], budget,
+    { ...(signal === undefined ? {} : { signal }), stage: "git-inventory" }); }
+  catch (error) { if (!await confirmedNonGit(root, error)) throw observationFailure(error, "git-inventory"); method = "recursive-filesystem-fallback"; }
+  const git = (args: readonly string[], input?: string, allowedExitCodes?: readonly number[]): Promise<string> => observationGit(root, args, budget,
+    { ...(signal === undefined ? {} : { signal }), ...(input === undefined ? {} : { input }), ...(allowedExitCodes === undefined ? {} : { allowedExitCodes }), stage: "ignore-boundary" });
+  async function fingerprint(absolute: string, source: string, activeSignal = signal): Promise<void> {
     let stat;
-    try {
-      if (symlinkParents !== undefined && await hasSymlinkParent(root, absolutePath, symlinkParents)) {
-        failures.push(failure(
-          path,
-          "symlink-parent",
-          new Error("Git-selected path traverses a symbolic-link parent"),
-          ["artifact-enumeration", "inventory-completeness", "source-relationships"],
-        ));
-        return;
-      }
-      stat = await lstat(absolutePath);
-    } catch (error) {
-      if (typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT") return;
-      failures.push(failure(path, "artifact-metadata", error, ["artifact", "projection-unit", "source-relationships"]));
-      return;
+    try { stat = await lstat(absolute); } catch (error) { if (missing(error)) return; throw error; }
+    if (stat.isSymbolicLink()) throw new ObservationError("observation-failed", "ignore-boundary", source, "Ignore/config source is a symbolic link; cannot bind a stable boundary.");
+    if (!stat.isFile()) throw new ObservationError("observation-failed", "ignore-boundary", source, "Ignore/config source is not a regular file.");
+    countFile(source);
+    const bytes = await readObservationFile(absolute, budget, source, activeSignal);
+    ignoreSources.push({ path: source, contentHash: hashFramedDomain("repository-ignore-source", bytes.toString("base64")) });
+  }
+  async function inspect(path: string, allowDeleted = false, activeSignal = signal): Promise<void> {
+    checkObservation(budget, activeSignal, "file-enumeration", path);
+    if (!path || isAbsolute(path) || path.includes("\0")) throw new Error("Git returned an invalid repository path");
+    const absolute = resolve(root, ...path.split("/")), fromRoot = relative(root, absolute);
+    if (!fromRoot || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new Error("Git returned a path outside the repository root");
+    let stat;
+    try { stat = await lstat(absolute); }
+    catch (error) { if (allowDeleted && missing(error)) return; throw observationFailure(error, "artifact-metadata", path); }
+    for (let parent = dirname(absolute); parent !== root; parent = dirname(parent)) {
+      if ((await lstat(parent)).isSymbolicLink()) throw new ObservationError("observation-failed", "symlink-parent", path, "Git-selected path traverses a symbolic-link parent");
     }
+    if (!stat.isFile() && !stat.isSymbolicLink()) return;
+    countFile(path);
     if (stat.isSymbolicLink()) {
-      let symlinkTarget;
-      try {
-        symlinkTarget = await readlink(absolutePath);
-      } catch (error) {
-        failures.push(failure(path, "symlink-target", error, ["artifact-content", "projection-unit"]));
-        return;
-      }
-      entries.push({
-        path,
-        kind: "symlink",
-        mediaType: "inode/symlink",
-        content: symlinkTarget,
-        contentHash: hashFramedDomain("repository-artifact-content", symlinkTarget),
-        generated: false,
-        symlinkTarget,
-      });
+      const symlinkTarget = await readlink(absolute);
+      const size = Buffer.byteLength(symlinkTarget); budget.assertFileBytes(size, path); budget.consume("maxTotalBytes", size, "symlink-read", path);
+      entries.push({ path, kind: "symlink", mediaType: "inode/symlink", content: symlinkTarget,
+        contentHash: hashFramedDomain("repository-artifact-content", symlinkTarget), generated: false, symlinkTarget });
       return;
     }
-    if (!stat.isFile()) return;
-    let bytes;
-    try {
-      bytes = await readFile(absolutePath);
-    } catch (error) {
-      failures.push(failure(path, "artifact-content", error, ["artifact-content", "projection-unit", "source-relationships"]));
-      return;
-    }
-    const content = bytes.toString("utf8");
-    const generated = isGenerated(content);
-    entries.push({
-      path,
-      kind: "file",
-      mediaType: mediaType(path),
-      content,
-      contentHash: hashFramedDomain("repository-artifact-content", bytes.toString("base64")),
-      generated,
-      ...(generated ? { generatedReason: "source-marker" as const } : {}),
-    });
+    const bytes = await readObservationFile(absolute, budget, path, activeSignal), content = bytes.toString("utf8");
+    const generated = /(?:@generated|generated file|do not edit)/iu.test(content.slice(0, 1024));
+    entries.push({ path, kind: "file", mediaType: mediaType(path), content,
+      contentHash: hashFramedDomain("repository-artifact-content", bytes.toString("base64")), generated,
+      ...(generated ? { generatedReason: "source-marker" as const } : {}) });
   }
-
-  async function visit(directory: string): Promise<void> {
-    let children;
-    try {
-      children = await readdir(directory, { withFileTypes: true });
-    } catch (error) {
-      const scope = directory === root ? "." : repositoryPath(root, directory);
-      if (directory === root) rootAvailability = "unavailable";
-      failures.push(failure(scope, "directory-enumeration", error, ["artifact-enumeration", "inventory-completeness"]));
-      return;
+  // Streaming traversal sees ignored .gitignore files in otherwise active directories.
+  // Git itself decides which directory rules apply.
+  async function visit(directory: string, activeSignal = signal): Promise<string[]> {
+    const scope = repositoryPath(root, directory) || ".";
+    countDirectory(scope);
+    if (method === "git-index-and-nonignored-untracked") await fingerprint(join(directory, ".gitignore"), scope === "." ? ".gitignore" : `${scope}/.gitignore`, activeSignal);
+    const directories: string[] = [];
+    const handle = await opendir(directory, { bufferSize: 32 });
+    for await (const child of handle) {
+      checkObservation(budget, activeSignal, "directory-enumeration", scope);
+      const absolute = join(directory, child.name), path = repositoryPath(root, absolute);
+      if (isExcludedInventoryPath(path)) continue;
+      if (child.isDirectory()) {
+        if (method === "recursive-filesystem-fallback" && fallbackDirectories.has(child.name)) continue;
+        countDirectory(path); directories.push(path);
+      } else if (method === "recursive-filesystem-fallback") await inspect(path, false, activeSignal);
+      else countFile(path);
     }
-    children.sort((left, right) => compareCodePoint(left.name, right.name));
-    for (const child of children) {
-      if (child.isDirectory() && ignoredDirectories.has(child.name)) continue;
-      const absolutePath = resolve(directory, child.name);
-      const path = repositoryPath(root, absolutePath);
-      if (isExcluded(path)) continue;
-      let stat;
-      try {
-        stat = await lstat(absolutePath);
-      } catch (error) {
-        failures.push(failure(path, "artifact-metadata", error, ["artifact", "projection-unit", "source-relationships"]));
-        continue;
-      }
-      if (stat.isDirectory()) {
-        await visit(absolutePath);
-        continue;
-      }
-      await inspect(path, absolutePath);
-    }
+    return directories;
   }
-
   try {
-    const paths = await gitInventoryPaths(root);
-    const symlinkParents = new Map<string, boolean>();
-    for (const path of paths) {
-      const absolutePath = resolveInventoryPath(root, path);
-      if (absolutePath === undefined) {
-        failures.push(failure(path, "git-inventory-path", new Error("Git returned a path outside the repository root"), ["artifact-enumeration", "inventory-completeness"]));
-        continue;
+    if (method === "git-index-and-nonignored-untracked") {
+      const paths = new Set<string>();
+      for (let start = 0; start < output.length;) {
+        const end = output.indexOf("\0", start); if (end < 0) throw new Error("Git inventory is not NUL terminated");
+        const path = output.slice(start, end); start = end + 1;
+        if (path && !isExcludedInventoryPath(path)) { countFile(path); paths.add(path); }
       }
-      await inspect(path, absolutePath, symlinkParents);
+      output = "";
+      const deleted = new Set((await git(["ls-files", "--deleted", "-z"])).split("\0").filter(Boolean));
+      await observationMap([...paths].sort(compareCodePoint), (path, signal) => inspect(path, deleted.has(path), signal), signal);
+      const boundary = await observationMap([
+        ["rev-parse", "--git-path", "config"], ["rev-parse", "--git-path", "config.worktree"], ["rev-parse", "--git-path", "info/exclude"],
+        ["config", "--show-origin", "--null", "--list"], ["config", "--path", "--get", "core.excludesFile"],
+      ], (args, signal) => observationGit(root, args, budget, { signal, stage: "ignore-boundary", allowedExitCodes: args.includes("--get") ? [1] : [] }), signal);
+      ignoreSources.push({ path: "git:effective-config", contentHash: hashFramedDomain("repository-ignore-source", boundary[3]!) });
+      await observationMap(["config", "config.worktree", "info/exclude"], (name, signal) => fingerprint(resolve(root,
+        boundary[["config", "config.worktree", "info/exclude"].indexOf(name)]!.trim()), `git:${name}`, signal), signal);
+      const excludesFile = boundary[4]!.trim();
+      if (excludesFile) await fingerprint(resolve(root, excludesFile), `git:core.excludesFile:${excludesFile}`);
     }
-    return {
-      entries,
-      failures,
-      rootAvailability,
-      enumeration: {
-        method: "git-index-and-nonignored-untracked",
-        assumptions: ["Git CLI can read repository ignore and index metadata"],
-        blindSpots: ["untracked Git-ignored files outside the repository inventory", "excluded .git, .worktrees, and .projector/runtime contents"],
-      },
-    };
-  } catch (error) {
-    if (!await isConfirmedNonGitRepository(root, error)) {
-      failures.push(failure(".", "git-aware-inventory", error, ["artifact-enumeration", "inventory-completeness"]));
+    let directories = [root];
+    while (directories.length > 0) {
+      const candidates = (await observationMap(directories, (directory, signal) => visit(directory, signal), signal)).flat();
+      const ignored = new Set<string>();
+      if (method === "git-index-and-nonignored-untracked" && candidates.length > 0) {
+        const ignoredOutput = await git(["check-ignore", "--no-index", "-z", "--stdin"], candidates.map((path) => `${path}/\0`).join(""), [1]);
+        for (const path of ignoredOutput.split("\0")) if (path) ignored.add(path.replace(/\/$/u, ""));
+      }
+      directories = candidates.filter((path) => !ignored.has(path)).map((path) => resolve(root, ...path.split("/")));
     }
-    await visit(root);
-    return {
-      entries,
-      failures,
-      rootAvailability,
-      enumeration: {
-        method: "recursive-filesystem-fallback",
-        assumptions: ["repository root is readable"],
-        blindSpots: ["Git ignore boundary unavailable; recursive bounded fallback used", "excluded .git, .worktrees, node_modules, and .projector/runtime contents"],
-      },
-    };
-  }
+  } catch (error) { throw observationFailure(error, "inventory"); }
+  entries.sort((a, b) => compareCodePoint(a.path, b.path));
+  ignoreSources.sort((a, b) => compareCodePoint(a.path, b.path));
+  return { entries, failures: [], rootAvailability: "available",
+    observationDescriptor: { schemaVersion: "projector.observation/v1", observerVersion: "3.0.0", scope: ".", enumerationMethod: method,
+      limits: budget.limits, ignoreSources, excludedPaths: [...excludedPrefixes, ...(method === "recursive-filesystem-fallback" ? ["**/node_modules"] : [])], globalGitConfig: "disabled" },
+    enumeration: { method, assumptions: [method === "git-index-and-nonignored-untracked" ? "Git CLI can read repository ignore and index metadata" : "repository root is readable"],
+      blindSpots: method === "git-index-and-nonignored-untracked" ? ["untracked Git-ignored files outside the repository inventory", "excluded .git, .worktrees, and .projector/runtime contents"]
+        : ["confirmed non-Git repository; recursive bounded enumeration used", "excluded .git, .worktrees, node_modules, and .projector/runtime contents"] } };
 }

@@ -67,10 +67,10 @@ export async function inspectRepositoryContinuation(repositoryRoot: string, requ
     const store = await KnowledgeContextStore.create(repositoryRoot);
     let retained;
     try { retained = await store.read(contextId); }
-    catch (error) { if (!isMissing(error)) throw error; }
+    catch (error) { if (!isMissing(error) && !(error instanceof Error && isMissing(error.cause))) throw error; }
     if (retained === undefined) {
       context = { contextId, status: "unknown", governance: "unknown" };
-      evidence.push({ id: contextId, owner: "knowledge", status: "unknown", availability: "missing", required: true, reason: "The selected saved context is absent from its durable knowledge owner." });
+      evidence.push({ id: contextId, owner: "knowledge", status: "unknown", availability: "missing", required: true, reason: "The selected saved context is absent from its disposable cache; current meaning must be retrieved before this reasoning can be reused." });
       nextAction = operation("context", { request: capture?.request ?? `Recover current meaning for the unavailable saved context ${contextId}`, persist: true });
       reason = "Retrieve current meaning before reusing unavailable saved reasoning.";
     } else {

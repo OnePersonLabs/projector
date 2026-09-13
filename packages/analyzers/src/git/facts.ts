@@ -1,289 +1,144 @@
-import { execFile } from "node:child_process";
-import { constants } from "node:fs";
-import { lstat, open, realpath } from "node:fs/promises";
-import { dirname, relative, resolve, sep } from "node:path";
-import { promisify } from "node:util";
-
-import type { AnalyzerFailure, SourceClass } from "@projector/core";
-
+import { DerivedObservationBudget, ObservationBudget, ObservationError, type AnalyzerFailure, type SourceClass } from "@projector/core";
 import { compareCodePoint } from "../ordering.js";
 import { normalizeJavaScriptSemantics } from "../typescript/facts.js";
-
-const execFileAsync = promisify(execFile);
+import { isExcludedInventoryPath, type InventoryEntry } from "../filesystem/inventory.js";
+import { observationGit, observationMap } from "../filesystem/observation-io.js";
 
 export interface GitIdentityFact {
-  readonly sourceClass: SourceClass;
-  readonly path: string;
-  readonly tracked: boolean | "unknown";
+  readonly sourceClass: SourceClass; readonly path: string; readonly tracked: boolean | "unknown";
   readonly availability: "available" | "unavailable";
   readonly introductionHistory: "available" | "unavailable" | "not-applicable";
-  readonly objectId?: string;
-  readonly introductionCommit?: string;
+  readonly objectId?: string; readonly introductionCommit?: string;
 }
-
 export interface GitMoveFact {
-  readonly sourceClass: SourceClass;
-  readonly fromPath: string;
-  readonly toPath: string;
+  readonly sourceClass: SourceClass; readonly fromPath: string; readonly toPath: string;
   readonly status: "staged-rename" | "working-tree-rename";
 }
-
 export interface GitFacts {
-  readonly availability: "available" | "unavailable";
-  readonly revision: string;
-  readonly identities: GitIdentityFact[];
-  readonly moves: GitMoveFact[];
-  readonly failures: AnalyzerFailure[];
+  readonly availability: "available" | "unavailable"; readonly revision: string;
+  readonly identities: GitIdentityFact[]; readonly moves: GitMoveFact[]; readonly failures: AnalyzerFailure[];
+  readonly pendingMoveCandidates?: { readonly deleted: readonly { path: string; content: string }[]; readonly untracked: readonly { path: string; content: string }[] };
 }
-
-async function git(repositoryRoot: string, arguments_: readonly string[]): Promise<string> {
-  const environment: NodeJS.ProcessEnv = {};
-  for (const key of ["PATH", "PATHEXT", "SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG", "LC_ALL"]) {
-    if (process.env[key] !== undefined) environment[key] = process.env[key];
-  }
-  const { stdout } = await execFileAsync("git", [...arguments_], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    env: {
-      ...environment,
-      GIT_CONFIG_NOSYSTEM: "1",
-      GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
-      GIT_OPTIONAL_LOCKS: "0",
-    },
-    maxBuffer: 4 * 1024 * 1024,
-  });
-  return stdout;
-}
-
-const safeGitConfig = [
-  "-c", "core.fsmonitor=false",
-  "-c", "core.untrackedCache=false",
-  "-c", `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
-] as const;
-
-async function safeGit(repositoryRoot: string, arguments_: readonly string[]): Promise<string> {
-  return git(repositoryRoot, [...safeGitConfig, ...arguments_]);
-}
-
 function parseTracked(output: string): Map<string, string> {
   const result = new Map<string, string>();
   for (const record of output.split("\0")) {
-    if (record.length === 0) continue;
-    const match = /^\d+ ([0-9a-f]+) \d+\t(.+)$/u.exec(record);
+    const match = /^\d+ ([0-9a-f]+) \d+\t([\s\S]+)$/u.exec(record);
     if (match?.[1] !== undefined && match[2] !== undefined) result.set(match[2], match[1]);
   }
   return result;
 }
-
 function parseIntroductionHistory(output: string): Map<string, string> {
-  const introductions = new Map<string, string>();
+  const result = new Map<string, string>();
   for (const segment of output.split("\x1e").slice(1)) {
-    const separator = segment.indexOf("\0");
-    if (separator < 1) continue;
-    const commit = segment.slice(0, separator);
-    if (!/^[0-9a-f]+$/u.test(commit)) continue;
+    const separator = segment.indexOf("\0"); if (separator < 1) continue;
+    const commit = segment.slice(0, separator); if (!/^[0-9a-f]+$/u.test(commit)) continue;
     let names = segment.slice(separator + 1);
-    if (names.startsWith("\0\n")) names = names.slice(2);
-    else if (names.startsWith("\n")) names = names.slice(1);
-    for (const path of names.split("\0").filter(Boolean)) introductions.set(path, commit);
-  }
-  return introductions;
-}
-
-function parseMoves(output: string): GitMoveFact[] {
-  const records = output.split("\0");
-  const moves: GitMoveFact[] = [];
-  for (let index = 0; index < records.length; index += 1) {
-    const record = records[index];
-    if (record === undefined || !/^R[ MADRCU?!]|^[ MADRCU?!]R/u.test(record.slice(0, 2))) continue;
-    const toPath = record.slice(3);
-    const fromPath = records[index + 1];
-    if (fromPath === undefined || fromPath.length === 0) continue;
-    moves.push({
-      sourceClass: "derived",
-      fromPath,
-      toPath,
-      status: record[0] === "R" ? "staged-rename" : "working-tree-rename",
-    });
-    index += 1;
-  }
-  return moves.sort((left, right) => compareCodePoint(left.fromPath, right.fromPath) || compareCodePoint(left.toPath, right.toPath));
-}
-
-function changedPaths(output: string, status: string): string[] {
-  return output.split("\0")
-    .filter((record) => record.slice(0, 2) === status)
-    .map((record) => record.slice(3))
-    .sort(compareCodePoint);
-}
-
-function normalizeMoveCandidate(content: string): string {
-  return normalizeJavaScriptSemantics(content);
-}
-
-async function inferUnstagedMoves(repositoryRoot: string, statusOutput: string): Promise<GitMoveFact[]> {
-  const deletedPaths = [...changedPaths(statusOutput, " D"), ...changedPaths(statusOutput, "D ")];
-  const untrackedPaths = changedPaths(statusOutput, "??");
-  const available = new Set(untrackedPaths);
-  const currentContents = new Map<string, string>();
-  const resolvedRoot = await realpath(repositoryRoot);
-  await Promise.all(untrackedPaths.map(async (path) => {
-    try {
-      const absolutePath = resolve(repositoryRoot, path);
-      const lexicalRelative = relative(repositoryRoot, absolutePath);
-      if (lexicalRelative === ".." || lexicalRelative.startsWith(`..${sep}`)) return;
-      const stat = await lstat(absolutePath);
-      if (!stat.isFile() || stat.isSymbolicLink()) return;
-      const resolvedParent = await realpath(dirname(absolutePath));
-      const parentRelative = relative(resolvedRoot, resolvedParent);
-      if (parentRelative === ".." || parentRelative.startsWith(`..${sep}`)) return;
-      const handle = await open(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
-      try {
-        currentContents.set(path, normalizeMoveCandidate(await handle.readFile("utf8")));
-      } finally {
-        await handle.close();
-      }
-    } catch {
-      // Binary/unreadable candidates are not guessed as semantic moves.
-    }
-  }));
-  const result: GitMoveFact[] = [];
-  for (const fromPath of deletedPaths) {
-    let previous: string;
-    try {
-      previous = normalizeMoveCandidate(await safeGit(repositoryRoot, ["show", `HEAD:${fromPath}`]));
-    } catch {
-      continue;
-    }
-    const matches = [...available].filter((path) => currentContents.get(path) === previous);
-    if (matches.length !== 1) continue;
-    const toPath = matches[0]!;
-    available.delete(toPath);
-    result.push({ sourceClass: "derived", fromPath, toPath, status: "working-tree-rename" });
+    if (names.startsWith("\0\n")) names = names.slice(2); else if (names.startsWith("\n")) names = names.slice(1);
+    for (const path of names.split("\0").filter(Boolean)) result.set(path, commit);
   }
   return result;
 }
-
-export async function collectGitFacts(repositoryRoot: string, paths: readonly string[]): Promise<GitFacts> {
-  try {
-    const commandResults = await Promise.allSettled([
-      safeGit(repositoryRoot, ["rev-parse", "HEAD"]),
-      safeGit(repositoryRoot, ["ls-files", "--stage", "-z"]),
-      safeGit(repositoryRoot, ["status", "--porcelain=v1", "-z"]),
-    ]);
-    const failed = commandResults.find((result): result is PromiseRejectedResult => result.status === "rejected"); if (failed !== undefined) throw failed.reason;
-    const revisionOutput = (commandResults[0] as PromiseFulfilledResult<string>).value;
-    const trackedOutput = (commandResults[1] as PromiseFulfilledResult<string>).value;
-    const statusOutput = (commandResults[2] as PromiseFulfilledResult<string>).value;
-    const tracked = parseTracked(trackedOutput);
-    let introductionHistory: Map<string, string>;
-    try {
-      introductionHistory = parseIntroductionHistory(await safeGit(repositoryRoot, ["log", "--no-ext-diff", "--diff-filter=A", "--format=%x1e%H%x00", "--name-only", "-z", "--"]));
-    } catch (error) {
-      const identities = paths.map((path): GitIdentityFact => {
-        const objectId = tracked.get(path);
-        return objectId === undefined
-          ? { sourceClass: "derived", path, tracked: false, availability: "available", introductionHistory: "not-applicable" }
-          : { sourceClass: "derived", path, tracked: true, availability: "available", introductionHistory: "unavailable", objectId };
-      });
-      const failures = identities.filter(({ tracked: isTracked }) => isTracked === true).map(({ path }): AnalyzerFailure => ({
-        analyzerId: "projector.git-local",
-        capability: "introduction-history",
-        scope: path,
-        message: error instanceof Error ? error.message : String(error),
-        recoverable: true,
-        affectedClaimKinds: ["git-introduction-commit"],
-      }));
-      const explicitMoves = parseMoves(statusOutput);
-      const inferredMoves = await inferUnstagedMoves(repositoryRoot, statusOutput);
-      return {
-        availability: "available",
-        revision: revisionOutput.trim(),
-        identities: identities.sort((left, right) => compareCodePoint(left.path, right.path)),
-        moves: [...explicitMoves, ...inferredMoves]
-          .filter((move, index, moves) => moves.findIndex((candidate) => candidate.fromPath === move.fromPath && candidate.toPath === move.toPath) === index)
-          .sort((left, right) => compareCodePoint(left.fromPath, right.fromPath) || compareCodePoint(left.toPath, right.toPath)),
-        failures: failures.sort((left, right) => compareCodePoint(left.scope, right.scope)),
-      };
-    }
-    const identityResults = await Promise.all(paths.map(async (path): Promise<{ identity: GitIdentityFact; failure?: AnalyzerFailure }> => {
-      const objectId = tracked.get(path);
-      if (objectId === undefined) {
-        return { identity: { sourceClass: "derived", path, tracked: false, availability: "available", introductionHistory: "not-applicable" } };
-      }
-      let introductionCommit = introductionHistory.get(path);
-      if (introductionCommit !== undefined) return { identity: { sourceClass: "derived", path, tracked: true, availability: "available", introductionHistory: "available", objectId, introductionCommit } };
-      try {
-        const history = await safeGit(repositoryRoot, ["log", "--no-ext-diff", "--follow", "--diff-filter=A", "--format=%H", "--", path]);
-        introductionCommit = history.trim().split("\n").filter(Boolean).at(-1);
-      } catch (error) {
-        return {
-          identity: {
-            sourceClass: "derived",
-            path,
-            tracked: true,
-            availability: "available",
-            introductionHistory: "unavailable",
-            objectId,
-          },
-          failure: {
-            analyzerId: "projector.git-local",
-            capability: "introduction-history",
-            scope: path,
-            message: error instanceof Error ? error.message : String(error),
-            recoverable: true,
-            affectedClaimKinds: ["git-introduction-commit"],
-          },
-        };
-      }
-      return {
-        identity: {
-          sourceClass: "derived",
-          path,
-          tracked: true,
-          availability: "available",
-          introductionHistory: "available",
-          objectId,
-          ...(introductionCommit === undefined ? {} : { introductionCommit }),
-        },
-      };
-    }));
-    const identities = identityResults.map((result) => result.identity);
-    const historyFailures = identityResults
-      .map((result) => result.failure)
-      .filter((failure): failure is AnalyzerFailure => failure !== undefined)
-      .sort((left, right) => compareCodePoint(left.scope, right.scope));
-    const explicitMoves = parseMoves(statusOutput);
-    const inferredMoves = await inferUnstagedMoves(repositoryRoot, statusOutput);
-    return {
-      availability: "available",
-      revision: revisionOutput.trim(),
-      identities: identities.sort((left, right) => compareCodePoint(left.path, right.path)),
-      moves: [...explicitMoves, ...inferredMoves]
-        .filter((move, index, moves) => moves.findIndex((candidate) => candidate.fromPath === move.fromPath && candidate.toPath === move.toPath) === index)
-        .sort((left, right) => compareCodePoint(left.fromPath, right.fromPath) || compareCodePoint(left.toPath, right.toPath)),
-      failures: historyFailures,
-    };
-  } catch (error) {
-    return {
-      availability: "unavailable",
-      revision: "filesystem",
-      identities: paths.map((path) => ({
-        sourceClass: "derived",
-        path,
-        tracked: "unknown",
-        availability: "unavailable",
-        introductionHistory: "unavailable",
-      })),
-      moves: [],
-      failures: [{
-        analyzerId: "projector.git-local",
-        capability: "git-identity-and-moves",
-        scope: ".git",
-        message: error instanceof Error ? error.message : String(error),
-        recoverable: true,
-        affectedClaimKinds: ["git-identity", "move-lineage"],
-      }],
-    };
+function parseStatus(output: string): { moves: GitMoveFact[]; deleted: string[]; untracked: string[] } {
+  const records = output.split("\0"), moves: GitMoveFact[] = [], deleted: string[] = [], untracked: string[] = [];
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index]; if (!record) continue;
+    const status = record.slice(0, 2), path = record.slice(3);
+    if (/R/u.test(status)) {
+      const fromPath = records[++index]; if (fromPath && !isExcludedInventoryPath(fromPath) && !isExcludedInventoryPath(path)) moves.push({ sourceClass: "derived", fromPath, toPath: path,
+        status: status[0] === "R" ? "staged-rename" : "working-tree-rename" });
+    } else if (!isExcludedInventoryPath(path) && (status === " D" || status === "D ")) deleted.push(path);
+    else if (!isExcludedInventoryPath(path) && status === "??") untracked.push(path);
   }
+  return { moves, deleted: deleted.sort(compareCodePoint), untracked: untracked.sort(compareCodePoint) };
+}
+
+/** Parent-side bounded I/O only; semantic move matching is deferred to the analysis worker. */
+export async function collectGitFacts(repositoryRoot: string, paths: readonly string[], options: {
+  budget?: ObservationBudget; signal?: AbortSignal; confirmedNonGit?: boolean; entries?: readonly InventoryEntry[];
+} = {}): Promise<GitFacts> {
+  if (options.confirmedNonGit) return {
+    availability: "unavailable", revision: "filesystem", moves: [],
+    identities: paths.map((path) => ({ sourceClass: "derived", path, tracked: "unknown", availability: "unavailable", introductionHistory: "unavailable" })),
+    failures: [{ analyzerId: "projector.git-local", capability: "git-identity-and-moves", scope: ".git",
+      message: "Confirmed non-Git repository has no Git identity or history.", recoverable: true, affectedClaimKinds: ["git-identity", "move-lineage"] }],
+  };
+  const budget = options.budget ?? new ObservationBudget();
+  const git = (args: readonly string[], allowedExitCodes?: readonly number[]): Promise<string> => observationGit(repositoryRoot, args, budget,
+    { ...(options.signal === undefined ? {} : { signal: options.signal }), ...(allowedExitCodes === undefined ? {} : { allowedExitCodes }) });
+  // --verify --quiet returns 1 for an unborn branch; startup, permissions and malformed Git still fail.
+  const commandResults = await observationMap([
+    { args: ["rev-parse", "--verify", "--quiet", "HEAD"], allowedExitCodes: [1] },
+    { args: ["ls-files", "--stage", "-z"], allowedExitCodes: [] },
+    { args: ["status", "--porcelain=v1", "--untracked-files=all", "-z"], allowedExitCodes: [] },
+  ], (command, signal) => observationGit(repositoryRoot, command.args, budget, { signal, allowedExitCodes: command.allowedExitCodes }), options.signal);
+  const revisionOutput = commandResults[0]!;
+  if (revisionOutput.trim() === "") {
+    const headReference = (await git(["symbolic-ref", "--quiet", "HEAD"])).trim();
+    const references = await git(["show-ref"], [1]);
+    if (!headReference.startsWith("refs/heads/") || references.split("\n").some((record) => record.endsWith(` ${headReference}`))) {
+      throw new ObservationError("observation-failed", "git-facts", "HEAD", "Git HEAD could not be resolved and is not a confirmed unborn branch.");
+    }
+  }
+  const revision = revisionOutput.trim() || "unborn";
+  const tracked = parseTracked(commandResults[1]!);
+  const status = parseStatus(commandResults[2]!);
+  const introductions = revision === "unborn" ? new Map<string, string>() : parseIntroductionHistory(await git([
+    "log", "--no-ext-diff", "--diff-filter=A", "--format=%x1e%H%x00", "--name-only", "-z", "--",
+  ]));
+  const identities: GitIdentityFact[] = [];
+  for (const path of paths) {
+    budget.check("git-facts", path);
+    const objectId = tracked.get(path);
+    if (objectId === undefined) { identities.push({ sourceClass: "derived", path, tracked: false, availability: "available", introductionHistory: "not-applicable" }); continue; }
+    let introductionCommit = introductions.get(path);
+    if (introductionCommit === undefined && revision !== "unborn") {
+      introductionCommit = (await git(["log", "--no-ext-diff", "--follow", "--diff-filter=A", "--format=%H", "--", path])).trim().split("\n").filter(Boolean).at(-1);
+    }
+    identities.push({ sourceClass: "derived", path, tracked: true, availability: "available", introductionHistory: revision === "unborn" ? "not-applicable" : "available", objectId,
+      ...(introductionCommit === undefined ? {} : { introductionCommit }) });
+  }
+  const deleted: { path: string; content: string }[] = [];
+  if (revision !== "unborn") for (const path of status.deleted) {
+    // Object size is admitted before `show` allocates its content.
+    const size = Number((await git(["cat-file", "-s", `HEAD:${path}`])).trim());
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Invalid Git object size for ${path}`);
+    budget.assertFileBytes(size, path); budget.consume("maxTotalBytes", size, "git-move-content", path);
+    const content = await git(["show", `HEAD:${path}`]);
+    budget.assertFileBytes(Buffer.byteLength(content), path); deleted.push({ path, content });
+  }
+  const entryByPath = new Map((options.entries ?? []).filter((entry) => entry.kind === "file").map((entry) => [entry.path, entry]));
+  const untracked = status.untracked.flatMap((path) => {
+    const entry = entryByPath.get(path); return entry === undefined ? [] : [{ path, content: entry.content }];
+  });
+  return { availability: "available", revision, identities: identities.sort((a, b) => compareCodePoint(a.path, b.path)),
+    moves: status.moves, failures: [], pendingMoveCandidates: { deleted, untracked } };
+}
+
+/** Pure semantic analysis; safe to execute in a terminable worker. */
+export function finalizeGitFacts(facts: GitFacts, budget = new DerivedObservationBudget()): GitFacts {
+  const candidates = facts.pendingMoveCandidates;
+  if (candidates === undefined) return facts;
+  if (candidates.deleted.length === 0 || candidates.untracked.length === 0) return {
+    availability: facts.availability, revision: facts.revision, identities: facts.identities, failures: facts.failures,
+    moves: [...facts.moves].sort((a, b) => compareCodePoint(a.fromPath, b.fromPath) || compareCodePoint(a.toPath, b.toPath)),
+  };
+  const startedBytes = budget.usedBytes;
+  let retainedMoveBytes = 0;
+  try {
+  budget.reserveItems(candidates.untracked.length, 128, "git-move-candidates");
+  const contents = new Map(candidates.untracked.map(({ path, content }) => [path, normalizeJavaScriptSemantics(content, budget, path)]));
+  const moves = [...facts.moves];
+  for (const { path: fromPath, content } of candidates.deleted) {
+    const previous = normalizeJavaScriptSemantics(content, budget, fromPath);
+    const matches = [...contents].filter(([, value]) => value === previous).map(([path]) => path);
+    if (matches.length !== 1) continue;
+    const toPath = matches[0]!; contents.delete(toPath);
+    const moveBytes = 192 + 2 * (fromPath.length + toPath.length);
+    budget.reserve(moveBytes, "git-move-facts", fromPath); retainedMoveBytes += moveBytes;
+    moves.push({ sourceClass: "derived", fromPath, toPath, status: "working-tree-rename" });
+  }
+  return { availability: facts.availability, revision: facts.revision, identities: facts.identities, failures: facts.failures,
+    moves: moves.filter((move, index) => moves.findIndex((candidate) => candidate.fromPath === move.fromPath && candidate.toPath === move.toPath) === index)
+      .sort((a, b) => compareCodePoint(a.fromPath, b.fromPath) || compareCodePoint(a.toPath, b.toPath)) };
+  } finally { budget.release(budget.usedBytes - startedBytes - retainedMoveBytes); }
 }

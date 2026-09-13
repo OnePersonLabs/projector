@@ -39,6 +39,11 @@ function blockingDecision(): KnowledgeDecisionValidity {
 }
 
 describe("bounded knowledge transport", () => {
+  it("rejects oversized complete responses instead of emitting partial or oversized JSON", () => {
+    expect(() => projectKnowledgeContext({ ...context, request: "x".repeat(1024 * 1024) })).toThrow(/response.*limit/i);
+    expect(() => projectKnowledgeContext({ ...context, request: "x".repeat(16 * 1024 * 1024) }, "full")).toThrow(/response.*limit/i);
+    expect(() => projectKnowledgeReconciliation({ ...reconciliation, reasons: ["x".repeat(16 * 1024 * 1024)] }, "full")).toThrow(/response.*limit/i);
+  });
   it("retains whole selected meaning and leaves persisted proof available for full disclosure", async () => {
     const source = JSON.stringify(context);
     const view = KnowledgeContextAgentViewSchema.parse(projectKnowledgeContext(context));

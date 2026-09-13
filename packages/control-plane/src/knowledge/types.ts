@@ -48,6 +48,7 @@ export interface KnowledgeContextPolicy {
 
 export interface KnowledgeContextRequest {
   readonly request: string;
+  readonly view?: "agent" | "full";
   /** Stable IDs, canonical keys, or accepted aliases supplied as explicit addresses. */
   readonly entities?: readonly string[];
   readonly namedTargets?: readonly string[];

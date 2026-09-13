@@ -63,6 +63,47 @@ const abandonedMutexAfterMs = 30_000;
 const abandonedClaimAfterMs = 30_000;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
+/** Acquires only an immediately free project; never queues or bypasses a queued request. */
+export async function tryWithProjectExclusiveAccess<T>(
+  root: string,
+  operationName: string,
+  operation: (access: ProjectOperationAccess) => Promise<T> | T,
+  signal?: AbortSignal,
+): Promise<{ acquired: false } | { acquired: true; value: T }> {
+  validateOptions({ operation: operationName, mode: "exclusive" });
+  throwIfAborted(signal);
+  const accessPath = await prepareAccessDirectory(root);
+  const mutexPath = join(accessPath, mutexDirectoryName);
+  try { await mkdir(mutexPath); }
+  catch (error) {
+    if (isCode(error, "EEXIST")) return { acquired: false };
+    throw error;
+  }
+  let claim: AccessClaim | undefined;
+  try {
+    const state = await readAccessState(accessPath);
+    if (state.requests.length !== 0 || state.holders.length !== 0) return { acquired: false };
+    if (state.nextTicket === Number.MAX_SAFE_INTEGER) throw corrupt("Operation access ticket space is exhausted");
+    const now = new Date().toISOString();
+    claim = { version: 1, requestId: randomUUID(), ticket: state.nextTicket + 1,
+      operation: operationName, mode: "exclusive", processId: process.pid, createdAt: now, heartbeatAt: now };
+    await writeAtomic(accessPath, counterFileName, `${claim.ticket}\n`);
+    await writeNewClaim(join(accessPath, holdersDirectoryName, `${claim.requestId}.json`), claim);
+  } finally { await rmdir(mutexPath); }
+  const owned = claim;
+  const integrity = new AbortController();
+  const heartbeat = startHeartbeat(accessPath, owned, integrity);
+  try {
+    try {
+      return { acquired: true, value: await operation({
+        signal: signal === undefined ? integrity.signal : AbortSignal.any([signal, integrity.signal]),
+        ownedRelativePaths: [".projector/runtime/operation-access/next-ticket", `.projector/runtime/operation-access/holders/${owned.requestId}.json`],
+        assertOwned: async () => { await refreshHeartbeat(accessPath, owned); },
+      }) };
+    } finally { await heartbeat.stop(); }
+  } finally { await removeOwnClaim(accessPath, holdersDirectoryName, owned); }
+}
+
 export async function withProjectOperationAccess<T>(
   root: string,
   options: ProjectOperationAccessOptions,
@@ -108,8 +149,10 @@ export async function recoverAbandonedProjectOperationAccess(
 ): Promise<ProjectOperationAccessRecovery> {
   throwIfAborted(signal);
   const accessPath = await prepareAccessDirectory(root);
+  await recoverInterruptedMutex(accessPath);
   return withMutex(accessPath, signal, async () => {
-    const state = await readAccessState(accessPath, true);
+    const state = await readAccessState(accessPath, true, true);
+    const interrupted = await readInterruptedHeartbeats(accessPath, state);
     const now = Date.now();
     const abandoned = [...state.requests, ...state.holders].filter((claim) => {
       const heartbeat = new Date(claim.heartbeatAt).getTime();
@@ -123,8 +166,15 @@ export async function recoverAbandonedProjectOperationAccess(
         throw corrupt(`Operation access claim ${claim.requestId} is stale but its recorded process is still alive`);
       }
     }
+    for (const heartbeat of interrupted) {
+      if (!abandoned.some(({ requestId }) => requestId === heartbeat.requestId)) {
+        throw corrupt(`Interrupted heartbeat ${heartbeat.requestId} does not belong to an abandoned claim`);
+      }
+    }
+    for (const heartbeat of interrupted) await rm(heartbeat.path);
     const requestIds = new Set(state.requests.map(({ requestId }) => requestId));
     const synced = new Set<string>();
+    for (const heartbeat of interrupted) synced.add(heartbeat.directory);
     for (const claim of abandoned) {
       const directory = join(accessPath, requestIds.has(claim.requestId) ? requestsDirectoryName : holdersDirectoryName);
       await rm(join(directory, `${claim.requestId}.json`));
@@ -133,6 +183,74 @@ export async function recoverAbandonedProjectOperationAccess(
     for (const directory of synced) await syncDirectory(directory);
     return { removedClaimIds: abandoned.map(({ requestId }) => requestId) };
   });
+}
+
+async function recoverInterruptedMutex(accessPath: string): Promise<void> {
+  const mutexPath = join(accessPath, mutexDirectoryName);
+  let mutexStatus;
+  try { mutexStatus = await lstat(mutexPath); }
+  catch (error) {
+    if (isCode(error, "ENOENT")) return;
+    throw corrupt("Operation access mutex is unreadable", error);
+  }
+  if (!mutexStatus.isDirectory() || mutexStatus.isSymbolicLink()) throw corrupt("Operation access mutex is not a real directory");
+  if (Date.now() - mutexStatus.mtimeMs <= abandonedMutexAfterMs) return;
+  if ((await readdir(mutexPath)).length !== 0) throw corrupt("Operation access mutex contains unexpected evidence");
+  const state = await readAccessState(accessPath, true, true);
+  const interrupted = await readInterruptedHeartbeats(accessPath, state);
+  if (interrupted.length !== 1) {
+    throw corrupt("Abandoned operation access mutex has no unique interrupted heartbeat owner; manual recovery is required");
+  }
+  const now = Date.now();
+  for (const claim of [...state.requests, ...state.holders]) {
+    const heartbeat = new Date(claim.heartbeatAt).getTime();
+    if (heartbeat > now + abandonedClaimAfterMs || now - heartbeat <= abandonedClaimAfterMs) {
+      throw corrupt(`Operation access claim ${claim.requestId} is not safely expired`);
+    }
+    if (processIsAlive(claim.processId)) throw corrupt(`Operation access claim ${claim.requestId} is still held by a live process`);
+  }
+  const current = await lstat(mutexPath);
+  if (current.dev !== mutexStatus.dev || current.ino !== mutexStatus.ino || current.mtimeMs !== mutexStatus.mtimeMs) {
+    throw corrupt("Operation access mutex changed during recovery");
+  }
+  await rmdir(mutexPath);
+  await syncDirectory(accessPath);
+}
+
+interface InterruptedHeartbeat { requestId: string; path: string; directory: string }
+
+async function readInterruptedHeartbeats(accessPath: string, state: AccessState): Promise<InterruptedHeartbeat[]> {
+  const claims = new Map([...state.requests, ...state.holders].map((claim) => [claim.requestId, claim]));
+  const interrupted: InterruptedHeartbeat[] = [];
+  for (const name of [requestsDirectoryName, holdersDirectoryName]) {
+    const directory = join(accessPath, name);
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!entry.name.endsWith(".tmp")) continue;
+      const match = /^\.([0-9a-f-]+)\.json\.([0-9a-f-]+)\.tmp$/iu.exec(entry.name);
+      if (!entry.isFile() || entry.isSymbolicLink() || match === null || !uuidPattern.test(match[1]!) || !uuidPattern.test(match[2]!)) {
+        throw corrupt(`Unrecognized interrupted operation access heartbeat: ${entry.name}`);
+      }
+      const requestId = match[1]!;
+      const claim = claims.get(requestId);
+      if (claim === undefined || (name === holdersDirectoryName) !== state.holders.some((holder) => holder.requestId === requestId)) {
+        throw corrupt(`Interrupted heartbeat ${requestId} has no matching claim`);
+      }
+      const path = join(directory, entry.name);
+      const pending = await readClaim(path);
+      const { heartbeatAt: _prior, ...claimIdentity } = claim;
+      const { heartbeatAt: _pending, ...pendingIdentity } = pending;
+      if (JSON.stringify(claimIdentity) !== JSON.stringify(pendingIdentity) || pending.heartbeatAt < claim.heartbeatAt) {
+        throw corrupt(`Interrupted heartbeat ${requestId} does not match its claim`);
+      }
+      const modified = await lstat(path);
+      const now = Date.now();
+      if (now - modified.mtimeMs <= abandonedClaimAfterMs || new Date(pending.heartbeatAt).getTime() > now + abandonedClaimAfterMs || processIsAlive(claim.processId)) {
+        throw corrupt(`Interrupted heartbeat ${requestId} may still be active`);
+      }
+      interrupted.push({ requestId, path, directory });
+    }
+  }
+  return interrupted;
 }
 
 function validateOptions(options: ProjectOperationAccessOptions): void {
@@ -302,10 +420,10 @@ async function removeOwnClaim(accessPath: string, location: string, claim: Acces
   });
 }
 
-async function readAccessState(accessPath: string, permitAbandoned = false): Promise<AccessState> {
+async function readAccessState(accessPath: string, permitAbandoned = false, permitInterruptedHeartbeats = false): Promise<AccessState> {
   await validateAccessDirectoryEntries(accessPath);
-  const requests = await readClaims(join(accessPath, requestsDirectoryName));
-  const holders = await readClaims(join(accessPath, holdersDirectoryName));
+  const requests = await readClaims(join(accessPath, requestsDirectoryName), permitInterruptedHeartbeats);
+  const holders = await readClaims(join(accessPath, holdersDirectoryName), permitInterruptedHeartbeats);
   const allClaims = [...requests, ...holders];
   const now = Date.now();
   for (const claim of allClaims) {
@@ -352,6 +470,8 @@ function processIsAlive(processId: number): boolean {
   }
 }
 
+export { processIsAlive as projectOperationProcessIsAlive };
+
 async function validateAccessDirectoryEntries(accessPath: string): Promise<void> {
   const allowed = new Set([requestsDirectoryName, holdersDirectoryName, counterFileName, mutexDirectoryName]);
   let entries: Dirent[];
@@ -372,7 +492,7 @@ async function validateAccessDirectoryEntries(accessPath: string): Promise<void>
   }
 }
 
-async function readClaims(directory: string): Promise<AccessClaim[]> {
+async function readClaims(directory: string, permitInterruptedHeartbeats = false): Promise<AccessClaim[]> {
   const claims: AccessClaim[] = [];
   let entries: Dirent[];
   try {
@@ -381,6 +501,7 @@ async function readClaims(directory: string): Promise<AccessClaim[]> {
     throw corrupt(`Operation access claims are unreadable: ${directory}`, cause);
   }
   for (const entry of entries) {
+    if (permitInterruptedHeartbeats && entry.name.endsWith(".tmp")) continue;
     if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith(".json")) {
       throw corrupt(`Invalid operation access claim entry: ${entry.name}`);
     }

@@ -8,6 +8,7 @@ import type { KnowledgeDecisionCheck, KnowledgeDecisionValidity } from "./types.
 
 const unique = (items: readonly string[]) => [...new Set(items)].sort();
 export interface KnowledgeDecisionHost {
+  readonly readDecisionBaseline?: (decision: ArchitectureDecision, authority: AuthorityRecord) => Promise<DecisionBaselineEvidence>;
   readonly now?: () => string;
   /** Exact post-state baselines for authorities accepted by the enclosing transaction only. */
   readonly acceptedDecisionBaselines?: readonly KnowledgeDecisionBaseline[];
@@ -27,7 +28,7 @@ export class KnowledgeDecisionRun {
   private readonly observations = new Map<string, Promise<DecisionObservation>>();
   private readonly now: string;
 
-  constructor(private readonly observation: ChangeRepositoryObservation, private readonly host: KnowledgeDecisionHost = {}) {
+  constructor(private readonly observation: Omit<ChangeRepositoryObservation, "independentValidator">, private readonly host: KnowledgeDecisionHost = {}) {
     this.baselines = new DecisionBaselineReader(observation);
     this.now = (host.now ?? (() => new Date().toISOString()))();
   }
@@ -43,7 +44,7 @@ export class KnowledgeDecisionRun {
     const authority = this.observation.canonical.documents.find(({ id, kind }) => id === decision.authorityRecordId && kind === "authority-record")?.payload as unknown as AuthorityRecord | undefined;
     if (authority === undefined) return { decision, baseline: { kind: "unavailable", reason: "decision authority is missing" }, checks: [], observations: [], unknowns: ["decision authority is missing"] };
     const accepted = this.host.acceptedDecisionBaselines?.find((baseline) => baseline.decisionId === decision.id && baseline.decisionSemanticHash === decision.semanticHash && baseline.authorityId === authority.id && baseline.authoritySemanticHash === authority.semanticHash);
-    const evidence: DecisionBaselineEvidence = accepted === undefined ? await this.baselines.read(decision, authority)
+    const evidence: DecisionBaselineEvidence = accepted === undefined ? await (this.host.readDecisionBaseline?.(decision, authority) ?? this.baselines.read(decision, authority))
       : { kind: "authenticated-transaction", reference: "current-approved-canonical-transaction", baseline: accepted };
     const { baseline: captured, ...baseline } = evidence;
     const observed = captureDecisionTriggerObservations(decision, authority, this.observation.canonical.documents, this.observation.analysis.files.map(({ path }) => path), this.observation.analysis.surface.kind);

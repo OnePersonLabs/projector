@@ -10,6 +10,14 @@ const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 describe("installed Projector editor schema bundle", () => {
+  test("reuses an immutable editor bundle across consumers", () => {
+    const bundle = createProjectorEditorSchemaBundle();
+    expect(createProjectorEditorSchemaBundle()).toBe(bundle);
+    expect(Object.isFrozen(bundle)).toBe(true);
+    expect(() => Object.assign(bundle, { 0: { relativePath: "corrupted", contents: "{}" } })).toThrow(TypeError);
+    expect(() => Object.assign(bundle[0]!, { contents: "{}" })).toThrow(TypeError);
+  });
+
   test("derives strict per-kind canonical and config editor schemas from core contract authority", () => {
     const bundle = createProjectorEditorSchemaBundle();
 

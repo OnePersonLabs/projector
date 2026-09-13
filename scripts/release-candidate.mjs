@@ -58,17 +58,19 @@ function candidatePath(root, path) {
   return target;
 }
 
-export async function inventoryCandidateFiles(root) {
+export async function inventoryCandidateFiles(root, options = {}) {
+  options.signal?.throwIfAborted();
   const files = [];
   const visit = async (directory) => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
+      options.signal?.throwIfAborted();
       const path = resolve(directory, entry.name);
       const metadata = await lstat(path);
       if (metadata.isSymbolicLink()) throw new Error(`release candidate contains a symlink: ${relative(root, path)}`);
       if (metadata.isDirectory()) {
         if (relative(root, path) !== "results") await visit(path);
       } else if (metadata.isFile() && relative(root, path) !== "manifest.json") {
-        const bytes = await readFile(path);
+        const bytes = await readFile(path, { signal: options.signal });
         files.push({ path: relative(root, path).split(sep).join("/"), bytes: bytes.byteLength, digest: hashBytes(bytes) });
       } else if (!metadata.isFile()) {
         throw new Error(`release candidate contains a non-file entry: ${relative(root, path)}`);
@@ -79,12 +81,13 @@ export async function inventoryCandidateFiles(root) {
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-export async function validateReleaseCandidate(candidateRoot) {
+export async function validateReleaseCandidate(candidateRoot, options = {}) {
+  options.signal?.throwIfAborted();
   const root = await realpath(candidateRoot);
   const manifestPath = candidatePath(root, "manifest.json");
   const manifestMetadata = await lstat(manifestPath);
   if (!manifestMetadata.isFile() || manifestMetadata.isSymbolicLink()) throw new Error("release candidate manifest is not a regular file");
-  const manifestBytes = await readFile(manifestPath);
+  const manifestBytes = await readFile(manifestPath, { signal: options.signal });
   let manifest;
   try { manifest = JSON.parse(manifestBytes); } catch { throw new Error("release candidate manifest is malformed JSON"); }
   if (`${canonicalJson(manifest)}\n` !== manifestBytes.toString("utf8")) throw new Error("release candidate manifest is not canonical JSON");
@@ -92,7 +95,7 @@ export async function validateReleaseCandidate(candidateRoot) {
   if (manifest.release?.name !== releasePackageName || !numericVersion.test(manifest.release?.version ?? "") || !/^[0-9a-f]{40}$/u.test(manifest.release?.sourceRevision ?? "")) throw new Error("release candidate manifest has an invalid release identity");
   if (manifest.tarballPath !== `artifacts/onepersonlabs-projector-${manifest.release.version}.tgz` || manifest.pluginRoot !== "plugin/projector" || manifest.runnerPath !== "source-severed-release-acceptance.mjs" || manifest.fixturePath !== "fixtures/held-out-change.json") throw new Error("release candidate manifest has invalid entrypoint paths");
   if (!Array.isArray(manifest.files)) throw new Error("release candidate manifest has no file inventory");
-  const actual = await inventoryCandidateFiles(root);
+  const actual = await inventoryCandidateFiles(root, options);
   if (canonicalJson(manifest.files) !== canonicalJson(actual)) throw new Error("release candidate file inventory, bytes, or digest does not match manifest");
   const required = [manifest.tarballPath, `${manifest.pluginRoot}/.codex-plugin/plugin.json`, "packed-lifecycle-acceptance.mjs", manifest.runnerPath, "release-candidate.mjs", manifest.fixturePath];
   const paths = new Set(actual.map(({ path }) => path));
@@ -100,5 +103,6 @@ export async function validateReleaseCandidate(candidateRoot) {
     candidatePath(root, path);
     if (!paths.has(path)) throw new Error(`release candidate is missing required input ${path}`);
   }
+  options.signal?.throwIfAborted();
   return { root, manifest, manifestHash: hashBytes(manifestBytes), files: actual };
 }

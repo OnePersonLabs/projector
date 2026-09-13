@@ -302,8 +302,17 @@ export function validateContractRegistry(): string[] {
 
 export type ExportedJsonSchemas = Readonly<Record<string, z.core.JSONSchema.BaseSchema>>;
 
+let exportedJsonSchemas: ExportedJsonSchemas | undefined;
+
+function freezeJsonSchema(value: unknown): void {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return;
+  for (const child of Object.values(value)) freezeJsonSchema(child);
+  Object.freeze(value);
+}
+
 export function exportContractJsonSchemas(): ExportedJsonSchemas {
-  return Object.freeze(Object.fromEntries(
+  if (exportedJsonSchemas !== undefined) return exportedJsonSchemas;
+  const schemas = Object.fromEntries(
     Object.entries(contractRegistry)
       .filter((entry): entry is [string, ContractRegistration & { schema: z.ZodType }] => entry[1].schema !== undefined)
       .map(([name, registration]) => [
@@ -315,7 +324,12 @@ export function exportContractJsonSchemas(): ExportedJsonSchemas {
           io: "input",
         }),
       ]),
-  ));
+  );
+  // This module identity owns a fixed registry. Freeze nested schema objects and
+  // arrays before sharing the generated representation with any consumer.
+  freezeJsonSchema(schemas);
+  exportedJsonSchemas = schemas;
+  return schemas;
 }
 
 function collectRefs(value: unknown, refs: string[]): void {

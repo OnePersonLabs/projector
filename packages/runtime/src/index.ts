@@ -8,4 +8,6 @@ export * from "./transforms/index.js";
 export * from "./operations/index.js";
 export * from "./activation/index.js";
 export * from "./access/index.js";
+export * from "./cache/derived-cache.js";
 export * from "./migrations/index.js";
+export * from "./observation-scope.js";

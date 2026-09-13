@@ -8,7 +8,7 @@ The plugin runs independently of this checkout on native Windows and direct WSL.
 
 Projector has its own local `projector` marketplace rooted at this checkout. Use `$opl:refresh-local-plugins` to refresh both user-level Codex homes. Its helper runs this checkout's `plugin:prepare-local` package script before comparing or installing bundles, so compilation and standalone bundle assembly happen as part of refresh. A failed build stops installation. The OPL push/pull hook directs the agent to this same skill after successful Git operations. The helper registers the marketplace when needed and verifies installed hook trust; start a fresh Codex session to load updated components. For direct CLI installation, first run `pnpm plugin:prepare-local`, then `codex plugin marketplace add .` and `codex plugin add projector@projector`. Installation does not establish that a project is initialized or that its checks pass.
 
-The installed `projector` skill's `operation-contract.md` describes the versioned request protocol and locates its sibling `../../scripts/projector-operation.mjs`. Invoke that runner with `node`, passing one UTF-8 JSON request file or the same object on standard input. For example, the context request for this repository is:
+The installed plugin's shared `references/operation-contract.md` describes the versioned request protocol and locates `../scripts/projector-operation.mjs`. Invoke that runner with `node`, passing one UTF-8 JSON request file or the same object on standard input. For example, the context request for this repository is:
 
 ```json
 {

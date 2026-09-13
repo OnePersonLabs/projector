@@ -1,4 +1,6 @@
 import {
+  DerivedObservationBudget,
+  ObservationError,
   canonicalJson,
   hashFramedDomain,
   type ContentHash,
@@ -754,7 +756,10 @@ function normalizeRevalidatedUnits(outputs: readonly RevalidatedUnit[]): Revalid
 }
 
 export interface InvalidationRunOptions {
+  derivedBudget?: DerivedObservationBudget;
   revalidate(unitIds: readonly EntityId[]): Promise<readonly RevalidatedUnit[]>;
+  /** Report a delta against this index without replacing its retained proof. */
+  preserveDerivations?: boolean;
   backdatingPolicy?: BackdatingPolicy;
   stateBinding?: StateBinding;
   maximumProofGroupIterations?: number;
@@ -777,6 +782,17 @@ export interface InvalidationRunResult {
   blockedUnitIds: EntityId[];
   diagnostics: string[];
   impactClosure?: InternalImpactClosure;
+}
+
+class ReservedInvalidationSet extends Set<string> {
+  constructor(private readonly budget: DerivedObservationBudget, values: Iterable<string> = []) {
+    super();
+    for (const value of values) this.add(value);
+  }
+  override add(value: string): this {
+    if (!this.has(value)) this.budget.reserve(1024 + 4 * value.length, "invalidation-frontier", value);
+    return super.add(value);
+  }
 }
 
 export class InvalidationEngine {
@@ -807,14 +823,15 @@ export class InvalidationEngine {
   }
 
   async invalidate(event: InvalidationEvent, options: InvalidationRunOptions): Promise<InvalidationRunResult> {
-    const directlyAffected = new Set(this.derivations.reverseDependents(event.subjectId));
-    const transitivelyAffected = new Set<string>();
-    const possibleFrontier = new Set<string>();
-    const unavailable = new Set<string>();
-    const backdated = new Set<string>();
+    const budget = options.derivedBudget ?? new DerivedObservationBudget();
+    const directlyAffected = new ReservedInvalidationSet(budget, this.derivations.reverseDependents(event.subjectId));
+    const transitivelyAffected = new ReservedInvalidationSet(budget);
+    const possibleFrontier = new ReservedInvalidationSet(budget);
+    const unavailable = new ReservedInvalidationSet(budget);
+    const backdated = new ReservedInvalidationSet(budget);
     const refreshedRecords = new Map<string, DerivationRecord>();
     const blocked = new Map<string, InvalidationBlock>();
-    const diagnostics = new Set<string>();
+    const diagnostics = new ReservedInvalidationSet(budget);
     const queryDependencies: StateQueryDependency[] = [];
     const reasons = new Map<string, Set<string>>();
     const unavailableReasons = new Map<string, Set<string>>();
@@ -824,6 +841,7 @@ export class InvalidationEngine {
     const observabilityByDisposition = new Map<string, Map<ImpactDisposition, ObservabilityClass>>();
     const proofClassRank: Record<ImpactProofClass, number> = { unavailable: 0, inferred: 1, "impact-rule": 2, "exact-derivation": 3 };
     const observabilityRank: Record<ObservabilityClass, number> = { closed: 0, bounded: 1, sampled: 2, open: 3, unavailable: 4 };
+    budget.reserve(2048 + directlyAffected.size * 512, "invalidation-query", event.subjectId);
     queryDependencies.push(syntheticQueryDependency({
       id: `invalidation:reverse-derivation:${event.subjectId}`,
       programId: BUILT_IN_QUERY_PROGRAM_IDS.exactReverseDerivation,
@@ -835,6 +853,7 @@ export class InvalidationEngine {
     }));
     const addReason = (id: string, reason: string): void => {
       const values = reasons.get(id) ?? new Set<string>();
+      if (!values.has(reason)) budget.reserve(512 + 4 * (id.length + reason.length), "invalidation-reason", id);
       values.add(reason);
       reasons.set(id, values);
     };
@@ -886,6 +905,7 @@ export class InvalidationEngine {
             this.impactPort.subjects(rule, "after", event),
           ]);
           for (const [phase, subjects] of [["before", before], ["after", after]] as const) {
+            budget.reserve(2048 + 4 * canonicalJson(subjects).length, "invalidation-query", rule.id);
             queryDependencies.push(syntheticQueryDependency({
               id: `invalidation:${rule.id}:${rule.version}:selector-membership:${phase}`,
               programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleSelectorMembership,
@@ -903,7 +923,9 @@ export class InvalidationEngine {
             }));
           }
         } catch (error) {
+          if (error instanceof ObservationError) throw error;
           for (const phase of ["before", "after"] as const) {
+            budget.reserve(2048 + 4 * rule.id.length, "invalidation-query", rule.id);
             queryDependencies.push(syntheticQueryDependency({
               id: `invalidation:${rule.id}:${rule.version}:selector-membership:${phase}`,
               programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleSelectorMembership,
@@ -930,6 +952,7 @@ export class InvalidationEngine {
           seeds = sortedUnique([...before, ...after]
             .filter((subject) => evaluateSelector(rule.selector, subject).matched)
             .map(({ id }) => id));
+          budget.reserve(2048 + 4 * (canonicalJson(before).length + canonicalJson(after).length), "invalidation-query", rule.id);
           queryDependencies.push(syntheticQueryDependency({
             id: `invalidation:${rule.id}:${rule.version}:applicability`,
             programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleApplicability,
@@ -945,6 +968,8 @@ export class InvalidationEngine {
             dependencyKeys: [...before, ...after].flatMap(({ dependencyKeys }) => dependencyKeys),
           }));
         } catch (error) {
+          if (error instanceof ObservationError) throw error;
+          budget.reserve(2048 + 4 * rule.id.length, "invalidation-query", rule.id);
           queryDependencies.push(syntheticQueryDependency({
             id: `invalidation:${rule.id}:${rule.version}:applicability`,
             programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleApplicability,
@@ -973,6 +998,7 @@ export class InvalidationEngine {
         });
         if (seeds.length === 0 || rule.effect === "advisory") continue;
         if (rule.effect === "block") {
+          budget.reserve(1024 + seeds.length * 512, "invalidation-block", rule.id);
           const block: InvalidationBlock = {
             ruleId: rule.id,
             ruleVersion: rule.version,
@@ -990,6 +1016,7 @@ export class InvalidationEngine {
         }
         try {
           const traversal = await this.impactPort.traverse(seeds, rule, event);
+          budget.reserve(4096 + 8 * canonicalJson(traversal).length, "invalidation-query", rule.id);
           const traversalResults = queryTraversalResults(traversal);
           const traversalDependencyKeys = [
             ...seeds.map((id) => `selector-member:${id}`),
@@ -1056,6 +1083,8 @@ export class InvalidationEngine {
             seeds.forEach((id) => addReason(id, `${traversal.observability} Impact Rule traversal cannot prove closure`));
           }
         } catch (error) {
+          if (error instanceof ObservationError) throw error;
+          budget.reserve(4096 + seeds.length * 512, "invalidation-query", rule.id);
           queryDependencies.push(syntheticQueryDependency({
             id: `invalidation:${rule.id}:${rule.version}:reverse-traversal`,
             programId: BUILT_IN_QUERY_PROGRAM_IDS.impactRuleReverseTraversal,
@@ -1100,7 +1129,7 @@ export class InvalidationEngine {
       minimumValidatedAssurance: "strong",
       requireIndependent: true,
     };
-    const processed = new Set<string>();
+    const processed = new ReservedInvalidationSet(budget);
     for (const directId of [...directlyAffected].sort(compareStrings)) {
       if (processed.has(directId)) continue;
       const group = this.derivations.proofGroupFor(directId);
@@ -1117,6 +1146,7 @@ export class InvalidationEngine {
         try {
           outputs = normalizeRevalidatedUnits(await options.revalidate(memberIds));
         } catch (error) {
+          if (error instanceof ObservationError) throw error;
           outputs = [];
           diagnostics.add(error instanceof Error ? error.message : "semantic revalidation failed");
           break;
@@ -1162,6 +1192,7 @@ export class InvalidationEngine {
           const output = byUnit.get(prior.unitId);
           const assessment = assessments.find(({ unitId }) => unitId === prior.unitId)?.assessment;
           if (output !== undefined && assessment !== undefined) {
+            budget.reserve(1024 + 4 * canonicalJson(output).length, "invalidation-record", prior.unitId);
             refreshedRecords.set(prior.unitId, this.refreshDerivationRecord(prior, output, event));
           }
         }
@@ -1190,7 +1221,8 @@ export class InvalidationEngine {
       }
       const reason = assessments.find(({ assessment }) => !assessment?.eligible)?.assessment?.reason
         ?? "semantic revalidation is unavailable";
-      const downstream = this.transitiveDependents(memberIds, new Set(memberIds));
+      const downstream = this.transitiveDependents(memberIds, new Set(memberIds), budget);
+      budget.reserve(2048 + (memberIds.length + downstream.length) * 512, "invalidation-query", event.subjectId);
       queryDependencies.push(syntheticQueryDependency({
         id: `invalidation:reverse-derivation:downstream:${memberIds.join(",")}`,
         programId: BUILT_IN_QUERY_PROGRAM_IDS.transitiveReverseDerivation,
@@ -1214,8 +1246,10 @@ export class InvalidationEngine {
       });
     }
 
+    const allUnitIds = this.derivations.allUnitIds();
+    budget.reserveItems(allUnitIds.length, 128, "invalidation-result", event.subjectId);
     const revalidatedRecords = [...refreshedRecords.values()].sort((left, right) => compareStrings(left.unitId, right.unitId));
-    if (revalidatedRecords.length > 0) {
+    if (revalidatedRecords.length > 0 && options.preserveDerivations !== true) {
       const refreshedById = new Map(revalidatedRecords.map((record) => [record.unitId, record]));
       const replacementRecords = this.derivations.records().map((record) => refreshedById.get(record.unitId) ?? record);
       const replacementIndex = new DerivationIndex(replacementRecords);
@@ -1266,7 +1300,7 @@ export class InvalidationEngine {
     return {
       invalidation,
       backdatedUnitIds: sortedUnique([...backdated]),
-      validUnitIds: this.derivations.allUnitIds().filter((id) => !invalid.has(id)),
+      validUnitIds: allUnitIds.filter((id) => !invalid.has(id)),
       revalidatedRecords,
       blocked: [...blocked.values()].sort((left, right) => compareStrings(`${left.ruleId}\u0000${left.ruleVersion}`, `${right.ruleId}\u0000${right.ruleVersion}`)),
       blockedUnitIds: sortedUnique([...blocked.values()].flatMap(({ unitIds }) => unitIds)),
@@ -1330,8 +1364,8 @@ export class InvalidationEngine {
     });
   }
 
-  private transitiveDependents(seedIds: readonly string[], excluded: ReadonlySet<string>): string[] {
-    const seen = new Set<string>();
+  private transitiveDependents(seedIds: readonly string[], excluded: ReadonlySet<string>, budget: DerivedObservationBudget): string[] {
+    const seen = new ReservedInvalidationSet(budget);
     const pending = [...seedIds].sort(compareStrings);
     while (pending.length > 0) {
       const current = pending.shift()!;

@@ -1,14 +1,11 @@
-import { execFile } from "node:child_process";
-import { access, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { access, cp as copyFiles, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
-import { resolveNpmCommand } from "./npm-command.mjs";
+import { executeReleaseCommand, resolveNpmCommand } from "./npm-command.mjs";
 import { releasePackageName, releaseVersion } from "./release-identity.mjs";
 
-const execute = promisify(execFile);
 const require = createRequire(import.meta.url);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 export { releasePackageName, releaseVersion };
@@ -17,8 +14,23 @@ const bundledNames = internalPackages.map((name) => `@projector/${name}`);
 const exportTargets = { "./operations": "operation-runner", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./integrations/models": "integrations/models", "./integrations/codex": "integrations/codex", "./control-plane": "control-plane", "./testkit": "testkit" };
 const operationRuntimeModules = ["operation-runner", "operational-verification", "installed-psychord-observation"];
 
-export async function buildReleasePackage(stagingRoot, packDestination) {
-  if (!basename(stagingRoot).startsWith("projector-release-")) throw new Error("release staging root must be a dedicated projector-release-* directory"); await rm(stagingRoot, { recursive: true, force: true }); await mkdir(stagingRoot, { recursive: true }); await mkdir(packDestination, { recursive: true });
+export async function buildReleasePackage(stagingRoot, packDestination, options = {}) {
+  options.signal?.throwIfAborted();
+  const cp = async (source, target, copyOptions = {}) => {
+    await copyFiles(source, target, { ...copyOptions, filter: () => { options.signal?.throwIfAborted(); return true; } });
+    options.signal?.throwIfAborted();
+  };
+  if (!basename(stagingRoot).startsWith("projector-release-")) throw new Error("release staging root must be a dedicated projector-release-* directory");
+  await mkdir(dirname(stagingRoot), { recursive: true });
+  try {
+    // Exclusive creation also closes the check/create race between concurrent
+    // callers. Existing staging may belong to a still-running release process.
+    await mkdir(stagingRoot);
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    throw Object.assign(new Error(`Release staging root already exists; preserve its artifacts and choose a new staging path: ${stagingRoot}`, { cause: error }), { code: "RELEASE_STAGING_EXISTS" });
+  }
+  await mkdir(packDestination, { recursive: true });
   await mkdir(join(stagingRoot, "dist"), { recursive: true }); await mkdir(join(stagingRoot, "exports"), { recursive: true }); await mkdir(join(stagingRoot, "node_modules/@projector"), { recursive: true });
   for (const module of operationRuntimeModules) for (const extension of [".js", ".js.map", ".d.ts", ".d.ts.map"]) await cp(join(repositoryRoot, `packages/cli/dist/${module}${extension}`), join(stagingRoot, `dist/${module}${extension}`));
   for (const name of internalPackages) { const source = join(repositoryRoot, `packages/${name}`); const target = join(stagingRoot, `node_modules/@projector/${name}`); await mkdir(target, { recursive: true }); await cp(join(source, "dist"), join(target, "dist"), { recursive: true }); const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8")); if (manifest.version !== releaseVersion) throw new Error(`${manifest.name} version does not match root release version ${releaseVersion}`); manifest.private = false; for (const group of ["dependencies", "optionalDependencies", "peerDependencies"]) if (manifest[group] !== undefined) for (const [dependency, version] of Object.entries(manifest[group])) if (typeof version === "string" && version.startsWith("workspace:")) manifest[group][dependency] = releaseVersion; await writeFile(join(target, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`); }
@@ -39,7 +51,7 @@ export async function buildReleasePackage(stagingRoot, packDestination) {
   const packageJson = { name: releasePackageName, version: releaseVersion, description: "Local semantic governance and change execution kernel", type: "module", engines: { node: ">=24 <25" }, exports: Object.fromEntries(Object.keys(exportTargets).map((subpath) => { const base = `./exports/${subpath.slice(2).replaceAll("/", "-")}`; return [subpath, { types: `${base}.d.ts`, default: `${base}.js` }]; })), files: ["dist", "exports", "project-data"], dependencies: Object.fromEntries([...bundledNames.map((name) => [name, releaseVersion]), ["@types/node", "^24.13.3"], ["smol-toml", "1.8.0"], ["undici-types", "^7.18.2"], ["zod", "^4.0.15"]]), bundledDependencies: [...bundledNames, "@types/node", "smol-toml", "undici-types", "zod"], publishConfig: { access: "public" } }; await writeFile(join(stagingRoot, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
   const npmArguments = ["pack", "--json", "--pack-destination", packDestination];
   const { executable, arguments: arguments_ } = await resolveNpmCommand(npmArguments);
-  const { stdout } = await execute(executable, arguments_, { cwd: stagingRoot, encoding: "utf8", maxBuffer: 10_000_000 }); const packed = JSON.parse(stdout); const metadata = Array.isArray(packed) ? packed[0] : Object.values(packed)[0]; if (metadata?.name !== releasePackageName || metadata?.version !== releaseVersion || metadata?.filename === undefined) throw new Error("npm pack did not return the expected scoped tarball"); return join(packDestination, metadata.filename);
+  const { stdout } = await executeReleaseCommand(executable, arguments_, { cwd: stagingRoot, signal: options.signal, maxBuffer: 10_000_000 }); const packed = JSON.parse(stdout); const metadata = Array.isArray(packed) ? packed[0] : Object.values(packed)[0]; if (metadata?.name !== releasePackageName || metadata?.version !== releaseVersion || metadata?.filename === undefined) throw new Error("npm pack did not return the expected scoped tarball"); return join(packDestination, metadata.filename);
 }
 
 async function exists(path) {

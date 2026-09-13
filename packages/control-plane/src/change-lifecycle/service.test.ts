@@ -17,7 +17,8 @@ import {
   type PsychordObservationResult,
 } from "@projector/integrations/runtime-evidence";
 import { CanonicalFileRepository, FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
 
 import { RepositoryChangeLifecycleService } from "./service.js";
 import { ChangeLifecycleStore } from "./store.js";
@@ -25,6 +26,17 @@ import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { createDurablePsychordObservationArtifactService } from "../application-evidence/psychord.js";
 
 const exec = promisify(execFile);
+
+async function killInterruptionWorker(child: ReturnType<typeof spawn>): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const drained = new Promise<void>((resolve) => child.once("close", () => resolve()));
+  if (process.platform === "win32") {
+    await exec(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"), ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+  } else {
+    process.kill(-child.pid!, "SIGKILL");
+  }
+  await drained;
+}
 const placeholder = hashFramedDomain("test", "placeholder");
 
 const proposal = () => ({
@@ -815,6 +827,8 @@ describe("repository change lifecycle service", () => {
         cwd: projectorRoot,
         env: { ...process.env, PROJECTOR_INTERRUPTION_REPOSITORY: root, PROJECTOR_INTERRUPTION_APPROVAL: approval.id },
         stdio: ["ignore", "pipe", "pipe"],
+        detached: process.platform !== "win32",
+        windowsHide: true,
       });
       let workerOutput = "";
       const captureOutput = (chunk: Buffer) => { workerOutput = (workerOutput + chunk.toString("utf8")).slice(-8_192); };
@@ -825,9 +839,9 @@ describe("repository change lifecycle service", () => {
       }));
       const transactionId = await Promise.race([waitForValidatingTransaction(root), prematureExit]);
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("hello ${name}");
-      child.kill("SIGKILL");
-      const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child!.once("exit", (code, signal) => resolve({ code, signal })));
-      expect(exit).toMatchObject({ signal: "SIGKILL" });
+      await killInterruptionWorker(child);
+      if (process.platform !== "win32") expect(child.signalCode).toBe("SIGKILL");
+      else expect(child.exitCode).not.toBe(0);
       child = undefined;
       await rm(join(root, ".projector", "runtime", "interruption-hold"), { force: true });
       await new Promise((resolve) => setTimeout(resolve, 450));
@@ -836,10 +850,10 @@ describe("repository change lifecycle service", () => {
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toBe("export const greet = () => 'hello';\n");
       expect((await service.resume(approval.id)).outcome).toBe("success");
     } finally {
-      child?.kill("SIGKILL");
+      if (child !== undefined) await killInterruptionWorker(child);
       await rm(root, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   it("finalizes a committed attempt from prepared success after publication is interrupted", async () => {
     const root = await repository();
@@ -940,7 +954,7 @@ describe("repository change lifecycle service", () => {
       const records = await (new FileTransactionJournal(await RepositoryPathService.create(root)) as unknown as { incomplete(): Promise<unknown[]> }).incomplete();
       expect(records).toEqual([]);
     } finally { await rm(root, { recursive: true, force: true }); }
-  }, 10_000);
+  });
 });
 
 async function waitForValidatingTransaction(root: string): Promise<string> {

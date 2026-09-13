@@ -1,5 +1,11 @@
 import type { ContentHash } from "@projector/core";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
+
+vi.mock("zod", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("zod")>();
+  return { ...actual, z: { ...actual.z, toJSONSchema: vi.fn(actual.z.toJSONSchema) } };
+});
 
 import {
   canonicalOwnerModulePaths,
@@ -12,6 +18,26 @@ import {
 const hash = (digit: string) => `sha256:v1:${digit.repeat(64)}` as ContentHash;
 
 describe("release candidate project-data format owner", () => {
+  test("reuses schema generation while binding each candidate version and inventory afresh", () => {
+    const candidate = inventory();
+    const initial = createReleaseCandidateProjectDataFormat({ candidate });
+    vi.mocked(z.toJSONSchema).mockClear();
+    const changed = createReleaseCandidateProjectDataFormat({ candidate: {
+      ...candidate,
+      packageIdentity: { ...candidate.packageIdentity, version: "2.2.0" },
+      files: candidate.files.map((file) => ({ ...file, digest: hash("f") })),
+    } });
+    expect(vi.mocked(z.toJSONSchema).mock.calls.length).toBe(0);
+    expect(changed.packageIdentity.version).toBe("2.2.0");
+    expect(changed.preparedConfig.projectorVersion).toBe("2.2.0");
+    expect(changed.runtimeEvidence.schemaVersion).toBe("2.2.0");
+    expect(changed.preparedConfig.schemaHash).not.toBe(initial.preparedConfig.schemaHash);
+    expect(changed.canonical.schemaBundleHash).not.toBe(initial.canonical.schemaBundleHash);
+    expect(changed.runtimeEvidence.schemaHash).not.toBe(initial.runtimeEvidence.schemaHash);
+    expect(changed.snapshotHash).not.toBe(initial.snapshotHash);
+    expect(createReleaseCandidateProjectDataFormat({ candidate })).toEqual(initial);
+  });
+
   test("binds each descriptor field to its exact live schema and candidate owner closure", () => {
     const candidate = inventory();
     const initial = createReleaseCandidateProjectDataFormat({ candidate });

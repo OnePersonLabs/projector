@@ -1,4 +1,6 @@
 import {
+  DerivedObservationBudget,
+  ObservationError,
   ArchitectureDecisionSchema,
   ArchitectureConcernSchema,
   DeveloperPreferenceSchema,
@@ -187,13 +189,20 @@ export class KnowledgeGraph implements ContextSourcePort {
   private readonly selectorSubjects: readonly ReturnType<typeof projectionUnitSelectorSubject>[];
   private readonly implementationBindingsBySubjectId = new Map<string, readonly Readonly<Record<string, unknown>>[]>();
   private readonly envelopeById = new Map<string, CanonicalDocumentEnvelope>();
+  private readonly obligationBytesByLensId = new Map<string, number>();
+  private readonly validatorBytes = new WeakMap<object, number>();
 
-  constructor(readonly observation: ChangeRepositoryObservation, decisionHost: KnowledgeDecisionHost = {}) {
+  constructor(readonly observation: Omit<ChangeRepositoryObservation, "independentValidator">, decisionHost: KnowledgeDecisionHost = {}, readonly derivedBudget = new DerivedObservationBudget(observation.analysis.observationDescriptor.limits.maxDerivedBytes)) {
     this.entities = parseEntities(observation.canonical.documents);
     this.entitiesById = new Map(this.entities.map((entity) => [entity.id, entity]));
     for (const envelope of observation.canonical.documents) this.envelopeById.set(envelope.id, envelope);
     this.relations = observation.canonical.documents.filter(({ kind }) => kind === "relation").map(({ payload }) => RelationSchema.parse(payload) as Relation).filter(({ active }) => active).sort((left, right) => compare(left.id, right.id));
     this.lenses = this.entities.filter(({ kind }) => kind === "projection-lens").map(({ payload }) => payload as ProjectionLens);
+    for (const lens of this.lenses) {
+      // Compute a conservative expansion size once, before multiplying obligations by units.
+      this.obligationBytesByLensId.set(lens.id, 1024 + 2 * canonicalJson({ rules: lens.rules, validators: lens.validators, expectedProjections: lens.expectedProjections }).length);
+      for (const binding of lens.validators) this.validatorBytes.set(binding, 256 + 2 * canonicalJson(binding).length);
+    }
     this.decisions = this.entities.filter(({ kind }) => kind === "architecture-decision").map(({ payload }) => payload as ArchitectureDecision).filter(({ lifecycle }) => lifecycle === "active");
     this.decisionRun = new KnowledgeDecisionRun(observation, decisionHost);
     this.authorities = observation.canonical.documents.filter(({ kind }) => kind === "authority-record").map(({ payload }) => AuthorityRecordSchema.parse(payload) as AuthorityRecord).sort((left, right) => compare(left.id, right.id));
@@ -221,8 +230,9 @@ export class KnowledgeGraph implements ContextSourcePort {
     let compilation: ProjectionLensCompilation | undefined;
     let compilationUnknown: string | undefined;
     try {
-      compilation = compileProjectionLenses({ lenses: this.lenses, units: this.units, authorityRecords: this.authorities, selectorFactsByUnitId: this.selectorFactsByUnitId });
+      compilation = compileProjectionLenses({ lenses: this.lenses, units: this.units, authorityRecords: this.authorities, selectorFactsByUnitId: this.selectorFactsByUnitId, derivedBudget });
     } catch (error) {
+      if (error instanceof ObservationError) throw error;
       compilationUnknown = error instanceof Error ? error.message : "lens compilation is unavailable";
     }
     this.lensCompilation = compilation;
@@ -403,7 +413,9 @@ export class KnowledgeGraph implements ContextSourcePort {
     const result: KnowledgeLensObligation[] = [];
     for (const lens of activeLenses) {
       const members = new Set(this.lensCompilation.memberships[lens.id] ?? []);
-      for (const unit of units.filter(({ id }) => members.has(id))) {
+      for (const unit of units) {
+        if (!members.has(unit.id)) continue;
+        this.derivedBudget.reserve(this.obligationBytesByLensId.get(lens.id)! + 2 * unit.id.length, "lens-obligation", lens.id);
         const selectorFacts = { ...(this.selectorFactsByUnitId.get(unit.id) ?? {}), operation };
         const subject = projectionUnitSelectorSubject(unit, selectorFacts);
         const bundle = compileEffectiveRuleBundle({ unit, operation, rules: lens.rules, selectorFacts });
@@ -431,14 +443,25 @@ export class KnowledgeGraph implements ContextSourcePort {
 
   validatorRequests(entityIds: ReadonlySet<string>, operation: string): KnowledgeValidatorRequest[] {
     const requests: KnowledgeValidatorRequest[] = [];
-    for (const obligation of this.lensObligations(entityIds, operation)) {
-      const lens = this.lenses.find(({ id }) => id === obligation.lensId)!;
-      for (const binding of lens.validators) {
-        if (binding.provider === "deterministic-governance" && binding.id === "projector.builtin.static-dependency-boundary" && binding.version === "1") continue;
-        if (binding.required || obligation.validatorIds.includes(`${binding.id}@${binding.version}`)) requests.push({ binding, unitId: obligation.unitId, unitPath: this.unitPath.get(obligation.unitId) ?? "" });
+    const beforeObligations = this.derivedBudget.usedBytes;
+    const obligations = this.lensObligations(entityIds, operation);
+    const obligationBytes = this.derivedBudget.usedBytes - beforeObligations;
+    try {
+      for (const obligation of obligations) {
+        const lens = this.lenses.find(({ id }) => id === obligation.lensId)!;
+        for (const binding of lens.validators) {
+          if (binding.provider === "deterministic-governance" && binding.id === "projector.builtin.static-dependency-boundary" && binding.version === "1") continue;
+          if (binding.required || obligation.validatorIds.includes(`${binding.id}@${binding.version}`)) {
+            const unitPath = this.unitPath.get(obligation.unitId) ?? "";
+            this.derivedBudget.reserve(this.validatorBytes.get(binding)! + 2 * (obligation.unitId.length + unitPath.length), "validator-request", obligation.lensId);
+            requests.push({ binding, unitId: obligation.unitId, unitPath });
+          }
+        }
       }
+      return requests;
+    } finally {
+      this.derivedBudget.release(obligationBytes);
     }
-    return requests;
   }
 
   relevantDecisions(entityIds: ReadonlySet<string>): ArchitectureDecision[] {
@@ -460,21 +483,29 @@ export class KnowledgeGraph implements ContextSourcePort {
   governanceEvaluations(entityIds: ReadonlySet<string>, operation: string, validatorFindings: readonly ExternalGovernanceValidatorFinding[] = []): GovernanceBundleEvaluation[] {
     if (this.lensCompilation === undefined) return [];
     const observation = this.governanceObservation();
+    const beforeObligations = this.derivedBudget.usedBytes;
     const obligations = this.lensObligations(entityIds, operation);
-    const obligationsByLensAndUnit = new Map(obligations.map((item) => [`${item.lensId}\0${item.unitId}`, item]));
-    const evaluations: GovernanceBundleEvaluation[] = [];
-    for (const lens of this.lenses.filter(({ status, id }) => status === "active" && entityIds.has(id))) {
-      const members = new Set(this.lensCompilation.memberships[lens.id] ?? []);
-      for (const unit of this.units.filter(({ id }) => entityIds.has(id) && members.has(id))) {
-        const selectorFacts = { ...(this.selectorFactsByUnitId.get(unit.id) ?? {}), operation };
-        const bundle = compileEffectiveRuleBundle({ unit, operation, rules: lens.rules, selectorFacts });
-        const requiredValidatorIds = lens.validators.filter(({ required }) => required).map(({ id, version }) => `${id}@${version}`);
-        const expected = obligationsByLensAndUnit.get(`${lens.id}\0${unit.id}`);
-        const expectationIds = expected?.validatorIds ?? [];
-        evaluations.push(evaluateEffectiveRuleBundle(bundle, observation, { validatorFindings, requiredValidatorIds: unique([...requiredValidatorIds, ...expectationIds]) }));
+    const obligationBytes = this.derivedBudget.usedBytes - beforeObligations;
+    try {
+      const obligationsByLensAndUnit = new Map(obligations.map((item) => [`${item.lensId}\0${item.unitId}`, item]));
+      const evaluations: GovernanceBundleEvaluation[] = [];
+      for (const lens of this.lenses.filter(({ status, id }) => status === "active" && entityIds.has(id))) {
+        const members = new Set(this.lensCompilation.memberships[lens.id] ?? []);
+        for (const unit of this.units) {
+          if (!entityIds.has(unit.id) || !members.has(unit.id)) continue;
+          this.derivedBudget.reserve(this.obligationBytesByLensId.get(lens.id)!, "governance-evaluation", lens.id);
+          const selectorFacts = { ...(this.selectorFactsByUnitId.get(unit.id) ?? {}), operation };
+          const bundle = compileEffectiveRuleBundle({ unit, operation, rules: lens.rules, selectorFacts });
+          const requiredValidatorIds = lens.validators.filter(({ required }) => required).map(({ id, version }) => `${id}@${version}`);
+          const expected = obligationsByLensAndUnit.get(`${lens.id}\0${unit.id}`);
+          const expectationIds = expected?.validatorIds ?? [];
+          evaluations.push(evaluateEffectiveRuleBundle(bundle, observation, { validatorFindings, requiredValidatorIds: unique([...requiredValidatorIds, ...expectationIds]) }));
+        }
       }
+      return evaluations.sort((left, right) => compare(left.unitId, right.unitId) || compare(left.contentHash, right.contentHash));
+    } finally {
+      this.derivedBudget.release(obligationBytes);
     }
-    return evaluations.sort((left, right) => compare(left.unitId, right.unitId) || compare(left.contentHash, right.contentHash));
   }
 
   governanceObservation(): GovernanceObservation {

@@ -8,6 +8,7 @@ import type {
   StateBinding,
   ValidationResult,
 } from "@projector/core";
+import { DerivedObservationBudget } from "@projector/core";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
@@ -113,6 +114,17 @@ const currentSccOutputs = (
 ];
 
 describe("semantic signature profiles and assurance", () => {
+  it("rejects an expanding invalidation frontier before revalidation or proof publication", async () => {
+    const index = new DerivationIndex(Array.from({ length: 20 }, (_, i) => record(`unit:${i}`, [["artifact", "shared"]])));
+    const before = index.snapshot();
+    let revalidated = false;
+    await expect(new InvalidationEngine({ derivations: index }).invalidate(event("shared"), {
+      derivedBudget: new DerivedObservationBudget(1024),
+      revalidate: async () => { revalidated = true; return []; },
+    })).rejects.toMatchObject({ code: "observation-limit-exceeded", limit: "maxDerivedBytes", stage: "invalidation-frontier" });
+    expect(revalidated).toBe(false);
+    expect(index.snapshot()).toEqual(before);
+  });
   it("creates deterministic signatures independent of object and evidence insertion order", () => {
     const profiles = new SemanticSignatureProfileRegistry();
     profiles.register({
@@ -328,6 +340,27 @@ describe("derivation index and exact invalidation", () => {
     expect(result.revalidatedRecords[0]?.inputs.find(({ id }) => id === "handler")?.versionHash).toBe(changed.newHash);
     expect(index.get("contract")?.inputs.find(({ id }) => id === "handler")?.versionHash).toBe(changed.newHash);
     expect(stored?.records[0]?.inputs.find(({ id }) => id === "handler")?.versionHash).toBe(changed.newHash);
+  });
+
+  it("evaluates independent deltas against one retained baseline without mutating its proof", async () => {
+    const index = new DerivationIndex([
+      record("first", [["artifact", "handler"]], "first-v1"),
+      record("second", [["artifact", "other"]], "second-v1"),
+    ]);
+    const original = index.records();
+    const engine = new InvalidationEngine({ derivations: index });
+    const first = await engine.invalidate(event("handler"), {
+      preserveDerivations: true,
+      revalidate: async () => [{ unitId: "first", signature: signature("first-v1") }],
+    });
+    const second = await engine.invalidate(event("other"), {
+      preserveDerivations: true,
+      revalidate: async () => [{ unitId: "second", signature: signature("second-v1") }],
+    });
+
+    expect(first.invalidation.directlyAffected).toEqual(["first"]);
+    expect(second.invalidation.directlyAffected).toEqual(["second"]);
+    expect(index.records()).toEqual(original);
   });
 
   it("refuses heuristic equality and widens to downstream clients", async () => {
