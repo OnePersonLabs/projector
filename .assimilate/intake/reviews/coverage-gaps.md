@@ -1,6 +1,6 @@
 # Intake coverage gaps
 
-Bounded audit, September 12, 2026. Basis: [manifest.json](../manifest.json), [conception coverage](conception-coverage.md), [execution coverage](execution-coverage.md), `assimilation/INDEX.md`, `assimilation/WORKFLOW.md`, and all six `assimilation/topics/*.md` notes. Followed the repository's `$projector-assimilate` skill and workspace reference. Raw turn and attachment bodies were not reread. This checks recorded coverage and synthesis obligations; it cannot prove source fidelity independently of the prior reviewers.
+Bounded audit, September 12, 2026. Basis: [manifest.json](../manifest.json), [conception coverage](conception-coverage.md), [execution coverage](execution-coverage.md), `.assimilate/INDEX.md`, `.assimilate/WORKFLOW.md`, and all six `.assimilate/topics/*.md` notes. Followed the repository's `$projector-assimilate` skill and workspace reference. Raw turn and attachment bodies were not reread. This checks recorded coverage and synthesis obligations; it cannot prove source fidelity independently of the prior reviewers.
 
 ## Confirmed review-accounting gaps
 
@@ -8,7 +8,7 @@ The manifest contains 12 source keys, 70 source-turn occurrences, 56 distinct tu
 
 The conception review covers 19 distinct units from `nature`, `dynamics`, `conception`, and `sense`. The execution review reports all 28 units from `quality`, `orbital`, `orbital_research`, `baseline`, and `value`. Their union accounts for 47/56 units. Neither review records direct coverage of the following nine units. This means **no receipt in these two reviews**, not proof that nobody previously read them.
 
-Turn paths are exactly `assimilation/intake/turns/<unit>.md`; source membership is `manifest.json.sources[key].turns`.
+Turn paths are exactly `.assimilate/intake/turns/<unit>.md`; source membership is `manifest.json.sources[key].turns`.
 
 | Source key | Units without direct review receipts |
 | --- | --- |
@@ -16,7 +16,7 @@ Turn paths are exactly `assimilation/intake/turns/<unit>.md`; source membership 
 | `borg` | `bbb21218-99cb-4b17-907e-98cf18f5a574`; `bbb2139f-d2ac-49dc-899b-0ebb7a075cce` |
 | `views` | `bbb218e1-3826-4d80-a2a9-be29f694979a`; `bbb2195f-7732-4adc-849e-8be421336bdf`; `bbb21177-2cbf-4cdd-94bf-a2ab534d8e2f` |
 
-Nine attachment hashes have explicit full-reading receipts. Six do not. Paths below are relative to `assimilation/intake/attachments/`; their source mappings are in `manifest.json.sources[key].attachments`. Identical hashes under multiple sources count once.
+Nine attachment hashes have explicit full-reading receipts. Six do not. Paths below are relative to `.assimilate/intake/attachments/`; their source mappings are in `manifest.json.sources[key].attachments`. Identical hashes under multiple sources count once.
 
 | Sources | Attachment | Exact captured filename |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ The existing reviews explicitly exclude prompt attachments from governing instru
 
 ## Missing or uncertain synthesis obligations
 
-- **Confirmed current-workflow mismatch:** `assimilation/topics/assimilation-workspace.md`, “Durable conception and disposable execution state,” still groups captures and recovery checkpoints with temporary execution support. The new skill requires retained, unignored intake and prohibits routine deletion. Preserving important meaning alone is weaker than preserving recoverable evidence. Clarify which derived scratch is disposable and which intake remains durable.
+- **Confirmed current-workflow mismatch:** `.assimilate/topics/assimilation-workspace.md`, “Durable conception and disposable execution state,” still groups captures and recovery checkpoints with temporary execution support. The new skill requires retained, unignored intake and prohibits routine deletion. Preserving important meaning alone is weaker than preserving recoverable evidence. Clarify which derived scratch is disposable and which intake remains durable.
 - **Uncertain source fidelity:** `purpose-built-context.md` covers references, contextual views, supplementation, and delivery validity, but the `views` turns and context-compilation handoff lack direct receipts. Fine-grained reference semantics or interaction obligations cannot yet be certified as preserved or deliberately deferred.
 - **Uncertain scope/ownership fidelity:** `quality-and-work-economics.md` covers cost, competence, and delegation; `WORKFLOW.md` separates assimilation from Projector. Neither establishes disposition of every plugin-boundary obligation in the uncovered `weco` handoff or every adaptation obligation in `borg`. Review before assuming the current boundaries exhaust those sources.
 - **Evaluation remains open:** The notes describe cold recovery, interacting changes, and a mature change brief, but the two reviews establish editorial coverage, not completed cross-topic trials. This is unverified behavior, not an omitted requirement. The reviewed conception/execution commitments otherwise appear substantively represented; no additional confirmed source-backed omission follows from this bounded audit.

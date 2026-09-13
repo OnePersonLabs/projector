@@ -28,7 +28,7 @@ Scope: source keys `nature`, `dynamics`, `conception`, and `sense` in `manifest.
 
 ## Attachments actually read
 
-All five were read completely from content-addressed captured files under `assimilation/intake/attachments/`. Names below identify material; `manifest.json` retains original paths and exact hashes.
+All five were read completely from content-addressed captured files under `.assimilate/intake/attachments/`. Names below identify material; `manifest.json` retains original paths and exact hashes.
 
 | Name | SHA-256 | Coverage/status |
 | --- | --- | --- |
@@ -50,4 +50,4 @@ Other nature attachments concerning quality, economics, references, stewardship,
 - Holon controllers and rendered perspectives were described as competing commitments in inherited handoffs. The authored concept documents preserve flexible identity and useful continuing references without falsely resolving controller architecture or manufacturing a user-level conflict from compatible responsibilities.
 - These files synthesize current conception, not a full research protocol or an approved Projector specification. No model, hardware, novelty, current repository, or experimental-success claims were independently established.
 
-Outputs: `assimilation/topics/persistent-project-understanding.md` and `assimilation/topics/semantic-dynamics.md`.
+Outputs: `.assimilate/topics/persistent-project-understanding.md` and `.assimilate/topics/semantic-dynamics.md`.
