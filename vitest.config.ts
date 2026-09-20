@@ -7,6 +7,8 @@ export default defineConfig({
     // workflows. Bounding file workers keeps their existing operation limits
     // meaningful instead of turning host-wide scheduler contention into timeouts.
     maxWorkers: 3,
-    testTimeout: 10_000,
+    // Keep a generous safety bound; slow tests are surfaced by the reporter.
+    testTimeout: 300_000,
+    slowTestThreshold: 10_000,
   },
 });

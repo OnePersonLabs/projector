@@ -49,32 +49,26 @@ describe("release staging ownership", () => {
 });
 
 describe("owned release subprocesses", () => {
-  it.skipIf(process.platform !== "win32")("reports unconfirmed cleanup promptly when an exited non-Node parent leaves inherited pipes open", async () => {
+  it.skipIf(process.platform !== "win32")("closes the owned job when an exited non-Node parent leaves inherited pipes open", async () => {
     let descendant: number | undefined;
     let output = "";
     const command = "$s=New-Object System.Diagnostics.ProcessStartInfo; $s.FileName='" + process.execPath.replaceAll("'", "''")
       + "'; $s.Arguments='-e \"setTimeout(()=>{},4000)\"'; $s.UseShellExecute=$false; $s.CreateNoWindow=$true; $p=[System.Diagnostics.Process]::Start($s); [Console]::WriteLine($p.Id);";
-    const started = performance.now();
     try {
-      const failure = await executeReleaseCommand("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
-        timeout: 1_200,
+      const result = await executeReleaseCommand("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+        timeout: 8_000,
         onStdout: (chunk: string) => {
           output += chunk;
           if (output.includes("\n")) descendant = Number(output.trim());
         },
-      }).then(() => undefined, (error: unknown) => error);
-      expect(failure).toMatchObject({
-        code: "RELEASE_COMMAND_CLEANUP_UNCONFIRMED",
-        stdout: output,
-        cause: { message: "Release command exceeded its 1200ms deadline" },
       });
-      expect(isReleaseCommandCleanupUnconfirmed(failure)).toBe(true);
-      expect(performance.now() - started).toBeLessThan(3_500);
+      expect(result.stdout).toBe(output);
       expect(Number.isSafeInteger(descendant)).toBe(true);
-      expect(() => process.kill(descendant!, 0)).not.toThrow();
+      await expect.poll(() => {
+        try { process.kill(descendant!, 0); return "alive"; } catch { return "exited"; }
+      }, { timeout: 1_000 }).toBe("exited");
     } finally {
-      // This test knows the finite orphan's identity; the release helper cannot
-      // recover that identity from a parent which has already exited.
+      // Cleanup is a safety net if the regression returns before the job closes.
       if (descendant !== undefined) {
         try { process.kill(descendant); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
         await expect.poll(() => {

@@ -13,7 +13,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node ../../scripts/copy-windows-job-supervisor.mjs",
     "test": "vitest run --root ../.. packages/runtime/src",
     "typecheck": "tsc -b --pretty false"
   },

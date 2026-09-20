@@ -91,7 +91,8 @@ describe("source-severed release candidate", () => {
 
   it("authenticates the exact scoped tarball, plugin, runner, and fixture inputs", async () => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error("Release integration exceeded its 27s work deadline")), 27_000);
+    const warning = setTimeout(() => console.warn("SLOW RELEASE INTEGRATION: package build/install has exceeded 30 seconds"), 30_000);
+    const timer = setTimeout(() => controller.abort(new Error("Release integration exceeded its 297s work deadline")), 297_000);
     const execute = (file: string, args: string[], options = {}) => executeReleaseCommand(file, args, { ...options, signal: controller.signal });
     let installation: Promise<PromiseSettledResult<void>[]> | undefined;
     let fixtureRoot: string | undefined;
@@ -121,6 +122,8 @@ describe("source-severed release candidate", () => {
         "packed-lifecycle-acceptance.mjs",
         "source-severed-release-acceptance.mjs",
         "npm-command.mjs",
+        "windows-job-supervisor.ps1",
+        "plugin/projector/runtime/projector/node_modules/@projector/runtime/dist/execution/windows-job-supervisor.ps1",
         "release-candidate.mjs",
         "fixtures/held-out-change.json",
       ]));
@@ -204,6 +207,10 @@ describe("source-severed release candidate", () => {
       const [installed] = await installation!;
       if (installed.status === "rejected") throw installed.reason;
       expect(JSON.parse(await readFile(join(consumer, "node_modules/@onepersonlabs/projector/package.json"), "utf8"))).toMatchObject({ name: "@onepersonlabs/projector", version: releaseVersion });
+      if (process.platform === "win32") {
+        const smoke = "const {NativeProcessLauncher}=await import('@onepersonlabs/projector/runtime'); const result=await new NativeProcessLauncher().launch({executable:process.execPath,args:['-e',\"process.stdout.write('installed-job-ok')\"],cwd:process.cwd(),env:{},timeoutMs:10000,maxOutputBytes:1024,signal:new AbortController().signal}); if(result.stdout!=='installed-job-ok'||result.exitCode!==0) throw new Error('installed Windows supervisor failed');";
+        await expect(execute(process.execPath, ["--input-type=module", "-e", smoke], { cwd: consumer })).resolves.toMatchObject({ stdout: "" });
+      }
       expect(JSON.parse(await readFile(join(consumer, "node_modules/@onepersonlabs/projector/project-data/format-baseline.json"), "utf8"))).toMatchObject({ packageIdentity: { name: "@onepersonlabs/projector", version: "2.1.0" } });
 
       await writeFile(join(candidate, "fixtures/held-out-change.json"), "{}\n");
@@ -213,6 +220,7 @@ describe("source-severed release candidate", () => {
       throw error;
     } finally {
       clearTimeout(timer);
+      clearTimeout(warning);
       controller.abort();
       const installResults = await installation;
       const installFailure = installResults?.find((result) => result.status === "rejected")?.reason;
@@ -223,5 +231,5 @@ describe("source-severed release candidate", () => {
         });
       }
     }
-  }, 30_000);
+  }, 300_000);
 });

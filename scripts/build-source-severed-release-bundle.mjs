@@ -38,6 +38,7 @@ export async function buildSourceSeveredReleaseBundle(candidateRoot, options = {
       ["scripts/packed-lifecycle-acceptance.mjs", "packed-lifecycle-acceptance.mjs"],
       ["scripts/source-severed-release-acceptance.mjs", "source-severed-release-acceptance.mjs"],
       ["scripts/npm-command.mjs", "npm-command.mjs"],
+      ["scripts/windows-job-supervisor.ps1", "windows-job-supervisor.ps1"],
       ["scripts/release-candidate.mjs", "release-candidate.mjs"],
       ["release/fixtures/held-out-change.json", "fixtures/held-out-change.json"],
     ]) await cp(join(repositoryRoot, source), join(candidateRoot, target));
