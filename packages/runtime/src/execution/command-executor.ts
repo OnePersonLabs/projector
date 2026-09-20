@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 
 import type {
   AdapterContext,
@@ -56,8 +58,7 @@ export interface ProcessCleanupObservation {
   readonly rootProcessId: number;
   readonly rootExitObserved: boolean;
   readonly processGroupId?: number;
-  readonly requested: "posix-process-group-sigkill" | "windows-taskkill-tree";
-  readonly cleanupCommandExitCode?: number | null;
+  readonly requested: "posix-process-group-sigkill" | "windows-job-close";
   readonly status: "reported-complete" | "unconfirmed";
   readonly reason?: string;
 }
@@ -306,10 +307,20 @@ export class NativeProcessLauncher implements ProcessLauncher {
   launch(request: ProcessLaunchRequest): Promise<ProcessExecutionResult> {
     return new Promise((resolve, reject) => {
       const startedAt = performance.now();
-      const child = spawn(request.executable, request.args, {
+      const windows = process.platform === "win32";
+      const supervisor = fileURLToPath(new URL("./windows-job-supervisor.ps1", import.meta.url));
+      const developmentSupervisor = fileURLToPath(new URL("../../../../scripts/windows-job-supervisor.ps1", import.meta.url));
+      const supervisorPath = existsSync(supervisor) ? supervisor : developmentSupervisor;
+      if (windows && !existsSync(supervisorPath)) {
+        reject(new Error(`Windows job supervisor is missing: ${supervisorPath}`));
+        return;
+      }
+      const payload = windows ? Buffer.from(JSON.stringify({ file: request.executable, args: request.args, cwd: request.cwd }), "utf8").toString("base64") : "";
+      const child = spawn(windows ? "powershell.exe" : request.executable,
+        windows ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", supervisorPath, payload] : request.args, {
         cwd: request.cwd,
         env: request.env,
-        detached: process.platform !== "win32",
+        detached: !windows,
         shell: false,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
@@ -366,13 +377,17 @@ export class NativeProcessLauncher implements ProcessLauncher {
             reject(new ExecutionCleanupError(limitError, error, {
               rootProcessId: child.pid ?? -1,
               rootExitObserved: true,
-              requested: process.platform === "win32" ? "windows-taskkill-tree" : "posix-process-group-sigkill",
+              requested: process.platform === "win32" ? "windows-job-close" : "posix-process-group-sigkill",
               status: "unconfirmed",
               reason: error instanceof Error ? error.message : String(error),
             }));
             return;
           }
           reject(limitError);
+          return;
+        }
+        if (windows && exitCode === 127 && Buffer.concat(stderr).toString("utf8").trim() === "PROJECTOR_SUPERVISOR_SPAWN_ERROR:ENOENT") {
+          reject(Object.assign(new Error(`Executable was not found: ${request.executable}`), { code: "ENOENT" }));
           return;
         }
         resolve({
@@ -404,28 +419,11 @@ async function terminateOwnedProcessTree(child: ReturnType<typeof spawn>): Promi
       reason: "The owned process group received SIGKILL, but descendants that escaped into another session cannot be confirmed absent.",
     };
   }
-  return new Promise<ProcessCleanupObservation>((resolve, reject) => {
-    const cleanup = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
-      shell: false,
-      windowsHide: true,
-      stdio: "ignore",
-    });
-    cleanup.once("error", (error) => {
-      child.kill("SIGKILL");
-      reject(error);
-    });
-    cleanup.once("close", (code) => {
-      if (code === 0) resolve({
-        rootProcessId: child.pid!,
-        rootExitObserved: false,
-        requested: "windows-taskkill-tree",
-        cleanupCommandExitCode: code,
-        status: "reported-complete",
-      });
-      else {
-        child.kill("SIGKILL");
-        reject(new Error(`taskkill exited with code ${String(code)}`));
-      }
-    });
-  });
+  if (!child.kill("SIGKILL")) throw new Error("Windows job supervisor could not be terminated");
+  return {
+    rootProcessId: child.pid,
+    rootExitObserved: false,
+    requested: "windows-job-close",
+    status: "reported-complete",
+  };
 }

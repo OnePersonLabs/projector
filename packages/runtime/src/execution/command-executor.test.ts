@@ -79,7 +79,7 @@ describe("StateBoundCommandExecutor", () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-host-"));
     const paths = await RepositoryPathService.create(root);
     const executor = new StateBoundCommandExecutor(paths, new FixedBindingValidator("current"), new NativeProcessLauncher());
-    const spec = command({ argv: [process.execPath, "--input-type=module", "--eval", "process.stdout.write('host-ok')"], writeScope: [], sideEffectClass: "none" });
+    const spec = command({ argv: [process.execPath, "--input-type=module", "--eval", "process.stdout.write('host-ok')"], writeScope: [], sideEffectClass: "none", timeoutMs: 10_000 });
     const result = await executor.execute(spec, request(spec));
     expect(result).toMatchObject({ exitCode: 0, signal: null, stdout: "host-ok", stderr: "" });
     expect(result.authorization).toEqual({
@@ -215,7 +215,7 @@ describe("NativeProcessLauncher", () => {
       args: ["-e", script, "$(printf exploited)"],
       cwd: process.cwd(),
       env: { KEPT: "yes" },
-      timeoutMs: 1_000,
+      timeoutMs: 10_000,
       maxOutputBytes: 1_024,
       signal: new AbortController().signal,
     });
@@ -246,7 +246,7 @@ describe("NativeProcessLauncher", () => {
         args: ["-e", "process.stdout.write('x'.repeat(4096))"],
         cwd: process.cwd(),
         env: {},
-        timeoutMs: 1_000,
+        timeoutMs: 10_000,
         maxOutputBytes: 64,
         signal: new AbortController().signal,
       }),
@@ -297,6 +297,35 @@ describe("NativeProcessLauncher", () => {
     controller.abort();
     await expect(execution).rejects.toMatchObject({ limit: "aborted" });
     await expect.poll(() => processExists(descendantPid!)).toBe(false);
+  });
+
+  it.skipIf(process.platform !== "win32")("closes the Windows job after the root exits with a live descendant", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-exited-parent-"));
+    const pidFile = join(root, "descendant.pid");
+    let descendantPid: number | undefined;
+    try {
+      const source = [
+        "const {spawn}=require('node:child_process')",
+        "const {writeFileSync}=require('node:fs')",
+        "const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'})",
+        "child.unref()",
+        "writeFileSync(process.argv[1],String(child.pid))",
+      ].join(";");
+      const result = await new NativeProcessLauncher().launch({
+        executable: process.execPath,
+        args: ["-e", source, pidFile],
+        cwd: root,
+        env: {},
+        timeoutMs: 10_000,
+        maxOutputBytes: 1_024,
+        signal: new AbortController().signal,
+      });
+      expect(result.exitCode).toBe(0);
+      descendantPid = Number(await readFile(pidFile, "utf8"));
+      await expect.poll(() => processExists(descendantPid!)).toBe(false);
+    } finally {
+      if (descendantPid !== undefined && processExists(descendantPid)) process.kill(descendantPid, "SIGKILL");
+    }
   });
 
   it.skipIf(process.platform === "win32")("blocks interrupted execution when a descendant escapes the owned POSIX process group", async () => {
