@@ -4,5 +4,5 @@
 # - https://developers.openai.com/codex/config-reference
 # - https://developers.openai.com/codex/multi-agent
 
-[plugins."projector@personal"]
+[plugins."projector@projector"]
 enabled = true

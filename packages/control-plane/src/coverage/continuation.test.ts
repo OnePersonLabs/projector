@@ -27,11 +27,11 @@ async function repository(): Promise<string> {
   await writeFile(join(root, "test/greeting.test.mjs"), "import assert from 'node:assert/strict'; import { greet } from '../src/greeting.mjs'; assert.equal(greet('Ada'), 'hello Ada');\n");
   const hash = hashFramedDomain("continuation-test", "initial");
   await new CanonicalFileRepository(root).write(withCanonicalHashes({
-    apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id: "requirement:greeting", key: "greeting", lifecycle: "active",
+    apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "requirement", id: "requirement:greeting", key: "greeting", lifecycle: "active",
     payload: { id: "requirement:greeting", key: "greeting", title: "Greeting", statement: "The greeting includes the supplied name.", aliases: [], status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, origin: [], evidence: [], discoveryHash: hash, semanticHash: hash },
   }));
   await new CanonicalFileRepository(root).write(withCanonicalHashes({
-    apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id: "scenario:greet-name", key: "greet-name", lifecycle: "active",
+    apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "behavioral-scenario", id: "scenario:greet-name", key: "greet-name", lifecycle: "active",
     payload: { ...scenario, id: "scenario:greet-name", aliases: [], status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, evidence: [], discoveryHash: hash, semanticHash: hash },
   }));
   await exec("git", ["init", "-q"], { cwd: root });
@@ -61,24 +61,24 @@ test("cleanup resumes a saved context after reset and discloses a bounded eviden
   await expect(inspectRepositoryCoverage(root, { scope: ".", contextId: context.id, evidenceOffset: 1, evidenceIdentity: report.continuation!.page.evidenceIdentity }, "cleanup")).rejects.toThrow(/evidence changed/);
 });
 
-test("cleanup preserves current independent context branches and explains changed queries", async () => {
+test("cleanup preserves current independent dependencies and explains changed queries in a shared context", async () => {
   const root = await repository();
   const writer = new CanonicalFileRepository(root);
   const hash = hashFramedDomain("continuation-test", "concept");
   for (const key of ["local", "independent"]) await writer.write(withCanonicalHashes({
-    apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: `concept:${key}`, key, lifecycle: "active",
+    apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "concept", id: `concept:${key}`, key, lifecycle: "active",
     payload: { id: `concept:${key}`, key, kind: "capability", name: key, aliases: [], statement: `${key} capability`, status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [], discoveryHash: hash, semanticHash: hash },
   }));
   const service = await RepositoryKnowledgeService.create(root);
   const retained = await service.context({ request: "Inspect two independent meanings", entities: ["concept:local", "concept:independent"], persist: true });
   await writer.write(withCanonicalHashes({
-    apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: "relation:local-greeting", key: "relation:relation:local-greeting", lifecycle: "active",
+    apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "relation", id: "relation:local-greeting", key: "relation:relation:local-greeting", lifecycle: "active",
     payload: { id: "relation:local-greeting", fromId: "concept:local", toId: "requirement:greeting", type: "depends-on", active: true, sourceClass: "authored", confidence: 1, evidence: [], semanticHash: hash },
   }));
   const report = await inspectRepositoryCoverage(root, { scope: ".", contextId: retained.id, evidenceLimit: 50 }, "cleanup");
   expect(report.continuation!.context?.status).toBe("stale");
-  const independent = retained.branches.find(({ interpretation }) => interpretation.entityId === "concept:independent")!;
-  expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ id: `${retained.id}:${independent.id}`, status: "current" }));
+  expect(retained.branches).toHaveLength(1);
+  expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ id: expect.stringContaining(":value:concept:independent:"), status: "current" }));
   expect(report.continuation!.evidence).toContainEqual(expect.objectContaining({ status: "stale", reason: expect.stringContaining("Bound query semantics or result changed: knowledge-relations:concept:local") }));
   const query = report.continuation!.evidence.find(({ dependency }) => dependency?.kind === "query" && dependency.dependency.query.id === "knowledge-relations:concept:local")!;
   expect(query.dependency).toMatchObject({ kind: "query", status: "stale", basis: "evaluated", dependency: { priorResult: { resultCount: 0, observability: "closed" } }, currentResult: { resultCount: 1, observability: "closed" } });
@@ -153,7 +153,7 @@ const proposal = {
   validation: { independentNodeTests: ["test/greeting.test.mjs"], supplementalNodeTests: [] },
 };
 
-test("cleanup prioritizes recovery over unresolved work and missing preparation, then resumes the exact approval", async () => {
+test("cleanup prioritizes recovery over unresolved work and missing preparation, then offers the exact approval for apply", async () => {
   const root = await repository();
   const lifecycle = await RepositoryChangeLifecycleService.create(root);
   const captured = await lifecycle.capture({ request: "Implement the accepted greeting", proposal });
@@ -168,8 +168,8 @@ test("cleanup prioritizes recovery over unresolved work and missing preparation,
   const fresh = await RepositoryChangeLifecycleService.create(root);
   expect(await fresh.recover(approval.id)).toMatchObject([{ action: "no-transaction" }]);
   const recovered = await inspectRepositoryCoverage(root, input, "cleanup");
-  expect(recovered.continuation).toMatchObject({ lifecycle: { status: "unresolved" }, nextAction: { operation: "change.resume", input: { approvalSelector: approval.id } } });
-  const applied = await fresh.resume(approval.id);
+  expect(recovered.continuation).toMatchObject({ lifecycle: { status: "unresolved" }, nextAction: { operation: "change.apply", input: { approvalSelector: approval.id } } });
+  const applied = await fresh.apply(approval.id);
   expect(applied.outcome).toBe("success");
   const completed = await inspectRepositoryCoverage(root, input, "cleanup");
   expect(completed.continuation).toMatchObject({ lifecycle: { status: "completed" } });
@@ -200,7 +200,7 @@ test("cleanup distinguishes missing committed proof and preserves safe publicati
   expect(present.continuation!.evidence).toContainEqual(expect.objectContaining({ id: expect.stringContaining(":prepared-success"), status: "current", availability: "present", required: true }));
   expect(await fresh.recover(approval.id)).toMatchObject([{ action: "finalized" }]);
   expect(await fresh.recover(approval.id)).toEqual([]);
-  expect((await fresh.resume(approval.id)).outcome).toBe("success");
+  expect((await fresh.apply(approval.id)).outcome).toBe("success");
 });
 
 test("cleanup retains failed validation outcomes and routes missing representations to their existing plan owner", async () => {
@@ -238,7 +238,7 @@ test("cleanup recovers committed unpublished success after a same-HEAD edit with
   const fresh = await RepositoryChangeLifecycleService.create(root);
   expect(await fresh.recover(approval.id)).toMatchObject([{ action: "finalized" }]);
   expect(await fresh.recover(approval.id)).toEqual([]);
-  expect((await fresh.resume(approval.id)).outcome).toBe("success");
+  expect((await fresh.apply(approval.id)).outcome).toBe("success");
   expect(await store.readPreparedSuccess(attempt!.id)).toEqual(prepared);
   expect((await store.attemptsForApproval(approval.id)).map(({ id }) => id)).toEqual([attempt!.id]);
   expect((await exec("git", ["rev-parse", "HEAD"], { cwd: root })).stdout).toBe(head);

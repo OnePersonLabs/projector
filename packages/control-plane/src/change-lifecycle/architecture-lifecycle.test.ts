@@ -51,7 +51,7 @@ describe("public architectural products", () => {
         const hashedPayload = kind === "concept" || kind === "requirement"
           ? { ...payload, discoveryHash: placeholder, semanticHash: placeholder }
           : { ...payload, semanticHash: placeholder };
-        await files.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id: payload.id, key: payload.key, lifecycle, payload: hashedPayload }));
+        await files.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind, id: payload.id, key: payload.key, lifecycle, payload: hashedPayload }));
       }
       await exec("git", ["add", ".projector"], { cwd: root });
       await exec("git", ["commit", "-qm", "tracked architecture baseline"], { cwd: root });

@@ -5,25 +5,16 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type EvidenceRef, type Requirement } from "@projector/core";
+import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type ChangeProposal, type Requirement } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
-import {
-  createPsychordApplicationObservationPlan,
-  createStrictPsychordApplicationObserver,
-  psychordObservationAdapterId,
-  psychordObservationAdapterVersion,
-  type PsychordApplicationObservationPlan,
-  type PsychordObservationPlan,
-  type PsychordObservationResult,
-} from "@projector/integrations/runtime-evidence";
 import { CanonicalFileRepository, FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
-import { describe, expect } from "vitest";
+import { describe, expect, vi } from "vitest";
 import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
 
 import { RepositoryChangeLifecycleService } from "./service.js";
+import { adjudicatedKnowledgeContext } from "./identity-adjudication.js";
 import { ChangeLifecycleStore } from "./store.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
-import { createDurablePsychordObservationArtifactService } from "../application-evidence/psychord.js";
 
 const exec = promisify(execFile);
 
@@ -39,10 +30,10 @@ async function killInterruptionWorker(child: ReturnType<typeof spawn>): Promise<
 }
 const placeholder = hashFramedDomain("test", "placeholder");
 
-const proposal = () => ({
+const proposal = (): ChangeProposal => ({
   apiVersion: "projector.change-proposal/v1",
   requirements: [{ key: "greeting-personalization", title: "Personalized greeting", statement: "The greeting includes the supplied name.", aliases: ["named-greeting"] }],
-  scenarios: [{ key: "greet-supplied-name", title: "Greet a supplied name", steps: [
+  scenarios: [{ key: "greet-supplied-name", title: "Greet a supplied name", aliases: [], steps: [
     { role: "precondition", statement: "A caller supplies a nonblank name." },
     { role: "trigger", statement: "The caller requests a greeting." },
     { role: "expected-outcome", statement: "The result includes that exact name." },
@@ -83,9 +74,9 @@ async function repository(): Promise<string> {
   await writeFile(join(root, "src", "index.mjs"), "import { greet } from './greeting.mjs'; export { greet };\n");
   await writeFile(join(root, "test", "public-contract.test.mjs"), "import assert from 'node:assert/strict'; import { greet } from '../src/index.mjs'; assert.equal(greet(), 'hello');\n");
   const payload: Requirement = { id: "requirement:legacy-greeting", key: "legacy-greeting", title: "Personalized greeting", aliases: ["named-greeting"], statement: "The greeting includes the supplied name.", status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, origin: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder };
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload } }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "requirement", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload } }));
   const scenario = proposal().scenarios[0]!;
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id: "scenario:greet-supplied-name", key: scenario.key, lifecycle: "active",
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "behavioral-scenario", id: "scenario:greet-supplied-name", key: scenario.key, lifecycle: "active",
     payload: { ...scenario, id: "scenario:greet-supplied-name", aliases: [], status: "active", sourceClass: "authored", scope: payload.scope, evidence: [], discoveryHash: placeholder, semanticHash: placeholder } }));
   await exec("git", ["init", "-q"], { cwd: root });
   await exec("git", ["config", "user.email", "projector@example.invalid"], { cwd: root });
@@ -104,55 +95,33 @@ function authority(id: string, subjectId: string): AuthorityRecord {
   };
 }
 
-function stripDerived<T extends Record<string, unknown>>(payload: T) {
-  const { semanticHash: _semanticHash, discoveryHash: _discoveryHash, ...authored } = payload;
-  return authored;
-}
-
-function psychordPlan(root: string, runId: string, scenarioSemanticHash: `sha256:v1:${string}`): PsychordObservationPlan {
-  return {
-    runId, case: "no-input", scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenarioSemanticHash },
-    repository: { root, gitHead: "a".repeat(40), worktreeDigest: hashFramedDomain("test", "worktree") },
-    dependencies: [{ role: "source", locator: "src/greeting.mjs", contentHash: hashFramedDomain("test", "source") }], ownedArtifactRoot: join(root, ".projector", "runtime", "application-evidence-test"),
-    representativeInput: { code: "KeyA", holdMs: 1_000 },
-    server: { expectedOrigin: "http://127.0.0.1:43123", readinessNonce: "nonce", readinessPath: "/.projector-ready", applicationPath: "/",
-      expectedBuildArtifacts: [{ role: "application-document", buildLocator: "dist/index.html", requestPath: "/", contentHash: hashFramedDomain("test", "build") }] },
-    limits: { timeoutMs: 10_000, cleanupTimeoutMs: 1_000, maximumOutputBytes: 4_096, maximumDiagnosticBytes: 4_096 },
-  };
-}
-
-function psychordResult(plan: PsychordObservationPlan): PsychordObservationResult {
-  return {
-    adapterId: psychordObservationAdapterId, adapterVersion: psychordObservationAdapterVersion, runId: plan.runId, case: plan.case, scenario: plan.scenario,
-    operationalStatus: "completed", outcome: "passed", currentness: "current", assurance: "supporting",
-    host: { expectedOrigin: plan.server.expectedOrigin, actualOrigin: plan.server.expectedOrigin,
-      readiness: { url: `${plan.server.expectedOrigin}${plan.server.readinessPath}`, status: 200, nonce: plan.server.readinessNonce }, browserContextId: "browser:owned",
-      buildArtifacts: [{ role: "application-document", locator: "dist/index.html", contentHash: hashFramedDomain("test", "build") }],
-      servedArtifacts: [{ role: "application-document", locator: `${plan.server.expectedOrigin}/`, contentHash: hashFramedDomain("test", "build") }],
-      ownedResources: [{ kind: "browser-context", handle: "browser:owned", runId: plan.runId }],
-      browserCommands: [{ argvHash: hashFramedDomain("test", "argv"), exitCode: 0, signal: null, durationMs: 5, rootExitObserved: true, stdio: "closed", descendantState: "not-observed" }] },
-    currentnessObservation: { status: "current", observedWorktreeDigest: plan.repository.worktreeDigest,
-      dependencies: plan.dependencies.map(({ role, locator, contentHash }) => ({ role, locator, expectedHash: contentHash, observedHash: contentHash, status: "current" })) },
-    assertions: ["run-binding", "endpoint-binding", "readiness-binding", "build-binding", "served-byte-binding", "fresh-browser-storage", "owned-resource-binding", "pinned-dependency-profile", "bounded-loopback-plan", "currentness-binding", "no-input-controls", "no-input-player", "no-input-persistence"].map((id) => ({ id, passed: true, detail: `${id} passed` })),
-    observations: { precondition: { sound: "disabled", controls: { listen: false, keep: false, clear: false }, archiveCount: 0, replay: "idle", playerNoteCount: 0, activeVoiceCount: 0, playerEvents: [] } },
-    diagnostics: [], cleanup: { complete: true, resources: [{ kind: "browser-context", handle: "browser:owned", outcome: "released" }], diagnostics: [] }, limitations: ["The fixture does not prove acoustic output."],
-  };
-}
-
-function psychordCurrentness(plan: PsychordApplicationObservationPlan) {
-  return { status: "current" as const, repository: { expectedGitHead: plan.adapter.input.repository.gitHead, observedGitHead: plan.adapter.input.repository.gitHead,
-    expectedWorktreeDigest: plan.adapter.input.repository.worktreeDigest, observedWorktreeDigest: plan.adapter.input.repository.worktreeDigest, status: "current" as const },
-    dependencies: plan.adapter.input.dependencies.map(({ role, locator, contentHash }) => ({ role, locator, expectedHash: contentHash, observedHash: contentHash, status: "current" as const })),
-    buildArtifacts: plan.adapter.input.server.expectedBuildArtifacts.map(({ role, buildLocator, contentHash }) => ({ role, locator: buildLocator, expectedHash: contentHash, observedHash: contentHash, status: "current" as const })), reasons: [] };
-}
-
-function psychordEvidenceReference(plan: PsychordApplicationObservationPlan, evidenceId: string, observationRole: "prior" | "latest") {
-  return { evidenceId, stance: "supports" as const, applicationPredicate: { kind: "application-observation" as const,
-    adapter: { id: psychordObservationAdapterId, version: psychordObservationAdapterVersion }, scenario: plan.scenario, case: plan.case,
-    predicateId: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"], observationRole } };
-}
-
 describe("repository change lifecycle service", () => {
+  it("reuses an exact reviewed direct context but rebuilds a narrower selection", async () => {
+    const root = await repository();
+    try {
+      const requirementId = "requirement:legacy-greeting";
+      const scenarioId = "scenario:greet-supplied-name";
+      const knowledge = await RepositoryKnowledgeService.create(root);
+      const retained = await knowledge.context({ request: "Change greeting.", entities: [requirementId, scenarioId] });
+      const exact: ChangeProposal = { ...proposal(), identityResolution: {
+        contextId: retained.id, contextHash: retained.contentHash, outcome: "reuse-existing" as const,
+        selectedEntityIds: [requirementId, scenarioId], rationale: "The reviewed proof directly selects both changed meanings.",
+      } };
+      const context = vi.spyOn(RepositoryKnowledgeService.prototype, "context");
+
+      const reused = await adjudicatedKnowledgeContext(root, exact, retained.id);
+      expect(reused).toMatchObject({ id: retained.id, contentHash: retained.contentHash });
+      expect(context).not.toHaveBeenCalled();
+
+      const narrower: ChangeProposal = { ...exact, scenarios: [], identityResolution: { ...exact.identityResolution!, selectedEntityIds: [requirementId] } };
+      const rebuilt = await adjudicatedKnowledgeContext(root, narrower, retained.id);
+      expect(context).toHaveBeenCalledTimes(1);
+      if (rebuilt === undefined) throw new Error("Narrower selected context was unexpectedly absent");
+      expect(rebuilt.requestOptions.entities).toEqual([requirementId]);
+      context.mockRestore();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("honors caller cancellation across capture, plan, approve, and recover", async () => {
     const root = await repository();
     try {
@@ -170,79 +139,22 @@ describe("repository change lifecycle service", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("blocks lifecycle planning when a selected requirement's declared application predicate is unknown", async () => {
+  it("blocks lifecycle planning when a selected requirement has no authenticated evidence assessor", async () => {
     const root = await repository();
-    const evidenceId = "psychord-artifact:lifecycle";
+    const evidenceId = "artifact:lifecycle";
     try {
       const canonical = new CanonicalFileRepository(root);
       const requirement = (await canonical.read("requirement", "requirement:legacy-greeting"))!;
       await canonical.write(withCanonicalHashes({ ...requirement, payload: { ...requirement.payload, evidence: [{ evidenceId, stance: "supports", applicationPredicate: {
-        kind: "application-observation", adapter: { id: "psychord.keep-reload-replay", version: "1" },
+        kind: "application-observation", adapter: { id: "fixture.application", version: "1" },
         scenario: { id: "scenario:greet-supplied-name", semanticHash: placeholder }, case: "supplied-name",
         predicateId: "predicate:greeting-preserves-name", assertionIds: ["exact-name"], observationRole: "latest",
       } }] } }));
-      const applicationEvidence = {
-        artifacts: { artifactSetId: () => evidenceId, observeAndPublish: async () => ({ status: "missing" as const, artifactSetId: evidenceId }), read: async () => ({ status: "missing" as const, artifactSetId: evidenceId }) },
-        currentness: { observe: async () => { throw new Error("currentness is not invoked for missing evidence"); } },
-      } as const;
-      const context = await (await RepositoryKnowledgeService.create({ repositoryRoot: root, applicationEvidence })).context({ request: "Change greeting.", entities: ["requirement:legacy-greeting"] });
+      const context = await (await RepositoryKnowledgeService.create(root)).context({ request: "Change greeting.", entities: ["requirement:legacy-greeting"] });
       const selected = { ...proposal(), identityResolution: { contextId: context.id, contextHash: context.contentHash, outcome: "reuse-existing" as const, selectedEntityIds: ["requirement:legacy-greeting"], rationale: "The existing requirement owns greeting behavior." } };
-      const service = await RepositoryChangeLifecycleService.create(root, { applicationEvidence });
+      const service = await RepositoryChangeLifecycleService.create(root);
       await expect(service.capture({ request: "Change greeting.", proposal: selected })).rejects.toThrow(/application evidence is unknown/iu);
       expect(await readdir(join(root, ".projector", "runtime", "change-lifecycles", "captures")).catch(() => [])).toHaveLength(0);
-    } finally { await rm(root, { recursive: true, force: true }); }
-  });
-
-  it("admits only a current same-predicate evidence replacement without changing normative meaning", async () => {
-    const root = await repository();
-    try {
-      const canonical = new CanonicalFileRepository(root);
-      const scenario = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario" as const,
-        id: "scenario:keep-reload-replay-owned-moment", key: "keep-reload-replay-owned-moment", lifecycle: "active",
-        payload: { id: "scenario:keep-reload-replay-owned-moment", key: "keep-reload-replay-owned-moment", title: "Keep and replay", aliases: [], status: "active" as const,
-          sourceClass: "authored" as const, scope: { op: "atom" as const, field: "path" as const, matcher: "equals" as const, value: "src/greeting.mjs" },
-          steps: [{ role: "expected-outcome" as const, statement: "No input is represented as player activity." }], evidence: [], discoveryHash: placeholder, semanticHash: placeholder } });
-      await canonical.write(scenario);
-      const artifactRoot = join(root, ".projector", "runtime", "application-evidence-test");
-      await mkdir(artifactRoot, { recursive: true });
-      const artifacts = createDurablePsychordObservationArtifactService({ storageRoot: artifactRoot, observer: createStrictPsychordApplicationObserver({
-        async observeApplication(plan): Promise<PsychordObservationResult> { return psychordResult(plan); },
-      }) });
-      const oldPlan = createPsychordApplicationObservationPlan(psychordPlan(root, "old", scenario.semanticHash));
-      const newPlan = createPsychordApplicationObservationPlan(psychordPlan(root, "new", scenario.semanticHash));
-      const oldPublished = await artifacts.observeAndPublish(oldPlan, { signal: new AbortController().signal });
-      const newPublished = await artifacts.observeAndPublish(newPlan, { signal: new AbortController().signal });
-      expect(oldPublished.status).toBe("published");
-      expect(newPublished.status).toBe("published");
-      const oldReference = psychordEvidenceReference(oldPlan, oldPublished.artifactSetId, "latest");
-      const ordinaryReference = { evidenceId: "evidence:reviewed-design", stance: "context" as const, weight: 0.5 };
-      const requirement = (await canonical.read("requirement", "requirement:legacy-greeting"))!;
-      await canonical.write(withCanonicalHashes({ ...requirement, payload: { ...requirement.payload, evidence: [ordinaryReference, oldReference] } }));
-      await exec("git", ["add", "."], { cwd: root });
-      await exec("git", ["commit", "-qm", "bind stale evidence"], { cwd: root });
-
-      let newStatus: "current" | "stale" = "stale";
-      const applicationEvidence = { artifacts, currentness: { async observe(plan: PsychordApplicationObservationPlan) {
-        const current = psychordCurrentness(plan);
-        return plan.runId === "old" || newStatus === "stale" ? { ...current, status: "stale" as const, repository: { ...current.repository, status: "stale" as const, observedWorktreeDigest: hashFramedDomain("test", "changed") }, reasons: ["source changed"] } : current;
-      } } };
-      const context = await (await RepositoryKnowledgeService.create({ repositoryRoot: root, applicationEvidence })).context({ request: "Replace stale application evidence without changing the requirement.", entities: [requirement.id] });
-      const currentRequirement = (await canonical.read("requirement", requirement.id))!;
-      const replacement = (evidence: EvidenceRef[], statement = currentRequirement.payload.statement) => ({
-        apiVersion: "projector.change-proposal/v1", requirements: [], scenarios: [], architecture: null, edits: [], validation: { independentNodeTests: [], supplementalNodeTests: [] }, analysisFacets: ["behavior", "architecture"],
-        identityResolution: { contextId: context.id, contextHash: context.contentHash, outcome: "reuse-existing", selectedEntityIds: [requirement.id], rationale: "Preserve the same requirement while replacing stale evidence." },
-        canonicalMutations: [{ kind: "requirement", operation: "revise", expectedSemanticHash: currentRequirement.semanticHash, expectedDocumentHash: currentRequirement.canonicalDocumentHash, rationale: "Retain prior evidence history and attach its current same-predicate successor.",
-          payload: stripDerived({ ...currentRequirement.payload, statement, evidence }) }],
-      });
-      const missing = psychordEvidenceReference(newPlan, "psychord-missing-replacement", "latest");
-      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, missing]) })).rejects.toThrow(/application evidence is unknown/iu);
-      const newReference = psychordEvidenceReference(newPlan, newPublished.artifactSetId, "latest");
-      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, newReference]) })).rejects.toThrow(/application evidence is unknown/iu);
-      newStatus = "current";
-      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, newReference], "A weaker greeting is acceptable.") })).rejects.toThrow(/application evidence is unknown/iu);
-      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, { ...newReference, applicationPredicate: { ...newReference.applicationPredicate, assertionIds: ["easier-assertion"] } }]) })).rejects.toThrow(/application evidence is unknown/iu);
-      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([{ ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, newReference]) })).rejects.toThrow(/application evidence is unknown/iu);
-      await expect((await RepositoryChangeLifecycleService.create(root, { applicationEvidence })).capture({ request: "Replace evidence.", proposal: replacement([ordinaryReference, { ...oldReference, applicationPredicate: { ...oldReference.applicationPredicate, observationRole: "prior" } }, newReference]) })).resolves.toMatchObject({ compiled: { executionKind: "canonical-only" } });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
@@ -494,8 +406,8 @@ describe("repository change lifecycle service", () => {
           scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" }, lifecycle: "active",
           authorityRecordId: authorityRecord.id, governanceBasis: [], consequences: [], appliedPreferences: [], supersedesDecisionIds: [], semanticHash: placeholder,
         };
-        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "authority-record", id: authorityRecord.id, key: authorityRecord.key, lifecycle: authorityRecord.status, payload: { ...authorityRecord } }));
-        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "architecture-decision", id: decision.id, key: decision.key, lifecycle: decision.lifecycle, payload: { ...decision } }));
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "authority-record", id: authorityRecord.id, key: authorityRecord.key, lifecycle: authorityRecord.status, payload: { ...authorityRecord } }));
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "architecture-decision", id: decision.id, key: decision.key, lifecycle: decision.lifecycle, payload: { ...decision } }));
         const context = await (await RepositoryKnowledgeService.create(root)).context({ request: "use decision", entities: [decision.id] });
         const service = await RepositoryChangeLifecycleService.create(root);
 
@@ -503,7 +415,7 @@ describe("repository change lifecycle service", () => {
           .rejects.toThrow(/knowledge context governance is unknown.*referenced authority/iu);
         if (variant === "rejected") {
           const payload = modelProposal().canonicalMutations[0]!.payload;
-          await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: payload.id, key: payload.key!, lifecycle: "active", payload: { ...payload, discoveryHash: placeholder, semanticHash: placeholder } }));
+          await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "concept", id: payload.id, key: payload.key!, lifecycle: "active", payload: { ...payload, discoveryHash: placeholder, semanticHash: placeholder } }));
           const unrelated = await (await RepositoryKnowledgeService.create(root)).context({ request: "Inspect clock", entities: [payload.id] });
           expect(JSON.stringify(unrelated)).not.toContain(decision.id);
           const accepted = await service.capture({ request: "Change greeting with unrelated supplied knowledge", proposal: proposal(), knowledgeContextId: unrelated.id });
@@ -561,8 +473,8 @@ describe("repository change lifecycle service", () => {
           selector: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" },
           governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:repository-layout" }],
         });
-        if (!invalidAuthority) await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "authority-record", id: authorityRecord.id, key: authorityRecord.key, lifecycle: authorityRecord.status, payload: { ...authorityRecord } }));
-        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "projection-lens", id: lens.id, key: lens.key, lifecycle: lens.status, payload: { ...lens } }));
+        if (!invalidAuthority) await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "authority-record", id: authorityRecord.id, key: authorityRecord.key, lifecycle: authorityRecord.status, payload: { ...authorityRecord } }));
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "projection-lens", id: lens.id, key: lens.key, lifecycle: lens.status, payload: { ...lens } }));
         const context = await (await RepositoryKnowledgeService.create(root)).context({ request: "change greeting", namedTargets: ["src/greeting.mjs"] });
         const service = await RepositoryChangeLifecycleService.create(root);
 
@@ -758,10 +670,10 @@ describe("repository change lifecycle service", () => {
       await transaction.writeFile("src/greeting.mjs", "export const greet = () => 'interrupted';\n");
       await writeFile(join(root, "src", "greeting.mjs"), "export const greet = () => 'third state';\n");
 
-      await expect(service.resume(approval.id)).rejects.toMatchObject({
-        code: "lifecycle-recovery-required",
-        outcomes: [expect.objectContaining({ attemptId: attempt.id, transactionId: attempt.transactionId, action: "recovery-required" })],
-      });
+      await expect(service.recover(approval.id)).resolves.toEqual([
+        expect.objectContaining({ attemptId: attempt.id, transactionId: attempt.transactionId, action: "recovery-required" }),
+      ]);
+      await expect(service.apply(approval.id)).rejects.toThrow(/incomplete governed transaction requires recovery/iu);
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("third state");
     } finally { await rm(root, { recursive: true, force: true }); }
   });
@@ -807,10 +719,10 @@ describe("repository change lifecycle service", () => {
     try {
       await writeFile(join(root, "test", "public-contract.test.mjs"), [
         "import assert from 'node:assert/strict';",
-        "import { existsSync } from 'node:fs';",
+        "import { existsSync, writeFileSync } from 'node:fs';",
         "import { setTimeout as delay } from 'node:timers/promises';",
         "import { greet } from '../src/index.mjs';",
-        "if (existsSync('.projector/runtime/interruption-hold')) await delay(20_000);",
+        "if (existsSync('.projector/runtime/interruption-hold')) { writeFileSync('.projector/runtime/interruption-hold-entered', 'entered\\n'); await delay(20_000); }",
         "assert.equal(greet(), 'hello');",
         "",
       ].join("\n"));
@@ -839,6 +751,7 @@ describe("repository change lifecycle service", () => {
       }));
       const transactionId = await Promise.race([waitForValidatingTransaction(root), prematureExit]);
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toContain("hello ${name}");
+      await Promise.race([waitForInterruptionHold(root), prematureExit]);
       await killInterruptionWorker(child);
       if (process.platform !== "win32") expect(child.signalCode).toBe("SIGKILL");
       else expect(child.exitCode).not.toBe(0);
@@ -848,7 +761,7 @@ describe("repository change lifecycle service", () => {
 
       expect(await service.recover(approval.id)).toEqual([expect.objectContaining({ transactionId, action: "rolled-back" })]);
       expect(await readFile(join(root, "src", "greeting.mjs"), "utf8")).toBe("export const greet = () => 'hello';\n");
-      expect((await service.resume(approval.id)).outcome).toBe("success");
+      expect((await service.apply(approval.id)).outcome).toBe("success");
     } finally {
       if (child !== undefined) await killInterruptionWorker(child);
       await rm(root, { recursive: true, force: true });
@@ -892,9 +805,9 @@ describe("repository change lifecycle service", () => {
       internal.store.writeArtifact = writeArtifact;
       const recovered = await service.recover(approval.id);
       expect(recovered).toEqual([expect.objectContaining({ action: "finalized" })]);
-      const resumed = await service.resume(approval.id);
-      expect(resumed.outcome).toBe("success");
-      expect(resumed.certificateHash).toMatch(/^sha256:v1:/u);
+      const applied = await service.apply(approval.id);
+      expect(applied.outcome).toBe("success");
+      expect(applied.certificateHash).toMatch(/^sha256:v1:/u);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
@@ -970,4 +883,19 @@ async function waitForValidatingTransaction(root: string): Promise<string> {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error("child lifecycle did not reach host validation before interruption deadline");
+}
+
+async function waitForInterruptionHold(root: string): Promise<void> {
+  const marker = join(root, ".projector", "runtime", "interruption-hold-entered");
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    try {
+      if ((await readFile(marker, "utf8")) === "entered\n") return;
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      // The independent validator has not entered its deliberate hold.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("child lifecycle did not enter independent host validation before interruption deadline");
 }

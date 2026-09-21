@@ -2,12 +2,7 @@ import { z } from "zod";
 
 import { PackageVersionSchema } from "./operations.js";
 
-export const projectorConfigApiVersion = "projector.config/v1" as const;
-
-export const LegacyUnversionedProjectorConfigSchema = z.object({
-  apiVersion: z.literal(projectorConfigApiVersion),
-  enabled: z.literal(true),
-}).strict();
+export const projectorConfigApiVersion = "projector.config/v3" as const;
 
 export const PreparedProjectorConfigSchema = z.object({
   apiVersion: z.literal(projectorConfigApiVersion),
@@ -15,20 +10,15 @@ export const PreparedProjectorConfigSchema = z.object({
   projectorVersion: PackageVersionSchema,
 }).strict();
 
-// The public configuration contract is the prepared, version-bound format.
-// Legacy input remains available only through its explicitly named migration schema.
+// Configuration declares the authored format. Package versions record provenance;
+// a patch release does not change the format or require a data migration.
 export const ProjectorConfigSchema = PreparedProjectorConfigSchema;
 
 export type ProjectorConfig = z.infer<typeof ProjectorConfigSchema>;
-export type LegacyUnversionedProjectorConfig = z.infer<typeof LegacyUnversionedProjectorConfigSchema>;
 export type PreparedProjectorConfig = z.infer<typeof PreparedProjectorConfigSchema>;
 
 export function parseProjectorConfig(value: unknown): ProjectorConfig {
   return ProjectorConfigSchema.parse(value);
-}
-
-export function parseLegacyUnversionedProjectorConfig(value: unknown): LegacyUnversionedProjectorConfig {
-  return LegacyUnversionedProjectorConfigSchema.parse(value);
 }
 
 export function parsePreparedProjectorConfig(value: unknown): PreparedProjectorConfig {

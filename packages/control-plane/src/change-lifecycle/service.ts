@@ -1,15 +1,11 @@
 import {
-  ApplicationEvidencePredicateBindingSchema,
   canonicalJson,
   hashFramedDomain,
   parseChangeProposal,
-  type ApplicationEvidencePredicateBinding,
   type ChangeProposal,
   type ContentHash,
-  type EvidenceRef,
   type ExecutionCapsule,
 } from "@projector/core";
-import { psychordObservationAdapterId, psychordObservationAdapterVersion } from "@projector/integrations/runtime-evidence";
 import { executionCapsuleHash, type BuiltInRepresentationProfileKey } from "@projector/engine";
 import { publishPreparedStateBoundChangeSuccess, type StateBoundChangeResult } from "@projector/engine";
 import { FileTransactionJournal, GovernedWorktreeRuntime, RepositoryPathService, WriterLeaseManager } from "@projector/runtime";
@@ -19,12 +15,7 @@ import { executeCompiledRepositoryChange } from "./executor.js";
 import { adjudicatedKnowledgeContext, assertIdentityDisposition, captureKnowledgeContextId } from "./identity-adjudication.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import type { KnowledgeReconciliationResult } from "../knowledge/types.js";
-import type { PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
-import {
-  PsychordEvidenceOwnerEnvelopeSchema,
-  createPsychordApplicationEvidenceAssessmentService,
-  type PsychordEvidenceOwnerEnvelope,
-} from "../application-evidence/psychord-assessment.js";
+import type { ApplicationEvidencePort } from "../knowledge/application-evidence.js";
 import { RepositoryRepresentationArtifactStore } from "../representation/artifact-store.js";
 import { validateCompiledRepositoryChangeCurrentness } from "./currentness.js";
 import {
@@ -50,7 +41,7 @@ export interface CapturedRepositoryChange extends PlannedRepositoryChange {}
 
 export interface RepositoryChangeLifecycleServiceOptions extends ChangeLifecycleStoreOptions {
   readonly leaseStaleAfterMs?: number;
-  readonly applicationEvidence?: PsychordApplicationEvidenceHost;
+  readonly applicationEvidence?: ApplicationEvidencePort;
   /** Selects an authenticated packaged profile; omitted uses the current active profile. */
   readonly representationProfileKey?: BuiltInRepresentationProfileKey;
 }
@@ -72,15 +63,6 @@ export interface CurrentLifecyclePlanInspection {
 }
 
 export type LifecycleApplyOptions = LifecycleOperationOptions;
-
-export class LifecycleRecoveryRequiredError extends Error {
-  readonly code = "lifecycle-recovery-required";
-
-  constructor(readonly outcomes: readonly LifecycleRecoveryOutcome[]) {
-    super(`lifecycle recovery requires manual action: ${outcomes.map(({ transactionId, reason }) => `${transactionId}: ${reason ?? "unknown"}`).join("; ")}`);
-    this.name = "LifecycleRecoveryRequiredError";
-  }
-}
 
 function capsules(compiled: CompiledRepositoryChange): ExecutionCapsule[] {
   return compiled.compiledPlan.packets.map(({ capsule }) => capsule);
@@ -106,122 +88,6 @@ function permitsDecisionReconsideration(compiled: CompiledRepositoryChange, gove
   // Only the exact decision(s) being reconsidered may cross this pre-state gate.
   // Canonical post-state validation must establish their newly accepted baseline.
   return resolvedReasons.size > 0 && governance.reasons.every((reason) => resolvedReasons.has(reason));
-}
-
-type PsychordEvidenceRef = EvidenceRef & { readonly applicationPredicate: ApplicationEvidencePredicateBinding };
-
-function psychordEvidence(payload: Record<string, unknown>): PsychordEvidenceRef[] | undefined {
-  if (!Array.isArray(payload.evidence)) return undefined;
-  const result: PsychordEvidenceRef[] = [];
-  for (const raw of payload.evidence) {
-    if (typeof raw !== "object" || raw === null || !("applicationPredicate" in raw)) continue;
-    const binding = ApplicationEvidencePredicateBindingSchema.safeParse(raw.applicationPredicate);
-    if (!binding.success) return undefined;
-    const applicationPredicate = binding.data as ApplicationEvidencePredicateBinding;
-    if (applicationPredicate.adapter.id !== psychordObservationAdapterId || applicationPredicate.adapter.version !== psychordObservationAdapterVersion) continue;
-    if (!("evidenceId" in raw) || typeof raw.evidenceId !== "string" || !("stance" in raw)) return undefined;
-    result.push({ ...(raw as EvidenceRef), applicationPredicate });
-  }
-  return result;
-}
-
-function exactApplicationPredicate(binding: ApplicationEvidencePredicateBinding) {
-  const { observationRole: _observationRole, ...exact } = binding;
-  return exact;
-}
-
-function evidenceIndependentPayload(payload: Record<string, unknown>): Record<string, unknown> {
-  const { evidence: _evidence, ...rest } = payload;
-  return rest;
-}
-
-function preservedEvidenceReference(before: PsychordEvidenceRef, after: PsychordEvidenceRef): boolean {
-  const { applicationPredicate: beforePredicate, ...beforeReference } = before;
-  const { applicationPredicate: afterPredicate, ...afterReference } = after;
-  return canonicalJson(beforeReference) === canonicalJson(afterReference)
-    && canonicalJson(exactApplicationPredicate(beforePredicate)) === canonicalJson(exactApplicationPredicate(afterPredicate))
-    && (before.applicationPredicate.observationRole === after.applicationPredicate.observationRole
-      || (before.applicationPredicate.observationRole === "latest" && after.applicationPredicate.observationRole === "prior"));
-}
-
-function nonPsychordEvidence(payload: Record<string, unknown>): unknown[] | undefined {
-  if (!Array.isArray(payload.evidence)) return undefined;
-  return payload.evidence.filter((raw) => {
-    if (typeof raw !== "object" || raw === null || !("applicationPredicate" in raw)) return true;
-    const binding = ApplicationEvidencePredicateBindingSchema.safeParse(raw.applicationPredicate);
-    return !binding.success
-      || (binding.data as ApplicationEvidencePredicateBinding).adapter.id !== psychordObservationAdapterId
-      || (binding.data as ApplicationEvidencePredicateBinding).adapter.version !== psychordObservationAdapterVersion;
-  });
-}
-
-async function permitsApplicationEvidenceReplacement(input: {
-  readonly compiled: CompiledRepositoryChange;
-  readonly host: PsychordApplicationEvidenceHost | undefined;
-  readonly signal: AbortSignal;
-}): Promise<boolean> {
-  if (input.host === undefined || input.compiled.executionKind !== "canonical-only" || input.compiled.canonicalWrites.length === 0) return false;
-  const mutations = input.compiled.intentReview.canonicalMutations ?? [];
-  if (mutations.length !== input.compiled.canonicalWrites.length) return false;
-  const unresolvedOwners = new Set(input.compiled.knowledgeContext?.branches
-    .filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)
-    .flatMap(({ applicationEvidence }) => applicationEvidence
-      .filter((item) => item.status === "unavailable" || item.assessment.fulfillment.status !== "satisfied")
-      .map(({ owner }) => owner.id)) ?? []);
-  if (unresolvedOwners.size === 0) return false;
-
-  const revisedOwners = new Set<string>();
-  for (const mutation of mutations) {
-    if (mutation.operation !== "revise"
-      || (mutation.kind !== "requirement" && mutation.kind !== "behavioral-scenario")
-      || mutation.before === null || mutation.after === null
-      || canonicalJson(evidenceIndependentPayload(mutation.before)) !== canonicalJson(evidenceIndependentPayload(mutation.after))) return false;
-    const write = input.compiled.canonicalWrites.find(({ id, kind }) => id === mutation.id && kind === mutation.kind);
-    if (write === undefined || write.envelope.semanticHash !== mutation.before.semanticHash || write.envelope.semanticHash !== mutation.after.semanticHash) return false;
-    const beforeRefs = psychordEvidence(mutation.before);
-    const afterRefs = psychordEvidence(mutation.after);
-    const beforeOther = nonPsychordEvidence(mutation.before);
-    const afterOther = nonPsychordEvidence(mutation.after);
-    if (beforeRefs === undefined || afterRefs === undefined || beforeOther === undefined || afterOther === undefined
-      || canonicalJson(beforeOther) !== canonicalJson(afterOther)) return false;
-    const afterById = new Map(afterRefs.map((reference) => [reference.evidenceId, reference]));
-    if (beforeRefs.some((reference) => {
-      const after = afterById.get(reference.evidenceId);
-      return after === undefined || !preservedEvidenceReference(reference, after);
-    })) return false;
-    const beforeIds = new Set(beforeRefs.map(({ evidenceId }) => evidenceId));
-    const added = afterRefs.filter(({ evidenceId }) => !beforeIds.has(evidenceId));
-    if (added.length === 0 || added.some(({ stance, applicationPredicate }) => stance !== "supports" || applicationPredicate.observationRole !== "latest")) return false;
-
-    let owner: PsychordEvidenceOwnerEnvelope;
-    try { owner = PsychordEvidenceOwnerEnvelopeSchema.parse(write.envelope); }
-    catch { return false; }
-    const assessment = createPsychordApplicationEvidenceAssessmentService({
-      artifacts: input.host.artifacts,
-      currentness: input.host.currentness,
-      owners: { async readCurrent() { return owner; } },
-    });
-    const groups = new Map<string, string[]>();
-    for (const reference of afterRefs) {
-      const key = canonicalJson([reference.stance, exactApplicationPredicate(reference.applicationPredicate)]);
-      groups.set(key, [...(groups.get(key) ?? []), reference.evidenceId]);
-    }
-    try {
-      for (const reference of added) {
-        const single = await assessment.assess({ schemaVersion: "psychord-application-evidence-assessment-request@4", owner: { kind: owner.kind, id: owner.id, canonicalDocumentHash: owner.canonicalDocumentHash }, evidenceIds: [reference.evidenceId] }, { signal: input.signal });
-        if (single.fulfillment.status !== "satisfied") return false;
-      }
-      for (const evidenceIds of groups.values()) {
-        const group = await assessment.assess({ schemaVersion: "psychord-application-evidence-assessment-request@4", owner: { kind: owner.kind, id: owner.id, canonicalDocumentHash: owner.canonicalDocumentHash }, evidenceIds }, { signal: input.signal });
-        if (group.fulfillment.status !== "satisfied") return false;
-      }
-    } catch (error) {
-      input.signal.throwIfAborted();
-      return false;
-    }
-    revisedOwners.add(mutation.id);
-  }
-  return [...unresolvedOwners].every((id) => revisedOwners.has(id));
 }
 
 function approvedCompilation(compiled: CompiledRepositoryChange, capture: LifecycleCaptureRecord): CompiledRepositoryChange {
@@ -251,7 +117,7 @@ function approvedCompilation(compiled: CompiledRepositoryChange, capture: Lifecy
 export class RepositoryChangeLifecycleService {
   private readonly now: () => string;
   private readonly leaseStaleAfterMs: number;
-  private readonly applicationEvidence: PsychordApplicationEvidenceHost | undefined;
+  private readonly applicationEvidence: ApplicationEvidencePort | undefined;
   private readonly representationProfileKey: BuiltInRepresentationProfileKey | undefined;
 
   private constructor(
@@ -483,13 +349,6 @@ export class RepositoryChangeLifecycleService {
     }
   }
 
-  async resume(approvalSelector: string, options: LifecycleApplyOptions = {}): Promise<StateBoundChangeResult> {
-    const outcomes = await this.recover(approvalSelector, options);
-    const blocked = outcomes.filter(({ action }) => action === "recovery-required");
-    if (blocked.length > 0) throw new LifecycleRecoveryRequiredError(blocked);
-    return this.apply(approvalSelector, options);
-  }
-
   private async compile(request: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, publishRepresentation = true): Promise<CompiledRepositoryChange> {
     const knowledgeContext = await adjudicatedKnowledgeContext(this.repositoryRoot, proposal, contextId, signal, this.applicationEvidence);
     const compiled = await compileRepositoryChange(
@@ -520,12 +379,7 @@ export class RepositoryChangeLifecycleService {
     const selected = compiled.knowledgeContext;
     const selectedReconciliation = selected !== undefined && selected.id !== contextId ? await knowledge.reconcile(selected.id, signal === undefined ? {} : { signal }) : reconciliation;
     const governance = selectedReconciliation.governance;
-    if (selectedReconciliation.applicationEvidence.status === "violated"
-      || (selectedReconciliation.applicationEvidence.status === "unknown" && !await permitsApplicationEvidenceReplacement({
-        compiled,
-        host: this.applicationEvidence,
-        signal: signal ?? new AbortController().signal,
-      }))) {
+    if (selectedReconciliation.applicationEvidence.status === "violated" || selectedReconciliation.applicationEvidence.status === "unknown") {
       throw new Error(`knowledge context application evidence is ${selectedReconciliation.applicationEvidence.status}: ${selectedReconciliation.applicationEvidence.branches.flatMap(({ reasons }) => reasons).join("; ")}`);
     }
     if (proposal.identityResolution?.selectedEntityIds.length !== 0 && governance.status !== "conformant" && governance.status !== "not-applicable" && !permitsDecisionReconsideration(compiled, governance)) {

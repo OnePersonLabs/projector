@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v3.schema.json
+apiVersion = "projector/v3"
+schemaVersion = "3.0.0"
+kind = "relation"
+id = "relation:requirement:scoped-invalidation:demonstrated-by:scenario:block-unresolved-branch-governance-conflicts"
+key = "relation:relation:requirement:scoped-invalidation:demonstrated-by:scenario:block-unresolved-branch-governance-conflicts"
+lifecycle = "active"
+
+[payload]
+fromId = "requirement:scoped-invalidation"
+toId = "scenario:block-unresolved-branch-governance-conflicts"
+type = "demonstrated-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []

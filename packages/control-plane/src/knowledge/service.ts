@@ -28,7 +28,7 @@ import {
   applicationEvidenceDependencies,
   applicationEvidenceDisposition,
   assessKnowledgeApplicationEvidence,
-  type PsychordApplicationEvidenceHost,
+  type ApplicationEvidencePort,
 } from "./application-evidence.js";
 import { KnowledgeContextStore, finalizeKnowledgeContext, knowledgeContextWrite } from "./store.js";
 import { DecisionBaselineReader } from "./decision-baselines.js";
@@ -52,7 +52,7 @@ import {
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
 
-export function createKnowledgeComputeHostHandler(observation: ChangeRepositoryObservation, host: KnowledgeDecisionHost & KnowledgeValidatorHost & { readonly applicationEvidence?: PsychordApplicationEvidenceHost } = {}): (request: KnowledgeHostRequest, signal: AbortSignal) => Promise<unknown> {
+export function createKnowledgeComputeHostHandler(observation: ChangeRepositoryObservation, host: KnowledgeDecisionHost & KnowledgeValidatorHost & { readonly applicationEvidence?: ApplicationEvidencePort } = {}): (request: KnowledgeHostRequest, signal: AbortSignal) => Promise<unknown> {
   const baselines = new DecisionBaselineReader(observation);
   let validators: KnowledgeValidatorRun | undefined;
   return async (request, signal) => {
@@ -66,7 +66,7 @@ export function createKnowledgeComputeHostHandler(observation: ChangeRepositoryO
         validators ??= new KnowledgeValidatorRun(observation, combined, host);
         return { findings: await validators.evaluateAll(request.requests), executed: validators.executed };
       }
-      case "application-evidence": return assessKnowledgeApplicationEvidence({ observation, ownerIds: request.ownerIds, signal: combined, ...(host.applicationEvidence === undefined ? {} : { host: host.applicationEvidence }) });
+      case "application-evidence": return assessKnowledgeApplicationEvidence({ observation, ownerIds: request.ownerIds, signal: combined, ...(host.applicationEvidence === undefined ? {} : { port: host.applicationEvidence }) });
       case "fresh-state": return (await observeChangeRepository(observation.repositoryRoot)).state;
       case "read-impact": return readRepositoryImpactSnapshot(observation.repositoryRoot, request.reference);
     }
@@ -111,27 +111,28 @@ function coreCandidate(candidate: KnowledgeInterpretationCandidate): SemanticIde
 
 function identityResolution(
   request: string,
-  candidate: KnowledgeInterpretationCandidate,
+  candidates: readonly KnowledgeInterpretationCandidate[],
   compiledAgainst: AdapterContext["stateDigest"],
   identityDependency: StateQueryDependency,
   graph: KnowledgeGraph,
 ): SemanticIdentityResolution {
-  const eligibleKind = candidate.entityKind === "concept" || candidate.entityKind === "requirement" || candidate.entityKind === "scenario";
-  const selected = candidate.direct && eligibleKind;
+  const eligible = candidates.filter((candidate) => candidate.direct && coreCandidate(candidate) !== undefined);
+  const kinds = unique(eligible.map(({ entityKind }) => entityKind));
+  const requestedKind = kinds.length === 1 ? kinds[0]! as "concept" | "requirement" | "scenario" : "unknown" as const;
   const boundState = createStateBinding({
     compiledAgainst,
-    valueDependencies: selected ? graph.valueDependencies([candidate.entityId]) : [],
+    valueDependencies: graph.valueDependencies(eligible.map(({ entityId }) => entityId)),
     queryDependencies: [identityDependency],
   });
   const basis = {
     requestedMeaning: request,
-    requestedKind: eligibleKind ? candidate.entityKind : "unknown" as const,
-    outcome: selected ? "reuse-existing" as const : "unresolved" as const,
-    candidates: [coreCandidate(candidate)].filter((item): item is SemanticIdentityCandidate => item !== undefined),
-    selectedEntityIds: selected ? [candidate.entityId] : [],
-    confidence: selected ? 1 : candidate.score,
+    requestedKind,
+    outcome: eligible.length > 0 ? "reuse-existing" as const : "unresolved" as const,
+    candidates: eligible.map(coreCandidate).filter((item): item is SemanticIdentityCandidate => item !== undefined),
+    selectedEntityIds: eligible.map(({ entityId }) => entityId).sort(),
+    confidence: eligible.length > 0 ? 1 : Math.max(...candidates.map(({ score }) => score), 0),
     evidence: [],
-    unknowns: selected ? [] : ["interpretation remains a candidate; context compilation does not prove semantic identity"],
+    unknowns: eligible.length > 0 ? [] : ["interpretation remains a candidate; context compilation does not prove semantic identity"],
     boundState,
   };
   const contentHash = hashFramedDomain("semantic-identity-resolution", basis);
@@ -175,12 +176,12 @@ export class RepositoryKnowledgeService {
   private constructor(
     readonly repositoryRoot: string,
     private readonly store: KnowledgeContextStore | undefined,
-    private readonly host: KnowledgeDecisionHost & KnowledgeValidatorHost & { readonly applicationEvidence?: PsychordApplicationEvidenceHost },
+    private readonly host: KnowledgeDecisionHost & KnowledgeValidatorHost & { readonly applicationEvidence?: ApplicationEvidencePort },
     private readonly computeHost?: KnowledgeComputeHost,
     private readonly derivedBudget?: DerivedObservationBudget,
   ) {}
 
-  static async create(input: string | ({ readonly repositoryRoot: string; readonly applicationEvidence?: PsychordApplicationEvidenceHost } & KnowledgeDecisionHost & KnowledgeValidatorHost)): Promise<RepositoryKnowledgeService> {
+  static async create(input: string | ({ readonly repositoryRoot: string; readonly applicationEvidence?: ApplicationEvidencePort } & KnowledgeDecisionHost & KnowledgeValidatorHost)): Promise<RepositoryKnowledgeService> {
     const repositoryRoot = typeof input === "string" ? input : input.repositoryRoot;
     return new RepositoryKnowledgeService(repositoryRoot, await KnowledgeContextStore.create(repositoryRoot), typeof input === "string" ? {} : input);
   }
@@ -233,7 +234,15 @@ export class RepositoryKnowledgeService {
       signal: input.signal ?? new AbortController().signal,
     };
     const identity = await graph.bindIdentity(request, entities, namedTargets, adapterContext);
-    const candidates = identity.value.slice(0, selectedPolicy.maxCandidates);
+    const directCandidates = identity.value.filter(({ direct }) => direct);
+    const directAddressGroup = entities.length > 1 && namedTargets.length === 0 && directCandidates.length > 1;
+    // Several explicit accepted addresses name one requested body of meaning.
+    // They are not rival interpretations. Compile their direct closure once so
+    // no address disappears merely because it follows the candidate cap.
+    const candidates = directAddressGroup ? identity.value : identity.value.slice(0, selectedPolicy.maxCandidates);
+    const branchCandidates = directAddressGroup
+      ? [directCandidates[0]!, ...candidates.filter(({ direct }) => !direct)]
+      : candidates;
     const missingAddresses = entities.filter((address) => graph.search(request, [address], 1).length === 0);
     const missingTargets = namedTargets.filter((target) => graph.resolveNamedTargets([target]).length === 0);
     const interpretationUnknowns = unique([
@@ -246,13 +255,19 @@ export class RepositoryKnowledgeService {
     const computeHost = this.computeHost;
     if (computeHost === undefined) throw new Error("Knowledge compilation requires its observation worker host");
     let validatorsExecuted = false;
-    for (const candidate of candidates) {
-      const resolution = identityResolution(request, candidate, observation.state, identity.dependency, graph);
+    for (const candidate of branchCandidates) {
+      const selectedCandidates = directAddressGroup && candidate.entityId === directCandidates[0]!.entityId ? directCandidates : [candidate];
+      const resolution = identityResolution(request, selectedCandidates, observation.state, identity.dependency, graph);
       const collectedQueries: StateQueryDependency[] = [];
-      const eligibleSelected = candidate.direct && (candidate.entityKind === "concept" || candidate.entityKind === "requirement" || candidate.entityKind === "scenario");
+      const seeds = selectedCandidates.filter((selected) => coreCandidate(selected) === undefined).map((selected) => ({
+        kind: selected.entityKind === "projection-unit" ? "projection-unit" as const : selected.entityKind === "architecture-decision" ? "decision" as const : "manual" as const,
+        subjectId: selected.entityId,
+        reason: selected.explanation,
+        confidence: selected.score,
+      }));
       const compilation = await compileRelevanceClosure({
         request,
-        seeds: eligibleSelected ? [] : [{ kind: candidate.entityKind === "projection-unit" ? "projection-unit" : candidate.entityKind === "architecture-decision" ? "decision" : "manual", subjectId: candidate.entityId, reason: candidate.direct ? candidate.explanation : `hypothetical interpretation branch: ${candidate.explanation}`, confidence: candidate.score }],
+        seeds: seeds.length > 0 ? seeds : candidate.direct ? [] : [{ kind: candidate.entityKind === "projection-unit" ? "projection-unit" : candidate.entityKind === "architecture-decision" ? "decision" : "manual", subjectId: candidate.entityId, reason: `hypothetical interpretation branch: ${candidate.explanation}`, confidence: candidate.score }],
         identityResolution: resolution,
         activatedFacetKeys: [],
         compiledAgainst: observation.state,

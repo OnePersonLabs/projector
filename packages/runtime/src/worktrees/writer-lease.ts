@@ -4,11 +4,9 @@ import { join } from "node:path";
 
 import {
   ContentHashSchema,
-  ProjectDataMigrationSourceAuthoritySchema,
   StateBindingSchema,
   StateDigestSchema,
   type ContentHash,
-  type ProjectDataMigrationSourceAuthority,
   type StateBinding,
   type StateDigest,
 } from "@projector/core";
@@ -66,27 +64,7 @@ export interface MigrationRecoveryWriterLeaseRecord extends MigrationRecoveryWri
   staleAfterMs: number;
 }
 
-export interface ProjectDataMigrationWriterLeaseOwner {
-  sessionId: string;
-  processId: number | string;
-  attemptId: string;
-  migrationId: string;
-  manifestHash: ContentHash;
-  sourceAuthority: ProjectDataMigrationSourceAuthority;
-  targetSnapshotHash: ContentHash;
-}
-
-export interface ProjectDataMigrationWriterLeaseRecord extends ProjectDataMigrationWriterLeaseOwner {
-  version: 3;
-  ownerKind: "project-data-migration";
-  leaseId: string;
-  acquiredAt: string;
-  heartbeatAt: string;
-  expiresAt: string;
-  staleAfterMs: number;
-}
-
-type ActiveWriterLeaseRecord = WriterLeaseRecord | MigrationRecoveryWriterLeaseRecord | ProjectDataMigrationWriterLeaseRecord;
+type ActiveWriterLeaseRecord = WriterLeaseRecord | MigrationRecoveryWriterLeaseRecord;
 type WriterLeasePersistenceFields = Pick<
   ActiveWriterLeaseRecord,
   "leaseId" | "acquiredAt" | "heartbeatAt" | "expiresAt" | "staleAfterMs"
@@ -132,30 +110,6 @@ export class MigrationRecoveryWriterLeaseHandle {
   constructor(
     private readonly manager: WriterLeaseManager,
     readonly record: MigrationRecoveryWriterLeaseRecord,
-  ) {}
-
-  async heartbeat(): Promise<void> {
-    this.assertNotReleased();
-    await this.manager.heartbeat(this.record.leaseId);
-  }
-
-  async release(): Promise<void> {
-    this.assertNotReleased();
-    await this.manager.release(this.record.leaseId);
-    this.released = true;
-  }
-
-  private assertNotReleased(): void {
-    if (this.released) throw lostLease(this.record.leaseId);
-  }
-}
-
-export class ProjectDataMigrationWriterLeaseHandle {
-  private released = false;
-
-  constructor(
-    private readonly manager: WriterLeaseManager,
-    readonly record: ProjectDataMigrationWriterLeaseRecord,
   ) {}
 
   async heartbeat(): Promise<void> {
@@ -225,32 +179,6 @@ export class WriterLeaseManager {
     }));
     if (record.version !== 2) throw new Error("Internal writer lease kind mismatch");
     return new MigrationRecoveryWriterLeaseHandle(this, record);
-  }
-
-  async acquireProjectDataMigration(owner: ProjectDataMigrationWriterLeaseOwner): Promise<ProjectDataMigrationWriterLeaseHandle> {
-    assertOwnerIdentity(owner);
-    assertExactKeys(owner as unknown as Record<string, unknown>, [
-      "attemptId", "manifestHash", "migrationId", "processId", "sessionId", "sourceAuthority", "targetSnapshotHash",
-    ]);
-    assertMigrationIdentity(owner.attemptId, "project-data migration attempt");
-    assertMigrationIdentity(owner.migrationId, "project-data migration");
-    ContentHashSchema.parse(owner.manifestHash);
-    ProjectDataMigrationSourceAuthoritySchema.parse(owner.sourceAuthority);
-    ContentHashSchema.parse(owner.targetSnapshotHash);
-    const record = await this.acquireRecord((base) => ({
-      ...base,
-      version: 3,
-      ownerKind: "project-data-migration",
-      sessionId: owner.sessionId,
-      processId: owner.processId,
-      attemptId: owner.attemptId,
-      migrationId: owner.migrationId,
-      manifestHash: owner.manifestHash,
-      sourceAuthority: owner.sourceAuthority,
-      targetSnapshotHash: owner.targetSnapshotHash,
-    }));
-    if (record.version !== 3) throw new Error("Internal writer lease kind mismatch");
-    return new ProjectDataMigrationWriterLeaseHandle(this, record);
   }
 
   private async acquireRecord(
@@ -425,20 +353,7 @@ function isLeaseRecord(value: unknown): value is ActiveWriterLeaseRecord {
     typeof candidate.migrationId === "string" && /^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(candidate.migrationId) &&
     ContentHashSchema.safeParse(candidate.manifestHash).success && ContentHashSchema.safeParse(candidate.targetSnapshotHash).success &&
     ContentHashSchema.safeParse(candidate.backupManifestHash).success;
-  return candidate.version === 3 && candidate.ownerKind === "project-data-migration" &&
-    hasExactKeys(candidate, [
-      "acquiredAt", "attemptId", "expiresAt", "heartbeatAt", "leaseId", "manifestHash", "migrationId", "ownerKind",
-      "processId", "sessionId", "sourceAuthority", "staleAfterMs", "targetSnapshotHash", "version",
-    ]) &&
-    typeof candidate.attemptId === "string" && /^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(candidate.attemptId) &&
-    typeof candidate.migrationId === "string" && /^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(candidate.migrationId) &&
-    ContentHashSchema.safeParse(candidate.manifestHash).success &&
-    ProjectDataMigrationSourceAuthoritySchema.safeParse(candidate.sourceAuthority).success &&
-    ContentHashSchema.safeParse(candidate.targetSnapshotHash).success;
-}
-
-function assertMigrationIdentity(value: string, name: string): void {
-  if (!/^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(value)) throw new TypeError(`Invalid ${name} identity`);
+  return false;
 }
 
 function assertOwnerIdentity(owner: { sessionId: string; processId: number | string }): void {
@@ -455,11 +370,6 @@ function assertExactKeys(value: Record<string, unknown>, expected: readonly stri
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
     throw new TypeError("Migration recovery lease owner contains unexpected keys or missing fields");
   }
-}
-
-function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 
 function isIsoDate(value: unknown): value is string {

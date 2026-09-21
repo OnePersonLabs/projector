@@ -25,7 +25,7 @@ function requirement(id: string, key: string): Requirement {
 
 async function writeRequirement(root: string, value: Requirement): Promise<void> {
   await new CanonicalFileRepository(root).write(withCanonicalHashes({
-    apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id: value.id, key: value.key,
+    apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "requirement", id: value.id, key: value.key,
     lifecycle: "active", payload: value as unknown as Record<string, unknown>,
   }));
 }

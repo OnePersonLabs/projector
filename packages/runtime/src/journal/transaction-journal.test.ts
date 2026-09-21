@@ -344,24 +344,16 @@ describe("FileTransactionJournal", () => {
     expect(await journal.recoverIncomplete()).toEqual([]);
     expect((await journal.read("tx-v1-migration-terminal")).entry.phase).toBe("committed");
 
-    for (const invalid of [
-      { ...validPending, attemptId: "migration-attempt:detached" },
-      { ...validPending, manifestHash: hash.replace(/2$/u, "3") },
-      { ...validPending, migrationId: "Migration:Uppercase" },
-      { ...validPending, createdAt: "2026-09-10T00:00:00" },
-      { ...validPending, createdAt: "2026-02-30T00:00:00Z" },
-      { ...validPending, stagingLocation: "../outside" },
-      { ...validPending, backup: { ...validPending.backup, location: { ...validPending.backup.location, path: "../outside.pba" } } },
-    ]) {
-      record.pendingMigration = invalid;
-      await writeFile(path, `${JSON.stringify(record)}\n`, "utf8");
-      await expect(journal.recoverIncomplete()).rejects.toThrow(/invalid structure/i);
-    }
+    // Retired terminal metadata is opaque history, not active authority.
+    record.pendingMigration = { unrecognized: "retained historical payload" };
+    await writeFile(path, JSON.stringify(record));
+    expect(await journal.recoverIncomplete()).toEqual([]);
+    expect(JSON.parse(await readFile(path, "utf8")).pendingMigration).toEqual(record.pendingMigration);
 
     record.pendingMigration = validPending;
     (record.entry as Record<string, unknown>).phase = "workspace-mutating";
     await writeFile(path, `${JSON.stringify(record)}\n`, "utf8");
-    await expect(journal.recoverIncomplete()).rejects.toThrow(/invalid structure/i);
+    await expect(journal.recoverIncomplete()).rejects.toThrow(/Unsupported pre-cutover migration journal/i);
   });
 
   it("fails closed on nonterminal recovery work copied from another worktree", async () => {

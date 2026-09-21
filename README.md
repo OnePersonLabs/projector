@@ -1,61 +1,75 @@
-# Projector
+# Projector 3
 
-Projector keeps accepted product meaning, architectural decisions and their reasons with a software repository. Agents retrieve relevant meaning before changing code and reconcile retained context against later changes. Code and plans are revisable realizations; implementation discoveries can justify explicit revisions to the model.
+Projector keeps a project's intended behavior and the reasons behind its design
+available to Codex across changes and fresh sessions. It connects those records
+to source queries and typed relationships, so a changed assumption or a new
+consumer can bring the right obligation back into view.
 
-## Use the installed plugin
+The everyday loop is **retrieve relevant meaning → change with Codex → check
+affected meaning and behavior**. Normal edits use Codex's tools. Projector does
+not create another task queue or require a controlled execution for every edit.
 
-The plugin runs independently of this checkout on native Windows and direct WSL. Install Node 24 through the host's normal PATH. Each host has its own plugin installation; Windows does not require a WSL bridge.
+## Use it
 
-Projector has its own local `projector` marketplace rooted at this checkout. Use `$opl:refresh-local-plugins` to refresh both user-level Codex homes. Its helper runs this checkout's `plugin:prepare-local` package script before comparing or installing bundles, so compilation and standalone bundle assembly happen as part of refresh. A failed build stops installation. The OPL push/pull hook directs the agent to this same skill after successful Git operations. The helper registers the marketplace when needed and verifies installed hook trust; start a fresh Codex session to load updated components. For direct CLI installation, first run `pnpm plugin:prepare-local`, then `codex plugin marketplace add .` and `codex plugin add projector@projector`. Installation does not establish that a project is initialized or that its checks pass.
+Install the Projector plugin and use Node 24 or later on the host PATH. The bundled
+package exposes the `projector` command. The plugin also exposes the same commands
+through `node <plugin>/scripts/projector.mjs`.
 
-The installed plugin's shared `references/operation-contract.md` describes the versioned request protocol and locates `../scripts/projector-operation.mjs`. Invoke that runner with `node`, passing one UTF-8 JSON request file or the same object on standard input. For example, the context request for this repository is:
+Ask Codex: “Use $projector to understand this project and help me make this change.”
+The owning skills supply the workflow; you do not need to write proposal JSON.
 
-```json
-{
-  "apiVersion": "projector.operation/v1",
-  "operation": "context",
-  "repositoryRoot": "C:/dev/projects/projector",
-  "requestId": "next-change",
-  "input": {
-    "request": "Retrieve the accepted behavior and architecture for the next change",
-    "persist": true
-  }
-}
-```
+| Command | Purpose |
+|---|---|
+| `projector init` | Prepare a fresh project's model and local runtime. |
+| `projector context "task" --target src/path` | Retrieve applicable meaning, reasons, evidence and open questions. |
+| `projector check CONTEXT` | Recheck the checkout and the dependencies of retained context. |
+| `projector accept proposal.json --context CONTEXT` | Preview new or revised accepted meaning. Codex prepares the proposal. |
+| `projector accept --apply CHANGE --hash HASH` | Apply exactly the reviewed, currently valid plan. |
+| `projector resume CONTEXT` | Inspect and recover context in a fresh session, without applying work. |
+| `projector inspect ID` | Read a canonical record or retained execution detail. |
+| `projector recover APPROVAL` | Explicitly recover an interrupted controlled write. |
 
-Use the absolute root of the intended project. Read returned readiness, operation status and operation-owned output separately. Candidate matches are hypotheses; inspect applicable meaning, unknowns and disclosure bounds before relying on them. Retain the context ID and reconcile it before reuse. A stale binding, a violated predicate and an unavailable check are different results.
+Use `--entity ID` to name an exact obligation, `--root PATH` for another checkout,
+and `--json` for machine detail. Resume also accepts an actual change or approval
+ID. It never guesses “latest,” renews authority or silently retries changes.
 
-| Need | Operations |
-| --- | --- |
-| Inspect readiness; initialize or upgrade an authorized project | `status`, `init` |
-| Retrieve meaning; check saved reasoning | `context`, `reconcile` |
-| Establish or revise accepted meaning; inspect the exact proposed change | `change.capture`, `change.plan`, `representation.inspect` |
-| Authorize and execute a reviewed immutable plan | `change.approve`, `change.apply` |
-| Continue interrupted work or refresh a historical representation | `change.recover`, `change.resume`, `representation.reconcile` |
-| Inspect unresolved obligations and bounded continuation | `coverage`, `complete`, `cleanup` |
-| Check supported operational behavior | `verify` |
-| Observe the supported Psychord application workflow | `application.observe` |
+## Read the model
 
-Inspection grants no execution authority. An approval binds the exact reviewed plan and required state. Ordinary authorized host edits can implement existing meaning without replaying those edits through a second execution; reconcile their affected context and check the changed behavior. A successful controlled apply requires `output.outcome` to indicate success, not merely a successful transport status.
+Start with [.projector/README.md](.projector/README.md) for Projector's own model.
+Concepts, requirements, scenarios, concerns, decisions and their rationale use
+Markdown. Their small TOML metadata identifies the record and its scope and
+links. Relations and executable policies remain structured TOML. There is one
+authored source for each record; hashes are derived, not hand-maintained.
 
-## Project data and recovery
+An identity survives renaming a file. A wording change does not itself prove
+that two concepts are equivalent. Codex should reuse an existing owner or state
+the boundary for a new one. Keep conditions, exceptions and reasons that could
+change a future decision. Plain technical English is the default.
 
-Commit `.projector/config.toml`, typed `.projector/model/` records, architecture and applicable schemas. Core executable schemas own exact machine shapes. Authored TOML needs no hand-maintained fingerprints; semantic reuse follows parsed meaning, while reviewed writes, validators and recovery retain exact-byte checks.
+Commit the canonical model and configuration. Receipts, retained contexts and
+recovery journals live under `.projector/runtime/` and stay off the normal reading
+path. Preserve unfinished recovery evidence. Projector 3 has one supported
+artifact format; an older repository needs a checked cutover, not an automatic
+chain of package-version migrations.
 
-`init` prepares recognized older data through authenticated migration steps. One pre-upgrade backup preserves the starting Projector data, including uncommitted changes, across the whole upgrade chain. Keep it for recovery. Commit a successful upgrade together; do not replace its backup after every migration version. When an operation reports recovery required, follow its registered recovery action before starting another conflicting write. Do not delete unfinished runtime journals or edit migration receipts by hand. An incompatible old process may need to stop and restart.
+## What a check establishes
 
-Local `.projector/runtime/` contains derived state, retained context and execution/application observations. A clone can reconstruct from accepted meaning but cannot reuse uncopied local IDs or observations. Missing evidence remains unavailable. Back up personal application data independently; a Projector metadata upgrade does not migrate browser storage or a music archive.
+A context packet includes complete selected meaning and states what was omitted
+or unavailable. Reconciliation distinguishes stale assumptions and new query
+members from observed violations. It preserves conclusions whose dependencies
+did not change. A successful command does not prove that the design is complete
+or that the implementation behaves correctly.
 
-## Development and release
+Use $projector-review on an actual candidate diff. It traces producers, storage,
+consumers, registration and tests, and supplies concrete failure cases. Run the
+relevant behavior checks as well. Application-specific evidence comes through a
+host-supplied generic interface; a hash does not prove a claim true.
 
-Use `pnpm install --frozen-lockfile`, `pnpm build`, and the relevant checks. `pnpm verify` is the integrated test/type/boundary gate. `pnpm release:artifacts` regenerates release traceability from canonical owners and test bindings; `pnpm release:acceptance` exercises the packaged runtime, installed lifecycle, direct representation checks, benchmarks and reconstruction. Stage the intended deletions before running that worktree-bound release check.
+## Develop and verify Projector
 
-Build a standalone candidate with `node scripts/build-source-severed-release-bundle.mjs` followed by an absolute output directory ending in `release-candidate`. Its package, plugin and acceptance runner travel together. The manual CI workflow uses the same candidate in separate Windows and Linux jobs. Release and registry publication are separate actions; these commands do not publish to a registry.
+Use the package manager declared by the workspace for developer installs.
 
-Verify concrete behavior and consequential failures. Reuse checks whose dependencies are unchanged. Independent review belongs at consequential integration boundaries; new reports, transcript parsers and repeated certificates are not ordinary development requirements.
-
-## Current limits
-
-This is cooperative integrity under the host's permissions, not operating-system confinement or protection from hostile same-user code. Native CPU/memory limit enforcement is unavailable. Dynamic/runtime dependencies and open relevance populations can remain unknown. General autonomous research, repair selection, modernization, multi-packet orchestration and arbitrary application adapters are not established public workflows; accepted future commitments retain their own reopening conditions.
-
-The Psychord adapter observes browser/controller behavior with owned setup and cleanup. It does not prove acoustic output, device routing, latency, learning or mastery. Fidelity checks and hashes do not establish arbitrary semantic equivalence, agent understanding or economic superiority. The next implementation should use the model's relevant requirements and actual observations, preserving these limits.
+`pnpm build` compiles the packages. `pnpm verify` runs type checks, tests, package
+boundaries and the advisory prose check. `pnpm release:check` builds and exercises
+the installed distribution in a fresh repository. Keep its output as evidence;
+use a fresh output path for another run.

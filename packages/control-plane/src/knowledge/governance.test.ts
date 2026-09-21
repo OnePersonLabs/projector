@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type CanonicalDocumentEnvelope, type Concept, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
-import { CanonicalFileRepository, NativeProcessLauncher, parseTomlDocument, stringifyTomlDocument, type ProcessLauncher, type ProcessLaunchRequest } from "@projector/runtime";
+import { CanonicalFileRepository, NativeProcessLauncher, canonicalApiVersion, canonicalSchemaVersion, type ProcessLauncher, type ProcessLaunchRequest } from "@projector/runtime";
 import { afterEach, describe, expect } from "vitest";
 import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
 
@@ -24,7 +24,7 @@ function authority(overrides: Partial<AuthorityRecord> = {}): AuthorityRecord {
 }
 async function canonical(root: string, kind: CanonicalDocumentEnvelope["kind"], value: object) {
   const payload = value as Record<string, unknown>;
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id: String(payload.id), key: String(payload.key), lifecycle: String(payload.status ?? payload.lifecycle), payload }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: canonicalApiVersion, schemaVersion: canonicalSchemaVersion, kind, id: String(payload.id), key: String(payload.key), lifecycle: String(payload.status ?? payload.lifecycle), payload }));
 }
 async function git(root: string, args: string[]) { return (await execute("git", args, { cwd: root })).stdout.trim(); }
 async function commit(root: string) {
@@ -69,11 +69,9 @@ describe("public architectural decision validity", () => {
     const root = await repository(); const service = await RepositoryKnowledgeService.create(root);
     const before = firstDecision(await query(service));
     await canonical(root, "concept", { ...subject, statement: "Changed after authority." });
-    const file = new CanonicalFileRepository(root).pathFor("authority-record", "authority:boundary");
-    const parsed = parseTomlDocument(await readFile(file, "utf8"), file) as Record<string, unknown>;
-    const encoded = stringifyTomlDocument(parsed, { schemaPath: "../schemas/canonical-authority-record-v2.schema.json" });
-    const [directive, ...body] = encoded.split("\n");
-    await writeFile(file, `${directive}\n# formatting-only authority edit\n${body.join("\n")}`);
+    const file = (await new CanonicalFileRepository(root).locate("authority-record", "authority:boundary"))!.path;
+    const source = await readFile(file, "utf8");
+    await writeFile(file, source.replace("+++\n", "+++\n# formatting-only authority edit\n"));
     await commit(root);
     const after = firstDecision(await query(service));
     expect(after.baseline.reference).toBe(before.baseline.reference);
@@ -144,7 +142,7 @@ describe("public architectural decision validity", () => {
     const root = await repository(authority(), false);
     // A new accepted decision is authored through the public model-only route.
     const files = new CanonicalFileRepository(root);
-    await rm(files.pathFor("architecture-decision", decision.id)); await rm(files.pathFor("authority-record", "authority:boundary"));
+    await files.delete("architecture-decision", decision.id); await files.delete("authority-record", "authority:boundary");
     const knowledge = await RepositoryKnowledgeService.create(root);
     const proof = await knowledge.context({ request: "record behavior architecture", entities: [subject.id] });
     const lifecycle = await RepositoryChangeLifecycleService.create(root, { now: () => "2026-09-09T12:00:00.000Z" });

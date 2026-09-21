@@ -30,7 +30,7 @@ async function repository() {
 }
 async function canonical(root: string, kind: CanonicalDocumentEnvelope["kind"], payload: Record<string, unknown>) {
   const placeholder = hashFramedDomain("realization-fixture-placeholder", payload.id);
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id: String(payload.id), key: String(payload.key), lifecycle: String(payload.status), payload: { ...payload, semanticHash: placeholder, discoveryHash: placeholder } }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind, id: String(payload.id), key: String(payload.key), lifecycle: String(payload.status), payload: { ...payload, semanticHash: placeholder, discoveryHash: placeholder } }));
 }
 const requirement = (realizations?: RealizationBinding[]) => ({ id: "requirement:pre-edit-relevance", key: "pre-edit-relevance", title: "Recover relevant meaning", aliases: [], statement: "Recover relevant meaning before editing.", status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, origin: [], evidence: [], ...(realizations === undefined ? {} : { realizations }) });
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 }))); });

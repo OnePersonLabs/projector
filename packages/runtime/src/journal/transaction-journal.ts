@@ -14,42 +14,18 @@ import {
 import { dirname, join, posix } from "node:path";
 
 import {
-  ContentHashSchema,
-  PendingProjectDataMigrationSchema,
   hashFramedDomain,
   type ContentHash,
-  type PendingProjectDataMigration,
   type StateDigest,
   type TransactionJournalEntry,
   type TransactionPhase,
 } from "@projector/core";
-import * as z from "zod";
 
 import type { RepositoryPathService } from "../security/index.js";
 
 const journalRoot = ".projector/runtime/journal";
 const maximumJournalBytes = 64 * 1024 * 1024;
 const transientWindowsRenameCodes = new Set(["EACCES", "EBUSY", "EPERM"]);
-const retiredStableIdSchema = z.string().min(1).max(512).regex(/^[a-z0-9][a-z0-9._:-]*$/u);
-const retiredPortableRelativePathSchema = z.string().min(1).max(1_024).regex(
-  /^(?!\/)(?!.*:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!.*[. ](?:\/|$))(?!.*(?:^|\/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\.[^/]*)?(?:\/|$))(?!(?:\.|\.\.)(?:\/|$))(?!.*\/(?:\.|\.\.)(?:\/|$))[^/](?:.*[^/])?$/u,
-);
-const retiredPendingProjectDataMigrationV1Schema = z.strictObject({
-  apiVersion: z.literal("projector.pending-project-data-migration/v1"),
-  attemptId: retiredStableIdSchema,
-  migrationId: retiredStableIdSchema,
-  sourceSnapshotHash: ContentHashSchema,
-  targetSnapshotHash: ContentHashSchema,
-  manifestHash: ContentHashSchema,
-  backup: z.strictObject({
-    id: retiredStableIdSchema,
-    location: z.strictObject({ kind: z.literal("codex-data-relative"), path: retiredPortableRelativePathSchema }),
-    manifestHash: ContentHashSchema,
-  }),
-  stagingLocation: retiredPortableRelativePathSchema,
-  phase: z.literal("backed-up"),
-  createdAt: z.iso.datetime({ offset: true }),
-});
 
 async function publishJournalRecord(source: string, destination: string, renameRecord: typeof rename, platform: NodeJS.Platform): Promise<void> {
   for (const delayMs of [0, 10, 25, 50, 100, 200]) {
@@ -86,7 +62,6 @@ export interface BeginTransactionInput {
   beforeState: StateDigest;
   intendedAfterCanonicalDigest?: ContentHash;
   allowedWriteRoots: string[];
-  pendingMigration?: PendingProjectDataMigration;
 }
 
 interface MissingSnapshot {
@@ -138,7 +113,6 @@ export interface DurableTransactionRecord {
   operations: FileJournalOperation[];
   checkpoints: JournalCheckpoint[];
   compensations: CompensationRecord[];
-  pendingMigration?: PendingProjectDataMigration;
 }
 
 export interface ExactFileTransactionJournalRecord {
@@ -353,18 +327,6 @@ export class FileTransactionJournal {
     if (input.transactionId.length === 0 || input.planId.length === 0 || input.allowedWriteRoots.length === 0) {
       throw new TypeError("A transaction requires IDs and at least one write root");
     }
-    if (input.pendingMigration !== undefined) {
-      PendingProjectDataMigrationSchema.parse(input.pendingMigration);
-      if (input.pendingMigration.phase !== "backed-up") {
-        throw new TypeError("A migration journal must bind the backed-up Pending marker before effects");
-      }
-      if (input.pendingMigration.attemptId !== input.transactionId) {
-        throw new TypeError("A migration transaction ID must equal its unique Pending migration attempt ID");
-      }
-      if (input.pendingMigration.manifestHash !== input.planId) {
-        throw new TypeError("A migration transaction plan ID must equal its Pending manifest hash");
-      }
-    }
     await this.ensureJournalRoot();
     const now = this.timestamp();
     const record: DurableTransactionRecord = {
@@ -387,7 +349,6 @@ export class FileTransactionJournal {
       operations: [],
       checkpoints: [],
       compensations: [],
-      ...(input.pendingMigration === undefined ? {} : { pendingMigration: input.pendingMigration }),
     };
     await this.persist(record, true);
     this.inject("after-phase:prepared");
@@ -822,6 +783,9 @@ function parseRecord(text: string): DurableTransactionRecord {
     throw new JournalRecoveryRequiredError(`Journal JSON is corrupt: ${String(error)}`);
   }
   if (!isRecord(value)) throw new JournalRecoveryRequiredError("Journal record has an invalid structure");
+  if (Object.hasOwn(value, "pendingMigration") && !["committed", "rolled-back"].includes(value.entry.phase)) {
+    throw new JournalRecoveryRequiredError("Unsupported pre-cutover migration journal; preserve it and inspect with its matching runtime before recovery.");
+  }
   return value;
 }
 
@@ -849,23 +813,8 @@ function isRecord(value: unknown): value is DurableTransactionRecord {
     record.checkpoints.every(isCheckpoint) &&
     Array.isArray(record.compensations) &&
     record.compensations.every(isCompensation) &&
-    (record.pendingMigration === undefined || isPendingMigrationForJournal(record.pendingMigration, entry)) &&
     hasConsistentRecordIndexes(record as DurableTransactionRecord)
   );
-}
-
-function isPendingMigrationForJournal(value: unknown, entry: Partial<TransactionJournalEntry>): boolean {
-  const current = PendingProjectDataMigrationSchema.safeParse(value);
-  if (current.success) return current.data.phase === "backed-up";
-  return (entry.phase === "committed" || entry.phase === "rolled-back")
-    && isLegacyTerminalPendingMigration(value, entry);
-}
-
-function isLegacyTerminalPendingMigration(value: unknown, entry: Partial<TransactionJournalEntry>): boolean {
-  const parsed = retiredPendingProjectDataMigrationV1Schema.safeParse(value);
-  return parsed.success
-    && parsed.data.attemptId === entry.transactionId
-    && parsed.data.manifestHash === entry.planId;
 }
 
 const transactionPhases: readonly TransactionPhase[] = [

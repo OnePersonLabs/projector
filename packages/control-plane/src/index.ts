@@ -9,7 +9,6 @@ export {
   LifecyclePlanOutputSchema,
   LifecycleRecoveryOutcomeSchema,
   LifecycleRecoveryOutputSchema,
-  LifecycleResumeOutputSchema,
   RepositoryIntentReviewSummarySchema,
   StateBoundChangeResultSchema,
   projectLifecycleApply,
@@ -17,14 +16,12 @@ export {
   projectLifecycleCapture,
   projectLifecyclePlan,
   projectLifecycleRecovery,
-  projectLifecycleResume,
   summarizeRepositoryIntentReview,
   type LifecycleApplyOutput,
   type LifecycleApprovalOutput,
   type LifecycleCaptureOutput,
   type LifecyclePlanOutput,
   type LifecycleRecoveryOutput,
-  type LifecycleResumeOutput,
   type RepositoryIntentReviewSummary,
 } from "./change-lifecycle/transport.js";
 export { RepositoryKnowledgeService } from "./knowledge/service.js";
@@ -32,7 +29,7 @@ export { checkRepository, RepositoryCheckOutputSchema } from "./repository-check
 export {
   KnowledgeApplicationEvidenceAssessmentSchema,
   type KnowledgeApplicationEvidenceAssessment,
-  type PsychordApplicationEvidenceHost,
+  type ApplicationEvidencePort,
 } from "./knowledge/application-evidence.js";
 export { buildRepositoryImpactSnapshot, predictRepositoryImpact, reconcileRepositoryImpact, type RepositoryImpactReport } from "./impact/service.js";
 export { inspectRepositoryArchitecture } from "./knowledge/architecture-inspection.js";
@@ -64,39 +61,6 @@ export {
   type ReadinessInspectionInput,
   type ReadyProjectReadiness,
 } from "./readiness/service.js";
-export {
-  createPreparedProjectDataMigrationRecoveryService,
-  type PreparedProjectDataMigrationRecoveryService,
-} from "./readiness/project-data-migration-recovery.js";
-export {
-  canonicalOwnerModulePaths,
-  createReleaseCandidateProjectDataFormat,
-  preparedConfigOwnerModulePaths,
-  runtimeEvidenceOwnerModulePaths,
-  type ValidatedReleaseCandidateInventory,
-} from "./readiness/project-data-format-owner.js";
-export {
-  compareProjectDataFormats,
-  createProjectDataMigrationDraft,
-  createReleaseCandidateProjectDataMigration,
-  projectDataFormatDimensions,
-  verifyProjectDataMigrationManifest,
-  type ProjectDataFormatDimension,
-} from "./readiness/project-data-migration-authoring.js";
-export {
-  ProjectDataMigrationTransformResultSchema,
-  ProjectDataMigrationValidationResultSchema,
-  loadProjectDataMigrationArtifact,
-  type LoadedProjectDataMigrationArtifact,
-  type ProjectDataMigrationArtifactContext,
-  type ProjectDataMigrationSourceObservation,
-  type ProjectDataMigrationTransformResult,
-  type ProjectDataMigrationValidationResult,
-} from "./readiness/project-data-migration-artifact.js";
-export {
-  createPackagedProjectDataMigrationService,
-  type PackagedProjectDataMigrationResult,
-} from "./readiness/project-data-migration-execution.js";
 export {
   RepositoryRepresentationArtifactStore,
   type DurableRepresentationArtifact,

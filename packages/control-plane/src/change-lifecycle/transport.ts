@@ -21,8 +21,10 @@ import type { CompiledRepositoryChange, RepositoryIntentReview } from "./compile
 import type { CapturedRepositoryChange, LifecycleRecoveryOutcome, PlannedRepositoryChange } from "./service.js";
 import type { LifecycleApprovalRecord } from "./store.js";
 
-const intentSubjectSchema = z.object({ id: z.string(), kind: z.enum(["requirement", "scenario"]), operation: z.enum(["preserve", "add", "revise"]), rationale: z.string().nullable() }).strict();
-const intentMutationSchema = z.object({ id: z.string(), kind: z.enum(["requirement", "behavioral-scenario", "concept", "relation", "lineage", "tombstone", "architecture-decision", "architecture-concern", "developer-preference", "projection-lens", "authority-record"]), operation: z.enum(["add", "revise", "retire"]), rationale: z.string() }).strict();
+const reviewRelationSchema = z.object({ fromId: z.string(), toId: z.string(), type: z.string(), active: z.boolean().optional() }).strict();
+const reviewMetadataSchema = z.object({ scope: z.unknown().optional(), evidence: z.array(z.unknown()).optional(), relation: reviewRelationSchema.optional() }).strict();
+const intentSubjectSchema = z.object({ id: z.string(), kind: z.enum(["requirement", "scenario"]), operation: z.enum(["preserve", "add", "revise"]), before: reviewMetadataSchema.optional(), after: reviewMetadataSchema.optional(), rationale: z.string().nullable() }).strict();
+const intentMutationSchema = z.object({ id: z.string(), kind: z.enum(["requirement", "behavioral-scenario", "concept", "relation", "lineage", "tombstone", "architecture-decision", "architecture-concern", "developer-preference", "projection-lens", "authority-record"]), operation: z.enum(["add", "revise", "retire"]), before: reviewMetadataSchema.optional(), after: reviewMetadataSchema.optional(), rationale: z.string() }).strict();
 const identityResolutionSummarySchema = z.object({ contextId: z.string(), contextHash: ContentHashSchema, outcome: z.enum(["reuse-existing", "coordinated-modification", "split-existing", "merge-existing", "replace-existing", "create-new", "no-durable-entity"]), selectedEntityIds: z.array(z.string()), rationale: z.string(), newBoundary: z.object({ owns: z.array(z.string()), excludes: z.array(z.string()), nearestEntityIds: z.array(z.string()), rationale: z.string() }).strict().optional() }).strict();
 
 export const RepositoryIntentReviewSummarySchema = z.object({
@@ -37,14 +39,27 @@ export const RepositoryIntentReviewSummarySchema = z.object({
 }).strict();
 
 export interface RepositoryIntentReviewSummary {
-  readonly subjects: readonly { readonly id: string; readonly kind: "requirement" | "scenario"; readonly operation: "preserve" | "add" | "revise"; readonly rationale: string | null }[];
+  readonly subjects: readonly { readonly id: string; readonly kind: "requirement" | "scenario"; readonly operation: "preserve" | "add" | "revise"; readonly before?: ReviewMetadata; readonly after?: ReviewMetadata; readonly rationale: string | null }[];
   readonly identityResolution?: NonNullable<RepositoryIntentReview["identityResolution"]>;
   readonly relations: readonly Relation[];
-  readonly canonicalMutations: readonly { readonly id: string; readonly kind: string; readonly operation: "add" | "revise" | "retire"; readonly rationale: string }[];
+  readonly canonicalMutations: readonly { readonly id: string; readonly kind: string; readonly operation: "add" | "revise" | "retire"; readonly before?: ReviewMetadata; readonly after?: ReviewMetadata; readonly rationale: string }[];
   readonly relatedObligations: readonly { readonly id: string; readonly kind: string }[];
   readonly unknowns: readonly string[];
   readonly blockingUnknowns: readonly string[];
   readonly contentHash: ContentHash;
+}
+
+type ReviewMetadata = z.infer<typeof reviewMetadataSchema>;
+function reviewMetadata(value: object | null): ReviewMetadata | undefined {
+  if (value === null) return undefined;
+  const source = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  if (source.scope !== undefined) result.scope = source.scope;
+  if (Array.isArray(source.evidence)) result.evidence = source.evidence;
+  if (typeof source.fromId === "string" && typeof source.toId === "string" && typeof source.type === "string") {
+    result.relation = { fromId: source.fromId, toId: source.toId, type: source.type, ...(typeof source.active === "boolean" ? { active: source.active } : {}) };
+  }
+  return Object.keys(result).length === 0 ? undefined : reviewMetadataSchema.parse(result);
 }
 
 export const LifecycleCaptureOutputSchema = z.object({ kind: z.literal("lifecycle-change"), selector: z.string(), immutablePlanHash: ContentHashSchema, proposalHash: ContentHashSchema, knowledgeContextId: z.string().min(1).optional() }).strict();
@@ -59,21 +74,19 @@ export const StateBoundChangeResultSchema = z.object({
   outcome: z.enum(["success", "failure", "partial"]), reasons: z.array(z.string()), preview: TransformPreviewSchema.optional(), transformResult: TransformResultSchema.optional(), validations: z.array(ValidationResultSchema), certificate: ChangeCertificateSchema, certificateHash: ContentHashSchema, certificateRef: z.string(), receipt: TransactionReceiptSchema, receiptHash: ContentHashSchema, receiptRef: z.string(),
 }).strict();
 export const LifecycleApplyOutputSchema = StateBoundChangeResultSchema.extend({ kind: z.literal("lifecycle-apply"), selector: z.string() });
-export const LifecycleResumeOutputSchema = StateBoundChangeResultSchema.extend({ kind: z.literal("lifecycle-resume"), selector: z.string() });
 
 export type LifecycleCaptureOutput = z.infer<typeof LifecycleCaptureOutputSchema>;
 export type LifecyclePlanOutput = Omit<z.infer<typeof LifecyclePlanOutputSchema>, "plan" | "preview"> & { readonly preview: { readonly proposal: ChangeProposal; readonly proposalHash: ContentHash; readonly expectedDiff: string; readonly intentReview: RepositoryIntentReviewSummary }; readonly plan: ExecutionPlan };
 export type LifecycleApprovalOutput = z.infer<typeof LifecycleApprovalOutputSchema>;
 export type LifecycleRecoveryOutput = z.infer<typeof LifecycleRecoveryOutputSchema>;
 export type LifecycleApplyOutput = StateBoundChangeResult & { readonly kind: "lifecycle-apply"; readonly selector: string };
-export type LifecycleResumeOutput = StateBoundChangeResult & { readonly kind: "lifecycle-resume"; readonly selector: string };
 
 export function summarizeRepositoryIntentReview(review: RepositoryIntentReview): RepositoryIntentReviewSummary {
   return RepositoryIntentReviewSummarySchema.parse({
-    subjects: review.subjects.map(({ id, kind, operation, rationale }) => ({ id, kind, operation, rationale })),
+    subjects: review.subjects.map(({ id, kind, operation, before, after, rationale }) => ({ id, kind, operation, ...(reviewMetadata(before) === undefined ? {} : { before: reviewMetadata(before) }), ...(reviewMetadata(after) === undefined ? {} : { after: reviewMetadata(after) }), rationale })),
     ...(review.identityResolution === undefined ? {} : { identityResolution: review.identityResolution }),
     relations: review.relations,
-    canonicalMutations: (review.canonicalMutations ?? []).map(({ id, kind, operation, rationale }) => ({ id, kind, operation, rationale })),
+    canonicalMutations: (review.canonicalMutations ?? []).map(({ id, kind, operation, before, after, rationale }) => ({ id, kind, operation, ...(reviewMetadata(before) === undefined ? {} : { before: reviewMetadata(before) }), ...(reviewMetadata(after) === undefined ? {} : { after: reviewMetadata(after) }), rationale })),
     relatedObligations: review.relatedObligations.map(({ id, kind }) => ({ id, kind })),
     unknowns: review.unknowns,
     blockingUnknowns: review.blockingUnknowns,
@@ -94,7 +107,6 @@ export function projectLifecycleApproval(value: LifecycleApprovalRecord): Lifecy
 }
 
 export function projectLifecycleApply(selector: string, value: StateBoundChangeResult): LifecycleApplyOutput { return LifecycleApplyOutputSchema.parse({ kind: "lifecycle-apply", selector, ...value }) as LifecycleApplyOutput; }
-export function projectLifecycleResume(selector: string, value: StateBoundChangeResult): LifecycleResumeOutput { return LifecycleResumeOutputSchema.parse({ kind: "lifecycle-resume", selector, ...value }) as LifecycleResumeOutput; }
 export function projectLifecycleRecovery(selector: string, outcomes: readonly LifecycleRecoveryOutcome[]): LifecycleRecoveryOutput { return LifecycleRecoveryOutputSchema.parse({ kind: "lifecycle-recovery", selector, outcomes }); }
 
 function expectedDiff(compiled: CompiledRepositoryChange): string {

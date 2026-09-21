@@ -5,7 +5,7 @@ import { compileAuthenticatedCoverageSnapshot, REQUIRED_COVERAGE_LANES, type Cov
 import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
 import { KnowledgeGraph } from "../knowledge/graph.js";
 import { assessKnowledgeDecisions } from "../knowledge/governance.js";
-import { applicationEvidenceDependencies, applicationEvidenceDisposition, assessmentKey, type PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
+import { applicationEvidenceDependencies, applicationEvidenceDisposition, assessmentKey, type ApplicationEvidencePort } from "../knowledge/application-evidence.js";
 import { createKnowledgeComputeHostHandler } from "../knowledge/service.js";
 import { runObservationTask } from "../observation/task-runner.js";
 import type { RepositoryObservationData } from "../observation/tasks.js";
@@ -23,7 +23,7 @@ const inside = (path: string, scope: string): boolean => scope === "." || path =
 const unavailable = (key: RequiredCoverageLaneKey, reason: string): CoverageLaneEvidence => ({ key, applicability: "required", observability: "unavailable", numerator: 0, confidence: 0, assumptions: [], provenAssumptions: [], blindSpots: [reason], staleObservationIds: [] });
 
 /** Current observations, never an answer ledger or a completion percentage for behavior. */
-export async function inspectRepositoryCoverage(repositoryRoot: string, request: RepositoryCoverageRequest, mode: RepositoryCoverageMode = "coverage", options: { readonly signal?: AbortSignal; readonly applicationEvidence?: PsychordApplicationEvidenceHost } = {}): Promise<RepositoryCoverageResult> {
+export async function inspectRepositoryCoverage(repositoryRoot: string, request: RepositoryCoverageRequest, mode: RepositoryCoverageMode = "coverage", options: { readonly signal?: AbortSignal; readonly applicationEvidence?: ApplicationEvidencePort } = {}): Promise<RepositoryCoverageResult> {
   return withObservationScope({ ...(options.signal === undefined ? {} : { signal: options.signal }) }, async (scope) => {
     const observation = await observeChangeRepository(repositoryRoot);
     const { independentValidator: _validator, ...data } = observation;

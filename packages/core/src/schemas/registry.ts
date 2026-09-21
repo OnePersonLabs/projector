@@ -7,6 +7,7 @@ import {
   ContentHashSchema,
   EntityIdSchema,
   GitRealizationLocatorSchema,
+  PortableRelativePathSchema,
   SourceClassSchema,
 } from "./contracts.js";
 import * as generated from "./generated-contracts.js";
@@ -14,19 +15,6 @@ import { getHashProfile } from "../hashing/projections.js";
 import { ChangeProposalSchema } from "./change-proposal.js";
 import { CanonicalDocumentEnvelopeByKindSchema, CanonicalDocumentEnvelopeSchema, CanonicalDocumentWireByKindSchema } from "./canonical-envelope.js";
 import { PreparedProjectorConfigSchema } from "./project-config.js";
-import {
-  PendingProjectDataMigrationSchema,
-  LegacyUnversionedProjectDataSourceSchema,
-  ProjectDataLegacyIngressManifestSchema,
-  ProjectDataMigrationSourceAuthoritySchema,
-  ProjectDataFormatSnapshotSchema,
-  ProjectDataMigrationArtifactRefSchema,
-  ProjectDataMigrationChainSchema,
-  ProjectDataMigrationDraftSchema,
-  ProjectDataMigrationManifestSchema,
-  ProjectDataMigrationReceiptSchema,
-  PortableRelativePathSchema,
-} from "./project-data-migration.js";
 import { DurableRepresentationArtifactRecordSchema } from "./representation-artifact.js";
 
 export interface ContractRegistration {
@@ -110,7 +98,6 @@ export const normativeContractNames = [
   "LensContributionRole",
   "LensExample",
   "LensRef",
-  "LegacyUnversionedProjectDataSource",
   "LineageRecord",
   "MigrationBinding",
   "MigrationOverlay",
@@ -120,7 +107,6 @@ export const normativeContractNames = [
   "ObservabilityClass",
   "OperationEvidence",
   "PatternCandidate",
-  "PendingProjectDataMigration",
   "PlanCheckpoint",
   "PlanningSurprise",
   "PortableRelativePath",
@@ -130,14 +116,6 @@ export const normativeContractNames = [
   "ProjectionSpec",
   "ProjectionUnit",
   "PreparedProjectorConfig",
-  "ProjectDataFormatSnapshot",
-  "ProjectDataLegacyIngressManifest",
-  "ProjectDataMigrationArtifactRef",
-  "ProjectDataMigrationChain",
-  "ProjectDataMigrationDraft",
-  "ProjectDataMigrationManifest",
-  "ProjectDataMigrationReceipt",
-  "ProjectDataMigrationSourceAuthority",
   "RecognizerBinding",
   "Relation",
   "RelationType",
@@ -251,16 +229,6 @@ const schemaExports: Record<string, z.ZodType> = {
   CanonicalDocumentEnvelopeByKindSchema,
   CanonicalDocumentWireByKindSchema,
   PreparedProjectorConfigSchema,
-  PendingProjectDataMigrationSchema,
-  LegacyUnversionedProjectDataSourceSchema,
-  ProjectDataLegacyIngressManifestSchema,
-  ProjectDataMigrationSourceAuthoritySchema,
-  ProjectDataFormatSnapshotSchema,
-  ProjectDataMigrationArtifactRefSchema,
-  ProjectDataMigrationChainSchema,
-  ProjectDataMigrationDraftSchema,
-  ProjectDataMigrationManifestSchema,
-  ProjectDataMigrationReceiptSchema,
   PortableRelativePathSchema,
   DurableRepresentationArtifactRecordSchema,
 };

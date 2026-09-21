@@ -13,7 +13,7 @@ import { z } from "zod";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
 import { ChangeLifecycleStore, type LifecycleCaptureRecord } from "../change-lifecycle/store.js";
-import type { PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
+import type { ApplicationEvidencePort } from "../knowledge/application-evidence.js";
 import { RepositoryRepresentationArtifactStore } from "./artifact-store.js";
 
 const factStatusSchema = z.enum(["valid", "invalid", "unavailable"]);
@@ -127,7 +127,7 @@ export class RepositoryRepresentationInspectionService {
     private readonly artifacts: RepositoryRepresentationArtifactStore,
   ) {}
 
-  static async create(repositoryRoot: string, options: { readonly applicationEvidence?: PsychordApplicationEvidenceHost } = {}): Promise<RepositoryRepresentationInspectionService> {
+  static async create(repositoryRoot: string, options: { readonly applicationEvidence?: ApplicationEvidencePort } = {}): Promise<RepositoryRepresentationInspectionService> {
     const [lifecycle, lifecycleStore, artifacts] = await Promise.all([
       RepositoryChangeLifecycleService.create(repositoryRoot, options),
       ChangeLifecycleStore.create(repositoryRoot),

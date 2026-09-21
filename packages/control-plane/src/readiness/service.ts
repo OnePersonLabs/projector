@@ -4,14 +4,11 @@ import { link, lstat, mkdir, open, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
-  LegacyUnversionedProjectorConfigSchema,
   PackageIdentitySchema,
-  PendingProjectDataMigrationSchema,
   PreparedProjectorConfigSchema,
   ProjectReadinessSchema,
   ProjectorOperationSchema,
   projectorConfigApiVersion,
-  parseCanonicalJson,
   type PackageIdentity,
   type ProjectReadiness,
   type ProjectorOperation,
@@ -22,19 +19,15 @@ import {
   RepositoryPathService,
   initializeProjectLocalIgnore,
   installProjectorEditorSchemaBundle,
-  pendingProjectDataMigrationRelativePath,
   parseTomlDocument,
   stringifyTomlDocument,
   withProjectOperationAccess as withRuntimeOperationAccess,
 } from "@projector/runtime";
 import { z } from "zod";
 
-import { comparePackageVersions } from "./version-order.js";
 import { maintainDerivedCache } from "../knowledge/cache-maintenance.js";
 
-const legacyConfigPath = join(".projector", "config.json");
 const preparedConfigPath = join(".projector", "config.toml");
-const pendingMigrationPath = pendingProjectDataMigrationRelativePath;
 const maximumConfigBytes = 16 * 1024;
 
 export interface ReadinessInspectionInput {
@@ -82,6 +75,7 @@ export async function initializePreparedProject(
       if (current.status !== "inactive") return { readiness: current, created: false };
       await initializeProjectLocalIgnore(repositoryRoot);
       await installProjectorEditorSchemaBundle(repositoryRoot);
+      await publishPreparedIndex(paths);
       throwIfAborted(input.signal);
       await publishPreparedConfig(paths, input.package);
       const ready = await inspectProjectReadiness(repositoryRoot, { operation: "init", ...input });
@@ -103,66 +97,21 @@ export async function inspectProjectReadiness(
   } catch (error) {
     return readiness(input.package, "unavailable", `Projector repository root is unavailable: ${message(error)}`);
   }
-  const [legacy, prepared, pending] = await Promise.all([
-    readRepositoryMetadata(paths, legacyConfigPath.replaceAll("\\", "/")),
-    readRepositoryMetadata(paths, preparedConfigPath.replaceAll("\\", "/")),
-    readRepositoryMetadata(paths, pendingMigrationPath.replaceAll("\\", "/")),
-  ]);
+  const prepared = await readRepositoryMetadata(paths, preparedConfigPath.replaceAll("\\", "/"));
+  const legacy = await readRepositoryMetadata(paths, ".projector/config.json");
+  const pending = await readRepositoryMetadata(paths, ".projector/pending-project-data-migration.json");
   throwIfAborted(input.signal);
-
-  const pendingReadiness = inspectPendingMigration(pending, input.package);
-  if (pendingReadiness !== undefined) return pendingReadiness;
-
-  if (legacy.status === "missing" && prepared.status === "missing") {
-    return readiness(input.package, "inactive", "Projector is not active in this repository");
-  }
-  if (legacy.status === "unsafe") return readiness(input.package, "unavailable", legacy.reason);
+  for (const marker of [legacy, pending]) if (marker.status === "unsafe") return readiness(input.package, "unavailable", marker.reason);
+  // Detect historical ownership without interpreting or continuing an old format.
+  if (pending.status === "present") return ProjectReadinessSchema.parse({
+    status: "recovery-required", package: input.package, reason: "A pre-cutover operation has unfinished evidence.",
+    recovery: { code: "project-data-cutover-required", location: ".projector/pending-project-data-migration.json", action: "Inspect the retained operation with its matching pre-cutover runtime before a checked cutover. Preserve its evidence." },
+  });
+  if (legacy.status === "present") return readiness(input.package, "unavailable", "Unsupported legacy or mixed Projector configuration remains untouched; use a checked format cutover.");
+  if (prepared.status === "missing") return readiness(input.package, "inactive", "Projector is not active in this repository");
   if (prepared.status === "unsafe") return readiness(input.package, "unavailable", prepared.reason);
-  if (legacy.status !== "missing" && prepared.status !== "missing") {
-    return readiness(input.package, "unavailable", "Projector configuration contains mixed legacy JSON and prepared TOML markers");
-  }
-  if (legacy.status === "present") return inspectLegacyConfig(legacy.source, input.package);
   if (prepared.status === "present") return inspectPreparedConfig(prepared.source, input.package, join(repositoryRoot, preparedConfigPath));
   return readiness(input.package, "unavailable", "Projector configuration metadata could not be classified");
-}
-
-function inspectPendingMigration(metadata: MetadataRead, packageIdentity: PackageIdentity): ProjectReadiness | undefined {
-  const location = pendingMigrationPath.replaceAll("\\", "/");
-  if (metadata.status === "missing") return undefined;
-  if (metadata.status === "unsafe") return unrecognizedPendingMigration(packageIdentity, location, metadata.reason);
-  let value: unknown;
-  try {
-    value = parseCanonicalJson(metadata.source);
-  } catch (error) {
-    return unrecognizedPendingMigration(packageIdentity, location, `Pending migration marker is malformed: ${message(error)}`);
-  }
-  const result = PendingProjectDataMigrationSchema.safeParse(value);
-  if (!result.success) {
-    return unrecognizedPendingMigration(packageIdentity, location, `Pending migration marker is invalid: ${result.error.message}`);
-  }
-  return ProjectReadinessSchema.parse({
-    status: "recovery-required",
-    package: packageIdentity,
-    reason: `Project data migration ${result.data.migrationId} is interrupted in phase ${result.data.phase}`,
-    recovery: {
-      code: "project-data-migration-pending",
-      location,
-      action: `Recover migration ${result.data.migrationId} from recognized marker bytes; resolve the marker-declared backup ${result.data.backup.id} at ${result.data.backup.location.kind}:${result.data.backup.location.path}, then verify its existence and recorded manifest hash before use`,
-    },
-  });
-}
-
-function unrecognizedPendingMigration(packageIdentity: PackageIdentity, location: string, reason: string): ProjectReadiness {
-  return ProjectReadinessSchema.parse({
-    status: "unavailable",
-    package: packageIdentity,
-    reason,
-    recovery: {
-      code: "project-data-migration-unrecognized",
-      location,
-      action: "Preserve and inspect the unrecognized pending migration marker; automated recovery is refused",
-    },
-  });
 }
 
 export async function withProjectOperationAccess<T>(
@@ -210,23 +159,6 @@ export async function withProjectOperationAccess<T>(
   }
 }
 
-function inspectLegacyConfig(source: string, packageIdentity: PackageIdentity): ProjectReadiness {
-  let value: unknown;
-  try {
-    value = parseCanonicalJson(source);
-  } catch (error) {
-    return readiness(packageIdentity, "unavailable", `Legacy Projector configuration is malformed: ${message(error)}`);
-  }
-  const result = LegacyUnversionedProjectorConfigSchema.safeParse(value);
-  if (!result.success) return readiness(packageIdentity, "unavailable", `Legacy Projector configuration is invalid: ${result.error.message}`);
-  return ProjectReadinessSchema.parse({
-    status: "upgrade-required",
-    package: packageIdentity,
-    observed: { configApiVersion: result.data.apiVersion },
-    reason: "Projector data uses the recognized legacy unversioned layout and requires staged preparation",
-  });
-}
-
 function inspectPreparedConfig(source: string, packageIdentity: PackageIdentity, path: string): ProjectReadiness {
   let value: unknown;
   try {
@@ -235,22 +167,9 @@ function inspectPreparedConfig(source: string, packageIdentity: PackageIdentity,
     return readiness(packageIdentity, "unavailable", `Prepared Projector configuration is malformed: ${message(error)}`);
   }
   const result = PreparedProjectorConfigSchema.safeParse(value);
-  if (!result.success) return readiness(packageIdentity, "unavailable", `Prepared Projector configuration is invalid: ${result.error.message}`);
-  const order = comparePackageVersions(result.data.projectorVersion, packageIdentity.version);
+  if (!result.success) return readiness(packageIdentity, "unavailable", `Projector requires current authored format ${projectorConfigApiVersion}. Preserve unsupported data for the documented cutover. Configuration detail: ${result.error.message}`);
   const observed = { configApiVersion: result.data.apiVersion, preparedProjectorVersion: result.data.projectorVersion };
-  if (order === 0) return ProjectReadinessSchema.parse({ status: "ready", package: packageIdentity, observed });
-  if (order < 0) return ProjectReadinessSchema.parse({
-    status: "upgrade-required",
-    package: packageIdentity,
-    observed,
-    reason: `Projector data was prepared by ${result.data.projectorVersion} and requires preparation for ${packageIdentity.version}`,
-  });
-  return ProjectReadinessSchema.parse({
-    status: "unavailable",
-    package: packageIdentity,
-    observed,
-    reason: `Projector data was prepared by newer release ${result.data.projectorVersion}; installed release ${packageIdentity.version} cannot load it`,
-  });
+  return ProjectReadinessSchema.parse({ status: "ready", package: packageIdentity, observed });
 }
 
 type MetadataRead =
@@ -285,14 +204,23 @@ async function readRepositoryMetadata(paths: RepositoryPathService, relativePath
   }
 }
 
+async function publishPreparedIndex(paths: RepositoryPathService): Promise<void> {
+  const contents = "# Project meaning\n\nRead concepts and requirements first. Scenarios describe observable checks; decisions and rationale explain consequential choices. Add records only when they preserve meaning needed by later work.\n\n- [Concepts](model/concepts/)\n- [Requirements](model/requirements/)\n- [Scenarios](model/scenarios/)\n- [Concerns](concerns/)\n- [Decisions](decisions/)\n- [Rationale](authorities/)\n- [Typed relationships](model/relations/)\n\nThese directories appear as records are accepted. Keep useful navigation here. Stable identities live inside records independently of filenames. Runtime receipts and recovery evidence stay under `runtime/`; use `projector inspect` when needed.\n";
+  await publishPreparedFile(paths, ".projector/README.md", contents, true);
+}
+
 async function publishPreparedConfig(paths: RepositoryPathService, packageIdentity: PackageIdentity): Promise<void> {
   const config = PreparedProjectorConfigSchema.parse({
     apiVersion: projectorConfigApiVersion,
     enabled: true,
     projectorVersion: packageIdentity.version,
   });
-  const contents = stringifyTomlDocument(config, { schemaPath: "schemas/projector-config-v1.schema.json" });
-  const target = (await paths.resolveWrite(preparedConfigPath.replaceAll("\\", "/"))).realTarget;
+  const contents = stringifyTomlDocument(config, { schemaPath: "schemas/projector-config-v3.schema.json" });
+  await publishPreparedFile(paths, preparedConfigPath.replaceAll("\\", "/"), contents);
+}
+
+async function publishPreparedFile(paths: RepositoryPathService, relativePath: string, contents: string, preserveExisting = false): Promise<void> {
+  const target = (await paths.resolveWrite(relativePath)).realTarget;
   const temporary = join(dirname(target), `.config.${randomBytes(12).toString("hex")}.tmp`);
   let handle;
   try {
@@ -306,8 +234,8 @@ async function publishPreparedConfig(paths: RepositoryPathService, packageIdenti
     } catch (error) {
       if (!isCode(error, "EEXIST")) throw error;
       const existing = await readBoundedMetadata(target);
-      if (existing.status !== "present" || existing.source !== contents) {
-        throw new Error("Prepared Projector configuration was concurrently published with different bytes");
+      if (existing.status !== "present" || (!preserveExisting && existing.source !== contents)) {
+        throw new Error(`Prepared Projector metadata was concurrently published with different bytes: ${relativePath}`);
       }
     }
     await syncDirectory(dirname(target));

@@ -1,0 +1,866 @@
+{
+  "apiVersion": "projector.change-proposal/v1",
+  "requirements": [],
+  "scenarios": [],
+  "architecture": null,
+  "edits": [],
+  "validation": {
+    "independentNodeTests": [],
+    "supplementalNodeTests": []
+  },
+  "analysisFacets": [
+    "architecture",
+    "behavior"
+  ],
+  "identityResolution": {
+    "contextId": "knowledge_context_8165960c72a5c4618f045ab7fc9c6358",
+    "contextHash": "sha256:v1:e381487e03fec806c18c58a57580a5f68165960c72a5c4618f045ab7fc9c6358",
+    "outcome": "reuse-existing",
+    "selectedEntityIds": [
+      "projector-requirement_79c7928e16eb5643c8b6778091634417",
+      "projector-requirement_3bcd55516585aff4edd2baf0b7d4aa53",
+      "projector-scenario_4e2fc9f2c68c08d706037ae16c243fe5",
+      "projector-scenario_a9bf38a9725c1539b81070a884b397be",
+      "scenario:manual-release-tests-exact-candidate-without-source-checkout",
+      "scenario:recover-installed-held-out-change-lifecycle",
+      "projector-scenario_2abeee80cd0dae371c8deb189aede82d",
+      "scenario:preserve-valid-work-across-plan-revisions",
+      "scenario:inspect-isolated-application-behavior",
+      "requirement:runtime-evidence-legibility",
+      "requirement:governed-migration-overlays",
+      "decision:project-data-readiness-and-migration",
+      "concern:cross-platform-validation-sandbox",
+      "decision:windows-wsl-bubblewrap"
+    ],
+    "rationale": "Explicitly authorized content review after the format-only fidelity check. Preserve stable responsibilities while removing retired implementation prescriptions and reaffirming affected host-execution authority."
+  },
+  "canonicalMutations": [
+    {
+      "kind": "requirement",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:8802b016a2a87658f169f5bf56ad405b113b58a8dc6591d7b6af1cad47a2686b",
+      "expectedDocumentHash": "sha256:v1:36e1ea1cd54b3259c9bf68b4db58e7c8ac7b8c836ee574faa199441e880f4292",
+      "payload": {
+        "id": "projector-requirement_79c7928e16eb5643c8b6778091634417",
+        "key": "boundary-repository-change-check",
+        "title": "Check changed files when context is used",
+        "aliases": [],
+        "statement": "When context is requested or checked, observe the current revision, staged changes, working files, deletions and nonignored new files. Include canonical Projector records and exclude disposable runtime state. Distinguish unchanged, changed, no previous observation and incomplete observation; report bounded paths and limitations. Repeated observation must preserve unresolved findings.\n\nValidate retained knowledge before reuse. Changed files justify scoped reconsideration, not a claim of semantic drift. Quiet session instructions may explain the workflow; do not rescan the checkout or inject repeated reminders at each prompt or tool call. Use the current task and existing authorization to decide whether deeper investigation is needed.",
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "any",
+          "items": []
+        },
+        "origin": [
+          {
+            "kind": "document",
+            "locator": "proposal:sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99",
+            "contentHash": "sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99",
+            "description": "Structured interpretation proposed for approval; not a verbatim user request."
+          }
+        ],
+        "evidence": []
+      },
+      "rationale": "Replace mandatory prompt/session observer hooks with demand-driven checks. Preserve bounded observation, uncertainty and unresolved findings."
+    },
+    {
+      "kind": "requirement",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:70f01f2064662860ae72a3f5a77bd15c8f910e8f858927c6bfaf386af87311da",
+      "expectedDocumentHash": "sha256:v1:d31b287952ace8782c63c7fe0e541161b4fceef0e0993b4a043a3b07f7949ddc",
+      "payload": {
+        "id": "projector-requirement_3bcd55516585aff4edd2baf0b7d4aa53",
+        "key": "delegated-drift-investigation",
+        "title": "Investigate drift with focused evidence",
+        "aliases": [],
+        "statement": "For an authorized investigation, compare saved reasoning dependencies with current evidence. Without saved dependencies, inspect current design and state that files alone cannot reconstruct historical intent. Return concise findings, source references and concrete consequences. Investigation alone does not authorize repair or new accepted meaning; use the authorization already given for the task.\n\nDelegate separable work when it reduces context or review cost. Coordinate overlapping files and decisions before writes. Keep material unresolved questions visible, continue independent work and ask only for information or authority that is actually missing. Update an existing finding when new evidence arrives.",
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "any",
+          "items": []
+        },
+        "origin": [
+          {
+            "kind": "document",
+            "locator": "proposal:sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99",
+            "contentHash": "sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99",
+            "description": "Structured interpretation proposed for approval; not a verbatim user request."
+          }
+        ],
+        "evidence": []
+      },
+      "rationale": "Remove compulsory subagents and UI-specific question routing. Preserve evidence, authorization, coordination and uncertainty."
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:5dc65ec4a015e880531e04cc6b59c4633cbf9711e75f7ad733946f1570a0630c",
+      "expectedDocumentHash": "sha256:v1:d7d44e5c913d283306955dc3d841f996ff14a4ca53447c8cb23323c394d93804",
+      "payload": {
+        "id": "projector-scenario_4e2fc9f2c68c08d706037ae16c243fe5",
+        "key": "detect-pull-on-next-prompt",
+        "title": "Detect external changes before reusing context",
+        "aliases": [],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "any",
+          "items": []
+        },
+        "steps": [
+          {
+            "role": "precondition",
+            "statement": "A retained context exists for a checkout."
+          },
+          {
+            "role": "trigger",
+            "statement": "Another tool changes the checkout, then the agent requests, resumes or checks the retained context."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "Observe the current state and identify affected dependencies before reuse. Preserve unaffected conclusions and unresolved findings; explain incomplete observation."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Treat a changed commit as proof of semantic drift, silently reuse stale context, or interrupt work with repeated prompt and tool reminders."
+          }
+        ],
+        "evidence": []
+      },
+      "rationale": "Preserve external-change detection at the point of reuse without the retired prompt hook."
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:eb8e5f2f608e419e18484a70134b8a10ec77b1e9d0472b4bf210a3b48b1db839",
+      "expectedDocumentHash": "sha256:v1:d93c8c7152fb33c074ce6e5972b61f23479149e183e62d96a71efa47b86e68d4",
+      "payload": {
+        "id": "projector-scenario_a9bf38a9725c1539b81070a884b397be",
+        "key": "delegate-reconciliation-questions",
+        "title": "Keep investigation questions focused",
+        "aliases": [],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "any",
+          "items": []
+        },
+        "steps": [
+          {
+            "role": "precondition",
+            "statement": "The user has authorized an investigation."
+          },
+          {
+            "role": "trigger",
+            "statement": "The investigator finds a consequential unresolved choice or an overlapping write."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "Explain the choice and its evidence concisely, coordinate overlap, and continue independent work. Request user input only when the missing decision exceeds existing authority or cannot be resolved from available evidence."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Infer historical intent from files alone, require delegation for every investigation, or require the user to repeat authorization already given."
+          }
+        ],
+        "evidence": []
+      },
+      "rationale": "Keep the useful coordination and uncertainty behavior without prescribing one host UI or delegation ceremony."
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:30b943d737a2e6c288c8e1a19d88699c64793da7be5e93335146f28a0edc9eaf",
+      "expectedDocumentHash": "sha256:v1:766459c056d0129ef491b8a01d36d1e927e9c1749f33e81ccc55a7ff3c40bcca",
+      "payload": {
+        "id": "scenario:manual-release-tests-exact-candidate-without-source-checkout",
+        "key": "manual-release-tests-exact-candidate-without-source-checkout",
+        "title": "Exercise the package as installed",
+        "aliases": [
+          "scenario:17:manual-only-source-severed-release-workflow"
+        ],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "atom",
+          "field": "requirement",
+          "matcher": "equals",
+          "value": "requirement:self-hosted-value"
+        },
+        "steps": [
+          {
+            "role": "precondition",
+            "statement": "The release package and plugin have been assembled from verified source."
+          },
+          {
+            "role": "trigger",
+            "statement": "Exercise their public commands in a fresh ordinary repository with workspace module resolution removed."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "Initialization, context retrieval, canonical preview/apply, checks, inspection and read-only resumption work using the bundled runtime. Retain the exact package and observed results."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Claim that successful compilation or a copied source checkout proves the installed package works. Treat test isolation as a mandatory product confinement backend."
+          }
+        ],
+        "origin": [
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/12-delivery/acceptance-core.md",
+            "contentHash": "sha256:v1:5471e7090610ccdf0d8e567ec2ea1cbba53dc726f6ea53d51f9cac52d994d0fc",
+            "description": "Historical acceptance conditions, lines 124-132; immutable Git blob 804692b98650789629c95b699fa20de3b026d634. Content hash is SHA-256 of exact source blob bytes. Source conditions require reviewed disposition, not automatic authority."
+          }
+        ],
+        "realizations": [],
+        "evidence": []
+      },
+      "rationale": "Retire a specific CI lane, certificate and traceability protocol. Keep direct evidence that the actual distribution works independently of source dependency resolution."
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:f52864b6338e97aa854a6077839166ab8f7abc477f6800197f21a8b76d28b7ed",
+      "expectedDocumentHash": "sha256:v1:9096f2547b820be249b07ee396761250da1f093a672398e80f8a4e69b52332bc",
+      "payload": {
+        "id": "scenario:recover-installed-held-out-change-lifecycle",
+        "key": "recover-installed-held-out-change-lifecycle",
+        "title": "Recover interrupted writes without replaying authority",
+        "aliases": [
+          "scenario:19:installed-held-out-change-lifecycle",
+          "adversary:33:installed-source-severed-lifecycle-interruption-recovery-and-identity-continuity"
+        ],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "atom",
+          "field": "requirement",
+          "matcher": "equals",
+          "value": "requirement:reverse-reconciliation"
+        },
+        "steps": [
+          {
+            "role": "precondition",
+            "statement": "A controlled change has current exact approval and an authenticated journal."
+          },
+          {
+            "role": "trigger",
+            "statement": "The applying process tree stops after durable target mutation and before completion."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "A fresh process can inspect the retained invocation, journal and authority. Explicit recovery restores the journaled consistent state only after ownership is established. Preserve ambiguity as recovery-required."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "A subsequent explicit apply rechecks exact plan authority and current dependencies. Reject a substituted hash, changed validator, out-of-scope write or stale dependency. An unrelated change may rebind only through the existing dependency rules."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "Independent validation uses its authenticated source bytes. A completed apply retains its receipt; repeated explicit application returns the same completed result without duplicating work."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Resume silently recovers, applies changes, renews authority or hides unavailable evidence."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Represent native execution or disposable test isolation as protection against hostile same-user access."
+          }
+        ],
+        "origin": [
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/12-delivery/acceptance-core.md",
+            "contentHash": "sha256:v1:5471e7090610ccdf0d8e567ec2ea1cbba53dc726f6ea53d51f9cac52d994d0fc",
+            "description": "Historical acceptance conditions, lines 140-150; immutable Git blob 804692b98650789629c95b699fa20de3b026d634. Content hash is SHA-256 of exact source blob bytes. Source conditions require reviewed disposition, not automatic authority."
+          },
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/decisions/f1d7f82a89ecaa14199107b9aed7953eba0a14e39b42672b61b3f24db1322d51.decision.json",
+            "contentHash": "sha256:v1:623673cf17762ec9d36c6e364e59e739ee940eb58bf4c1333f37deb6ee3f9210",
+            "description": "Accepted registered in-process runner supersedes standalone MCP and wrapper-to-CLI delivery prescriptions. Immutable Git blob d307af7324bdae70577cbec60042b4fc8ed05db1; exact-byte SHA-256."
+          },
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/model/concepts/01561d6546adb32a8afb29429380b0ecdec1bd6a9dd562fbea23a395381ca5b8.concept.json",
+            "contentHash": "sha256:v1:a4dd211d265700ff82bf503b4cedf13661ad8d9ec3aea6f147004e754a9634c3",
+            "description": "Accepted host integrity preserves exact authority, state, provenance, cancellation and recovery without confinement or hostile same-user protection. Immutable Git blob 3ccfee51b0a75179711d6ded3324b17b8279da61; exact-byte SHA-256."
+          },
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
+            "contentHash": "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e",
+            "description": "Exact adversary condition 33; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157. Hash binds original Git bytes."
+          },
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
+            "contentHash": "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e",
+            "description": "Complete Host tests section with explicit installed-runner supersession; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157. Hash binds original Git bytes."
+          },
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
+            "contentHash": "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e",
+            "description": "Unit coverage family 31; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157."
+          }
+        ],
+        "realizations": [],
+        "evidence": []
+      },
+      "rationale": "Preserve the exact authority, interruption, provenance and idempotence invariants; remove duplicated harness instructions and the old resume-as-apply behavior."
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:2ea89cc40e8fdb3b34baad2f8907a03ffc07b8d45e8d69da609030643bba3f44",
+      "expectedDocumentHash": "sha256:v1:b3fc49e7829f6909927c027abba495f6dded840f54f9220c72eeeaa83b58f289",
+      "payload": {
+        "id": "projector-scenario_2abeee80cd0dae371c8deb189aede82d",
+        "key": "preserve-pending-check-finding",
+        "title": "Keep unresolved findings until evidence changes",
+        "aliases": [],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "any",
+          "items": []
+        },
+        "steps": [
+          {
+            "role": "precondition",
+            "statement": "A repository observation identifies a change that has not yet been investigated."
+          },
+          {
+            "role": "trigger",
+            "statement": "A later check sees the same change or new relevant bytes."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "Keep the unresolved finding distinct from the observation, update it when relevant bytes change, and state any incomplete evidence."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Repeat the same finding as a new obligation, silently discard it, or require prompt and session hooks to perform the check."
+          }
+        ],
+        "evidence": []
+      },
+      "rationale": "The current scenario makes retired prompt hooks part of the behavior. The revision keeps durable unresolved findings and scoped refresh without prescribing host ceremony."
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:94ea083ff229d03e26c8a6b2ef64242de5bddbafb0252ed77306313deced04d1",
+      "expectedDocumentHash": "sha256:v1:684ca37cae8b4f7fc77494348f24fbaacb48f00f62c10cf8f8d8078c8d5dca4c",
+      "payload": {
+        "id": "scenario:preserve-valid-work-across-plan-revisions",
+        "key": "preserve-valid-work-across-plan-revisions",
+        "title": "Preserve valid work across a changed plan",
+        "aliases": [
+          "scenario:21:partial-completion-and-plan-rebase"
+        ],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "atom",
+          "field": "requirement",
+          "matcher": "equals",
+          "value": "requirement:scoped-invalidation"
+        },
+        "steps": [
+          {
+            "role": "precondition",
+            "statement": "A controlled change has completed some accepted work and retains its bound dependencies."
+          },
+          {
+            "role": "trigger",
+            "statement": "Work stops and a later change affects the repository before continuation."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "Keep settled canonical decisions. Reconsider only completed work whose bound dependencies changed; carry unaffected valid work into a new plan or rebind it when all recorded dependencies remain current."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Resume a stale plan blindly, discard unaffected completed work, or require a named test technique as product behavior."
+          }
+        ],
+        "origin": [
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/12-delivery/acceptance-core.md",
+            "contentHash": "sha256:v1:5471e7090610ccdf0d8e567ec2ea1cbba53dc726f6ea53d51f9cac52d994d0fc",
+            "description": "Historical acceptance conditions, lines 158-164; immutable Git blob 804692b98650789629c95b699fa20de3b026d634. Content hash is SHA-256 of exact source blob bytes. Source conditions require reviewed disposition, not automatic authority."
+          },
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md",
+            "contentHash": "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e",
+            "description": "Unit coverage family 30; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157."
+          }
+        ],
+        "realizations": [],
+        "evidence": []
+      },
+      "rationale": "Removes script/hook implementation wording and the embedded unit-evaluation prescription while retaining dependency-scoped currentness and reuse."
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:888ad6817f47bc633fc3ee7071172d54a0ac61ed4b17dc32f3510b7bbb0b0099",
+      "expectedDocumentHash": "sha256:v1:c41b1953e5eae4909ddf0f6c517852e53809fc892948eb5dad6e836ef38d4ceb",
+      "payload": {
+        "id": "scenario:inspect-isolated-application-behavior",
+        "key": "inspect-isolated-application-behavior",
+        "title": "Inspect application behavior in an owned test instance",
+        "aliases": [],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "any",
+          "items": [
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/integrations/src/runtime-evidence/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "plugins/projector/skills/**"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "role": "precondition",
+            "statement": "A supported application adapter identifies the build and endpoint, owns setup and teardown, provides fresh state and declares its trust assumptions."
+          },
+          {
+            "role": "trigger",
+            "statement": "An affected user-facing scenario runs against that application state."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "The reviewer consumes the adapter outcome and records the scenario, source or build, controller state, collection method, freshness, cleanup and assurance before citing behavioral evidence."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Treat a registered handler, unavailable observation, unconsumed artifact, wrong build or endpoint, or contaminated state as behavioral proof; claim outcomes that the adapter did not observe."
+          }
+        ],
+        "origin": [
+          {
+            "kind": "user-request",
+            "locator": "conversation:2026-09-13:complete-existing-projector-control-loop",
+            "description": "The user approved explicit skill, hook, runner, and service ownership; selector-based continuation; installed consumption and recovery verification."
+          }
+        ],
+        "evidence": []
+      },
+      "rationale": "Replaces the Product-specific Psychord adapter name with the required capability boundary. The evidence contract remains concrete and source-independent."
+    },
+    {
+      "kind": "requirement",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:5ad2ed6e27df5925ceaa6f86f63af162fb29988fff8ef25e23bb3cbd1718942a",
+      "expectedDocumentHash": "sha256:v1:34b215506511c001be7f6a37a93e18c662aa0f719b4846677bf8e79143c07726",
+      "payload": {
+        "id": "requirement:runtime-evidence-legibility",
+        "key": "runtime-evidence-legibility",
+        "title": "Connect affected meaning to inspectable application behavior",
+        "aliases": [],
+        "statement": "When accepted meaning needs application observation, use a supported adapter with an identifiable build and endpoint, owned setup and teardown, fresh state, explicit trust assumptions and the inputs needed for the observation. Bind evidence to the scenario, source or build, controller state, collection method and freshness. Keep outcome, operational status, currentness and assurance separate. Retain diagnostics when collection fails or is unavailable, and do not claim outcomes that the adapter did not observe.\n\nA host reports its actual capabilities, limits and unavailable surfaces. A command declares its working directory, reads, writes, network need, environment, time, resources and side effects; pass opaque arguments without shell interpolation. Remote observations identify their adapter version and revision. Pin deterministic comparisons to the required snapshot. A refreshed remote state creates a new revision and may invalidate dependent work.\n\nKeep application observation, planning, approval, application and recovery as separate capabilities with explicit inputs and evidence. Do not retain an obsolete delivery transport or create a production interface solely to satisfy an isolated release test.",
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "any",
+          "items": [
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/core/src/schemas/application-evidence-*.ts"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "equals",
+              "value": "packages/control-plane/src/knowledge/application-evidence.ts"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "equals",
+              "value": "packages/cli/src/operational-verification.ts"
+            }
+          ]
+        },
+        "origin": [
+          {
+            "kind": "user-request",
+            "locator": "conversation:2026-09-09:architectural-reasons-and-harness-assimilation",
+            "description": "The user explicitly requires architectural choices, rejected options and reasons to survive, and requests useful harness practices be assimilated without flattening Projector into instructions."
+          },
+          {
+            "kind": "external",
+            "locator": "https://openai.com/index/harness-engineering/",
+            "description": "Motivating integration evidence; not authority for Projector-specific design or claimed implementation."
+          },
+          {
+            "kind": "document",
+            "locator": "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/08-agents/hosts-and-mcp.md",
+            "description": "Recovered historical design evidence; retained conditions and limits require explicit acceptance through this proposal."
+          },
+          {
+            "kind": "document",
+            "locator": "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/10-operation/cli-modes-and-security.md",
+            "description": "Recovered historical design evidence; retained conditions and limits require explicit acceptance through this proposal."
+          },
+          {
+            "kind": "document",
+            "locator": "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/10-operation/observability-and-reporting.md",
+            "description": "Recovered historical design evidence; retained conditions and limits require explicit acceptance through this proposal."
+          },
+          {
+            "kind": "document",
+            "locator": "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/acceptance-core.md",
+            "description": "Recovered historical design evidence; retained conditions and limits require explicit acceptance through this proposal."
+          },
+          {
+            "kind": "document",
+            "locator": "git:4ae2774b8d84359fbfdb5d20e7c276b5cff41d18:PROJECTOR_SPEC/12-delivery/release-and-directive.md",
+            "description": "Recovered historical design evidence; retained conditions and limits require explicit acceptance through this proposal."
+          },
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/09-evolution/modernization-and-surfaces.md",
+            "contentHash": "sha256:v1:ff986a014ff0cd8b7be189b106e183b54096efb5b3e55e82e5809be5f7981209",
+            "description": "Historical friction-driven modernization, rejection reasons and snapshot/open-world surface conditions; distinct from persisted-data upgrades. Source range 3-102; immutable Git blob a46c14c6a463bb973f562517fe6240e48f1fcc75; content hash is SHA-256 of exact blob bytes."
+          }
+        ],
+        "realizations": [
+          {
+            "selector": {
+              "op": "atom",
+              "field": "path",
+              "matcher": "equals",
+              "value": "packages/runtime/src/execution/command-executor.ts"
+            },
+            "origin": {
+              "kind": "git",
+              "locator": "git:fbb691eb4b7bb62ef51e8d94ff97474782abb95a:packages/runtime/src/execution/command-executor.ts",
+              "description": "Observed implementation surface for requirement:runtime-evidence-legibility; the selector is evaluated from repository facts."
+            }
+          }
+        ],
+        "evidence": []
+      },
+      "rationale": "The current requirement mixes durable evidence rules with a long inventory of retired CLI, MCP, wrapper and confinement routes. The revision preserves observable behavior and safety without making historical implementation topology live authority."
+    },
+    {
+      "kind": "requirement",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:2f6d0015512df1c6de46750505346c757bd3d87aa4f1eedad085d74e23988c68",
+      "expectedDocumentHash": "sha256:v1:94f007638cebd7c44971ee9ee8623d9e3a4a1c5cb44f33b8e9acdb780369dba9",
+      "payload": {
+        "id": "requirement:governed-migration-overlays",
+        "key": "governed-migration-overlays",
+        "title": "Expose governed lens-transition phases and residue",
+        "aliases": [],
+        "statement": "A concrete lens or compatibility transition may expose proposed, prepared, dual-running, cutover, cleanup, complete and rolled-back phases to selectors. It identifies source and target lenses, entry and exit criteria, compatibility strategy, allowed temporary divergence, validation obligations, rollback or compensation, and a residue detector. Completion follows the declared exit criteria rather than elapsed time.\n\nDo not create an overlay or realization merely because the type exists. A transition becomes active only when a supported consumer has an accepted scope and a concrete compatibility need. Preserve its rationale, owner, invalidation conditions and cleanup obligation.",
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "any",
+          "items": [
+            {
+              "op": "atom",
+              "field": "requirement",
+              "matcher": "equals",
+              "value": "requirement:scoped-invalidation"
+            },
+            {
+              "op": "atom",
+              "field": "requirement",
+              "matcher": "equals",
+              "value": "requirement:reverse-reconciliation"
+            }
+          ]
+        },
+        "origin": [
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/06-reconciliation/reconciliation-and-divergence.md",
+            "contentHash": "sha256:v1:aa322881e51538f7a9ec4a3c4a3195d50c495faf14ee598f03eb9288e22f8856",
+            "description": "Historical general lens-transition invariant, not a persisted-data upgrade or an accepted overlay instance. Source range 165-211; Git blob 04fdadb79ebfc5108b500d559e7fd6f5761138f2; content hash is SHA-256 of exact blob bytes."
+          },
+          {
+            "kind": "document",
+            "locator": "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:.projector/decisions/8e351edf78b532b4d4fbc05e3f5c3faf0778d6add11491f518a1cc468ce48c03.decision.json",
+            "contentHash": "sha256:v1:f3c4d29686f50318549bb73cbd7c96ae1aabebfa44c756980af1e88d36a204f4",
+            "description": "Accepted lifetime shared operation access, exclusive migration access, retained writer leases without nested acquisition, and limits for nonparticipating legacy code. Source range complete accepted record; Git blob 99353cb632158429efb49b5bb111d2f2e274800c; content hash is SHA-256 of exact blob bytes."
+          }
+        ],
+        "realizations": [],
+        "evidence": []
+      },
+      "rationale": "The current text keeps a now-completed persisted-project-data upgrade as a live comparison point. This preserves the general capability while removing a retired migration chain from its meaning."
+    },
+    {
+      "kind": "architecture-decision",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:474313d3077eab8674cbaaf3a64f567c534d1540e8845b3337e9eb7053a9eee6",
+      "expectedDocumentHash": "sha256:v1:12916ce9fb8c24345f1905bc059cc72df7287913e0b28d03002ce4cbfbbb2f70",
+      "payload": {
+        "id": "decision:project-data-readiness-and-migration",
+        "key": "project-data-readiness-and-migration-decision",
+        "concernId": "concern:project-data-readiness-and-migration",
+        "title": "Use the current authored format with explicit controlled recovery",
+        "decision": "Projector uses the declared current authored format before strict loading, lifetime cooperative operation access and exact controlled-write recovery. Fresh projects initialize with the current format and publish configuration last. The Projector 3 conversion was a completed one-time cutover recorded by its accepted snapshot and receipt; it does not create a live version chain, legacy reader or future per-package data migration obligation. Unsupported formats remain untouched and report their limitation. Read-only resumption checks currentness and continuation only; recovery and application remain explicit authenticated operations.",
+        "selectedOptionKey": "bounded-readiness-exclusive-recoverable-migration",
+        "scope": {
+          "op": "any",
+          "items": [
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": ".projector/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/runtime/src/access/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/runtime/src/activation/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/runtime/src/journal/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/runtime/src/migrations/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/runtime/src/sqlite/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/runtime/src/worktrees/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/control-plane/src/readiness/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/control-plane/src/migrations/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "packages/cli/src/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "plugins/projector/hooks/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "plugins/projector/scripts/**"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "equals",
+              "value": "scripts/build-plugin-runtime.mjs"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "scripts/*migration*"
+            },
+            {
+              "op": "atom",
+              "field": "path",
+              "matcher": "glob",
+              "value": "scripts/*release*"
+            }
+          ]
+        },
+        "lifecycle": "active",
+        "authorityRecordId": "authority:project-data-readiness-and-migration",
+        "governanceBasis": [
+          {
+            "kind": "adopted-standard",
+            "authorityRecordId": "authority:project-data-readiness-and-migration"
+          }
+        ],
+        "consequences": [
+          {
+            "kind": "introduce-constraint",
+            "targetId": "concept:safe-project-data-readiness",
+            "explanation": "Preserve readiness, safe cutover and recovery while retiring unused compatibility."
+          }
+        ],
+        "appliedPreferences": [],
+        "supersedesDecisionIds": []
+      },
+      "rationale": "The accepted decision still describes the V2-to-V3 cutover as future work and scopes deleted migration modules. This revision records the completed cutover while preserving the live format, recovery and no-compatibility constraints."
+    },
+    {
+      "kind": "authority-record",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:70ff15e639bb11bd123c845e3329dbae8659fcf8c362d7291ec21dbbbe87df18",
+      "expectedDocumentHash": "sha256:v1:656d1514f4962e1fe525abd51d617c2ac9dfd5b52c26bfc180189cc74354c36b",
+      "payload": {
+        "id": "authority:windows-wsl-bubblewrap",
+        "key": "windows-wsl-bubblewrap-authority",
+        "subjectId": "concern:cross-platform-validation-sandbox",
+        "status": "approved",
+        "conclusion": "normalize",
+        "rationale": "Reaffirm host-configured native execution after the runtime-evidence wording revision. The revised requirement preserves actual host permissions, exact source and mutation integrity, explicit unavailable capabilities, caller cancellation and journaled recovery. It removes retired delivery topology; it does not introduce a confinement backend, a Windows-to-WSL bridge, or guarantees against hostile same-user interference.",
+        "alternatives": [
+          {
+            "key": "landstrip-native",
+            "description": "@landstrip/landstrip-api 0.18.43 LPAC AppContainer, evaluated locally on Windows.",
+            "advantages": [
+              "Open-source npm distribution with a plausible native isolation route; declared-read and write-denial probes worked."
+            ],
+            "disadvantages": [
+              "Published Node startup failed with WSAStartup 10107.",
+              "A local registryRead-capability patch repaired startup, but transient validator DENY ACE cleanup and immutable source-to-target overlay integration still needed work."
+            ],
+            "rejectedBecause": [
+              "The evaluated published release did not meet the entire earlier isolation contract, and maintaining a private security fork was not justified."
+            ],
+            "evidence": []
+          },
+          {
+            "key": "anthropic-sandbox-runtime",
+            "description": "@anthropic-ai/sandbox-runtime 0.0.75 Windows alpha; source audit only.",
+            "advantages": [
+              "Open-source npm package with Windows isolation work."
+            ],
+            "disadvantages": [
+              "Elevated setup, shared sandbox-account grants and documented resolver limitations; no demonstrated immutable source overlay route."
+            ],
+            "rejectedBecause": [
+              "No live contract proof justified adopting it, and the selected product direction no longer requires Projector-owned confinement."
+            ],
+            "evidence": []
+          },
+          {
+            "key": "microsoft-mxc",
+            "description": "@microsoft/mxc-sdk 0.8.0; source audit only.",
+            "advantages": [
+              "Open-source Windows and Linux package."
+            ],
+            "disadvantages": [
+              "The evaluated project documentation warned that permissive policies should not be treated as security boundaries."
+            ],
+            "rejectedBecause": [
+              "It did not justify the earlier security-boundary claim, and no current consumer requires a replacement confinement backend."
+            ],
+            "evidence": []
+          },
+          {
+            "key": "mandatory-projector-confinement",
+            "description": "Continue requiring a Projector-selected confinement backend and Windows-to-WSL bridge.",
+            "advantages": [
+              "Can enforce stronger filesystem and network properties when a proven backend exists."
+            ],
+            "disadvantages": [
+              "Adds installation, platform, packaging and failure complexity; blocks supported host workflows when the optional backend is absent; risks claims stronger than the actual host path proves."
+            ],
+            "rejectedBecause": [
+              "The user selected host-configured execution with retained change-integrity checks and honest evidence limits instead of a mandatory Projector confinement product."
+            ],
+            "evidence": []
+          }
+        ],
+        "assumptions": [
+          "The host supplies and enforces the permissions under which Projector runs.",
+          "The supported workspace is trusted; same-user or host code can interfere with ordinary-process collection.",
+          "Exact validator bytes, reviewed writes, source/state/version binding, cancellation and recovery remain enforceable without a Projector confinement backend.",
+          "Unsupported CPU, memory, network, or filesystem-isolation controls are reported as unsupported and never silently claimed."
+        ],
+        "reconsiderWhen": [
+          {
+            "type": "requirement-changed",
+            "subjectId": "requirement:runtime-evidence-legibility"
+          },
+          {
+            "type": "scope-expanded",
+            "scopeKey": "controlled-host-execution"
+          },
+          {
+            "type": "assumption-falsified",
+            "assumptionKey": "trusted-host-permissions"
+          }
+        ],
+        "vector": {
+          "explicitDecisionAlignment": 1,
+          "productConstraintFit": 1,
+          "semanticFit": 1,
+          "independentOccurrence": 0,
+          "historicalStability": 0,
+          "independentValidationSupport": 0,
+          "boundaryCoherence": 1,
+          "maintenanceOutcome": 1,
+          "platformCompatibility": 1,
+          "externalRationale": 0,
+          "ecosystemHealth": 0,
+          "securitySupport": 0,
+          "reversibility": 1,
+          "migrationCost": 1,
+          "counterEvidence": 0
+        },
+        "assessmentConfidence": "high",
+        "evidence": [
+          {
+            "evidenceId": "knowledge_context_6204acbaff99f456aa7e24800a87b41d",
+            "stance": "supports"
+          }
+        ],
+        "governanceRiskClass": "R2",
+        "decidedBy": "user",
+        "createdAt": "2026-09-09T17:00:00.000Z"
+      },
+      "rationale": "Reaffirm host-configured native execution after the runtime-evidence wording revision. The revised requirement preserves actual host permissions, exact source and mutation integrity, explicit unavailable capabilities, caller cancellation and journaled recovery. It removes retired delivery topology; it does not introduce a confinement backend, a Windows-to-WSL bridge, or guarantees against hostile same-user interference."
+    }
+  ]
+}

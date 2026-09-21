@@ -1,0 +1,5 @@
+You are a fresh OpenSpec baseline implementer for checkpoint 3. You have no prior-chat context. Read `PARTICIPANT.md`, repository, existing OpenSpec artifacts, and named follow-on brief. Do not read outside this repository or search for an oracle.
+
+Use the installed OpenSpec workflow competently: inspect state, explore, create/complete/validate change artifacts, implement, verify, then archive/sync if supported. Before application-source edits, write and commit `REHEARSAL_CONTEXT.md` plus `REHEARSAL_DEPENDENCY_DELTA.md` and the planning artifacts required by the brief. The dependency delta must be a separate pre-edit commit. Then implement, verify, update `REHEARSAL_CHECKS.md`, and commit. Final response: changed files, checks, failures/unknowns, commit hash.
+
+This checkpoint has a 10-minute wall-time ceiling and a target of no more than 12,000 generated tokens. Keep reads and tool output concise. Use browser automation only to test changed Evidence-register/replay behavior or an existing failing case; report unfinished work rather than broad exploratory checking.

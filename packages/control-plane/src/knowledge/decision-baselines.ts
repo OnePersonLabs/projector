@@ -170,7 +170,9 @@ export class DecisionBaselineReader {
     try {
       const files = new CanonicalFileRepository(this.observation.repositoryRoot);
       if ((await this.git(["rev-parse", "--is-shallow-repository"])).trim() === "true") throw new Error("shallow Git history cannot establish the first authority baseline");
-      const path = relative(this.observation.repositoryRoot, files.pathFor("authority-record", authority.id)).replaceAll("\\", "/");
+      const authorityLocator = await files.locate("authority-record", authority.id);
+      if (authorityLocator === undefined) throw new Error("current authority locator is unavailable");
+      const path = relative(this.observation.repositoryRoot, authorityLocator.path).replaceAll("\\", "/");
       const headSource = { text: await this.git(["show", `HEAD:${path}`]), path: `HEAD:${path}` };
       const history = (await this.git(["log", "--format=%H", "--max-count=257", "HEAD", "--", path])).trim().split(/\s+/u).filter(Boolean);
       if (history.length > 256) throw new Error("authority history exceeds the bounded Git baseline search");
@@ -192,13 +194,17 @@ export class DecisionBaselineReader {
         const current = this.observation.canonical.documents.find(({ id }) => id === subjectId);
         const kinds = current === undefined ? ["concept", "requirement", "behavioral-scenario", "relation", "rule", "projection-lens"] as const : [current.kind];
         for (const kind of kinds) {
-            const subjectPath = relative(this.observation.repositoryRoot, files.pathFor(kind as Parameters<CanonicalFileRepository["pathFor"]>[0], subjectId)).replaceAll("\\", "/");
+            const subjectLocator = await files.locate(kind as Parameters<CanonicalFileRepository["locate"]>[0], subjectId);
+            if (subjectLocator === undefined) continue;
+            const subjectPath = relative(this.observation.repositoryRoot, subjectLocator.path).replaceAll("\\", "/");
             if (!trackedPaths.has(subjectPath)) continue;
             sources.push({ text: await this.git(["show", `${anchor}:${subjectPath}`]), path: `${anchor}:${subjectPath}`, subjectId }); break;
         }
       }
       const paths = [...trackedPaths].filter((path) => path !== ".projector" && !path.startsWith(".projector/"));
-      const decisionPath = relative(this.observation.repositoryRoot, files.pathFor("architecture-decision", decision.id)).replaceAll("\\", "/");
+      const decisionLocator = await files.locate("architecture-decision", decision.id);
+      if (decisionLocator === undefined) throw new Error("current decision locator is unavailable");
+      const decisionPath = relative(this.observation.repositoryRoot, decisionLocator.path).replaceAll("\\", "/");
       sources.push({ text: await this.git(["show", `${anchor}:${decisionPath}`]), path: `${anchor}:${decisionPath}`, subjectId: decision.id });
       const observations = await runObservationTask("decision-baseline-data", { kind: "git-observations", decision, authority: anchorAuthority!, sources, paths }, currentObservationScope()!);
       if (observations.kind !== "git-observations") throw new Error("Decision baseline worker returned another result kind");

@@ -1,12 +1,16 @@
 {
   "name": "@projector/cli",
-  "version": "2.1.9",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "exports": {
     "./operations": {
       "types": "./dist/operation-runner.d.ts",
       "default": "./dist/operation-runner.js"
+    },
+    "./commands": {
+      "types": "./dist/public-command.d.ts",
+      "default": "./dist/public-command.js"
     }
   },
   "scripts": {

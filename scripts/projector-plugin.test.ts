@@ -23,10 +23,7 @@ async function installedFixture() {
   await writeFile(join(packagedRoot, "exports/operations.js"), [
     "import { access, readFile, writeFile } from 'node:fs/promises';",
     "import { join } from 'node:path';",
-    "export function createInstalledProjectorApplicationEvidenceHost() { return { fixture: true }; }",
-    "export function createInstalledPsychordObservationFactory() { return async () => { throw new Error('fixture observation should not run'); }; }",
-    "export async function createBundledProjectorOperationRunner({ packagedRoot, applicationEvidence }) {",
-    " if (typeof applicationEvidence !== 'function') throw new Error('application evidence host missing');",
+    "export async function createBundledProjectorOperationRunner({ packagedRoot }) {",
     " const manifest = JSON.parse(await readFile(join(packagedRoot, 'package.json'), 'utf8'));",
     " return { execute: async (request, options = {}) => {",
     "  await writeFile(join(request.repositoryRoot, '.fixture-request.json'), JSON.stringify(request));",
@@ -53,7 +50,7 @@ describe("Projector installed operation entry", () => {
     const session = manifest.hooks.SessionStart[0];
     expect(session.matcher).toBe("startup|resume|clear|compact");
     const injection = session.hooks.find((entry: { command: string }) => entry.command.includes("projector-instructions.mjs"));
-    expect(session.hooks.some((entry: { command: string }) => entry.command.includes("projector-session.mjs"))).toBe(true);
+    expect(session.hooks).toHaveLength(1);
     const contents = await readFile(join(pluginRoot, "AGENTS.md"), "utf8");
     expect(contents.length).toBeLessThanOrEqual(injection.additionalContextLimit);
     const hook = join(pluginRoot, "hooks/projector-instructions.mjs");
@@ -68,8 +65,6 @@ describe("Projector installed operation entry", () => {
       expect((await run("git", ["init", "-q"], repository)).exitCode).toBe(0);
     }
     await writeFile(join(packagedRoot, "exports/operations.js"), "throw new Error('observation unavailable');");
-    const observation = await run(process.execPath, [join(pluginRoot, "hooks/projector-session.mjs")], repository, JSON.stringify({ hook_event_name: "SessionStart", cwd: repository }));
-    expect(observation.exitCode).toBe(1);
     const independent = await run(process.execPath, [hook], repository);
     expect(JSON.parse(independent.stdout).hookSpecificOutput.additionalContext).toBe(contents);
     await rm(join(pluginRoot, "AGENTS.md"));
@@ -148,80 +143,6 @@ describe("Projector installed operation entry", () => {
     }
     const manifest = JSON.parse(await readFile(join(sourcePluginRoot, ".codex-plugin/plugin.json"), "utf8"));
     expect(manifest).not.toHaveProperty("mcpServers");
-  });
-});
-
-describe("Projector lifecycle hooks", () => {
-  test("shares bounded readiness on session startup, resume, and mutation paths without deciding the tool call", async () => {
-    const { root, pluginRoot } = await installedFixture();
-    const repository = join(root, "repository");
-    await mkdir(repository);
-    expect((await run("git", ["init", "-q"], repository)).exitCode).toBe(0);
-    const hook = join(pluginRoot, "hooks/projector-session.mjs");
-
-    const manifest = JSON.parse(await readFile(join(pluginRoot, "hooks/hooks.json"), "utf8"));
-    expect(manifest.hooks.SessionStart[0].matcher).toBe("startup|resume|clear|compact");
-    expect(manifest.hooks.PreToolUse[0].matcher).toBe("Bash|apply_patch|Edit|Write");
-
-    const inactive = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command: "*** Begin Patch" } }));
-    expect(inactive).toMatchObject({ exitCode: 0, stdout: "", stderr: "" });
-
-    await mkdir(join(repository, ".projector"));
-    await writeFile(join(repository, ".projector/config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "9.8.7"\n');
-    for (const source of ["startup", "resume"] as const) {
-      const active = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "SessionStart", source, session_id: "session-start" }));
-      expect(active).toMatchObject({ exitCode: 0, stderr: "" });
-      expect(JSON.parse(active.stdout)).toMatchObject({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: expect.stringContaining("$projector") } });
-      expect(JSON.parse(await readFile(join(repository, ".fixture-request.json"), "utf8"))).toMatchObject({ operation: "repository.check", repositoryRoot: repository.replaceAll("\\", "/"), input: { mode: "full", sessionId: "session-start" } });
-    }
-
-    const beforeMutation = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_use_id: "tool-1", tool_input: { command: "*** Begin Patch" } }));
-    expect(beforeMutation).toMatchObject({ exitCode: 0, stderr: "" });
-    expect(JSON.parse(beforeMutation.stdout)).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: expect.stringContaining("operation entry owns readiness and access") } });
-    expect(JSON.parse(beforeMutation.stdout).hookSpecificOutput).not.toHaveProperty("permissionDecision");
-    expect(JSON.parse(await readFile(join(repository, ".fixture-request.json"), "utf8"))).toMatchObject({ operation: "status", input: {} });
-
-    expect(manifest.hooks.UserPromptSubmit).toHaveLength(1);
-    await writeFile(join(repository, ".projector/check-fixture.json"), JSON.stringify({ status: "changed", offer: true }));
-    const changed = await run(process.execPath, [hook], root, JSON.stringify({ hook_event_name: "UserPromptSubmit", cwd: repository, session_id: "session-1", prompt: "Continue my main task" }));
-    expect(changed).toMatchObject({ exitCode: 0, stderr: "" });
-    expect(JSON.parse(await readFile(join(repository, ".fixture-request.json"), "utf8"))).toMatchObject({ operation: "repository.check", repositoryRoot: repository.replaceAll("\\", "/"), input: { mode: "commit-only", sessionId: "session-1" } });
-    const notice = JSON.parse(changed.stdout).hookSpecificOutput;
-    expect(notice.hookEventName).toBe("UserPromptSubmit");
-    expect(notice.additionalContext).toContain("Offer $projector-reconcile and wait for acceptance");
-    expect(notice.additionalContext.length).toBeLessThanOrEqual(768);
-    expect(notice).not.toHaveProperty("permissionDecision");
-    await writeFile(join(repository, ".projector/check-fixture.json"), JSON.stringify({ status: "unchanged", offer: false }));
-    const repeated = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "session-1" }));
-    expect(JSON.parse(repeated.stdout).hookSpecificOutput.additionalContext).not.toContain("Offer $projector-reconcile");
-
-    const neighbor = join(root, "neighbor");
-    await mkdir(neighbor);
-    expect((await run("git", ["init", "-q"], neighbor)).exitCode).toBe(0);
-    const lateTarget = await run(process.execPath, [hook], neighbor, JSON.stringify({ hook_event_name: "UserPromptSubmit", prompt: "Add a skill to the Projector repository next door" }));
-    expect(lateTarget).toMatchObject({ exitCode: 0, stderr: "" });
-    expect(JSON.parse(lateTarget.stdout).hookSpecificOutput.additionalContext).toContain("actual target");
-
-    for (const status of ["upgrade-required", "recovery-required", "busy", "unavailable"]) {
-      await writeFile(join(repository, ".projector/non-ready-status"), `${status}\n`);
-      const nonReady = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id: `tool-${status}`, tool_input: { command: "git status" } }));
-      expect(nonReady).toMatchObject({ exitCode: 0, stderr: "" });
-      const output = JSON.parse(nonReady.stdout);
-      expect(output).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: expect.stringMatching(new RegExp(`${status}.*resolve ${status} fixture state`, "iu")) } });
-      expect(output.hookSpecificOutput.additionalContext.length).toBeLessThanOrEqual(256);
-      expect(output.hookSpecificOutput).not.toHaveProperty("permissionDecision");
-    }
-    await rm(join(repository, ".projector/non-ready-status"));
-
-    await rm(join(pluginRoot, "runtime/projector/exports/operations.js"));
-    await mkdir(join(pluginRoot, "runtime/projector/exports/operations.js"));
-    const unexpected = await run(process.execPath, [hook], repository, JSON.stringify({ hook_event_name: "SessionStart", source: "startup" }));
-    expect(unexpected.exitCode).toBe(1);
-    expect(unexpected.stdout).toBe("");
-    expect(unexpected.stderr).not.toBe("");
-
-    const malformed = await run(process.execPath, [hook], repository, "[]");
-    expect(malformed).toMatchObject({ exitCode: 1, stdout: "", stderr: expect.stringMatching(/JSON object/iu) });
   });
 });
 

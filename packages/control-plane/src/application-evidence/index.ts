@@ -1,7 +1,13 @@
+/**
+ * Domain adapters are supplied at the application boundary. Projector keeps
+ * only the generic, strict Core evidence contract in its shipped runtime.
+ */
 export {
-  createDurablePsychordAgentBrowserObservationArtifactService,
-  createDurablePsychordObservationArtifactService,
-  type DurablePsychordAgentBrowserObservationServiceInput,
-} from "./psychord.js";
-export * from "./psychord-assessment.js";
-export * from "./psychord-custody.js";
+  ApplicationEvidenceAssessmentRequestSchema,
+  ApplicationEvidenceAssessmentSchema,
+  assessApplicationEvidence,
+  hashApplicationEvidenceAssessment,
+  type ApplicationEvidenceAssessment,
+  type ApplicationEvidenceAssessmentRequest,
+  type ApplicationEvidencePort,
+} from "@projector/core";

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
 
 import { ChangeLifecycleStore } from "../change-lifecycle/store.js";
-import type { PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
+import type { ApplicationEvidencePort } from "../knowledge/application-evidence.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { KnowledgeContextStore } from "../knowledge/store.js";
 import { RepositoryRepresentationInspectionService } from "../representation/service.js";
@@ -46,7 +46,7 @@ function isMissing(error: unknown): boolean {
 }
 
 /** Re-observes existing owners. This projection has no durable continuation state. */
-export async function inspectRepositoryContinuation(repositoryRoot: string, request: RepositoryContinuationRequest, options: { readonly signal?: AbortSignal; readonly applicationEvidence?: PsychordApplicationEvidenceHost } = {}): Promise<RepositoryContinuation> {
+export async function inspectRepositoryContinuation(repositoryRoot: string, request: RepositoryContinuationRequest, options: { readonly signal?: AbortSignal; readonly applicationEvidence?: ApplicationEvidencePort } = {}): Promise<RepositoryContinuation> {
   const input = ProjectorOperationInputSchemas.cleanup.parse(request);
   const signal = options.signal ?? new AbortController().signal;
   signal.throwIfAborted();
@@ -102,12 +102,10 @@ export async function inspectRepositoryContinuation(repositoryRoot: string, requ
   if (capture !== undefined) {
     let recoveryRequired = false;
     let completed = false;
-    let attempted = false;
     if (approval !== undefined) {
       const journal = new FileTransactionJournal(await RepositoryPathService.create(repositoryRoot));
       for (const attempt of await lifecycleStore.attemptsForApproval(approval.id)) {
         signal.throwIfAborted();
-        attempted = true;
         let result;
         try { result = await lifecycleStore.readAttemptResult(attempt.id); }
         catch (error) { if (!isMissing(error)) throw error; }
@@ -169,7 +167,7 @@ export async function inspectRepositoryContinuation(repositoryRoot: string, requ
       } else {
         nextAction = approval === undefined
           ? operation("change.approve", { changeSelector: capture.semanticChangeId, planHash: capture.planHash })
-          : operation(attempted ? "change.resume" : "change.apply", { approvalSelector: approval.id });
+          : operation("change.apply", { approvalSelector: approval.id });
         reason = approval === undefined ? "Review and approve the exact current plan hash before execution." : "The selected approval and its plan dependencies are current; continue through the lifecycle service.";
       }
     }

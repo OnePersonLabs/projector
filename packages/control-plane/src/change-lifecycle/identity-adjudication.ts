@@ -3,13 +3,16 @@ import { CanonicalFileRepository } from "@projector/runtime";
 
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import type { KnowledgeContextResult } from "../knowledge/types.js";
-import type { PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
+import type { ApplicationEvidencePort } from "../knowledge/application-evidence.js";
 import type { CompiledRepositoryChange } from "./compiler.js";
 
 const normalize = (value: string): string => value.normalize("NFKC").trim().toLocaleLowerCase("en-US");
 const durableKinds = new Set(["concept", "requirement", "behavioral-scenario", "architecture-decision", "architecture-concern", "developer-preference", "projection-lens"]);
 const coveredIds = (context: KnowledgeContextResult): Set<string> => new Set(context.branches.filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)
   .flatMap(({ closure }) => [...closure.entries.map(({ entityId }) => entityId), ...closure.boundState.valueDependencies.map(({ id }) => id)]));
+const directRootIds = (context: KnowledgeContextResult): Set<string> => new Set(context.branches.filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)
+  .flatMap(({ closure }) => closure.entries.filter(({ band }) => band === "direct").map(({ entityId }) => entityId)));
+const sameIds = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean => left.size === right.size && [...left].every((id) => right.has(id));
 
 /** Explicit existing proposal identities can supply a direct address; prose similarity cannot. */
 function existingAddresses(proposal: ChangeProposal, documents: readonly CanonicalDocumentEnvelope[]): string[] {
@@ -55,7 +58,7 @@ function existingAddresses(proposal: ChangeProposal, documents: readonly Canonic
   return [...selected].sort();
 }
 
-export async function captureKnowledgeContextId(repositoryRoot: string, request: string, proposal: ChangeProposal, suppliedId?: string, signal?: AbortSignal, applicationEvidence?: PsychordApplicationEvidenceHost): Promise<string | undefined> {
+export async function captureKnowledgeContextId(repositoryRoot: string, request: string, proposal: ChangeProposal, suppliedId?: string, signal?: AbortSignal, applicationEvidence?: ApplicationEvidencePort): Promise<string | undefined> {
   signal?.throwIfAborted();
   const resolutionId = proposal.identityResolution?.contextId;
   if (suppliedId !== undefined && resolutionId !== undefined && suppliedId !== resolutionId) throw new Error("identity resolution and supplied knowledge context differ");
@@ -73,7 +76,7 @@ export async function captureKnowledgeContextId(repositoryRoot: string, request:
 }
 
 /** Materialize selected candidate branches using the same context machinery and store. */
-export async function adjudicatedKnowledgeContext(repositoryRoot: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, applicationEvidence?: PsychordApplicationEvidenceHost): Promise<KnowledgeContextResult | undefined> {
+export async function adjudicatedKnowledgeContext(repositoryRoot: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, applicationEvidence?: ApplicationEvidencePort): Promise<KnowledgeContextResult | undefined> {
   signal?.throwIfAborted();
   if (contextId === undefined) {
     if (proposal.identityResolution !== undefined) throw new Error("identity resolution requires its retained candidate context");
@@ -99,15 +102,24 @@ export async function adjudicatedKnowledgeContext(repositoryRoot: string, propos
   signal?.throwIfAborted();
   const covered = coveredIds(retained);
   if (resolution === undefined && required.every((id) => covered.has(id))) return retained;
-  const selectedIds = resolution?.selectedEntityIds ?? retained.branches.filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct && interpretation.entityKind !== "projection-unit").map(({ interpretation }) => interpretation.entityId);
+  const selectedIds = resolution?.selectedEntityIds ?? retained.branches
+    .filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)
+    .flatMap(({ closure }) => closure.entries.filter(({ band }) => band === "direct").map(({ entityId }) => entityId));
   const entities = [...new Set([...selectedIds, ...required])].sort();
   if (entities.length === 0) return retained;
+  // A reviewed selection can be the exact direct body already retained. Rebuilding
+  // it would only repeat repository observation; the later reconciliation still
+  // proves its currentness against the lifecycle compilation snapshot.
+  const allRetainedBranchesDirect = retained.branches.length > 0 && retained.branches.every(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct);
+  if (allRetainedBranchesDirect && required.every((id) => covered.has(id)) && sameIds(directRootIds(retained), new Set(entities))) return retained;
   // Bring every explicitly preserved/revised existing subject into the actual
   // governing context. An unrelated supplied context cannot omit its obligations.
   const selected = await knowledge.context({ request: retained.request, entities, namedTargets: retained.requestOptions.namedTargets,
     operation: retained.operation, policy: { ...retained.requestOptions.policy, maxCandidates: Math.max(retained.requestOptions.policy.maxCandidates, entities.length + retained.requestOptions.namedTargets.length) }, ...(signal === undefined ? {} : { signal }) });
   signal?.throwIfAborted();
-  const directIds = new Set(selected.branches.filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct).map(({ interpretation }) => interpretation.entityId));
+  const directIds = new Set(selected.branches
+    .filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)
+    .flatMap(({ closure }) => closure.entries.filter(({ band }) => band === "direct").map(({ entityId }) => entityId)));
   if (selectedIds.some((id) => !directIds.has(id))) throw new Error("a selected identity no longer resolves directly; refresh candidate knowledge");
   return selected;
 }

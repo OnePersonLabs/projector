@@ -1,6 +1,5 @@
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -18,6 +17,7 @@ import {
   projectorOperationApiVersion,
   projectorOperationResultApiVersion,
   type PackageIdentity,
+  type ApplicationEvidencePort,
   type ProjectReadiness,
   type ProjectorOperation,
   type ProjectorOperationAction,
@@ -34,7 +34,6 @@ import {
   LifecycleCaptureOutputSchema,
   LifecyclePlanOutputSchema,
   LifecycleRecoveryOutputSchema,
-  LifecycleResumeOutputSchema,
   PreparedProjectInitializationResultSchema,
   RepositoryCleanupOutputSchema,
   RepositoryCompletionOutputSchema,
@@ -44,7 +43,6 @@ import {
   RepositoryChangeLifecycleService,
   RepositoryRepresentationInspectionService,
   RepositoryRepresentationProfileReconciliationService,
-  createPackagedProjectDataMigrationService,
   RepresentationInspectionOperationOutputSchema,
   RepresentationInspectionOutputSchema,
   RepresentationProfileReconciliationOperationOutputSchema,
@@ -58,28 +56,17 @@ import {
   projectLifecycleCapture,
   projectLifecyclePlan,
   projectLifecycleRecovery,
-  projectLifecycleResume,
   projectRepresentationInspectionOperation,
   projectRepresentationProfileReconciliationOperation,
   withProjectOperationAccess,
   type PreparedProjectInitializationResult,
-  type PsychordApplicationEvidenceHost,
 } from "@projector/control-plane";
-import { createDurablePsychordObservationArtifactService } from "@projector/control-plane/application-evidence";
-import {
-  PsychordApplicationObservationPlanSchema,
-  PsychordObserveAndPublishResultSchema,
-  createStrictPsychordApplicationObserver,
-  observePsychordEvidenceCurrentness,
-  type PsychordCommandRunner,
-} from "@projector/integrations/runtime-evidence";
 import { NativeProcessLauncher, OperationalReportSchema, withObservationScope } from "@projector/runtime";
 import { z } from "zod";
 
 import { runReadOnlyOperationalVerification } from "./operational-verification.js";
-import type { InstalledPsychordObservationFactory } from "./installed-psychord-observation.js";
-export { createInstalledPsychordObservationFactory } from "./installed-psychord-observation.js";
 
+const optionalApplicationEvidence = (port: ApplicationEvidencePort | undefined): { applicationEvidence?: ApplicationEvidencePort } => port === undefined ? {} : { applicationEvidence: port };
 const maximumPackageManifestBytes = 16 * 1024;
 const ordinaryOperationSchema = ProjectorOperationSchema.exclude(["status", "init"]);
 const operationEnvelopeSchema = z.strictObject({
@@ -314,56 +301,16 @@ export async function createProjectorOperationRunner<
 export interface BundledProjectorOperationRunnerInput {
   readonly packagedRoot: string;
   readonly codexDataRoot?: string;
-  readonly applicationEvidence: (input: {
+  readonly applicationEvidence?: (input: {
     readonly repositoryRoot: string;
     readonly signal: AbortSignal;
     readonly environment: Readonly<Record<string, string | undefined>>;
-  }) => PsychordApplicationEvidenceHost;
-  readonly applicationObservation?: InstalledPsychordObservationFactory;
-}
-
-const inheritedApplicationEnvironmentKeys = ["SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "PATH", "TEMP", "TMP", "TMPDIR"] as const;
-
-/** Lazy/read-only until an exact evidence ID is assessed; browser collection is a separate optional service. */
-export function createInstalledProjectorApplicationEvidenceHost(input: {
-  readonly repositoryRoot: string;
-  readonly signal: AbortSignal;
-  readonly environment: Readonly<Record<string, string | undefined>>;
-}): PsychordApplicationEvidenceHost {
-  const launcher = new NativeProcessLauncher();
-  const environment = Object.fromEntries(inheritedApplicationEnvironmentKeys.flatMap((key) => {
-    const value = input.environment[key];
-    return value === undefined ? [] : [[key, value]];
-  }));
-  const commands: PsychordCommandRunner = { run: async (request) => launcher.launch({ ...request, args: [...request.args] }) };
-  const artifacts = createDurablePsychordObservationArtifactService({
-    storageRoot: join(input.repositoryRoot, ".projector/runtime/application-evidence"),
-    observer: createStrictPsychordApplicationObserver({
-      async observeApplication() {
-        throw new Error("Application evidence collection is unavailable without a registered application observer");
-      },
-    }),
-  });
-  return {
-    artifacts,
-    currentness: {
-      observe: async (plan, { signal }) => observePsychordEvidenceCurrentness({
-        commands,
-        plan,
-        environment,
-        signal: AbortSignal.any([input.signal, signal]),
-      }),
-    },
-  };
+  }) => ApplicationEvidencePort;
 }
 
 /** The installed in-process composition. Every registered result schema remains owned by its service package. */
 export async function createBundledProjectorOperationRunner(input: BundledProjectorOperationRunnerInput) {
-  const migration = createPackagedProjectDataMigrationService({
-    packagedRoot: input.packagedRoot,
-    codexDataRoot: input.codexDataRoot ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"),
-  });
-  const applicationEvidenceFor = (repositoryRoot: string, context: OperationHandlerContext) => input.applicationEvidence({
+  const applicationEvidenceFor = (repositoryRoot: string, context: OperationHandlerContext) => input.applicationEvidence?.({
     repositoryRoot,
     signal: context.signal,
     environment: context.environment,
@@ -381,7 +328,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       outputSchema: KnowledgeContextOperationOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const { signal } = context;
-        const service = await RepositoryKnowledgeService.create({ repositoryRoot, applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
+        const service = await RepositoryKnowledgeService.create({ repositoryRoot, ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)) });
         return projectKnowledgeContext(await service.context({
           request: input.request,
           signal,
@@ -407,7 +354,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       outputSchema: KnowledgeReconciliationOperationOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const { signal } = context;
-        const service = await RepositoryKnowledgeService.create({ repositoryRoot, applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
+        const service = await RepositoryKnowledgeService.create({ repositoryRoot, ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)) });
         return projectKnowledgeReconciliation(await service.reconcile(input.contextId, { signal }), input.view);
       },
     }),
@@ -417,7 +364,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       outputSchema: LifecycleCaptureOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const { signal } = context;
-        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)) });
         return LifecycleCaptureOutputSchema.parse(projectLifecycleCapture(await service.capture({
           request: input.request,
           proposal: input.proposal,
@@ -431,7 +378,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       outputSchema: LifecyclePlanOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const { signal } = context;
-        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)) });
         return LifecyclePlanOutputSchema.parse(projectLifecyclePlan(input.changeSelector, await service.plan(input.changeSelector, { signal })));
       },
     }),
@@ -441,7 +388,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       outputSchema: LifecycleApprovalOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const { signal } = context;
-        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)) });
         return LifecycleApprovalOutputSchema.parse(projectLifecycleApproval(await service.approve(input.changeSelector, input.planHash, { signal })));
       },
     }),
@@ -451,7 +398,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       outputSchema: LifecycleApplyOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const { signal } = context;
-        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)) });
         return LifecycleApplyOutputSchema.parse(projectLifecycleApply(input.approvalSelector, await service.apply(input.approvalSelector, { signal })));
       },
     }),
@@ -467,20 +414,11 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       outputSchema: LifecycleRecoveryOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const { signal } = context;
-        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
+        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)) });
         return LifecycleRecoveryOutputSchema.parse(projectLifecycleRecovery(input.approvalSelector, await service.recover(input.approvalSelector, { signal })));
       },
     }),
-    defineProjectorOperationHandler({
-      operation: "change.resume",
-      inputSchema: ProjectorOperationInputSchemas["change.resume"],
-      outputSchema: LifecycleResumeOutputSchema,
-      execute: async ({ repositoryRoot, input }, context) => {
-        const { signal } = context;
-        const service = await RepositoryChangeLifecycleService.create(repositoryRoot, { applicationEvidence: applicationEvidenceFor(repositoryRoot, context) });
-        return LifecycleResumeOutputSchema.parse(projectLifecycleResume(input.approvalSelector, await service.resume(input.approvalSelector, { signal })));
-      },
-    }),
+
     coverageHandler("coverage", RepositoryCoverageOutputSchema, applicationEvidenceFor),
     coverageHandler("complete", RepositoryCompletionOutputSchema, applicationEvidenceFor),
     coverageHandler("cleanup", RepositoryCleanupOutputSchema, applicationEvidenceFor),
@@ -493,7 +431,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
           signal: context.signal,
           toolVersion: context.package.version,
           policy: { preset: "observe", allowMutation: false, allowPersistence: false },
-          applicationEvidence: applicationEvidenceFor(repositoryRoot, context),
+          ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)),
         }),
       ),
     }),
@@ -503,7 +441,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       outputSchema: RepresentationInspectionOperationOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const service = await RepositoryRepresentationInspectionService.create(repositoryRoot, {
-          applicationEvidence: applicationEvidenceFor(repositoryRoot, context),
+          ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)),
         });
         return projectRepresentationInspectionOperation(RepresentationInspectionOutputSchema.parse(await service.inspect({
           changeSelector: input.changeSelector,
@@ -520,7 +458,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       outputSchema: RepresentationProfileReconciliationOperationOutputSchema,
       execute: async ({ repositoryRoot, input }, context) => {
         const service = await RepositoryRepresentationProfileReconciliationService.create(repositoryRoot, {
-          applicationEvidence: applicationEvidenceFor(repositoryRoot, context),
+          ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)),
         });
         return projectRepresentationProfileReconciliationOperation(RepresentationProfileReconciliationOutputSchema.parse(await service.reconcile({
           changeSelector: input.changeSelector,
@@ -530,19 +468,6 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       },
     }),
   ];
-  if (input.applicationObservation !== undefined) {
-    const serviceFor = input.applicationObservation;
-    handlers.push(defineProjectorOperationHandler({
-      operation: "application.observe",
-      inputSchema: z.strictObject({ plan: PsychordApplicationObservationPlanSchema }),
-      outputSchema: PsychordObserveAndPublishResultSchema,
-      execute: async ({ repositoryRoot, input: { plan } }, context) => {
-        const service = await serviceFor({ repositoryRoot, plan, signal: context.signal, environment: context.environment });
-        return service.observeAndPublish(plan, { signal: context.signal });
-      },
-    }));
-  }
-
   const launcherCapabilities = new NativeProcessLauncher().capabilities;
   return createProjectorOperationRunner({
     packagedRoot: input.packagedRoot,
@@ -551,19 +476,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
       inspectReadiness: inspectProjectReadiness,
       initializer: {
         resultSchema: PreparedProjectInitializationResultSchema,
-        execute: async (repositoryRoot, request) => {
-          const readiness = await inspectProjectReadiness(repositoryRoot, { operation: "init", ...request });
-          if (readiness.status === "upgrade-required" || readiness.status === "recovery-required") {
-            await migration.migrate(repositoryRoot, {
-              requestId: `project-data-migration:${process.pid}:${Date.now()}`,
-              processId: process.pid,
-              ...(request.signal === undefined ? {} : { signal: request.signal }),
-            });
-            const migrated = await inspectProjectReadiness(repositoryRoot, { operation: "init", ...request });
-            return PreparedProjectInitializationResultSchema.parse({ readiness: migrated, created: true });
-          }
-          return initializePreparedProject(repositoryRoot, request);
-        },
+        execute: initializePreparedProject,
       },
       withProjectOperationAccess,
       observedHostCapabilities: [
@@ -589,7 +502,7 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
 function coverageHandler<TOperation extends "coverage" | "complete" | "cleanup", TSchema extends z.ZodType>(
   operation: TOperation,
   outputSchema: TSchema,
-  applicationEvidenceFor: (repositoryRoot: string, context: OperationHandlerContext) => PsychordApplicationEvidenceHost,
+  applicationEvidenceFor: (repositoryRoot: string, context: OperationHandlerContext) => ApplicationEvidencePort | undefined,
 ): ProjectorOperationHandler<TOperation, (typeof ProjectorOperationInputSchemas)[TOperation], TSchema> {
   return defineProjectorOperationHandler({
     operation,
@@ -602,7 +515,7 @@ function coverageHandler<TOperation extends "coverage" | "complete" | "cleanup",
         ...(input.budgetTokens === undefined ? {} : { budgetTokens: input.budgetTokens }),
         ...(input.budgetCost === undefined ? {} : { budgetCost: input.budgetCost }),
         ...(input.questionOffset === undefined ? {} : { questionOffset: input.questionOffset }),
-      }, operation, { signal: context.signal, applicationEvidence: applicationEvidenceFor(repositoryRoot, context) }),
+      }, operation, { signal: context.signal, ...optionalApplicationEvidence(applicationEvidenceFor(repositoryRoot, context)) }),
     ),
   });
 }

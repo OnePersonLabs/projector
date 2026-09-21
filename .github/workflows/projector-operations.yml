@@ -1,11 +1,15 @@
-name: Projector operations
+name: Projector checks and package
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-candidate:
-    runs-on: ubuntu-24.04
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     permissions:
       contents: read
@@ -21,47 +25,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm verify
-      - run: pnpm release:artifacts:check
-      - run: node scripts/build-source-severed-release-bundle.mjs "${{ runner.temp }}/projector/release-candidate"
-      - name: Upload exact release candidate
-        uses: actions/upload-artifact@v4
+      - run: pnpm release:check
+      - uses: actions/upload-artifact@v4
         with:
-          name: projector-release-candidate
-          path: ${{ runner.temp }}/projector/release-candidate
-          if-no-files-found: error
-          retention-days: 7
-
-  source-severed-acceptance:
-    needs: build-candidate
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, windows-2025]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Download exact release candidate without a checkout
-        uses: actions/download-artifact@v4
-        with:
-          name: projector-release-candidate
-          path: ${{ runner.temp }}/projector/release-candidate
-      - name: Accept downloaded source-severed candidate
-        run: node "${{ runner.temp }}/projector/release-candidate/source-severed-release-acceptance.mjs" "${{ runner.temp }}/projector/release-candidate"
-      - name: Upload exact accepted artifacts and evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: projector-accepted-${{ matrix.os }}
-          path: |
-            ${{ runner.temp }}/projector/release-candidate/artifacts
-            ${{ runner.temp }}/projector/release-candidate/plugin
-            ${{ runner.temp }}/projector/release-candidate/manifest.json
-            ${{ runner.temp }}/projector/release-candidate/results/packed-held-out-lifecycle.json
-            ${{ runner.temp }}/projector/release-candidate/results/packed-held-out-lifecycle-transcript.json
-            ${{ runner.temp }}/projector/release-candidate/results/digests.json
+          name: projector-${{ matrix.os }}
+          path: .temp/projector-release-check
           if-no-files-found: error
           retention-days: 14

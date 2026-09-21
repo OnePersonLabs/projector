@@ -1,6 +1,6 @@
 import { collectLocalRepositoryInputs } from "@projector/analyzers";
 import { hashFramedDomain, ObservationError, type ContentHash } from "@projector/core";
-import { inspectRepositoryCoverage, runObservationTask, type PsychordApplicationEvidenceHost, type RepositoryCoverageResult } from "@projector/control-plane";
+import { inspectRepositoryCoverage, runObservationTask, type ApplicationEvidencePort, type RepositoryCoverageResult } from "@projector/control-plane";
 import {
   collectCanonicalSnapshotSources,
   currentObservationScope,
@@ -16,7 +16,7 @@ export interface ReadOnlyOperationalVerificationOptions {
   readonly signal: AbortSignal;
   readonly toolVersion: string;
   readonly policy: unknown;
-  readonly applicationEvidence: PsychordApplicationEvidenceHost;
+  readonly applicationEvidence?: ApplicationEvidencePort;
 }
 
 export async function runReadOnlyOperationalVerification(
@@ -41,7 +41,7 @@ async function verifyWithinScope(repositoryRoot: string, options: ReadOnlyOperat
     if (knowledge.findings.length > 0) throw new Error("Canonical knowledge is invalid; dependent coverage cannot be evaluated.");
     coverage = await inspectRepositoryCoverage(repositoryRoot, { scope: "." }, "coverage", {
       signal: options.signal,
-      applicationEvidence: options.applicationEvidence,
+      ...(options.applicationEvidence === undefined ? {} : { applicationEvidence: options.applicationEvidence }),
     });
   } catch (error) {
     options.signal.throwIfAborted();
