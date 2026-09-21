@@ -23,7 +23,7 @@ describe("project activation authority", () => {
     const repositoryRoot = await root();
     expect(await inspectProjectActivation(repositoryRoot)).toMatchObject({ status: "disabled", failure: "missing" });
     await mkdir(join(repositoryRoot, ".projector"));
-    await writeFile(join(repositoryRoot, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
+    await writeFile(join(repositoryRoot, ".projector", "config.toml"), 'apiVersion = "projector.config/v3"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     expect(await inspectProjectActivation(repositoryRoot)).toMatchObject({ status: "enabled", config: { projectorVersion: "2.1.0" } });
   });
 

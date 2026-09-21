@@ -1,0 +1,36 @@
++++
+format = 3
+apiVersion = "projector/v3"
+schemaVersion = "3.0.0"
+kind = "requirement"
+id = "projector-requirement_0272e6aa6b6a02aa24572b72939c539d"
+key = "host-change-intent-routing"
+lifecycle = "active"
+
+[metadata]
+aliases = []
+sourceClass = "authored"
++++
+
+# Recognize project change intent before implementation
+
+For a Projector-active target, recognize proposed changes to behavior, architecture, requirements, or shipped skills before dependent implementation, including proposals introduced by the agent, a target discovered late in a turn, or a capability change discovered midway through implementation. Retrieve accepted meaning and use the existing canonical change lifecycle when intended meaning changes. Carry forward existing user authorization. Planning-only discussions stay in planning; speculative ideas are not accepted requirements. Hook guidance is advisory and model interpretation owns meaning; do not classify intent through keyword matching or transcript parsing.
+
+<details>
+<summary>Structured record details</summary>
+
+```toml
+evidence = []
+
+[scope]
+op = "any"
+items = []
+
+[[origin]]
+kind = "document"
+locator = "proposal:sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99"
+contentHash = "sha256:v1:598c8dc3878ef3fd2f2bb3750a31d2953534dd2be7f6e361a2fd02af5d5ebb99"
+description = "Structured interpretation proposed for approval; not a verbatim user request."
+
+```
+</details>

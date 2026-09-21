@@ -55,7 +55,7 @@ export async function buildPluginRuntime(outputRoot, options = {}) {
       await buildReleasePackage(releaseRoot, join(temporary, "artifacts"), { signal: options.signal });
     }
     const manifest = JSON.parse(await readFile(join(releaseRoot, "package.json"), "utf8"));
-    if (manifest.name !== releasePackageName || manifest.version !== releaseVersion || manifest.bin !== undefined || manifest.exports?.["./operations"] === undefined) throw new Error("plugin runtime is not the expected operation-only Projector release");
+    if (manifest.name !== releasePackageName || manifest.version !== releaseVersion || manifest.bin?.projector !== "./dist/command-main.mjs" || manifest.exports?.["./operations"] === undefined || manifest.exports?.["./commands"] === undefined) throw new Error("plugin runtime is not the expected Projector release");
     await cp(pluginSource, target, { recursive: true, filter: (source) => source !== join(pluginSource, "runtime") });
     const pluginManifestPath = join(target, ".codex-plugin/plugin.json");
     const pluginManifest = JSON.parse(await readFile(pluginManifestPath, "utf8"));

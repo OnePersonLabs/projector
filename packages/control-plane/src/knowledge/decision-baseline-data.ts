@@ -1,5 +1,5 @@
-import { hydrateCanonicalDocumentWire, withCanonicalHashes, hashFramedDomain, type ArchitectureDecision, type AuthorityRecord, type CanonicalDocumentEnvelope } from "@projector/core";
-import { assertSupportedCanonicalVersions, parseTomlDocument } from "@projector/runtime";
+import { hydrateCanonicalDocumentWire, hashSemantic, hashFramedDomain, type ArchitectureDecision, type AuthorityRecord, type CanonicalDocumentEnvelope } from "@projector/core";
+import { assertSupportedCanonicalVersions, parseCanonicalMarkdownDocument, parseTomlDocument } from "@projector/runtime";
 import type { StateBoundChangeResult } from "@projector/engine";
 import { ChangeLifecycleStore } from "../change-lifecycle/store.js";
 import { captureDecisionTriggerObservations, KnowledgeDecisionBaselineSchema, type KnowledgeDecisionBaseline } from "./decision-baselines.js";
@@ -35,7 +35,7 @@ export async function executeDecisionBaselineData(input: DecisionBaselineDataInp
   if (input.kind === "canonical") {
     try { return { kind: "canonical", documents: input.sources.map(({ text, path }) => {
       let record: CanonicalDocumentEnvelope;
-      try { record = hydrateCanonicalDocumentWire(parseTomlDocument(text, path)); }
+      try { record = hydrateCanonicalDocumentWire(path.endsWith(".md") ? parseCanonicalMarkdownDocument(text, path) : parseTomlDocument(text, path)); }
       catch (error) { throw new Error(`invalid tracked canonical document at ${path}: ${error instanceof Error ? error.message : String(error)}`); }
       assertSupportedCanonicalVersions(record, ` at ${path}`);
       return record;
@@ -66,8 +66,7 @@ export async function executeDecisionBaselineData(input: DecisionBaselineDataInp
           const approved = mutations.some((mutation) => {
             if (!("payload" in mutation)) return false;
             const payload = mutation.payload as Record<string, unknown>;
-            const envelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: mutation.kind, id: String(payload.id), key: String(payload.key), lifecycle: String(payload.status ?? payload.lifecycle), payload });
-            return envelope.semanticHash === (mutation.kind === "authority-record" ? baseline.authoritySemanticHash : baseline.decisionSemanticHash);
+            return hashSemantic(mutation.kind, payload) === (mutation.kind === "authority-record" ? baseline.authoritySemanticHash : baseline.decisionSemanticHash);
           });
           if (!approved || capture.planHash !== approval.planHash) continue;
           receipts.push({ baseline, reference: record.receiptHash ?? record.contentHash, completedAt: record.completedAt,

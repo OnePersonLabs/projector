@@ -56,7 +56,7 @@ import {
   type CompiledSemanticChangePlan,
   type BuiltInRepresentationProfileKey,
 } from "@projector/engine";
-import { CanonicalFileRepository, RepositoryPathService, withObservationScope, type ExactTextPatchInput } from "@projector/runtime";
+import { CanonicalFileRepository, RepositoryPathService, canonicalApiVersion, canonicalSchemaVersion, withObservationScope, type ExactTextPatchInput, type CanonicalSourceLocator } from "@projector/runtime";
 
 import { observeChangeRepository, type IndependentValidatorObservation } from "./repository-observer.js";
 import { CHANGE_QUERY_PROGRAM_IDS, createChangeQueryRegistry, exactIdentityCandidates } from "./query-programs.js";
@@ -325,6 +325,7 @@ async function optionalText(path: string): Promise<string | null> {
 async function canonicalWrite(
   repositoryRoot: string,
   repository: CanonicalFileRepository,
+  locations: ReadonlyMap<string, CanonicalSourceLocator>,
   kind: CanonicalChangeWrite["kind"],
   id: string,
   key: string,
@@ -336,13 +337,17 @@ async function canonicalWrite(
     : typeof body.lifecycle === "string" ? body.lifecycle
       : typeof body.status === "string" ? body.status
         : "active";
-  const envelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key, lifecycle, payload: body });
-  const prepared = repository.prepareWrite(envelope);
+  const envelope = withCanonicalHashes({ apiVersion: canonicalApiVersion, schemaVersion: canonicalSchemaVersion, kind, id, key, lifecycle, payload: body });
+  const existing = locations.get(id);
+  if (existing !== undefined && existing.kind !== kind) throw new Error(`canonical identity kind changed: ${id}`);
+  const prepared = repository.prepareWrite(envelope, existing === undefined ? {} : { existingPath: existing.path });
+  const before = await optionalText(prepared.path);
+  if (existing === undefined && before !== null) throw new Error(`canonical filename is already owned; choose a distinct readable title for ${id}`);
   return {
     id,
     kind,
     path: relative(repositoryRoot, prepared.path).replaceAll("\\", "/"),
-    before: await optionalText(prepared.path),
+    before,
     after: prepared.contents,
     envelope,
   };
@@ -350,11 +355,14 @@ async function canonicalWrite(
 
 async function canonicalDelete(
   repositoryRoot: string,
-  repository: CanonicalFileRepository,
+  locations: ReadonlyMap<string, CanonicalSourceLocator>,
   document: CanonicalDocumentEnvelope,
 ): Promise<CanonicalChangeWrite> {
   const kind = document.kind as CanonicalChangeWrite["kind"];
-  const absolutePath = repository.pathFor(kind, document.id);
+  const located = locations.get(document.id);
+  if (located !== undefined && located.kind !== kind) throw new Error(`canonical identity kind changed: ${document.id}`);
+  if (located === undefined) throw new Error(`canonical retirement source disappeared: ${document.id}`);
+  const absolutePath = located.path;
   const before = await optionalText(absolutePath);
   if (before === null) throw new Error(`canonical retirement source disappeared: ${document.id}`);
   return {
@@ -483,6 +491,7 @@ async function compileObservedRepositoryChange(
   }
   const independentValidators = await withCancellation(Promise.all(input.proposal.validation.independentNodeTests.map((path) => observation.independentValidator(path))), options.signal);
   const canonical = new CanonicalFileRepository(input.repositoryRoot);
+  const canonicalLocations = new Map((await canonical.locations()).map((location) => [location.id, location]));
   const retiredEntityIds = new Set(observation.canonical.documents
     .filter(({ kind }) => kind === "tombstone")
     .map(({ payload }) => String(payload.entityId)));
@@ -515,7 +524,7 @@ async function compileObservedRepositoryChange(
     const payload = proposedRequirementPayload(proposed, existing, targetId, proposalHash, editedPaths);
     reviewSubjects.push({ id: targetId, kind: "requirement", operation: existing === undefined ? "add" : proposed.revision === undefined ? "preserve" : "revise", before: existing ?? null, after: payload, rationale: proposed.revision?.rationale ?? null });
     if (existing !== undefined && proposed.revision === undefined) continue;
-    const write = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, "requirement", targetId, payload.key, payload), options.signal);
+    const write = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, canonicalLocations, "requirement", targetId, payload.key, payload), options.signal);
     reviewSubjects[reviewSubjects.length - 1] = { ...reviewSubjects.at(-1)!, after: RequirementSchema.parse(write.envelope.payload) as Requirement };
     if (write.before !== write.after) {
       canonicalWrites.push(write);
@@ -539,7 +548,7 @@ async function compileObservedRepositoryChange(
     const payload = proposedScenarioPayload(proposed, existing, targetId, editedPaths);
     reviewSubjects.push({ id: targetId, kind: "scenario", operation: existing === undefined ? "add" : proposed.revision === undefined ? "preserve" : "revise", before: existing ?? null, after: payload, rationale: proposed.revision?.rationale ?? null });
     if (existing !== undefined && proposed.revision === undefined) continue;
-    const write = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, "behavioral-scenario", targetId, payload.key, payload), options.signal);
+    const write = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, canonicalLocations, "behavioral-scenario", targetId, payload.key, payload), options.signal);
     reviewSubjects[reviewSubjects.length - 1] = { ...reviewSubjects.at(-1)!, after: BehavioralScenarioSchema.parse(write.envelope.payload) as BehavioralScenario };
     if (write.before !== write.after) {
       canonicalWrites.push(write);
@@ -565,7 +574,7 @@ async function compileObservedRepositoryChange(
         throw new Error(`canonical revision target hashes are stale: ${id}`);
       }
     }
-    const write = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, mutation.kind, id, mutationKey(mutation.kind, payload), payload), options.signal);
+    const write = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, canonicalLocations, mutation.kind, id, mutationKey(mutation.kind, payload), payload), options.signal);
     if (mutation.operation === "revise" && existing?.canonicalDocumentHash === write.envelope.canonicalDocumentHash) {
       throw new Error(`canonical revision is a no-op: ${id}`);
     }
@@ -622,7 +631,7 @@ async function compileObservedRepositoryChange(
       reason: mutation.rationale,
       stateDigest: observation.state.canonicalProjectorDigest,
     }) as LineageRecord;
-    const lineageWrite = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, "lineage", lineageId, `lineage:${lineageId}`, lineage as unknown as Record<string, unknown>), options.signal);
+    const lineageWrite = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, canonicalLocations, "lineage", lineageId, `lineage:${lineageId}`, lineage as unknown as Record<string, unknown>), options.signal);
     canonicalWrites.push(lineageWrite);
     documentsAfter.set(lineageId, lineageWrite.envelope);
     mutationReviews.push({ id: lineageId, kind: "lineage", operation: "add", before: null, after: lineageWrite.envelope.payload, rationale: mutation.rationale });
@@ -640,8 +649,8 @@ async function compileObservedRepositoryChange(
         replacementIds: toIds,
         reason: mutation.rationale,
       }) as Tombstone;
-      const tombstoneWrite = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, "tombstone", tombstoneId, `tombstone:${source.id}`, tombstone as unknown as Record<string, unknown>), options.signal);
-      const deletionWrite = await withCancellation(canonicalDelete(input.repositoryRoot, canonical, source), options.signal);
+      const tombstoneWrite = await withCancellation(canonicalWrite(input.repositoryRoot, canonical, canonicalLocations, "tombstone", tombstoneId, `tombstone:${source.id}`, tombstone as unknown as Record<string, unknown>), options.signal);
+      const deletionWrite = await withCancellation(canonicalDelete(input.repositoryRoot, canonicalLocations, source), options.signal);
       canonicalWrites.push(tombstoneWrite, deletionWrite);
       documentsAfter.set(tombstoneId, tombstoneWrite.envelope);
       documentsAfter.delete(source.id);
@@ -746,7 +755,7 @@ async function compileObservedRepositoryChange(
     .flatMap(({ closure }) => closure.entries.filter(({ requiredForPlanning }) => requiredForPlanning).map(({ entityId }) => entityId)) ?? [];
   const contextRootIds = input.knowledgeContext?.branches
     .filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)
-    .map(({ interpretation }) => interpretation.entityId) ?? [];
+    .flatMap(({ closure }) => closure.entries.filter(({ band }) => band === "direct").map(({ entityId }) => entityId)) ?? [];
   const relationMutationEndpointIds = mutationReviews
     .filter(({ kind }) => kind === "relation")
     .flatMap(({ before, after }) => [before, after])
@@ -849,7 +858,7 @@ async function compileObservedRepositoryChange(
     unknowns: unique([
       ...blockingUnknowns,
       ...[...candidateRelationIds].map((id) => `inferred relation remains a candidate and has not been adopted as an obligation: ${id}`),
-      "Independent validator provenance does not establish coverage of every requirement or scenario outcome.",
+      ...(executionKind === "repository-code" ? ["Independent validator provenance does not establish coverage of every requirement or scenario outcome."] : []),
       ...(input.knowledgeContext === undefined ? ["No retained pre-edit conceptual context was supplied; relevance starts from proposal identities."] : input.knowledgeContext.unknowns),
     ]),
   };

@@ -17,7 +17,7 @@ beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "projector-knowledge-transport-"));
   await writeFile(join(root, "package.json"), JSON.stringify({ name: "knowledge-transport-fixture", type: "module" }));
   await new CanonicalFileRepository(root).write(withCanonicalHashes({
-    apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: "concept:transport", key: "transport", lifecycle: "active",
+    apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "concept", id: "concept:transport", key: "transport", lifecycle: "active",
     payload: { id: "concept:transport", key: "transport", kind: "capability", name: "Transport", aliases: [],
       statement: "MUST_NOT delete production data unless explicit user approval. A iff B. Exactly one.",
       status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [], discoveryHash: hash, semanticHash: hash },
@@ -44,13 +44,21 @@ describe("bounded knowledge transport", () => {
     expect(() => projectKnowledgeContext({ ...context, request: "x".repeat(16 * 1024 * 1024) }, "full")).toThrow(/response.*limit/i);
     expect(() => projectKnowledgeReconciliation({ ...reconciliation, reasons: ["x".repeat(16 * 1024 * 1024)] }, "full")).toThrow(/response.*limit/i);
   });
-  it("retains whole selected meaning and leaves persisted proof available for full disclosure", async () => {
+  it("projects readable whole meaning while leaving raw persisted proof available for full disclosure", async () => {
     const source = JSON.stringify(context);
     const view = KnowledgeContextAgentViewSchema.parse(projectKnowledgeContext(context));
     const original = context.branches[0]!.context.items.find((item) => item.entityId === "concept:transport")!;
-    expect(view.branches[0]!.context.items).toContainEqual(original);
+    expect(view.branches[0]!.context.items).toContainEqual(expect.objectContaining({
+      entityId: original.entityId, sourceSemanticHash: original.sourceSemanticHash, sectionDisclosure: { total: 2, included: 2, omitted: 0 },
+    }));
+    expect(view.meaning).toMatchObject({
+      profile: { id: "human-compact", version: 1, sourceContentHash: context.contentHash },
+      sections: expect.arrayContaining([expect.objectContaining({ entityId: original.entityId, kind: "statement", text: "MUST_NOT delete production data unless explicit user approval. A iff B. Exactly one." })]),
+    });
     expect(JSON.stringify(view)).not.toContain('"discoveryBinding"');
     expect(JSON.stringify(view)).not.toContain('"closure"');
+    expect(JSON.stringify(view)).not.toContain('"discoveryHash"');
+    expect(JSON.stringify(view)).not.toContain('"evidence"');
     expect(view.contentHash).toBe(context.contentHash);
     expect(projectKnowledgeContext(context, "full")).toBe(context);
     expect(KnowledgeContextOperationOutputSchema.safeParse(projectKnowledgeContext(context, "full")).success).toBe(true);
@@ -63,20 +71,70 @@ describe("bounded knowledge transport", () => {
     expect((await service.reconcile(view.id)).contextId).toBe(view.id);
   });
 
-  it("omits oversized Unicode records whole, with honest totals and a supported full view", () => {
+  it("keeps oversized raw history out of the compact view, with honest section totals and a supported full view", () => {
     const branch = context.branches[0]!;
     const original = branch.context.items[0]!;
     const huge = { ...original, entityId: "concept:large", content: `规则${"界".repeat(20_000)} MUST_NOT lose this exception` };
     const report = { ...context, unknowns: Array.from({ length: 1000 }, (_, index) => `Unknown ${index}: ${"x".repeat(100)}`),
       branches: [{ ...branch, context: { ...branch.context, items: [huge, original] } }] };
     const view = KnowledgeContextAgentViewSchema.parse(projectKnowledgeContext(report));
-    expect(view.branches[0]!.context.items).toEqual([original]);
-    expect(view.branches[0]!.context.itemsDisclosure).toEqual({ total: 2, included: 1, omitted: 1 });
+    expect(view.branches[0]!.context.items).toHaveLength(2);
+    expect(view.branches[0]!.context.itemsDisclosure).toEqual({ total: 2, included: 2, omitted: 0 });
+    expect(view.branches[0]!.context.meaningDisclosure).toEqual({ total: 3, included: 2, omitted: 1 });
+    expect(view.meaning.disclosure).toEqual({ total: 3, included: 2, omitted: 1 });
     expect(view.branches[0]!.context.deferredEntityIds.values).toContain("concept:large");
     expect(view.unknownDisclosure.total).toBe(1000);
     expect(view.unknownDisclosure.omitted).toBeGreaterThan(980);
     expect(Buffer.byteLength(JSON.stringify(view), "utf8")).toBeLessThan(65_536);
     expect(projectKnowledgeContext(report, "full").branches[0]!.context.items[0]).toEqual(huge);
+  });
+
+  it("deduplicates before the display budget so unique selected later branches are still represented", () => {
+    const branch = context.branches[0]!;
+    const shared = branch.context.items[0]!;
+    const later = {
+      ...shared,
+      entityId: "concept:late",
+      sourceSemanticHash: hashFramedDomain("knowledge-transport-test", "late"),
+      content: JSON.stringify({ id: "concept:late", key: "late", name: "Late selected meaning", statement: "The later selected branch MUST keep this unique condition.", status: "active" }),
+    };
+    const report: KnowledgeContextResult = {
+      ...context,
+      branches: Array.from({ length: 13 }, (_, index) => ({
+        ...branch, id: `branch:${index}`,
+        context: { ...branch.context, items: index === 12 ? [shared, later] : [shared] },
+      })),
+    };
+    const view = KnowledgeContextAgentViewSchema.parse(projectKnowledgeContext(report));
+    expect(view.branches.some(({ id }) => id === "branch:12")).toBe(false);
+    expect(view.meaning.sections.filter(({ entityId }) => entityId === shared.entityId)).toHaveLength(2);
+    expect(view.meaning.sections).toContainEqual(expect.objectContaining({
+      entityId: "concept:late", text: "The later selected branch MUST keep this unique condition.", branchIds: ["branch:12"],
+    }));
+  });
+
+  it("preserves current authority qualifiers without making evidence history default context", () => {
+    const branch = context.branches[0]!;
+    const original = branch.context.items[0]!;
+    const qualified = {
+      ...original,
+      entityId: "decision:qualified",
+      kind: "decision" as const,
+      sourceSemanticHash: hashFramedDomain("knowledge-transport-test", "qualified"),
+      content: JSON.stringify({
+        record: { id: "decision:qualified", title: "Preserve qualifier", decision: "The system MUST retain the qualified rule.", lifecycle: "active", consequences: [{ explanation: "Keep the named exception." }] },
+        authority: { payload: { rationale: "The exception applies only while evidence remains current.", assumptions: ["The producer identity is authenticated."], reconsiderWhen: [{ type: "assumption-falsified", assumptionKey: "producer-identity" }], status: "approved", conclusion: "adopt" } },
+      }),
+    };
+    const report = { ...context, branches: [{ ...branch, context: { ...branch.context, items: [qualified] } }] };
+    const view = KnowledgeContextAgentViewSchema.parse(projectKnowledgeContext(report));
+    const qualifier = view.meaning.sections.find(({ entityId, kind }) => entityId === qualified.entityId && kind === "qualifier")!;
+    expect(qualifier.text).toContain("Keep the named exception.");
+    expect(qualifier.text).toContain("The exception applies only while evidence remains current.");
+    expect(qualifier.text).toContain("The producer identity is authenticated.");
+    expect(view.meaning.sections).toContainEqual(expect.objectContaining({ entityId: qualified.entityId, kind: "currentness", text: expect.stringContaining("Authority status: approved") }));
+    expect(JSON.stringify(view)).not.toContain('"reconsiderWhen"');
+    expect((projectKnowledgeContext(report as KnowledgeContextResult, "full") as KnowledgeContextResult).branches[0]!.context.items[0]!.content).toContain('"reconsiderWhen"');
   });
 
   it("retains blocked and unknown totals even when the responsible branches and records are omitted", () => {

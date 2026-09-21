@@ -82,7 +82,7 @@ describe("change query programs", () => {
 
       const id = "requirement:named-value";
       const payload: Requirement = { id, key: "named-value", title: "Named value", aliases: [], statement: "A named value exists.", status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/value.mjs" }, origin: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder };
-      await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id, key: "named-value", lifecycle: "active", payload: { ...payload } }));
+      await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "requirement", id, key: "named-value", lifecycle: "active", payload: { ...payload } }));
       await writeFile(join(root, "src", "consumer.mjs"), "import { value } from './value.mjs'; export const doubled = value * 2;\n");
       const after = await observeChangeRepository(root);
       const current = createChangeQueryRegistry({ observation: after, now: "2026-08-26T00:00:00.000Z" });

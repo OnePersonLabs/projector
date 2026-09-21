@@ -18,6 +18,12 @@ export const ContentHashSchema = z.string()
 
 export const SourceClassSchema = z.enum(["authored", "derived", "observed", "inferred"]);
 
+/** A portable, unambiguous relative path used by durable local artifacts. */
+export const PortableRelativePathSchema = z.string().min(1).max(1_024).regex(
+  /^(?!\/)(?!.*:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!.*[. ](?:\/|$))(?!.*(?:^|\/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\.[^/]*)?(?:\/|$))(?!(?:\.|\.\.)(?:\/|$))(?!.*\/(?:\.|\.\.)(?:\/|$))[^/](?:.*[^/])?$/u,
+  "must be a portable canonical relative path without aliases, device names, or alternate data streams",
+);
+
 export const GitRealizationLocatorSchema = z.string().regex(
   /^git:(?:[a-f0-9]{40}|[a-f0-9]{64}):(?!\/)(?![A-Za-z]:)(?!.*\\)(?!.*\/\/)(?!(?:\.|\.\.)(?:\/|$))(?!.*\/(?:\.|\.\.)(?:\/|$))[^/](?:.*[^/])?$/u,
   "git realization origin must contain a full commit ID and canonical repository-relative path",

@@ -1,11 +1,10 @@
 import { mkdir, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
-import { hashFramedDomain, toCanonicalDocumentWire, withCanonicalHashes } from "@projector/core";
+import { hashFramedDomain, withCanonicalHashes } from "@projector/core";
+import { CanonicalFileRepository } from "@projector/runtime";
 import { checkAuthoritativeSpecification } from "./check-spec-human-technical.mjs";
-const { stringify } = createRequire(new URL("../packages/testkit/package.json", import.meta.url))("smol-toml");
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 async function fixture(statement = "Preserve the complete conditions.") {
@@ -13,9 +12,9 @@ async function fixture(statement = "Preserve the complete conditions.") {
   for (const directory of ["requirements", "scenarios"]) await mkdir(join(root, ".projector/model", directory), { recursive: true });
   const id = "scenario:style"; const hash = hashFramedDomain("fixture", id);
   const payload = { id, key: "style", title: "Preserve prose", aliases: [], status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, steps: [{ role: "trigger", statement: "Read `obviously` as an exact token." }, { role: "expected-outcome", statement }], evidence: [], discoveryHash: hash, semanticHash: hash };
-  const wire = toCanonicalDocumentWire(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id, key: "style", lifecycle: "active", payload }));
-  const path = join(root, ".projector/model/scenarios/style.scenario.toml"); await writeFile(path, stringify(wire));
-  return { root, path, wire };
+  const document = withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "behavioral-scenario", id, key: "style", lifecycle: "active", payload });
+  const path = await new CanonicalFileRepository(root).write(document);
+  return { root, path };
 }
 describe("canonical human technical check", () => {
   it("checks typed owner prose without a Markdown manifest and does not claim semantic equivalence", async () => {
@@ -27,8 +26,8 @@ describe("canonical human technical check", () => {
     await expect(checkAuthoritativeSpecification(root)).resolves.toMatchObject({ blocking: [], advisory: [{ ownerId: "scenario:style", field: "steps.1.statement", rule: "modal-filler", count: 1 }] });
   });
   it("rejects malformed core payloads even when their prose is clean", async () => {
-    const { root, path, wire } = await fixture();
-    await writeFile(path, stringify({ ...wire, payload: { ...wire.payload, steps: [{ role: "unsupported", statement: "Clean prose." }] } }));
+    const { root, path } = await fixture();
+    await writeFile(path, (await readFile(path,"utf8")).replace("## When", "## Unsupported"));
     await expect(checkAuthoritativeSpecification(root)).rejects.toThrow();
   });
   it("rejects missing canonical owners", async () => {

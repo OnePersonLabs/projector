@@ -1,5 +1,10 @@
 # Working synthesis
 
+**September 20 delivery:** start with [implementation and verification](IMPLEMENTATION.md),
+[capability decisions](CAPABILITY-DECISIONS.md), and the [reconstruction](rehearsal/README.md).
+The user stopped further evaluation to protect usage quota and prioritized the
+software finish line. Large-project comparative value remains untested.
+
 > **Current ownership:** This Markdown fileset is assimilation's own working synthesis. Its topic notes and references do not share identity, schema, lifecycle, or authority with Projector's accepted concept records. Some topics describe ideas *about* Projector, including its concept system. That subject matter does not make them Projector records. This draft still needs a full fidelity review.
 
 This is the self-contained working synthesis maintained by assimilation. It explores a development system that can retain, refine, and apply a complex conception without requiring any one agent to hold it all at once. It preserves an immediately useful assimilation workflow and a more ambitious Projector research direction. It is not an accepted Projector implementation specification or a claim that the proposed mechanisms already work.

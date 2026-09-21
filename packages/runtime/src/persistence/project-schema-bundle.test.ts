@@ -23,9 +23,9 @@ describe("installed Projector editor schema bundle", () => {
 
     expect(bundle).toHaveLength(17);
     expect(bundle.map(({ relativePath }) => relativePath).sort()).toEqual(expect.arrayContaining([
-      ".projector/schemas/canonical-concept-v2.schema.json",
-      ".projector/schemas/canonical-requirement-v2.schema.json",
-      ".projector/schemas/projector-config-v1.schema.json",
+      ".projector/schemas/canonical-concept-v3.schema.json",
+      ".projector/schemas/canonical-requirement-v3.schema.json",
+      ".projector/schemas/projector-config-v3.schema.json",
     ]));
     for (const item of bundle) {
       const schema = JSON.parse(item.contents) as Record<string, unknown>;
@@ -36,8 +36,8 @@ describe("installed Projector editor schema bundle", () => {
       properties: Record<string, unknown>;
       definitions: Record<string, unknown>;
     };
-    const concept = schemaFor(".projector/schemas/canonical-concept-v2.schema.json");
-    const requirement = schemaFor(".projector/schemas/canonical-requirement-v2.schema.json");
+    const concept = schemaFor(".projector/schemas/canonical-concept-v3.schema.json");
+    const requirement = schemaFor(".projector/schemas/canonical-requirement-v3.schema.json");
     const canonical = concept;
     expect(JSON.stringify(canonical.definitions)).toContain('\"__projector_toml_null\":{\"enum\":[true]}');
     expect(JSON.stringify(canonical.definitions)).not.toContain('\"type\":\"null\"');
@@ -157,7 +157,7 @@ describe("installed Projector editor schema bundle", () => {
   test("refuses to replace a differing installed schema", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-schema-bundle-"));
     roots.push(root);
-    const target = join(root, ".projector", "schemas", "canonical-concept-v2.schema.json");
+    const target = join(root, ".projector", "schemas", "canonical-concept-v3.schema.json");
     await mkdir(join(target, ".."), { recursive: true });
     await writeFile(target, "{}\n");
 

@@ -1,0 +1,64 @@
++++
+format = 3
+apiVersion = "projector/v3"
+schemaVersion = "3.0.0"
+kind = "behavioral-scenario"
+id = "scenario:retrieve-distant-governing-concern"
+key = "retrieve-distant-governing-concern"
+lifecycle = "active"
+
+[metadata]
+aliases = [ "scenario:32:cross-cutting-governing-concern-outside-touched-package", "adversary:20:cross-cutting-governing-semantics-hidden-outside-the-touched-package" ]
+sourceClass = "authored"
++++
+
+# Cross-cutting governing concern outside touched package
+
+## Given
+
+Acceptance case "Cross-cutting governing concern outside touched package": the source fixture and declared dependencies are available; this case does not imply implementation or proof.
+
+## When
+
+A request changes Bluetooth MIDI timestamp compensation in a mobile adapter. The canonical Session Clock invariant lives under a different semantic owner and its implementation spans session/network packages.
+
+## Then
+
+- direct context includes Bluetooth MIDI/timing semantics.
+- governing context includes the Session Clock invariant and any applicable architecture decision despite physical separation.
+- known downstream multiplayer ordering/recording consumers enter consequence context according to their typed relationships.
+- unrelated identity/avatar/UI semantics do not enter the capsule merely because they share the monorepo.
+
+## Given
+
+Adversarial evaluation must exercise this class and reject false success: Cross-cutting governing semantics hidden outside the touched package.
+
+<details>
+<summary>Structured record details</summary>
+
+```toml
+realizations = []
+evidence = []
+
+[scope]
+op = "atom"
+field = "requirement"
+matcher = "equals"
+value = "requirement:pre-edit-relevance"
+
+[[origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/12-delivery/acceptance-relevance-and-identity.md"
+contentHash = "sha256:v1:11d59a588b7fa0a781ace0a04b81e0856a45b59bbaba6fe0cf433e7200a16b39"
+description = """Full acceptance case \"Cross-cutting governing concern outside touched package\", starting line 38; \
+  immutable Git blob 5d6f3dca8cdea899e17922829e54d0561c8f940a. Hash binds original Git bytes."""
+
+[[origin]]
+kind = "document"
+locator = "git:e6ac9c766c52e25fca87074dd3fa7d67d28fc7e5:PROJECTOR_SPEC/11-validation/testing-and-adversarial-evaluation.md"
+contentHash = "sha256:v1:07e8c964f8698c9cb85e4dea06a97d1ba867ca00394eaab7d1df04a748113d7e"
+description = """Exact adversary condition 20; immutable Git blob 130a7cbb9c87d445fe907bbf83efb60ecb066157. Hash binds \
+  original Git bytes."""
+
+```
+</details>

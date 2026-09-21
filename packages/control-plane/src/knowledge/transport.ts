@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   KNOWLEDGE_API_VERSION, KnowledgeContextResultSchema, KnowledgeReconciliationResultSchema,
   KnowledgeInterpretationCandidateSchema, KnowledgeLensObligationSchema, KnowledgeDecisionValiditySchema,
-  compiledContextSchema, governanceEvaluationSchema,
+  governanceEvaluationSchema,
   type KnowledgeContextResult, type KnowledgeContextBranch, type KnowledgeReconciliationResult,
 } from "./types.js";
 import { KnowledgeApplicationEvidenceAssessmentSchema } from "./application-evidence.js";
@@ -31,6 +31,22 @@ export function assertKnowledgeContextResponseSize(report: KnowledgeContextResul
 const countSchema = z.strictObject({ total: z.number().int().nonnegative(), included: z.number().int().nonnegative(), omitted: z.number().int().nonnegative() });
 const stringsSchema = z.strictObject({ values: z.array(z.string()), disclosure: countSchema });
 const bindingStatusSchema = z.enum(["current", "rebound", "stale", "suspect", "unavailable"]);
+const humanMeaningSectionSchema = z.strictObject({
+  id: z.string(), entityId: z.string(), sourceSemanticHash: ContentHashSchema,
+  kind: z.enum(["statement", "scenario", "decision", "qualifier", "currentness", "summary"]),
+  heading: z.string(), text: z.string(), branchIds: z.array(z.string()),
+});
+const humanMeaningSchema = z.strictObject({
+  profile: z.strictObject({ id: z.literal("human-compact"), version: z.literal(1), sourceContentHash: ContentHashSchema }),
+  sections: z.array(humanMeaningSectionSchema), disclosure: countSchema,
+});
+const contextItemReferenceSchema = z.strictObject({
+  entityId: z.string(), sourceSemanticHash: ContentHashSchema,
+  kind: z.enum(["concept", "requirement", "scenario", "decision", "projection-unit", "other"]),
+  band: z.enum(["direct", "governing", "consequence", "possible"]), disclosure: z.enum(["full", "summary", "identity"]),
+  relevanceScore: z.number().finite(), relevanceReasons: z.array(z.string()), uncertainty: z.array(z.string()), confidence: z.number().finite(),
+  sectionIds: z.array(z.string()), sectionDisclosure: countSchema,
+});
 const safetySchema = z.strictObject({
   blockedDecisions: z.number().int().nonnegative(), unknownDecisions: z.number().int().nonnegative(),
   firedDecisionChecks: z.number().int().nonnegative(), unknownDecisionChecks: z.number().int().nonnegative(), unobservedDecisionChecks: z.number().int().nonnegative(),
@@ -42,7 +58,8 @@ const safetySchema = z.strictObject({
 const contextBranchSchema = z.strictObject({
   id: z.string(), interpretation: KnowledgeInterpretationCandidateSchema, hypothesis: z.boolean(),
   context: z.strictObject({
-    items: compiledContextSchema.shape.items, itemsDisclosure: countSchema,
+    items: z.array(contextItemReferenceSchema), itemsDisclosure: countSchema,
+    meaningDisclosure: countSchema,
     deferredEntityIds: stringsSchema, requiredExpansionIds: z.array(z.string()), requiredExpansionDisclosure: countSchema,
     estimatedCost: z.number().nonnegative(), requiredBudgetOverrun: z.number().nonnegative(),
   }),
@@ -58,6 +75,7 @@ export const KnowledgeContextAgentViewSchema = z.strictObject({
   persisted: z.boolean(), contentHash: ContentHashSchema, capturedState: StateDigestSchema,
   interpretation: z.strictObject({ status: z.enum(["direct", "candidates", "unresolved"]), candidates: z.array(KnowledgeInterpretationCandidateSchema), candidateDisclosure: countSchema, unknowns: z.array(z.string()), unknownDisclosure: countSchema }),
   branches: z.array(contextBranchSchema), branchDisclosure: countSchema,
+  meaning: humanMeaningSchema,
   unknowns: z.array(z.string()), unknownDisclosure: countSchema,
   analyzerFailures: z.array(AnalyzerFailureSchema), analyzerFailureDisclosure: countSchema,
   safety: safetySchema,
@@ -144,6 +162,134 @@ function evaluations(values: NonNullable<KnowledgeContextBranch["governanceEvalu
   return sample([...values].sort((a, b) => Number(b.status !== "conformant") - Number(a.status !== "conformant")), 4_096);
 }
 
+type MeaningKind = z.infer<typeof humanMeaningSectionSchema>["kind"];
+type MeaningSection = z.infer<typeof humanMeaningSectionSchema>;
+type JsonObject = Record<string, unknown>;
+
+interface MeaningCandidate {
+  readonly branchId: string;
+  readonly branchIndex: number;
+  readonly hypothesis: boolean;
+  readonly item: KnowledgeContextBranch["context"]["items"][number];
+  readonly section: Omit<MeaningSection, "branchIds">;
+}
+
+function object(value: unknown): JsonObject | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as JsonObject : undefined;
+}
+function string(value: unknown): string | undefined { return typeof value === "string" && value.trim().length > 0 ? value : undefined; }
+function strings(value: unknown): string[] { return Array.isArray(value) ? value.flatMap((item) => string(item) ?? []) : []; }
+function list(label: string, values: readonly string[]): string | undefined {
+  return values.length === 0 ? undefined : `${label}:\n${values.map((value) => `- ${value}`).join("\n")}`;
+}
+function valueText(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value === undefined) return undefined;
+  return JSON.stringify(value);
+}
+function sourceRecord(content: string): { readonly record?: JsonObject; readonly authority?: JsonObject; readonly fallback?: string } {
+  try {
+    const parsed = object(JSON.parse(content));
+    if (parsed === undefined) return { fallback: content };
+    const record = object(parsed.record) ?? parsed;
+    const authorityEnvelope = object(parsed.authority);
+    if (authorityEnvelope === undefined) return { record };
+    return { record, authority: object(authorityEnvelope.payload) ?? authorityEnvelope };
+  } catch { return { fallback: content }; }
+}
+function label(record: JsonObject | undefined, fallback: string): string {
+  return string(record?.title) ?? string(record?.name) ?? string(record?.key) ?? fallback;
+}
+function section(item: MeaningCandidate["item"], kind: MeaningKind, heading: string, text: string): Omit<MeaningSection, "branchIds"> {
+  return {
+    // Source semantic identity keeps all branch copies of the same current fact together.
+    id: `${item.entityId}:${item.sourceSemanticHash}:${kind}`,
+    entityId: item.entityId, sourceSemanticHash: item.sourceSemanticHash, kind, heading, text,
+  };
+}
+
+/**
+ * This is a display projection only. It reads current typed source fields from
+ * the retained raw record, so source and state bindings stay exactly as they
+ * were when the context was compiled. Evidence/provenance/history remains in
+ * the full view instead of becoming default task noise.
+ */
+function meaningFromItem(item: MeaningCandidate["item"]): Omit<MeaningSection, "branchIds">[] {
+  if (item.disclosure === "identity") return [];
+  const parsed = sourceRecord(item.content);
+  if (parsed.record === undefined) {
+    return parsed.fallback === undefined ? [] : [section(item, "summary", item.entityId, parsed.fallback)];
+  }
+  const record = parsed.record;
+  const sourceLabel = label(record, item.entityId);
+  const sections: Omit<MeaningSection, "branchIds">[] = [];
+  const statement = string(record.statement);
+  const decision = string(record.decision);
+  const steps = Array.isArray(record.steps)
+    ? record.steps.flatMap((step) => {
+      const value = object(step);
+      const text = string(value?.statement);
+      return text === undefined ? [] : [`${string(value?.role) ?? "step"}: ${text}`];
+    })
+    : [];
+  if (statement !== undefined) sections.push(section(item, "statement", sourceLabel, statement));
+  else if (decision !== undefined) sections.push(section(item, "decision", sourceLabel, decision));
+  else if (steps.length > 0) sections.push(section(item, "scenario", sourceLabel, steps.join("\n")));
+  else if (item.disclosure === "summary") sections.push(section(item, "summary", sourceLabel, string(record.summary) ?? item.content));
+
+  const consequences = Array.isArray(record.consequences)
+    ? record.consequences.flatMap((entry) => string(object(entry)?.explanation) ?? []) : [];
+  const qualifiers = [
+    list("Consequences", consequences),
+    valueText(record.scope) === undefined ? undefined : `Scope: ${valueText(record.scope)}`,
+    string(parsed.authority?.rationale) === undefined ? undefined : `Rationale: ${parsed.authority!.rationale}`,
+    list("Assumptions", strings(parsed.authority?.assumptions)),
+    Array.isArray(parsed.authority?.reconsiderWhen) && parsed.authority.reconsiderWhen.length > 0
+      ? `Reconsider when: ${JSON.stringify(parsed.authority.reconsiderWhen)}` : undefined,
+  ].filter((value): value is string => value !== undefined);
+  if (qualifiers.length > 0) sections.push(section(item, "qualifier", `${sourceLabel} qualifiers`, qualifiers.join("\n\n")));
+
+  const current = [
+    string(record.lifecycle) === undefined ? undefined : `Lifecycle: ${record.lifecycle}`,
+    string(record.status) === undefined ? undefined : `Status: ${record.status}`,
+    string(parsed.authority?.status) === undefined ? undefined : `Authority status: ${parsed.authority!.status}`,
+    string(parsed.authority?.conclusion) === undefined ? undefined : `Authority conclusion: ${parsed.authority!.conclusion}`,
+  ].filter((value): value is string => value !== undefined);
+  if (current.length > 0) sections.push(section(item, "currentness", `${sourceLabel} currentness`, current.join("\n")));
+  return sections;
+}
+
+function bandPriority(band: MeaningCandidate["item"]["band"]): number {
+  return band === "direct" ? 0 : band === "governing" ? 1 : band === "consequence" ? 2 : 3;
+}
+function compareCandidates(left: MeaningCandidate, right: MeaningCandidate): number {
+  return bandPriority(left.item.band) - bandPriority(right.item.band)
+    || Number(left.hypothesis) - Number(right.hypothesis)
+    || right.item.relevanceScore - left.item.relevanceScore
+    || left.branchIndex - right.branchIndex
+    || left.branchId.localeCompare(right.branchId);
+}
+function humanMeaning(report: KnowledgeContextResult) {
+  const candidates: MeaningCandidate[] = report.branches.flatMap((branch, branchIndex) => branch.context.items.flatMap((item) =>
+    meaningFromItem(item).map((source) => ({ branchId: branch.id, branchIndex, hypothesis: branch.hypothesis, item, section: source }))));
+  const groups = new Map<string, MeaningCandidate[]>();
+  for (const candidate of candidates) groups.set(candidate.section.id, [...(groups.get(candidate.section.id) ?? []), candidate]);
+  const ordered = [...groups.values()].map((group) => [...group].sort(compareCandidates)).sort((left, right) => compareCandidates(left[0]!, right[0]!));
+  let remaining = contentBudget;
+  const included = new Set<string>();
+  const sections: MeaningSection[] = [];
+  for (const group of ordered) {
+    const primary = group[0]!;
+    const rendered: MeaningSection = { ...primary.section, branchIds: [...new Set(group.map(({ branchId }) => branchId))].sort() };
+    const size = bytes(rendered) + 1;
+    if (size > remaining) continue;
+    included.add(rendered.id);
+    sections.push(rendered);
+    remaining -= size;
+  }
+  return { sections, disclosure: count(ordered.length, sections.length), included };
+}
+
 /** Only the public transport is projected; saved context identities and hashes still name full proof. */
 export function projectKnowledgeContext(report: KnowledgeContextResult, view: "agent" | "full" = "agent") {
   if (view === "full") return boundedResponse(report, view);
@@ -151,14 +297,26 @@ export function projectKnowledgeContext(report: KnowledgeContextResult, view: "a
   const interpretationUnknowns = sample(report.interpretation.unknowns);
   const unknowns = sample(report.unknowns);
   const failures = sample(report.analyzerFailures);
-  let remainingContent = contentBudget;
+  const meaning = humanMeaning(report);
   const projected = report.branches.slice(0, sampleLimit).map((branch) => {
-    // Direct meaning precedes governing meaning; no string slicing or semantic reconstruction.
+    // Branches only refer to the one globally deduplicated section list.
+    // Direct meaning still precedes governing meaning within each branch.
     const priority = (band: string) => band === "direct" ? 0 : band === "governing" ? 1 : 2;
     const ordered = [...branch.context.items].sort((a, b) => priority(a.band) - priority(b.band));
-    const items = sample(ordered, remainingContent, 64);
-    remainingContent -= items.values.reduce((total, item) => total + bytes(item) + 1, 0);
-    const deferred = sample(ordered.filter((item) => !items.values.includes(item)).map((item) => item.entityId));
+    const references = ordered.map((item) => {
+      const ids = meaningFromItem(item).map(({ id }) => id);
+      const selected = ids.filter((id) => meaning.included.has(id));
+      return {
+        entityId: item.entityId, sourceSemanticHash: item.sourceSemanticHash, kind: item.kind, band: item.band, disclosure: item.disclosure,
+        relevanceScore: item.relevanceScore, relevanceReasons: item.relevanceReasons, uncertainty: item.uncertainty, confidence: item.confidence,
+        sectionIds: selected, sectionDisclosure: count(ids.length, selected.length),
+      };
+    });
+    const items = sample(references, 8_000, 64);
+    const deferred = sample(ordered.filter((item) => {
+      const ids = meaningFromItem(item).map(({ id }) => id);
+      return ids.some((id) => !meaning.included.has(id)) || !items.values.some(({ entityId }) => entityId === item.entityId);
+    }).map((item) => item.entityId));
     const frontier = sample(branch.frontier);
     const expansions = sample(branch.context.requiredExpansionIds);
     const obligations = sample([...branch.lensObligations].sort((a, b) => Number(b.status === "unknown") - Number(a.status === "unknown")), 4_096);
@@ -168,6 +326,7 @@ export function projectKnowledgeContext(report: KnowledgeContextResult, view: "a
     return {
       id: branch.id, interpretation: branch.interpretation, hypothesis: branch.hypothesis,
       context: { items: items.values, itemsDisclosure: items.disclosure, deferredEntityIds: deferred,
+        meaningDisclosure: count(references.reduce((total, reference) => total + reference.sectionDisclosure.total, 0), references.reduce((total, reference) => total + reference.sectionDisclosure.included, 0)),
         requiredExpansionIds: expansions.values, requiredExpansionDisclosure: expansions.disclosure,
         estimatedCost: branch.context.estimatedCost, requiredBudgetOverrun: branch.context.requiredBudgetOverrun },
       frontier: frontier.values, frontierDisclosure: frontier.disclosure,
@@ -185,6 +344,7 @@ export function projectKnowledgeContext(report: KnowledgeContextResult, view: "a
     interpretation: { status: report.interpretation.status, candidates: candidates.values, candidateDisclosure: candidates.disclosure,
       unknowns: interpretationUnknowns.values, unknownDisclosure: interpretationUnknowns.disclosure },
     branches: branches.values, branchDisclosure: count(report.branches.length, branches.values.length),
+    meaning: { profile: { id: "human-compact", version: 1, sourceContentHash: report.contentHash }, sections: meaning.sections, disclosure: meaning.disclosure },
     unknowns: unknowns.values, unknownDisclosure: unknowns.disclosure,
     analyzerFailures: failures.values, analyzerFailureDisclosure: failures.disclosure,
     safety: safety(report.branches),

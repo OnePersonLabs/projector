@@ -17,6 +17,20 @@ import type { KnowledgeContextResult } from "../knowledge/types.js";
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "placeholder");
 
+it("does not rescan the canonical model for each proposed write", async () => {
+  const root = await repository();
+  const locate = vi.spyOn(CanonicalFileRepository.prototype, "locate");
+  try {
+    const proposed = proposal();
+    const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Personalize the greeting", proposal: parseChangeProposal({ ...proposed, requirements: [...proposed.requirements, { key: "greeting-preserve-input", title: "Preserve input", statement: "Keep the supplied name unchanged." }] }) });
+    expect(compiled.canonicalWrites.length).toBeGreaterThan(1);
+    expect(locate.mock.calls.length).toBeLessThanOrEqual(1);
+  } finally {
+    locate.mockRestore();
+    await rm(root, { recursive: true, force: true, maxRetries: 5 });
+  }
+}, 30_000);
+
 it("uses one fresh observation per currentness check, not one per dependency", async () => {
   const root = await repository();
   try {
@@ -89,7 +103,7 @@ async function existingRequirement(root: string, id: string, key: string, aliase
     sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" },
     origin: [{ kind: "document", locator: "README.md" }], evidence: [], discoveryHash: placeholder, semanticHash: placeholder,
   };
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id, key, lifecycle: "active", payload: { ...payload } }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "requirement", id, key, lifecycle: "active", payload: { ...payload } }));
 }
 
 async function existingScenario(root: string): Promise<void> {
@@ -98,12 +112,12 @@ async function existingScenario(root: string): Promise<void> {
     sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" },
     steps: proposal().scenarios[0]!.steps.map((step) => ({ ...step })), evidence: [], discoveryHash: placeholder, semanticHash: placeholder,
   };
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload } }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "behavioral-scenario", id: payload.id, key: payload.key, lifecycle: "active", payload: { ...payload } }));
 }
 
 async function existingRelation(root: string, id: string, fromId: string, toId: string, type: "requires" | "depends-on" | "constrains" | "owns" = "requires"): Promise<void> {
   await new CanonicalFileRepository(root).write(withCanonicalHashes({
-    apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id, key: `relation:${id}`, lifecycle: "active",
+    apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "relation", id, key: `relation:${id}`, lifecycle: "active",
     payload: { id, fromId, toId, type, sourceClass: "authored", active: true, confidence: 1, evidence: [], semanticHash: placeholder },
   }));
 }
@@ -237,6 +251,7 @@ describe("repository change compiler", () => {
       expect(compiled.compiledChange.change.risk).toMatchObject({ inherentOperationRisk: 1, affectedUnitCount: 1 });
       expect(compiled.canonicalWrites).toEqual([expect.objectContaining({ id: "concept:clock", kind: "concept", before: null })]);
       expect(compiled.intentReview.canonicalMutations).toEqual([expect.objectContaining({ id: "concept:clock", operation: "add" })]);
+      expect(compiled.intentReview.unknowns).not.toContain("Independent validator provenance does not establish coverage of every requirement or scenario outcome.");
       expect(compiled.compiledPlan.packets[0]?.packet.transformId).toBe("canonical-model-write");
       expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).toContain("projector.canonical-model-integrity");
       expect(compiled.compiledPlan.plan.completionCriteria.requiredValidators).toContain("projector.canonical-decision-baselines");
@@ -348,7 +363,7 @@ describe("repository change compiler", () => {
       for (const entityId of [requirementId, scenarioId, conceptId]) {
         const id = deriveEntityId("projector.tombstone", entityId);
         await canonical.write(withCanonicalHashes({
-          apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "tombstone", id,
+          apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "tombstone", id,
           key: `tombstone:${entityId}`, lifecycle: "deleted",
           payload: { entityId, deletedAtRevision: 1, lastSemanticHash: placeholder, replacementIds: [], reason: "Retain the retired identity." },
         }));
@@ -378,7 +393,7 @@ describe("repository change compiler", () => {
       const canonical = new CanonicalFileRepository(root);
       const source = (await canonical.read("requirement", "requirement:legacy-greeting"))!;
       const relationPayload = { id: "relation:legacy-replacement", fromId: source.id, toId: "requirement:new-greeting", type: "supersedes", sourceClass: "authored", confidence: 1, evidence: [], active: true, semanticHash: placeholder };
-      const relationEnvelope = withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: relationPayload.id, key: `relation:${relationPayload.id}`, lifecycle: "active", payload: relationPayload });
+      const relationEnvelope = withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "relation", id: relationPayload.id, key: `relation:${relationPayload.id}`, lifecycle: "active", payload: relationPayload });
       await canonical.write(relationEnvelope);
       const disposition = {
         kind: "lineage", operation: "add", lineageKind: "replace",
@@ -518,7 +533,7 @@ describe("repository change compiler", () => {
     const root = await repository();
     try {
       const canonical = new CanonicalFileRepository(root);
-      const path = canonical.pathFor("requirement", "requirement:legacy-greeting");
+      const path = (await canonical.locate("requirement", "requirement:legacy-greeting"))!.path;
       const before = await readFile(path, "utf8");
       const reduced = parseChangeProposal({ ...proposal(), requirements: [{ ...proposal().requirements[0], statement: "The greeting returns text." }],
         edits: [{ path: "src/greeting.mjs", before: proposal().edits[0]!.before, after: 'export const greet = () => "hello";\n' }] });
@@ -539,7 +554,7 @@ describe("repository change compiler", () => {
       const canonical = new CanonicalFileRepository(root);
       const existing = (await canonical.snapshot()).documents.find(({ id }) => id === "requirement:legacy-greeting")!;
       await existingRequirement(root, "requirement:future", "future-personalization", []);
-      await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: "relation:future", key: "relation:relation:future", lifecycle: "active",
+      await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "relation", id: "relation:future", key: "relation:relation:future", lifecycle: "active",
         payload: { id: "relation:future", fromId: existing.id, toId: "requirement:future", type: "requires", active: true, sourceClass: "authored", confidence: 1, evidence: [], semanticHash: placeholder } }));
       const revised = parseChangeProposal({ ...proposal(), requirements: [{ ...proposal().requirements[0], statement: "The greeting includes the supplied name and preserves its case.",
         revision: { id: existing.id, expectedSemanticHash: existing.payload.semanticHash, rationale: "Make the previously implicit case-preservation requirement explicit." } }] });
@@ -555,7 +570,7 @@ describe("repository change compiler", () => {
       expect(compiled.compiledChange.change.assumptions.join(" ")).toContain("requirement:future");
       const stale = parseChangeProposal({ ...revised, requirements: [{ ...revised.requirements[0], revision: { ...revised.requirements[0]!.revision, expectedSemanticHash: placeholder } }] });
       await expect(compileRepositoryChange({ repositoryRoot: root, request: "Clarify case preservation.", proposal: stale })).rejects.toThrow(/semantic hash is stale/iu);
-      await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: "relation:unimplemented", key: "relation:relation:unimplemented", lifecycle: "active",
+      await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "relation", id: "relation:unimplemented", key: "relation:relation:unimplemented", lifecycle: "active",
         payload: { id: "relation:unimplemented", fromId: "requirement:future", toId: "concept:not-yet-modeled", type: "depends-on", active: true, sourceClass: "authored", confidence: 1, evidence: [], semanticHash: placeholder } }));
       await expect(compileRepositoryChange({ repositoryRoot: root, request: "Clarify case preservation.", proposal: revised })).rejects.toThrow(/unresolved conceptual obligations.*concept:not-yet-modeled/iu);
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -577,7 +592,7 @@ describe("repository change compiler", () => {
     try {
       const canonical = new CanonicalFileRepository(root);
       for (const [id, type, sourceClass] of [["relation:descriptive", "documents", "authored"], ["relation:inferred", "requires", "inferred"]] as const) {
-        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id, key: `relation:${id}`, lifecycle: "active",
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "relation", id, key: `relation:${id}`, lifecycle: "active",
           payload: { id, fromId: "requirement:legacy-greeting", toId: "unaccepted:meaning", type, sourceClass, active: true, confidence: 1, evidence: [], semanticHash: placeholder } }));
       }
       const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Implement greeting.", proposal: proposal() });
@@ -593,7 +608,7 @@ describe("repository change compiler", () => {
       const canonical = new CanonicalFileRepository(root);
       await existingRequirement(root, "requirement:owned", "owned", []);
       for (const [id, fromId, toId] of [["relation:owned", "requirement:legacy-greeting", "requirement:owned"], ["relation:other-owner", "concept:unrelated-owner", "requirement:legacy-greeting"]]) {
-        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: id!, key: `relation:${id}`, lifecycle: "active",
+        await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "relation", id: id!, key: `relation:${id}`, lifecycle: "active",
           payload: { id, fromId, toId, type: "owns", sourceClass: "authored", active: true, confidence: 1, evidence: [], semanticHash: placeholder } }));
       }
       const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Implement greeting.", proposal: proposal() });

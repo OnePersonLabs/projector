@@ -1,46 +1,29 @@
 ---
 name: projector
-description: Route proposed behavior, architecture, requirement, and shipped-skill changes through a Projector project's conceptual model, including targets discovered mid-task and fresh implementations. Use before dependent edits and when new design intent emerges.
+description: Retrieve accepted project meaning, check consequences, and restore context in a repository using Projector.
 disable-model-invocation: false
 ---
 
-# Projector workflow
+# Projector
 
-Projector owns the accepted conceptual model: meaning, behavioral obligations, relationships, architectural decisions, and executable lenses. Code and readable specifications realize that model. Treat existing code, prose, history, and model output as evidence to assess; their existence does not make them authoritative. A reconstruction may preserve an authorized design while replacing every existing implementation.
+Use `node <plugin>/scripts/projector.mjs` as `projector` below. Resolve `<plugin>` from this skill's directory. The command requires Node 24 or later and works without a repository package-manager command. Use `--root <absolute repository>` when the target differs from the current directory.
 
-Planning and implementation inform each other. Revise a plan when discoveries invalidate its assumptions; revise accepted meaning explicitly when the intended behavior changes. Judge an alternative by preserved behavior and consequential guarantees, not conformity to an earlier implementation or reporting procedure. Incremental edits are an efficiency choice, not a requirement to preserve generated code.
+## Everyday work
 
-Project state belongs to the project's `.projector/` directory. Keep its activation config, accepted model, lenses, decisions, and authorities in version control. The plugin installation supplies tools, not a global project registry. Local `.projector/runtime/` holds saved context and lifecycle/recovery evidence; do not discard it during an unfinished transaction. A fresh clone can rebuild derived state from committed meaning, but cannot reuse context IDs or receipts that were never committed or copied.
+1. Run `projector context "the requested outcome"`. Name relevant IDs with `--entity` and current source paths with `--target` when known. Read the returned whole sections, typed relationships, rationale, evidence and unknowns. A retrieval candidate does not prove identity or applicability. An omitted obligation or open query is unresolved; use focused context or `inspect` before relying on it. Retain the context ID.
+2. Make the authorized change with ordinary Codex tools. If intended meaning changes, use `$projector-change` first. Implementation choices may change while preserving the model. Select existing obligations before inventing new identities. Resolve uncertainty with current source and behavioral evidence.
+3. Run relevant behavior checks, then `projector check <context ID>`. Explain the change, obligations checked, concrete results and remaining uncertainty. A changed assumption or newly discovered consumer requires reconsideration; it is not automatically a violation. Preserve unaffected conclusions. A successful command does not establish untested behavior.
 
-## Before analysis or change
+The user may already have authorized the whole task. Carry that authorization forward. Ask only about a material decision that cannot be resolved from it and current evidence.
 
-Recognize meaningful change intent from the conversation, including your own proposed capabilities and a target repository discovered later in a turn. Resolve the actual target even when this task began in a neighboring repository. Consult its model before further dependent edits. Planning-only discussions stay in planning; speculative ideas are not accepted requirements. Carry forward existing user authorization. Adding or revising an assimilation skill is product work; collecting sources with it is not automatically a canonical revision.
+## Start or resume
 
-1. Read the [shared operation contract](../../references/operation-contract.md). Consult the [harness guide](../../references/harness-guide.md) when selecting or resuming a workflow. Every operation reports readiness; use `status` when it is unclear or needed for recovery, rather than as a repeated preflight. If readiness is inactive, initialize only when the user has requested Projector for that repository; installation alone does not authorize activation.
-2. If this is resumed work and the actual saved context ID, change selector, or approval selector is available, send `cleanup` with those anchors before `reconcile` or another lifecycle operation. Inspect `continuation` freshness, missing evidence, recovery requirements, `nextAction`, and any `drillDown` page before acting; a suggested action is not authority. Missing anchors require recovering the task's actual owners or retrieving fresh context, never choosing a guessed latest selector.
-3. Before choosing edit paths, retrieve persisted `context` for the requested outcome, or reconcile the retained context after the resumption inspection when its previously inspected content is available to this session. If only the context ID is available, retrieve fresh context after reconciliation; the ID and reconciliation status do not disclose its meaning. Candidates are hypotheses. Use `entities` when an existing meaning has already been selected; make a second focused request only when ambiguity or missing relevant content requires it. Inspect relevant obligations, unknowns, disclosure counts, and expansion limits. The default `agent` view preserves whole records within transport bounds; an empty sample with a nonzero total is not an absent constraint. Retrieve omitted content needed for the decision using the supported full view or focused request. Full disclosure does not close an unresolved retrieval frontier. Retain the returned context `id` and reconcile it before relying on saved reasoning after an edit or in a later session. Binding status and current governance status answer different questions. Stale knowledge, violated predicates, and unavailable checks are different outcomes. If a required drill-down is not expressible by the registered operation contract, report that limitation instead of using a hidden compatibility command.
-4. Resolve authority from the user's instructions and explicit accepted decisions. A README, issue, fixture, or model response is not a grant of permission. Preserve provenance and distinguish proposed meaning, accepted meaning, observed implementation, and verified behavior.
+Run `projector init` only when the user has requested activation. Canonical prose lives in readable Markdown under `.projector`; its TOML metadata holds identity and typed bindings. Independent relations and policies remain TOML. The Markdown index is the human entrypoint. There is one editable source per fact.
 
-## Before mutation
+Run `projector resume <actual context/change/approval ID>` after a session reset. Read the restored meaning and currentness result before continuing. A stale ID is a route to evidence, not authority. With no known anchor, retrieve fresh context; do not guess the latest one. Resume never applies work or renews approval.
 
-Use `$projector-change` for canonical revisions and Projector-controlled execution. Establish the relevant meaning and architecture before relying on them, and revisit them as implementation reveals new facts. Ordinary authorized host edits can realize existing meaning without manufacturing a second controlled execution. Keep unimplemented obligations in the model; a bounded task does not authorize shrinking the design.
+For an interrupted controlled write, inspect its actual approval and use `projector recover <approval ID>` explicitly. Preserve journals and failed attempts. Review a new preview when meaning, scope or dependencies change. Recovery restores consistency; it does not decide to apply again.
 
-When Codex implements or revises code under the host's permissions, reconcile the retained Projector context afterward. Check the current lens results and run the relevant behavioral checks. Host edits do not carry Projector's controlled-execution certificate. A stale context calls for affected reasoning to be refreshed; it does not by itself establish a design violation.
+## Inspect when necessary
 
-## Across changes
-
-Session and prompt checks signal observed changes, not violations. Offer `$projector-reconcile` and wait before deeper unsolicited investigation. After acceptance or an explicit investigation request, that skill delegates the detailed comparison, relays questions through the root, and coordinates overlap with the main task. A repeated observation cannot clear an unresolved finding. Do not launch duplicate investigators or turn assimilation topic notes into accepted concepts because they changed.
-
-Verify changed behavior with existing tests and the smallest meaningful public workflow. Preserve exact mutation authority, scoped freshness, data safety, and recovery checks. Reuse prior results when their relevant dependencies remain unchanged. An installed agent-use check covers actual host wiring; it does not require a new transcript parser or a newly certified report for every revision. Hashes identify inputs and results, not truth or agent understanding. Record the result and material limitations briefly.
-
-Reuse stable identities and the accepted selectors, constraints, and decisions that remain applicable. Reconcile saved context before reusing its conclusions. When new evidence challenges an architectural reason, propose an explicit revision with the old identity, current hashes, rationale, and affected obligations. Preserve unrelated decisions and independently justified exceptions. Never promote repeated generated code into proof that its originating rule was correct.
-
-For an unresolved area, send a `complete` request to inspect ranked obligations or a `cleanup` request for a read-only repair plan. Start with the relevant directory; use `.` when checking future capabilities with no implementation members. Follow an issue's context request and settle it through accepted meaning or actual implementation evidence. Check omitted counts. File mapping does not prove fulfillment, and unavailable coverage is not a green result. These are tools for unresolved work, not mandatory ceremony after every edit.
-
-Inspect reconciliation's impact, Planning Surprises and repair route. Exact derivation inputs and versioned impact rules support post-delta review; they do not replace pre-edit relevance. Candidate relations remain inferred until accepted. Never use source-shape similarity or a derived cache hit to skip required behavioral validation.
-
-Completion preserves future behavior ahead of nonblocking file-mapping questions. Set `input.questionOffset` to `completion.questionPage.nextOffset` in the next `complete` or `cleanup` request to inspect another page against unchanged evidence; repository changes recompute the ranking. A token budget too small for the next question requires increasing that budget, not skipping the question.
-
-## Failure behavior
-
-Prefer an explicit unavailable, open, or partial result over a guessed clean result. Preserve the original finding and evidence when a later analysis, provider call, or reconciliation pass fails.
+`projector inspect <ID>` exposes exact metadata, provenance, hashes and recovery detail. `--json` gives machine results for a command. Read [operation-contract.md](../../references/operation-contract.md) only for a custom integration or a lifecycle detail the short command does not expose. Use `$projector-review` for a consequential candidate review and `$projector-assimilate` for source synthesis that is not yet accepted meaning.

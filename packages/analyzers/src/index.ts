@@ -1,5 +1,5 @@
 export * from "./filesystem/inventory.js";
-export * from "./filesystem/observation-io.js";
+export { checkObservation, GitCommandError, observationFailure, observationGit, observationMap, readObservationFile } from "./filesystem/observation-io.js";
 export * from "./formats/documents.js";
 export * from "./git/facts.js";
 export * from "./typescript/facts.js";

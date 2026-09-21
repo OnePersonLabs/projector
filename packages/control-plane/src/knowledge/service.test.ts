@@ -6,6 +6,7 @@ import {
   hashFramedDomain,
   ContentHashSchema,
   withCanonicalHashes,
+  type ApplicationEvidencePort,
   type ArchitectureDecision,
   type AuthorityRecord,
   type Concept,
@@ -52,8 +53,8 @@ function concept(id: string, key: string, statement: string, aliases: readonly s
 
 async function writeConcept(root: string, value: Concept): Promise<void> {
   await new CanonicalFileRepository(root).write(withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: "projector/v3",
+    schemaVersion: "3.0.0",
     kind: "concept",
     id: value.id,
     key: value.key,
@@ -64,8 +65,8 @@ async function writeConcept(root: string, value: Concept): Promise<void> {
 
 async function writeRelation(root: string, value: Relation): Promise<void> {
   await new CanonicalFileRepository(root).write(withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: "projector/v3",
+    schemaVersion: "3.0.0",
     kind: "relation",
     id: value.id,
     key: `relation:${value.id}`,
@@ -75,7 +76,7 @@ async function writeRelation(root: string, value: Relation): Promise<void> {
 }
 
 async function writeRequirement(root: string, value: Requirement): Promise<void> {
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id: value.id, key: value.key, lifecycle: value.status, payload: { ...value } }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "requirement", id: value.id, key: value.key, lifecycle: value.status, payload: { ...value } }));
 }
 
 function authority(id: string, subjectId: string): AuthorityRecord {
@@ -105,7 +106,7 @@ function authority(id: string, subjectId: string): AuthorityRecord {
 }
 
 async function writeCanonical(root: string, kind: "architecture-decision" | "authority-record" | "projection-lens" | "behavioral-scenario" | "tombstone", id: string, key: string, lifecycle: string, payload: Record<string, unknown>): Promise<void> {
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key, lifecycle, payload }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind, id, key, lifecycle, payload }));
 }
 
 afterEach(async () => {
@@ -115,18 +116,18 @@ afterEach(async () => {
 describe("RepositoryKnowledgeService", () => {
   it("reruns declared application evidence and exposes changed negative dispositions", async () => {
     const root = await repository();
-    const evidenceId = "psychord-artifact:test";
+    const evidenceId = "artifact:test";
     await writeCanonical(root, "behavioral-scenario", "scenario:keep-reload-replay-owned-moment", "keep-reload-replay-owned-moment", "active", {
       id: "scenario:keep-reload-replay-owned-moment", key: "keep-reload-replay-owned-moment", title: "Keep, reload, and replay", aliases: [], status: "active", sourceClass: "authored",
       scope: { op: "all", items: [] }, steps: [{ role: "trigger", statement: "The application is observed." }, { role: "expected-outcome", statement: "The declared assertion is evaluated." }], evidence: [], discoveryHash: hash("scenario:discovery"), semanticHash: hash("scenario"),
     });
     const scenarioHash = ContentHashSchema.parse((await new CanonicalFileRepository(root).read("behavioral-scenario", "scenario:keep-reload-replay-owned-moment"))!.payload.semanticHash);
     await writeRequirement(root, {
-      id: "requirement:psychord-observation", key: "psychord-observation", title: "Observed Psychord behavior", aliases: [],
+      id: "requirement:application-observation", key: "application-observation", title: "Observed application behavior", aliases: [],
       statement: "The accepted application predicate has current supporting behavioral evidence.", status: "active", sourceClass: "authored",
       scope: { op: "all", items: [] }, origin: [],
       evidence: [{ evidenceId, stance: "supports", applicationPredicate: {
-        kind: "application-observation", adapter: { id: "psychord.keep-reload-replay", version: "1" },
+        kind: "application-observation", adapter: { id: "fixture.application", version: "1" },
         scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenarioHash }, case: "no-input",
         predicateId: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"], observationRole: "latest",
       } }, { evidenceId: "foreign-artifact:test", stance: "supports", applicationPredicate: {
@@ -134,27 +135,28 @@ describe("RepositoryKnowledgeService", () => {
         scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenarioHash }, case: "no-input",
         predicateId: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"], observationRole: "latest",
       } }],
-      discoveryHash: hash("requirement:psychord:discovery"), semanticHash: hash("requirement:psychord:semantic"),
+      discoveryHash: hash("requirement:application:discovery"), semanticHash: hash("requirement:application:semantic"),
     });
     let publication: "missing" | "incomplete" = "missing";
-    const applicationEvidence = {
-      artifacts: {
-        artifactSetId: () => evidenceId,
-        observeAndPublish: async () => ({ status: publication, artifactSetId: evidenceId }),
-        read: async () => ({ status: publication, artifactSetId: evidenceId }),
+    const applicationEvidence: ApplicationEvidencePort = {
+      async assess(request) {
+        const basis = {
+          schemaVersion: "application-evidence-assessment@1" as const, request,
+          custody: { status: "unavailable" as const, reason: "The fixture cannot authenticate artifact custody." },
+          currentness: { status: "unknown" as const, reason: `The fixture observation is ${publication}.` },
+          fulfillment: { status: "unknown" as const, reason: "Unknown without authenticated, current evidence." },
+          dependencies: [],
+        };
+        return { ...basis, contentHash: hashFramedDomain("application-evidence-assessment/v1", basis) };
       },
-      currentness: { observe: async () => { throw new Error("currentness is not invoked for an unpublished artifact"); } },
-    } as const;
+    };
     const service = await RepositoryKnowledgeService.create({ repositoryRoot: root, applicationEvidence });
-    const retained = await service.context({ request: "inspect", entities: ["requirement:psychord-observation"] });
-    expect(retained.branches[0]!.applicationEvidence).toHaveLength(1);
-    const first = retained.branches[0]!.applicationEvidence[0]!;
+    const retained = await service.context({ request: "inspect", entities: ["requirement:application-observation"] });
+    expect(retained.branches[0]!.applicationEvidence).toHaveLength(2);
+    const first = retained.branches[0]!.applicationEvidence.find((item) => item.binding.adapter.id === "fixture.application")!;
     expect(first).toMatchObject({ status: "assessed", assessment: { fulfillment: { status: "unknown" } } });
     expect(first.status === "assessed" ? first.dependencies.map(({ id }) => id) : []).toEqual([
       "application-evidence-scenario:scenario:keep-reload-replay-owned-moment",
-      "requirement:psychord-observation",
-      `application-evidence:${evidenceId}`,
-      `application-evidence-currentness:${evidenceId}`,
     ]);
 
     expect((await service.reconcile(retained.id)).applicationEvidence).toMatchObject({ status: "unknown", branches: [{ changed: false }] });
@@ -199,6 +201,29 @@ describe("RepositoryKnowledgeService", () => {
       "projector.knowledge.relations",
       "projector.knowledge.implementation-binding",
     ]));
+  });
+
+  it("compiles all explicit direct addresses as one shared closure without hiding a non-direct candidate", async () => {
+    const root = await repository();
+    const ids = Array.from({ length: 6 }, (_, index) => `concept:explicit-${index + 1}`);
+    for (const id of ids) await writeConcept(root, concept(id, id.slice("concept:".length), `Keep accepted meaning for ${id}.`));
+    await writeConcept(root, { ...concept("concept:rejected", "rejected", "This exact address is not accepted."), status: "rejected" });
+
+    const result = await (await RepositoryKnowledgeService.create(root)).context({
+      request: "review the explicitly selected accepted meaning",
+      entities: [...ids, "concept:rejected"],
+      persist: false,
+      policy: { maxCandidates: 5 },
+    });
+
+    expect(result.interpretation.status).toBe("candidates");
+    expect(result.interpretation.candidates.map(({ entityId }) => entityId)).toEqual([...ids, "concept:rejected"]);
+    expect(result.branches).toHaveLength(2);
+    const direct = result.branches.find(({ hypothesis }) => !hypothesis)!;
+    expect(direct.closure.entries.filter(({ band }) => band === "direct").map(({ entityId }) => entityId)).toEqual(ids);
+    expect(direct.closure.boundState.valueDependencies.map(({ id }) => id)).toEqual(expect.arrayContaining(ids));
+    expect(direct.frontier).toEqual([]);
+    expect(result.branches.find(({ hypothesis }) => hypothesis)?.interpretation.entityId).toBe("concept:rejected");
   });
 
   it("keeps free-text lexical retrieval as candidate interpretation", async () => {

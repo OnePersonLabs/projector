@@ -16,7 +16,7 @@ import { z } from "zod";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
 import { ChangeLifecycleStore, type LifecycleCaptureRecord } from "../change-lifecycle/store.js";
-import type { PsychordApplicationEvidenceHost } from "../knowledge/application-evidence.js";
+import type { ApplicationEvidencePort } from "../knowledge/application-evidence.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { RepositoryRepresentationArtifactStore } from "./artifact-store.js";
 import { RepositoryRepresentationInspectionService } from "./service.js";
@@ -127,7 +127,7 @@ export class RepositoryRepresentationProfileReconciliationService {
     private readonly knowledge: RepositoryKnowledgeService,
   ) {}
 
-  static async create(repositoryRoot: string, options: { readonly applicationEvidence?: PsychordApplicationEvidenceHost } = {}) {
+  static async create(repositoryRoot: string, options: { readonly applicationEvidence?: ApplicationEvidencePort } = {}) {
     const [lifecycle, store, artifacts, inspection, knowledge] = await Promise.all([
       RepositoryChangeLifecycleService.create(repositoryRoot, options),
       ChangeLifecycleStore.create(repositoryRoot),

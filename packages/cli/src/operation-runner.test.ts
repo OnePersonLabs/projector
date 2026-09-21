@@ -17,7 +17,6 @@ import { z } from "zod";
 import {
   createProjectorOperationRunner,
   createBundledProjectorOperationRunner,
-  createInstalledProjectorApplicationEvidenceHost,
   defineProjectorOperationHandler,
   OperationCapabilityDiscoverySchema,
   type OperationRunnerPorts,
@@ -107,7 +106,7 @@ describe("bounded Projector operation runner", () => {
 
   test("recovers a dead non-lifecycle operation through a dedicated public route", async () => {
     const root = await packagedRoot();
-    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root, applicationEvidence: createInstalledProjectorApplicationEvidenceHost });
+    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root });
     await runner.execute({ ...request("init"), repositoryRoot: root });
     const access = join(root, ".projector", "runtime", "operation-access");
     const requestId = "00000000-0000-4000-8000-000000000003";
@@ -134,7 +133,7 @@ describe("bounded Projector operation runner", () => {
 
   test("bounds knowledge transport by default and accepts explicit full proof through the same operations", async () => {
     const root = await packagedRoot();
-    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root, applicationEvidence: createInstalledProjectorApplicationEvidenceHost });
+    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root });
     await runner.execute({ ...request("init"), repositoryRoot: root });
     const context = await runner.execute({ ...request("context", { request: "Understand this repository", persist: true }), repositoryRoot: root });
     expect(context).toMatchObject({ status: "succeeded", output: { view: "agent", persisted: true, branchDisclosure: { total: expect.any(Number) } } });
@@ -149,24 +148,10 @@ describe("bounded Projector operation runner", () => {
     expect(ProjectorOperationInputSchemas.reconcile.safeParse({ contextId: id, full: true }).success).toBe(false);
   });
 
-  test("reads an exact missing application artifact without creating repository state", async () => {
-    const root = await packagedRoot();
-    const host = createInstalledProjectorApplicationEvidenceHost({
-      repositoryRoot: root,
-      signal: new AbortController().signal,
-      environment: process.env,
-    });
-
-    await expect(host.artifacts.read("psychord-missing-artifact-set")).resolves.toEqual({
-      status: "missing",
-      artifactSetId: "psychord-missing-artifact-set",
-    });
-    await expect(stat(join(root, ".projector"))).rejects.toMatchObject({ code: "ENOENT" });
-  });
 
   test("composes installed readiness, initialization, verification, and observed host capabilities", async () => {
     const root = await packagedRoot();
-    const applicationEvidence = vi.fn(createInstalledProjectorApplicationEvidenceHost);
+    const applicationEvidence = vi.fn(() => ({ assess: vi.fn() }));
     const runner = await createBundledProjectorOperationRunner({ packagedRoot: root, applicationEvidence });
 
     const inactive = await runner.discoverCapabilities({ repositoryRoot: root });
@@ -196,7 +181,6 @@ describe("bounded Projector operation runner", () => {
       "change.approve",
       "change.apply",
       "change.recover",
-      "change.resume",
     ] as const) {
       expect(inactive.operations.find((capability) => capability.operation === operation)).toMatchObject({
         registered: true,
@@ -265,7 +249,7 @@ describe("bounded Projector operation runner", () => {
 
   test("delivers bounded cleanup continuation through the installed composition schema", async () => {
     const root = await packagedRoot();
-    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root, applicationEvidence: createInstalledProjectorApplicationEvidenceHost });
+    const runner = await createBundledProjectorOperationRunner({ packagedRoot: root });
     expect(await runner.execute({ ...request("init"), repositoryRoot: root })).toMatchObject({ status: "succeeded" });
     const contextId = "knowledge_context_00000000000000000000000000000000";
     const continued = await runner.execute({ ...request("cleanup", { contextId, evidenceLimit: 1 }), repositoryRoot: root });

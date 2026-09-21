@@ -44,13 +44,13 @@ async function repository(): Promise<string> {
     status: "active", sourceClass: "authored", scope: { op: "atom", field: "path", matcher: "equals", value: "src/greeting.mjs" },
     origin: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder,
   };
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "requirement", id: requirement.id, key: requirement.key, lifecycle: "active", payload: requirement as unknown as Record<string, unknown> }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "requirement", id: requirement.id, key: requirement.key, lifecycle: "active", payload: requirement as unknown as Record<string, unknown> }));
   const scenario: BehavioralScenario = {
     id: "scenario:greet-name", key: "greet-name", title: "Greet a name", aliases: [], status: "active", sourceClass: "authored",
     scope: requirement.scope, evidence: [], discoveryHash: placeholder, semanticHash: placeholder,
     steps: proposal().scenarios[0]!.steps,
   };
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "behavioral-scenario", id: scenario.id, key: scenario.key, lifecycle: "active", payload: scenario as unknown as Record<string, unknown> }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "behavioral-scenario", id: scenario.id, key: scenario.key, lifecycle: "active", payload: scenario as unknown as Record<string, unknown> }));
   await exec("git", ["init", "-q"], { cwd: root });
   await exec("git", ["config", "user.email", "projector@example.invalid"], { cwd: root });
   await exec("git", ["config", "user.name", "Projector Test"], { cwd: root });

@@ -44,12 +44,12 @@ describe("project readiness metadata inspection", () => {
     await expect(stat(join(root, ".projector"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  test("recognizes only the bounded legacy JSON marker as requiring one-time preparation", async () => {
+  test("leaves unsupported legacy JSON configuration untouched", async () => {
     const root = await repository();
     await mkdir(join(root, ".projector"));
     await writeFile(join(root, ".projector", "config.json"), '{"apiVersion":"projector.config/v1","enabled":true}\n');
     const readiness = await inspectProjectReadiness(root, { operation: "context", package: packageIdentity });
-    expect(readiness).toMatchObject({ status: "upgrade-required", observed: { configApiVersion: "projector.config/v1" } });
+    expect(readiness).toMatchObject({ status: "unavailable", reason: expect.stringContaining("Unsupported legacy") });
     expect(await readFile(join(root, ".projector", "config.json"), "utf8")).toBe('{"apiVersion":"projector.config/v1","enabled":true}\n');
   });
 
@@ -57,8 +57,8 @@ describe("project readiness metadata inspection", () => {
     const root = await repository();
     await mkdir(join(root, ".projector"));
     await writeFile(join(root, ".projector", "config.toml"), [
-      '#:schema schemas/projector-config-v1.schema.json',
-      'apiVersion = "projector.config/v1"',
+      '#:schema schemas/projector-config-v3.schema.json',
+      'apiVersion = "projector.config/v3"',
       "enabled = true",
       'projectorVersion = "2.1.0"',
       "",
@@ -66,14 +66,22 @@ describe("project readiness metadata inspection", () => {
     await expect(inspectProjectReadiness(root, { operation: "coverage", package: packageIdentity })).resolves.toMatchObject({
       status: "ready",
       package: packageIdentity,
-      observed: { configApiVersion: "projector.config/v1", preparedProjectorVersion: "2.1.0" },
+      observed: { configApiVersion: "projector.config/v3", preparedProjectorVersion: "2.1.0" },
     });
+  });
+
+  test("keeps current-format data ready across package patch versions", async () => {
+    const root = await repository();
+    await initializePreparedProject(root, { package: { name: "projector", version: "3.0.0" } });
+    const before = await readFile(join(root, ".projector/config.toml"), "utf8");
+    await expect(inspectProjectReadiness(root, { operation: "context", package: { name: "projector", version: "3.0.9" } })).resolves.toMatchObject({ status: "ready", observed: { preparedProjectorVersion: "3.0.0" } });
+    expect(await readFile(join(root, ".projector/config.toml"), "utf8")).toBe(before);
   });
 
   test("requires recovery without claiming an absent marker-declared backup is verified", async () => {
     const root = await repository();
     await mkdir(join(root, ".projector"));
-    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
+    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v3"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     await writeFile(join(root, ".projector", "pending-project-data-migration.json"), JSON.stringify({
       apiVersion: "projector.pending-project-data-migration/v2",
       attemptId: "migration-attempt:prepared-data:001",
@@ -94,9 +102,9 @@ describe("project readiness metadata inspection", () => {
     await expect(inspectProjectReadiness(root, { operation: "context", package: packageIdentity })).resolves.toMatchObject({
       status: "recovery-required",
       recovery: {
-        code: "project-data-migration-pending",
+        code: "project-data-cutover-required",
         location: ".projector/pending-project-data-migration.json",
-        action: expect.stringMatching(/migration:prepared-data.*marker-declared backup backup:prepared-data.*codex-data-relative:projector\/backups\/published\/backup-prepared-data.*verify its existence.*manifest hash/iu),
+        action: expect.stringContaining("matching pre-cutover runtime"),
       },
     });
     const readiness = await inspectProjectReadiness(root, { operation: "context", package: packageIdentity });
@@ -107,25 +115,25 @@ describe("project readiness metadata inspection", () => {
     const root = await repository();
     await mkdir(join(root, ".projector"));
     const pendingPath = join(root, ".projector", "pending-project-data-migration.json");
-    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
+    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v3"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     await writeFile(pendingPath, "{unrecognized");
 
     await expect(inspectProjectReadiness(root, { operation: "verify", package: packageIdentity })).resolves.toMatchObject({
-      status: "unavailable",
+      status: "recovery-required",
       recovery: {
-        code: "project-data-migration-unrecognized",
+        code: "project-data-cutover-required",
         location: ".projector/pending-project-data-migration.json",
-        action: expect.stringMatching(/preserve.*inspect/iu),
+        action: expect.stringContaining("Inspect the retained operation"),
       },
     });
     expect(await readFile(pendingPath, "utf8")).toBe("{unrecognized");
   });
 
-  test("does not treat a newer, mixed, or malformed marker as current", async () => {
+  test("does not treat an unsupported format, mixed or malformed marker as current", async () => {
     for (const fixture of [
-      { name: "newer", files: { "config.toml": 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "3.0.0"\n' } },
-      { name: "mixed", files: { "config.toml": 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n', "config.json": '{"apiVersion":"projector.config/v1","enabled":true}\n' } },
-      { name: "malformed", files: { "config.toml": 'apiVersion = "projector.config/v1"\nenabled = "yes"\n' } },
+      { name: "unsupported", files: { "config.toml": 'apiVersion = "projector.config/v4"\nenabled = true\nprojectorVersion = "3.0.0"\n' } },
+      { name: "mixed", files: { "config.toml": 'apiVersion = "projector.config/v3"\nenabled = true\nprojectorVersion = "2.1.0"\n', "config.json": '{"apiVersion":"projector.config/v1","enabled":true}\n' } },
+      { name: "malformed", files: { "config.toml": 'apiVersion = "projector.config/v3"\nenabled = "yes"\n' } },
     ] as const) {
       const root = await repository();
       await mkdir(join(root, ".projector"));
@@ -139,7 +147,7 @@ describe("project readiness metadata inspection", () => {
     const root = await repository();
     const outside = await mkdtemp(join(tmpdir(), "projector-readiness-outside-"));
     roots.push(outside);
-    await writeFile(join(outside, "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
+    await writeFile(join(outside, "config.toml"), 'apiVersion = "projector.config/v3"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     await symlink(outside, join(root, ".projector"), "dir");
 
     await expect(inspectProjectReadiness(root, { operation: "status", package: packageIdentity })).resolves.toMatchObject({
@@ -160,7 +168,7 @@ describe("project readiness metadata inspection", () => {
   test("invokes an ordinary operation only while current readiness has shared access", async () => {
     const root = await repository();
     await mkdir(join(root, ".projector"));
-    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
+    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v3"\nenabled = true\nprojectorVersion = "2.1.0"\n');
 
     const result = await withProjectOperationAccess(root, { operation: "context", package: packageIdentity }, async ({ readiness }) => {
       expect(readiness.status).toBe("ready");
@@ -175,7 +183,7 @@ describe("project readiness metadata inspection", () => {
     const root = await repository();
     const cache = join(root, ".projector", "runtime", "knowledge", "contexts");
     await mkdir(cache, { recursive: true });
-    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
+    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v3"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     const stage = join(cache, `${"a".repeat(32)}.json.999999.abc.tmp`);
     await writeFile(stage, "interrupted disposable bytes");
     await withProjectOperationAccess(root, { operation: "context", package: packageIdentity }, async () => {
@@ -199,7 +207,7 @@ describe("project readiness metadata inspection", () => {
   test("returns a recovery route for corrupt cooperative access state", async () => {
     const root = await repository();
     await mkdir(join(root, ".projector", "runtime", "operation-access", "holders"), { recursive: true });
-    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v1"\nenabled = true\nprojectorVersion = "2.1.0"\n');
+    await writeFile(join(root, ".projector", "config.toml"), 'apiVersion = "projector.config/v3"\nenabled = true\nprojectorVersion = "2.1.0"\n');
     await writeFile(join(root, ".projector", "runtime", "operation-access", "holders", "bad.json"), "{broken");
 
     const result = await withProjectOperationAccess(root, { operation: "verify", package: packageIdentity }, async () => "unreachable");
@@ -249,14 +257,14 @@ describe("project readiness metadata inspection", () => {
       readiness: { status: "ready", observed: { preparedProjectorVersion: "2.1.0" } },
     });
     await expect(initializePreparedProject(root, { package: packageIdentity })).resolves.toMatchObject({ created: false });
-    expect(await readFile(join(root, ".projector", "config.toml"), "utf8")).toMatch(/^#:schema schemas\/projector-config-v1\.schema\.json\n/u);
-    expect(JSON.parse(await readFile(join(root, ".projector", "schemas", "projector-config-v1.schema.json"), "utf8")))
+    expect(await readFile(join(root, ".projector", "config.toml"), "utf8")).toMatch(/^#:schema schemas\/projector-config-v3\.schema\.json\n/u);
+    expect(JSON.parse(await readFile(join(root, ".projector", "schemas", "projector-config-v3.schema.json"), "utf8")))
       .toMatchObject({ $schema: "http://json-schema.org/draft-04/schema#" });
   });
 
   test("leaves configuration unpublished when schema staging fails", async () => {
     const root = await repository();
-    const schemaPath = join(root, ".projector", "schemas", "canonical-concept-v2.schema.json");
+    const schemaPath = join(root, ".projector", "schemas", "canonical-concept-v3.schema.json");
     await mkdir(join(schemaPath, ".."), { recursive: true });
     await writeFile(schemaPath, "{}\n");
 

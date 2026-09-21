@@ -1,6 +1,6 @@
 {
   "name": "@projector/runtime",
-  "version": "2.1.9",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@projector/core": "workspace:*",
+    "mdast-util-from-markdown": "^2.0.3",
     "smol-toml": "1.8.0",
     "zod": "^4.0.15"
   }

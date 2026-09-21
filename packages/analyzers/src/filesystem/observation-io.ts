@@ -77,12 +77,20 @@ export class GitCommandError extends ObservationError {
 }
 
 /** Calls are intentionally sequential at the collector; every child is drained before rejection. */
-export async function observationGit(root: string, args: readonly string[], budget: ObservationBudget, options: {
-  signal?: AbortSignal; stage?: string; input?: string; allowedExitCodes?: readonly number[];
-} = {}): Promise<string> {
+export interface GitObservationOptions {
+  readonly signal?: AbortSignal; readonly stage?: string; readonly input?: string; readonly allowedExitCodes?: readonly number[];
+}
+export async function observationGit(root: string, args: readonly string[], budget: ObservationBudget, options: GitObservationOptions = {}): Promise<string> {
+  return observationGitResult(root, args, budget, options, (output) => output.toString("utf8"));
+}
+/** Raw output is needed when Git batch framing uses byte lengths rather than characters. */
+export async function observationGitBytes(root: string, args: readonly string[], budget: ObservationBudget, options: GitObservationOptions = {}): Promise<Buffer> {
+  return observationGitResult(root, args, budget, options, (output) => output);
+}
+async function observationGitResult<T>(root: string, args: readonly string[], budget: ObservationBudget, options: GitObservationOptions, result: (output: Buffer) => T): Promise<T> {
   const stage = options.stage ?? "git-facts";
   checkObservation(budget, options.signal, stage);
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const child = spawn("git", ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c",
       `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`, ...args],
     { cwd: root, env: environment(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
@@ -126,7 +134,7 @@ export async function observationGit(root: string, args: readonly string[], budg
       if (code !== 0 && !options.allowedExitCodes?.includes(code ?? -1)) {
         reject(new GitCommandError(code, Buffer.concat(stderr).toString("utf8"), stage)); return;
       }
-      resolve(Buffer.concat(stdout).toString("utf8"));
+      resolve(result(Buffer.concat(stdout)));
     });
     child.stdin.end(options.input);
     if (options.signal?.aborted) onAbort();

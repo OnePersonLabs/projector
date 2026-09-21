@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/prom
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { ContentHash, ProjectDataMigrationSourceAuthority, StateBinding, StateDigest } from "@projector/core";
+import type { ContentHash, StateBinding, StateDigest } from "@projector/core";
 import { describe, expect, it } from "vitest";
 
 import { RepositoryPathService } from "../security/index.js";
@@ -100,72 +100,6 @@ describe("WriterLeaseManager", () => {
     await expect(manager.acquireMigrationRecovery({ ...valid, processId: 0 })).rejects.toThrow(/process/i);
     await expect(manager.acquireMigrationRecovery({ ...valid, processId: " " })).rejects.toThrow(/process/i);
     await expect(manager.acquireMigrationRecovery({ ...valid, leaseId: "caller-chosen" } as typeof valid))
-      .rejects.toThrow(/keys|fields/i);
-    await expect(stat(join(root, ".projector", "runtime", "writer-lease.lock")))
-      .rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("records project-data migration execution ownership and excludes every other writer kind", async () => {
-    const root = await mkdtemp(join(tmpdir(), "projector-lease-"));
-    const manager = await leaseManager(root);
-    const sourceAuthority: ProjectDataMigrationSourceAuthority = {
-      kind: "legacy-unversioned",
-      sourceHash: hash,
-    };
-    const lease = await manager.acquireProjectDataMigration({
-      sessionId: "upgrade-request-1",
-      processId: 42,
-      attemptId: "migration-attempt:legacy-ingress:001",
-      migrationId: "migration:legacy-ingress",
-      manifestHash: hash,
-      sourceAuthority,
-      targetSnapshotHash: hash,
-    });
-
-    const record = JSON.parse(
-      await readFile(join(root, ".projector", "runtime", "writer-lease.lock", "owner.json"), "utf8"),
-    );
-    expect(record).toMatchObject({
-      version: 3,
-      ownerKind: "project-data-migration",
-      sessionId: "upgrade-request-1",
-      attemptId: "migration-attempt:legacy-ingress:001",
-      migrationId: "migration:legacy-ingress",
-      manifestHash: hash,
-      sourceAuthority,
-      targetSnapshotHash: hash,
-    });
-    expect(record).not.toHaveProperty("stateBinding");
-    expect(record).not.toHaveProperty("backupManifestHash");
-    await expect(manager.acquire(owner("ordinary-writer"))).rejects.toMatchObject({ code: "lease-held" });
-    await expect(manager.acquireMigrationRecovery({
-      sessionId: "recovery-request-1",
-      processId: 42,
-      attemptId: "migration-attempt:legacy-ingress:001",
-      migrationId: "migration:legacy-ingress",
-      manifestHash: hash,
-      targetSnapshotHash: hash,
-      backupManifestHash: hash,
-    })).rejects.toMatchObject({ code: "lease-held" });
-    await lease.heartbeat();
-    await lease.release();
-  });
-
-  it("rejects malformed project-data migration owners before creating a lease", async () => {
-    const root = await mkdtemp(join(tmpdir(), "projector-lease-"));
-    const manager = await leaseManager(root);
-    const valid = {
-      sessionId: "upgrade-request-1",
-      processId: 42,
-      attemptId: "migration-attempt:legacy-ingress:001",
-      migrationId: "migration:legacy-ingress",
-      manifestHash: hash,
-      sourceAuthority: { kind: "legacy-unversioned", sourceHash: hash } as const,
-      targetSnapshotHash: hash,
-    };
-    await expect(manager.acquireProjectDataMigration({ ...valid, sourceAuthority: { kind: "legacy-unversioned", sourceHash: "bad" } } as unknown as typeof valid))
-      .rejects.toThrow();
-    await expect(manager.acquireProjectDataMigration({ ...valid, leaseId: "caller-chosen" } as typeof valid))
       .rejects.toThrow(/keys|fields/i);
     await expect(stat(join(root, ".projector", "runtime", "writer-lease.lock")))
       .rejects.toMatchObject({ code: "ENOENT" });

@@ -1,6 +1,6 @@
 # Assimilation workspace and intake
 
-Read this when the pile is large, branched, likely to outlive a context, or when resuming a campaign. The repository-local `.assimilate/` directory owns the working synthesis and durable intake. It is separate from Projector's `.projector/` accepted model, runtime, and authorities.
+Read this when the pile is large, branched, likely to outlive a context, or when resuming an effort. The repository-local `.assimilate/` directory owns the working synthesis and durable intake. It is separate from Projector's `.projector/` accepted model, runtime, and authorities.
 
 The usual navigational shape is:
 
@@ -12,7 +12,7 @@ The usual navigational shape is:
   intake/               retained captures, fingerprints, coverage, review evidence
 ```
 
-These filenames are a default for a new workspace, not a reason to reorganize an existing useful one. Split topic notes where a reader gains a coherent disclosure boundary; do not force one note per source, noun, or fixed token count. Intake artifacts can be indexed and subdivided as needed. Their identity and source coverage must remain recoverable over a long campaign. An unignored path is intentional; deciding what to commit or share is distinct from preserving it locally.
+These filenames are a default for a new workspace, not a reason to reorganize an existing useful one. Split topic notes where a reader gains a coherent disclosure boundary; do not force one note per source, noun, or fixed token count. Intake artifacts can be indexed and subdivided as needed. Their identity and source coverage must remain recoverable over a long-running effort. An unignored path is intentional; deciding what to commit or share is distinct from preserving it locally.
 
 ## Intake and coverage
 

@@ -180,10 +180,10 @@ describe("observed derivation impact", () => {
     const selector = { op: "atom" as const, field: "path" as const, matcher: "equals" as const, value: "value.ts" };
     const impactRule: ImpactRule = { id: "impact:consumer", key: "consumer", version: "1", selector, trigger: "external-change", direction: "forward", relationTypes: ["depends-on"], maxDepth: 2, effect: "widen-analysis", semanticHash: placeholder };
     const lens = { ...createRepositoryScriptLens({ id: "lens:impact", status: "active", selector, authorityRecordId: authority.id, governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:impact" }] }), impactRules: [impactRule] };
-    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "concept", id: "concept:impact", key: "impact", lifecycle: "active", payload: { id: "concept:impact", key: "impact", name: "Impact", kind: "constraint", aliases: [], statement: "Inspect changed dependencies.", status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder } }));
-    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "authority-record", id: authority.id, key: authority.key, lifecycle: "approved", payload: { ...authority } }));
-    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "projection-lens", id: lens.id, key: lens.key, lifecycle: "active", payload: { ...lens } }));
-    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "relation", id: "relation:possible-impact", key: "relation:relation:possible-impact", lifecycle: "active", payload: { id: "relation:possible-impact", fromId: sourceId, toId: otherId, type: "depends-on", sourceClass: "inferred", confidence: 1, evidence: [], active: true, semanticHash: placeholder } }));
+    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "concept", id: "concept:impact", key: "impact", lifecycle: "active", payload: { id: "concept:impact", key: "impact", name: "Impact", kind: "constraint", aliases: [], statement: "Inspect changed dependencies.", status: "active", sourceClass: "authored", confidence: 1, tags: [], evidence: [], discoveryHash: placeholder, semanticHash: placeholder } }));
+    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "authority-record", id: authority.id, key: authority.key, lifecycle: "approved", payload: { ...authority } }));
+    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "projection-lens", id: lens.id, key: lens.key, lifecycle: "active", payload: { ...lens } }));
+    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "relation", id: "relation:possible-impact", key: "relation:relation:possible-impact", lifecycle: "active", payload: { id: "relation:possible-impact", fromId: sourceId, toId: otherId, type: "depends-on", sourceClass: "inferred", confidence: 1, evidence: [], active: true, semanticHash: placeholder } }));
     const governed = await observeChangeRepository(root);
     expect(() => new KnowledgeGraph(governed, {}, new DerivedObservationBudget(1))).toThrow(ObservationError);
     const obligationBudget = new DerivedObservationBudget(2048);
@@ -210,7 +210,7 @@ describe("observed derivation impact", () => {
     expect(result.possibleFrontierUnitIds).toContain(otherId);
     expect(result.repairRoute).toBe("widen-analysis");
     const conceptualLens = { ...lens, impactRules: [{ ...impactRule, trigger: "concept-change" as const }] };
-    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: "projection-lens", id: lens.id, key: lens.key, lifecycle: "active", payload: { ...conceptualLens } }));
+    await canonicalStore.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "projection-lens", id: lens.id, key: lens.key, lifecycle: "active", payload: { ...conceptualLens } }));
     const beforeMeaning = await snapshot(root);
     const concept = (await canonicalStore.snapshot()).documents.find(({ kind }) => kind === "concept")!;
     await canonicalStore.write(withCanonicalHashes({ ...concept, payload: { ...concept.payload, statement: "Changed behavior requires review even when current source bytes are identical." } }));

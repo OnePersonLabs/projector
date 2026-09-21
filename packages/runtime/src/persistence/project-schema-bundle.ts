@@ -24,7 +24,7 @@ export function createProjectorEditorSchemaBundle(): readonly ProjectorEditorSch
   const schemas = exportContractJsonSchemas();
   const selected = [
     ...Object.entries(CanonicalDocumentWireSchemasByKind).map(([kind, schema]) => [
-      `.projector/schemas/canonical-${kind}-v2.schema.json`,
+      `.projector/schemas/canonical-${kind}-v3.schema.json`,
       tomlEncodingSchema(z.toJSONSchema(schema, {
         target: "draft-2020-12",
         reused: "ref",
@@ -32,7 +32,7 @@ export function createProjectorEditorSchemaBundle(): readonly ProjectorEditorSch
         io: "input",
       })),
     ] as const),
-    [".projector/schemas/projector-config-v1.schema.json", taploDraft4Schema(schemas.PreparedProjectorConfig)],
+    [".projector/schemas/projector-config-v3.schema.json", taploDraft4Schema(schemas.PreparedProjectorConfig)],
   ] as const;
   editorSchemaBundle = Object.freeze(selected.map(([relativePath, schema]) => {
     if (schema === undefined) throw new Error(`Core contract registry does not export the schema for ${relativePath}`);
@@ -230,7 +230,7 @@ function assertTaploDraft4Schema(value: unknown, location = "#"): void {
 }
 
 export function canonicalEditorSchemaRelativePath(kind: CanonicalKind): string {
-  return `.projector/schemas/canonical-${kind}-v2.schema.json`;
+  return `.projector/schemas/canonical-${kind}-v3.schema.json`;
 }
 
 function replacePatternWithAllOf(schema: Record<string, unknown>, constraints: readonly Record<string, unknown>[]): void {

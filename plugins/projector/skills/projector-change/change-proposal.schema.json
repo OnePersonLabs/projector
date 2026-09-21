@@ -335,9 +335,9 @@
       }
     },
     "__schema24": {
-      "anyOf": [
+      "oneOf": [
         {
-          "anyOf": [
+          "oneOf": [
             {
               "type": "object",
               "properties": {
@@ -410,7 +410,7 @@
           ]
         },
         {
-          "anyOf": [
+          "oneOf": [
             {
               "type": "object",
               "properties": {
@@ -483,7 +483,7 @@
           ]
         },
         {
-          "anyOf": [
+          "oneOf": [
             {
               "type": "object",
               "properties": {
@@ -556,7 +556,7 @@
           ]
         },
         {
-          "anyOf": [
+          "oneOf": [
             {
               "type": "object",
               "properties": {
@@ -629,7 +629,7 @@
           ]
         },
         {
-          "anyOf": [
+          "oneOf": [
             {
               "type": "object",
               "properties": {
@@ -702,7 +702,7 @@
           ]
         },
         {
-          "anyOf": [
+          "oneOf": [
             {
               "type": "object",
               "properties": {
@@ -775,7 +775,7 @@
           ]
         },
         {
-          "anyOf": [
+          "oneOf": [
             {
               "type": "object",
               "properties": {
@@ -848,7 +848,7 @@
           ]
         },
         {
-          "anyOf": [
+          "oneOf": [
             {
               "type": "object",
               "properties": {
@@ -921,7 +921,7 @@
           ]
         },
         {
-          "anyOf": [
+          "oneOf": [
             {
               "type": "object",
               "properties": {

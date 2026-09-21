@@ -1,72 +1,25 @@
 ---
 name: projector-change
-description: Establish or revise Projector's canonical conceptual model, carry accepted meaning into implementation, and reconcile it across subsequent changes.
+description: Accept new or revised canonical Projector meaning with a readable preview and exact-state apply.
 disable-model-invocation: false
 ---
 
-# Projector change
+# Accept meaning
 
-Projector retains accepted meaning, typed relationships, and architectural obligations independently of implementation. Use the same public change lifecycle to establish the model before code exists, revise it explicitly, and plan implementation. Retrieval candidates are interpretation evidence; they do not prove semantic equivalence.
+Use `$projector` to retrieve the relevant obligations, rationale and current source evidence. Reuse an existing identity when it owns the intended meaning. Similar wording is a candidate, not proof of identity. A new identity needs an explicit boundary and inspected nearest meanings; a split, merge or retirement needs preserved lineage.
 
-Resolve `node` through the host `PATH`; Projector requires Node 24 on native Windows and direct WSL. The installed plugin bundles Projector JavaScript, not a private Node runtime.
+Write a proposal using [proposal-schema.md](proposal-schema.md). Core validates the JSON; [change-proposal.schema.json](change-proposal.schema.json) supplies the exact executable shape. A model-only proposal has no code edits or executable tests. Accepting meaning establishes an obligation, not proof that it works.
 
-On a new session with a retained context ID, change selector, or approval selector, read the [shared operation contract](../../references/operation-contract.md) and send `cleanup` with those actual anchors before entering the route below. Inspect the bounded continuation evidence, recovery requirement, and `nextAction`; follow `drillDown` when required evidence is omitted. Reconcile saved context before reusing its reasoning. If the anchors are missing, recover them from their durable owners or retrieve fresh context; do not choose a guessed latest selector.
+Use `node <plugin>/scripts/projector.mjs` as `projector` below:
 
-## Choose the change route
+1. Run `projector accept proposal.json --context <context ID> --request "reason"`. The result previews the changed meaning, scope, affected obligations and unresolved questions. Review it against the user's authorization. Inspect the exact record or change if detail is missing.
+2. When the preview is correct and the action is already authorized, run `projector accept --apply <change ID> --hash <reviewed hash>`. The service checks live dependencies, authenticates the exact plan, acquires operation access and journals writes. Read the outcome and reasons; transport success alone does not establish a successful change.
+3. Realize accepted meaning with ordinary Codex edits. Run relevant checks and `projector check <context ID>`. Retain a useful new scenario, relation, selector or rationale when the work discovers one. Revise the model again if implementation changes intended behavior.
 
-Planning and implementation are a feedback loop. For authorized code changes that realize existing accepted meaning, use ordinary host edits, relevant behavioral checks, and scoped reconciliation as described in step 9. Use the capture/plan/approve/apply route below when revising canonical meaning or requesting Projector-controlled execution; do not replay a completed host edit merely to obtain a certificate. Revise the plan when implementation invalidates its assumptions. Explicitly revise canonical meaning when intended behavior changes, with rationale and provenance; a procedural amendment must not silently drop a required outcome.
+Carry existing authorization forward. Ask only when a material unresolved choice or irreversible action exceeds it. An approval names one exact plan; a changed proposal or stale dependency needs a fresh preview and approval. Never transfer an old approval to a replacement plan.
 
-## Canonical revision and controlled execution
+For an interrupted write, run `projector resume <approval ID>` to inspect the journal, then explicit `projector recover <approval ID>` when authorized. Recovery restores a consistent state. It does not reapply changes. Preserve ambiguous ownership and unavailable evidence; do not hand-edit journals or guess an approval.
 
-1. Read the target repository's agent instructions and the [shared operation contract](../../references/operation-contract.md). Consult the [harness guide](../../references/harness-guide.md) when selecting or resuming a lifecycle. Before choosing edit paths, resolve `../../scripts/projector-operation.mjs` relative to this skill. For new work, write a `projector.operation/v1` request with operation `context`, the absolute repository root, and input `{ "request": "<requested-outcome>", "persist": true }`, then run:
+Conditional architectural rationale must retain the assumptions, alternatives, consequence and reconsideration condition that affect a later choice. Establish a blocking architectural decision and its constraint/lens products together. A bounded deferral states what remains forbidden and when to reconsider; it does not accept the deferred choice.
 
-   ```sh
-   node <projector-operation.mjs> <context-request.json>
-   ```
-
-   For resumed work, reuse previously inspected context content only after `cleanup` and `reconcile` show its dependencies remain current. If that content is unavailable to this session, or its dependencies changed or are missing, retrieve fresh context for the requested outcome; a context ID alone does not disclose its meaning. For a `context` result, inspect `output.interpretation`, each `output.branches[].context.items`, typed relevance reasons, `lensObligations`, and unknown frontiers. Read the source and tests needed to resolve them. Select an existing meaning before sending a focused `context` request with `input.entities: ["<entity-id>"]`. Preserve `output.id` and `output.contentHash`; a free-text candidate is not an accepted identity. An empty result means knowledge is missing, not that no constraints exist.
-
-   Context is bounded by `input.policy`. Inspect `output.unknowns` and each branch's `frontier`, `closure`, and `context` before relying on its retained items. Budget-stopped expansion is unresolved knowledge. Request focused context or adjust the supported policy bounds when a required direct or governing dependency is not retained. Inspect each branch's `lensObligations` and `governanceEvaluations` for applicability and predicate results. Do not infer that an omitted identity or finding is absent.
-
-2. Read [proposal-schema.md](proposal-schema.md). Write one strict proposal JSON file using the retrieved meaning and the user's intended design. Preserve existing requirement/scenario keys and exact meaning where they own the behavior. When the user intends a design revision, provide its current identity, semantic hash, and rationale in `revision`. Use `canonicalMutations` for typed concept, relation, concern, project preference, decision, lens, and authority changes, and full requirement/scenario records when revising scope, provenance or status. Inspect `preview.intentReview` for exact before/after meaning, related obligations, and unresolved targets, including capabilities without current code.
-
-   To select a retrieved candidate or establish distinct new meaning, include `identityResolution` with the saved candidate `contextId`, `contextHash`, reviewed outcome, selected IDs, and rationale. New ownership needs `newBoundary` explaining what it owns, excludes, and the inspected nearest meanings. Use the lineage mutation for split, merge, replacement, relocation, or deletion; it atomically preserves history and tombstones. Do not imitate retirement by deleting JSON files. Capture can retrieve exact unchanged existing meaning automatically, but omitting context cannot bypass an unresolved interpretation. Empty-model bootstrap is supported without inventing an existing identity.
-
-   A model-only proposal has no implementation edits or executable test commands. It establishes or revises accepted meaning and architecture, with canonical integrity validation. It does not establish runtime behavior. Do not invent code edits or dummy tests to establish a future obligation. Historical code and prose supply provenance or counterevidence; accepting a concept must not silently accept its old implementation.
-
-   Architecture choices come from the host agent's investigation of the current options and the user's constraints. Use fresh primary evidence for volatile technology choices; do not invent research provenance. Keep alternatives and uncertainties in the authority record. A concern can be resolved by a corresponding accepted decision or explicitly deferred with preserved options, forbidden commitments, and reconsideration conditions. Include a decision's required constraint/lens/migration products in the same reviewed transaction: declaring a consequence is insufficient. Adopt shared preferences explicitly with project scope; changing a soft preference does not retroactively revise earlier decisions.
-3. Ask the user only about an unresolved material ambiguity: conflicting requirement identity, a blocking architecture choice with no current canonical decision, or an irreversible boundary that repository evidence cannot settle. Do not ask about choices that existing authority or a bounded deferral already resolves.
-4. Send `change.capture` with the request, parsed proposal object, and retained context ID. If capture succeeds, send `change.plan` with its `changeSelector`:
-
-   ```sh
-   node <projector-operation.mjs> <capture-request.json>
-   node <projector-operation.mjs> <plan-request.json>
-   ```
-
-5. Inspect the returned preview, `changeSelector`, and exact `immutablePlanHash`. Send `representation.inspect` with `input: { "changeSelector": "<selector>", "view": "summary" }` when the plan has a bound representation; use `view: "content"` only when the exact rendered instructions are needed. Check artifact integrity, live dependency freshness, semantic fidelity, and plan/capsule association separately. If an authenticated historical plan is stale only because its packaged representation profile was superseded, send `representation.reconcile` with that `changeSelector` and optional historical `approvalSelector`; inspect and separately approve the returned replacement selector. Reconciliation preserves the historical plan and approval and never transfers authority. Inspection creates no execution authority. Check every meaning revision, authority change, affected obligation, and unknown against the user's authorization. Within the user's authorization for local changes, the agent may approve that inspected plan. Ask only when a material decision or action exceeds that authorization. Approval always names the exact reviewed hash; it does not authorize a changed plan or broader scope.
-6. After that review and authorization, send `change.approve` with the change selector and exact plan hash, then send `change.apply` with the returned approval selector:
-
-   ```sh
-   node <projector-operation.mjs> <approval-request.json>
-   node <projector-operation.mjs> <apply-request.json>
-   ```
-
-7. If apply is interrupted or reports recovery-required, inspect the last durable result and send `cleanup` with the retained approval selector. Read its continuation and recovery requirement before acting. Preserve the lifecycle records; do not hand-edit the target or retry raw apply. Recover and resume the same approval:
-
-   Send `change.recover` with the same approval selector. After a successful recovery result, send `change.resume` with that selector. A new process or session must re-read the durable readiness and lifecycle result; delivery of an earlier result does not prove it was consumed.
-
-8. Check the authenticated result, receipt, and closed journal for the approved plan. Report exactly the assurance returned: a canonical model commit is not a certificate of behavioral conformance. Unsupported execution, stale dependencies, ambiguity, and planning surprises require new evidence or a revised plan.
-
-9. Codex may realize the accepted model through ordinary host-owned edits within the user's authorization. Run the relevant behavioral checks and send a `reconcile` operation with the retained context ID afterward, and before reusing context in a later session. Keep stale reasoning separate from a violated architectural predicate. A different implementation can conform. Refresh affected context when dependencies change; unknown validators or observation gaps cannot establish conformance. Reconciliation never promotes newly inferred relations automatically, and host-owned edits do not acquire Projector's controlled-execution guarantees.
-
-   Inspect `decisionValidity` as well as predicate findings. Observable reconsideration conditions are rechecked against authenticated transaction baselines or tracked history. A fresh context does not reset a fired condition. Manual review conditions require an explicit event; unsupported assumptions remain visibly unobserved. An accepted semantic revision can reauthorize the affected decision. See [executable-lenses.md](executable-lenses.md) for custom validators and platform behavior.
-
-## Fail-closed rules
-
-- Put the absolute repository root in every request. The operation entry loads only its packaged Projector runtime and does not keep a hidden workspace binding. If the user has requested initialization, send an `init` operation for that repository.
-- The entry is stateless. It creates no parallel trace or continuation; the registered services own durable context, lifecycle authority, receipts, and recovery.
-- Preserve the proposal and returned lifecycle selectors. For a changed proposal, send a new `change.capture` and then `change.plan`. Review the resulting plan and obtain another approval naming its exact hash before applying it; an earlier approval does not authorize a changed plan.
-- Code-bearing controlled changes require independent validators at the Git base that the proposal does not edit. Supplemental validators may be proposed, but they do not prove independence. Model-only changes validate canonical integrity without executing repository code.
-- A passing validator establishes only the behavior it exercises. The post-change knowledge validator checks applicable executable lens predicates before commit; it does not prove every scenario outcome or the fidelity of the whole design.
-- A blocking-now architecture concern requires a current eligible canonical decision. Establish or revise that decision and its authority through a model transaction before relying on it for implementation. A bounded deferral is not an accepted architectural choice.
-- Stop an operation when its required runner, host permission, authenticated validator source, observation, or recovery evidence is unavailable. Host validator execution is bounded and source-checked, but it does not establish filesystem confinement, network denial, or hostile same-user protection. A failed or interrupted validator cannot establish conformance. Model-only transactions remain available without executing repository code. Unavailability is not evidence of safety.
+Ordinary host edits do not need controlled execution. For a change that specifically requires Projector-controlled code execution, read [executable-lenses.md](executable-lenses.md) and the [operation contract](../../references/operation-contract.md): authenticated validators, exact patch scope and recovery remain mandatory. Tests establish their observed behavior, not completeness of the whole design.

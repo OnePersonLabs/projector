@@ -1,0 +1,15 @@
+#:schema ../../schemas/canonical-relation-v3.schema.json
+apiVersion = "projector/v3"
+schemaVersion = "3.0.0"
+kind = "relation"
+id = "relation:requirement:engineering-english:demonstrated-by:scenario:preserve-critical-tokens-during-compaction"
+key = "relation:relation:requirement:engineering-english:demonstrated-by:scenario:preserve-critical-tokens-during-compaction"
+lifecycle = "active"
+
+[payload]
+fromId = "requirement:engineering-english"
+toId = "scenario:preserve-critical-tokens-during-compaction"
+type = "demonstrated-by"
+sourceClass = "authored"
+confidence = 1
+evidence = []

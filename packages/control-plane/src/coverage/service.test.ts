@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hashFramedDomain, hashSemantic, withCanonicalHashes, type AuthorityRecord, type CanonicalDocumentEnvelope, type ProjectionLens } from "@projector/core";
+import { hashFramedDomain, hashSemantic, withCanonicalHashes, type ApplicationEvidencePort, type AuthorityRecord, type CanonicalDocumentEnvelope, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { describe, expect, it } from "vitest";
@@ -14,7 +14,7 @@ import { RepositoryCleanupOutputSchema, RepositoryCompletionOutputSchema, Reposi
 const hash = hashFramedDomain("coverage-test", "fixture");
 const scope = { op: "atom", field: "path", matcher: "glob", value: "src/**" } as const;
 async function canonical(root: string, kind: CanonicalDocumentEnvelope["kind"], payload: Record<string, unknown>) {
-  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id: String(payload.id), key: String(payload.key), lifecycle: String(payload.status ?? payload.lifecycle), payload: { ...payload, semanticHash: hash, ...(["requirement", "behavioral-scenario"].includes(kind) ? { discoveryHash: hash } : {}) } }));
+  await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind, id: String(payload.id), key: String(payload.key), lifecycle: String(payload.status ?? payload.lifecycle), payload: { ...payload, semanticHash: hash, ...(["requirement", "behavioral-scenario"].includes(kind) ? { discoveryHash: hash } : {}) } }));
 }
 function authority(): AuthorityRecord {
   return { id: "authority:boundary", key: "boundary", subjectId: "lens:boundary", status: "approved", conclusion: "preserve", rationale: "Accepted boundary.", alternatives: [], assumptions: [], reconsiderWhen: [], vector: { explicitDecisionAlignment: 1, productConstraintFit: 1, semanticFit: 1, independentOccurrence: 1, historicalStability: 1, independentValidationSupport: 1, boundaryCoherence: 1, maintenanceOutcome: 1, platformCompatibility: 1, externalRationale: 0, ecosystemHealth: 0, securitySupport: 0, reversibility: 1, migrationCost: 0, counterEvidence: 0 }, assessmentConfidence: "high", evidence: [], governanceRiskClass: "R1", decidedBy: "user", createdAt: "2026-09-09T00:00:00.000Z", semanticHash: hash };
@@ -51,23 +51,31 @@ describe("observed progressive coverage", () => {
 
   it("reports declared application evidence as predicate evidence and binds negative dispositions", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-coverage-application-evidence-"));
-    const evidenceId = "psychord-artifact:coverage";
+    const evidenceId = "artifact:coverage";
     try {
       const scenarioBase = { id: "scenario:keep-reload-replay-owned-moment", key: "keep-reload-replay-owned-moment", title: "Keep, reload, and replay", aliases: [], status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, steps: [{ role: "trigger", statement: "The application is observed." }, { role: "expected-outcome", statement: "The declared assertion is evaluated." }], origin: [] };
       const scenarioHash = hashSemantic("behavioral-scenario", scenarioBase);
       await canonical(root, "behavioral-scenario", { ...scenarioBase, evidence: [{ evidenceId, stance: "supports", applicationPredicate: {
-          kind: "application-observation", adapter: { id: "psychord.keep-reload-replay", version: "1" },
+          kind: "application-observation", adapter: { id: "fixture.application", version: "1" },
           scenario: { id: "scenario:keep-reload-replay-owned-moment", semanticHash: scenarioHash }, case: "no-input",
           predicateId: "predicate:no-input-is-not-player", assertionIds: ["no-input-player"], observationRole: "latest",
         } }], discoveryHash: hashFramedDomain("coverage-test", "scenario-discovery"), semanticHash: scenarioHash });
-      const applicationEvidence = {
-        artifacts: { artifactSetId: () => evidenceId, observeAndPublish: async () => ({ status: "missing" as const, artifactSetId: evidenceId }), read: async () => ({ status: "missing" as const, artifactSetId: evidenceId }) },
-        currentness: { observe: async () => { throw new Error("currentness is not invoked for missing evidence"); } },
-      } as const;
+      const applicationEvidence: ApplicationEvidencePort = {
+        async assess(request) {
+          const basis = {
+            schemaVersion: "application-evidence-assessment@1" as const, request,
+            custody: { status: "unavailable" as const, reason: "The fixture has no authenticated artifact custody." },
+            currentness: { status: "unknown" as const, reason: "No current observation is available." },
+            fulfillment: { status: "unknown" as const, reason: "Unknown without authenticated, current evidence." },
+            dependencies: [],
+          };
+          return { ...basis, contentHash: hashFramedDomain("application-evidence-assessment/v1", basis) };
+        },
+      };
       const result = await inspectRepositoryCoverage(root, { scope: "." }, "coverage", { applicationEvidence });
       expect(result.applicationEvidence).toMatchObject({ status: "unknown", assessments: [{ status: "assessed", assessment: { fulfillment: { status: "unknown" } } }] });
       expect(result.boundState.valueDependencies.map(({ id }) => id)).toEqual(expect.arrayContaining([
-        "scenario:keep-reload-replay-owned-moment", `application-evidence:${evidenceId}`, `application-evidence-currentness:${evidenceId}`,
+        "scenario:keep-reload-replay-owned-moment",
       ]));
       expect(result.lanes.find(({ key }) => key === "validation-evidence")).toMatchObject({ numerator: 0, denominator: 1 });
       expect(result.applicationEvidence.assessments[0]?.contentHash).toMatch(/^sha256:v1:/u);

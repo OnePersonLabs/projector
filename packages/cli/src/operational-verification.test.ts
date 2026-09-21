@@ -8,15 +8,13 @@ import { validateOperationalReport, withObservationScope } from "@projector/runt
 import { afterEach, describe, expect, test } from "vitest";
 
 import { runReadOnlyOperationalVerification } from "./operational-verification.js";
-import { createInstalledProjectorApplicationEvidenceHost } from "./operation-runner.js";
 
 const roots: string[] = [];
 const execFileAsync = promisify(execFile);
-const verificationOptions = (root: string, signal = new AbortController().signal) => ({
+const verificationOptions = (_root: string, signal = new AbortController().signal) => ({
   signal,
   toolVersion: "2.1.0-test",
   policy: { preset: "observe", allowMutation: false, allowPersistence: false },
-  applicationEvidence: createInstalledProjectorApplicationEvidenceHost({ repositoryRoot: root, signal, environment: process.env }),
 });
 
 afterEach(async () => {

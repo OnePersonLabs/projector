@@ -25,8 +25,8 @@ function concept(
   key = `concept:${id}`,
 ): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: "projector/v3",
+    schemaVersion: "3.0.0",
     kind: "concept",
     id,
     key,
@@ -51,8 +51,8 @@ function concept(
 
 function relation(id: string, fromId: string, toId: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: "projector/v3",
+    schemaVersion: "3.0.0",
     kind: "relation",
     id,
     key: `relation:${id}`,
@@ -73,8 +73,8 @@ function relation(id: string, fromId: string, toId: string): CanonicalDocumentEn
 
 function requirement(id: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: "projector/v3",
+    schemaVersion: "3.0.0",
     kind: "requirement",
     id,
     key: `requirement:${id}`,
@@ -98,8 +98,8 @@ function requirement(id: string): CanonicalDocumentEnvelope {
 
 function scenario(id: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: "projector/v3",
+    schemaVersion: "3.0.0",
     kind: "behavioral-scenario",
     id,
     key: `scenario:${id}`,
@@ -122,8 +122,8 @@ function scenario(id: string): CanonicalDocumentEnvelope {
 
 function lineage(id: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: "projector/v3",
+    schemaVersion: "3.0.0",
     kind: "lineage",
     id,
     key: `lineage:${id}`,
@@ -141,8 +141,8 @@ function lineage(id: string): CanonicalDocumentEnvelope {
 
 function tombstone(id: string, entityId: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: "projector/v3",
+    schemaVersion: "3.0.0",
     kind: "tombstone",
     id,
     key: `tombstone:${entityId}`,
@@ -159,8 +159,8 @@ function tombstone(id: string, entityId: string): CanonicalDocumentEnvelope {
 
 function rule(id: string): CanonicalDocumentEnvelope {
   return withCanonicalHashes({
-    apiVersion: "projector/v2",
-    schemaVersion: "2.0.0",
+    apiVersion: "projector/v3",
+    schemaVersion: "3.0.0",
     kind: "rule",
     id,
     key: `rule:${id}`,
@@ -185,7 +185,7 @@ function rule(id: string): CanonicalDocumentEnvelope {
 }
 
 function governanceDocument(kind: "projection-lens" | "exception" | "migration", id: string): CanonicalDocumentEnvelope {
-  const common = { apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id, key: `${kind}:${id}`, lifecycle: "active" } as const;
+  const common = { apiVersion: "projector/v3", schemaVersion: "3.0.0", kind, id, key: `${kind}:${id}`, lifecycle: "active" } as const;
   if (kind === "projection-lens") return withCanonicalHashes({ ...common, payload: { id, key: `${kind}:${id}`, version: "1", status: "active", purpose: "rebuild fixture", realizesConceptKinds: [], selector: { op: "all", items: [] }, contributions: [], expectedProjections: [], rules: [], impactRules: [], recognizers: [], validators: [], transforms: [], migrations: [], conflictsWith: [], compatibleWith: [], examples: [], counterExamples: [], authorityRecordId: "authority:fixture", governanceBasis: [], semanticHash: zeroHash } });
   if (kind === "exception") return withCanonicalHashes({ ...common, payload: { id, key: `${kind}:${id}`, selector: { op: "all", items: [] }, exceptedRuleIds: ["rule-a"], exceptedLensIds: ["lens-a"], exceptedExpectationIds: ["expectation-a"], rationale: "bounded exception", evidence: [], owner: "team:fixture", reviewOrExpiryTrigger: { type: "manual-review" }, invalidationConditions: [{ type: "lens-changed", lensId: "lens-a" }], exitCriteria: ["migration complete"], status: "active", semanticHash: zeroHash } });
   return withCanonicalHashes({ ...common, payload: { id, key: `${kind}:${id}`, sourceLensRef: { lensId: "lens-a", version: "1", semanticHash: zeroHash }, targetLensRef: { lensId: "lens-b", version: "2", semanticHash: zeroHash }, phase: "prepared", entryCriteria: ["validated"], exitCriteria: ["cut over"], compatibilityStrategy: "dual run", allowedTemporaryDivergenceIds: [], validationObligations: ["compare projections"], rollbackPlan: "restore lens-a", cleanupResidueDetector: "no old projection", semanticHash: zeroHash } });

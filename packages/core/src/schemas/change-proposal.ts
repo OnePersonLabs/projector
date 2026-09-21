@@ -87,7 +87,7 @@ const canonicalPayloadSchemas = {
   }),
   "authority-record": canonicalPayloadWithoutDerivedHashes(AuthorityRecordSchema).extend({ key, rationale: text(16_384) }),
 } as const;
-const canonicalMutationFor = <K extends keyof typeof canonicalPayloadSchemas>(kind: K, payload: (typeof canonicalPayloadSchemas)[K]) => z.union([
+const canonicalMutationFor = <K extends keyof typeof canonicalPayloadSchemas>(kind: K, payload: (typeof canonicalPayloadSchemas)[K]) => z.discriminatedUnion("operation", [
   z.object({ kind: z.literal(kind), operation: z.literal("add"), expectedAbsent: z.literal(true), payload, rationale: text() }).strict(),
   z.object({ kind: z.literal(kind), operation: z.literal("revise"), expectedSemanticHash: contentHash, expectedDocumentHash: contentHash, payload, rationale: text() }).strict(),
 ]);
@@ -113,7 +113,7 @@ const LineageMutationSchema = z.object({
   if (lineageKind === "replace" && (sources.length !== 1 || replacementIds.length < 1)) context.addIssue({ code: "custom", message: "replace lineage requires one source and at least one replacement" });
   if (lineageKind === "delete" && replacementIds.length !== 0) context.addIssue({ code: "custom", message: "delete lineage cannot have replacements" });
 });
-const CanonicalMutationSchema = z.union([
+const CanonicalMutationSchema = z.discriminatedUnion("kind", [
   canonicalMutationFor("requirement", canonicalPayloadSchemas.requirement),
   canonicalMutationFor("behavioral-scenario", canonicalPayloadSchemas["behavioral-scenario"]),
   canonicalMutationFor("concept", canonicalPayloadSchemas.concept),

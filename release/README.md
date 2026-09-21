@@ -1,11 +1,7 @@
-# Projector release acceptance
+# Release checks
 
-This file is generated from accepted canonical semantic owners and exact test bindings. Legacy counts document migration identities, not proof of coverage.
+Run `pnpm build`, `pnpm verify`, and `pnpm release:check` with a supported Node runtime. The last command builds the actual package and plugin, then exercises installed commands in a fresh repository without workspace dependency resolution. Output and packages remain in `.temp/projector-release-check`.
 
-- Canonical owners: 78
-- Legacy scenarios: 63
-- Property classes: 27
-- Adversary classes: 33
-- Inventory hash: `sha256:v1:df6c6877ae1d7f1a9abef4a161f343afe4bf855ee7c5afad1a3ad0a5dced2e08`
+The [reconstruction rehearsal](../.assimilate/rehearsal/README.md) preserves partial integration findings. It does not establish a comparative advantage over OpenSpec.
 
-Run `pnpm release:acceptance` to execute the mapped tests and validate the packed artifact, installed workflow, benchmarks, rebuild, conformance, and durable release evidence.
+The old release certificates and version-by-version migration chain were retired. Generic exact approval, interrupted-write recovery, bounded process cleanup and package ownership checks remain tested in their owning packages. Pre-cutover canonical data and unfinished runtime evidence are in `.temp/projector3-before-format`; retired release files are preserved in `.temp/projector3-retired-release`.

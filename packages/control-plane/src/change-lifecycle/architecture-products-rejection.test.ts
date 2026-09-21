@@ -138,7 +138,7 @@ describe("public architecture product proof", () => {
       // Seed historical records deliberately outside this authoring path. New unrelated
       // work must not silently rewrite or require repair of these old decisions.
       for (const [kind, payload] of [["architecture-decision", { ...a, appliedPreferences: [{ key: "historical-user-preference", scope: "user", semanticHash: hash, influence: "Historical influence retained without reauthoring." }], scope: { ...scope, value: "legacy/**" } }], ["architecture-decision", { ...b, scope: { ...scope, value: "legacy/**" } }], ["authority-record", authority("a")], ["authority-record", authority("b")], ["concept", note]] as const) {
-        await files.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind: kind as CanonicalDocumentEnvelope["kind"], id: payload.id, key: payload.key, lifecycle: "status" in payload ? payload.status : payload.lifecycle, payload: { ...payload, semanticHash: hash } }));
+        await files.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: kind as CanonicalDocumentEnvelope["kind"], id: payload.id, key: payload.key, lifecycle: "status" in payload ? payload.status : payload.lifecycle, payload: { ...payload, semanticHash: hash } }));
       }
       const before = (await files.read("concept", note.id))!;
       const { semanticHash: _semantic, discoveryHash: _discovery, ...notePayload } = note;

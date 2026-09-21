@@ -1,6 +1,6 @@
-#:schema ../schemas/canonical-projection-lens-v2.schema.json
-apiVersion = "projector/v2"
-schemaVersion = "2.0.0"
+#:schema ../schemas/canonical-projection-lens-v3.schema.json
+apiVersion = "projector/v3"
+schemaVersion = "3.0.0"
 kind = "projection-lens"
 id = "lens:core-static-dependencies"
 key = "core-static-dependencies"

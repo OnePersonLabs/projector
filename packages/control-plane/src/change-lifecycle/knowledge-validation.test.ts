@@ -40,7 +40,7 @@ async function repository() {
   };
   const canonical = new CanonicalFileRepository(root);
   for (const [kind, payload, lifecycle] of [["authority-record", authority, "approved"], ["projection-lens", lens, "active"]] as const) {
-    await canonical.write(withCanonicalHashes({ apiVersion: "projector/v2", schemaVersion: "2.0.0", kind, id: payload.id, key: payload.key, lifecycle, payload: { ...payload } }));
+    await canonical.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind, id: payload.id, key: payload.key, lifecycle, payload: { ...payload } }));
   }
   await exec("git", ["init", "-q"], { cwd: root });
   await exec("git", ["-c", "user.email=projector@example.invalid", "-c", "user.name=Projector Test", "add", "."], { cwd: root });
