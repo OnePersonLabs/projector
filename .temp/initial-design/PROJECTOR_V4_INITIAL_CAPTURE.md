@@ -150,3 +150,116 @@ Scope: `OnePersonLabs/projector`, new branch `v4`; no changes to `main` or exist
 The main `.gitignore` contents are retained and a narrow exception admits `.temp/initial-design/` and descendants while other `.temp` contents remain ignored. Before publication, local Git ignore checks verify this distinction. Branch creation and the resulting remote tree are verified through GitHub; the actual commit identity is available from the commit carrying this event, rather than embedded circularly in its own content.
 
 Materialized running spec: revision 0.2, through U002/A002. Original capture prefix is preserved byte-for-byte. No product implementation, OpenSpec installation, hook, schema, or runtime has been built in this step.
+
+
+---
+
+## U003: attribution policy, subreferences, unjustified code, and requirement retirement
+
+Capture mode: user message body, with its informal wording and line layout retained. U003 explicitly preserves assistant suggestions as provisional unless explicitly or unambiguously implicitly approved; the positive skim is not blanket acceptance.
+
+````text
+yes without reading deeply but skimming dangerously your reply (i.e. the very behavior I should dub The Slop Attractor, aka MichaelsBane) what you said looked good at a glance. don't lose that shit.      
+      
+ by default, include your suggestions / clarifications but mark them as provisional until explicitly or unambiguously implicitly approved. keep clear attribution in append only file and spec file, just to easily distinguish  assumption threads on your part from material based directly or near directly (obvious leeway for cleaning up my sloppy prose, formatting with formal placeholders and such, etc) on what I say        
+        
+ btw can u begin to see where I'm going with this? 😎 if you think theres some big gaping hole hiding a dealbreaker or value neuterer, CONCISELY list them with minimal but sufficient explanations. I don't wanna forget the entire eureka idea so point out the holes real quick but don't be pedantic. first point out the highest leverage assumptions you are filling in that reduce the list of exception holes as much as you possibly can.  (so only the lingering holes are listed). number and give 1-2 simple shorthand names to the assumptions & holes. for each hole, cite assumptions that contributed materially to identifying it in like [2, 4] citation number form at the end of the hole item. in other words, if the referenced assumptions changed or didn't exist,v the hole wouldn't make sense (though other hole(s) might have been listed instead)   
+  
+---  
+  
+oH I SHOULD HAVE SAID THIS IN PRIOR MSG:  
+[[]] reference syntax should support in-thing sub reference specificity.. idk how better to describe that . but think of pointing to a specific property on a typescript class.  or a specific "part" (as yet to be determined what exactly parts are) of a design or a subheading path in a term definition md doc.(like $ term definition > ## blahblah > ### yipyap" but don't use my off the cuff arrow convention. pick something as aligned with established conventions as possible. what im describing may or may not be more powerfully useful to be elevated to something like css selectors .. I'll leave that to you to explore and come up with defensible scenarios justifying promoting what I'm describing to a css selectorlike capability)  
+  
+ (again, regarding design, "parts" types are as yet undefined - though you may have proposed a specification already I just haven't read and approved it yet in that case. anyways...)   
+  
+  
+we should be also able to, using some optimized smart hidden caching / hashing hook magic, raise errors in the same context as type checking for code that isn't justified by a design!!
+
+one end result use case scenario I am trying to achieve, which sparked this inspiration, is "removing a requirement should efficiently and optimally, **AVOIDING ANY MASSIVE CHURN OR PLUGIN OVERHEAD THAT ISNT STRICTLY NARROWLY THE MINIMUM POSSIBLE COST ON LOCAL COMPUTE RESOURCES AND AI TOKEN BURN**, result in the corresponding code implementation snapping back to a similar shape as it would've been before the requirement was added. this should scale non-explosively or even less than linearly (I.e. optimizations that can batch and structure work in the most efficient way, so the more that changes with derivable provenance/cause (i.e. im distinguishing that from mystery drift where we can't determine we're in the middle of a process and expect XYZ changes to occur blah blah blah, I.e. we can assume we have excellent injection points to integrate with a cohesive integrated workflow process, something quite different than "audit drift caused by jr dev who accidentally used Claude to add a feature, so our plugin wasn't involved")  before the plugin has its turn, the more ... you know what I am gonna let you finish my thought I am sure you can see where I'm going with this
+````
+
+---
+
+## A003: provisional interpretation and proposals
+
+**Attribution:** assistant interpretation, not blanket user approval. U003 explicitly retains suggestions as provisional until explicit or unambiguous implicit acceptance. Numbers 1-7 are local to A003; bracketed numbers in the holes refer to these assumptions. This is a substantive capture, not a verbatim transcript.
+
+### Direction and high-leverage assumptions
+
+The assistant sees software growing and contracting with its current reasons for existing, not merely accumulating patches. Proposed completion of the unfinished thought: more causally understood, overlapping edits before reconciliation can collapse into one net change instead of repeated repair cascades. This is an optimization target, not a measured result.
+
+1. **Managed batches / Known causes.** Extend the user's integrated-workflow premise into explicit batch boundaries, expected changes, and a final state to reconcile. Record events cheaply rather than repair after every save. Use deltas as transition context, not permission to treat unaccepted requirement drafts as live truth. Unknown external changes require recovery rather than defining normal cost.
+
+2. **Concern coverage / Inherited ownership.** Justify code at coherent responsibility boundaries; internal helpers may inherit the owner's design accountability, with finer bindings where independent behavior warrants them. Do not require a handwritten miniature design for every line or helper. Inheritance is accountability, not automatic conformance or a blanket directory-glob permission. Granularity remains undecided.
+
+3. **Current reasons / Shared support.** Retain why a design choice or implementation is still needed, not merely which event introduced it. Distinguish motivating requirements, constraints, and dependencies, including shared/conditional support. Requirement removal retracts a reason and reopens choices while preserving other live obligations and independent later improvements. Compatibility or durable-state obligations count when relevant. This interprets snap-back as current-state simplification, not historical commit reversal; no dependency algebra is selected.
+
+4. **Incremental checks / Bounded reasoning.** Deterministically check references, coverage, structural rules, and current verification. Restrict AI reasoning to changed semantic obligations during planned work, not every save. Cache against actual dependency-relevant inputs, referenced parts, membership queries, and applicable checker/resolver/policy versions. Hashes establish identity/currentness, not truth. Narrow invalidation requires a complete-enough relevant contract, not simply a short link.
+
+### Remaining material holes
+
+5. **Rubber-stamp coverage / Justification gap.** A valid code-to-design link can prove that an owner exists without proving the behavior belongs there. Need an operational definition of justified code, scoped contract checks, and meaningful delta review; otherwise a broad design becomes a permission slip. Repeated whole-project AI audits would defeat the economics. [2, 4]
+
+6. **Missing edges / Applicability gap.** New requirements, broadened scopes, or new consumers can matter before any link exists. Bounded discovery must notice newly applicable obligations and changed or previously empty query populations, or the system efficiently ignores necessary work. [3, 4]
+
+7. **Structural residue / Sticky choices.** Deleting orphaned code is insufficient when a retired requirement justified a framework, extra layer, or storage strategy that still has dependents. Reconsider those choices and surviving support, not only reference counts, or the code shrinks superficially while the complexity remains. The gap is bounded, causally informed simplification, not a universal inverse edit or unique global optimum. [2, 3]
+
+These are value-critical gaps to solve, not demonstrated fatal flaws. Existing open questions about cycles, names, and recovery are not relabeled as new headline objections.
+
+### P9: subreference syntax
+
+Propose familiar forms:
+
+```text
+[[Player Evidence#Origin#System events]]
+[[SomeClass.someProperty]]
+[[Playback Design#<part-id>]]
+```
+
+The first follows Obsidian nested heading links. The second follows familiar symbol-member reference syntax; TypeDoc also uses `#` for instance members, making `[[SomeClass#someProperty]]` a possible disambiguation. Neither example settles a cross-language grammar. The third is deliberately a placeholder: design-part types, identities, and schema are still undefined.
+
+Resolve through document/language context, not spelling alone. Refactoring should update bound subreferences when headings/members move or rename. A part's relevant enclosing contract may also need tracking; hashing its text alone can miss a changed meaning. Escaping, duplicate headings, overloads, stable identity versus path, and section-sign shorthand remain open.
+
+### P10: bounded selectors, separate from exact references
+
+Defensible uses are 'every implementation of this audio interface' and 'all design elements governed by this requirement'. These cover newly added members without maintaining a manual list. Propose a distinct scoped set-query form rather than silently making `[[...]]` return multiple targets. Exact references expect one legal target; queries deliberately return sets. No full CSS language, cascade, specificity policy, positional identity, design-part taxonomy, or tag semantics are selected.
+
+Track query definitions, bounded search populations, and changing membership, including initially empty sets. Hashing only previous matches misses newcomers. Use indexed, change-driven query maintenance rather than unconditional rescans. Structural selection is not semantic understanding of arbitrary prose.
+
+### P11: unjustified-code diagnostics
+
+U003 requests errors alongside type checking. Proposed mechanical errors cover missing design ownership, broken bindings, prohibited dependencies, and absent/stale required conformance evidence. Changed behavioral justification still requires relevant checks/review. A hash or design link cannot certify arbitrary semantic correctness. Unchanged previously checked code should not trigger another model call on every editor check.
+
+Illustrative diagnostic: `Unjustified implementation: AudioPreview.cache has no current design owner.` It does not fix the checking granularity or diagnostic syntax. The allowed temporary state during an implementing delta remains to be defined and must not excuse unrelated live drift.
+
+### P12: retirement and simplification
+
+Proposed target: preserve surviving accepted meaning and justified later improvements, remove requirement-specific behavior and avoidable support machinery, and simplify affected designs under the remaining obligations. Do not promise byte-identical history, a unique canonical architecture, or automatic deletion of shared infrastructure.
+
+Example: R1 needs playback, R2 adds a cache/strategy, and R3 later needs part of it. Removing R2 should reevaluate the cache/strategy, retain what R1/R3 still need, and simplify the remainder. A pivotal alternative uses planned/reviewed escalation. Support may be alternative or conjunctive; raw reference counts are insufficient. Cyclic references without a live justification root must not preserve orphaned machinery. These are proposed requirements on a future support model, not a selected schema.
+
+Minimum immediate edits and minimum lasting structural complexity are not identical. Avoiding churn should not mean preserving unnecessary architecture; neither should simplifying justify global rewrites or cosmetic renaming.
+
+### P13: net-change economics
+
+Propose: ingest known events cheaply; coalesce safely canceling or superseded intermediate changes within the batch; determine the union of affected dependencies; settle upstream designs before downstream review; prune propagation where the relevant guarantees demonstrably remain unchanged; combine all final changes into one update per affected file. Events already producing durable/external effects cannot be canceled merely because their input text later reverts. Preserve the historical record.
+
+Expensive work should track distinct net-affected regions and real semantic decisions, not event count multiplied by repository size or repeated traversal of overlapping closures. Related edits can share work. Independent consequences still require independent necessary work; a global requirement may genuinely have repository-wide impact. N distinct files that must change still require N writes.
+
+Sublinear savings are plausible relative to repository size for local warm changes, or relative to separate overlapping passes, not universally below necessary input/output work. Count ingestion, index maintenance, cold start, recovery, review, validation, and writes. No benchmark or mathematically minimal implementation is claimed. The user's strict compute/token/churn objective remains a governing requirement, not an optional nicety.
+
+### Research context, not product authority
+
+- Obsidian internal links: https://help.obsidian.md/links . Successive `#` components address headings/subheadings in wikilinks. This is an Obsidian convention, not standard Markdown.
+- TypeDoc: https://typedoc.org/documents/Declaration_References.html and https://typedoc.org/documents/Tags.__link_.html . Context-aware symbol/member links and `.`/`#` resolution are precedent, not a language-agnostic resolver implementation.
+- ESLint: https://eslint.org/docs/latest/extend/selectors . CSS-like AST selectors can match structural/attribute patterns. They do not establish semantic applicability or require CSS cascade semantics.
+- Bazel Skyframe: https://bazel.build/versions/8.6.0/reference/skyframe . Tracked dependencies and unchanged-value pruning are precedent for avoiding repeated downstream work; they do not solve prose equivalence or unknown dependency discovery.
+
+
+---
+
+## O003: two-file design update
+
+Prepared against verified `v4` head `eaff7f650b338761ed5d63e80412404bd81b0705` and its tree `94c550f4278395293d5b44e8b6deef9b410071f2`. Local starting bytes matched the remote blobs: running spec `3e98de8679f181f0eba0f460cf9edfc0c79dc4df`, capture `c062dd109b96f554246106f1199b6cccefbe0178`.
+
+The prior 18,613-byte capture is an unchanged prefix; U003/A003/O003 are appended. Running specification revision 0.3 integrates U003 and explicitly marks A003 provisional. Only the two files in `.temp/initial-design/` are in this update; `.gitignore`, V3, and `main` are not edited. Publish both in one commit based on the observed head, without a forced branch update. The containing Git commit provides publication identity without circular self-hashing. No product implementation or new automation is part of this update.
