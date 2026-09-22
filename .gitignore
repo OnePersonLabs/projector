@@ -5,8 +5,8 @@ dist/
 .temp/
 *Zone.Identifier
 
-# Keep V4 design records tracked without including other temporary output.
+# Track only the V4 implementation handoff package under .temp/.
 !/.temp/
-/.temp/*
-!/.temp/initial-design/
-!/.temp/initial-design/**
+.temp/*
+!/.temp/handoff/
+!/.temp/handoff/**

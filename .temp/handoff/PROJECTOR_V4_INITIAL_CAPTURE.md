@@ -1110,3 +1110,31 @@ Rechecked primary sources support narrow premises only: OpenAI hooks/MCP documen
 ## O011: implementation-handoff recording
 
 Prepared against v4 at 5c7e083db63e9b349526f202c1d97b011b4038e1; source blobs d729f14ea49bfb724ff2ed042d589fc5335b78b0 and 5bdb7ffa16e7ebf3f6e5cc2eaf6d5ead3c25811a. Preserve the entire 142582-byte published capture as an exact prefix, append U013 and attributed A011, and update the current-state snapshot to 0.11. Publish only the two maintained initial-design records in one non-forced fast-forward commit; the containing commit establishes publication identity. H1 is a separate downloadable artifact with its recorded hash. No runtime, main/V3, Psychord, companion plugin or installed tool configuration is changed.
+
+---
+
+## U014: promote V4 to main and package the implementation handoff
+
+Capture mode: verbatim user message body.
+
+```text
+might as well shuffle the repo so the current main branch becomes legacy/projector-main-v3 and this branch becomes main, then hand codex a prompt telling it to do whatever the handoff MD file says (put a handoff prompt in a handoff MD file and move these files to a .temp/handoff/ dir in the repo, with explicit instructions to root AGENTS.md that the agent must NEVER write dependencies or references to files within .temp/ in files outside of .temp/ -- that wording feels clunky so rephrase it strongly. do all that and gimme an attachment less handoff prompt starting with an instruction to do a clean git pull from main, discarding any modifications etc in the repo dir then blah blah
+```
+
+---
+
+## A012: repository handoff packaging
+
+**Attribution:** operational fulfillment of U014, not a new product-design proposal.
+
+Preserve the previous V3 main at `legacy/projector-main-v3`; promote the prepared V4 line to `main`; retire the temporary `v4` branch name after verification. Move the running spec and append-only capture to `.temp/handoff/`, add the implementation handoff and a self-contained handoff prompt there, and update `.gitignore` to track only that handoff subtree under `.temp/`.
+
+Add root `AGENTS.md` with a strict one-way boundary: files under `.temp/` may be read as agent handoff/scratch inputs, but tracked files outside `.temp/` may not import, load, link to, cite, embed paths to, or otherwise depend on any `.temp/` file. If information is needed by the implementation, restate it in the proper durable artifact outside `.temp/`. This rule itself is the sole outside-file mention needed to establish the boundary.
+
+The handoff prompt begins by explicitly authorizing a destructive synchronization of the local Projector checkout to `origin/main`, including discarding modifications/untracked/ignored files in that repository, then directs creation of a short-lived implementation branch and execution of the packaged H1 contract through its definition of done. It does not authorize touching Psychord, the legacy branch, or unrelated repositories.
+
+---
+
+## O012: branch and handoff publication
+
+Prepared from old main `0a01dacc694793daea28f416372671554ac9b4e7` and V4 head `5dc51a8c29b2847150b1727372edf3409ded3798`. The former main is preserved before promotion. The new publication contains only root `.gitignore`, root `AGENTS.md`, and the four tracked handoff files under `.temp/handoff/`; the old `.temp/initial-design/` paths are removed from the new tree. H1's branch/location preamble is updated for the new layout without changing its substantive implementation contract.
