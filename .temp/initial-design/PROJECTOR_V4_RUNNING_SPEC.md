@@ -1,6 +1,6 @@
 # Projector V4: running specification
 
-**Revision 0.6** · Captured through U006 and provisional assistant response A006.  
+**Revision 0.7** · Captured through U009 and assistant synthesis A007.  
 **Status:** incomplete conception in active conversation, not approved for implementation.  
 **Authority:** Michael's stated direction. Assistant proposals remain separately labeled.
 
@@ -73,7 +73,7 @@ A Markdown reference also needs a resolution context. How a document acquires an
 
 An unresolved code-symbol reference is an error. Offer a fully qualifying autofix only when **exactly one** matching symbol is accessible from that reference context without violating configured import/module boundaries. Zero or multiple legal candidates do not justify an automatic choice. Qualification must not bypass a boundary. Nx and dependency-cruiser are examples of boundary-policy providers, not selected dependencies. When an offered fix may be applied automatically is not settled.
 
-### Proposed global default ownership (U006; not yet adopted)
+### Global default ownership (U006/A006; approved by U007)
 
 Michael proposes that an unqualified `[[Some Type]]`, `[[SomeType]]`, or `[[some type]]` name may resolve to the unique corresponding code symbol anywhere in the project, irrespective of its namespace, unless an eligible Markdown `# <term>` definition claims that term. That Markdown definition takes precedence for unqualified references; code references then require qualification. Unqualified and qualified names may otherwise reach the same code symbol. This supplies the subject of U005's unfinished fragment, but is expressly a new proposal, not automatic acceptance of a resolver implementation.
 
@@ -391,15 +391,15 @@ These informed assistant suggestions, not V4 authority or required dependencies.
 
 ### A004: revised justification direction, nested designs, and Evidence
 
-**Attribution:** the three headings added to section 5 record U004's correction and direction. P14-P18 below are assistant-provisional refinements. U004 adopts nested design structure explicitly, not every earlier proposal about ownership, hashing, or reference grammar.
+**Status:** P14-P18 and the proposals in A004 are approved by U007. Exact syntax remains illustrative where it was explicitly labeled illustrative.
 
-### P14. One-way authored bindings; derived reverse lookup
+### P14 (approved by U007). One-way authored bindings; derived reverse lookup
 
 Keep required implementation bindings, reasons, evidence, and review detail in readable designs. A disposable reverse index can map observed code units back to those bindings and issue diagnostics without injecting design references into the code. Coverage population must still be observed independently: querying only already-bound artifacts cannot discover unjustified additions.
 
 Proposed removability test: removing Projector and its explicit checking/hook integration should leave ordinary code, builds, and tests understandable and usable without rewriting source annotations or importing a Projector runtime. This is a test of tool independence, not a promise that deleting the checker retains its enforcement or that generated product code is forbidden. No duplicate authored code-to-design registry is needed by this proposal.
 
-### P15. Concern hierarchy, contract-directed disclosure
+### P15 (approved by U007). Concern hierarchy, contract-directed disclosure
 
 Nest subdesigns by responsibility, not by artifact category or an automatic one-to-one mirror of folders/classes. A parent explains the concern, its externally relevant promises, and the responsibilities delegated to children; a child owns its internal decisions. Readers should not have to load every child's internals to understand the parent.
 
@@ -407,13 +407,13 @@ Keep applicable parent obligations available by reference rather than copying th
 
 A child implementation change need not dirty all ancestors and siblings merely because it is nested. Proposed invalidation follows actually relied-on parts and guarantees, including changed child membership where the parent relies on that composition. This reuses P4's still-provisional unchanged-contract pruning. A child's exported guarantee changing does affect its users. Do not manufacture an all-descendants hash as every parent's universal dependency.
 
-### P16. A small candidate part structure
+### P16 (approved by U007). A small candidate part structure
 
 Candidate readable parts are **Contract**, **Decisions**, **Realization**, and **Subdesigns**. This is a proposal, not an approved universal document template or four required files. A Decision may have typed subparts for its requirement basis, chosen option, rationale, material alternatives, implementation consequences, evidence, and reopening conditions. The policy matrix determines which are required for the case; routine work should not expand into a full architectural essay.
 
 The useful primitive is a small argument: under these requirements and conditions, choose this option rather than that credible alternative, producing this implementation consequence, supported by this evidence. Record why the implementation has its shape, not a post-hoc story for arbitrary code. The same Decision part could be an addressable delta/invalidation unit; this is a candidate answer to 'parts', not a settled design-delta schema.
 
-### P17. Evidence obligations are conditional, not universal paperwork
+### P17 (approved by U007). Evidence obligations are conditional, not universal paperwork
 
 Proposed matrix:
 
@@ -443,7 +443,7 @@ Reopen: Replay timing or buffer-lifetime requirements change.
 
 This is a rationale awaiting appropriate evidence, not a claim that a cache is required or that a test proves latency. Identifiers, field names, and grammar are examples, not adopted schema. Canonical review information should remain visible enough for a human to understand; do not assume hidden HTML annotations are the desired authoring UX.
 
-### P18. Connect evidence to requirement retirement
+### P18 (approved by U007). Connect evidence to requirement retirement
 
 The decision's requirement basis, tradeoff, and implementation consequences provide a place to retain current reasons for a structure. Removing a replay-timing requirement can reopen the buffer-retention decision rather than merely delete a requirement link. Remaining consumers, requirements, and other legitimate benefits still count; simplify only where the structure loses sufficient justification. Prefer current-state reevaluation over replaying a historic Git inverse.
 
@@ -481,4 +481,50 @@ Unselected details include term normalization/namespaces/definition scope; symbo
 
 **Assistant reasoning (A005):** one delimiter makes reference recognition uniform; readability and qualification can vary within it. This is a design judgment, not a benchmark claim.
 
-**U006 continuation, still proposed:** the previously unfinished `[[Some Type]] should,` topic now has a concrete user proposal: a uniquely named code symbol can own an unqualified normalized reference unless an eligible Markdown definition owns that term. The proposed priority, assistant refinements, and explicit conflict with the earlier import-local lookup rule are recorded in section 3. No fuzzy matching is inferred.
+**U006/A006 resolution, approved by U007:** the previously unfinished `[[Some Type]] should,` topic now has a concrete user proposal: a uniquely named code symbol can own an unqualified normalized reference unless an eligible Markdown definition owns that term. The proposed priority, assistant refinements, and explicit conflict with the earlier import-local lookup rule are recorded in section 3. No fuzzy matching is inferred.
+
+
+## 13. Clean reconstruction and aggressive work economics
+
+**Sources: U007-U009. U007 approves all proposals in A004-A006. U008-U009 add new user requirements. A007 mechanisms below are provisional unless directly entailed.**
+
+### Previous design ownership illuminates implementation, not preserves it
+When a design, subdesign, or design part changes or is removed, Projector must efficiently identify implementation artifacts the previous accepted design wholly or partly justified. That footprint is an **impact seed for reconsideration**, not a preservation list. Decide what to remove, rewrite, refactor, retain under surviving justification, and add under the new design. Existing code has no authority merely because it exists.
+
+### Clean-reconstruction equivalence
+The resulting implementation should meet a reasonable evidence bar that it is materially as clean and well-shaped as if the resulting design had been intended from the beginning. This applies to add, modify, remove, and refactor operations. It is not byte equality or historical rollback.
+
+**A007 provisional terminology:** **history-independent convergence** / **clean-reconstruction equivalence**. Equivalent accepted design states should converge on materially equivalent justified implementation shapes, allowing multiple clean realizations and surviving external compatibility obligations. Separately, reconciliation should be ordinarily idempotent once settled: a second pass proposes no substantive changes.
+
+Testing must include representative add/modify/remove/refactor trajectories and show clean implementations prevailing over compatibility bridges, dead scaffolding, duplicate paths, and accidental abstractions.
+
+### Efficiency is a governing constraint
+Every operation must justify local compute, filesystem I/O, and AI-token cost. Minimum practical overhead through clever incremental design is a first-order requirement, not later polish.
+
+**Presumptive red flags:** broad/repeated sweeps when maintained indexes or changed sets suffice; repeated model calls over unchanged meaning; iterative read/edit/read/edit loops when final affected edits can be computed once; per-event recomputation when causal events can be coalesced; whole-file/design invalidation when a stable referenced part suffices; and repeated parsing/hash work for known-unchanged inputs. Broad checks require justification, such as cold-start indexing, explicit recovery from mystery drift, or a genuinely global changed obligation.
+
+**A007 provisional optimization principle:** managed-work cost should approach **delta cost + affected-closure cost**, not repository-size cost. Maintain cheap indexes from known workflow events, batch causal changes, compute union/difference once, settle dependencies in order, and construct one net edit per affected file where feasible. Cache hits must be sound for every dependency relevant to the cached conclusion.
+
+### Implementation-footprint provenance
+**A007 provisional mechanism:** derive/cache design-to-implementation footprints from design-side realization bindings, structural ancestry, accepted decisions, and dependency relationships, never required source annotations. Before accepting a design delta, retain enough previous footprint and decision basis to compute lost/gained/changed justification. Reconcile from that difference rather than rescanning everything. Shared artifacts may retain multiple live justifications.
+
+### Reconciliation evidence
+**A007 provisional strategy:** deterministic residue/dependency/reference/coverage checks first; focused tests/evals from changed contracts and affected closure; targeted clean-counterfactual comparison only when material enough to justify token spend; then a second-pass no-op/idempotence check. A clean reconstruction candidate is evidence, not canonical authority.
+
+### Newly reassessed assumptions
+1. **Causal workflow / Managed provenance.** Normal operation sees changes through integrated workflow injection points; mystery drift is recovery mode.
+2. **One-way design ownership / Derived footprint.** Designs author justification; reverse implementation maps are disposable derived indexes.
+3. **Current-state authority / No sacred code.** Accepted live meaning and surviving obligations outrank historical code shape.
+4. **Stable addressability / Fine invalidation.** Requirements, design parts/decisions, and implementation artifacts can have stable enough logical identities for narrow invalidation.
+5. **Evidence proportionality / Escalating proof.** Evidence cost follows claim/risk; expensive semantic/counterfactual work is selective.
+6. **Convergence over history / Clean endpoint.** Managed paths to the same accepted design should converge to materially equivalent clean structure without demanding one canonical text.
+
+### Remaining high-leverage holes
+1. **Footprint completeness / Hidden ownership.** Need cheap detection of implementation artifacts affected by a design but absent from existing bindings/indexes, without source annotations or repeated semantic sweeps. [1, 2, 4]
+2. **Applicability frontier / New obligations.** Reverse edges cannot reveal a brand-new requirement or newly applicable constraint. Need bounded discovery, including changed or previously empty query populations. [1, 4]
+3. **Cleanliness oracle / Counterfactual proof.** “As if designed this way from the start” has no unique answer. Need practical criteria that reject historical residue without regenerating/comparing whole subsystems routinely. [3, 5, 6]
+4. **Granularity / Stable identity.** Too-coarse parts cause churn; too-fine parts recreate bureaucracy/index overhead. Part schema and identity must support narrow invalidation across moves/refactors without source coupling. [2, 4]
+5. **Cache soundness / Dependency capture.** Missing invalidators create fast silent wrongness; overcapturing recreates sweeping churn. Cache keys must cover exactly the facts relevant to each conclusion. [1, 4, 5]
+6. **Simplification stopping rule / Churn economics.** Cleanliness can always be pushed further. Need a criterion for when more restructuring is not justified by the changed obligation, so clean reconstruction does not authorize unrelated rewrites. [3, 5, 6]
+
+These are unresolved design problems, not identified dealbreakers.
