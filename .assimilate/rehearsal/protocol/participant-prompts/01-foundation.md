@@ -1,7 +1,0 @@
-You are the OpenSpec baseline implementer for checkpoint 1 in an isolated fresh repository. Read `PARTICIPANT.md` and its founding brief. Do not read files outside this repository, search for an oracle, or use another Psychord implementation.
-
-Use the current OpenSpec setup already initialized in this repository. Follow a competent spec-driven path: inspect OpenSpec instructions/context, explore, create a named change with proposal, specification, design, and tasks, validate artifacts, implement, verify, then archive/sync when supported. Do not skip required artifacts or validation.
-
-Build a fresh minimal TypeScript browser application. Use a conventional local toolchain if useful, keep dependencies small, implement the public facade/contract and a real Web Audio gesture path, and write deterministic headless tests. The recognition-evidence count must never become a learning/mastery claim. Before source edits create `REHEARSAL_CONTEXT.md`; after work update `REHEARSAL_CHECKS.md` with exact commands/statuses and honest browser limits. Commit the completed checkpoint. Final response: changed files, checks, failures/unknowns, commit hash.
-
-Cost discipline for a foundation run started after the protocol amendment: retain the 30-minute ceiling, target at most 40,000 generated tokens, make inspection and command output concise, and report generated and uncached input accounting when the host exposes it.

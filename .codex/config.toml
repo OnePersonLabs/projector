@@ -1,8 +1,0 @@
-#:schema https://developers.openai.com/codex/config-schema.json
-
-# Official docs:
-# - https://developers.openai.com/codex/config-reference
-# - https://developers.openai.com/codex/multi-agent
-
-[plugins."projector@projector"]
-enabled = true

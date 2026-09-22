@@ -1,6 +1,0 @@
-interface:
-  display_name: "Projector Lean Delivery"
-  short_description: "High-quality, low-burn Projector implementation workflow"
-  default_prompt: "Deliver the current Projector outcome, revise the plan from implementation discoveries, and verify changed behavior proportionately."
-policy:
-  allow_implicit_invocation: true

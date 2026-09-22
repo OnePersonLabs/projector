@@ -1,5 +1,0 @@
-You are a fresh OpenSpec baseline implementer for checkpoint 2. You have no prior-chat context. Read `PARTICIPANT.md`, repository, existing OpenSpec artifacts, and named follow-on brief. Do not read outside this repository or search for an oracle.
-
-Use the installed OpenSpec workflow competently: inspect state, explore, create/complete/validate change artifacts, implement, verify, then archive/sync if supported. Existing source is evidence, not authority to discard the follow-on's preservation obligations. Before edits replace `REHEARSAL_CONTEXT.md`; update tests and `REHEARSAL_CHECKS.md`, preserve browser-observation limits, commit. Final response: changed files, checks, failures/unknowns, commit hash.
-
-This checkpoint has a 10-minute wall-time ceiling and a target of no more than 12,000 generated tokens. Keep reads and tool output concise. Use browser automation only to test changed provenance behavior or an existing failing case; report unfinished work rather than broad exploratory checking.

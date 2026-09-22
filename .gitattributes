@@ -1,9 +1,0 @@
-# Preserve authenticated release artifacts and deterministic generated inventories.
-.projector/**/*.toml text eol=lf
-release/**/*.json text eol=lf
-release/**/*.mjs text eol=lf
-release/**/*.md text eol=lf
-
-# Legacy ingress includes mixed line endings; preserve its exact sealed bytes.
-release/project-data-migrations/artifacts/legacy-unversioned-to-baseline.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
-release/project-data-migrations/artifacts/legacy-unversioned-baseline-validation.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
