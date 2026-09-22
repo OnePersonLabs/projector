@@ -415,3 +415,40 @@ Unfinished continuation:
 The assistant agrees: all term references use double brackets. Spaced and underscore-separated conceptual names are spellings of the same term; qualified code names remain subject to actual contextual symbol resolution. One delimiter makes references consistently recognizable while allowing readable names and qualification inside it.
 
 This establishes the notation from U005, not a new namespace system, fuzzy code-symbol matcher, or design-part schema. Existing provisional mechanisms remain provisional except for the reference-form decision. The incomplete `[[Some Type]] should,` rule remains unresolved, particularly any intended relationship to a symbol spelled `SomeType`.
+
+
+---
+
+## U006: proposed default code-symbol ownership and Markdown precedence
+
+Capture mode: verbatim user message body. Status: user proposal inviting evaluation, not an implementation instruction or blanket approval.
+
+````text
+separately, proposal: should a reference like [[Some Type]] or [[SomeType]] be interpreted as referring to a code symbol, no matter what namespace / scope it exists in, unless the term is defined in a pattern matched md file with the "# <term>" convention - in which case that would be the assumed term owner, and references to the symbol would need to be qualified code symbol references - but the un-md-overridden, unqualified code symbol ownership would require that no other code symbol share that exact name / spaceless name ([[Some Type]] and [[SomeType]] and [[some type]] all are treated as referring to = `class SomeType` type so long as only one thing is named that and no overriding md '# <term definition>` overrides it.. , should that code symbol be treated as the default term definition, with no namespacing / scoping required for [[references]] to it?  (doesnt preclude a namespaced ref to the same term - presumably there would be no issue with both)
+````
+
+---
+
+## A006: global defaults with explicit ambiguity and rebinding
+
+Attribution: assistant-provisional recommendation and clarifications; not a verbatim transcript.
+
+The assistant recommends the proposal as a global default-name rule, with explicit refinements. Markdown owns an unqualified normalized name when exactly one eligible definition exists; otherwise exactly one distinct indexed logical code symbol may own it. Duplicate code names invalidate ambiguous references, not source declarations. Qualified code references can reach the same symbol and bypass the Markdown default without bypassing boundary policy.
+
+The provisional formatting key removes spaces and underscores and case-folds names; it does not perform fuzzy matching, rewrite program identifiers, or relax qualified language binding. The provisional candidate population is referenceable project declarations rather than every local variable or installed library declaration. Several aliases of one logical symbol count once only when actual language resolution establishes identity. Candidate scope and completeness still require a decision.
+
+Three examples distinguish outcomes: with only `audio.SomeType`, all proposed bare spellings and the explicit qualified form can target it; adding a second distinct `network.SomeType` makes the bare name ambiguous but leaves both declarations valid; adding one eligible Markdown `# Some Type` makes it the proposed default even when several code candidates exist. Qualified code links remain available.
+
+This is a deliberate alternative to U001's import-local selection. The assistant favors one repository-wide meaning for a bare conceptual reference, with qualifications where needed; normal source imports still behave normally. The running spec must keep the policy change visibly proposed rather than applying both incompatible rules simultaneously. Source context still matters to boundary eligibility, not to silently choosing between global candidates.
+
+Existing reference targets must not silently change when a Markdown owner or colliding symbol appears or disappears. Invalidate only affected name-key bindings, then let the planned change intentionally accept the new target or qualify the old code target. This is a proposed binding-change check integrated with existing reviewed batches, not source annotations or another approval subsystem.
+
+The direct benefit is that namespaces are available when needed without being mandatory ceremony for every unambiguous reference. Agreement with the idea is not a claim that it is implemented, nor blanket adoption of its population, normalization, cache, or rebinding details.
+
+---
+
+## O006: two-file update preparation
+
+Prepared against verified `v4` head `109b58909e885f87099306bf6c13b7a942a526bc`. Starting mounted bytes match remote Git blobs: running spec `1d843bb6f3c0a5c3ef2c5b2f96d543c18fe344b6`, capture `90252329dd90ffe263194c83cbd3235e9104c68d`. The prior capture is retained as an exact byte prefix; U006/A006/O006 are appended. The current-state spec advances to revision 0.6, records this resolution change as proposed, and marks the former unfinished-input note as addressed by U006. Earlier accepted directions and provisional proposals otherwise remain unchanged.
+
+Only the two `.temp/initial-design/` Markdown records are prepared for publication on `v4`. No runtime, source annotations, new tooling, or changes to main/V3 are part of this update. Publication is identified by the carrying Git commit after a non-forced branch update.
