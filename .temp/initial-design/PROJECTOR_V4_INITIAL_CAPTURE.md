@@ -452,3 +452,81 @@ The direct benefit is that namespaces are available when needed without being ma
 Prepared against verified `v4` head `109b58909e885f87099306bf6c13b7a942a526bc`. Starting mounted bytes match remote Git blobs: running spec `1d843bb6f3c0a5c3ef2c5b2f96d543c18fe344b6`, capture `90252329dd90ffe263194c83cbd3235e9104c68d`. The prior capture is retained as an exact byte prefix; U006/A006/O006 are appended. The current-state spec advances to revision 0.6, records this resolution change as proposed, and marks the former unfinished-input note as addressed by U006. Earlier accepted directions and provisional proposals otherwise remain unchanged.
 
 Only the two `.temp/initial-design/` Markdown records are prepared for publication on `v4`. No runtime, source annotations, new tooling, or changes to main/V3 are part of this update. Publication is identified by the carrying Git commit after a non-forced branch update.
+
+
+---
+
+## U007: approve A004-A006 and request reassessment
+
+Capture mode: verbatim user message body.
+
+```text
+all proposals from your last 3 replies are approved.  re-evaluate and list new assumptions and holes
+```
+
+---
+
+## U008: clean reconstruction after design change
+
+Capture mode: verbatim user message body.
+
+```text
+had to interrupt you because i Thought of something while you were preparing your last reply:
+
+need a heavily optimized efficient way of effectively doing this: when a design changes or is removed, we want to illuminate the implementation artifacts (by that i mean, usually, code) that the previous version of the design had total or partial ownership of (i.e. code thats existence was justified due to satisfying the design) and determine what to cut, what to rewrite, refactor, and add.  since agents seem to be hell bent on dishing out slop and acting like "pre-existing" code is sacred and holy and tend to be inclined to work around, preserve, and build technical debt bridges over existing code, that tendency must be *stamped out* / dealt with cleverly and subjected to suitable testing to prove clean implementations consistently  prevail - an area of code should end up effectively the same after a change to a design as it would have been if the design had been initially created that way (as the modified design state after modification) to begin with.  same with removing parts and adding parts.  removing, adding, and refactoring should be tested and pass a reasonable bar of evidence that those operations are... i want to say idempotent but thats not quite right or im missing some words i need to say prior to idempotent or something lol you get what i mean though 
+
+so.. yeah.. regather your marbles, deal with what i just said, redo whatever you were doin and all that
+```
+
+---
+
+## U009: efficiency is a governing constraint
+
+Capture mode: verbatim user message body.
+
+```text
+right and that needs to be implemented in a EFFICIENT OPTIMIZED WAY.  EVERY BIT of this needs to justify local compute and token spend and aggressively aim to be as lightweight and nimble with as little overhead - or rather the minimum overhead achievable with clever optimization strategies and design. that means ANY BRUTE FORCE OR SWEEPING CHECKS / ITERATIVE IN PLACE PROCESSING (doing a bunch of reads and edits that could instead be done in a single efficient batch pass way sorta stuff) LOOKING CODE IS A BIG RED FLAG
+```
+
+---
+
+## A007: reassessment after approval, clean reconstruction, and efficiency
+
+**Attribution:** assistant synthesis. U007 directly approves all proposals in A004-A006. U008-U009 directly establish clean-reconstruction and aggressive work-economics requirements. The terminology, mechanisms, assumptions, and holes below are provisional unless entailed by those user requirements or later approved.
+
+### Approved state
+All proposals in A004/P14-P18 and associated matrix/refinements, A005's single `[[...]]` convention, and A006's global-default term ownership/resolution rule and safeguards are approved. Earlier proposals outside those replies are not blanket-approved.
+
+### Interpretation
+The previous design's implementation ownership is an impact seed, not a preservation set. Existing code is not authority. A changed accepted design should produce a clean implementation of the new state rather than compatibility bridges from historical code. Efficiency is architectural: normal operation should use causal events, maintained indexes, narrow invalidation, batching, memoization, and net edits rather than repeated sweeps or repeated AI reasoning.
+
+### Provisional terminology/mechanisms
+Call the endpoint property **history-independent convergence** or **clean-reconstruction equivalence**: equivalent accepted design states should converge to materially equivalent justified implementation shapes, allowing multiple clean realizations and surviving compatibility obligations. Separately, settled reconciliation should be idempotent: a second pass proposes no substantive changes.
+
+Propose a cached design-to-implementation footprint derived from design-side realization bindings, structural ancestry, accepted decisions, and dependency relationships, never required source annotations. Retain enough previous footprint/basis around a design delta to compute lost/gained/changed justification and reconcile from those differences.
+
+Propose evidence proportionality: deterministic residue/dependency/reference/coverage checks first; focused tests/evals for changed contracts; expensive clean-counterfactual comparison only when material enough to justify it; then a no-op/idempotence check.
+
+### Provisional assumptions
+1. **Causal workflow / Managed provenance.** Normal operation sees changes through integrated workflow injection points; mystery drift is recovery mode.
+2. **One-way design ownership / Derived footprint.** Designs author justification; reverse implementation maps are disposable derived indexes.
+3. **Current-state authority / No sacred code.** Live accepted meaning and surviving obligations outrank historical code shape.
+4. **Stable addressability / Fine invalidation.** Requirements, design parts/decisions, and implementation artifacts can have stable enough logical identities for narrow invalidation.
+5. **Evidence proportionality / Escalating proof.** Evidence cost follows claim/risk; expensive semantic/counterfactual work is selective.
+6. **Convergence over history / Clean endpoint.** Managed paths to the same accepted design converge to materially equivalent clean structure without demanding one canonical text.
+
+### Remaining holes
+1. **Footprint completeness / Hidden ownership.** Need cheap detection of affected implementation absent from existing bindings/indexes, without source annotations or repeated semantic sweeps. [1, 2, 4]
+2. **Applicability frontier / New obligations.** Reverse edges cannot reveal a brand-new requirement/newly applicable constraint; need bounded discovery including changed/empty query populations. [1, 4]
+3. **Cleanliness oracle / Counterfactual proof.** No unique canonical clean code; need criteria that reject residue without whole-subsystem regeneration/comparison on every change. [3, 5, 6]
+4. **Granularity / Stable identity.** Too coarse causes churn; too fine causes bureaucracy/index overhead. [2, 4]
+5. **Cache soundness / Dependency capture.** Missing invalidators create fast silent wrongness; overcapturing recreates sweeping churn. [1, 4, 5]
+6. **Simplification stopping rule / Churn economics.** Need a stopping criterion so clean reconstruction does not authorize unrelated rewrites. [3, 5, 6]
+
+These are unresolved design problems, not identified dealbreakers.
+
+---
+
+## O007: two-file update publication
+
+Started from verified `v4` head `ba949a09d2c93bcaf323b8f704ad4087df32647d`, whose design blobs matched the mounted working copies. The running spec was advanced first to revision 0.7, then this capture was appended in a second fast-forward commit because the available repository contents API updates one path per commit. Only the two initial-design records changed; main, V3, runtime code, and tooling did not.
