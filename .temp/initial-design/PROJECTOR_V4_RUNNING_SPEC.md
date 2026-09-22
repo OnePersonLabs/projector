@@ -1,10 +1,10 @@
 # Projector V4: running specification
 
-**Revision 0.4** · Captured through U004 and provisional assistant response A004.  
+**Revision 0.5** · Captured through U005 and assistant response A005.  
 **Status:** incomplete conception in active conversation, not approved for implementation.  
 **Authority:** Michael's stated direction. Assistant proposals remain separately labeled.
 
-**Attribution key:** U001-U004 identify user messages in the sibling capture; A001-A004 identify assistant interpretations/proposals. User-derived meaning can be cleaned up without changing intent. Assistant assumptions are provisional until explicitly or unambiguously implicitly approved, with the specific approval evidence recorded. Neither a skim nor silence is blanket approval. This specification is a current-state view; the append-only file preserves the event trail.
+**Attribution key:** U001-U005 identify user messages in the sibling capture; A001-A005 identify assistant interpretations/proposals. User-derived meaning can be cleaned up without changing intent. Assistant assumptions are provisional until explicitly or unambiguously implicitly approved, with the specific approval evidence recorded. Neither a skim nor silence is blanket approval. This specification is a current-state view; the append-only file preserves the event trail.
 
 ## 1. Blank slate and durable conversation
 
@@ -15,7 +15,7 @@ V4 starts from a blank design slate. V3 remains reference material, not inherite
 Maintain two files in `OnePersonLabs/projector`, branch `v4`, under `.temp/initial-design/`:
 
 - **`PROJECTOR_V4_RUNNING_SPEC.md`:** this self-contained current-state specification. Integrate corrections here rather than accumulating contradictory historical versions.
-- **`PROJECTOR_V4_INITIAL_CAPTURE.md`:** the append-only conversation capture, retaining its original filename and original bytes. Append user additions/corrections and separately attributed assistant interpretations/proposals. Replaying the capture must recover the current conception, tentative choices, and unresolved questions without earlier chats.
+- **`PROJECTOR_V4_INITIAL_CAPTURE.md`:** the append-only conversation capture, retaining its filename and clear attribution. Append user additions/corrections and separately attributed assistant interpretations/proposals. Replaying the capture must recover the current conception, tentative choices, and unresolved questions without earlier chats.
 
 Update both at the end of each response in this continuing design conversation. Later user direction supersedes earlier direction; an assistant suggestion is not adopted merely because it appears in the spec. U003 explicitly asks to include suggestions by default while marking them provisional until explicit or unambiguous implicit approval. Record adoption per claim, with its supporting user event; ambiguous agreement remains provisional. Append corrections to the history instead of rewriting old entries. Read the branch's current files before subsequent updates and keep both updates in one commit where possible; do not overwrite intervening work. Prose replay supports faithful semantic reconstruction, not a promise of byte-identical synthesis.
 
@@ -37,18 +37,23 @@ The captured direction combines resolvable terms and code symbols, complete econ
 
 ## 3. Terms, references, and tags
 
-**Source: U001, with live-reference truth from U002 and subreference support from U003.**
+**Source: U001, with live-reference truth from U002, subreference support from U003, and the reference convention established by U005.**
 
-### Proposed notation
+### Reference notation
 
-| Form | Meaning under consideration |
+**Established convention (U005, agreed in A005): all term references use `[[...]]`.**
+
+| Form | Meaning |
 | --- | --- |
-| Leading `# My Term` in an eligible Markdown file | Explicit term definition |
-| `[[My Term]]` | Readable term/symbol reference; conceptual term matching is intended to be case-insensitive |
-| `§my_term` | Compact reference to the same term; Michael leans toward underscores |
+| Leading `# My Term` in an eligible Markdown file | Explicit term definition; eligibility rules remain to be selected |
+| `[[Term Name]]` | Human-readable conceptual term reference |
+| `[[term_name]]` | Underscore-separated spelling of the same conceptual term |
+| `[[somepackage.SomeType]]` | Qualified code-symbol reference, resolved in its document/language context |
 | `@Tag` | Mentioned, but semantics not yet defined |
 
-The name-conversion analogy is a human skill name becoming a command-like identifier; no other tool's implementation is selected. Exact normalization, punctuation, Unicode, acronyms/camel case, collisions, and the relationship to language-sensitive symbol names are open. Michael currently leans against namespaces for terms; namespace support and fully qualified code-reference syntax remain undecided.
+The spaced and underscore-separated conceptual forms denote the same identity, not competing definitions. Conceptual matching remains case-insensitive as stated in U001. Qualification and subreferences occur inside the brackets; their full grammar remains open. Supporting a qualified code name does not settle conceptual namespaces or override language-aware resolution and import boundaries.
+
+Exact normalization of punctuation, repeated separators, Unicode, acronyms/camel case, and collisions remains open. Do not infer that `[[Some Type]]` resolves to a code symbol named `SomeType`: U005 ends at the incomplete fragment `[[Some Type]] should,`, and the intended continuation has not been supplied. Michael previously leaned against namespaces for conceptual terms; that question remains open.
 
 ### Definitions and uniqueness
 
@@ -236,7 +241,7 @@ These proposals are retained for consideration, not adopted by default. U002's a
 
 ### P1. Separate term spelling from code-symbol identity
 
-Prefer `[[My Term]]` and `§my_term` provisionally. Underscores are a preference, not a necessity. Unnamespaced concepts can coexist with actual qualified code-symbol identities: two modules' separate `Result` symbols should not automatically become duplicate conceptual definitions. Do not apply conceptual case folding blindly to language binding. The one-definition rule should ultimately apply to the resolved identity in its declared scope. An explicit-definition/code-symbol collision rule remains needed.
+The bracketed reference forms are established in section 3 by U005. The following identity-related proposals remain provisional: Unnamespaced concepts can coexist with actual qualified code-symbol identities: two modules' separate `Result` symbols should not automatically become duplicate conceptual definitions. Do not apply conceptual case folding blindly to language binding. The one-definition rule should ultimately apply to the resolved identity in its declared scope. An explicit-definition/code-symbol collision rule remains needed.
 
 ### P2. Distinguish draft vocabulary and broken bindings
 
@@ -312,7 +317,7 @@ Propose familiar forms:
 
 The first follows Obsidian nested heading links. The second follows familiar symbol-member reference syntax; TypeDoc also uses `#` for instance members, making `[[SomeClass#someProperty]]` a possible disambiguation. Neither example settles a cross-language grammar. The third is deliberately a placeholder: design-part types, identities, and schema are still undefined.
 
-Resolve through document/language context, not spelling alone. Refactoring should update bound subreferences when headings/members move or rename. A part's relevant enclosing contract may also need tracking; hashing its text alone can miss a changed meaning. Escaping, duplicate headings, overloads, stable identity versus path, and section-sign shorthand remain open.
+Resolve through document/language context, not spelling alone. Refactoring should update bound subreferences when headings/members move or rename. A part's relevant enclosing contract may also need tracking; hashing its text alone can miss a changed meaning. Escaping, duplicate headings, overloads, and stable identity versus path remain open.
 
 ### P10: bounded selectors, separate from exact references
 
@@ -440,4 +445,13 @@ Michael has not finished elaborating V4. Preserve that fact rather than filling 
 
 Unselected details include term normalization/namespaces/definition scope; symbol and document contexts; supported languages; tag semantics; design placement; stable requirement addressing through wording and path changes; applicability discovery; the exact dependency-relevant design surface; design-delta parts/schema/lifecycle; dirty-state representation and cycle handling; refactor detection and concurrency; safe review/escalation policy; completion evidence; subreference grammar and stable part identity; exact-reference versus set-query syntax and query invalidation; code-justification coverage and conformance evidence; surviving support and simplification on retirement; cost bounds and accounting; and the remaining implementation-generation loop.
 
-**This revision adds user direction (U004):** design-side rather than mandatory code-side references; a non-dominating, replaceable plugin; nested subdesigns and progressive disclosure as fundamental; formal lintable design parts with exact types still open; and criteria-driven evidence for artifacts/modifications and decisions versus alternatives. A003 hole 5 is corrected, not silently preserved as code-annotation policy. **Assistant-provisional:** P14-P18, their matrix, candidate part taxonomy, sample grammar, invalidation/removability refinements, and the proposed selective transfer from Evidence. Earlier provisional material is not blanket-approved. No V4 runtime, conformance checker, Evidence integration, or performance result has been implemented or established.
+**Retained user direction (U004):** design-side rather than mandatory code-side references; a non-dominating, replaceable plugin; nested subdesigns and progressive disclosure as fundamental; formal lintable design parts with exact types still open; and criteria-driven evidence for artifacts/modifications and decisions versus alternatives. A003 hole 5 is corrected, not silently preserved as code-annotation policy. **Assistant-provisional:** P14-P18, their matrix, candidate part taxonomy, sample grammar, invalidation/removability refinements, and the proposed selective transfer from Evidence. Earlier provisional material is not blanket-approved. No V4 runtime, conformance checker, Evidence integration, or performance result has been implemented or established.
+
+
+## 12. Reference convention confirmation
+
+**User direction U005, agreed in A005:** use `[[...]]` consistently for conceptual and code-symbol term references. `[[Term Name]]` and `[[term_name]]` are two spellings of the same conceptual term; `[[somepackage.SomeType]]` demonstrates a qualified code-symbol form. This is a notation decision, not adoption of every provisional resolver, namespace, selector, or design-part proposal.
+
+**Assistant reasoning (A005):** one delimiter makes reference recognition uniform; readability and qualification can vary within it. This is a design judgment, not a benchmark claim.
+
+**Unfinished input:** `[[Some Type]] should,` is preserved as an open fragment. No conversion from spaced conceptual names to camel-case code symbols, fuzzy matching, or extra autofix rule has been inferred.

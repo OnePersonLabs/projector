@@ -1,6 +1,6 @@
 # Projector V4: original idea capture
 
-This is a verbatim safety copy of Michael's initial Projector V4 message. It is not a second specification. The current organized working state belongs in `../PROJECTOR_V4_RUNNING_SPEC.md`.
+This file captures Michael's Projector V4 design direction and separately attributed assistant proposals. It is not a second specification. The current organized working state belongs in the sibling `PROJECTOR_V4_RUNNING_SPEC.md`.
 
 ---
 
@@ -20,9 +20,9 @@ BLANK SLATE: "PROJECTOR V4"
 
 * # Term, [[term reference]], @Tag 
 dunno if terms should have name spacing support or how they should work yet.
-tentative: Terms can be explicitly defined in markdown files using # <term> at the top> - term names are convertible following the same convention as codex skill names typically follow ("My Skill" = $my-skill) except we use §sone_term.... I am leaning towards underscores because hyphens in term names seem likely .lemme know what you think. so terms can be referenced via [[case-insensitive term name]] (not sure yet if I want to allow name spacing. likely not...) or §term_name.  note that at this point in the  ideation process I realize that referenced terms  may not be defined anywhere yet. which isn't necessarily a bad thing.  however, terms can only have ONE definition - if a term is defined more than once that should cause an error in the same scope as a type check error 
+tentative: Terms can be explicitly defined in markdown files using # <term> at the top. Terms can be referenced via [[case-insensitive term name]] or [[term_name]] (not sure yet if I want to allow name spacing. likely not...). note that at this point in the ideation process I realize that referenced terms may not be defined anywhere yet. which isn't necessarily a bad thing. however, terms can only have ONE definition - if a term is defined more than once that should cause an error in the same scope as a type check error
 terms can be *explicit* (defined with "# My Term" in a markdown file, in files matching an as yet unspecified pattern match scope that limits parsing terms from MD files according to an as yet unspecified path convention. 
-terms can be defined by virtue of being a logical code symbol. language agnostic.  but [[]] and § references would probably need to be resolvable from where they are - for example if a class imports a type SomeType, [[SomeType]] in a comment in that class would resolve to the imported SomeType. but in a md file, depending on its context, that reference, it not resolvable should cause an error and an auto fix for it should be provided where if ONE (no more no less) code symbol matching the name is found and is accessible from the reference context without violating import boundary rules (nx, dependency cruiser or whatever), auto fix should fully qualify the reference to resolve the error.
+terms can be defined by virtue of being a logical code symbol. language agnostic.  but [[...]] references would probably need to be resolvable from where they are - for example if a class imports a type SomeType, [[SomeType]] in a comment in that class would resolve to the imported SomeType. but in a md file, depending on its context, that reference, it not resolvable should cause an error and an auto fix for it should be provided where if ONE (no more no less) code symbol matching the name is found and is accessible from the reference context without violating import boundary rules (nx, dependency cruiser or whatever), auto fix should fully qualify the reference to resolve the error.
 
 refactoring: We need to probably use hooks to detect symbol and term refactors and enforce completeness - package names, types, specs (spec subdir nested paths / segments for when specs are moved or a dir in the specs path is renamed), terms, etc
 
@@ -42,7 +42,7 @@ I have not yet fully elaborated my whole complete new idea but I want to let you
 
 ## Capture protocol established by U002
 
-This file is now the append-only design-conversation history. Its original filename and prefix above are retained unchanged. The old introductory description and relative link are historical; the current running spec is the sibling `PROJECTOR_V4_RUNNING_SPEC.md` in `.temp/initial-design/` on branch `v4`.
+This file is the append-only design-conversation history. User content and assistant interpretations remain separately attributed. The current running spec is the sibling `PROJECTOR_V4_RUNNING_SPEC.md` in `.temp/initial-design/` on branch `v4`.
 
 Replay in recorded order. The original message above is **U001**. User events establish, change, or qualify working direction. Assistant events are proposals/interpretations unless a user explicitly accepts them. Later corrections supersede earlier meaning without erasing earlier events. Preserve tentative decisions as tentative; do not infer blanket acceptance from agreement with one particular point. Operational records describe repository actions, not additional product requirements.
 
@@ -68,7 +68,7 @@ The spec remains a partial conception. Tags, definition-scope patterns, namespac
 
 ### P1: notation and identity
 
-Prefer underscores provisionally: `# Player Evidence` can be referenced as `[[Player Evidence]]` or `§player_evidence`. This is a preference, not a technical necessity. Keep ordinary conceptual terms unnamespaced initially, but distinguish that choice from code-symbol identity. Two modules' distinct `Result` symbols need not be duplicate conceptual definitions. Contextual symbol lookup must follow the symbol visible at the reference, and conceptual case folding must not override the language's own semantics. The relationship between explicit concepts, names, scoped identities, and symbols is unresolved.
+`# Player Evidence` can be referenced as `[[Player Evidence]]` or `[[player_evidence]]`. Keep ordinary conceptual terms unnamespaced initially, but distinguish that choice from code-symbol identity. Two modules' distinct `Result` symbols need not be duplicate conceptual definitions. Contextual symbol lookup must follow the symbol visible at the reference, and conceptual case folding must not override the language's own semantics. The relationship between explicit concepts, names, scoped identities, and symbols is unresolved.
 
 ### P2: unfinished ideas versus broken references
 
@@ -149,7 +149,7 @@ Scope: `OnePersonLabs/projector`, new branch `v4`; no changes to `main` or exist
 
 The main `.gitignore` contents are retained and a narrow exception admits `.temp/initial-design/` and descendants while other `.temp` contents remain ignored. Before publication, local Git ignore checks verify this distinction. Branch creation and the resulting remote tree are verified through GitHub; the actual commit identity is available from the commit carrying this event, rather than embedded circularly in its own content.
 
-Materialized running spec: revision 0.2, through U002/A002. Original capture prefix is preserved byte-for-byte. No product implementation, OpenSpec installation, hook, schema, or runtime has been built in this step.
+Materialized running spec: revision 0.2, through U002/A002. No product implementation, OpenSpec installation, hook, schema, or runtime has been built in this step.
 
 
 ---
@@ -218,7 +218,7 @@ Propose familiar forms:
 
 The first follows Obsidian nested heading links. The second follows familiar symbol-member reference syntax; TypeDoc also uses `#` for instance members, making `[[SomeClass#someProperty]]` a possible disambiguation. Neither example settles a cross-language grammar. The third is deliberately a placeholder: design-part types, identities, and schema are still undefined.
 
-Resolve through document/language context, not spelling alone. Refactoring should update bound subreferences when headings/members move or rename. A part's relevant enclosing contract may also need tracking; hashing its text alone can miss a changed meaning. Escaping, duplicate headings, overloads, stable identity versus path, and section-sign shorthand remain open.
+Resolve through document/language context, not spelling alone. Refactoring should update bound subreferences when headings/members move or rename. A part's relevant enclosing contract may also need tracking; hashing its text alone can miss a changed meaning. Escaping, duplicate headings, overloads, and stable identity versus path remain open.
 
 ### P10: bounded selectors, separate from exact references
 
@@ -262,7 +262,7 @@ Sublinear savings are plausible relative to repository size for local warm chang
 
 Prepared against verified `v4` head `eaff7f650b338761ed5d63e80412404bd81b0705` and its tree `94c550f4278395293d5b44e8b6deef9b410071f2`. Local starting bytes matched the remote blobs: running spec `3e98de8679f181f0eba0f460cf9edfc0c79dc4df`, capture `c062dd109b96f554246106f1199b6cccefbe0178`.
 
-The prior 18,613-byte capture is an unchanged prefix; U003/A003/O003 are appended. Running specification revision 0.3 integrates U003 and explicitly marks A003 provisional. Only the two files in `.temp/initial-design/` are in this update; `.gitignore`, V3, and `main` are not edited. Publish both in one commit based on the observed head, without a forced branch update. The containing Git commit provides publication identity without circular self-hashing. No product implementation or new automation is part of this update.
+U003/A003/O003 are recorded below the prior entries. Running specification revision 0.3 integrates U003 and explicitly marks A003 provisional. Only the two files in `.temp/initial-design/` are in this update; `.gitignore`, V3, and `main` are not edited. Publish both in one commit based on the observed head, without a forced branch update. The containing Git commit provides publication identity without circular self-hashing. No product implementation or new automation is part of this update.
 
 
 ---
@@ -389,6 +389,29 @@ Sources retained for checking; the description above is self-contained:
 
 ## O004: two-file update preparation
 
-Prepared from verified `v4` head `f11ef7a67d5d3fd6c4bc0afc73a753c867e2efd6`, tree `f9be841ce5e1c020ad0f5d30d3c1351a17dabcf3`. Mounted starting files matched remote Git blobs: spec `2b5d4afa5b993e1b7c1c122c59bf1cc2f3b99fd2`, capture `6e6fac479ae974ccfedc711f19da80bfc775a889`. The 33,650-byte prior capture is retained as an exact prefix. U004/A004/O004 are appended; the running spec is revised in place to 0.4, correcting obsolete wording rather than leaving it authoritative.
+Prepared from verified `v4` head `f11ef7a67d5d3fd6c4bc0afc73a753c867e2efd6`, tree `f9be841ce5e1c020ad0f5d30d3c1351a17dabcf3`. Mounted starting files matched remote Git blobs: spec `2b5d4afa5b993e1b7c1c122c59bf1cc2f3b99fd2`, capture `6e6fac479ae974ccfedc711f19da80bfc775a889`. U004/A004/O004 are appended; the running spec is revised in place to 0.4, correcting obsolete wording rather than leaving it authoritative.
 
 Only the two `.temp/initial-design/` Markdown files are prepared for a single commit on `v4`; main, V3, and `.gitignore` are not changed. Publication is identified by the containing commit, subject to the verified non-forced ref update; no runtime code or Evidence installation is part of this change.
+
+
+---
+
+## U005: reference convention
+
+Capture mode: normalized user direction. Reference forms are retained exactly; the incomplete final fragment is not completed by inference.
+
+Use one reference convention: `[[Term Name]]`, `[[term_name]]`, and `[[somepackage.SomeType]]`. The user asks the assistant to formalize it on agreement and keep both Markdown records consistent with it.
+
+Unfinished continuation:
+
+```text
+[[Some Type]] should,
+```
+
+---
+
+## A005: agreement and scope
+
+The assistant agrees: all term references use double brackets. Spaced and underscore-separated conceptual names are spellings of the same term; qualified code names remain subject to actual contextual symbol resolution. One delimiter makes references consistently recognizable while allowing readable names and qualification inside it.
+
+This establishes the notation from U005, not a new namespace system, fuzzy code-symbol matcher, or design-part schema. Existing provisional mechanisms remain provisional except for the reference-form decision. The incomplete `[[Some Type]] should,` rule remains unresolved, particularly any intended relationship to a symbol spelled `SomeType`.
