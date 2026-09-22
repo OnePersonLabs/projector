@@ -1,10 +1,10 @@
 # Projector V4: running specification
 
-**Revision 0.3** · Captured through U003 and provisional assistant response A003.  
+**Revision 0.4** · Captured through U004 and provisional assistant response A004.  
 **Status:** incomplete conception in active conversation, not approved for implementation.  
 **Authority:** Michael's stated direction. Assistant proposals remain separately labeled.
 
-**Attribution key:** U001-U003 identify user messages in the sibling capture; A001-A003 identify assistant interpretations/proposals. User-derived meaning can be cleaned up without changing intent. Assistant assumptions are provisional until explicitly or unambiguously implicitly approved, with the specific approval evidence recorded. Neither a skim nor silence is blanket approval. This specification is a current-state view; the append-only file preserves the event trail.
+**Attribution key:** U001-U004 identify user messages in the sibling capture; A001-A004 identify assistant interpretations/proposals. User-derived meaning can be cleaned up without changing intent. Assistant assumptions are provisional until explicitly or unambiguously implicitly approved, with the specific approval evidence recorded. Neither a skim nor silence is blanket approval. This specification is a current-state view; the append-only file preserves the event trail.
 
 ## 1. Blank slate and durable conversation
 
@@ -92,7 +92,7 @@ Completeness concerns supported reference bindings, not arbitrary prose matches 
 
 ## 5. Designs, live truth, and design deltas
 
-**Source: U001-U002. U003 explicitly reiterates that design-part types are not yet approved.**
+**Source: U001-U002, extended and corrected by U004. Nested designs are now fundamental; exact design-part types and grammar remain unapproved.**
 
 ### Design responsibility and justification
 
@@ -104,6 +104,26 @@ Each design explicitly names the requirements it satisfies and provides concise 
 - **Secondary/applicable:** other requirements that constrain it because of scope, behavior, dependencies, or another applicability criterion.
 
 Secondary does not mean optional. These labels explain the distinction; they do not prescribe a schema. A design can depend on another design, affecting understanding, invalidation, and scheduling.
+
+### Design-side bindings and tool independence
+
+**User correction (U004), superseding A003 hole 5's code-to-design wording:** designs justify and reference implementation artifacts; source code must not be required to reference designs. Projector must remain a non-dominating plugin that preserves human understandability and developers' ability to change tools.
+
+Store the required justification in the design, including why a distinct artifact exists or why it was modified. Reverse lookup for diagnostics does not imply a reverse annotation in code. A003's question about substantive justification remains relevant, but mandatory source-side design citations are explicitly rejected.
+
+U001's optional contextual term/symbol references in source comments are not silently forbidden by this correction. They must not become required design-coverage annotations across the codebase. No mandatory Projector imports, decorators, IDs, or source tags are inferred.
+
+### Nested designs and progressive disclosure
+
+**User requirement (U004): nested subdesign structure and progressive disclosure are fundamental to designs**, not an optional future viewer feature. Designs can contain architectural decisions at their own level and at nested subdesign levels. They must allow readers to start with higher-level meaning and enter deeper detail as needed.
+
+**User direction under elaboration (U004):** use a formal, lintable structure for design parts and potentially part-type-specific children, subheadings, or expected lists. The desired form is analogous to specs in structural discipline, not a requirement to reuse OpenSpec scenario keywords. No exact part taxonomy, header grammar, directory layout, file-per-node policy, inheritance model, or delta schema has yet been approved. Nested-design support is settled; those mechanics remain open.
+
+### Criteria-driven evidence and concise decisions
+
+**User direction (U004):** establish criteria, potentially a decision matrix, to determine what evidence belongs in a design to justify a distinct artifact or artifact modification. Retain architectural choices and concise evidence supporting them versus plausible alternatives in an efficient, validatable inline form.
+
+This is not permission to replace justification with a bare address, invent alternatives to fill a quota, or label an untested assertion as an observed result. Those safeguards and the concrete matrix below are assistant proposals. The user has not selected an evidence engine, prescribed every field, or adopted Evidence's workflow wholesale.
 
 ### Live-design truth
 
@@ -176,7 +196,7 @@ Exact safe-to-proceed criteria, reviewer independence, authority boundaries, rou
 
 ### Code must be justified by design
 
-Raise errors in the same context as type checking for code that is not justified by a design. Use efficient internal caching/hashing and workflow integration rather than repeatedly paying compute or model cost. The user has not yet defined the coverage granularity, exact meaning of justification, conformance witness, language integration, or diagnostics format. A003/2, A003/4, hole 5, and P11 propose an implementation distinction without claiming that a link or hash proves behavior.
+Raise errors in the same context as type checking for code that is not justified by a design. Use efficient internal caching/hashing and workflow integration rather than repeatedly paying compute or model cost. U004 explicitly places the required justification and references in designs, not annotations in source code, and proposes criteria/a decision matrix to determine the needed evidence. Coverage granularity, exact conformance witnesses, language integration, and diagnostic format remain open. A003/2, A003/4, and P11 remain provisional except that hole 5's code-to-design wording is superseded below.
 
 ### Requirement removal should remove its unnecessary complexity
 
@@ -252,11 +272,11 @@ One changed token can alter a public contract, while many resolved rename edits 
 
 ### A003 additions: numbered assumptions, holes, and proposals P9-P13
 
-The following entire block is **assistant-provisional**. Its numbered assumptions/holes are local to A003 and are not new user requirements. The outcome being interpreted is U003; only a later explicit or unambiguous implicit user approval can adopt an individual mechanism.
+The following block remains **assistant-provisional** except where an explicit U004 correction is noted. Its numbered assumptions/holes are local to A003 and are not new user requirements. The outcome being interpreted is U003; only a later explicit or unambiguous implicit user approval can adopt an individual mechanism.
 
 ### A003: provisional interpretation and proposals
 
-**Attribution:** assistant interpretation, not blanket user approval. U003 explicitly retains suggestions as provisional until explicit or unambiguous implicit acceptance. Numbers 1-7 are local to A003; bracketed numbers in the holes refer to these assumptions. This is a substantive capture, not a verbatim transcript.
+**Attribution:** assistant interpretation, not blanket user approval. U003 retains suggestions as provisional until explicit or unambiguous implicit acceptance. Numbers 1-7 are local to A003. The running view corrects hole 5 under U004; the original wording remains untouched in the append-only capture.
 
 ### Direction and high-leverage assumptions
 
@@ -272,7 +292,7 @@ The assistant sees software growing and contracting with its current reasons for
 
 ### Remaining material holes
 
-5. **Rubber-stamp coverage / Justification gap.** A valid code-to-design link can prove that an owner exists without proving the behavior belongs there. Need an operational definition of justified code, scoped contract checks, and meaningful delta review; otherwise a broad design becomes a permission slip. Repeated whole-project AI audits would defeat the economics. [2, 4]
+5. **Justification gap (direction corrected by U004).** Designs must justify code, not require code to reference designs. A design-side binding still does not alone prove the implementation belongs there. U004 supplies the direction for addressing this: criteria or a decision matrix determine the evidence required to justify an artifact or its modification. P17 proposes a matrix; exact evidence/conformance rules remain open. A broad design must not become a permission slip, and repeated whole-project AI audits would defeat the economics. [2, 4]
 
 6. **Missing edges / Applicability gap.** New requirements, broadened scopes, or new consumers can matter before any link exists. Bounded discovery must notice newly applicable obligations and changed or previously empty query populations, or the system efficiently ignores necessary work. [3, 4]
 
@@ -337,10 +357,87 @@ These informed assistant suggestions, not V4 authority or required dependencies.
 - Bazel Skyframe: dependency tracking and change pruning when recomputed values are unchanged. https://bazel.build/versions/8.6.0/reference/skyframe
 - Nx module boundaries: project-tag dependency constraints as a possible permission input. This is not an implementation of Markdown reference resolution. https://nx.dev/docs/features/enforce-module-boundaries
 
+### A004: revised justification direction, nested designs, and Evidence
+
+**Attribution:** the three headings added to section 5 record U004's correction and direction. P14-P18 below are assistant-provisional refinements. U004 adopts nested design structure explicitly, not every earlier proposal about ownership, hashing, or reference grammar.
+
+### P14. One-way authored bindings; derived reverse lookup
+
+Keep required implementation bindings, reasons, evidence, and review detail in readable designs. A disposable reverse index can map observed code units back to those bindings and issue diagnostics without injecting design references into the code. Coverage population must still be observed independently: querying only already-bound artifacts cannot discover unjustified additions.
+
+Proposed removability test: removing Projector and its explicit checking/hook integration should leave ordinary code, builds, and tests understandable and usable without rewriting source annotations or importing a Projector runtime. This is a test of tool independence, not a promise that deleting the checker retains its enforcement or that generated product code is forbidden. No duplicate authored code-to-design registry is needed by this proposal.
+
+### P15. Concern hierarchy, contract-directed disclosure
+
+Nest subdesigns by responsibility, not by artifact category or an automatic one-to-one mirror of folders/classes. A parent explains the concern, its externally relevant promises, and the responsibilities delegated to children; a child owns its internal decisions. Readers should not have to load every child's internals to understand the parent.
+
+Keep applicable parent obligations available by reference rather than copying their prose into each child. Inheritance does not mean every global rule applies to every descendant, or that a child can silently weaken a parent contract. Cross-cutting requirements and dependencies still form explicit graph links; the containment tree is not a complete dependency graph.
+
+A child implementation change need not dirty all ancestors and siblings merely because it is nested. Proposed invalidation follows actually relied-on parts and guarantees, including changed child membership where the parent relies on that composition. This reuses P4's still-provisional unchanged-contract pruning. A child's exported guarantee changing does affect its users. Do not manufacture an all-descendants hash as every parent's universal dependency.
+
+### P16. A small candidate part structure
+
+Candidate readable parts are **Contract**, **Decisions**, **Realization**, and **Subdesigns**. This is a proposal, not an approved universal document template or four required files. A Decision may have typed subparts for its requirement basis, chosen option, rationale, material alternatives, implementation consequences, evidence, and reopening conditions. The policy matrix determines which are required for the case; routine work should not expand into a full architectural essay.
+
+The useful primitive is a small argument: under these requirements and conditions, choose this option rather than that credible alternative, producing this implementation consequence, supported by this evidence. Record why the implementation has its shape, not a post-hoc story for arbitrary code. The same Decision part could be an addressable delta/invalidation unit; this is a candidate answer to 'parts', not a settled design-delta schema.
+
+### P17. Evidence obligations are conditional, not universal paperwork
+
+Proposed matrix:
+
+| Trigger | Minimum proposed design content |
+| --- | --- |
+| Internal artifact or modification already explained by an accepted decision | Bind the artifact/change to the applicable decision; reuse current relevant evidence and run the affected checks. No invented alternatives. |
+| New owner, boundary, dependency, abstraction, or meaningful implementation strategy | Name the motivating requirements and criteria; explain the chosen shape versus the strongest credible simpler alternative, including not adding the structure where viable; record the consequential tradeoff. |
+| A decision depends on an empirical or failure-sensitive claim, such as latency, concurrency, or persistence | Add the discriminating measurement, test, trace, or review needed for that claim, its conditions, and actual result; mark missing evidence explicitly. Existing interpretation/repair escalation policy still applies. |
+
+Rows can accumulate; they are triggers, not exclusive risk tiers or a score claiming objectivity. Criteria route the evidence burden, not an automatic winner. A measured tradeoff needs a measurement; a rationale need not invent numeric scoring. Selecting criteria, mandatory proof kinds, exceptions, and materiality remains open. Existing binding and conformance gaps are addressed by this policy direction, not magically proved solved.
+
+Propose linting part shape, required fields selected by the matrix, reference resolution, conflicting evidence/exclusion statements, applicable coverage, and evidence currentness. Content truth still depends on the relevant observations/checks and reviewed reasoning. A fingerprint proves neither an empirical outcome nor reviewer independence. Relevant dependencies include the decision/criteria, cited requirements, implementation target, and checker environment where material; hashing only the target can miss changed reasons.
+
+Illustrative format only, with invented requirement and code/test names:
+
+```markdown
+## Decision: retain the prepared preview
+Requires: [[Preview#Immediate replay]]
+Choice: Keep the current decoded buffer until replacement or closure.
+Alternative: Regenerate the buffer on each replay.
+Reason: Avoid regeneration during replay; retain one buffer instead.
+Realizes: [[PreviewPlayer.replay]]
+Evidence: [[PreviewTests.reusesPreparedBuffer]]; pending execution.
+Evidence: Replay-latency measurement; not yet available.
+Reopen: Replay timing or buffer-lifetime requirements change.
+```
+
+This is a rationale awaiting appropriate evidence, not a claim that a cache is required or that a test proves latency. Identifiers, field names, and grammar are examples, not adopted schema. Canonical review information should remain visible enough for a human to understand; do not assume hidden HTML annotations are the desired authoring UX.
+
+### P18. Connect evidence to requirement retirement
+
+The decision's requirement basis, tradeoff, and implementation consequences provide a place to retain current reasons for a structure. Removing a replay-timing requirement can reopen the buffer-retention decision rather than merely delete a requirement link. Remaining consumers, requirements, and other legitimate benefits still count; simplify only where the structure loses sufficient justification. Prefer current-state reevaluation over replaying a historic Git inverse.
+
+This sharpens A003 hole 7 (structural residue). The matrix supplies a candidate answer to hole 5's evidence question while U004 rejects its source-annotation direction. Hole 6 (new applicability) remains: neither nested documents nor existing citations discover all newly relevant requirements by themselves. No new mandatory framework or comparative research campaign follows.
+
+### Evidence repository: inspected facts versus proposed transfer
+
+**Source-derived, not V4 authority:** inspected `wrtnlabs/evidence` repository snapshot `9b5bfdd7f7affed0c27bd74cd2f425ac008fd25e`, README, its Evidence Graph project contract, and `IEvidenceConfig.ts`. This was a source/documentation review, not an installation or benchmark run.
+
+The documented convention is `@evidence <target> <reason>`, with separate justified exclusions and reviews. Claim/reference configuration selects the populations that must be acknowledged. Explicit structural ancestry can let an acknowledgement cover selected descendants, rather than relying on string-prefix containment. Reviews are separate from acknowledgements and can be required to match a current cited-unit/subtree fingerprint. The source expressly distinguishes graph completeness/currentness from whether reasons are true; the checker cannot establish who actually reviewed something.
+
+Its common examples put annotations in source documentation, but the project contract permits every supported artifact family to be both claim host and reference target. Thus Markdown designs citing programming targets fit its documented general model; the mechanism is not intrinsically code-annotation-only. This is a source-grounded compatibility observation, not a tested V4 configuration or a claim of sufficient coverage of every implementation artifact. The public config interface also describes cross-family populations.
+
+Its Markdown adapter documents file/H1-H4 structural units. That supplies a nested outline/addressing precedent, not V4's typed design-part schema or progressive-disclosure ownership policy. Its documentation explicitly says standalone code references are file-qualified and do not provide compiler import-scoped symbol lookup; that does not satisfy U001's imported-symbol reference example by itself. General language support and source populations have declared limitations. No perfect conformance or economic advantage for V4 is inferred from the repository's promotional claims or upstream benchmark.
+
+**Proposed transfer:** concise target-plus-reason, scoped coverage, explicit non-applicability when relevant, and separately checkable review currentness, authored in designs. Do not automatically inherit source tags, all-functions-by-all-rules checklist policies, hidden rationale, manual fingerprint editing, Evidence as a dependency, or a new requirement authority. Bulk cross-products would conflict with V4's narrowly minimal work goal.
+
+Sources retained for checking; the description above is self-contained:
+- https://github.com/wrtnlabs/evidence/blob/9b5bfdd7f7affed0c27bd74cd2f425ac008fd25e/README.md
+- https://github.com/wrtnlabs/evidence/blob/9b5bfdd7f7affed0c27bd74cd2f425ac008fd25e/.agents/skills/project/evidence/SKILL.md
+- https://github.com/wrtnlabs/evidence/blob/9b5bfdd7f7affed0c27bd74cd2f425ac008fd25e/packages/evidence/src/structures/IEvidenceConfig.ts
+
 ## 11. Remaining design frontier
 
 Michael has not finished elaborating V4. Preserve that fact rather than filling gaps with V3 machinery.
 
 Unselected details include term normalization/namespaces/definition scope; symbol and document contexts; supported languages; tag semantics; design placement; stable requirement addressing through wording and path changes; applicability discovery; the exact dependency-relevant design surface; design-delta parts/schema/lifecycle; dirty-state representation and cycle handling; refactor detection and concurrency; safe review/escalation policy; completion evidence; subreference grammar and stable part identity; exact-reference versus set-query syntax and query invalidation; code-justification coverage and conformance evidence; surviving support and simplification on retirement; cost bounds and accounting; and the remaining implementation-generation loop.
 
-**This revision adds user direction (U003):** default retention of clearly attributed provisional suggestions, precise subreferences, typecheck-context diagnostics for code without design justification, and low-overhead requirement retirement under a causally integrated workflow. **It retains assistant-provisional:** A003 assumptions 1-4, holes 5-7, and P9-P13. P1-P8 are not silently promoted. Existing U001/U002 direction is retained. No V4 runtime, selector engine, conformance checker, or performance claim has been implemented or established.
+**This revision adds user direction (U004):** design-side rather than mandatory code-side references; a non-dominating, replaceable plugin; nested subdesigns and progressive disclosure as fundamental; formal lintable design parts with exact types still open; and criteria-driven evidence for artifacts/modifications and decisions versus alternatives. A003 hole 5 is corrected, not silently preserved as code-annotation policy. **Assistant-provisional:** P14-P18, their matrix, candidate part taxonomy, sample grammar, invalidation/removability refinements, and the proposed selective transfer from Evidence. Earlier provisional material is not blanket-approved. No V4 runtime, conformance checker, Evidence integration, or performance result has been implemented or established.
