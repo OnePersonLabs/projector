@@ -530,3 +530,144 @@ These are unresolved design problems, not identified dealbreakers.
 ## O007: two-file update publication
 
 Started from verified `v4` head `ba949a09d2c93bcaf323b8f704ad4087df32647d`, whose design blobs matched the mounted working copies. The running spec was advanced first to revision 0.7, then this capture was appended in a second fast-forward commit because the available repository contents API updates one path per commit. Only the two initial-design records changed; main, V3, runtime code, and tooling did not.
+
+
+---
+
+## U010: approve A007; propose an external map and efficient asynchronous maintenance
+
+Capture mode: user message body. Its opening approves the preceding completed response A007, not the new mechanisms subsequently proposed in A008. The remainder is the user's new idea for evaluation.
+
+````text
+everything you just said is approved.
+
+new idea
+  
+if feasible, I think it would be a good idea to have a artifact/code <-> design <-> spec map in a plugin owned dir outside the repo hidden from view, scoped per filesystem repo root dir.  
+  
+loose thoughts:  
+tree sitter approach would make sense but we can't really control the lifecycle of a background sitter... (note inserted after writing the rest of this message: unleeesss... we make an MCP!! so interpret the following with the presumption  that I didn't think of making an MCP yet when I wrote it ...)  
+  
+anyway the basic off the cuff definitely bad and needs thorough refinement and optimization idea is like;  
+  
+how would you do a .net style ReaderWriterLockSlim type thing for codex hooks designed to maintain blocking background process that checks if a cached code - design - spec map exists and isn't dirty, (otherwise kicking off an exclusive write map build/repair bg process, allowing codex to proceed but blocking reads on the map until the build/repair is done and only allowing a single exclusive build/repair process at a time, checking  and aborting attempts to start new instances of the process while one is running) and if clean, allowing map reads to proceed but hooks (codex and git/husky hooks) that detect file changes trigger debounced lazy map repairs in the background but forcing a blocking immediate repair if a map read is attempted while in a dirty state   
+  
+the big risk obviously is performance hits and suboptimal read/repair approach. if we can do something smarter than just "entire map dirty / lock logic" and invalidate/lock on a more granular efficient and async-friendly level that would be golden. we just don't want to have situations where like an agent is doing a bunch of edits and grinds to a slog when a smarter approach would let it cook and be as unintrusive and unobstructive as possible without sacrificing determinism, I.e. without creating edge case holes where the solid logical behavior can get subverted or messed up leading to stale map data informing agent decisions etc
+````
+
+---
+
+## A008: external map, snapshots, and demand-driven freshness
+
+Capture mode: substantive assistant response and specification payload, not a verbatim transcript. The following includes U010-derived goals and explicitly provisional mechanisms, with attribution retained for replay. A007 is now approved; its open problems are not automatically resolved.
+
+## 14. External map, MCP lifetime, and granular freshness
+
+**Status and attribution:** U010 approves A007 in full, including its assumptions, proposed mechanisms, efficiency-first pipeline, clean-convergence/idempotence distinction, and recognition of unresolved holes. Approval does not establish those holes solved or performance bounds proved. U010 then proposes an external per-repository map and asks for refinement of its lifecycle, locking, background work, and read-currentness strategy. The implementation mechanisms P19-P25 below are new A008 proposals and remain provisional.
+
+### User proposal and goals (U010)
+
+Keep a plugin-owned artifact/code <-> design <-> live-spec map outside the repository, hidden from the normal project reading surface and scoped per filesystem repository root. No code annotations or duplicated authored requirement authority are introduced. Explore Tree-sitter and an MCP server as possible ways to retain useful process state.
+
+The user's initial concurrency sketch is a reader/writer arrangement: reuse a clean cached map; otherwise admit only one exclusive build/repair; permit ordinary Codex editing to continue; debounce lazy background map maintenance after changes; force immediate refresh when a read needs dirty data, waiting for completion rather than presenting stale state. The user explicitly requests a better, granular asynchronous design instead of an all-map dirty flag/global lock if feasible. Performance, determinism, duplicate process avoidance, and avoiding edit-induced stalls are central constraints. The requested guarantee is that stale map data must not silently inform agent decisions.
+
+The lock analogy and exact background lifecycle are exploratory, not approved library choices or permission to install a daemon now.
+
+### P19. External derived state, per physical checkout
+
+**A008 provisional.** Use a stable plugin-owned per-user cache/state location outside both the repository and versioned plugin installation directories. An illustrative path is `<user-cache>/projector/repos/<root-key>/`. Key the namespace from the canonical physical checkout root, with repository/worktree identity checks to detect replacement at the same path; do not use only a remote URL, branch name, or shared Git object directory. Different worktrees/clones keep separate mutable indexes. Branch switches change the indexed generation rather than silently reusing the old state. Root rename may cheaply reattach only when identity is established; rebuilding is an acceptable explicit fallback. Cache files stay local to the coordinating host, not a concurrently shared Windows/WSL or network-filesystem database.
+
+Specs, designs, their justification, and accepted relations remain portable repository artifacts. The outside map is derived and rebuildable, not an invisible sole source of project meaning. Retain/pin the old design footprint and required source versions for active design transitions; do not garbage-collect the only evidence needed for deletion or recovery. Historical committed bases can be reconstructed through Git, while uncommitted transition bases require explicitly retained inputs. A cache loss with no recoverable prior basis is a recovery gap, not evidence of zero old ownership.
+
+Keep storage bounded and private to the user, expose a small inspect/clear/rebuild interface, and avoid ordinary model-context dumps. Cache clearing cannot silently abandon unfinished transition evidence. This preserves the approved non-dominating/removability goal without making hidden storage uninspectable.
+
+### P20. Embedded parser, MCP facade, one root coordinator
+
+**A008 provisional, informed by current primary documentation.** Tree-sitter is an embeddable incremental parsing library, not a background watcher or daemon. It can retain/update syntax trees inside a long-lived process. File notifications, cross-file symbol resolution, logical identity, applicability, and boundary policy need separate implementation; syntax extraction does not prove semantic dependencies.
+
+MCP can supply a persistent tool connection and host-launched process. It does not itself guarantee one shared process per repository or a process that outlives the host. Codex documents local STDIO and Streamable HTTP MCP support. A stdio connection has client-owned subprocess lifetime. Multiple clients therefore need explicit coordination to avoid duplicated indexing and watchers.
+
+Proposed logical topology: thin MCP/CLI/hook clients attach to one coordinator per root. Elect/attach through an OS-backed exclusive root ownership primitive and a local IPC endpoint; a losing starter joins rather than launching a duplicate rebuild or killing an unrelated process. A coordinator can live in a first host process or a small on-demand local service; choose that packaging only after lifecycle/installation costs are established. Local sockets/named pipes avoid requiring an unauthenticated HTTP service; a chosen loopback HTTP transport needs appropriate access controls. No mandatory system service is selected.
+
+The elected owner tracks an incarnation/generation so completions from a retired owner cannot publish. Lock ownership must not depend only on a PID file or elapsed wall-clock TTL. Coordinator death releases actual process ownership; replacement explicitly reestablishes filesystem observation and currentness. Idle shutdown is allowed with bounded retained state. Cold/recovery operation uses the same indexing logic and publication rules, not a second independent implementation.
+
+Hooks are event producers, not worker supervisors. Use direct calls to an already-connected MCP server where supported to avoid a process spawn per edit. An event callback promptly records/acknowledges invalidation and queues work; it does not parse the repository or call an LLM. Host limitations and Git changes outside a running connection require an explicit fallback/recovery path.
+
+### P21. Versioned snapshots rather than long reader/writer exclusion
+
+**A008 provisional.** Prefer one short atomic publication writer plus versioned reader snapshots, not a global exclusive lock held throughout parsing, reasoning, or rebuild. Deterministic extraction jobs can run with bounded parallelism over immutable captured inputs. Track/coalesce duplicate jobs by artifact/input versions; several readers needing the same work share it. One coordinator owns scheduling; not every reader becomes a competing repair process.
+
+A published generation includes mutually consistent structural records, forward/reverse relations, membership/name-index changes, and freshness dependencies for the affected set. A reader must not combine forward links from one revision with inverse links from another, or mix dependency versions that never formed a valid snapshot. Compute changes outside the publication transaction, revalidate their input/dependency versions, then commit the batch briefly and atomically. Reject stale completions without throwing away still-valid unrelated parsing results. Dirtying and publication are ordered together: finishing old work cannot clear a newer invalidation.
+
+SQLite WAL is a credible baseline for cross-process snapshot reads, short serialized writes, and transactional updates; it is not selected merely by this discussion. WAL separates consistent database reads from concurrent publication but does not certify filesystem freshness. Keep transactions/snapshot retention short and bound WAL checkpoint, memory, and cache costs. Benchmark whether storage/index maintenance pays for the reads it saves. Do not implement a lock for every symbol by default. Per-key generations and shared job promises provide narrow waiting without a miniature distributed lock system.
+
+### P22. Invalidate immediately, debounce computation, refresh on demand
+
+**A008 provisional.** Dirty state is a set of affected inputs/queries/parts plus their required versions, not one all-map boolean. Managed mutation begins with a lightweight intent/affected-scope registration before file writes; completion provides exact observed changes or a known unresolved observation gap. Mark potential staleness immediately. Debounce/coalesce expensive maintenance, not the invalidation that protects a read.
+
+Maintain atomic edit/batch boundaries for changes that must be viewed together. Expose an earlier accepted snapshot as historical only, or wait for the relevant batch, rather than publishing accidental half-renames or half-applied spec/design transitions as settled. Ordinary editing and work unrelated to those scopes can continue.
+
+For a current map query:
+1. Establish an observation/read barrier for relevant completed mutations and in-flight scopes. Having no queued event does not prove there are no unobserved writes.
+2. Use indexed dependencies to identify its required input closure, including lookup-name candidate populations, applicability criteria, and selector membership. Refresh needed discovery indexes before assuming the old closure is complete. Absence/uniqueness and empty queries are dependencies too.
+3. If that closure is current, return a consistent published result immediately even while other regions are dirty.
+4. If it needs maintenance, bypass debounce for only the required ready work, raise its priority, join any existing job, and wait for valid atomic publication. Preserve unrelated results. Bound waiting/retries and return an explicit unavailable/in-progress reason when completion cannot be established; do not silently fall back to a stale live answer.
+5. Return a snapshot/dependency stamp and observation boundary. Subsequent managed plan application revalidates only the relied-on inputs and uses guarded/CAS-style writes or relevant cooperative scope exclusion; an earlier read is not timeless permission.
+
+During high edit rates, do not repeatedly cancel all work or wait for the entire repository to become idle. Build from declared settled generations, retain valid intermediate extraction, prioritize waiting queries, cap speculative background work, and process later causal batches separately. A read against an actually changing required input may necessarily wait; unrelated inputs should not create that wait. A job can be rerun when its input truly changed; once-per-final-input is an optimization goal, not a prohibition on necessary verification.
+
+### P23. Separate map freshness from design conformance
+
+**A008 provisional.** A map can be fresh and faithfully report drift. Rebuilding it does not mean redesigning the product, repairing code, reapproving a design, or invoking an LLM. Keep at least these distinctions visible to the caller: observation freshness, extraction/coverage completeness, applicable drift/conformance findings, and active transition state. New requirements can be mapped while their affected designs remain dirty pending the approved planning/review lifecycle.
+
+Never wait for expensive semantic design repair just to finish a structural map query. Indexing consumes authored design-side bindings and observed syntax/relationships; semantic unknowns become scoped findings, not invented links or a 'clean' flag. Deterministic map upkeep should have zero model calls. Selected interpretation and repair work uses the separate evidence-proportional workflow.
+
+### P24. Guarantee boundary: notifications accelerate, ordering establishes freshness
+
+**A008 provisional design consequence.** Asynchronous filesystem notifications alone cannot establish a linearizable current filesystem snapshot. An edit can occur before the watcher reports it. Git hooks do not observe every working-tree write, and MCP is transport rather than complete mutation interposition. Codex's current documentation says MCP hook failures/missing servers need not block the tool, and some tool paths can bypass hooks. Therefore absence of a hook error or queued event is not proof of complete observation.
+
+Use cooperative prewrite registration/completion for managed operations and supported observation barriers to order reads. For independent changes, missed events, watcher overflow, restart after an unobserved interval, unknown write scope, parse failure, or a changed inventory policy: mark the affected observation coverage unknown. Reconcile through a reliable cursor/journal or bounded revalidation/recovery; when the gap cannot be bounded, a full inventory may genuinely be necessary. Attribute and measure that cost instead of hiding routine scans under the word incremental. A debounce quiet period or mtime alone is not a correctness proof.
+
+Query dependencies include newly possible members, not only old hits: a new code symbol elsewhere can make a bare term ambiguous, and a new Markdown owner can change its default binding. Update the relevant name/population partitions from changes without rescanning every body. Root/config/parser/resolver/boundary-policy changes invalidate the facts they actually govern; unsupported populations cannot be declared complete.
+
+A response is current through a specified observation boundary, not forever. Preventing a later external write after a response requires actual write cooperation/exclusion or immutable source snapshots. Revalidation narrows the race but does not make an arbitrary noncooperating writer atomic. Supported guarantees must state their writer/host assumptions; an unknown state is not silently a valid one. This is a feasible managed-workflow design with explicit recovery, not a claim to make arbitrary unsupervised edits free and perfectly ordered.
+
+### P25. Acceptance evidence without an expensive review ritual
+
+**A008 provisional.** Exercise the deterministic coordinator/indexer with controlled interleavings and operation counters, not model invocations for every test. Use representative real workloads later for latency/CPU/memory and evidence that the mechanism is worth its overhead. Candidate checks:
+
+| Exercise | Required property to test |
+| --- | --- |
+| Many edits to the same input within one settled batch | Immediate invalidation; bounded/coalesced extraction and one net publication for the batch, not per event |
+| Many concurrent readers require the same dirty partition | One shared repair computation per needed input version; no worker stampede |
+| Audio is dirty while querying independent account design | Account read need not wait, if its actual dependencies and observation scope are current |
+| An input changes while its older extraction runs | Old completion cannot publish as current or clear the new dirtiness; unrelated work is retained |
+| Add a second matching code symbol or first selector member | Previously unique/empty results invalidate without a broad content rescan |
+| Multi-file rename/design deletion | No falsely settled mixed state; old total/partial implementation footprint survives until reconciliation no longer needs it |
+| Two clients race for ownership; owner crashes before/during publication | One effective publisher, atomic visibility, released ownership, stale completions fenced, and explicit observation recovery |
+| A hook is missed, a watcher overflows, or the service was stopped | No silent stale-current answer; recovery scope and cost are explicit |
+| Repeat a settled read/check | Reuse current state without reparse, broad scan, substantive edits, or AI calls; observation-barrier cost remains accounted for |
+
+Measure changed bytes read/hashed/parsed, dependency and query partitions visited, publications, waiter delay, spawned processes, and memory/disk retention. Budget background work, avoid spin-polling and per-keystroke subprocess/LLM creation, and include initialization/recovery in economics. Minimal overhead is an objective supported by evidence, not a claimed mathematical global minimum. Genuine global obligations and output size can require broad work.
+
+### Current assessment
+
+The proposed map/lifecycle mechanism addresses scheduling and cache-currentness engineering. It does not automatically solve unknown semantic applicability, design-part granularity, the cleanliness oracle, or evidence/justification completeness. The main new tradeoff is how to establish a cheap read barrier on each supported host without relying on lossy post-hoc events. The next architecture choice is a measured baseline for coordinator lifetime/storage/observation integration, not a reason to invent a large service platform.
+
+### Primary-source context for A008 (not product authority)
+
+Read on 2026-09-22; no V4 daemon, database, watcher, or concurrency implementation was built or benchmarked.
+- Tree-sitter introduction: an embeddable incremental parsing library, not a watcher service. https://tree-sitter.github.io/tree-sitter/
+- Codex MCP documentation: local stdio and Streamable HTTP server connections and configuration. https://developers.openai.com/codex/mcp (redirects to https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+- Codex hooks documentation: synchronous calls to already-connected MCP tools; no server startup/reconnection by those hooks; hook errors/unavailability need not block a tool; incomplete tool coverage. https://learn.chatgpt.com/docs/hooks
+- MCP lifecycle specification (2025-06-18): stdio client/server connection and subprocess shutdown semantics. https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle
+- SQLite isolation and WAL documentation: snapshot isolation, concurrent readers with one writer, local-filesystem and checkpoint considerations. https://www.sqlite.org/isolation.html and https://www.sqlite.org/wal.html
+- Node filesystem documentation: platform-specific watcher limitations, replacement/inode issues, and missing filename events. https://nodejs.org/api/fs.html
+- Watchman query synchronization and troubleshooting: ordering barriers/cookies, explicit platform limitations, and recrawl on lost observation. This is a precedent, not an adopted dependency or universal guarantee. https://facebook.github.io/watchman/docs/cookies and https://facebook.github.io/watchman/docs/troubleshooting
+
+
+---
+
+## O008: update prepared against verified repository bytes
+
+Base: `OnePersonLabs/projector` branch `v4` at `b8a59a63d992f56de2cb338302222c8d2acd8355`. Baseline blobs: running spec `909b37a34edd775390647a81887e53629bda3b99`, capture `370c00fe393ac1176325eb4bbf57d5eeb54c37ba`. The mounted capture had one extra blank line before A007; it was synchronized to the exact GitHub blob before appending. The entire 62,458-byte published capture prefix remains unchanged. The running snapshot advances to revision 0.8 and corrects stale approval labels; the new mechanisms are provisional. Only the two initial-design Markdown files are prepared for publication; no product runtime, daemon, database, hooks, source annotations, or main/V3 files are modified. Actual publication is determined by the containing commit and verified branch head, not this preparation note.
