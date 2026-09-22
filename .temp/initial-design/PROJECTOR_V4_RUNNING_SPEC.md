@@ -1,10 +1,10 @@
 # Projector V4: running specification
 
-**Revision 0.5** · Captured through U005 and assistant response A005.  
+**Revision 0.6** · Captured through U006 and provisional assistant response A006.  
 **Status:** incomplete conception in active conversation, not approved for implementation.  
 **Authority:** Michael's stated direction. Assistant proposals remain separately labeled.
 
-**Attribution key:** U001-U005 identify user messages in the sibling capture; A001-A005 identify assistant interpretations/proposals. User-derived meaning can be cleaned up without changing intent. Assistant assumptions are provisional until explicitly or unambiguously implicitly approved, with the specific approval evidence recorded. Neither a skim nor silence is blanket approval. This specification is a current-state view; the append-only file preserves the event trail.
+**Attribution key:** U001-U006 identify user messages in the sibling capture; A001-A006 identify assistant interpretations/proposals. User-derived meaning can be cleaned up without changing intent. Assistant assumptions are provisional until explicitly or unambiguously implicitly approved, with the specific approval evidence recorded. Neither a skim nor silence is blanket approval. This specification is a current-state view; the append-only file preserves the event trail.
 
 ## 1. Blank slate and durable conversation
 
@@ -37,7 +37,7 @@ The captured direction combines resolvable terms and code symbols, complete econ
 
 ## 3. Terms, references, and tags
 
-**Source: U001, with live-reference truth from U002, subreference support from U003, and the reference convention established by U005.**
+**Source: U001, with live-reference truth from U002, subreference support from U003, the reference convention established by U005, and the separate proposed resolution policy in U006.**
 
 ### Reference notation
 
@@ -53,7 +53,7 @@ The captured direction combines resolvable terms and code symbols, complete econ
 
 The spaced and underscore-separated conceptual forms denote the same identity, not competing definitions. Conceptual matching remains case-insensitive as stated in U001. Qualification and subreferences occur inside the brackets; their full grammar remains open. Supporting a qualified code name does not settle conceptual namespaces or override language-aware resolution and import boundaries.
 
-Exact normalization of punctuation, repeated separators, Unicode, acronyms/camel case, and collisions remains open. Do not infer that `[[Some Type]]` resolves to a code symbol named `SomeType`: U005 ends at the incomplete fragment `[[Some Type]] should,`, and the intended continuation has not been supplied. Michael previously leaned against namespaces for conceptual terms; that question remains open.
+Exact normalization of punctuation, repeated separators, Unicode, acronyms/camel case, and collisions remains open. U006 now proposes that `[[Some Type]]`, `[[SomeType]]`, and `[[some type]]` may resolve to the same uniquely named code symbol, with an eligible Markdown definition taking precedence. This is recorded below as a proposed policy, not retroactive adoption of arbitrary normalization. Michael previously leaned against namespaces for conceptual terms; that question remains open.
 
 ### Definitions and uniqueness
 
@@ -65,11 +65,37 @@ A logical code symbol can also define a term. The intended model is language-agn
 
 ### Contextual resolution and qualification
 
+**Prior direction (U001):** the contextual lookup rule below predates the separately proposed global-default rule in U006. The two priorities are alternatives for bare references, not simultaneously applicable rules; adoption of U006 remains pending. Boundary-permission constraints are not removed by the proposal.
+
 References must resolve from where they occur. If a class imports `SomeType`, `[[SomeType]]` in its comment should resolve to that imported symbol, not an arbitrary repository-wide match.
 
 A Markdown reference also needs a resolution context. How a document acquires an owner, imports, or explicit qualifications is open.
 
 An unresolved code-symbol reference is an error. Offer a fully qualifying autofix only when **exactly one** matching symbol is accessible from that reference context without violating configured import/module boundaries. Zero or multiple legal candidates do not justify an automatic choice. Qualification must not bypass a boundary. Nx and dependency-cruiser are examples of boundary-policy providers, not selected dependencies. When an offered fix may be applied automatically is not settled.
+
+### Proposed global default ownership (U006; not yet adopted)
+
+Michael proposes that an unqualified `[[Some Type]]`, `[[SomeType]]`, or `[[some type]]` name may resolve to the unique corresponding code symbol anywhere in the project, irrespective of its namespace, unless an eligible Markdown `# <term>` definition claims that term. That Markdown definition takes precedence for unqualified references; code references then require qualification. Unqualified and qualified names may otherwise reach the same code symbol. This supplies the subject of U005's unfinished fragment, but is expressly a new proposal, not automatic acceptance of a resolver implementation.
+
+**Provisional A006 recommendation:** use this as a global default-name rule for references, not a requirement for globally unique source-code declarations. Several legitimate code symbols may share a normalized name; in the absence of a Markdown owner, only the ambiguous bare references error and need qualification. Multiple eligible Markdown definitions for the same normalized term remain errors. An explicit qualified code reference bypasses Markdown default ownership but not any applicable boundary policy.
+
+| Eligible Markdown definitions for the normalized name | Distinct indexed code targets | Proposed unqualified resolution |
+| --- | --- | --- |
+| One | Any number | The Markdown term |
+| None | One | That code symbol |
+| None | More than one | Ambiguous reference; qualify it |
+| None | None | Unresolved reference; live-design drift under U002 |
+| More than one | Any number | Duplicate definition error; no fallback winner |
+
+**Interpretation change to make explicit:** the proposed global rule replaces import-local selection for unqualified double-bracket references. Imports would not secretly disambiguate a globally ambiguous bare name or defeat an explicit Markdown owner. Normal source-language imports and name binding are not changed. The earlier U001 contextual rule remains the prior direction until this proposed revision is adopted. Reference location can still determine whether a resolved code target is permitted and how to construct its legal qualification; lookup priority is a separate question.
+
+**A006 normalization proposal:** compare case-folded names after removing spaces and underscores, preserving other punctuation unless separately specified. This makes `Some Type`, `SomeType`, `some type`, and the previously established `some_type` spelling share a lookup key. It is formatting normalization, not fuzzy matching. Apply the same key rule to eligible Markdown names and code default-name candidates. Exact qualified code paths retain language-aware symbol identity and punctuation; distinct symbols that collapse to one default key are ambiguous rather than merged.
+
+**A006 population proposal:** count distinct logical, referenceable project declarations, not every local variable, member short name, or installed library symbol. Members remain available by subreference. Deduplicate several export/import aliases only when the language adapter establishes that they refer to the same logical declaration; similarly named unrelated declarations remain separate. What declarations qualify, external-library participation, and how unavailable/unsupported indexing is represented remain open. The tool must not claim global uniqueness from an incomplete candidate population. This narrows the user's broad wording and is therefore explicitly provisional.
+
+**A006 binding-change proposal:** an added Markdown owner, a new colliding code symbol, a rename, or a removed owner must invalidate affected saved bindings. Do not silently redirect existing code references to a new Markdown term, or silently fall back from a deleted Markdown definition to same-named code. Planned/reviewed work can intentionally accept the new owner or qualify references that must preserve the former target. A delta may approve the transition in a batch; no mandatory human approval for every such change is implied.
+
+The code remains free of required Projector design annotations. Ambiguity should be repaired at references rather than pressuring developers to rename otherwise valid classes to satisfy the plugin. Provisional implementation: cache normalized name-to-owner/candidate membership and reverse reference uses; update the affected name keys when relevant definitions change rather than globally rescanning on each lookup. The cache must watch owner absence and candidate-set membership, not only the currently selected target. No resolver, code export filter, or performance bound is implemented by recording this proposal.
 
 ### Undefined references in ideation versus live designs
 
@@ -242,6 +268,7 @@ These proposals are retained for consideration, not adopted by default. U002's a
 ### P1. Separate term spelling from code-symbol identity
 
 The bracketed reference forms are established in section 3 by U005. The following identity-related proposals remain provisional: Unnamespaced concepts can coexist with actual qualified code-symbol identities: two modules' separate `Result` symbols should not automatically become duplicate conceptual definitions. Do not apply conceptual case folding blindly to language binding. The one-definition rule should ultimately apply to the resolved identity in its declared scope. An explicit-definition/code-symbol collision rule remains needed.
+
 
 ### P2. Distinguish draft vocabulary and broken bindings
 
@@ -454,4 +481,4 @@ Unselected details include term normalization/namespaces/definition scope; symbo
 
 **Assistant reasoning (A005):** one delimiter makes reference recognition uniform; readability and qualification can vary within it. This is a design judgment, not a benchmark claim.
 
-**Unfinished input:** `[[Some Type]] should,` is preserved as an open fragment. No conversion from spaced conceptual names to camel-case code symbols, fuzzy matching, or extra autofix rule has been inferred.
+**U006 continuation, still proposed:** the previously unfinished `[[Some Type]] should,` topic now has a concrete user proposal: a uniquely named code symbol can own an unqualified normalized reference unless an eligible Markdown definition owns that term. The proposed priority, assistant refinements, and explicit conflict with the earlier import-local lookup rule are recorded in section 3. No fuzzy matching is inferred.
