@@ -808,3 +808,209 @@ Remaining consequential seams: prospective-state/acceptance lifecycle versus sto
 ## O009: documentation update preparation
 
 Prepared against v4 head c73e0d65591e3ce0fcd0bf46d94754f119ddeb1b. Exact baseline blobs: spec c2ba890b84518a4795849397fb22b59b74c98c54, capture 2b7ad77c7ee786461448046df4445c537a38a66a. The entire prior capture is retained byte-for-byte. U011 includes the user edit reporting the completed opl-openspec update; A009 is attributed as a new provisional proposal. Both files are prepared for one fast-forward commit; main, V3, the plugin repository, hooks, runtimes and schemas are untouched. Publication is verified separately through the containing commit and ref; no product implementation is authorized by this documentation update.
+
+
+---
+
+## U012: map/kernel reassessment request
+
+Capture mode: verbatim user message; candidate mechanisms are not approvals.
+
+Revisit the outstanding map/kernel concerns from your earlier holes **6–10**, taking the subsequent managed-change proposal into account. Some may already be addressed. Distinguish genuinely unresolved problems from implementation details whose solutions follow from the design we already have.
+
+Treat the mechanisms below as **candidates to evaluate**, not instructions to adopt literally. Reconcile them with the established requirements rather than letting my wording accidentally override a stronger design.
+
+## 1. Observation, coordination, and process lifetime
+
+Would this be a sufficient, relatively simple hosting model?
+
+- Each client launches a thin MCP relay.
+- Those relays connect to an on-demand, machine-local singleton kernel.
+- The kernel serves multiple clients and repositories, with state, coordination, and work isolated by filesystem repository/worktree root.
+- Hook scripts communicate through the same kernel protocol rather than maintaining separate locks, caches, or repair processes.
+
+The goal is to avoid requiring a manually configured background service while preventing duplicate indexing processes and inconsistent state across clients.
+
+Explain what this resolves about observation and liveness, and identify only the remaining consequential gaps. Do not assume that singleton ownership alone proves filesystem freshness or complete hook coverage.
+
+## 2. Missing ownership and newly applicable requirements
+
+I expect the managed workflow to identify missing design or implementation coverage before presenting a change as complete. Unexpected discrepancies should be detected early and surfaced rather than silently rationalized.
+
+Please clarify the distinction between:
+
+- **A detected coverage gap:** we know an artifact or requirement lacks the necessary justification.
+- **A discovery gap:** we have not established whether something newly applicable was missed.
+
+Does our proposed workflow and map adequately address both? Do not assume that a missing relationship necessarily means someone bypassed the workflow; the workflow’s own discovery or planning could be incomplete.
+
+Where deterministic processing cannot resolve a discrepancy, report the specific unresolved decision. Escalate consequential ambiguity with concise, evidence-supported options plus **Other**, grouping related findings rather than asking once per file.
+
+## 3. Granularity and efficiency
+
+Give a concrete, defensible proposal for the map’s indexing, invalidation, and refresh granularity. I do not want “we’ll tune it later” to conceal an architecture that already requires excessive bookkeeping or repeated broad work.
+
+Explain what is stored, what makes it dirty, what a read must validate, and how overlapping changes and requests share work. Make the reasoning strong enough to reject obvious performance traps before implementation, then identify a small set of deterministic tests that would verify those properties.
+
+Every mechanism must justify its compute, I/O, memory, process, and token cost. Prefer a simpler sound design with clear optimization points over speculative fine-grained machinery that risks becoming another source of complexity. Broad recovery work may be necessary, but must not become the normal read path.
+
+## 4. Freshness, discrepancies, and previous-design information
+
+My essential requirement is:
+
+> **A current-state read must not use stale or not-yet-validated data as though it were current.**
+
+After kernel startup or relevant invalidation, reads requiring those facts should wait for the necessary validation/refresh, while unrelated valid reads and editing remain unobstructed. Distinguish a current map that accurately reports a design discrepancy from a map whose observations are themselves stale or unknown.
+
+Also reconcile this with the already-established requirement to identify artifacts justified by a **previous design version** when planning removals or revisions. I do not want to accidentally prohibit the historical comparison needed for clean reconstruction. Explain how revision-bound historical evidence can support that comparison without becoming stale authority about the current implementation.
+
+## Response and recording
+
+Give your recommended resolution, briefly explain its logic, and list only the important holes that remain. Start with any assumptions you need to add or correct; distinguish guarantees from conditions and unverified expectations. Preserve the earlier numbered assumption-reference convention for remaining holes.
+
+Do not introduce another framework merely to handle hypothetical edge cases. The objective remains **sound behavior with aggressively minimal overhead**, integrated with the managed apply lifecycle.
+
+Update the running spec and capture with clear attribution. This is a request for reassessment, not blanket approval of the candidate mechanisms above.
+
+---
+
+## A010: kernel reassessment response and proposed resolution
+
+Capture mode: attributed substantive response, not a verbatim chat transcript.
+
+## 13. Map/kernel reassessment with managed changes (A010, provisional)
+
+### Attribution and guarantees
+
+U012 requests reassessment, not adoption of its hosting candidates or blanket approval of A008/A009. Its explicit requirements are: current-state reads never silently use stale or unvalidated facts; relevant reads wait for validation while unrelated valid reads and editing continue; managed completion catches missing coverage and does not hide discovery uncertainty; consequential ambiguity is grouped into evidence-supported choices plus Other; historical ownership remains usable as revision-bound evidence; every mechanism justifies resource cost. A010/P35-P40 below are the recommended candidate, not implemented or approved mechanics. A007's approved clean-reconstruction/economics foundations remain in force.
+
+The guarantee is refusal to pass unknown or stale information off as current, conditional on a declared observation contract for the supported host and filesystem. This is not a guarantee that arbitrary semantic applicability is decidable or that no noncooperating write can occur after an answer. Operation-count expectations below are falsifiable design targets, not benchmark results.
+
+### Assumptions for this assessment
+
+1. **Qualified observation.** A managed mutation provides acknowledged begin/end boundaries and its actual write set, or the root has a separately qualified change-observation barrier. Missing/unprovable coverage is unknown, not clean. Hooks alone are not assumed complete. This makes the earlier managed-work premise an explicit condition.
+2. **Revision separation.** Accepted meaning, proposed target, observed implementation, and historical evidence have distinct identities. Current reads have an observation boundary; historical reads name an immutable revision. Consequential use revalidates dependencies. This carries forward the managed-change proposal, not its blanket approval.
+3. **Accountable discovery.** A completion claim depends on scoped coverage and applicability evidence, not absence of diagnostics. Clean-reconstruction evidence also addresses structural residue, not behavior tests alone. Unknowns remain explicit and cannot be cleared by merely adding a justification label.
+4. **Two granularities.** Extract changed files; propagate changes through addressable requirements, design contracts/decisions/realizations, referenced symbols, and indexed query populations. Do not persist every AST expression or treat every file as one semantic dependency. This is a concrete new proposal.
+5. **User-local host.** Recommend one on-demand kernel per OS user/security domain, shared by authorized clients and isolated by canonical worktree root. Root partitions have bounded work and short publication transactions; no global parse lock. This refines, rather than literally adopts, the machine-singleton candidate.
+
+### P35. Thin relays and one user-local kernel
+
+Recommend the candidate hosting shape: a client-launched thin MCP relay connects to an on-demand local kernel; CLI/hook clients use the same protocol and never own another index, refresh algorithm, or lock hierarchy. The relay has no parser or persistent map cache. Direct hook calls over an existing connection can avoid process creation where supported; otherwise a small protocol client records batches. Do not start an indexer for every hook or use model calls for bookkeeping.
+
+Use an OS-held process-lifetime ownership lock and local endpoint, scoped to the user's security domain. A winning launcher starts the kernel; competing launchers join it. Validate readiness/protocol version and kernel incarnation. Never steal ownership solely because a PID file is old or a timeout expires. A closing relay does not terminate the kernel used by others. On idle exit or crash, pending requests receive explicit failure/pending status rather than cached answers. An incompatible protocol is a visible upgrade/reconnect condition, not a reason to spawn rival owners over the same cache.
+
+Inside the kernel, isolate roots by canonical filesystem/worktree identity, not remote repository URL or branch name. Symlink aliases of the same actual worktree should not create duplicate owners; different worktrees of one repository remain separate. Root replacement or identity changes require reopening/revalidation. A Windows/WSL/container pair writing the same actual checkout is not automatically two safe independent owners: route it to one qualified owner or declare that sharing unsupported. No elevated machine-wide service or universal cross-environment bridge is proposed.
+
+Recommend one local SQLite database per root in plugin-owned outside-repository storage, with short WAL publication transactions and separate snapshot readers, plus a bounded shared extraction worker pool and fair per-root queues. This avoids coupling unrelated roots through one database writer. Parsing/IO occurs outside publication transactions and off the coordinator's response path. SQLite is a recommended baseline, not an accepted dependency; no custom MVCC engine or distributed lock service is needed. Snapshot isolation is not source freshness.
+
+Watch active roots, retain hot parser/query state within fixed memory/disk limits, and release idle roots. Do not preload every repository on the machine. One process shares lifecycle and code; it does not imply one unbounded map or that a busy root may monopolize all workers. Bound active queries, result size, waiters, background batches, retained source snapshots, and database checkpoint/WAL costs. Structural storage is proportional to inventoried files, selected semantic records, real edges, and bounded cached queries, not all possible artifact/requirement pairs.
+
+This addresses duplicate process ownership, competing refresh writers, most relay lifetime questions, and cross-client coherence by a concrete design. It does not establish complete mutation observation or semantic discovery. One kernel crash can interrupt all clients; persistent partitions and observation recovery handle that without pretending process isolation. Platform lock/IPC implementation and test qualification are engineering work, not a reason for another framework.
+
+### P36. Concrete indexing and refresh granularity
+
+Use four modest groups of records, not four new services:
+
+| Group | Stored state | Invalidation/refresh trigger | Why this granularity |
+| --- | --- | --- | --- |
+| Input manifest | Canonical path/file identity, observed content version/hash, extraction version, pending mutation generation, known additions/deletions | Actual completed file change, possible write, inventory gap, relevant parser/config change | One settled file read/hash/parse can update all extracted records |
+| Semantic records | Requirements; design contract/decision/realization parts; eligible code declarations/members needed for references and ownership; direct typed edges; scoped fingerprints and evidence status | Changed extracted record or a dependency of a claim/check | Addressable decisions and public guarantees propagate separately from unrelated detail |
+| Reverse and discovery indexes | Design-side realization bindings and reverse coverage; incoming edges; normalized name-to-candidate sets; scope/path/export/contract indexes; cached selectors and their population dependencies | Edge/ownership changes, candidate births/deaths, changed selector scope or membership | Find the union of affected consumers without rescanning every design or materializing a Cartesian product |
+| Query/revision records | Bounded cached query results and their dependency/policy versions; observation boundary; accepted/target/working view identity; historical ownership keyed to immutable revisions | Used input/membership/checker changes, view change, lost observation | Reuse current results, share work, and retain prior ownership without confusing it with live observations |
+
+Start with file-level extraction and semantic-record-level invalidation. Tree-sitter incremental edits are an optional optimization only where exact edit ranges and a warm tree are available; ordinary bounded parsing of a changed file is sufficient initially. Code extraction keeps import/export and referenceable-declaration summaries plus needed ownership/binding data, not every token as a persistent graph node. Local bodies may be covered under a coherent owner, but changed conformance evidence still needs its actual body/input dependencies.
+
+A parser may update several records from one file. Unchanged extracted records retain their versions. The parent design does not hash every descendant. Equally, an unchanged type signature does not prove behavior unchanged: a behavior conclusion depending on a modified implementation/check becomes stale even if names and types do not. Hash only validates identity/currentness under the selected profile, never arbitrary semantic equivalence.
+
+Before a managed write, mark the affected input generation pending immediately. Do not walk the entire transitive graph for every edit. Keep a coalesced dirty-input set and defer extraction until a logical batch settles or a relevant read demands it. Refresh each needed settled file version once, compare its records, and traverse the union of changed dependencies once per settled batch. Final code mutations are still a separate planned/reviewed unit, combined per affected file.
+
+Demand jobs are deduplicated by root/view/input generation/extractor basis. Overlapping requests join shared per-file extraction rather than each creating a refresh. Derive narrower query results after their shared inputs publish. One stale input does not discard unrelated valid extraction. A worker's publication is conditional on its captured input/dependency generations and kernel incarnation; completion cannot clear newer dirtiness. Avoid an independent lock, worker, or persistent node per code symbol.
+
+Record new-member dependencies as first-class query inputs. Example: a bare globally unique name depends on the eligible declaration population, not only its previous target. A pending edit elsewhere might introduce a second symbol. Refresh the necessary changed declaration summaries before asserting uniqueness. Exact qualified reads not depending on that population can continue. Similarly, an empty ownership/consumer query watches its bounded population. Do not decide a dirty file is irrelevant merely because it is absent from the old result. Unsupported or unbounded queries are explicit unknowns or deliberately costly operations, not cheap-but-unsound fast paths.
+
+Changes to extraction, name resolution, evidence rules, boundary policy, or population definitions invalidate the records actually governed by them. Reuse identical bytes under identical extractor versions; do not rehash untouched source on every request. Cache result dependency subscriptions or generation summaries so warm queries do not rewalk their entire transitive closure. Cache count and dependency storage are bounded; evicted entries recompute on demand. No exotic per-expression dependency engine is required.
+
+### P37. Current reads, in-flight writes, and historical comparisons
+
+A current read follows this protocol:
+1. Select the root and explicit accepted/target/working view. Establish an observation barrier covering relevant writes completed before the read, plus known in-flight work. The last event received or an old cached watermark is not itself a current barrier.
+2. Ensure the needed discovery/name/membership populations are validated before trusting any saved closure. On startup, validate cached observation continuity; absent reliable continuity, mark the affected population unknown and recover it.
+3. If required scope is pending, join/prioritize its bounded refresh after a settled mutation checkpoint. Other scopes and editing remain free. Do not hold a read lock while an agent edits or thinks, and do not let a map request wait for semantic repair. A writer asking about its own unfinished batch needs an explicit settled checkpoint, not a circular wait for itself.
+4. Read one coherent published snapshot with the necessary input and rule versions validated. Return factual results, extraction limitations, coverage/discovery status, design discrepancies, and expected transition state separately.
+5. Revalidate relied-on versions/target identity before consequential managed use/publication. The response does not authorize relying on it forever. Timeout or unavailable observation yields pending/unavailable, never implicit stale fallback.
+
+Normal managed checks use acknowledged writes and qualified observation, not a recurring full-tree scan. Missing hooks, unknown shell scope, detached writers, watcher loss, startup gaps, external edits, or root changes require the smallest justified recovery. A broad scan can be necessary after an unbounded lost interval or on cold initialization; share it and do not hide it inside every read. Until discovery scope is validated, a local read may proceed only if it genuinely does not depend on that unknown population. Global name uniqueness can require global eligible-inventory validation on a cold start.
+
+A qualified observation mode is a condition of claiming live freshness. Use explicit managed write boundaries plus a supported observer/barrier, or immutable checkpoint input for exact revision-bound operations. Generic asynchronous notifications, quiet debounce time, mtime, or singleton ownership cannot manufacture that condition. If the host cannot establish current working-tree coverage, refuse a live-current claim; an explicitly historical/checkpoint query remains possible but is not silently relabeled current. Concurrent noncooperating writes cannot be made atomic by check-then-read/check-then-write; require isolation/cooperation for that stronger claim.
+
+A current map may correctly report a known missing design justification or unresolved interpretation. Return it as current observations plus discrepancy/unknown status. It is useful for repair planning and does not wait until all product defects are fixed. Stale observations, unparsed relevant source, and unknown extraction coverage cannot satisfy requests for validated current facts. This distinguishes factual currentness from design conformance and from semantic-discovery assurance.
+
+Historical ownership is an explicit revision-bound read: 'design D at revision R justified these artifacts under these bindings.' Preserve last accepted and relevant prior candidate-target design inputs, footprints, and source revision identities needed by active changes. Use ordinary Git/candidate checkpoints or an explicit durable revision record for irrecoverable authored transition inputs; a disposable map cannot be their sole surviving copy. Rebuild derived historic footprints on demand from those inputs. Pin active comparison state and bound remaining cache retention rather than retaining every old full map indefinitely.
+
+Planning removals combines the prior footprint, new target support, and freshly validated current artifacts/consumers. Old support identifies what to reconsider; it neither proves a referenced artifact still exists unchanged nor grants permission to delete shared code. Historical references use their historical resolution context. A missing old target today is a comparison result, not a reason to corrupt historical meaning. Cache loss must not erase the basis for withdrawing obsolete implementation. No new full repository event store or second authored authority is implied.
+
+### P38. Coverage and discovery are separate completion obligations
+
+A **detected coverage gap** is a known current artifact or applicable requirement missing required ownership/realization/evidence. It can arise inside the managed workflow; do not blame a bypass by default. A **discovery gap** is uncertainty about whether the necessary artifact/requirement population and applicability were examined. It is not automatically a proved violation or a proved absence.
+
+At apply planning, compare declared changes with independently observed input/declaration inventories and both old/new design footprints. On each settled batch, account for actual additions/modifications/removals instead of observing only planned write paths. A changed design binding must not be its own sole definition of the artifacts that exist. Reconcile new requirement criteria and changed concept/contract/query populations; activate affected scope and cross-cutting concerns from indexes. Deterministic selectors/rules can establish completeness only for their declared, fully observed populations.
+
+For prose-only or insufficiently formalized applicability, assign one explicit discovery obligation to the relevant change/concern scope, not one record per requirement-by-artifact pair. Record what was examined, the scope/exclusion rationale, important dependencies, and unresolved questions in existing plan/design evidence. An affected concern review may expand that scope. It is bounded judgment, not proof that arbitrary natural-language implications are exhaustive. Do not claim semantic completeness from name matching, typechecking, an empty error list, or an agent saying done.
+
+Before coherent completion, require no unaccounted implementation changes, coverage for known applicable obligations, current required evidence, and no material unresolved discovery obligations under the selected policy. The workflow already provides the point at which to enforce this; a new verification ceremony for every file is unnecessary. Planned transition exceptions must be resolved rather than laundered into final acceptance. No requirement weakening or automatic design manufacture just to make a check green.
+
+If deterministic processing cannot settle an issue, report its smallest unresolved decision with supporting observations and consequences. Group related findings by cause/revision. Offer evidence-supported choices plus Other, not a generic menu for each file. Example: 'These replay events now reach assessment. Should that path be excluded because only player-origin events count, or is intentional generated-event assessment a proposed requirement/design change? Other.' Show only alternatives actually plausible in the specific case. Escalate pivotal intent/implementation choices according to existing criteria; resolved mechanical work need not interrupt the user.
+
+Thus managed apply and the map adequately place and support coverage gates, but do not themselves supply a universal discovery oracle. Designing the coverage policy and testing semantic misses remains a substantive frontier. The same applies to deciding whether a new implementation is free of unjustified historical structure.
+
+### P39. Cost constraints and deterministic verification
+
+The proposed warm-path cost follows distinct changed source bytes, changed semantic records, necessary indexed dependencies/populations, requested output, and required evidence. It is not universally constant or sublinear: a genuine global constraint, startup inventory, or a globally scoped uniqueness query can require broad necessary work. Do not lower correctness to preserve a slogan.
+
+Bookkeeping stores known events/generations and real relationships, not speculative every-to-every links. A settled warm query with no relevant changes performs no source reading/hashing/parsing and no model call; it still pays necessary IPC, observation-barrier, small status checks and result serialization costs. Query-dependency validation must not reread every transitive source. Event ingestion itself costs work even when downstream computations coalesce.
+
+Use bounded parallel extraction only when justified; one coordinator response loop and short per-root transactions are enough initially. Content reuse and coalescing pay before AST micro-optimization, background precomputation, or more workers. Parsing, index publication, cache validation, and routine map reads use zero model calls. Targeted semantic/evidence work occurs in the managed plan. Required upstream broad validation is still counted and must not be duplicated by another Projector pass.
+
+Five deterministic test groups, with synthetic interleavings and instrumented counters:
+
+| Group | Required discriminating cases |
+| --- | --- |
+| Coalescing and warm reuse | 100 related writes followed by 32 readers after one settled batch share one required final-file extraction; intermediate states are not demanded. Repeated settled reads do zero source IO/hash/parse/model work. Genuinely unaffected reads return while another scope is pending. Global population-dependent reads are not mislabeled unaffected. |
+| Ownership and race isolation | Simultaneous relay startups select one kernel; one relay closing does not kill others; two roots do not share write queues/data; crash/restart fails pending reads explicitly; old-incarnation or stale-generation workers cannot publish or clear newer dirtiness. Paused incomplete batches do not deadlock reads used to plan their own repair. |
+| Discovery and freshness | Add a colliding name, a member to an empty selector, an unbound artifact, and a broadened requirement scope. Pending discovery is processed before negative/unique conclusions. Lost notifications, unsupported extraction, read failures and startup gaps never appear clean. Reordered multi-file writes cannot mix target generations. |
+| Completion and semantic status | A current map returns a known design discrepancy without running repair. Missing coverage and unresolved applicability block completion claims even when boxes are checked. Group same-cause findings into one decision. Model-free fixtures exercise gate mechanics, not semantic judgment quality. |
+| Historical reconstruction and retention | Removing/revising a design still exposes its old partial/shared footprint; current artifact checks use current facts. Deleting disposable cache reconstructs needed history from pinned inputs. Old evidence cannot satisfy current read validation. Active history is protected; inactive AST/query/WAL retention obeys budgets. |
+
+Measure parse/hash/read bytes and counts, partitions and edges visited, IPC/process starts, publication count, queued/waiting work, memory/disk retention and startup/recovery costs. Test scaling with added unrelated files after initialization and with overlapping versus distinct changes. These reject structural performance traps before empirical latency tuning. They do not prove real-world overhead, semantic discovery, or clean-reconstruction benefit; focused held-out change scenarios and measured supported-host tests are still required.
+
+### P40. What remains of earlier holes 6-10
+
+Earlier numbers refer to A008's response, not the six older A007 holes. The recommended candidate reduces the open architectural list as follows:
+
+- **Old 8, Granularity economics:** given a concrete bounded design in P36/P39, no longer an unspecified architecture hole. File extraction, part invalidation, real indexes, capped demand queries and counters make the tradeoff inspectable. Implementation must pass tests; this is not a proven performance result.
+- **Old 9, Liveness/publication:** addressed at the design level by one user-local owner, fair root queues, shared refreshes, short conditional publication, explicit pending failures and resumable managed changes. Exact lock/IPC/timeout APIs are implementation choices subject to tests. Host coverage remains in hole 6, not relabeled solved.
+- **Old 6, Observation gap:** reduced to the concrete qualified-observer/managed-writer seam. Singleton ownership does not settle it.
+- **Old 7, Semantic gap:** workflow gates and discrepancy UX are accounted for; sufficient scope/applicability evidence still needs definition and testing.
+- **Old 10, Cleanliness/stopping:** historical footprints provide the needed inputs and managed apply the place to act; the acceptance bar is still substantive.
+
+Remaining holes, using assumptions 1-5 above:
+
+6. **Observation contract.** Demonstrate exactly how supported writers/hosts establish a current boundary, detect lost intervals and avoid bypass races without a routine sweep. Unsupported environments get explicit limited/checkpoint operation, not false currentness. [1, 2, 5]
+7. **Discovery sufficiency.** Establish an evidence bar that catches newly applicable semantic obligations and unintended implementation, including the workflow's own misses, without a requirement-by-artifact audit. [2, 3, 4]
+10. **Clean endpoint.** Establish the structural residue/simplification stopping criteria that reject old scaffolding while preserving still-justified shared work, without full independent regeneration on every change. [2, 3, 4]
+
+These are unresolved evidence/contract questions, not demonstrated impossibilities. Stable IDs, cache tables, ownership-lock mechanics, batching queues and deadline handling are not each another conceptual dealbreaker. Implementation errors can still invalidate the proposed solution. Exact design-part grammar and the stock workflow adapter remain separate previously acknowledged work; this reassessment does not declare them finished.
+
+### Source grounding and limits
+
+Read the actual running spec at a6eb5946d4dbd4eecb51af48156a15a5620bf004, including A008/P19-P25 and A009/P26-P34. This reassessment preserves their provisional status and approved foundations. It refines P20's prior per-root-coordinator suggestion into the preferred shared-host/root-partition candidate; that is a recommendation, not a user-approved migration. No code, database, daemon, plugin workflow, or runtime test is implemented here.
+
+Primary sources checked for implementation premises: MCP's stdio transport launches a subprocess per client, which supports separating a thin relay from shared ownership; https://modelcontextprotocol.io/specification/2025-11-25/basic/transports . SQLite WAL supports snapshot readers with writes, but snapshots do not validate filesystem observation; https://www.sqlite.org/isolation.html . Codex MCP hooks use existing connections and do not block on missing servers/tool errors; some paths can bypass tool hooks; https://developers.openai.com/codex/hooks (redirects to https://learn.chatgpt.com/docs/hooks). Watchman's synchronization-cookie documentation contains platform-specific limitations, so it is a precedent rather than a universal freshness proof; https://facebook.github.io/watchman/docs/cookies . These are checked source claims, not required dependencies or claims of tested V4 behavior.
+
+
+---
+
+## O010: repository documentation update
+
+Prepared from verified v4 head a6eb5946d4dbd4eecb51af48156a15a5620bf004. Both files were fetched at that revision and matched Git blobs 9cb4d3264c976e68626621a3798ebff6009275c6 and 9e465064d67b747dc0ac38f075f9273f1aba2995. The complete 110043-byte published capture remains an unchanged prefix. U012 is verbatim; A010 is an attributed substantive response capture. The snapshot advances to 0.10 and replaces its stale outstanding-hole summary while preserving prior material and approval distinctions. Publish only the two initial-design Markdown files in one non-forced fast-forward commit. The containing commit and ref verification establish actual publication; this note is not runtime evidence. No local checkout, main, V3, plugin source, or operating kernel is changed.
