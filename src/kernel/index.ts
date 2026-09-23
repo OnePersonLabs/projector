@@ -372,7 +372,8 @@ export class Kernel {
     const indexPath = path.join(session.directory, `git-index-${randomUUID()}`);
     const command = async (args: string[]) => {
       session.counters.subprocesses++;
-      const { stdout } = await execute('git', ['-C', session.root, ...args], { env: { ...process.env, GIT_INDEX_FILE: indexPath }, windowsHide: true, timeout: 30_000 }); return stdout.trim();
+      const options = process.platform === 'win32' ? ['-c', 'core.longPaths=true'] : [];
+      const { stdout } = await execute('git', [...options, '-C', session.root, ...args], { env: { ...process.env, GIT_INDEX_FILE: indexPath }, windowsHide: true, timeout: 30_000 }); return stdout.trim();
     };
     let revision: string;
     try {

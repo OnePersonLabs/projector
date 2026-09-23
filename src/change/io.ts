@@ -60,7 +60,11 @@ export async function run(command: string, args: string[], cwd: string, options:
   if (result.code !== 0 && !options.allowFailure) throw new Error(`${command} ${args.join(' ')} failed (${result.code}): ${result.stderr || result.stdout}`);
   return result;
 }
-export async function git(root: string, args: string[], options: Parameters<typeof run>[3] = {}): Promise<string> { return (await run('git', args, root, options)).stdout.trim(); }
+export async function runGit(args: string[], root: string, options: Parameters<typeof run>[3] = {}): Promise<ProcessResult> {
+  const invocation = process.platform === 'win32' ? ['-c', 'core.longPaths=true', ...args] : args;
+  return run('git', invocation, root, options);
+}
+export async function git(root: string, args: string[], options: Parameters<typeof run>[3] = {}): Promise<string> { return (await runGit(args, root, options)).stdout.trim(); }
 export async function canonicalRoot(root: string): Promise<string> {
   const canonical = await realpath(root);
   const top = await realpath(await git(canonical, ['rev-parse', '--show-toplevel']));

@@ -18,8 +18,8 @@ runtime copies and two SDK clients. It also injects publication failures and
 worker exits. No test calls a model. Fake observation events and explicit
 barriers determine race ordering; elapsed time is not the correctness oracle.
 
-The final production-source check passed compilation, ESLint and **52/52
-tests**; the test phase took **71.95 seconds**. Strict OpenSpec validation covers
+The final production-source check passed compilation, ESLint and **53/53
+tests**; the test phase took **73.60 seconds**. Strict OpenSpec validation covers
 the three live nested specification documents. The 65 references in the five
 durable concern designs resolve against the actual repository file inventory.
 
@@ -28,7 +28,7 @@ durable concern designs resolve against the actual repository file inventory.
 | Authored references | Unicode normalization, Markdown ownership, legal code duplicates, aliases and re-exports, nested parts, boundary decisions, rebinding, malformed and overlapping deltas |
 | Independent coverage | Selector population changes, hidden declarations, new exports beside covered symbols, actual changed-artifact inventory, prior contribution and replacement residue |
 | Shared observation | One endpoint owner, independent roots, 100 edits/32 readers, generation races, interrupted batches, unknown observation intervals, identity changes and exact historical queries |
-| Recovery | Worker exit and replacement, missing/corrupt disposable database, reconstruction from Git targets, archive/publication faults and repeated finish |
+| Recovery | Worker exit and replacement, missing/corrupt disposable database, reconstruction from Git targets, archive/publication faults, Windows archive paths longer than 260 characters and repeated finish |
 | Change lifecycle | Nested target projection, task reconciliation, partial target revision, preserved same-file contributions, missing/stale executed evidence, prerequisites and candidate-only publication |
 | Installed behavior | Fresh external installation, two MCP clients, native Windows paths, managed mutation/read interleaving and writer exclusion during lifecycle mutations |
 
@@ -38,6 +38,14 @@ invalidation, root admission release, narrow realization coverage, replaced
 symbol residue and publication overlapping an acknowledged writer. The
 regressions exercise the production interfaces. Review attribution inside
 deterministic fixtures is a simulated input, not independent review evidence.
+
+An actual Windows archive-stage `Filename too long` failure led to per-invocation
+`core.longPaths=true` for internal Git operations, without changing user Git
+configuration. The sealed candidate, whose target was already archived, resumed
+and published after that correction. A regression covers an archive file path
+longer than 260 characters. Git still rejects some extremely long worktree
+metadata roots with `$GIT_DIR too big`; that observed limitation requires a
+shorter repository root.
 
 ## Operation costs and fixed limits
 
@@ -81,6 +89,10 @@ artifact discovery, merge/archive behavior and exact recovery.
 marketplace installation and successful native discovery of all 15 tools.
 [Evaluation instructions](../evaluation/README.md) describe the coupled world,
 held-out oracle and its five seeded-defect controls.
+[Hosted clean-evolution results](clean-evolution.md) and their
+[machine-readable evidence](evidence/clean-evolution.json) record three passing
+final pairs and six accepted candidates after two targeted repairs, across eight
+native participant runs.
 
 Unsupported CommonJS export inference, destructured declarations, inherited or
 project-reference TypeScript configurations and unadapted dependency policies

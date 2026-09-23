@@ -6,7 +6,8 @@ import path from 'node:path';
 
 const execute = promisify(execFile);
 export async function git(root: string, args: string[]): Promise<string> {
-  const { stdout } = await execute('git', ['-C', root, ...args], { windowsHide: true, maxBuffer: 64 * 1024 * 1024, timeout: 30_000 });
+  const options = process.platform === 'win32' ? ['-c', 'core.longPaths=true'] : [];
+  const { stdout } = await execute('git', [...options, '-C', root, ...args], { windowsHide: true, maxBuffer: 64 * 1024 * 1024, timeout: 30_000 });
   return stdout;
 }
 export const hash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');

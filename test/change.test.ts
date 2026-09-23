@@ -159,3 +159,17 @@ test('T6: explicit whole-file realization covers a new internal declaration unde
   const plan = await service.validatePlan({ ...input, ...disposition });
   assert.equal(plan.valid, true, JSON.stringify(plan.obligations));
 });
+
+test('T7: deep native paths recover an archived change and publish without global Git configuration', async () => {
+  const input = await fixture('deep-'.repeat(18));
+  const service = new ChangeService({ fault: point => { if (point === 'after-archive') throw new Error('deep archive interruption'); } });
+  const prepared = await service.prepareChange(input);
+  await planAndEvidence(service, prepared);
+  await assert.rejects(service.finishChange(input), /deep archive interruption/);
+  const completed = await new ChangeService().finishChange(input);
+  assert.equal(completed.complete, true, JSON.stringify(completed.obligations));
+  assert.ok(`${completed.archivePath}/implementation-state.json`.length > 260);
+  assert.equal(gitFixture(input.root, 'rev-parse', 'main'), input.baseline);
+  assert.equal(gitFixture(String(prepared.candidateRoot), 'status', '--porcelain'), '');
+  assert.equal((await new ChangeService().finishChange(input)).publication, completed.publication);
+});

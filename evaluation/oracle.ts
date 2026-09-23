@@ -38,6 +38,7 @@ const received=[];const off=r.subscribe('late',e=>{received.push({...e});e.id='l
 assert.deepEqual(received.map(e=>e.id),['alpha','beta']);r.play('gamma');off();r.play('delta');assert.deepEqual(received.map(e=>e.id),['alpha','beta','gamma']);
 assert.deepEqual(r.events().map(e=>e.id),['alpha','beta','gamma','delta']);
 const {subscribe}=await import(pathToFileURL(path.join(process.cwd(),'src/recorder.js')));const recording=subscribe(r);assert.deepEqual(recording.events.map(e=>e.id),['alpha','beta','gamma','delta']);r.play('epsilon',{preview:true});assert.equal(recording.events.at(-1).id,'epsilon');recording.close();r.play('zeta');assert.equal(recording.events.length,5);
+const nested=createRuntime(),copies=[];nested.subscribe('mutator',event=>{event.id.value='listener-mutation';});nested.subscribe('observer',event=>copies.push(event));const id={value:'original'};const returned=nested.play(id);id.value='caller-mutation';returned.id.value='return-mutation';assert.equal(nested.events()[0].id.value,'original');assert.equal(copies[0].id.value,'original');
 console.log(JSON.stringify({events:r.events(),evidence:r.evidence('proof'),recorded:recording.events}));`;
 
 export async function evaluateTrial(root: string, trajectory: Trajectory, options: EvaluateOptions = {}): Promise<Evaluation> {
@@ -48,7 +49,7 @@ export async function evaluateTrial(root: string, trajectory: Trajectory, option
       const original = await realpath(root);
       const config = JSON.parse(await readFile(path.join(root, 'trial.json'), 'utf8')) as { trajectory: string; mode: string };
       if (config.trajectory !== trajectory) throw new Error('Trajectory identity differs from the assigned trial');
-      const state = JSON.parse(await readFile(path.join(root, 'openspec/changes/clean-evolution/implementation-state.json'), 'utf8')) as { candidateRoot: string; targetId: string; plan?: { targetId: string }; evidence: { passed: boolean; command: string; outputHash: string }[] };
+      const state = JSON.parse(await readFile(path.join(root, 'openspec/changes/clean-evolution/implementation-state.json'), 'utf8')) as { baseline: string; candidateRoot: string; targetId: string; plan?: { targetId: string }; evidence: { passed: boolean; command: string; outputHash: string }[] };
       if (!path.resolve(state.candidateRoot).startsWith(path.resolve(original) + path.sep + '.worktrees' + path.sep)) throw new Error('Candidate is outside the allocated trial worktree');
       if (!state.plan || state.plan.targetId !== state.targetId) fail('projector-plan', 'No current Projector plan supports the final target.');
       if (!state.evidence.some(evidence => evidence.passed && evidence.command && evidence.outputHash)) fail('projector-evidence', 'The real Projector candidate lacks executed final evidence.');
@@ -62,6 +63,11 @@ export async function evaluateTrial(root: string, trajectory: Trajectory, option
         if (ref !== stage.checkpoint) fail('staged-history', 'The verified intermediate Git checkpoint is missing or different.');
         const source = (await execute('git', ['show', `${stage.checkpoint}:src/index.js`], { cwd: root, windowsHide: true })).stdout;
         if (!source.includes('previewCount')) fail('staged-history', 'The intermediate checkpoint does not contain the implemented preview audit contribution.');
+        if (trajectory === 'preview') {
+          const previous = (await execute('git', ['ls-tree', '-r', '--name-only', state.baseline, '--', 'src/preview-strategy.js'], { cwd: root, windowsHide: true })).stdout.trim();
+          if (previous) fail('staged-addition', 'The preview strategy already existed at baseline; this trajectory must implement its addition before withdrawal.');
+          await execute('git', ['cat-file', '-e', `${stage.checkpoint}:src/preview-strategy.js`], { cwd: root, windowsHide: true });
+        }
       }
       root = state.candidateRoot; checks.push('real Projector target, plan, executed evidence and staged checkpoint');
     } catch (error) { fail('projector-lifecycle', String(error)); return { passed: false, findings, checks }; }

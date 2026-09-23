@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { parse, stringify } from 'yaml';
 import { applyDesignDelta, extractFile, parseDesignDelta } from '../documents/index.ts';
-import { digest, exists, files, git, run, safePath, textFile } from './io.ts';
+import { digest, exists, files, git, run, runGit, safePath, textFile } from './io.ts';
 import type { ChangeServiceOptions, Support } from './types.ts';
 
 const schemaRoot = fileURLToPath(new URL('../../openspec/schemas/projector/', import.meta.url));
@@ -58,7 +58,7 @@ export class OpenSpecAdapter {
       const originalPaths = (await git(root, ['ls-tree', '-r', '--name-only', baseline, '--', 'openspec/specs', 'openspec/designs', 'openspec/terms', 'openspec/config.yaml'])).split('\n').filter(Boolean);
       for (const name of originalPaths) {
         const to = safePath(temporary, name); await mkdir(path.dirname(to), { recursive: true });
-        await writeFile(to, (await run('git', ['show', `${baseline}:${name}`], root)).stdout);
+        await writeFile(to, (await runGit(['show', `${baseline}:${name}`], root)).stdout);
       }
       await this.copyInputs(root, temporary, change);
       const status = await this.invoke(temporary, ['status', '--change', change, '--json']);
@@ -119,7 +119,7 @@ export class OpenSpecAdapter {
     const result: Support[] = [];
     const paths = (await git(root, ['ls-tree', '-r', '--name-only', revision, '--', 'openspec/designs'])).split('\n').filter(name => name.endsWith('design.md'));
     for (const name of paths) {
-      const record = extractFile(name, (await run('git', ['show', `${revision}:${name}`], root)).stdout);
+      const record = extractFile(name, (await runGit(['show', `${revision}:${name}`], root)).stdout);
       for (const unit of record.units.filter(unit => unit.kind === 'part')) {
         const fields = unit.data?.fields as Record<string, string[]> | undefined;
         for (const value of fields?.realizes ?? []) for (const reference of value.matchAll(/\[\[(code:([^\]#]+)(?:#[^\]]*)?)\]\]/g)) {
