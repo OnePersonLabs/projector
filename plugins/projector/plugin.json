@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "projector",
+  "version": "4.0.0",
+  "description": "Managed requirements, nested designs, exact revision queries and justified change reconciliation."
+}
