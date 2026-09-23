@@ -12,7 +12,9 @@ test('coupled evaluator accepts authored controls across three pairs; these are 
     for (const trajectory of ['preview', 'shared', 'ownership'] as const) {
       const evolved = await createTrial(path.join(directory, `${trajectory}-evolved`), trajectory, 'evolved');
       const direct = await createTrial(path.join(directory, `${trajectory}-direct`), trajectory, 'direct');
-      assert.match(evolved.brief, /previously|originally|partial/);
+      const strategy = path.join(evolved.root, 'src/preview-strategy.js');
+      if (trajectory === 'preview') await assert.rejects(readFile(strategy), { code: 'ENOENT' }, 'the add/remove trajectory must start before the strategy exists');
+      else assert.match(await readFile(strategy, 'utf8'), /publish\(/, 'other trajectories start from functional historical ownership');
       assert.equal((await evaluateTrial(direct.root, trajectory, { authoredControl: true })).passed, false, 'unfinished starting world must fail');
       await installAuthoredControl(evolved.root); await installAuthoredControl(direct.root);
       const result = await comparePair(evolved.root, direct.root, trajectory, { authoredControl: true });

@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import type { ChangeService } from '../src/change/index.ts';
 
 export const sha = (source: string) => createHash('sha256').update(source).digest('hex');
-export const gitFixture = (root: string, ...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+export const gitFixture = (root: string, ...args: string[]) => execFileSync('git', ['-c', 'core.longPaths=true', ...args], { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
 export async function put(root: string, name: string, value: string): Promise<void> { const file = path.join(root, name); await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, value); }
 export const liveDesign = `---
 projectorDesign: 1
@@ -35,8 +35,8 @@ Requires: [[spec:audio/preview#Immediate replay]]
 Realizes: [[code:src/player.js#replay]]
 Evidence: A controlled replay checks the restart count and preserves caller-owned event storage.
 `;
-export async function fixture(): Promise<{ root: string; baseline: string; change: string }> {
-  const root = await mkdtemp(path.join(tmpdir(), 'projector-change-'));
+export async function fixture(suffix = ''): Promise<{ root: string; baseline: string; change: string }> {
+  const root = await mkdtemp(path.join(tmpdir(), `projector-change-${suffix}`));
   await put(root, '.gitignore', '.worktrees/\n');
   await put(root, 'package.json', '{"name":"playback-fixture","private":true,"type":"module"}\n');
   await put(root, 'src/player.js', 'export function replay() { return 2; }\nexport function retainEvent() { return "user"; }\n');

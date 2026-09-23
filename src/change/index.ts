@@ -4,7 +4,7 @@ import path from 'node:path';
 import { extractFile, parseMarkdown, resolveReference, selectUnits } from '../documents/index.ts';
 import type { FileRecord } from '../documents/index.ts';
 import { OpenSpecAdapter } from './openspec.ts';
-import { atomicJson, canonicalRoot, digest, exclusive, exists, files, git, run, safePath, textFile } from './io.ts';
+import { atomicJson, canonicalRoot, digest, exclusive, exists, files, git, run, runGit, safePath, textFile } from './io.ts';
 import type { Applicability, ChangeServiceOptions, ChangeState, Contribution, Evidence, JsonRequest, Plan, Review, Support } from './types.ts';
 export type * from './types.ts';
 
@@ -61,8 +61,8 @@ export class ChangeService {
   }
   private async save(state: ChangeState): Promise<void> { await atomicJson(safePath(state.root, stateRelative(state.change)), state); }
   private async fingerprint(state: ChangeState): Promise<{ basis: string; changes: string[] }> {
-    const changed = (await run('git', ['diff', '--name-only', '-z', state.baseline, '--'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
-    const added = (await run('git', ['ls-files', '--others', '--exclude-standard', '-z'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
+    const changed = (await runGit(['diff', '--name-only', '-z', state.baseline, '--'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
+    const added = (await runGit(['ls-files', '--others', '--exclude-standard', '-z'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
     const names = [...new Set([...changed, ...added])].filter(name => name !== stateRelative(state.change)).sort();
     const content: string[] = [];
     for (const name of names) {
@@ -76,8 +76,8 @@ export class ChangeService {
     return { basis: digest(JSON.stringify({ target: state.targetId, baseline: state.baseline, plan, content })), changes: names };
   }
   private async implementationSeal(state: ChangeState): Promise<string> {
-    const changed = (await run('git', ['diff', '--name-only', '-z', state.baseline, '--'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
-    const added = (await run('git', ['ls-files', '--others', '--exclude-standard', '-z'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
+    const changed = (await runGit(['diff', '--name-only', '-z', state.baseline, '--'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
+    const added = (await runGit(['ls-files', '--others', '--exclude-standard', '-z'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
     const entries: string[] = [];
     for (const name of [...new Set([...changed, ...added])].sort()) {
       if (artifact(state.change, name) || (state.archivePath && name.startsWith(path.relative(state.candidateRoot, state.archivePath).replaceAll('\\', '/') + '/'))) continue;
@@ -119,7 +119,7 @@ export class ChangeService {
       await git(root, ['-c', 'core.autocrlf=false', 'worktree', 'add', '-b', branch, candidateRoot, baseline]);
       // Revision design hashes name Git bytes. Checkout EOL filters are not part of that identity.
       const authorityPaths = (await git(root, ['ls-tree', '-r', '--name-only', baseline, '--', 'openspec/specs', 'openspec/designs', 'openspec/terms'])).split('\n').filter(Boolean);
-      for (const name of authorityPaths) await writeFile(safePath(candidateRoot, name), (await run('git', ['show', `${baseline}:${name}`], root)).stdout);
+      for (const name of authorityPaths) await writeFile(safePath(candidateRoot, name), (await runGit(['show', `${baseline}:${name}`], root)).stdout);
       await this.adapter.copyInputs(root, candidateRoot, change);
       const gitDir = await git(candidateRoot, ['rev-parse', '--absolute-git-dir']);
       await atomicJson(path.join(gitDir, 'projector-candidate.json'), { version: 1, candidate: candidateId, root: await realpath(candidateRoot), baseline, writerContract: 'acknowledged-batches' });
@@ -228,7 +228,7 @@ export class ChangeService {
       const key = `${state.root}\0${state.targetId}\0${name}`;
       let record = this.extractionCache.get(key);
       if (!record) {
-        record = extractFile(name, (await run('git', ['show', `${state.targetId}:${name}`], state.root)).stdout);
+        record = extractFile(name, (await runGit(['show', `${state.targetId}:${name}`], state.root)).stdout);
         this.extractionCache.set(key, record);
       }
       records.push(record);
@@ -241,7 +241,7 @@ export class ChangeService {
         }
       }
     }
-    const inventory = (await run('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
+    const inventory = (await runGit(['ls-files', '--cached', '--others', '--exclude-standard', '-z'], state.candidateRoot)).stdout.split('\0').filter(Boolean);
     for (const name of [...new Set(inventory)]) {
       if (name.startsWith('openspec/specs/') || name.startsWith('openspec/designs/') || name.startsWith('openspec/changes/') || name.startsWith('openspec/schemas/')) continue;
       const location = safePath(state.candidateRoot, name);
@@ -302,14 +302,14 @@ export class ChangeService {
     }
     for (const name of changes.filter(item => /^openspec\/(specs|designs)\//.test(item))) obligations.push(`Live authority was edited inside the candidate; express this change in its target delta: ${name}`);
     const implementations = changes.filter(name => !artifact(state.change, name));
-    const baselinePaths = implementations.length ? new Set((await run('git', ['ls-tree', '-r', '--name-only', '-z', state.baseline, '--', ...implementations], state.root)).stdout.split('\0').filter(Boolean)) : new Set<string>();
+    const baselinePaths = implementations.length ? new Set((await runGit(['ls-tree', '-r', '--name-only', '-z', state.baseline, '--', ...implementations], state.root)).stdout.split('\0').filter(Boolean)) : new Set<string>();
     for (const name of implementations) {
       const removed = !await exists(safePath(state.candidateRoot, name));
       if (!state.plan.contributions.some(item => item.path === name && (removed ? item.action === 'remove' || item.action === 'replace' : item.action !== 'remove' && support.some(target => matches(target, item))))) obligations.push(`Changed artifact has no current contribution disposition: ${name}`);
       const current = declared.records.find(record => record.path === name);
       if (!removed && current?.language === 'typescript') {
         if (current.diagnostics.length) obligations.push(`Changed semantic unit inventory is unknown: ${name}`);
-        const previous = baselinePaths.has(name) ? extractFile(name, (await run('git', ['show', `${state.baseline}:${name}`], state.root)).stdout).units : [];
+        const previous = baselinePaths.has(name) ? extractFile(name, (await runGit(['show', `${state.baseline}:${name}`], state.root)).stdout).units : [];
         const currentSupport = support.filter(item => item.path === name && state.plan!.contributions.some(contribution => contribution.action !== 'remove' && matches(item, contribution)));
         for (const unit of current.units.filter(item => item.kind === 'symbol')) {
           const original = previous.find(item => item.id === unit.id);
@@ -336,7 +336,7 @@ export class ChangeService {
       else {
         const prior = JSON.parse(await textFile(location)) as ChangeState;
         if (prior.phase !== 'published' || !prior.publication) obligations.push(`Blocking prerequisite is not published: ${prerequisite}`);
-        else if ((await run('git', ['merge-base', '--is-ancestor', prior.publication, state.baseline], state.root, { allowFailure: true })).code !== 0) obligations.push(`Baseline does not include published prerequisite: ${prerequisite}`);
+        else if ((await runGit(['merge-base', '--is-ancestor', prior.publication, state.baseline], state.root, { allowFailure: true })).code !== 0) obligations.push(`Baseline does not include published prerequisite: ${prerequisite}`);
       }
     }
     if (completing) {
@@ -389,7 +389,7 @@ export class ChangeService {
       .concat((await files(safePath(state.candidateRoot, 'openspec/designs'))).map(name => `openspec/designs/${name}`)).sort();
     if (JSON.stringify([...targetPaths].sort()) !== JSON.stringify(actualPaths)) throw new Error('Materialized target document inventory mismatch');
     for (const name of targetPaths) {
-      const expected = (await run('git', ['show', `${state.targetId}:${name}`], state.root)).stdout;
+      const expected = (await runGit(['show', `${state.targetId}:${name}`], state.root)).stdout;
       if (expected !== await textFile(safePath(state.candidateRoot, name))) throw new Error(`Materialized target differs from reviewed bytes: ${name}`);
     }
   }
@@ -399,8 +399,8 @@ export class ChangeService {
     for (const name of [...new Set([...before, ...after])]) {
       const destination = safePath(state.candidateRoot, name);
       const current = await exists(destination) ? await textFile(destination) : undefined;
-      const old = before.includes(name) ? (await run('git', ['show', `${state.baseline}:${name}`], state.root)).stdout : undefined;
-      const target = after.includes(name) ? (await run('git', ['show', `${state.targetId}:${name}`], state.root)).stdout : undefined;
+      const old = before.includes(name) ? (await runGit(['show', `${state.baseline}:${name}`], state.root)).stdout : undefined;
+      const target = after.includes(name) ? (await runGit(['show', `${state.targetId}:${name}`], state.root)).stdout : undefined;
       if (current !== old && current !== target) throw new Error(`Design changed outside the sealed target: ${name}`);
       if (current === target) continue;
       if (target === undefined) await unlink(destination);

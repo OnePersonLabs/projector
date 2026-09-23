@@ -35,7 +35,7 @@ Run `npm run build`, followed by `node --test test/host.test.ts` and
 | SQLite worker | WAL enabled, committed row persisted, synchronous million-row query executed in worker while coordinator progressed |
 | Real Git linked worktree | Canonical aliases agree; linked candidate has distinct Git directory and shared common Git directory |
 
-The SQLite sample took **76.23 ms**, allowed **65,995** coordinator event-loop
+The SQLite sample took **78.23 ms**, allowed **70,903** coordinator event-loop
 turns, and left an **8,192-byte** database. Timing and event-loop counts are
 observations, not thresholds or comparative performance claims.
 
@@ -43,7 +43,7 @@ The installed test copied the compiled runtime and plugin to a fresh directory
 outside the source checkout and installed locked production dependencies with
 `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`. Its installation cache
 was local to that disposable installation and removed afterward. The observed
-installation was **55,729,450 bytes**, completed in **3.57 seconds**, and needed
+installation was **55,731,133 bytes**, completed in **3.35 seconds**, and needed
 no native addon compilation because SQLite is bundled with the pinned Node
 runtime. Dependency downloads and the cold installation are real costs.
 
@@ -81,7 +81,7 @@ The barrier and serialization costs remain counted. This installed observation
 test is separate from full lifecycle and hosted clean-evolution acceptance.
 
 Run `node --test test/host-lifecycle.test.ts` for the installed lifecycle. It
-passed in **17.88 seconds** through two actual MCP clients: nested spec/design
+passed in **16.83 seconds** through two actual MCP clients: nested spec/design
 target preparation, missing-applicability blocking, a reviewed plan, acknowledged
 implementation edits, target revision preserving valid code, missing-evidence
 blocking, a real controlled playback check, archive and candidate-branch
@@ -105,9 +105,26 @@ invocation-specific variable, retains authentication/proxy/user configuration,
 and still supplies `--ignore-scripts` explicitly. This behavior was checked
 against the installed npm `resolve-allow-scripts.js` implementation.
 
-The complete `npm run check` run passed build, lint, and **51 tests** in this
-profile. The test phase took **71.34 seconds**; both installation suites ran
+The complete `npm run check` run passed build, lint, and **53/53 tests** in this
+profile. The test phase took **73.60 seconds**; both installation suites ran
 inside that npm invocation.
+
+An actual Windows archive-stage `Filename too long` result exposed a Git path
+limit after the candidate had been sealed and its target archived. Internal Git
+operations now receive `core.longPaths=true` per invocation on Windows; no user
+Git configuration is changed. The same sealed, archived candidate resumed and
+published after the correction. The regression exercises interruption and
+recovery with an archive file path longer than 260 characters.
+
+This correction does not remove every Git path limit. Extremely long worktree
+metadata roots were observed to fail with `$GIT_DIR too big`; use a shorter
+repository root for that failure.
+
+The separate [hosted clean-evolution results](clean-evolution.md) and
+[machine-readable evidence](evidence/clean-evolution.json) contain three passing
+final pairs and six accepted candidates after two targeted repairs, across eight
+native participant runs. Those participant results supply the independent
+semantic evidence that the deterministic installed lifecycle fixture does not.
 
 ## Host and permission findings
 

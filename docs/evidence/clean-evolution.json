@@ -1,0 +1,1073 @@
+{
+  "version": 1,
+  "verifiedAt": "2026-09-23T01:21:45.970Z",
+  "projectorVersion": "4.0.0",
+  "profile": {
+    "os": "Windows 10.0.26200",
+    "filesystem": "NTFS",
+    "node": "24.19.0",
+    "git": "2.55.0.windows.5",
+    "openspec": "1.13.1",
+    "codex": "0.155.1"
+  },
+  "execution": {
+    "host": "native Codex delegation",
+    "initialParticipantRuns": 6,
+    "affectedCaseRepairs": 2,
+    "totalParticipantRuns": 8,
+    "acceptedCandidates": 6,
+    "participantCeilingMinutes": 10,
+    "model": "inherited configured model; identifier not exposed per run",
+    "tokens": null,
+    "monetaryCost": null,
+    "usageUnavailableReason": "Native delegation does not expose per-run token counts, cash cost or an enforceable token cap.",
+    "deterministicRuntimeModelCalls": 0,
+    "participantOracleAccess": false,
+    "authoredControlsCountAsParticipantResults": false
+  },
+  "localArtifactRoot": "C:/Users/zethj/AppData/Local/Projector/evaluation-20260922",
+  "installedRuntimeTreeSha256": "afd3e62ecb47ac96bdbd413702298ad867aafde7734deb4611dd51025cd20666",
+  "diagnostics": [
+    {
+      "name": "preview-evolved",
+      "correction": "The initial fixture already had the strategy. The replacement starts without it, implements and verifies its addition, then withdraws it.",
+      "accepted": false,
+      "findingCodes": [
+        "staged-addition"
+      ]
+    },
+    {
+      "name": "preview-direct",
+      "correction": "A concrete nested identity mutation exposed shallow copies. The oracle and authored good control were strengthened; only the affected direct trial was repeated.",
+      "accepted": false,
+      "findingCodes": [
+        "behavior"
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "trajectory": "preview",
+      "result": {
+        "equivalent": true,
+        "evolved": {
+          "passed": true,
+          "findings": [],
+          "checks": [
+            "real Projector target, plan, executed evidence and staged checkpoint",
+            "independent source population and current ownership",
+            "held-out playback/provenance/evidence/late-consumer behavior",
+            "settled content and write no-op",
+            "changed inputs invalidate no-op basis"
+          ],
+          "behavior": {
+            "events": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              },
+              {
+                "id": "zeta",
+                "sequence": 6,
+                "provenance": "live"
+              }
+            ],
+            "evidence": "two",
+            "recorded": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              }
+            ]
+          }
+        },
+        "direct": {
+          "passed": true,
+          "findings": [],
+          "checks": [
+            "real Projector target, plan, executed evidence and staged checkpoint",
+            "independent source population and current ownership",
+            "held-out playback/provenance/evidence/late-consumer behavior",
+            "settled content and write no-op",
+            "changed inputs invalidate no-op basis"
+          ],
+          "behavior": {
+            "events": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              },
+              {
+                "id": "zeta",
+                "sequence": 6,
+                "provenance": "live"
+              }
+            ],
+            "evidence": "two",
+            "recorded": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              }
+            ]
+          }
+        }
+      },
+      "candidates": [
+        {
+          "name": "preview-evolved-addition",
+          "mode": "evolved",
+          "baseline": "1bf079b44c1acae14196bf6088b3eaa8a29a833f",
+          "target": "bc6bfcbd8cac7b6c48f61a347baa504ae0e0bf07",
+          "candidateBranch": "refs/heads/projector/clean-evolution-64191ffa",
+          "publication": "f4089c8d91a503e6167b8ea4e15996a2f6001fae",
+          "mainUnchanged": true,
+          "candidateClean": true,
+          "archiveVerified": true,
+          "repeatedFinish": "no-op",
+          "review": {
+            "basis": "e54733f5bac17a42254d355289bbfc55acde8d4dfc3f2f7d54c722a52169f562",
+            "reviewer": "Native root agent, separate from corrected trial_preview_evolved participant",
+            "findings": [],
+            "examined": [
+              "Baseline lacks strategy; intermediate Git diff adds functional strategy and retained history",
+              "Intermediate source actually routes preview publication through added strategy and executed count checks pass",
+              "Exact final target, current source, contribution removal and baseline diff",
+              "Held-out nested mutation isolation, provenance, replay, unsubscribe and changed consumer inputs"
+            ],
+            "alternative": "A single ordinary event store with independent subscriber cursors is sufficient for the final requirements and is the chosen result. The temporary strategy and history module are removed after a real verified addition. Retention remains owned by the runtime for current playback and recorder needs, with no compatibility layer or retired counter."
+          },
+          "evidence": [
+            {
+              "id": "bdf7724a-fef0-4d78-a2d2-5abeef9e37d7",
+              "basis": "e54733f5bac17a42254d355289bbfc55acde8d4dfc3f2f7d54c722a52169f562",
+              "command": "node",
+              "scope": [
+                "src/index.js",
+                "src/recorder.js",
+                "src/preview-strategy.js",
+                "src/retained-events.js",
+                "scripts/reconcile.js",
+                "test/playback.test.js",
+                "test/ownership.test.js",
+                "requirements.json",
+                "consumers.json",
+                "design/decisions.json",
+                "design/reconciliation.md",
+                "ownership.json",
+                "EVALUATION.md"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "e977046cc3fead1b2053a952e604cfe82b3cd3b2c15b943af385c446641a86e7",
+              "durationMs": 302.19429999999994,
+              "recordedAt": "2026-09-23T01:05:36.353Z"
+            },
+            {
+              "id": "bd072512-66fd-499d-bde1-00ce8a0f0a15",
+              "basis": "e54733f5bac17a42254d355289bbfc55acde8d4dfc3f2f7d54c722a52169f562",
+              "command": "C:\\Program Files\\nodejs\\node.exe",
+              "scope": [
+                "EVALUATION.md",
+                "consumers.json",
+                "design/decisions.json",
+                "design/reconciliation.md",
+                "openspec/changes/clean-evolution/.openspec.yaml",
+                "openspec/changes/clean-evolution/designs/playback/events/design.md",
+                "openspec/changes/clean-evolution/proposal.md",
+                "openspec/changes/clean-evolution/specs/playback/events/spec.md",
+                "openspec/changes/clean-evolution/tasks.md",
+                "openspec/config.yaml",
+                "openspec/schemas/projector/schema.yaml",
+                "openspec/schemas/projector/templates/design.md",
+                "openspec/schemas/projector/templates/proposal.md",
+                "openspec/schemas/projector/templates/spec.md",
+                "openspec/schemas/projector/templates/tasks.md",
+                "ownership.json",
+                "scripts/reconcile.js",
+                "src/index.js",
+                "src/recorder.js",
+                "test/ownership.test.js",
+                "test/playback.test.js"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "7b924c0d832b4c15ab2c13d6e47f61a25db549868a563ac6edaf43bb3677ecf2",
+              "durationMs": 995.6577000000001,
+              "recordedAt": "2026-09-23T01:09:12.961Z"
+            }
+          ],
+          "intermediate": {
+            "checkpoint": "62755f78d162285984723aee62ba81b376781c11",
+            "priorTarget": "702c38bfc01e4d8a4f1bf42ef2e612f7ca729239",
+            "nextTarget": "0e4a478d701000136d8701a007a4835e4aedac10",
+            "passed": true,
+            "outputHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "recordedAt": "2026-09-23T01:00:30.948Z"
+          },
+          "applicationWithoutProjectorEnvironment": {
+            "tests": 6,
+            "failed": 0,
+            "outputSha256": "70ec44a6bddf3a35a7a9dd933683d1b62f1e6452484ea5c04d29707bc6a41c70"
+          }
+        },
+        {
+          "name": "preview-direct-isolation",
+          "mode": "direct",
+          "baseline": "0931c34f11722f3edda3d29533d3eddc3e6f408d",
+          "target": "e1c98d03dba1ee151f2499cb0455fcea6b038390",
+          "candidateBranch": "refs/heads/projector/clean-evolution-ec48a0c1",
+          "publication": "bf59504823a032ce5e2938445bcbbe84316b7ba3",
+          "mainUnchanged": true,
+          "candidateClean": true,
+          "archiveVerified": true,
+          "repeatedFinish": "no-op",
+          "review": {
+            "basis": "278009fa1cd99d193105a9ed6510589a405b280a3023d7fce90416d47c5f6034",
+            "reviewer": "Native root agent, separate from trial_preview_direct_repair participant",
+            "findings": [],
+            "examined": [
+              "Exact target, baseline diff and current runtime/recorder/source ownership",
+              "Structured cloning on caller input, returned values, event snapshots, replay and each live delivery",
+              "Seven executed participant tests and independent nested mutation counterexample that failed the original candidate",
+              "Held-out provenance, evidence replacement, unsubscribe and changed consumer reconciliation"
+            ],
+            "alternative": "A separate strategy or event-bus framework has no current responsibility. The single retained journal and independent subscriber cursors are sufficient. Native structured cloning implements the required nested isolation directly without a custom cloning subsystem, and no withdrawn preview path survives."
+          },
+          "evidence": [
+            {
+              "id": "ead20dc9-a120-4e7d-8330-6d650ff01e25",
+              "basis": "278009fa1cd99d193105a9ed6510589a405b280a3023d7fce90416d47c5f6034",
+              "command": "C:/Program Files/nodejs/node.exe",
+              "scope": [
+                "src/index.js",
+                "src/recorder.js",
+                "test/playback.test.js",
+                "scripts/reconcile.js",
+                "consumers.json",
+                "design/decisions.json",
+                "design/reconciliation.md",
+                "ownership.json",
+                "EVALUATION.md"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "06f0ea4405cc6206d8ea0481aa7d359cb87834bd486602361cfafabae5d9065a",
+              "durationMs": 411.6557,
+              "recordedAt": "2026-09-23T01:14:39.653Z"
+            },
+            {
+              "id": "2970e8ea-f838-4449-be0b-b2200b669fcc",
+              "basis": "278009fa1cd99d193105a9ed6510589a405b280a3023d7fce90416d47c5f6034",
+              "command": "C:\\Program Files\\nodejs\\node.exe",
+              "scope": [
+                "EVALUATION.md",
+                "consumers.json",
+                "design/decisions.json",
+                "design/reconciliation.md",
+                "openspec/changes/clean-evolution/.openspec.yaml",
+                "openspec/changes/clean-evolution/designs/playback/events/design.md",
+                "openspec/changes/clean-evolution/proposal.md",
+                "openspec/changes/clean-evolution/specs/playback/events/spec.md",
+                "openspec/changes/clean-evolution/tasks.md",
+                "openspec/config.yaml",
+                "openspec/schemas/projector/schema.yaml",
+                "openspec/schemas/projector/templates/design.md",
+                "openspec/schemas/projector/templates/proposal.md",
+                "openspec/schemas/projector/templates/spec.md",
+                "openspec/schemas/projector/templates/tasks.md",
+                "ownership.json",
+                "scripts/reconcile.js",
+                "src/index.js",
+                "src/recorder.js",
+                "test/playback.test.js"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "908bd3d49c693bff8c8c0fb31bef508fe8edaf4b80a12aa3de60635a359b2e9d",
+              "durationMs": 598.1771000000001,
+              "recordedAt": "2026-09-23T01:16:26.165Z"
+            }
+          ],
+          "intermediate": null,
+          "applicationWithoutProjectorEnvironment": {
+            "tests": 7,
+            "failed": 0,
+            "outputSha256": "bc02f5c63f969639d501db5b63738876249cb0e1bef19ebad5aa77b25f9fc6af"
+          }
+        }
+      ]
+    },
+    {
+      "trajectory": "shared",
+      "result": {
+        "equivalent": true,
+        "evolved": {
+          "passed": true,
+          "findings": [],
+          "checks": [
+            "real Projector target, plan, executed evidence and staged checkpoint",
+            "independent source population and current ownership",
+            "held-out playback/provenance/evidence/late-consumer behavior",
+            "settled content and write no-op",
+            "changed inputs invalidate no-op basis"
+          ],
+          "behavior": {
+            "events": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              },
+              {
+                "id": "zeta",
+                "sequence": 6,
+                "provenance": "live"
+              }
+            ],
+            "evidence": "two",
+            "recorded": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              }
+            ]
+          }
+        },
+        "direct": {
+          "passed": true,
+          "findings": [],
+          "checks": [
+            "real Projector target, plan, executed evidence and staged checkpoint",
+            "independent source population and current ownership",
+            "held-out playback/provenance/evidence/late-consumer behavior",
+            "settled content and write no-op",
+            "changed inputs invalidate no-op basis"
+          ],
+          "behavior": {
+            "events": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              },
+              {
+                "id": "zeta",
+                "sequence": 6,
+                "provenance": "live"
+              }
+            ],
+            "evidence": "two",
+            "recorded": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              }
+            ]
+          }
+        }
+      },
+      "candidates": [
+        {
+          "name": "shared-evolved",
+          "mode": "evolved",
+          "baseline": "6e5646590c68bbf5e0708312b3e9350d1c7ed3dd",
+          "target": "8fab6d607c8ca63ee4b905f9f9aef39a428242cf",
+          "candidateBranch": "refs/heads/projector/clean-evolution-3744fbfb",
+          "publication": "39c6b04d6a914c57e3c80394710a9baf15adfdbc",
+          "mainUnchanged": true,
+          "candidateClean": true,
+          "archiveVerified": true,
+          "repeatedFinish": "no-op",
+          "review": {
+            "basis": "7c9c03b8f5510fc1f9043bd1981a62440ba57d121aae9a194c4593e8323d6811",
+            "reviewer": "Native root agent, separate from trial_shared_evolved participant",
+            "findings": [],
+            "examined": [
+              "Exact final target and baseline diff including deleted preview strategy",
+              "Runtime facade, retained event owner, recorder, current requirement reasons, reconciliation and executed tests",
+              "Held-out replay, mutation isolation, evidence replacement, unsubscribe and changed consumer input checks"
+            ],
+            "alternative": "Inlining retained storage and subscriptions into createRuntime is credible and used by the direct case. This evolved candidate keeps a focused retained-event owner responsible for history, replay and evidence while the facade assigns sequence/provenance. That surviving responsibility is exercised by the new recorder; the former preview strategy and counter are removed. The extra module does not preserve an obsolete execution route."
+          },
+          "evidence": [
+            {
+              "id": "c9970856-6629-40d5-b38d-44c8bdd62a4a",
+              "basis": "7c9c03b8f5510fc1f9043bd1981a62440ba57d121aae9a194c4593e8323d6811",
+              "command": "node",
+              "scope": [
+                "src/index.js",
+                "src/retained-events.js",
+                "src/recorder.js",
+                "src/preview-strategy.js",
+                "consumers.json",
+                "design/decisions.json",
+                "design/reconciliation.md",
+                "design/previous-contribution.md",
+                "scripts/reconcile.js",
+                "scripts/verify.js",
+                "test/playback.test.js",
+                "test/reconcile.test.js",
+                "ownership.json",
+                "EVALUATION.md"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "b4cfce45797aacd24e837beaf5f8c35c6ec8604b0ac6566c320ec2c9e133f79d",
+              "durationMs": 831.3384000000001,
+              "recordedAt": "2026-09-23T00:58:33.378Z"
+            },
+            {
+              "id": "6fd5f4a4-91b5-43e5-a353-eb58e6f35e10",
+              "basis": "7c9c03b8f5510fc1f9043bd1981a62440ba57d121aae9a194c4593e8323d6811",
+              "command": "C:\\Program Files\\nodejs\\node.exe",
+              "scope": [
+                "EVALUATION.md",
+                "consumers.json",
+                "design/decisions.json",
+                "design/previous-contribution.md",
+                "design/reconciliation.md",
+                "openspec/changes/clean-evolution/.openspec.yaml",
+                "openspec/changes/clean-evolution/designs/playback/events/design.md",
+                "openspec/changes/clean-evolution/proposal.md",
+                "openspec/changes/clean-evolution/specs/playback/events/spec.md",
+                "openspec/changes/clean-evolution/tasks.md",
+                "openspec/config.yaml",
+                "openspec/schemas/projector/schema.yaml",
+                "openspec/schemas/projector/templates/design.md",
+                "openspec/schemas/projector/templates/proposal.md",
+                "openspec/schemas/projector/templates/spec.md",
+                "openspec/schemas/projector/templates/tasks.md",
+                "ownership.json",
+                "scripts/reconcile.js",
+                "scripts/verify.js",
+                "src/index.js",
+                "src/preview-strategy.js",
+                "src/recorder.js",
+                "src/retained-events.js",
+                "test/playback.test.js",
+                "test/reconcile.test.js"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "da09d785ddafc7c95668394e269eaece20236dd9cd5445492c8932354afd9eee",
+              "durationMs": 977.2915,
+              "recordedAt": "2026-09-23T01:02:08.987Z"
+            }
+          ],
+          "intermediate": {
+            "checkpoint": "181a89e433dbef5f96409611444d8bb1df471809",
+            "priorTarget": "6512ac7d019a5acd6ab744681b0250e1df20dc2c",
+            "nextTarget": "a8f7b72a8e049c799153cc2613a64cfbb1eab50c",
+            "passed": true,
+            "outputHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "recordedAt": "2026-09-23T00:51:47.712Z"
+          },
+          "applicationWithoutProjectorEnvironment": {
+            "tests": 5,
+            "failed": 0,
+            "outputSha256": "69efcafef3394e5da26edde0afa975f7848229c3e1592dbcb422cdd4743c44ae"
+          }
+        },
+        {
+          "name": "shared-direct",
+          "mode": "direct",
+          "baseline": "c3258b3ba14f9c717638149178707a9b09c617aa",
+          "target": "f40d909e6278f3a60362616632ebd8fea835e974",
+          "candidateBranch": "refs/heads/projector/clean-evolution-d3003a33",
+          "publication": "70eb402ba6219020b0b636a24e04d9e9d0bd4f2e",
+          "mainUnchanged": true,
+          "candidateClean": true,
+          "archiveVerified": true,
+          "repeatedFinish": "no-op",
+          "review": {
+            "basis": "81e39d619d16f1b0bc08918df68c42f21cc6f31b7da653b03899343572b5d205",
+            "reviewer": "Native root agent, separate from trial_shared_direct participant",
+            "findings": [],
+            "examined": [
+              "Exact final target and baseline diff",
+              "Runtime, recorder, ordinary ownership records, reconcile and verification decision",
+              "Executed tests and held-out mutation/replay/unsubscribe/changed-consumer counterexamples",
+              "Parent marked two already verified tasks complete; implementation, target meaning and prior review findings unchanged."
+            ],
+            "alternative": "A separate retained-event class is a valid alternative when maintaining a distinct storage concern; here a single closure implements the same current responsibilities directly. Subscriber cursors and an active/delivering guard serve exact replay and reentrancy. No preview-only strategy, dependency or unexplained compatibility surface remains."
+          },
+          "evidence": [
+            {
+              "id": "99b2fb4a-a01b-4bae-aa88-e1fdac5f0735",
+              "basis": "81e39d619d16f1b0bc08918df68c42f21cc6f31b7da653b03899343572b5d205",
+              "command": "C:\\Program Files\\nodejs\\node.exe",
+              "scope": [
+                "EVALUATION.md",
+                "consumers.json",
+                "design/decisions.json",
+                "design/reconciliation.md",
+                "openspec/changes/clean-evolution/.openspec.yaml",
+                "openspec/changes/clean-evolution/designs/playback/events/design.md",
+                "openspec/changes/clean-evolution/proposal.md",
+                "openspec/changes/clean-evolution/specs/playback/events/spec.md",
+                "openspec/changes/clean-evolution/tasks.md",
+                "openspec/config.yaml",
+                "openspec/schemas/projector/schema.yaml",
+                "openspec/schemas/projector/templates/design.md",
+                "openspec/schemas/projector/templates/proposal.md",
+                "openspec/schemas/projector/templates/spec.md",
+                "openspec/schemas/projector/templates/tasks.md",
+                "ownership.json",
+                "scripts/reconcile.js",
+                "src/index.js",
+                "src/recorder.js",
+                "test/playback.test.js",
+                "test/reconcile.test.js"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "e2021a8e8d65cf3044d66c69ade1b567ae40d4d4d216cb3f167d9eb309ad31cc",
+              "durationMs": 808.4742,
+              "recordedAt": "2026-09-23T01:03:01.271Z"
+            }
+          ],
+          "intermediate": null,
+          "applicationWithoutProjectorEnvironment": {
+            "tests": 5,
+            "failed": 0,
+            "outputSha256": "2fe009965125663d7d31cb0e692b9613cd35e7592d8001af9684cc585c33875e"
+          }
+        }
+      ]
+    },
+    {
+      "trajectory": "ownership",
+      "result": {
+        "equivalent": true,
+        "evolved": {
+          "passed": true,
+          "findings": [],
+          "checks": [
+            "real Projector target, plan, executed evidence and staged checkpoint",
+            "independent source population and current ownership",
+            "held-out playback/provenance/evidence/late-consumer behavior",
+            "settled content and write no-op",
+            "changed inputs invalidate no-op basis"
+          ],
+          "behavior": {
+            "events": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              },
+              {
+                "id": "zeta",
+                "sequence": 6,
+                "provenance": "live"
+              }
+            ],
+            "evidence": "two",
+            "recorded": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              }
+            ]
+          }
+        },
+        "direct": {
+          "passed": true,
+          "findings": [],
+          "checks": [
+            "real Projector target, plan, executed evidence and staged checkpoint",
+            "independent source population and current ownership",
+            "held-out playback/provenance/evidence/late-consumer behavior",
+            "settled content and write no-op",
+            "changed inputs invalidate no-op basis"
+          ],
+          "behavior": {
+            "events": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              },
+              {
+                "id": "zeta",
+                "sequence": 6,
+                "provenance": "live"
+              }
+            ],
+            "evidence": "two",
+            "recorded": [
+              {
+                "id": "alpha",
+                "sequence": 1,
+                "provenance": "live"
+              },
+              {
+                "id": "beta",
+                "sequence": 2,
+                "provenance": "preview"
+              },
+              {
+                "id": "gamma",
+                "sequence": 3,
+                "provenance": "live"
+              },
+              {
+                "id": "delta",
+                "sequence": 4,
+                "provenance": "live"
+              },
+              {
+                "id": "epsilon",
+                "sequence": 5,
+                "provenance": "preview"
+              }
+            ]
+          }
+        }
+      },
+      "candidates": [
+        {
+          "name": "ownership-evolved",
+          "mode": "evolved",
+          "baseline": "551948b2b38258e85f59662f89bacfb7f4b74747",
+          "target": "7001e3576765555613affed0d45d6ce74d64d118",
+          "candidateBranch": "refs/heads/projector/clean-evolution-40220513",
+          "publication": "0c2d4d0959dc559f22c2eb12dd47cec0f8ab1799",
+          "mainUnchanged": true,
+          "candidateClean": true,
+          "archiveVerified": true,
+          "repeatedFinish": "no-op",
+          "review": {
+            "basis": "b828b9f332b54577d29637e0be59e3551a0759ff56b056bead33f562fcaf5902",
+            "reviewer": "Native root agent, separate from trial_ownership_evolved participant",
+            "findings": [],
+            "examined": [
+              "Exact target, source and baseline diff",
+              "Intermediate checkpoint, removed strategy/history files, migrated EventStore ownership and all actual imports/consumers",
+              "Held-out nested mutation, replay, provenance, retained evidence and changed-consumer checks"
+            ],
+            "alternative": "The general event owner could be inlined into the runtime as in the direct case. A focused EventStore is also coherent: it owns sequencing, retained records, evidence and delivery, while the facade maps preview to provenance. Current decisions and the recorder justify that responsibility. The old history owner and strategy do not coexist, and no compatibility route remains."
+          },
+          "evidence": [
+            {
+              "id": "a234edb3-5681-414a-9f7c-245740b4f3bb",
+              "basis": "b828b9f332b54577d29637e0be59e3551a0759ff56b056bead33f562fcaf5902",
+              "command": "node",
+              "scope": [
+                "src/index.js",
+                "src/event-store.js",
+                "src/recorder.js",
+                "src/preview-history.js",
+                "src/preview-strategy.js",
+                "scripts/reconcile.js",
+                "test/playback.test.js",
+                "test/reconcile.test.js"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "70c35d37cdcf18734e716508533cc86f979990e9605dcf001b77e8b031aec410",
+              "durationMs": 303.6799,
+              "recordedAt": "2026-09-23T01:07:26.943Z"
+            },
+            {
+              "id": "3b91e3a4-d9a1-41de-b05e-1ab9e10def80",
+              "basis": "b828b9f332b54577d29637e0be59e3551a0759ff56b056bead33f562fcaf5902",
+              "command": "node",
+              "scope": [
+                "src/index.js",
+                "src/preview-strategy.js",
+                "src/preview-history.js",
+                "src/event-store.js",
+                "src/recorder.js",
+                "consumers.json",
+                "design/decisions.json",
+                "design/previous-contribution.md",
+                "design/reconciliation.md",
+                "scripts/reconcile.js",
+                "ownership.json",
+                "test/playback.test.js",
+                "test/reconcile.test.js",
+                "EVALUATION.md",
+                "requirements.json"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "7e31f1a9a434b0067f506c6a295230c152e96eae97431273c88744bb50d0be98",
+              "durationMs": 125.7337,
+              "recordedAt": "2026-09-23T01:08:16.367Z"
+            },
+            {
+              "id": "cdd9bfdf-3de0-4c7c-8f7c-3e7aa46c8e71",
+              "basis": "b828b9f332b54577d29637e0be59e3551a0759ff56b056bead33f562fcaf5902",
+              "command": "C:\\Program Files\\nodejs\\node.exe",
+              "scope": [
+                "EVALUATION.md",
+                "consumers.json",
+                "design/decisions.json",
+                "design/previous-contribution.md",
+                "design/reconciliation.md",
+                "openspec/changes/clean-evolution/.openspec.yaml",
+                "openspec/changes/clean-evolution/designs/playback/events/design.md",
+                "openspec/changes/clean-evolution/proposal.md",
+                "openspec/changes/clean-evolution/specs/playback/events/spec.md",
+                "openspec/changes/clean-evolution/tasks.md",
+                "openspec/config.yaml",
+                "openspec/schemas/projector/schema.yaml",
+                "openspec/schemas/projector/templates/design.md",
+                "openspec/schemas/projector/templates/proposal.md",
+                "openspec/schemas/projector/templates/spec.md",
+                "openspec/schemas/projector/templates/tasks.md",
+                "ownership.json",
+                "scripts/reconcile.js",
+                "src/event-store.js",
+                "src/index.js",
+                "src/preview-history.js",
+                "src/preview-strategy.js",
+                "src/recorder.js",
+                "test/playback.test.js",
+                "test/reconcile.test.js"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "7c9f62ccce972e609e8566bb193a02abced1fac307dcda2bcef6b806e25d8de2",
+              "durationMs": 933.2464,
+              "recordedAt": "2026-09-23T01:16:30.753Z"
+            }
+          ],
+          "intermediate": {
+            "checkpoint": "c5dedf4bf251c1e8e3abd01ea69307a7c68b37f6",
+            "priorTarget": "f64e06c58b70b0f9a9783224fa0019e63ae4aa59",
+            "nextTarget": "2e68b62bf4de6adc6c6a3af073ff653ce3f9d768",
+            "passed": true,
+            "outputHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "recordedAt": "2026-09-23T01:00:43.696Z"
+          },
+          "applicationWithoutProjectorEnvironment": {
+            "tests": 5,
+            "failed": 0,
+            "outputSha256": "bd6483cc9011e22baf429d4739733d865d437b83306a555b15107b896c101392"
+          }
+        },
+        {
+          "name": "ownership-direct",
+          "mode": "direct",
+          "baseline": "66d0c5ce8538ab6b5f0d839ebedfef517cee15d9",
+          "target": "ac8a903cc0439b987647c5cd8f436a223f998713",
+          "candidateBranch": "refs/heads/projector/clean-evolution-d65e4491",
+          "publication": "46bc7562db4e7550cc232bab5af9b4660132edfc",
+          "mainUnchanged": true,
+          "candidateClean": true,
+          "archiveVerified": true,
+          "repeatedFinish": "no-op",
+          "review": {
+            "basis": "ca71ed179773ae4a14f56bd57d8f132442b554cbc66fd13ed5483d2c9f79d635",
+            "reviewer": "Native root agent, separate from trial_ownership_direct participant",
+            "findings": [],
+            "examined": [
+              "Exact target, source, ordinary decisions and baseline diff",
+              "Reconcile behavior and actual source/consumer population",
+              "Executed tests and held-out nested mutation, late replay, reentrancy, unsubscribe and changed-input cases"
+            ],
+            "alternative": "A separate EventStore could isolate a storage concern, but this direct implementation has one compact owner and no distinct caller requiring an additional public class. Its subscriber cursors and explicit error reporting have current delivery responsibilities. No missing current concern or retired structure was found in the bounded contract."
+          },
+          "evidence": [
+            {
+              "id": "ac1b644b-aaac-4298-91c1-ba427c7356e7",
+              "basis": "ca71ed179773ae4a14f56bd57d8f132442b554cbc66fd13ed5483d2c9f79d635",
+              "command": "node",
+              "scope": [
+                "src/index.js",
+                "src/recorder.js",
+                "test/playback.test.js",
+                "test/reconcile.test.js",
+                "scripts/reconcile.js",
+                "design/decisions.json",
+                "consumers.json",
+                "requirements.json",
+                "ownership.json",
+                "design/reconciliation.md",
+                "EVALUATION.md"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "188214a7dc4c0a180d1a248a46b30397e1d0990f5dd0c00e9beb723631c49ee9",
+              "durationMs": 447.0538,
+              "recordedAt": "2026-09-23T01:07:43.934Z"
+            },
+            {
+              "id": "4c310612-4ca8-4d45-a912-9056fb579c11",
+              "basis": "ca71ed179773ae4a14f56bd57d8f132442b554cbc66fd13ed5483d2c9f79d635",
+              "command": "C:\\Program Files\\nodejs\\node.exe",
+              "scope": [
+                "EVALUATION.md",
+                "consumers.json",
+                "design/decisions.json",
+                "design/reconciliation.md",
+                "openspec/changes/clean-evolution/.openspec.yaml",
+                "openspec/changes/clean-evolution/designs/playback/events/design.md",
+                "openspec/changes/clean-evolution/proposal.md",
+                "openspec/changes/clean-evolution/specs/playback/events/spec.md",
+                "openspec/changes/clean-evolution/tasks.md",
+                "openspec/config.yaml",
+                "openspec/schemas/projector/schema.yaml",
+                "openspec/schemas/projector/templates/design.md",
+                "openspec/schemas/projector/templates/proposal.md",
+                "openspec/schemas/projector/templates/spec.md",
+                "openspec/schemas/projector/templates/tasks.md",
+                "ownership.json",
+                "scripts/reconcile.js",
+                "src/index.js",
+                "src/recorder.js",
+                "test/playback.test.js",
+                "test/reconcile.test.js"
+              ],
+              "passed": true,
+              "exitCode": 0,
+              "outputHash": "9bee48bf087f9d843aea52c502980ae8726d3649149bca2319c43f9e716b76fc",
+              "durationMs": 608.7476999999999,
+              "recordedAt": "2026-09-23T01:16:35.076Z"
+            }
+          ],
+          "intermediate": null,
+          "applicationWithoutProjectorEnvironment": {
+            "tests": 5,
+            "failed": 0,
+            "outputSha256": "a07aa9977895936279ab4c0d2fe97fb30cbdc84df9fcecba9d4ac3b372cf2552"
+          }
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "A bounded coupled evaluation world does not prove exhaustive semantic correctness, globally minimal architecture, or general economic superiority.",
+    "Review attribution is an observed separate root-agent review, not cryptographic proof of independence."
+  ]
+}

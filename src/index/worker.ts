@@ -54,8 +54,9 @@ async function revisionBytes(root: string, revision: string, counters: Counters)
   }
   if (blobs.length > LIMITS.files) throw new Error('Revision file population exceeds configured budget');
   counters.subprocesses++;
+  const platformOptions = process.platform === 'win32' ? ['-c', 'core.longPaths=true'] : [];
   const output = await new Promise<Buffer>((resolve, reject) => {
-    const process = spawn('git', ['-C', root, 'cat-file', '--batch'], { windowsHide: true });
+    const process = spawn('git', [...platformOptions, '-C', root, 'cat-file', '--batch'], { windowsHide: true });
     const chunks: Buffer[] = []; let bytes = 0; let stderr = '';
     process.stdout.on('data', (chunk: Buffer) => { bytes += chunk.length; if (bytes > LIMITS.snapshotBytes * 2) { process.kill(); reject(new Error('Git snapshot byte budget exceeded')); } else chunks.push(chunk); });
     process.stderr.on('data', chunk => { stderr += String(chunk); });

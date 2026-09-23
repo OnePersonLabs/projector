@@ -12,10 +12,10 @@ export const expectedCode: Record<Seed, string> = {
 const implementation = `export function createRuntime() {
  const records = [], retained = new Map(), subscribers = new Map(); let serial = 0;
  return {
-  play(id, options = {}) { const event = {id, sequence: ++serial, provenance: options.preview ? 'preview' : 'live'}; records.push(event); for(const callback of subscribers.values()) callback({...event}); return {...event}; },
-  events() { return records.map(event=>({...event})); },
+  play(id, options = {}) { const event = structuredClone({id, sequence: ++serial, provenance: options.preview ? 'preview' : 'live'}); records.push(event); for(const callback of subscribers.values()) callback(structuredClone(event)); return structuredClone(event); },
+  events() { return structuredClone(records); },
   retain(id, text) { retained.set(id,text); }, evidence(id) { return retained.get(id) ?? null; },
-  subscribe(name, callback) { const token=Symbol(name); subscribers.set(token,callback); for(const event of records) callback({...event}); return ()=>subscribers.delete(token); }
+  subscribe(name, callback) { const token=Symbol(name); subscribers.set(token,callback); for(const event of records) callback(structuredClone(event)); return ()=>subscribers.delete(token); }
  };
 }
 `;
