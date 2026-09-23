@@ -1,0 +1,38 @@
+{
+  "name": "@onepersonlabs/projector",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Revision-aware requirements, design and implementation reconciliation",
+  "type": "module",
+  "engines": { "node": "24.19.0" },
+  "bin": { "projector": "dist/host/cli.js" },
+  "exports": {
+    "./documents": "./dist/documents/index.js",
+    "./index": "./dist/index/index.js",
+    "./kernel": "./dist/kernel/index.js",
+    "./change": "./dist/change/index.js",
+    "./host": "./dist/host/index.js"
+  },
+  "files": ["dist", "plugins", "openspec/schemas", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test --test-concurrency=2 test/**/*.test.ts",
+    "lint": "eslint src test evaluation",
+    "check": "npm run build && npm run lint && npm test",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@fission-ai/openspec": "1.13.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "mdast-util-from-markdown": "2.0.3",
+    "typescript": "6.0.3",
+    "unicode-case-folding": "1.1.1",
+    "yaml": "2.9.1",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "eslint": "10.11.0",
+    "typescript-eslint": "8.70.1"
+  }
+}

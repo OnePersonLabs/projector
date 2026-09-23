@@ -1,0 +1,28 @@
+name: projector
+version: 1
+description: Nested requirements and design decisions with a verified implementation loop.
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Intended behavior and affected concerns
+    template: proposal.md
+    requires: []
+  - id: specs
+    generates: specs/**/spec.md
+    description: OpenSpec requirement deltas
+    template: spec.md
+    requires: [proposal]
+  - id: designs
+    generates: designs/**/design.md
+    description: Exact nested Projector design deltas
+    template: design.md
+    requires: [specs]
+  - id: tasks
+    generates: tasks.md
+    description: Editable implementation and evidence tasks
+    template: tasks.md
+    requires: [designs]
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  instruction: Use the explicit Projector extension to prepare the candidate, review applicability and contributions, apply acknowledged edits, execute evidence, and finish the exact reviewed target.
