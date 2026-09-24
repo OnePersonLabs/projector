@@ -1,7 +1,7 @@
 import { hashSemantic, type ArchitectureDecision, type AuthorityRecord, type SelectorExpr } from "@projector/core";
 import { describe, expect, it, vi } from "vitest";
 
-import { acceptArchitectureDecisions, convergeDecisionGroup } from "./governance.js";
+import { acceptArchitectureDecisions, convergeDecisionGroup, type SemanticGovernanceTransactionPort } from "./governance.js";
 
 const scope: SelectorExpr = { op: "atom", field: "platform", matcher: "equals", value: "shared" };
 const authority = (id: string): AuthorityRecord => {
@@ -19,13 +19,13 @@ const decision = (id: string, selectedOptionKey: string): ArchitectureDecision =
   };
   return { ...base, semanticHash: hashSemantic("architecture-decision", base) };
 };
-const ports = (records: readonly AuthorityRecord[], transact: ReturnType<typeof vi.fn>, overlap: "compatible" | "incompatible" = "compatible") => ({
+const ports = (records: readonly AuthorityRecord[], transact: SemanticGovernanceTransactionPort["transact"], overlap: "compatible" | "incompatible" = "compatible") => ({
   authority: { read: async (id: string) => records.find((record) => record.id === id) }, overlap: { assess: vi.fn().mockResolvedValue(overlap) }, convergence: { verify: vi.fn() }, transaction: { transact },
 });
 
 describe("atomic decision consequences and overlap", () => {
   it("blocks incompatible overlap before opening the semantic governance transaction", async () => {
-    const transact = vi.fn();
+    const transact = vi.fn<SemanticGovernanceTransactionPort["transact"]>();
     const left = decision("left", "alpha");
     const right = decision("right", "beta");
     const result = await acceptArchitectureDecisions({ decisions: [left, right], existingDecisions: [] }, ports([authority("authority:left"), authority("authority:right")], transact, "incompatible"));
@@ -34,7 +34,7 @@ describe("atomic decision consequences and overlap", () => {
   });
 
   it("commits acceptance and all consequences through one injected atomic call", async () => {
-    const transact = vi.fn().mockResolvedValue(undefined);
+    const transact = vi.fn<SemanticGovernanceTransactionPort["transact"]>().mockResolvedValue(undefined);
     const selected = decision("simple", "do-not-add-yet");
     selected.consequences = [];
     selected.semanticHash = hashSemantic("architecture-decision", selected);
