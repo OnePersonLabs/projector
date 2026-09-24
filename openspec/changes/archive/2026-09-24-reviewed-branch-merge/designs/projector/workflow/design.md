@@ -22,12 +22,12 @@ Applies: [[spec:projector/workflow#Reviewed branch integration]] | {"kind":"path
 ```markdown
 ## Decision: reviewed-branch-integration
 
-Choice: Construct a pinned no-fast-forward merge on a temporary branch in a locked linked worktree, review and correct that result, then advance the original unchanged target with a fast-forward-only merge.
+Choice: Construct a pinned no-fast-forward merge on a temporary branch in a locked linked worktree outside the tracked target, review and correct that result, then advance the original unchanged target with a fast-forward-only merge. Use the repository's `.worktrees/` directory only when Git confirms that the directory is ignored; otherwise, use an external temporary directory.
 Reason: The current branch must remain recoverable and unchanged until conflict resolution, checks and semantic review establish one acceptable combined result.
 Requires: [[spec:projector/workflow#Agent owned conversational workflow]] [[spec:projector/workflow#Reviewed branch integration]]
 Consequential: boundary
 Alternative: Merge directly in the user's working directory and rely on Git abort or an automatic stash.
-Tradeoff: An isolated worktree adds temporary Git objects and cleanup, but it avoids mixing local work with unresolved integration state and permits review before publication.
+Tradeoff: An isolated worktree and portable location selection add temporary Git objects and cleanup, but they avoid mixing local work with unresolved integration state and permit review before publication.
 Realizes: [[code:README.md]] [[code:package-lock.json]] [[code:package.json]] [[code:plugins/projector/.codex-plugin/plugin.json]] [[code:plugins/projector/plugin.json]] [[code:plugins/projector/skills/finish/SKILL.md]] [[code:plugins/projector/skills/merge/SKILL.md]] [[code:plugins/projector/skills/merge/references/conflict-review.md]] [[code:src/host/config.ts]] [[code:test/host-installed.test.ts]] [[code:docs/qualification-workflow.md]] [[code:docs/reference/runtime.md]] [[code:docs/reference/workflow-coverage.md]] [[code:docs/troubleshooting.md]] [[code:docs/workflows.md]]
 Evidence: Installed package discovery, realistic temporary-repository merge exercises, full repository checks and independent adversarial review.
 ```
