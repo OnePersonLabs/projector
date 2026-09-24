@@ -95,6 +95,16 @@ test('T6: undefined target term and an unpublished prerequisite remain explicit 
   assert.ok((blocked.obligations as string[]).some(item => item.includes('missing-consumer')));
 });
 
+test('T6: an archived published prerequisite remains available to an integrated baseline', async () => {
+  const input = await fixture(), service = new ChangeService();
+  const state = await service.prepareChange(input);
+  await put(input.root, 'openspec/changes/archive/2026-09-24-consumer/implementation-state.json', JSON.stringify({
+    change: 'consumer', phase: 'published', publication: state.baseline,
+  }));
+  const planned = await service.validatePlan({ ...input, ...disposition, prerequisites: ['consumer'] });
+  assert.ok(!(planned.obligations as string[]).some(item => item.includes('consumer')));
+});
+
 test('T7: moved candidate ref and mutation after archive are refused without overwriting another revision', async () => {
   const input = await fixture(), service = new ChangeService(), state = await service.prepareChange(input);
   await planAndEvidence(service, state);

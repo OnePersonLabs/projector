@@ -336,11 +336,19 @@ export class ChangeService {
     for (const prerequisite of state.plan.prerequisites) {
       if (!/^[a-z][a-z0-9-]{0,100}$/.test(prerequisite)) throw new Error('Invalid prerequisite name');
       const location = safePath(state.root, stateRelative(prerequisite));
-      if (!await exists(location)) obligations.push(`Blocking prerequisite is not published: ${prerequisite}`);
+      const prior: ChangeState[] = [];
+      if (await exists(location)) prior.push(JSON.parse(await textFile(location)) as ChangeState);
       else {
-        const prior = JSON.parse(await textFile(location)) as ChangeState;
-        if (prior.phase !== 'published' || !prior.publication) obligations.push(`Blocking prerequisite is not published: ${prerequisite}`);
-        else if ((await runGit(['merge-base', '--is-ancestor', prior.publication, state.baseline], state.root, { allowFailure: true })).code !== 0) obligations.push(`Baseline does not include published prerequisite: ${prerequisite}`);
+        const archivedRoot = safePath(state.root, 'openspec/changes/archive');
+        for (const name of (await files(archivedRoot)).filter(item => item.endsWith('/implementation-state.json'))) {
+          const archived = JSON.parse(await textFile(safePath(archivedRoot, name))) as ChangeState;
+          if (archived.change === prerequisite) prior.push(archived);
+        }
+      }
+      const published = prior.filter(item => item.phase === 'published' && item.publication);
+      if (!published.length) obligations.push(`Blocking prerequisite is not published: ${prerequisite}`);
+      else if (!(await Promise.all(published.map(item => runGit(['merge-base', '--is-ancestor', item.publication!, state.baseline], state.root, { allowFailure: true })))).some(result => result.code === 0)) {
+        obligations.push(`Baseline does not include published prerequisite: ${prerequisite}`);
       }
     }
     if (completing) {

@@ -41,12 +41,12 @@ Evidence: Nested add/modify/archive integration uses the real pinned CLI and ver
 
 Choice: Compare actual changed artifacts, independently extracted changed declarations, and prior symbol contributions with executable applicability, current realization bindings, executed checks, and attributed review.
 Reason: Links, checkboxes, selectors, and a successful command alone cannot establish behavioral or architectural correctness.
-Requires: [[spec:projector/changes#Applicability and independent coverage]], [[spec:projector/changes#Current evidence and contribution disposition]], [[spec:projector/changes#Clean evolution]]
+Requires: [[spec:projector/changes#Applicability and independent coverage]], [[spec:projector/changes#Current evidence and contribution disposition]], [[spec:projector/changes#Coherent recoverable finish]], [[spec:projector/changes#Clean evolution]]
 Consequential: strategy
 Alternative: Treat completed tasks and valid document links as sufficient completion evidence.
 Tradeoff: Semantic judgments remain bounded host/reviewer work; deterministic code can reject absent, stale, contradictory, or unsupported records but cannot authenticate an invented narrative.
 Realizes: [[code:src/change/index.ts#ChangeService]]
-Evidence: Missing-scope, unplanned-file, stale-evidence, task-edit, and same-file contribution tests discriminate unsupported completion.
+Evidence: Missing-scope, unplanned-file, stale-evidence, task-edit, same-file contribution, and archived-prerequisite tests discriminate unsupported completion.
 
 ## Realization
 
