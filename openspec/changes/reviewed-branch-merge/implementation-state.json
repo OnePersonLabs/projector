@@ -1,0 +1,818 @@
+{
+  "version": 1,
+  "root": "C:\\dev\\projects\\projector",
+  "change": "reviewed-branch-merge",
+  "baseline": "6c4a4e591d9a460ba976d4e554bf21a886d04d71",
+  "candidateRoot": "C:\\dev\\projects\\projector\\.worktrees\\projector-reviewed-branch-merge-acc7d9a6",
+  "candidateBranch": "refs/heads/projector/reviewed-branch-merge-acc7d9a6",
+  "candidateId": "acc7d9a6-1edf-43ed-9ec2-332d55c30d0f",
+  "candidateHead": "6c4a4e591d9a460ba976d4e554bf21a886d04d71",
+  "targetId": "4459e70701eb67bde78bf0d7d526c8bc9cfa4133",
+  "targetRef": "refs/projector/reviewed-branch-merge/target",
+  "previousSupport": [
+    {
+      "path": "src/change/index.ts",
+      "decision": "design:projector/change#decision:durable-candidate",
+      "basis": "5e9a8759f4cf611dd9c6453489633e4d646cf6bc969db503499e6c35c0668d03",
+      "target": "code:src/change/index.ts#ChangeService"
+    },
+    {
+      "path": "src/change/openspec.ts",
+      "decision": "design:projector/change#decision:supported-merge",
+      "basis": "180b117432befe9ef069f2705b047eb7db5ffe0e8249509b92aa0b680e2ba917",
+      "target": "code:src/change/openspec.ts#OpenSpecAdapter"
+    },
+    {
+      "path": "src/change/index.ts",
+      "decision": "design:projector/change#decision:explicit-gates",
+      "basis": "5087a51db4788072e832833acac548d260972bc0a96e483f3695a9b1eb411512",
+      "target": "code:src/change/index.ts#ChangeService"
+    },
+    {
+      "path": "src/change/io.ts",
+      "decision": "design:projector/change#realization",
+      "basis": "18435c70894f0c5c420bcf5375a56b979f409e5e0e4a451fab411507ea1e8a71",
+      "target": "code:src/change/io.ts"
+    },
+    {
+      "path": "eslint.config.js",
+      "decision": "design:projector#decision:one-package",
+      "basis": "8407622dc04de11334a64855e51256e8d680184c00f6a8a7259c4482ad0839b0",
+      "target": "code:eslint.config.js"
+    },
+    {
+      "path": "package.json",
+      "decision": "design:projector#decision:one-package",
+      "basis": "8407622dc04de11334a64855e51256e8d680184c00f6a8a7259c4482ad0839b0",
+      "target": "code:package.json"
+    },
+    {
+      "path": "src/documents/index.ts",
+      "decision": "design:projector/documents#decision:established-parsers",
+      "basis": "a6fe07c58819c2d4a47f0a2edcf1c8ddeaddeefc6c6fda7c54c72a27a538aa64",
+      "target": "code:src/documents/index.ts"
+    },
+    {
+      "path": "src/documents/code.ts",
+      "decision": "design:projector/documents#decision:established-parsers",
+      "basis": "a6fe07c58819c2d4a47f0a2edcf1c8ddeaddeefc6c6fda7c54c72a27a538aa64",
+      "target": "code:src/documents/code.ts"
+    },
+    {
+      "path": "src/documents/markdown.ts",
+      "decision": "design:projector/documents#decision:established-parsers",
+      "basis": "a6fe07c58819c2d4a47f0a2edcf1c8ddeaddeefc6c6fda7c54c72a27a538aa64",
+      "target": "code:src/documents/markdown.ts"
+    },
+    {
+      "path": "src/documents/resolver.ts",
+      "decision": "design:projector/documents#decision:established-parsers",
+      "basis": "a6fe07c58819c2d4a47f0a2edcf1c8ddeaddeefc6c6fda7c54c72a27a538aa64",
+      "target": "code:src/documents/resolver.ts"
+    },
+    {
+      "path": "src/documents/common.ts",
+      "decision": "design:projector/documents#decision:established-parsers",
+      "basis": "a6fe07c58819c2d4a47f0a2edcf1c8ddeaddeefc6c6fda7c54c72a27a538aa64",
+      "target": "code:src/documents/common.ts"
+    },
+    {
+      "path": "src/documents/delta.ts",
+      "decision": "design:projector/documents#decision:exact-part-splices",
+      "basis": "0b56cce5a747321d47d53e3da592deff282575a2dc88f315f0e5ff24fe137bb8",
+      "target": "code:src/documents/delta.ts"
+    },
+    {
+      "path": "src/host/server.ts",
+      "decision": "design:projector/host#decision:exclusive-loopback-owner",
+      "basis": "a8c015eb682ce4c6a9b6fd3e4de203bd92fb68d806dda7f0b3712321276d7974",
+      "target": "code:src/host/server.ts#startOwner"
+    },
+    {
+      "path": "src/host/client.ts",
+      "decision": "design:projector/host#decision:exclusive-loopback-owner",
+      "basis": "a8c015eb682ce4c6a9b6fd3e4de203bd92fb68d806dda7f0b3712321276d7974",
+      "target": "code:src/host/client.ts#connectOwner"
+    },
+    {
+      "path": "src/host/config.ts",
+      "decision": "design:projector/host#decision:exclusive-loopback-owner",
+      "basis": "a8c015eb682ce4c6a9b6fd3e4de203bd92fb68d806dda7f0b3712321276d7974",
+      "target": "code:src/host/config.ts#privateDirectory"
+    },
+    {
+      "path": "src/host/relay.ts",
+      "decision": "design:projector/host#decision:thin-installed-clients",
+      "basis": "b29487c428d03d1dc1553bdeebaf234626d72b4a1c9c8136e3db86bdd1d4c9ab",
+      "target": "code:src/host/relay.ts#relay"
+    },
+    {
+      "path": "src/host/cli.ts",
+      "decision": "design:projector/host#decision:thin-installed-clients",
+      "basis": "b29487c428d03d1dc1553bdeebaf234626d72b4a1c9c8136e3db86bdd1d4c9ab",
+      "target": "code:src/host/cli.ts"
+    },
+    {
+      "path": "src/host/install.ts",
+      "decision": "design:projector/host#decision:thin-installed-clients",
+      "basis": "b29487c428d03d1dc1553bdeebaf234626d72b4a1c9c8136e3db86bdd1d4c9ab",
+      "target": "code:src/host/install.ts#install"
+    },
+    {
+      "path": "plugins/projector/mcp.json",
+      "decision": "design:projector/host#decision:thin-installed-clients",
+      "basis": "b29487c428d03d1dc1553bdeebaf234626d72b4a1c9c8136e3db86bdd1d4c9ab",
+      "target": "code:plugins/projector/mcp.json"
+    },
+    {
+      "path": "plugins/projector/plugin.json",
+      "decision": "design:projector/host#decision:thin-installed-clients",
+      "basis": "b29487c428d03d1dc1553bdeebaf234626d72b4a1c9c8136e3db86bdd1d4c9ab",
+      "target": "code:plugins/projector/plugin.json"
+    },
+    {
+      "path": "src/index/index.ts",
+      "decision": "design:projector/kernel#decision:worker-owned-sqlite",
+      "basis": "b2957b971167ccf4eaaa8fe6a241be7f1f8b636c2b0227f632ba022e18440ebc",
+      "target": "code:src/index/index.ts#IndexPool"
+    },
+    {
+      "path": "src/index/worker.ts",
+      "decision": "design:projector/kernel#decision:worker-owned-sqlite",
+      "basis": "b2957b971167ccf4eaaa8fe6a241be7f1f8b636c2b0227f632ba022e18440ebc",
+      "target": "code:src/index/worker.ts"
+    },
+    {
+      "path": "src/index/types.ts",
+      "decision": "design:projector/kernel#decision:worker-owned-sqlite",
+      "basis": "b2957b971167ccf4eaaa8fe6a241be7f1f8b636c2b0227f632ba022e18440ebc",
+      "target": "code:src/index/types.ts"
+    },
+    {
+      "path": "src/kernel/index.ts",
+      "decision": "design:projector/kernel#decision:qualified-candidates",
+      "basis": "2412392bb97afa5d65076b577629b30daa69621a5a48f289993ce0346d54b840",
+      "target": "code:src/kernel/index.ts#Kernel"
+    },
+    {
+      "path": "src/index/git.ts",
+      "decision": "design:projector/kernel#decision:qualified-candidates",
+      "basis": "2412392bb97afa5d65076b577629b30daa69621a5a48f289993ce0346d54b840",
+      "target": "code:src/index/git.ts"
+    },
+    {
+      "path": "README.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:README.md"
+    },
+    {
+      "path": "package-lock.json",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:package-lock.json"
+    },
+    {
+      "path": "package.json",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:package.json"
+    },
+    {
+      "path": "plugins/projector/plugin.json",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/plugin.json"
+    },
+    {
+      "path": "src/change/index.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:src/change/index.ts"
+    },
+    {
+      "path": "src/change/openspec.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:src/change/openspec.ts"
+    },
+    {
+      "path": "src/change/types.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:src/change/types.ts"
+    },
+    {
+      "path": "src/host/config.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:src/host/config.ts"
+    },
+    {
+      "path": "src/host/index.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:src/host/index.ts"
+    },
+    {
+      "path": "src/host/relay.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:src/host/relay.ts"
+    },
+    {
+      "path": "src/host/server.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:src/host/server.ts"
+    },
+    {
+      "path": "test/host-installed.test.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:test/host-installed.test.ts"
+    },
+    {
+      "path": "test/host-lifecycle.test.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:test/host-lifecycle.test.ts"
+    },
+    {
+      "path": "docs/README.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/README.md"
+    },
+    {
+      "path": "docs/development.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/development.md"
+    },
+    {
+      "path": "docs/existing-projects.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/existing-projects.md"
+    },
+    {
+      "path": "docs/getting-started.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/getting-started.md"
+    },
+    {
+      "path": "docs/qualification-workflow.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/qualification-workflow.md"
+    },
+    {
+      "path": "docs/reference/runtime.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/reference/runtime.md"
+    },
+    {
+      "path": "docs/reference/workflow-coverage.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/reference/workflow-coverage.md"
+    },
+    {
+      "path": "docs/revisions-and-recovery.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/revisions-and-recovery.md"
+    },
+    {
+      "path": "docs/troubleshooting.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/troubleshooting.md"
+    },
+    {
+      "path": "docs/workflows.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:docs/workflows.md"
+    },
+    {
+      "path": "plugins/projector/skills/apply/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/apply/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/apply/references/runtime.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/apply/references/runtime.md"
+    },
+    {
+      "path": "plugins/projector/skills/audit/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/audit/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/continue/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/continue/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/explore/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/explore/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/finish/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/finish/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/finish/references/bulk.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/finish/references/bulk.md"
+    },
+    {
+      "path": "plugins/projector/skills/init/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/init/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/propose/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/propose/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/propose/references/artifacts.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/propose/references/artifacts.md"
+    },
+    {
+      "path": "plugins/projector/skills/reconcile/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/reconcile/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/reconcile/references/import.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/reconcile/references/import.md"
+    },
+    {
+      "path": "plugins/projector/skills/revise/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/revise/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/sync/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/sync/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/verify/SKILL.md",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:plugins/projector/skills/verify/SKILL.md"
+    },
+    {
+      "path": "src/host/project.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:src/host/project.ts"
+    },
+    {
+      "path": "test/change-sync.test.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:test/change-sync.test.ts"
+    },
+    {
+      "path": "test/project-init.test.ts",
+      "decision": "design:projector/workflow#decision:conversational-entrypoints",
+      "basis": "f1d41f0785895e1eaea4c61a7fad4c263d8fa9c2c7375586be93f76fdb6c0c8e",
+      "target": "code:test/project-init.test.ts"
+    },
+    {
+      "path": "README.md",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:README.md"
+    },
+    {
+      "path": "package-lock.json",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:package-lock.json"
+    },
+    {
+      "path": "package.json",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:package.json"
+    },
+    {
+      "path": "plugins/projector/.codex-plugin/plugin.json",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:plugins/projector/.codex-plugin/plugin.json"
+    },
+    {
+      "path": "plugins/projector/plugin.json",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:plugins/projector/plugin.json"
+    },
+    {
+      "path": "plugins/projector/skills/finish/SKILL.md",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:plugins/projector/skills/finish/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/merge/SKILL.md",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:plugins/projector/skills/merge/SKILL.md"
+    },
+    {
+      "path": "plugins/projector/skills/merge/references/conflict-review.md",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:plugins/projector/skills/merge/references/conflict-review.md"
+    },
+    {
+      "path": "src/host/config.ts",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:src/host/config.ts"
+    },
+    {
+      "path": "test/host-installed.test.ts",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:test/host-installed.test.ts"
+    },
+    {
+      "path": "docs/qualification-workflow.md",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:docs/qualification-workflow.md"
+    },
+    {
+      "path": "docs/reference/runtime.md",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:docs/reference/runtime.md"
+    },
+    {
+      "path": "docs/reference/workflow-coverage.md",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:docs/reference/workflow-coverage.md"
+    },
+    {
+      "path": "docs/troubleshooting.md",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:docs/troubleshooting.md"
+    },
+    {
+      "path": "docs/workflows.md",
+      "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+      "basis": "3668ef0393773c0379d77d573a4c3230efcad254923076abc226c35cb51981c1",
+      "target": "code:docs/workflows.md"
+    }
+  ],
+  "requirements": [
+    "spec:projector/workflow#Agent%20owned%20conversational%20workflow",
+    "spec:projector/workflow#Reviewed%20branch%20integration"
+  ],
+  "inputHash": "034314ba2a03c11d8477cb098ab9db98eacaa10d6cf63b9d328889bf70ec59b2",
+  "sourceTasksHash": "01d2f5108b426bfe7e4f04168c5f6245daef1149aa355371cfd8d556503aad08",
+  "candidateTasksAtSync": "01d2f5108b426bfe7e4f04168c5f6245daef1149aa355371cfd8d556503aad08",
+  "bindingRenames": {},
+  "phase": "published",
+  "evidence": [
+    {
+      "id": "b0af6261-9512-4300-93c1-681455c867fa",
+      "basis": "fbb1aa6ee736e09d0e3ec1c9958e8953975db7e996672c19202b3121ac75e075",
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+        "run",
+        "check"
+      ],
+      "scope": [
+        "README.md",
+        "docs/qualification-workflow.md",
+        "docs/reference/runtime.md",
+        "docs/reference/workflow-coverage.md",
+        "docs/troubleshooting.md",
+        "docs/workflows.md",
+        "package-lock.json",
+        "package.json",
+        "plugins/projector/.codex-plugin/plugin.json",
+        "plugins/projector/plugin.json",
+        "plugins/projector/skills/finish/SKILL.md",
+        "plugins/projector/skills/merge/SKILL.md",
+        "plugins/projector/skills/merge/references/conflict-review.md",
+        "src/host/config.ts",
+        "test/host-installed.test.ts"
+      ],
+      "passed": true,
+      "exitCode": 0,
+      "output": "\n> @onepersonlabs/projector@4.2.0 check\n> npm run build && npm run lint && npm test\n\n✔ change exclusion serializes successors after failures and permits independent roots (1.3995ms)\n✔ concurrent ChangeService instances allocate exactly one candidate in the shared owner (3726.3442ms)\n✔ sync materializes exact authority, invalidates evidence, repeats safely, and finishes without reapplying deltas (13051.1366ms)\n✔ sync then revise preserves implementation and replaces the previous synchronized target (16779.6537ms)\n✔ manual authority edits, deletion and extra files block sync before any writes and block finish (6580.0482ms)\n✔ interrupted sync recovers its exact target and refuses unrelated edits during recovery (10900.6449ms)\n✔ interrupted sync recovers its stored target despite newer source edits, then permits revision (13390.395ms)\n✔ yml configuration survives initialize, prepare, synchronize and finish without a shadow yaml (9864.0713ms)\n✔ synchronized authority survives multiple revisions and pruning unreachable Git objects (11259.3757ms)\n✔ deleting an unbound baseline file requires a current decision but no dangling realization (9576.9893ms)\n✔ prepare provisions missing schema files while revision preserves repository-owned template edits (11676.5792ms)\n✔ T6/T7: exact nested target, executed evidence, candidate-only publication, recovered cache and settled no-op (9575.533ms)\n✔ T6: actual unplanned files, executable selector emptiness, undefined references, stale evidence and task amendments block (8701.4433ms)\n✔ T6/T7: revised target retains same-file valid work and prior support; archive and publication crashes recover (21108.8038ms)\n✔ T6: a removed same-file contribution requires its own finite disposition (4472.378ms)\n✔ T6: undefined target term and an unpublished prerequisite remain explicit blockers (7169.6737ms)\n✔ T7: moved candidate ref and mutation after archive are refused without overwriting another revision (14531.764ms)\n✔ T6: replacement cannot leave an unsupported retired symbol beside a verified symbol (11302.6752ms)\n✔ T6: narrow realization does not cover an unrelated new export in the same file (6957.804ms)\n✔ T6: explicit whole-file realization covers a new internal declaration under its current responsibility (4283.6837ms)\n✔ T7: deep native paths recover an archived change and publish without global Git configuration (9165.1752ms)\n✔ T1 normalization pins full Unicode case folding and preserves punctuation (0.6407ms)\n✔ T1 terms own bare names while explicit code addresses bypass ownership (6.7053ms)\n✔ T1 Markdown duplicate owners error, legal code duplicates are ambiguous, aliases deduplicate (3.1619ms)\n✔ T1 aliases and package exports resolve through actual module summaries (2.6728ms)\n✔ T1 encoded address components retain reserved punctuation and nested headings (0.7317ms)\n✔ T1 live designs expose scoped parts, exact requirements and pending evidence (5.5478ms)\n✔ T1 malformed designs and consequential fields produce actionable diagnostics (1.2743ms)\n✔ T1 boundary policy is explicit and private scope does not override configured policy (0.3325ms)\n✔ T3 new owners, collisions and unsupported syntax cannot yield false uniqueness (1.0439ms)\n✔ T3 empty path membership records its population and changes when a file arrives (0.9979ms)\n✔ static consumers, concern descendants and conjunctive selectors expose real memberships (1.6383ms)\n✔ exact replacement preserves unrelated formatting and recorded retries require exact result (3.1019ms)\n✔ deltas reject overlap, stale baselines, missing targets and conflicting additions (3.6907ms)\n✔ explicit rename returns binding maps including subaddresses and preserves body text (2.138ms)\n✔ whole design creation and deletion are explicit and baseline guarded (2.3602ms)\n✔ implementation bodies invalidate body hashes without inventing public signature changes (0.4866ms)\n✔ real TypeScript module resolution obeys path mappings and conditional package exports (2.2787ms)\n✔ cross-package explicit code references enforce declared export reachability (0.7628ms)\n✔ unsupported CommonJS and illegal duplicate declarations are explicit unknowns (0.6674ms)\n✔ evolved fixture adapter preserves a real tested intermediate checkpoint while revising the production Projector target (10542.9917ms)\n✔ coupled evaluator accepts authored controls across three pairs; these are oracle qualification, not hosted evidence (3457.1886ms)\n✔ seeded bad candidates are rejected for their intended causes before hosted trials count (2677.65ms)\n✔ fresh installed runtime serves two actual MCP clients and qualified managed interleaving (7733.5388ms)\nℹ {\"installedVersion\":\"4.2.0\",\"node\":\"v24.19.0\",\"installMs\":3358.7127,\"installedBytes\":55795223,\"nativePackaging\":\"node:sqlite bundled with Node; no addon build\"}\nℹ {\"clients\":2,\"sharedKernel\":\"82b259b2-eab6-48b1-a4ca-1eeb6bc1fbc4\",\"nativePath\":true,\"warmCountersBefore\":{\"sourceBytes\":78,\"hashBytes\":78,\"parsedFiles\":2,\"extractions\":2,\"dependencyVisits\":2,\"subprocesses\":7,\"transactions\":2,\"cacheBytes\":49152,\"outputBytes\":4832,\"modelCalls\":0,\"barriers\":7,\"workerStarts\":1},\"warmCountersAfter\":{\"sourceBytes\":78,\"hashBytes\":78,\"parsedFiles\":2,\"extractions\":2,\"dependencyVisits\":2,\"subprocesses\":7,\"transactions\":2,\"cacheBytes\":49152,\"outputBytes\":6442,\"modelCalls\":0,\"barriers\":8,\"workerStarts\":1}}\n✔ T9 installed nested target plan, managed apply, revision, evidence, archive and settled repeat through two MCP clients (22606.1097ms)\nℹ {\"installedVersion\":\"4.2.0\",\"clients\":2,\"mainUnchanged\":true,\"publication\":\"725ab67851f6c1241dc080b04f5b61167d3f3678\",\"archive\":true,\"repeatedFinish\":\"no-op\",\"modelCalls\":0,\"semanticReview\":\"separate from simulated protocol attestation\"}\n✔ exclusive loopback bind admits exactly one owner and authenticates before dispatch (574.4028ms)\n✔ request admission and shutdown remain bounded while an operation is running (207.4135ms)\n✔ foreign configured endpoint is rejected without searching another port (3.6382ms)\n✔ node sqlite owns WAL connection in worker while coordinator can respond (109.5157ms)\nℹ {\"sqliteElapsedMs\":79.09550000000002,\"coordinatorTurns\":69464,\"databaseBytes\":8192}\n✔ canonical Git identity separates real linked candidates and preserves alias identity (502.5522ms)\n{\"case\":\"T2\",\"edits\":100,\"readers\":32,\"delta\":{\"sourceBytes\":40,\"hashBytes\":40,\"parsedFiles\":1,\"extractions\":1,\"dependencyVisits\":1,\"subprocesses\":0,\"transactions\":1,\"cacheBytes\":0,\"outputBytes\":52320,\"modelCalls\":0,\"barriers\":132,\"workerStarts\":0}}\n✔ T2: 100 undemanded managed edits and 32 readers extract the final version once; warm read performs no source work (1710.8807ms)\n✔ T3/T5: empty population gains members, collision blocks uniqueness, unknown writes need checkpoint, prior revision survives (1552.6894ms)\n✔ T4: racing extraction cannot publish stale content or clear newer dirtiness (1346.9301ms)\n✔ T4/T7: interrupted writer journal survives owner restart and deletion/corruption of disposable index (2623.4385ms)\n✔ T5: a lost observation interval during checkpoint cannot publish prior extracted bytes as current (1431.6641ms)\n✔ T5: exact checkpoint bytes come from Git normalization and match another kernel (2027.2073ms)\n✔ T3: transitive renamed aliases and resolver configuration remain in the cached factual basis (1378.4571ms)\n✔ installed schema setup preserves existing configuration and is repeatable (540.032ms)\n✔ schema conflict is reported before any scaffolding is written (452.0453ms)\n✔ fresh setup creates a ready local schema and concurrent repeats settle (485.8415ms)\n✔ setup rejects invalid configuration and external directory links without writes (524.7266ms)\n{\"case\":\"T8\",\"backgroundFiles\":10,\"cold\":{\"sourceBytes\":264,\"hashBytes\":264,\"parsedFiles\":11,\"extractions\":11,\"dependencyVisits\":0,\"subprocesses\":7,\"transactions\":1,\"cacheBytes\":77824,\"outputBytes\":0,\"modelCalls\":0,\"barriers\":1,\"workerStarts\":1},\"local\":{\"sourceBytes\":24,\"hashBytes\":24,\"parsedFiles\":1,\"extractions\":1,\"dependencyVisits\":1,\"subprocesses\":0,\"transactions\":1,\"modelCalls\":0}}\n{\"case\":\"T8\",\"backgroundFiles\":2000,\"cold\":{\"sourceBytes\":57804,\"hashBytes\":57804,\"parsedFiles\":2001,\"extractions\":2001,\"dependencyVisits\":0,\"subprocesses\":7,\"transactions\":1,\"cacheBytes\":5955584,\"outputBytes\":0,\"modelCalls\":0,\"barriers\":1,\"workerStarts\":1},\"local\":{\"sourceBytes\":24,\"hashBytes\":24,\"parsedFiles\":1,\"extractions\":1,\"dependencyVisits\":1,\"subprocesses\":0,\"transactions\":1,\"modelCalls\":0}}\n✔ T8: local managed workload has the same source/extraction cost with 10 and 2000 untouched background files (12386.1326ms)\n✔ T4: a crashed worker rejects its publication and another root continues on the bounded pool (1317.3197ms)\n✔ T5: malformed declaration inventory cannot certify bare uniqueness; new Markdown ownership cannot silently rebind (1333.2448ms)\n✔ T3: hidden tracked declarations are included in the global uniqueness population (849.6793ms)\n✔ T8: released idle roots surrender their admission and snapshot memory (4139.6858ms)\nℹ tests 66\nℹ suites 0\nℹ pass 66\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 154265.0645\nnpm notice run @onepersonlabs/projector@4.2.0 build\nnpm notice run tsc -p tsconfig.json\nnpm notice run @onepersonlabs/projector@4.2.0 lint\nnpm notice run eslint src test evaluation\nnpm notice run @onepersonlabs/projector@4.2.0 test\nnpm notice run node --test --test-concurrency=2 test/**/*.test.ts\n",
+      "outputHash": "ce5df47fe08887ff94b9b60acfdaad48ee0f1067d8a384e860b2862876ae5161",
+      "durationMs": 157501.14179999987,
+      "runtime": "v24.19.0",
+      "recordedAt": "2026-09-24T12:19:37.048Z"
+    }
+  ],
+  "obligations": [],
+  "previousTarget": "74a0fe57483c6cc6e2ca3d91193146b5b70b523f",
+  "plan": {
+    "targetId": "4459e70701eb67bde78bf0d7d526c8bc9cfa4133",
+    "tasksHash": "01d2f5108b426bfe7e4f04168c5f6245daef1149aa355371cfd8d556503aad08",
+    "tasksText": "# Reviewed branch merge work\n\n- [] Add the isolated merge, conflict escalation, review, publication and recovery workflow.\n- [] Expose reviewed integration through the installed plugin, version metadata and user documentation.\n- [] Verify installed discovery and realistic clean, conflicting, blocked, stale-target and rejected merge scenarios.\n- [] Run the full repository checks and obtain independent adversarial review of the final candidate.\n",
+    "taskChange": {
+      "kind": "scheduling",
+      "reason": "Keep completed task status after the final branch-identity safety clarification.",
+      "targetId": "4459e70701eb67bde78bf0d7d526c8bc9cfa4133"
+    },
+    "applicability": [
+      {
+        "requirement": "spec:projector/workflow#Agent owned conversational workflow",
+        "selectors": [
+          {
+            "root": ".",
+            "kind": "path",
+            "prefix": "plugins/projector/"
+          }
+        ],
+        "reason": "The installed skills implement and route the conversational workflow.",
+        "excluded": false
+      },
+      {
+        "requirement": "spec:projector/workflow#Reviewed branch integration",
+        "selectors": [
+          {
+            "root": ".",
+            "kind": "path",
+            "prefix": "plugins/projector/skills/merge/"
+          }
+        ],
+        "reason": "The merge skill owns isolated integration and conflict escalation.",
+        "excluded": false
+      }
+    ],
+    "contributions": [
+      {
+        "path": "README.md",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:README.md",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "package-lock.json",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:package-lock.json",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "package.json",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:package.json",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "plugins/projector/plugin.json",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:plugins/projector/plugin.json",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "plugins/projector/skills/finish/SKILL.md",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:plugins/projector/skills/finish/SKILL.md",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "src/host/config.ts",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:src/host/config.ts",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "test/host-installed.test.ts",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:test/host-installed.test.ts",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "docs/qualification-workflow.md",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:docs/qualification-workflow.md",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "docs/reference/runtime.md",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:docs/reference/runtime.md",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "docs/reference/workflow-coverage.md",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:docs/reference/workflow-coverage.md",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "docs/troubleshooting.md",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:docs/troubleshooting.md",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "docs/workflows.md",
+        "decision": "design:projector/workflow#decision:conversational-entrypoints",
+        "target": "code:docs/workflows.md",
+        "action": "revise",
+        "reason": "Preserve the existing conversational workflow responsibility while adding explicit reviewed integration."
+      },
+      {
+        "path": "README.md",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:README.md",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "package-lock.json",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:package-lock.json",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "package.json",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:package.json",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "plugins/projector/.codex-plugin/plugin.json",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:plugins/projector/.codex-plugin/plugin.json",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "plugins/projector/plugin.json",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:plugins/projector/plugin.json",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "plugins/projector/skills/finish/SKILL.md",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:plugins/projector/skills/finish/SKILL.md",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "plugins/projector/skills/merge/SKILL.md",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:plugins/projector/skills/merge/SKILL.md",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "plugins/projector/skills/merge/references/conflict-review.md",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:plugins/projector/skills/merge/references/conflict-review.md",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "src/host/config.ts",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:src/host/config.ts",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "test/host-installed.test.ts",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:test/host-installed.test.ts",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "docs/qualification-workflow.md",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:docs/qualification-workflow.md",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "docs/reference/runtime.md",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:docs/reference/runtime.md",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "docs/reference/workflow-coverage.md",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:docs/reference/workflow-coverage.md",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "docs/troubleshooting.md",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:docs/troubleshooting.md",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "docs/workflows.md",
+        "decision": "design:projector/workflow#decision:reviewed-branch-integration",
+        "target": "code:docs/workflows.md",
+        "action": "revise",
+        "reason": "Implement or expose the reviewed branch integration workflow."
+      },
+      {
+        "path": "package.json",
+        "decision": "design:projector#decision:one-package",
+        "target": "code:package.json",
+        "action": "revise",
+        "reason": "Preserve the one-package release boundary while advancing the public plugin version."
+      },
+      {
+        "path": "src/host/config.ts",
+        "decision": "design:projector/host#decision:exclusive-loopback-owner",
+        "target": "code:src/host/config.ts#privateDirectory",
+        "action": "revise",
+        "reason": "Preserve host configuration and private directory behavior while advancing the version constant."
+      },
+      {
+        "path": "plugins/projector/plugin.json",
+        "decision": "design:projector/host#decision:thin-installed-clients",
+        "target": "code:plugins/projector/plugin.json",
+        "action": "revise",
+        "reason": "Preserve installed client packaging while exposing the added skill."
+      }
+    ],
+    "prerequisites": [],
+    "review": {
+      "basis": "fbb1aa6ee736e09d0e3ec1c9958e8953975db7e996672c19202b3121ac75e075",
+      "reviewer": "/root/merge_adversarial_review (opl-reviewer)",
+      "findings": [],
+      "examined": [
+        "full candidate diff from 6c4a4e591d9a460ba976d4e554bf21a886d04d71",
+        "plugins/projector/skills/merge/SKILL.md",
+        "plugins/projector/skills/merge/references/conflict-review.md",
+        "proposal, requirement, design and checked tasks",
+        "qualification record, finish routing, runtime and user documentation",
+        "version surfaces and installed-skill test",
+        "current-basis build, lint and 66-test evidence",
+        "forward merge QA including deliberate rejection"
+      ],
+      "alternative": "Perform the merge in the original working directory or use autostash. This is weaker because it mutates the target before conflict resolution and review and adds stash-restoration risk."
+    }
+  },
+  "implementationSeal": "bf6114970f9c955cc2e44c51f4cae4fbc0058e095b53adfefbc4df0b6f979d4c",
+  "candidateInputsHash": "034314ba2a03c11d8477cb098ab9db98eacaa10d6cf63b9d328889bf70ec59b2",
+  "verifiedTasksHash": "01d2f5108b426bfe7e4f04168c5f6245daef1149aa355371cfd8d556503aad08",
+  "synchronizedTarget": "4459e70701eb67bde78bf0d7d526c8bc9cfa4133",
+  "archivePath": "C:\\dev\\projects\\projector\\.worktrees\\projector-reviewed-branch-merge-acc7d9a6\\openspec\\changes\\archive\\2026-09-24-reviewed-branch-merge",
+  "publication": "008bb7b25ad9de17c2652b0674a3b634967fb687"
+}
