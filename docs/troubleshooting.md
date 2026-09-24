@@ -9,7 +9,9 @@
 | Several active changes | Select the intended change. |
 | Stale evidence | Rerun relevant checks and refresh independent review. |
 | Incorrect task status | Use `$projector:reconcile`. |
-| Working branch unchanged | Review and integrate the isolated candidate. |
+| Working branch unchanged | Use `$projector:merge` with the finished candidate branch. |
+| Merge target is dirty or moved | Preserve the isolated integration, settle the original worktree, then resume without repinning. |
+| Merge conflict needs a product choice | Read the self-contained conflict brief and select the behavior to preserve. |
 | Old owner rejects new version | Settle active operations and restart the authenticated owner. |
 
 The agent should explain the concrete problem and next step. Internal commands belong in the [runtime reference](reference/runtime.md) and [development guide](development.md).

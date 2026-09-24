@@ -30,6 +30,14 @@ $projector:finish
 
 Projector checks the work and archives the completed change. The result is on an isolated branch, ready to review and integrate into your working branch.
 
+To integrate a finished candidate after reviewing the combined result:
+
+```text
+$projector:merge projector/my-change-12345678
+```
+
+Projector builds the merge in an isolated worktree, resolves conflicts it can justify, runs checks, obtains an independent adversarial review, and advances your working branch only when the result is ready. Uncertain conflicts come back as a self-contained decision brief.
+
 ## Still figuring it out?
 
 ```text
@@ -48,6 +56,7 @@ That explicitly authorizes the full run. Otherwise, planning pauses for your rev
 - **Change the plan:** `$projector:revise`
 - **Check for drift:** `$projector:audit`
 - **Bring existing edits into the workflow:** `$projector:reconcile`
+- **Integrate a finished branch:** `$projector:merge`
 
 Projector includes its own workflow skills and OpenSpec tooling; you do not need the old OpenSpec plugin alongside it. The currently qualified implementation profile is local Git repositories with JavaScript/TypeScript and Markdown.
 

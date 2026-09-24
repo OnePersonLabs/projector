@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "projector",
-  "version": "4.1.2",
-  "description": "Describe a change, review the plan, and let your agent implement and verify it. Includes repository setup and the complete Projector workflow."
+  "version": "4.2.0",
+  "description": "Describe a change, review the plan, and let your agent implement, verify, and integrate it. Includes repository setup and the complete Projector workflow."
 }

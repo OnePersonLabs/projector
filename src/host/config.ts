@@ -5,7 +5,7 @@ import { homedir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
-export const VERSION = '4.1.2';
+export const VERSION = '4.2.0';
 export const PROTOCOL = 1;
 export const MAX_BYTES = 1024 * 1024;
 export interface HostSettings { home: string; port: number; timeoutMs: number; startupMs: number }
