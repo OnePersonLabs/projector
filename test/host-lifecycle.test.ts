@@ -9,7 +9,7 @@ import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { install } from '../src/host/install.ts';
 import { send } from '../src/host/client.ts';
-import { settings, readCredential } from '../src/host/config.ts';
+import { settings, readCredential, VERSION } from '../src/host/config.ts';
 import { fixture, disposition, put, read, gitFixture } from './change-fixture.ts';
 
 async function freePort() {
@@ -64,6 +64,11 @@ test('T9 installed nested target plan, managed apply, revision, evidence, archiv
   assert.equal((await invoke(a, 'read', { rootId, view: 'current', reference: '[[replay]]' })).freshness, 'pending');
   await invoke(b, 'completeBatch', { rootId, batchId: batch.batchId, actualPaths: ['src/player.js'] });
   assert.equal((await invoke(a, 'read', { rootId, view: 'current', reference: '[[replay]]' })).freshness, 'validated');
+  const synchronized = await invoke(a, 'syncChange', common);
+  assert.equal(synchronized.synchronized, true);
+  assert.match(await read(candidate, 'openspec/specs/audio/preview/spec.md'), /exactly once/);
+  assert.equal(gitFixture(input.root, 'rev-parse', String(prepared.candidateBranch)), input.baseline);
+  assert.equal((await invoke(b, 'read', { rootId, view: 'current', reference: '[[replay]]' })).freshness, 'unavailable');
   const delta = `openspec/changes/${input.change}/designs/audio/preview/design.md`;
   await put(input.root, delta, (await read(input.root, delta)).replace('caller-owned event storage', 'caller-owned recorded event storage'));
   const revised = await invoke(a, 'reviseChange', common); assert.notEqual(revised.targetId, prepared.targetId);
@@ -108,5 +113,5 @@ test('T9 installed nested target plan, managed apply, revision, evidence, archiv
   const resumed = await invoke(b, 'resumeChange', common); assert.equal(resumed.publication, finished.publication); assert.equal(resumed.reused, true);
   const repeated = await invoke(b, 'finishChange', common); assert.equal(repeated.publication, finished.publication); assert.equal(repeated.reused, true);
   assert.equal(gitFixture(candidate, 'status', '--porcelain'), '');
-  t.diagnostic(JSON.stringify({ installedVersion: '4.0.0', clients: 2, mainUnchanged: true, publication: finished.publication, archive: true, repeatedFinish: 'no-op', modelCalls: 0, semanticReview: 'separate from simulated protocol attestation' }));
+  t.diagnostic(JSON.stringify({ installedVersion: VERSION, clients: 2, mainUnchanged: true, publication: finished.publication, archive: true, repeatedFinish: 'no-op', modelCalls: 0, semanticReview: 'separate from simulated protocol attestation' }));
 });

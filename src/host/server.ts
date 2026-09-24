@@ -1,12 +1,14 @@
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { realpath } from 'node:fs/promises';
+import { initProject } from './project.ts';
 import { MAX_BYTES, PROTOCOL, VERSION, ownerCredential, claimConfiguredEndpoint, settings, type HostSettings } from './config.ts';
 
 export type Request = Record<string, unknown> & { op: string };
 export interface Dispatcher { handle(request: Request): Promise<unknown>; close(): Promise<void> }
-const changeOperations = new Set(['prepareChange', 'validatePlan', 'recordEvidence', 'finishChange', 'resumeChange', 'reviseChange', 'applyChange']);
-export const operations = new Set(['openRoot', 'read', 'inspectStatus', 'releaseRoot', 'beginBatch', 'completeBatch', 'checkpoint', 'invalidateObservation', ...changeOperations]);
+const changeOperations = new Set(['prepareChange', 'validatePlan', 'recordEvidence', 'finishChange', 'resumeChange', 'reviseChange', 'applyChange', 'syncChange']);
+export const operations = new Set(['initProject', 'openRoot', 'read', 'inspectStatus', 'releaseRoot', 'beginBatch', 'completeBatch', 'checkpoint', 'invalidateObservation', ...changeOperations]);
 export async function productDispatcher(config: HostSettings): Promise<Dispatcher> {
   const { Kernel } = await import('../kernel/index.ts');
   const { ChangeService } = await import('../change/index.ts');
@@ -19,6 +21,13 @@ export async function productDispatcher(config: HostSettings): Promise<Dispatche
   } });
   return {
     async handle(request) {
+      if (request.op === 'initProject') {
+        if (typeof request.root !== 'string' || !request.root.trim()) throw new Error('root must be a nonempty string');
+        const root = await realpath(request.root);
+        const release = await kernel.acquireMutationExclusion(root, 'Repository setup requires an independent checkpoint');
+        try { return await initProject({ root }); }
+        finally { await release(); }
+      }
       if (changeOperations.has(request.op)) {
         const method = changes[request.op as keyof typeof changes];
         if (typeof method !== 'function') throw new Error(`Unsupported change operation: ${request.op}`);

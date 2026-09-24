@@ -28,3 +28,4 @@ Evidence: npm run check verifies compilation, module direction and observable be
 [[design:projector/kernel]] owns exact facts, observed mutations, shared extraction and bounded storage.
 [[design:projector/change]] owns prospective targets, evidence obligations and coherent completion.
 [[design:projector/host]] owns the authenticated shared endpoint, relays and plugin installation.
+[[design:projector/workflow]] owns repository setup, conversational skills and user-facing documentation.
