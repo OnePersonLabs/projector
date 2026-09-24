@@ -14,6 +14,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  type ArchitectureResearchPort,
   assessDecisionValidity,
   assessDecisionDeferral,
   captureDecisionStateBinding,
@@ -51,7 +52,7 @@ const preference = (id: string, key: string, preferenceScope: DeveloperPreferenc
   semanticHash: hashSemantic("developer-preference", { id, key, scope: preferenceScope, selector: scope("desktop"), strength, statement: key, status: "active", sourceClass: "authored" }),
 });
 const adapterContext: AdapterContext = { repositoryRoot: "/repo", stateDigest: closure.boundState.compiledAgainst, config: {}, signal: new AbortController().signal };
-const evaluationPorts = (preferences: readonly DeveloperPreference[] = [], matches: Readonly<Record<string, readonly string[]>> = {}, research?: { verifyOptionSet: ReturnType<typeof vi.fn> }) => ({
+const evaluationPorts = (preferences: readonly DeveloperPreference[] = [], matches: Readonly<Record<string, readonly string[]>> = {}, research?: ArchitectureResearchPort) => ({
   ...(research === undefined ? {} : { research }),
   preferences: { read: async (id: string) => preferences.find((item) => item.id === id), match: async ({ preference: item }: { preference: DeveloperPreference }) => matches[item.id] ?? [] },
   authority: { read: async () => undefined },
@@ -79,7 +80,7 @@ describe("scoped decision proof and StateBinding", () => {
 
 describe("research, options, preferences, and deferral", () => {
   it("verifies only the affected option set through the port and blocks unavailable automatic acceptance", async () => {
-    const verifyOptionSet = vi.fn().mockResolvedValue({ options: [option("retain")], evidenceIds: [], unavailable: true, uncertainty: ["official capability unavailable"] });
+    const verifyOptionSet = vi.fn<ArchitectureResearchPort["verifyOptionSet"]>().mockResolvedValue({ options: [option("retain")], evidenceIds: [], unavailable: true, uncertainty: ["official capability unavailable"] });
     const result = await evaluateDecisionOptions({ concern, options: [option("retain"), option("replace")], preferenceIds: [], research: { required: true, affectedEvidenceIds: ["evidence:platform"] }, acceptance: { kind: "automatic" } }, evaluationPorts([], {}, { verifyOptionSet }));
     expect(verifyOptionSet).toHaveBeenCalledWith(expect.objectContaining({ affectedEvidenceIds: ["evidence:platform"] }));
     expect(result.evaluation.outcome).toBe("insufficient-evidence");
