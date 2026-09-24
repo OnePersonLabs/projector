@@ -33,10 +33,12 @@ export class OpenSpecAdapter {
     }
     for (const name of await files(schemaRoot)) {
       const to = safePath(destination, `openspec/schemas/projector/${name}`);
+      // Provision the bundle in fresh target staging, but preserve repository-owned candidate schema edits.
+      if (await exists(to)) continue;
       await mkdir(path.dirname(to), { recursive: true }); await copyFile(safePath(schemaRoot, name), to);
     }
     const config = safePath(destination, 'openspec/config.yaml');
-    if (!await exists(config)) await writeFile(config, 'schema: projector\n');
+    if (!await exists(config) && !await exists(safePath(destination, 'openspec/config.yml'))) await writeFile(config, 'schema: projector\n');
     const metadata = safePath(destination, `openspec/changes/${change}/.openspec.yaml`);
     const value = await exists(metadata) ? parse(await textFile(metadata)) as Record<string, unknown> : {};
     await writeFile(metadata, stringify({ ...value, schema: 'projector' }));
@@ -55,7 +57,7 @@ export class OpenSpecAdapter {
     const temporary = safePath(root, `.worktrees/projector-target-${randomUUID()}`);
     await mkdir(temporary, { recursive: true });
     try {
-      const originalPaths = (await git(root, ['ls-tree', '-r', '--name-only', baseline, '--', 'openspec/specs', 'openspec/designs', 'openspec/terms', 'openspec/config.yaml'])).split('\n').filter(Boolean);
+      const originalPaths = (await git(root, ['ls-tree', '-r', '--name-only', baseline, '--', 'openspec/specs', 'openspec/designs', 'openspec/terms', 'openspec/config.yaml', 'openspec/config.yml'])).split('\n').filter(Boolean);
       for (const name of originalPaths) {
         const to = safePath(temporary, name); await mkdir(path.dirname(to), { recursive: true });
         await writeFile(to, (await runGit(['show', `${baseline}:${name}`], root)).stdout);

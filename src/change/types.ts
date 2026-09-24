@@ -62,6 +62,8 @@ export interface ChangeState {
   targetId: string;
   targetRef: string;
   previousTarget?: string;
+  synchronizedTarget?: string;
+  pendingSynchronization?: string;
   previousSupport: Support[];
   requirements: string[];
   inputHash: string;
@@ -83,5 +85,5 @@ export interface ChangeServiceOptions {
   openspecEntry?: string;
   now?: () => number;
   beforeCandidateMutation?: (candidateRoot: string, operation: string) => Promise<void>;
-  fault?: (point: 'after-target' | 'after-archive' | 'before-publication' | 'after-publication') => void | Promise<void>;
+  fault?: (point: 'after-target' | 'after-sync-file' | 'after-archive' | 'before-publication' | 'after-publication') => void | Promise<void>;
 }

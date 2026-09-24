@@ -25,4 +25,4 @@ artifacts:
 apply:
   requires: [tasks]
   tracks: tasks.md
-  instruction: Use the explicit Projector extension to prepare the candidate, review applicability and contributions, apply acknowledged edits, execute evidence, and finish the exact reviewed target.
+  instruction: Use the installed $projector:apply skill to prepare the candidate and implement the reviewed plan, then $projector:verify and $projector:finish for executed evidence, independent review and completion.

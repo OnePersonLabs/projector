@@ -11,7 +11,7 @@ import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { install } from '../src/host/install.ts';
 import { send } from '../src/host/client.ts';
-import { readCredential, settings } from '../src/host/config.ts';
+import { readCredential, settings, VERSION } from '../src/host/config.ts';
 
 const execute = promisify(execFile);
 async function freePort() {
@@ -50,7 +50,7 @@ test('fresh installed runtime serves two actual MCP clients and qualified manage
   const launch = JSON.parse(await readFile(join(plugin, 'mcp.json'), 'utf8')).mcpServers.projector as { type: string; command: string; args: string[] };
   assert.equal(launch.type, 'stdio'); assert.equal(launch.command, 'node');
   const launchArgs = launch.args.map(value => value.replaceAll('${PLUGIN_ROOT}', plugin));
-  t.diagnostic(JSON.stringify({ installedVersion: '4.0.0', node: process.version, installMs: performance.now() - start, installedBytes: await bytes(plugin), nativePackaging: 'node:sqlite bundled with Node; no addon build' }));
+  t.diagnostic(JSON.stringify({ installedVersion: VERSION, node: process.version, installMs: performance.now() - start, installedBytes: await bytes(plugin), nativePackaging: 'node:sqlite bundled with Node; no addon build' }));
   const environment = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   const connect = async (name: string) => {
     const client = new Client({ name, version: '1.0.0' }); clients.push(client);
@@ -60,6 +60,14 @@ test('fresh installed runtime serves two actual MCP clients and qualified manage
   const [a, b] = await Promise.all([connect('client-a'), connect('client-b')]);
   const [openedA, openedB] = await Promise.all([a, b].map(client => client.callTool({ name: 'openRoot', arguments: { root: candidate, profile: 'managed', candidate: 'installed-test' } }).then(result)));
   ownerStarted = true;
+  const toolNames = (await a.listTools()).tools.map(tool => tool.name);
+  assert.ok(toolNames.includes('initProject') && toolNames.includes('syncChange'));
+  const initialized = result(await a.callTool({ name: 'initProject', arguments: { root: repository } }));
+  assert.equal(initialized.ready, true);
+  assert.equal(await readFile(join(repository, 'openspec/config.yaml'), 'utf8'), 'schema: projector\n');
+  assert.deepEqual(result(await b.callTool({ name: 'initProject', arguments: { root: repository } })).created, []);
+  const skills = (await readdir(join(plugin, 'skills'))).sort();
+  assert.deepEqual(skills, ['apply', 'audit', 'continue', 'explore', 'finish', 'init', 'propose', 'reconcile', 'revise', 'sync', 'verify'].sort());
   assert.equal(openedA.rootId, openedB.rootId); assert.equal(openedA.kernel, openedB.kernel);
   const rootId = String(openedA.rootId);
   const current = async () => result(await b.callTool({ name: 'read', arguments: { rootId, view: 'current', reference: '[[Before]]' } }));
@@ -68,6 +76,9 @@ test('fresh installed runtime serves two actual MCP clients and qualified manage
   assert.equal((await current()).freshness, 'validated');
   const batch = result(await a.callTool({ name: 'beginBatch', arguments: { rootId, writer: 'writer-a', paths: ['source.ts'] } }));
   assert.equal(batch.acknowledged, true);
+  const blockedSetup = await b.callTool({ name: 'initProject', arguments: { root: candidate } });
+  assert.equal(blockedSetup.isError, true);
+  assert.match(JSON.stringify(blockedSetup), /acknowledged writer|in flight/);
   await writeFile(join(candidate, 'source.ts'), 'export function Before(');
   const pending = await current(); assert.equal(pending.freshness, 'pending'); assert(!('data' in pending));
   await writeFile(join(candidate, 'source.ts'), 'export function Before() { return 2; }\n');

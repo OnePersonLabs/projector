@@ -9,6 +9,7 @@ export async function relay(): Promise<McpServer> {
   const root = { rootId: z.string() };
   const change = { root: z.string(), change: z.string() };
   const definitions: { name: string; description: string; schema: z.ZodObject; readOnly?: boolean }[] = [
+    { name: 'initProject', description: 'Initialize a local Git repository with the bundled Projector schema, preserving existing configuration and reporting conflicts.', schema: z.object({ root: z.string() }) },
     { name: 'openRoot', description: 'Open an exact-revision root or an explicitly allocated managed candidate.', schema: z.object({ root: z.string(), profile: z.enum(['revision', 'managed']).optional(), candidate: z.string().optional() }) },
     { name: 'read', description: 'Query one coherent revision or qualified working-current view. Pending and unavailable responses contain no current payload. Explicit adoption acknowledges the exact proposed binding.', readOnly: true, schema: z.object({ ...root, view: z.enum(['revision', 'current']), revision: z.string().optional(), reference: z.string().optional(), selector: z.record(z.string(), z.unknown()).optional(), fromPath: z.string().min(1).optional(), scope: z.string().min(1).optional(), edge: z.enum(['dependency', 'observation']).optional(), adoptBinding: z.string().min(1).optional(), limit: z.number().int().positive().optional(), cursor: z.string().optional() }) },
     { name: 'inspectStatus', description: 'Inspect observation, pending work and operation counters.', readOnly: true, schema: z.object(root) },
@@ -22,6 +23,7 @@ export async function relay(): Promise<McpServer> {
     { name: 'recordEvidence', description: 'Run a bounded check in the candidate and bind real results to its actual basis.', schema: z.object({ ...change, command: z.string(), args: z.array(z.string()), scope: z.array(z.string()), timeoutMs: z.number().int().positive().optional() }) },
     { name: 'applyChange', description: 'Apply the reviewed deterministic change operations to the isolated candidate.', schema: z.looseObject(change) },
     { name: 'reviseChange', description: 'Rebase planning obligations on revised target inputs while preserving valid contributions.', schema: z.looseObject(change) },
+    { name: 'syncChange', description: 'Materialize the exact target in the isolated candidate without archive or publication.', schema: z.object(change) },
     { name: 'finishChange', description: 'Require current completion evidence, materialize and archive the exact target, and publish only the candidate branch.', schema: z.looseObject(change) },
     { name: 'resumeChange', description: 'Recover the active candidate or remaining archive bookkeeping.', schema: z.object(change) },
   ];

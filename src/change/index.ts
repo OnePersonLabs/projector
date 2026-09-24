@@ -24,7 +24,7 @@ const stateRelative = (change: string) => `openspec/changes/${change}/implementa
 const unwrap = (value: string) => value.replace(/^\[\[|\]\]$/g, '');
 const canonicalReference = (value: string) => unwrap(value).split('#').map(part => decodeURIComponent(part)).join('#');
 function artifact(change: string, name: string): boolean {
-  if (name === 'openspec/config.yaml' || name.startsWith('openspec/schemas/projector/')) return true;
+  if (name === 'openspec/config.yaml' || name === 'openspec/config.yml' || name.startsWith('openspec/schemas/projector/')) return true;
   if (/^openspec\/(specs|designs)\/.+\/(spec|design)\.md$/.test(name)) return true;
   const prefix = `openspec/changes/${change}/`;
   if (!name.startsWith(prefix)) return false;
@@ -139,6 +139,8 @@ export class ChangeService {
     return exclusive(root, change, async () => {
       const state = await this.load(root, change);
       if (['archived', 'publishing', 'published'].includes(state.phase)) throw new Error('A finishing or published change cannot be revised');
+      if (state.pendingSynchronization) throw new Error('Synchronization was interrupted; run syncChange before revising');
+      if (state.synchronizedTarget) await git(root, ['update-ref', `refs/projector/${change}/synchronized/${state.synchronizedTarget}`, state.synchronizedTarget]);
       const inputHash = await this.adapter.inputHash(root, change);
       if (inputHash === state.inputHash) return stateJson(state, { reused: true });
       const projected = await this.adapter.target(root, change, state.baseline, state.targetId);
@@ -292,17 +294,19 @@ export class ChangeService {
       if (!disposed) obligations.push(`Missing applicability disposition: ${requirement}`);
     }
     const support = await this.adapter.support(state.root, state.targetId);
+    const implementations = changes.filter(name => !artifact(state.change, name));
+    const baselinePaths = implementations.length ? new Set((await runGit(['ls-tree', '-r', '--name-only', '-z', state.baseline, '--', ...implementations], state.root)).stdout.split('\0').filter(Boolean)) : new Set<string>();
     const renamed = (decision: string) => canonicalReference(Object.entries(state.bindingRenames ?? {}).find(([old]) => canonicalReference(old) === canonicalReference(decision))?.[1] ?? decision);
     const matches = (item: Support, contribution: Contribution) => item.path === contribution.path && renamed(item.decision) === renamed(contribution.decision) && (!item.target?.includes('#') || canonicalReference(item.target) === contribution.target);
     for (const contribution of state.plan.contributions) {
       safePath(state.candidateRoot, contribution.path);
       const withdrawsPrior = ['remove', 'replace'].includes(contribution.action) && state.previousSupport.some(item => matches(item, contribution));
+      const removesBaselineFile = contribution.action === 'remove' && baselinePaths.has(contribution.path) && !await exists(safePath(state.candidateRoot, contribution.path));
       if (!withdrawsPrior && !declared.decisions.has(renamed(contribution.decision))) obligations.push(`Contribution refers to no current decision: ${contribution.decision}`);
-      if (!withdrawsPrior && !support.some(item => matches(item, contribution))) obligations.push(`Contribution lacks a current Realizes binding: ${contribution.path} (${contribution.decision})`);
+      if (!withdrawsPrior && !removesBaselineFile && !support.some(item => matches(item, contribution))) obligations.push(`Contribution lacks a current Realizes binding: ${contribution.path} (${contribution.decision})`);
     }
-    for (const name of changes.filter(item => /^openspec\/(specs|designs)\//.test(item))) obligations.push(`Live authority was edited inside the candidate; express this change in its target delta: ${name}`);
-    const implementations = changes.filter(name => !artifact(state.change, name));
-    const baselinePaths = implementations.length ? new Set((await runGit(['ls-tree', '-r', '--name-only', '-z', state.baseline, '--', ...implementations], state.root)).stdout.split('\0').filter(Boolean)) : new Set<string>();
+    if (state.pendingSynchronization) obligations.push('Synchronization was interrupted; run syncChange');
+    for (const name of await this.authorityConflicts(state)) obligations.push(`Live authority was edited inside the candidate; express this change in its target delta: ${name}`);
     for (const name of implementations) {
       const removed = !await exists(safePath(state.candidateRoot, name));
       if (!state.plan.contributions.some(item => item.path === name && (removed ? item.action === 'remove' || item.action === 'replace' : item.action !== 'remove' && support.some(target => matches(target, item))))) obligations.push(`Changed artifact has no current contribution disposition: ${name}`);
@@ -393,19 +397,68 @@ export class ChangeService {
       if (expected !== await textFile(safePath(state.candidateRoot, name))) throw new Error(`Materialized target differs from reviewed bytes: ${name}`);
     }
   }
-  private async materializeDesignTarget(state: ChangeState): Promise<void> {
-    const before = (await git(state.root, ['ls-tree', '-r', '--name-only', state.baseline, '--', 'openspec/designs'])).split('\n').filter(Boolean);
-    const after = (await git(state.root, ['ls-tree', '-r', '--name-only', state.targetId, '--', 'openspec/designs'])).split('\n').filter(Boolean);
-    for (const name of [...new Set([...before, ...after])]) {
-      const destination = safePath(state.candidateRoot, name);
-      const current = await exists(destination) ? await textFile(destination) : undefined;
-      const old = before.includes(name) ? (await runGit(['show', `${state.baseline}:${name}`], state.root)).stdout : undefined;
-      const target = after.includes(name) ? (await runGit(['show', `${state.targetId}:${name}`], state.root)).stdout : undefined;
-      if (current !== old && current !== target) throw new Error(`Design changed outside the sealed target: ${name}`);
-      if (current === target) continue;
+  private async authorityTree(state: ChangeState, revision: string): Promise<Map<string, string>> {
+    const names = (await runGit(['ls-tree', '-r', '--name-only', '-z', revision, '--', 'openspec/specs', 'openspec/designs'], state.root)).stdout.split('\0').filter(Boolean);
+    const result = new Map<string, string>();
+    for (const name of names) result.set(name, (await runGit(['show', `${revision}:${name}`], state.root)).stdout);
+    return result;
+  }
+  private async candidateAuthority(state: ChangeState): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    for (const directory of ['openspec/specs', 'openspec/designs']) for (const relative of await files(safePath(state.candidateRoot, directory))) {
+      const name = `${directory}/${relative}`;
+      result.set(name, await textFile(safePath(state.candidateRoot, name)));
+    }
+    return result;
+  }
+  private async authorityConflicts(state: ChangeState): Promise<string[]> {
+    const expected = await this.authorityTree(state, state.synchronizedTarget ?? state.baseline);
+    const actual = await this.candidateAuthority(state);
+    return [...new Set([...expected.keys(), ...actual.keys()])].filter(name => expected.get(name) !== actual.get(name));
+  }
+  private async materializeTarget(state: ChangeState): Promise<void> {
+    const before = await this.authorityTree(state, state.synchronizedTarget ?? state.baseline);
+    const after = await this.authorityTree(state, state.targetId);
+    const actual = await this.candidateAuthority(state);
+    // Validate every file before writing any. Only a durable interrupted operation permits a mix of old and target bytes.
+    if (state.pendingSynchronization && state.pendingSynchronization !== state.targetId) throw new Error('Pending synchronization target no longer matches the current target');
+    for (const name of new Set([...before.keys(), ...after.keys(), ...actual.keys()])) {
+      if (actual.get(name) !== before.get(name) && (!state.pendingSynchronization || actual.get(name) !== after.get(name))) {
+        throw new Error(`Live authority changed outside the synchronized target: ${name}`);
+      }
+    }
+    await git(state.root, ['update-ref', `refs/projector/${state.change}/synchronized/${state.targetId}`, state.targetId]);
+    state.pendingSynchronization = state.targetId; await this.save(state);
+    for (const name of new Set([...before.keys(), ...after.keys()])) {
+      const target = after.get(name), destination = safePath(state.candidateRoot, name);
+      if (actual.get(name) === target) continue;
       if (target === undefined) await unlink(destination);
       else { await mkdir(path.dirname(destination), { recursive: true }); await writeFile(destination, target); }
+      await this.options.fault?.('after-sync-file');
     }
+    await this.verifyTarget(state);
+    state.synchronizedTarget = state.targetId; state.pendingSynchronization = undefined; await this.save(state);
+  }
+  async syncChange(request: JsonRequest): Promise<JsonRequest> {
+    const { root, change } = await this.context(request);
+    return exclusive(root, change, async () => {
+      const state = await this.load(root, change);
+      if (['verified', 'archived', 'publishing', 'published'].includes(state.phase)) throw new Error('A finishing or published change cannot be synchronized');
+      const requiresRevision = await this.adapter.inputHash(root, change) !== state.inputHash;
+      if (requiresRevision && !state.pendingSynchronization) throw new Error('Target inputs changed; run reviseChange');
+      if (await git(root, ['rev-parse', state.candidateBranch]) !== state.candidateHead) throw new Error('Candidate branch moved before synchronization; scoped refresh required');
+      const reused = state.synchronizedTarget === state.targetId && !state.pendingSynchronization;
+      await this.options.beforeCandidateMutation?.(state.candidateRoot, 'syncChange');
+      await this.materializeTarget(state);
+      if (!reused) {
+        state.evidence = [];
+        if (state.plan) state.plan.review = undefined;
+        state.obligations = requiresRevision ? ['Interrupted synchronization recovered; target inputs changed, run reviseChange']
+          : ['Authority synchronized: execute verification and independent review against the current candidate'];
+        await this.save(state);
+      }
+      return stateJson(state, { synchronized: true, reused, requiresRevision, basis: (await this.fingerprint(state)).basis });
+    });
   }
   async finishChange(request: JsonRequest): Promise<JsonRequest> {
     const { root, change } = await this.context(request);
@@ -439,8 +492,8 @@ export class ChangeService {
       }
       const active = safePath(state.candidateRoot, `openspec/changes/${state.change}`);
       await atomicJson(path.join(active, 'implementation-state.json'), { ...state, phase: 'verified', obligations: [] });
-      await this.materializeDesignTarget(state);
-      const archived = await this.adapter.invoke(state.candidateRoot, ['archive', state.change, '--yes', '--json']);
+      await this.materializeTarget(state);
+      const archived = await this.adapter.invoke(state.candidateRoot, ['archive', state.change, '--yes', '--skip-specs', '--json']);
       const data = archived.archive as { path?: string; change?: string } | undefined;
       if (!data?.path || data.change !== state.change) throw new Error('OpenSpec archive returned an unexpected identity');
       state.archivePath = data.path;
