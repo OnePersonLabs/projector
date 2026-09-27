@@ -12,8 +12,8 @@ For patch reconstruction, read [importing existing work](references/import.md), 
 1. Inventory staged, unstaged, and untracked work. Inspect actual content and identify one coherent selected patch, unrelated files, and ambiguous ownership. Clarify only scope that cannot be inferred safely.
 2. Infer durable behavior and decisions from the selected patch. Use $projector:propose to author a historical reconstruction, explicitly distinguishing inferred intent from observed implementation and preserving source implementation/index.
 3. Reject ghost requirements about performing this reconciliation or cleaning stale references. Put cleanup in tasks/evidence; describe surviving behavior in real requirement deltas.
-4. Prepare and validate a candidate, then import only the selected patch using the reference procedure. Preserve staging distinctions in the source; the candidate represents the selected final implementation.
-5. Audit residue and completeness in the candidate, reconcile tasks against actual work, and run $projector:verify against imported code. Never reuse source-worktree test results as candidate evidence.
-6. Report included/excluded paths, provenance, untouched source/index, candidate location, and validation. Continue to $projector:finish only if authorized.
+4. Prepare and validate the selected implementation checkout, recording the selected patch separately from unrelated edits. Preserve source staging distinctions. If explicit isolated mode is needed, import only the selected patch using the reference procedure.
+5. In checkout mode the selected patch is already present: do not import it over itself. In isolated mode use the selected-patch import procedure, preserving source files and index. Audit residue and completeness in the implementation checkout, reconcile actual tasks, and use $projector:verify. Reuse previous results only when their actual inputs and environment match; location alone is not proof of equivalence.
+6. Report included/excluded paths, historical provenance, preserved unrelated work/index, implementation location, and validation. Continue to $projector:finish when authorized.
 
-Completion: a coherent agent-authored change explains the selected existing work and its imported candidate has real verification, while unrelated source work remains intact.
+Completion: a coherent agent-authored change explains the selected existing work and its implementation has real verification, while unrelated work remains intact.

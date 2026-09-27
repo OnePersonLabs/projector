@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { extractFile, normalizeName, resolveReference, resolveDependencies, selectUnits } from '../documents/index.ts';
+import { extractFile, normalizeName, resolveReference, resolveDependencies, selectUnits, resolveRepository } from '../documents/index.ts';
 import type { FileRecord, ResolveOptions } from '../documents/index.ts';
 import { IndexPool, emptyCounters, git, hash, rootIdentity, safePath, LIMITS } from '../index/index.ts';
 import type { Counters, Indexed, IndexBackend } from '../index/index.ts';
@@ -48,15 +48,18 @@ function putFile(view: Snapshot, file: FileRecord): void {
   view.bytes += Buffer.byteLength(JSON.stringify(file));
   if (view.bytes > LIMITS.snapshotBytes * 4) throw new Error('Semantic snapshot memory budget exceeded');
   for (const unit of file.units) {
-    const members = view.names.get(unit.key) ?? new Set<string>(); members.add(file.path); view.names.set(unit.key, members);
+    if (!unit.address.startsWith('artifact:')) {
+      const members = view.names.get(unit.key) ?? new Set<string>(); members.add(file.path); view.names.set(unit.key, members);
+    }
     const key = JSON.stringify(unit.address.split('#').map(decodeURIComponent));
     const addressed = view.addresses.get(key) ?? new Set<string>(); addressed.add(file.path); view.addresses.set(key, addressed);
   }
   for (const binding of file.bindings ?? []) if (binding.exported) {
     const key = normalizeName(binding.exported); const members = view.names.get(key) ?? new Set<string>(); members.add(file.path); view.names.set(key, members);
   }
-  if (file.diagnostics.some(diagnostic => diagnostic.code.includes('unknown'))) view.unknowns.add(file.path);
-  if (/(?:^|\/)(?:package\.json|tsconfig[^/]*\.json|nx\.json|eslint\.config\.[^/]+|\.eslintrc[^/]*|dependency-cruiser[^/]*)$/.test(file.path)) view.configuration.add(file.path);
+  if (file.diagnostics.some(diagnostic => /(?:syntax|units|declaration)-unknown/.test(diagnostic.code)) ||
+      file.capabilities?.units === 'unknown' && /\.(?:[cm]?[jt]sx?|py|rs|cs)$/i.test(file.path)) view.unknowns.add(file.path);
+  if (file.units.some(unit => unit.data?.domain === 'configuration') || /(?:^|\/)(?:package\.json|tsconfig[^/]*\.json|nx\.json|eslint\.config\.[^/]+|\.eslintrc[^/]*|dependency-cruiser[^/]*|Cargo\.(?:toml|lock)|pyproject\.toml|setup\.(?:py|cfg)|[^/]+\.(?:csproj|props|targets)|tauri\.conf\.[^/]+|(?:metro|babel)\.config\.[^/]+|app\.json)$/.test(file.path)) view.configuration.add(file.path);
 }
 function dropFile(view: Snapshot, file: string): void {
   const previous = view.files.get(file); if (!previous) return;
@@ -156,7 +159,8 @@ export class Kernel {
     if (profile === 'managed') {
       const marker = JSON.parse(await readFile(path.join(identity.gitDir, 'projector-candidate.json'), 'utf8')) as Record<string, unknown>;
       if (marker.version !== 1 || marker.writerContract !== 'acknowledged-batches' || marker.root !== identity.root || marker.candidate !== request.candidate) throw new Error('Managed candidate allocation/identity contract does not match');
-      if (path.resolve(identity.gitDir) === path.resolve(identity.root, '.git')) throw new Error('An ordinary checkout cannot be asserted to be an isolated managed candidate');
+      if (path.resolve(identity.gitDir) === path.resolve(identity.root, '.git') && marker.mode !== 'checkout') throw new Error('An ordinary checkout requires an explicit checkout allocation');
+      if (marker.mode !== undefined && marker.mode !== 'checkout' && marker.mode !== 'isolated') throw new Error('Unknown managed workspace mode');
       candidate = String(marker.candidate);
     }
     const directory = path.join(this.stateDir, identity.id);
@@ -212,6 +216,8 @@ export class Kernel {
         putFile(session.current, file); session.dirty.delete(file.path);
       }
       for (const file of indexed.deleted) if (session.dirty.get(file) === generations.get(file)) { dropFile(session.current, file); session.dirty.delete(file); }
+      const resolved = resolveRepository(session.current.files);
+      session.current = snapshot(session.current.revision, [...resolved.values()]);
       session.current.revision = `managed:${session.candidate}:${session.generation}`;
     })();
     session.refresh = operation;
@@ -224,7 +230,7 @@ export class Kernel {
       const filename = decodeURIComponent(reference.slice(5).split('#')[0]!);
       const file = view.files.get(filename); return file ? [file] : [];
     }
-    if (reference.startsWith('spec:') || reference.startsWith('design:')) {
+    if (reference.startsWith('spec:') || reference.startsWith('design:') || reference.startsWith('artifact:')) {
       const addressed = view.addresses.get(JSON.stringify(reference.split('#').map(decodeURIComponent)));
       return [...addressed ?? []].map(file => view.files.get(file)!);
     }

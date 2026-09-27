@@ -11,7 +11,20 @@ import { Worker } from 'node:worker_threads';
 import { once } from 'node:events';
 import { startOwner } from '../src/host/server.ts';
 import { send, connectOwner, EndpointError } from '../src/host/client.ts';
-import { settings, PROTOCOL, VERSION, MAX_BYTES, readCredential } from '../src/host/config.ts';
+import { settings, PROTOCOL, VERSION, MAX_BYTES, readCredential, operationTimeout } from '../src/host/config.ts';
+
+test('evidence transport uses the selected bounded deadline while normal operations retain their budget', async t => {
+  assert.equal(operationTimeout({ op: 'read', timeoutMs: 600000 }, 30), 30);
+  assert.equal(operationTimeout({ op: 'recordEvidence' }, 30000), 75000);
+  assert.equal(operationTimeout({ op: 'recordEvidence', timeoutMs: 600000 }, 30000), 615000);
+  for (const timeoutMs of [0, -1, 600001, 1.5, '1000']) assert.throws(() => operationTimeout({ op: 'recordEvidence', timeoutMs }, 30), /timeoutMs/);
+  const fixture = await workspace(); t.after(() => fixture.dispose());
+  const config = settings({ home: join(fixture.path, 'state'), port: await port(), timeoutMs: 100 });
+  let executions = 0;
+  const owner = await startOwner(config, () => ({ async handle() { executions++; await new Promise(resolve => setTimeout(resolve, 250)); return { executions, passed: true }; }, async close() {} }));
+  t.after(() => owner.close());
+  assert.deepEqual(await send(config, { op: 'recordEvidence', timeoutMs: 1000 }, await readCredential(config)), { executions: 1, passed: true });
+});
 
 const execute = promisify(execFile);
 async function port(): Promise<number> {

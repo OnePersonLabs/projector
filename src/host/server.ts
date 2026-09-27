@@ -3,7 +3,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpath } from 'node:fs/promises';
 import { initProject } from './project.ts';
-import { MAX_BYTES, PROTOCOL, VERSION, ownerCredential, claimConfiguredEndpoint, settings, type HostSettings } from './config.ts';
+import { MAX_BYTES, PROTOCOL, VERSION, ownerCredential, claimConfiguredEndpoint, settings, operationTimeout, type HostSettings } from './config.ts';
 
 export type Request = Record<string, unknown> & { op: string };
 export interface Dispatcher { handle(request: Request): Promise<unknown>; close(): Promise<void> }
@@ -63,7 +63,7 @@ export async function startOwner(options: Partial<HostSettings> = {}, factory: (
     if (Number(request.headers['content-length'] ?? 0) > MAX_BYTES) { respond(response, 413, { error: 'Request exceeds the payload budget.' }); return; }
     if (active >= 64) { respond(response, 429, { error: 'Owner request budget exceeded; retry after active operations settle.' }); return; }
     active++;
-    const deadline = setTimeout(() => response.destroy(new Error('Owner request deadline exceeded.')), config.timeoutMs);
+    let deadline = setTimeout(() => response.destroy(new Error('Owner request deadline exceeded.')), config.timeoutMs);
     deadline.unref();
     try {
       const parts: Buffer[] = []; let size = 0;
@@ -75,6 +75,10 @@ export async function startOwner(options: Partial<HostSettings> = {}, factory: (
       const body: unknown = JSON.parse(Buffer.concat(parts).toString('utf8'));
       if (!body || typeof body !== 'object' || Array.isArray(body)) { respond(response, 400, { error: 'Expected an operation object.' }); return; }
       const input = body as Request;
+      const timeoutMs = operationTimeout(input, config.timeoutMs);
+      clearTimeout(deadline);
+      deadline = setTimeout(() => response.destroy(new Error('Owner request deadline exceeded; inspect recorded results before repeating a mutation.')), timeoutMs);
+      deadline.unref();
       if (input.op === 'hello') {
         if (input.protocol !== PROTOCOL || input.version !== VERSION) { respond(response, 409, { error: 'Incompatible Projector protocol/version; stop the existing owner before upgrading.' }); return; }
         respond(response, 200, { product: 'projector', protocol: PROTOCOL, version: VERSION, ownerId, pid: process.pid, runtime: process.version, platform: process.platform, architecture: process.arch }); return;

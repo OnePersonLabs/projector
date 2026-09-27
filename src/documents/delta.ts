@@ -45,7 +45,7 @@ function validContent(content: string, address: string): boolean {
   const segments = address.split('#');
   const expectedDepth = segments.length + 1;
   if (first.depth !== expectedDepth) return false;
-  const expectedName = segments.length === 1 ? partKey(first.name) : component(first.name);
+  const expectedName = segments.length === 1 ? partKey(first.name) ?? component(first.name) : component(first.name);
   return expectedName === segments.at(-1) && !parsed.sections.slice(1).some(section => section.depth <= first.depth);
 }
 export function applyDesignDelta(source: string, delta: DesignDelta, options: { path?: string; recordedApplication?: DeltaReceipt } = {}): DeltaResult {
@@ -113,7 +113,6 @@ export function applyDesignDelta(source: string, delta: DesignDelta, options: { 
           let name: string;
           try { name = newParts.length > 1 ? decodeURIComponent(local) : local.startsWith('decision:') ? `Decision: ${local.slice(9)}` : local[0]!.toUpperCase() + local.slice(1); }
           catch { return reject('delta-address-invalid', 'Invalid percent escape in rename destination.', operation.to); }
-          if (newParts.length === 1 && !partKey(name)) return reject('delta-rename-invalid', 'A design part must retain an addressable role.', operation.to);
           const newline = source.slice(target.start, target.contentStart).endsWith('\r\n') ? '\r\n' : '\n';
           edits.push({ start: target.start, end: target.contentStart, content: `${'#'.repeat(target.depth)} ${name}${newline}` });
           renames[`design:${addressPath(delta.target)}#${operation.address}`] = `design:${addressPath(delta.target)}#${operation.to}`;

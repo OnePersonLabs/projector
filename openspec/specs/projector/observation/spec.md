@@ -7,29 +7,37 @@ Distinguish precisely identified historical facts from qualified working observa
 ## Requirements
 
 ### Requirement: Honest read modes
-Projector SHALL offer exact revision reads and explicitly managed candidate reads. An ordinary editor worktree SHALL NOT become managed by assertion. Missing observation, interrupted writes, root replacement and unknown shell outputs SHALL return pending or unavailable with no purported current payload. Prior exact revisions remain independently queryable.
+Projector SHALL offer exact revision reads and explicitly enrolled managed implementation checkouts, including ordinary selected checkouts. Enrollment SHALL require lifecycle identity and acknowledged writes; assertion alone SHALL NOT establish currentness. Missing observation, interrupted writes, root replacement, and unknown outputs SHALL yield pending/unavailable without current payload. Exact historical revisions remain queryable.
 
 #### Scenario: Writer interruption
-- **WHEN** a cooperating writer fails to complete an acknowledged batch
-- **THEN** current reads remain pending or unavailable until its ownership and independent checkpoint are resolved
+- **WHEN** an acknowledged batch is interrupted
+- **THEN** current reads remain pending or unavailable until ownership and checkpoint recover
 
 ### Requirement: Coalesced publication
-Projector SHALL coalesce undemanded writes, share required extraction between readers, validate generation before publication, and preserve newer dirtiness when older work completes. One hundred edits followed by thirty-two readers SHALL require only one extraction of the final demanded file. A matching warm read SHALL perform no source reads, source hashing, parsing, or model calls.
+Projector SHALL coalesce undemanded writes, share extraction, validate generation before publication, and preserve newer dirtiness. One hundred edits followed by thirty-two readers SHALL require one extraction of the final demanded file. A matching warm read SHALL perform no source reads, hashing, parsing, or model calls.
 
 #### Scenario: A file changes during extraction
-- **WHEN** a newer batch changes the input of an in-flight extraction
-- **THEN** the obsolete result cannot clear the newer dirty state or become a current answer
+- **WHEN** a newer batch changes an in-flight input
+- **THEN** the obsolete result cannot clear dirtiness or publish current output
 
 ### Requirement: Shared owner and bounded workers
-Projector SHALL use one OS-owned authenticated user-local endpoint, independent root identities, at most two blocking-work lanes, fair bounded queues, bounded query/history/output/storage resources and explicit overload errors. Closing a relay SHALL NOT close the owner needed by another relay.
+Projector SHALL use one OS-owned authenticated local endpoint, independent root identities, at most two blocking lanes, fair bounded queues, bounded queries/history/output/storage, and overload errors. Closing a relay SHALL NOT close the owner. Evidence execution SHALL permit its selected bounded deadline through client/owner transport while normal operations retain their budget; disconnected callers SHALL inspect recorded results before retrying.
 
 #### Scenario: Simultaneous clients
-- **WHEN** two client relays start concurrently
-- **THEN** only the exclusive endpoint owner initializes the kernel and both clients join it
+- **WHEN** two relays start concurrently
+- **THEN** one exclusive owner initializes and both join it
+
+#### Scenario: Long evidence check
+- **WHEN** an installed check runs longer than thirty seconds within its selected deadline
+- **THEN** it completes with one recorded result without an owner/client thirty-second timeout
 
 ### Requirement: Disposable cache recovery
-Projector SHALL keep authored meaning, active previous targets and recovery identity outside its disposable SQLite index. Cache deletion or corruption SHALL rebuild derived facts without deleting authored state. Worker failure SHALL withhold publication and allow subsequent jobs to recover.
+Authored meaning, target refs, and recovery identity SHALL remain outside disposable SQLite. Cache deletion or corruption SHALL rebuild derived facts without deleting authored state. Provider cache identities SHALL include extraction schema, provider/parser/grammar/query revisions, path/content, and relevant project configuration. Worker failure and parser cancellation SHALL withhold publication and permit recovery; syntax trees SHALL NOT be retained between jobs.
 
 #### Scenario: Index corruption
-- **WHEN** a candidate's derived database is corrupt after an interrupted batch
-- **THEN** Projector retains the pending observation record and rebuilds after an explicit checkpoint
+- **WHEN** a derived database is corrupt after an interrupted batch
+- **THEN** the observation record survives and an explicit checkpoint rebuilds
+
+#### Scenario: Provider identity changes
+- **WHEN** parser query or project configuration changes
+- **THEN** derived extraction/resolution is invalidated before reuse

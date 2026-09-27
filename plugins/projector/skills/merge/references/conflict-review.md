@@ -21,6 +21,6 @@ Group all known decisions in one request. Do not reduce the brief to paths, symb
 
 ## Interrupted integration
 
-Use `git worktree list --porcelain` and the `projector/merge-*` branch prefix to find preserved work. Confirm the original target branch, pinned target commit and pinned source parent from Git before continuing. Inspect `MERGE_HEAD`, unmerged index stages and the current diff. If several temporary integrations fit, present their concrete branch, path, target and source commits for selection.
+Use `git worktree list --porcelain` and the publication journal under the target Git directory's `projector-publications` directory to find preserved detached integration work. Confirm the recorded target branch, pinned target commit, source parent, exact reviewed commit, and worktree before continuing. Inspect journal progress, `MERGE_HEAD`, unmerged stages, and actual files. If several integrations fit, present their concrete path, target, and source commits for selection. Resume the same prepared transaction rather than creating a second publication.
 
-Do not reset a target branch, delete a dirty worktree or force-delete a temporary branch during recovery. After successful publication, use `git worktree unlock`, `git worktree remove` and `git branch -d` against the exact recorded targets. If cleanup fails, leave the reviewed target intact and report the remaining worktree or branch.
+Do not reset a target branch or delete a dirty worktree during recovery. Preserve unexpected target edits and staged work. After successful publication, use ordinary Git worktree removal against the exact recorded temporary directory. If cleanup fails, leave the reviewed target intact and report remaining cleanup.

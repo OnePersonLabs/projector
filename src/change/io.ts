@@ -34,8 +34,8 @@ export async function atomicJson(file: string, value: unknown): Promise<void> {
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
   await rename(temporary, file);
 }
-export interface ProcessResult { stdout: string; stderr: string; code: number | null; durationMs: number }
-export async function run(command: string, args: string[], cwd: string, options: { input?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; allowFailure?: boolean } = {}): Promise<ProcessResult> {
+export interface ProcessResult { stdout: string; stdoutBytes: Buffer; stderr: string; code: number | null; durationMs: number }
+export async function run(command: string, args: string[], cwd: string, options: { input?: string | Uint8Array; env?: NodeJS.ProcessEnv; timeoutMs?: number; allowFailure?: boolean; maxOutputBytes?: number } = {}): Promise<ProcessResult> {
   const started = performance.now();
   const result = await new Promise<ProcessResult>((resolve, reject) => {
     const child = spawn(command, args, { cwd, env: { ...process.env, ...options.env }, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -44,7 +44,7 @@ export async function run(command: string, args: string[], cwd: string, options:
     const timer = setTimeout(() => { failure = new Error(`Command timed out: ${command}`); child.kill(); }, options.timeoutMs ?? 60_000);
     const collect = (into: Buffer[]) => (data: Buffer) => {
       bytes += data.length;
-      if (bytes > 2 * 1024 * 1024) { failure = new Error(`Command output exceeded 2 MiB: ${command}`); child.kill(); }
+      if (bytes > (options.maxOutputBytes ?? 2 * 1024 * 1024)) { failure = new Error(`Command output exceeded its byte budget: ${command}`); child.kill(); }
       else into.push(data);
     };
     child.stdout.on('data', collect(chunks)); child.stderr.on('data', collect(errors));
@@ -52,7 +52,8 @@ export async function run(command: string, args: string[], cwd: string, options:
     child.on('close', code => {
       clearTimeout(timer);
       if (failure) return reject(failure);
-      resolve({ stdout: Buffer.concat(chunks).toString('utf8'), stderr: Buffer.concat(errors).toString('utf8'), code, durationMs: performance.now() - started });
+      const stdoutBytes = Buffer.concat(chunks);
+      resolve({ stdout: stdoutBytes.toString('utf8'), stdoutBytes, stderr: Buffer.concat(errors).toString('utf8'), code, durationMs: performance.now() - started });
     });
     child.stdin.on('error', error => { if ((error as NodeJS.ErrnoException).code !== 'EPIPE') failure = error; });
     child.stdin.end(options.input);

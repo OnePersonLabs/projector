@@ -19,6 +19,6 @@ Projector replaces the local `opl-openspec` user workflow while retaining bundle
 | Reverse uncommitted edits | `$projector:reconcile` patch mode |
 | Repository setup | `$projector:init` |
 
-Sync targets the candidate instead of changing accepted requirements ahead of implementation. Finish owns validation, archive, and candidate publication; there is no second generic archive pipeline. Merge owns the separately authorized step from a selected source branch to the current clean working branch.
+Sync targets the candidate instead of changing accepted requirements ahead of implementation. Finish owns validation, archive, and integrated publication; there is no second generic archive pipeline. Merge handles another selected source branch through the same recoverable publication path, preserving unrelated local edits.
 
 Skills share artifact and lifecycle procedures. Review precedes implementation by default; explicit end-to-end requests authorize continuation. OpenSpec stores and cross-repository scheduling remain outside the qualified local runtime.

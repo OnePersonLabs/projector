@@ -1,5 +1,55 @@
 # Projector workflow qualification
 
+## Readiness repair qualification
+
+The portable readiness workload extends the existing clean-evolution evaluator. It does not add a production classifier or a second authority model. Run `node --test test/readiness-evaluation.test.ts` to exercise the authored control and six negative controls.
+
+The control executes producer and consumer behavior: an unwired model runtime reports unavailable; load, inference, warm-up and unload identify missing wiring; the consumer dispatches the first note while model readiness is pending; and dispatch-only observations cannot qualify native audio output. The provider rehearsal resolves a registered Tauri command through a frontend wrapper calling an imported API alias, imported React Native styles and array composition. Removing command registration and advertising unavailable runtime wiring as available both fail their relevant checks. Assets remain fixture-owned inputs; the fixture bank is not executable audio data.
+
+The six negative controls reuse existing observable checks for an undeclared consumer, a nonexistent requirement cited as justification, an external dependency in an explicitly dependency-free workload, incomplete migration, surviving withdrawn structure, and a dispatch-only observation advertised as native audio evidence. These checks identify concrete inconsistencies. They do not establish that prose citing a valid requirement is a sound rationale, that every abstraction is necessary, or that arbitrary obsolete code is discoverable. Those judgments require an independent reviewer reading the requirements and actual implementation.
+
+The authored controls passed on Windows with Node 24.19.0. The separate installed and hosted results below establish the additional workflow evidence. Production gates enforce current contributions, required artifact dispositions, recorded check freshness and review attribution. They cannot establish semantic correctness merely from a review string or a successful process exit.
+
+### Repository and installed checks, 2026-09-26
+
+The final Windows `npm run check` passed TypeScript build, ESLint and all 116 tests. Ubuntu used the official Node 24.19.0 distribution with a verified checksum. Its build and lint passed; 115 tests passed in the full run, and the remaining hook-recovery test passed after correcting its fixture to make the hook executable and select its own hook directory. The user's global hook configuration remained unchanged. The original failures remain recorded.
+
+Both platforms passed the installed two-client MCP tests and the complete prepare, revision, synchronization, evidence, archive, integrated publication and repeated-finish lifecycle. A real check exceeding thirty seconds completed through the installed transport with one recorded result. Linux qualification exposed and corrected the installer's npm path lookup for the official Linux Node layout.
+
+Nine real Git publication tests cover disjoint staged and unstaged edits, shared-file authority edits, prior managed synchronization, ref advancement and interrupted installation, index locking, and recovery after Git pruning. Additional lifecycle tests cover refreshed target commits, selected-tree realization validation, legacy finalized sessions, prerequisites in a fresh clone, and renewal of verification and review after hook mutations. Unresolved hook authority edits remain explicit until incorporated or discarded with a recorded reason.
+
+Strict OpenSpec validation passed for all four live capabilities and both active changes. Projecting the readiness change from the accepted baseline reproduced all nine changed specification and design artifacts. The projection contains 25 changed requirements. The task template remains a change-specific checklist; reusable execution and verification policy lives in the workflow skills.
+
+### Actual Psychord inventory
+
+The read-only rebuilt specification inventory contained 118 capability specifications. The provider extracted 633 units with no diagnostics in approximately 185 milliseconds. This is extraction evidence; strict OpenSpec validation remains a separate check.
+
+The first complete working-code inventory exposed a real cache-capacity/error-reporting failure after approximately 12.8 seconds. The SQLite transaction had already rolled back before the cleanup attempted another rollback, masking the initiating error. The repair removes unused duplicate unit/reference persistence, evicts extraction records by serialized bytes before insertion, retains a 48 MiB payload allowance inside the existing 64 MiB database cap, and preserves the initiating SQLite error when a transaction has already rolled back. Missing cache entries are extracted normally; eviction does not reduce the returned inventory.
+
+The affected read-only inventory then passed: 2,853 files, 22,490,105 raw bytes, approximately 5.53 seconds and a 51,458,048-byte disposable cache. It contained 1,388 Markdown files, 883 TypeScript-family files, 61 Python files, six Rust files, six HTML files, three CSS files, 68 configuration files and 438 opaque files. Its 688 diagnostics remain explicit, including dynamic/native framework relationships and unresolved imports. A passing inventory does not make those relationships complete. Observed process RSS was approximately 474 MB, including worker/WASM runtime allocation; Node worker heap limits are not a WASM memory cap.
+
+After the packaged declaration-query update, a fresh-cache repetition also passed: the same 2,853 files and 688 diagnostics, approximately 7.54 seconds, a 53,108,736-byte cache and approximately 560 MB observed process RSS. The failed result and both repaired results are retained in the operating-system temporary directory as `projector-readiness-inventory.json`. Published fixtures contain no machine-specific source paths. These timings describe local working inventories, not a portable performance guarantee.
+
+### Final installed Psychord inventory
+
+The final installed provider/index/kernel files matched all 48 corresponding built files by SHA-256. Provider fingerprint `6158d8c80182852d3802eb3f22d23487cba897e81c96512469745236e0506b88` indexed the same 2,853 files and 22,490,105 raw bytes in approximately 10.90 seconds. The cache occupied 53,112,832 bytes and observed process RSS was approximately 555 MB. The 665 remaining diagnostics describe scoped uncertainty rather than an incomplete file inventory. The 118 rebuilt specifications again yielded 633 units with no diagnostics.
+
+The actual desktop adapter produced five command links within its owning application and five explicit uncertainties for injected overrides. Module qualifiers no longer appear as command registrations. Two 1,658,912-byte FMOD banks retained raw-byte hashes without text decoding. An installed imported-style probe resolved aliased React Native styles in array composition. An unrelated object's `invoke` method produced no false Tauri relationship.
+
+### Hosted implementation and correction
+
+An actual participant, `/root/implement_workflow`, used the installed runtime in a disposable checkout. It received the participant brief, copied rebuilt model/audio requirements and prior Psychord adapter code, without access to the evaluator's authored control or oracle. It implemented playback, a late recorder, current ownership reconciliation and the unwired model boundary through the real prepare, revise, plan, apply and evidence operations.
+
+The participant's initial tests passed, but the independent oracle found nested event-data aliasing. Independent reviewer `/root/implement_index` also reproduced replay order `[1,3,2]` when a callback published a new event during historical replay. The participant first recorded two failing regressions, then corrected ownership with deep snapshots and per-subscriber queues. The reviewer independently confirmed historical order `[1,2,3]`, cross-subscriber order and nested-data isolation. Five participant tests, the platform probe, reconciliation and evidence-note checks passed. The failed receipt remained in history.
+
+Review also required a specific model-runtime owner instead of attributing model wiring to the playback decision. The trial adopted the rebuilt model specification byte for byte and added a bounded design tied to its availability and immediate-dispatch requirements. The four requirements for real artifacts, backends and sessions remain intact in the canonical text; they are explicitly outside this unwired rehearsal. This does not qualify a real target adapter.
+
+After independent review of the corrected code and revised authority, finish integrated code and accepted authority in trial commit `8b293b58df80c94a8e0f9377bf8b8f617d50d8b6`. Repeated finish reused that commit. The published result also passed the independent oracle. Its history contains 18 executed evidence records, including the failed regression run. The real producer/consumer probe reports unavailable models, four explicit missing-wiring failures, immediate dispatch while readiness is pending, and `qualified: false` for dispatch-only audio observations.
+
+These results qualify the Projector workflow and the stated rehearsal. Native model round trips, physical audio playback/capture and MIDI remain separate Psychord adapter obligations. Static relationships and dispatch checks cannot establish those outcomes.
+
+Detailed logs are retained in the operating-system temporary directory: `projector-final-check.log`, `projector-linux-qa-71PJi2/commands.txt`, `projector-readiness-target.json`, `projector-installed-inventory-final.json`, `projector-installed-relations-final.json`, `projector-hosted-semantic-review.md`, `projector-hosted-semantic-recheck.log`, `projector-hosted-oracle-published.log` and `projector-hosted-finish.json`. The earlier failed results are preserved alongside the successful checks.
+
 ## Projector 4.2.0 reviewed integration
 
 Qualification performed on 2026-09-24 using Windows, Node 24.19.0, Git 2.55.0 and the bundled OpenSpec 1.13.1.

@@ -1,15 +1,15 @@
 ---
 name: finish
-description: Verify and archive one or multiple Projector changes, recover interrupted completion, or carry an explicitly authorized change through end-to-end delivery.
+description: Verify, archive, and integrate selected Projector changes, including recovery of interrupted publication.
 ---
 
-Read [the runtime contract](../apply/references/runtime.md). For several changes, also read [bulk completion](references/bulk.md).
+Read [the runtime contract](../apply/references/runtime.md). For several changes, read [bulk completion](references/bulk.md).
 
-1. Resolve the explicit change selection. “Finish” authorizes necessary verification and archive for the selected change. It does not authorize unrelated scope, integration into the current working branch, deployment or external publication.
-2. For incomplete planning/implementation under an end-to-end request, route through $projector:propose and $projector:apply. For an interrupted finish, call `resumeChange` and act only on remaining bookkeeping or obligations.
-3. Use $projector:verify for current executed evidence and independent review. Resolve every completion obligation. Never manufacture successful review/evidence records or mark unperformed tasks complete.
-4. Call `finishChange({root,change})` as the single archive pipeline. Inspect its returned result, archive path, and publication. Do not run generic OpenSpec archive afterward.
-5. After a successful settled finish, call it again and confirm a substantive no-op. If the baseline or candidate branch moved, preserve all work and report the scoped recovery needed; never force-update refs.
-6. Tell the user what works, what was checked, and where the candidate branch is. Archiving leaves verified work on that branch. If the user also authorized integration, read and use $projector:merge; otherwise, state that integration into the working branch is a separate action.
+1. Resolve the selected change. Finish authorizes verification, archive, and integration into the selected branch. It does not authorize unrelated scope, deployment, or external publication.
+2. Route incomplete planning and implementation through $projector:propose and $projector:apply. For interrupted finish, call `resumeChange` and inspect remaining steps and obligations. Preserve unexpected edits.
+3. Use $projector:verify for current evidence and independent review. Never manufacture results or mark unperformed tasks complete.
+4. Call `finishChange({root,change})`. Publication assembles selected implementation and accepted authority in a temporary detached linked worktree. It runs normal hooks, inspects the resulting commit and hook writes, and integrates reviewed code and authority together. Inspect publication, archive, and recovery details. Do not run generic OpenSpec archive afterward.
+5. If hooks alter checked inputs or finalization fails, inspect the retained delta. Use `resumeChange({root,change,reconcileFinalization:true})` to recover that implementation delta into the selected checkout and reopen implementation. Repair, refresh affected checks, and independently review the result before another finish. Actual overlap or target drift needs scoped reconciliation. Preserve unrelated staged, unstaged, and untracked work, including disjoint shared-file edits. Never stash, reset, bypass hooks, or force-update the target.
+6. Verify the integrated tree and settled recovery. Repeat finish to confirm a substantive no-op. Report the integrated result, checks, and precise remaining obligations. An archived candidate alone is not completion.
 
-Completion: exact target archived and candidate branch published with settled recovery, or an actionable per-change blocker with no claimed success.
+Completion: the selected branch contains reviewed implementation and accepted authority together. Archive bookkeeping is settled and temporary finalization is removed. Otherwise preserve recoverable work and report the blocker.

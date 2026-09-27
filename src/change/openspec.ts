@@ -1,16 +1,18 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { mkdir, writeFile, copyFile, rm, unlink } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile, copyFile, rm, unlink, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parse, stringify } from 'yaml';
-import { applyDesignDelta, extractFile, parseDesignDelta } from '../documents/index.ts';
+import { applyDesignDelta, createDocumentIntelligence, parseDesignDelta, parseArtifactAddress } from '../documents/index.ts';
 import { digest, exists, files, git, run, runGit, safePath, textFile } from './io.ts';
 import type { ChangeServiceOptions, Support } from './types.ts';
 
 const schemaRoot = fileURLToPath(new URL('../../openspec/schemas/projector/', import.meta.url));
 export class OpenSpecAdapter {
   private entry: string;
+  private documentPromise?: ReturnType<typeof createDocumentIntelligence>;
+  private get documents() { return this.documentPromise ??= createDocumentIntelligence(); }
   constructor(options: ChangeServiceOptions) {
     const packageRoot = path.resolve(path.dirname(createRequire(import.meta.url).resolve('@fission-ai/openspec')), '..');
     this.entry = options.openspecEntry ?? path.join(packageRoot, 'bin/openspec.js');
@@ -29,7 +31,7 @@ export class OpenSpecAdapter {
     for (const name of await files(from)) {
       if (name === 'implementation-state.json') continue;
       const to = safePath(destination, `openspec/changes/${change}/${name}`);
-      await mkdir(path.dirname(to), { recursive: true }); await copyFile(safePath(from, name), to);
+      if (path.resolve(source) !== path.resolve(destination)) { await mkdir(path.dirname(to), { recursive: true }); await copyFile(safePath(from, name), to); }
     }
     for (const name of await files(schemaRoot)) {
       const to = safePath(destination, `openspec/schemas/projector/${name}`);
@@ -54,8 +56,7 @@ export class OpenSpecAdapter {
   }
   async target(root: string, change: string, baseline: string, previousTarget?: string): Promise<{ targetId: string; previousSupport: Support[]; requirements: string[]; renames: Record<string, string> }> {
     await this.version(root);
-    const temporary = safePath(root, `.worktrees/projector-target-${randomUUID()}`);
-    await mkdir(temporary, { recursive: true });
+    const temporary = await mkdtemp(path.join(tmpdir(), 'projector-target-'));
     try {
       const originalPaths = (await git(root, ['ls-tree', '-r', '--name-only', baseline, '--', 'openspec/specs', 'openspec/designs', 'openspec/terms', 'openspec/config.yaml', 'openspec/config.yml'])).split('\n').filter(Boolean);
       for (const name of originalPaths) {
@@ -70,7 +71,7 @@ export class OpenSpecAdapter {
       for (const name of await files(safePath(temporary, `openspec/changes/${change}/specs`))) {
         if (!name.endsWith('/spec.md') && name !== 'spec.md') continue;
         const relative = `openspec/changes/${change}/specs/${name}`;
-        const record = extractFile(relative, await textFile(safePath(temporary, relative)));
+        const record = await (await this.documents).extract(relative, await textFile(safePath(temporary, relative)));
         requirements.push(...record.units.filter(unit => unit.kind === 'requirement').map(unit => unit.address));
       }
       const renames = await this.applyDesigns(temporary, change);
@@ -96,9 +97,8 @@ export class OpenSpecAdapter {
       return { targetId: targetId!, previousSupport: await this.support(root, previousTarget ?? baseline), requirements: [...new Set(requirements)], renames };
     } finally {
       // This directory is allocated above, and containment is rechecked before removal.
-      const owned = safePath(root, path.relative(root, temporary));
-      if (path.dirname(owned) !== path.join(root, '.worktrees')) throw new Error('Target staging containment failed');
-      await rm(owned, { recursive: true, force: true });
+      if (path.dirname(temporary) !== tmpdir() || !path.basename(temporary).startsWith('projector-target-')) throw new Error('Target staging containment failed');
+      await rm(temporary, { recursive: true, force: true });
     }
   }
   async applyDesigns(root: string, change: string): Promise<Record<string, string>> {
@@ -121,11 +121,14 @@ export class OpenSpecAdapter {
     const result: Support[] = [];
     const paths = (await git(root, ['ls-tree', '-r', '--name-only', revision, '--', 'openspec/designs'])).split('\n').filter(name => name.endsWith('design.md'));
     for (const name of paths) {
-      const record = extractFile(name, (await runGit(['show', `${revision}:${name}`], root)).stdout);
+      const record = await (await this.documents).extract(name, (await runGit(['show', `${revision}:${name}`], root)).stdoutBytes);
       for (const unit of record.units.filter(unit => unit.kind === 'part')) {
         const fields = unit.data?.fields as Record<string, string[]> | undefined;
-        for (const value of fields?.realizes ?? []) for (const reference of value.matchAll(/\[\[(code:([^\]#]+)(?:#[^\]]*)?)\]\]/g)) {
-          result.push({ path: decodeURIComponent(reference[2]!), decision: unit.address, basis: unit.bodyHash, target: reference[1]! });
+        for (const value of fields?.realizes ?? []) for (const reference of value.matchAll(/\[\[([^\]\n]+)\]\]/g)) {
+          const target = reference[1]!;
+          const parsed = parseArtifactAddress(target);
+          const targetPath = parsed?.path ?? (/^code:([^#]+)/.exec(target)?.[1]);
+          if (targetPath) result.push({ path: parsed ? targetPath : decodeURIComponent(targetPath), decision: unit.address, basis: unit.bodyHash, target });
         }
       }
     }

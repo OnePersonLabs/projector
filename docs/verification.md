@@ -2,7 +2,7 @@
 
 The supported profile is Windows on NTFS, Node 24.19.0, Git 2.55.0.windows.5,
 OpenSpec 1.13.1 and Codex 0.155.1. Runtime and plugin version: **4.0.0**.
-Working-current means an allocated candidate with cooperating, acknowledged
+Working-current means an enrolled checkout with cooperating, acknowledged
 writers. Exact Git revision reads have a separate validity contract.
 
 ## Reproduction
@@ -29,7 +29,7 @@ durable concern designs resolve against the actual repository file inventory.
 | Independent coverage | Selector population changes, hidden declarations, new exports beside covered symbols, actual changed-artifact inventory, prior contribution and replacement residue |
 | Shared observation | One endpoint owner, independent roots, 100 edits/32 readers, generation races, interrupted batches, unknown observation intervals, identity changes and exact historical queries |
 | Recovery | Worker exit and replacement, missing/corrupt disposable database, reconstruction from Git targets, archive/publication faults, Windows archive paths longer than 260 characters and repeated finish |
-| Change lifecycle | Nested target projection, task reconciliation, partial target revision, preserved same-file contributions, missing/stale executed evidence, prerequisites and candidate-only publication |
+| Change lifecycle | Nested target projection, task reconciliation, partial target revision, preserved same-file contributions, missing/stale executed evidence, prerequisites and recoverable integrated publication |
 | Installed behavior | Fresh external installation, two MCP clients, native Windows paths, managed mutation/read interleaving and writer exclusion during lifecycle mutations |
 
 Independent review found and led to fixes for checkpoint epoch races, canonical
@@ -72,12 +72,14 @@ on a large production application. New population members and explicit broad
 checkpoints still require real inventory work. Responses are counted in bytes;
 the runtime does not invent tokenizer-specific output-token counts.
 
-The initial limits are two worker lanes, eight active roots, 128 queued jobs,
-20,000 inventory files, 1 MiB per file, 32 MiB per snapshot, 128 cached queries,
+The limits are two worker lanes, eight active roots, 128 queued jobs,
+20,000 inventory files, 1 MiB per parsed text file, 32 MiB of retained source per snapshot, 128 cached queries,
 256 KiB per query result, 250 rows per page and four retained snapshot versions.
-The worker caps SQLite at 64 MiB, bounds journal growth and checkpoints WAL.
+The worker bounds the extraction cache at 64 MiB and checkpoints WAL. Other SQLite tables and total repository storage are not covered by that extraction-cache limit.
 Host transport caps request/result bodies at 1 MiB and admits at most 64 active
 requests. Active pending/recovery state is preserved; overload rejects admission.
+
+Tracked large and binary artifacts retain raw-byte identity and ownership without being decoded or rejected by those text limits. Provider fingerprints include parser/grammar/query and project-configuration identity. The existing operation-count measurements above describe their recorded fixtures; new language and installed-workflow evidence is recorded in [workflow qualification](qualification-workflow.md).
 
 ## Evidence boundaries
 

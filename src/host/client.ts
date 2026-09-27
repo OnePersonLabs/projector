@@ -1,7 +1,7 @@
 import { request as httpRequest } from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { MAX_BYTES, PROTOCOL, VERSION, readCredential, settings, type HostSettings } from './config.ts';
+import { MAX_BYTES, PROTOCOL, VERSION, readCredential, settings, operationTimeout, type HostSettings } from './config.ts';
 
 export class EndpointError extends Error {
   readonly status?: number;
@@ -9,6 +9,7 @@ export class EndpointError extends Error {
 }
 export async function send(config: HostSettings, body: Record<string, unknown>, token: string | undefined): Promise<unknown> {
   const data = JSON.stringify(body);
+  const timeoutMs = operationTimeout(body, config.timeoutMs);
   if (Buffer.byteLength(data) > MAX_BYTES) throw new EndpointError('Request exceeds the payload budget.');
   return new Promise((resolve, reject) => {
     const request = httpRequest({ host: '127.0.0.1', port: config.port, method: 'POST', path: '/', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) } }, response => {
@@ -23,7 +24,7 @@ export async function send(config: HostSettings, body: Record<string, unknown>, 
         } catch (error) { reject(new EndpointError('Configured endpoint is not a compatible Projector owner.', response.statusCode, { cause: error })); }
       });
     });
-    const timer = setTimeout(() => request.destroy(new EndpointError('Projector request deadline exceeded; inspect status before repeating a mutation.')), config.timeoutMs);
+    const timer = setTimeout(() => request.destroy(new EndpointError('Projector request deadline exceeded; inspect status before repeating a mutation.')), timeoutMs);
     timer.unref(); request.on('close', () => clearTimeout(timer)); request.on('error', reject); request.end(data);
   });
 }

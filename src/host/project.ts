@@ -4,11 +4,19 @@ import { promisify } from 'node:util';
 import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
+import { createHash } from 'node:crypto';
 
 const execute = promisify(execFile);
 const schemaRoot = fileURLToPath(new URL('../../openspec/schemas/projector/', import.meta.url));
 const schemaFiles = ['schema.yaml', 'templates/proposal.md', 'templates/spec.md', 'templates/design.md', 'templates/tasks.md'];
 const queues = new Map<string, Promise<unknown>>();
+// Exact prior bundled contents, with only transport line endings normalized.
+// Customized files are never accepted as stock or overwritten.
+const previousStock: Record<string, string[]> = {
+  'schema.yaml': ['fe3e8fc18e6b3621fe17b2a2a355e797ebf42607c764fb14428582208e546258'],
+  'templates/tasks.md': ['4cd9c2fb04021ba767e855049639f16e60c806c9e94eade9e78fa213e192aacc'],
+};
+const stockHash = (text: string) => createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
 
 async function inspect(root: string, name: string, directory: boolean): Promise<boolean> {
   const parts = name.split('/');
@@ -43,12 +51,17 @@ async function initialize(root: string): Promise<Record<string, unknown>> {
   const directories = ['openspec', 'openspec/specs', 'openspec/designs', 'openspec/changes', 'openspec/changes/archive', 'openspec/schemas', 'openspec/schemas/projector', 'openspec/schemas/projector/templates'];
   for (const name of directories) await inspect(root, name, true);
   const pending = new Map<string, string>();
+  const upgrades = new Map<string, { before: string; after: string }>();
   const conflicts: string[] = [];
   for (const name of schemaFiles) {
     const destination = `openspec/schemas/projector/${name}`;
     const content = await readFile(join(schemaRoot, name), 'utf8');
     if (await inspect(root, destination, false)) {
-      if (await readFile(join(root, destination), 'utf8') !== content) conflicts.push(destination);
+      const before = await readFile(join(root, destination), 'utf8');
+      if (stockHash(before) !== stockHash(content)) {
+        if (previousStock[name]?.includes(stockHash(before))) upgrades.set(destination, { before, after: content });
+        else conflicts.push(destination);
+      }
     } else pending.set(destination, content);
   }
   const yaml = await inspect(root, 'openspec/config.yaml', false);
@@ -69,6 +82,8 @@ async function initialize(root: string): Promise<Record<string, unknown>> {
   const ignore = ignoreExists ? await readFile(join(root, '.gitignore'), 'utf8') : '';
   const hasWorktrees = /^(?:\/)?\.worktrees\/(?:\r)?$/m.test(ignore);
   const created: string[] = [];
+  // Recheck every planned replacement before any writes, including missing files.
+  for (const [name, upgrade] of upgrades) if (await readFile(join(root, name), 'utf8') !== upgrade.before) throw new Error(`${name} changed during setup; review the concurrent edit before retrying`);
   for (const name of directories) {
     if (!await inspect(root, name, true)) { await mkdir(join(root, name), { recursive: true }); created.push(name + '/'); }
   }
@@ -80,6 +95,12 @@ async function initialize(root: string): Promise<Record<string, unknown>> {
     await writeFile(destination, content, { flag: 'wx' });
     created.push(name);
   }
+  const upgraded: string[] = [];
+  for (const [name, upgrade] of upgrades) {
+    if (await readFile(join(root, name), 'utf8') !== upgrade.before) throw new Error(`${name} changed during setup; review the concurrent edit before retrying`);
+    await writeFile(join(root, name), upgrade.after);
+    upgraded.push(name);
+  }
   if (!hasWorktrees) {
     // Preserve all existing text. Exclusive creation protects a concurrent new file.
     const suffix = (ignore && !ignore.endsWith('\n') ? '\n' : '') + '.worktrees/\n';
@@ -89,5 +110,5 @@ async function initialize(root: string): Promise<Record<string, unknown>> {
     } else await writeFile(join(root, '.gitignore'), suffix, { flag: 'wx' });
     created.push('.gitignore');
   }
-  return { root, ready: true, created, conflicts: [], schema: 'projector', configuredSchema, instruction: 'Use the bundled projector schema explicitly for new Projector changes; existing configuration and history are preserved.' };
+  return { root, ready: true, created, upgraded, conflicts: [], schema: 'projector', configuredSchema, instruction: 'Use the bundled projector schema explicitly for new Projector changes; existing configuration and history are preserved.' };
 }

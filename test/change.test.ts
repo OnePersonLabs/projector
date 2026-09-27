@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { tmpdir } from 'node:os';
 import { ChangeService } from '../src/change/index.ts';
 import { fixture, disposition, gitFixture, planAndEvidence, put, read, liveDesign, sha } from './change-fixture.ts';
 
-test('T6/T7: exact nested target, executed evidence, candidate-only publication, recovered cache and settled no-op', async () => {
+test('T6/T7: exact nested target, executed evidence, integrated publication, recovered cache and settled no-op', async () => {
   const input = await fixture(), service = new ChangeService();
   const prepared = await service.prepareChange(input);
   const pending = await service.validatePlan(input);
@@ -14,7 +15,7 @@ test('T6/T7: exact nested target, executed evidence, candidate-only publication,
   await planAndEvidence(service, prepared);
   const before = await service.finishChange(input);
   assert.equal(before.complete, true, JSON.stringify(before.obligations));
-  assert.equal(gitFixture(input.root, 'rev-parse', 'main'), input.baseline);
+  assert.equal(gitFixture(input.root, 'rev-parse', 'main'), before.publication);
   assert.equal(gitFixture(input.root, 'rev-parse', String(before.candidateBranch)), before.publication);
   const candidate = String(prepared.candidateRoot);
   assert.match(await read(candidate, 'openspec/specs/audio/preview/spec.md'), /exactly once/);
@@ -97,16 +98,19 @@ test('T6: undefined target term and an unpublished prerequisite remain explicit 
 
 test('T6: an archived published prerequisite remains available to an integrated baseline', async () => {
   const input = await fixture(), service = new ChangeService();
-  const state = await service.prepareChange(input);
   await put(input.root, 'openspec/changes/archive/2026-09-24-consumer/implementation-state.json', JSON.stringify({
-    change: 'consumer', phase: 'published', publication: state.baseline,
+    change: 'consumer', phase: 'published', publication: input.baseline,
   }));
+  gitFixture(input.root, 'add', 'openspec/changes/archive/2026-09-24-consumer/implementation-state.json');
+  gitFixture(input.root, 'commit', '-m', 'Retain integrated prerequisite receipt');
+  input.baseline = gitFixture(input.root, 'rev-parse', 'HEAD');
+  await service.prepareChange(input);
   const planned = await service.validatePlan({ ...input, ...disposition, prerequisites: ['consumer'] });
   assert.ok(!(planned.obligations as string[]).some(item => item.includes('consumer')));
 });
 
 test('T7: moved candidate ref and mutation after archive are refused without overwriting another revision', async () => {
-  const input = await fixture(), service = new ChangeService(), state = await service.prepareChange(input);
+  const input = await fixture(), service = new ChangeService(), state = await service.prepareChange({ ...input, workspaceMode: 'isolated' });
   await planAndEvidence(service, state);
   const target = String(state.targetId);
   gitFixture(input.root, 'update-ref', String(state.candidateBranch), target, input.baseline);
@@ -118,7 +122,7 @@ test('T7: moved candidate ref and mutation after archive are refused without ove
   const pending = await crashing.prepareChange(another); await planAndEvidence(crashing, pending);
   await assert.rejects(crashing.finishChange(another), /stop after archive/);
   await put(String(pending.candidateRoot), 'src/player.js', 'export function replay() { return 99; }\n');
-  await assert.rejects(new ChangeService().resumeChange(another), /Implementation changed/);
+  await assert.rejects(new ChangeService().resumeChange(another), /Sealed inputs changed/);
   assert.equal(gitFixture(another.root, 'rev-parse', String(pending.candidateBranch)), another.baseline);
 });
 
@@ -171,7 +175,10 @@ test('T6: explicit whole-file realization covers a new internal declaration unde
 });
 
 test('T7: deep native paths recover an archived change and publish without global Git configuration', async () => {
-  const input = await fixture('deep-'.repeat(18));
+  // Keep the root component portable while making the archived state exceed MAX_PATH.
+  const repeats = Math.ceil((285 - tmpdir().length - 107) / 5);
+  const input = await fixture('deep-'.repeat(repeats));
+  assert.ok(path.basename(input.root).length < 255);
   const service = new ChangeService({ fault: point => { if (point === 'after-archive') throw new Error('deep archive interruption'); } });
   const prepared = await service.prepareChange(input);
   await planAndEvidence(service, prepared);
@@ -179,7 +186,7 @@ test('T7: deep native paths recover an archived change and publish without globa
   const completed = await new ChangeService().finishChange(input);
   assert.equal(completed.complete, true, JSON.stringify(completed.obligations));
   assert.ok(`${completed.archivePath}/implementation-state.json`.length > 260);
-  assert.equal(gitFixture(input.root, 'rev-parse', 'main'), input.baseline);
+  assert.equal(gitFixture(input.root, 'rev-parse', 'main'), completed.publication);
   assert.equal(gitFixture(String(prepared.candidateRoot), 'status', '--porcelain'), '');
   assert.equal((await new ChangeService().finishChange(input)).publication, completed.publication);
 });

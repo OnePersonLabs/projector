@@ -16,4 +16,4 @@ export interface Indexed {
 }
 export interface IndexBackend { run(job: IndexJob): Promise<Indexed>; close(): Promise<void>; }
 export const LIMITS = { lanes: 2, roots: 8, queue: 128, files: 20_000, fileBytes: 1_048_576,
-  snapshotBytes: 32 * 1_048_576, queries: 128, resultBytes: 256 * 1024, rows: 250, history: 4 } as const;
+  snapshotBytes: 32 * 1_048_576, cachePayloadBytes: 48 * 1_048_576, queries: 128, resultBytes: 256 * 1024, rows: 250, history: 4 } as const;

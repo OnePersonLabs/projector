@@ -220,3 +220,24 @@ test('unsupported CommonJS and illegal duplicate declarations are explicit unkno
   assert.equal(exactFile.unit?.kind, 'file');
   assert.ok(exactFile.diagnostics.some(diagnostic => diagnostic.code.includes('unknown')));
 });
+
+test('narrative design sections are addressable and survive design delta replacement', () => {
+  const source = `${design}\n## Context\nPrevious implementation detail.\n\n## Goals / Non-Goals\nOwn the behavior.\n`;
+  const record = extractFile('design.md', source);
+  assert.equal(record.diagnostics.some(diagnostic => diagnostic.code === 'design-part-invalid'), false);
+  assert.ok(record.units.some(unit => unit.address === 'design:audio/preview#Context'));
+  const delta = parseDesignDelta('delta.md', `---\ndesignDelta: 1\ntarget: audio/preview\nbaseline: ${digest(source)}\n---\n# Change\n\n## Replace: Context\n\n## Context\nNew implementation detail.\n`);
+  const result = applyDesignDelta(source, delta);
+  assert.equal(result.status, 'applied');
+  assert.ok(result.source?.includes('New implementation detail.'));
+  assert.ok(result.source?.includes('## Goals / Non-Goals'));
+});
+
+test('generated derivation declarations are parsed and invalid declarations are actionable', () => {
+  const declaration = { output: 'generated/schema.ts', producer: 'scripts/generate.ts', inputs: ['schema.json'], retention: 'tracked' };
+  const source = design.replace('## Realization', `**Generated:** ${JSON.stringify(declaration)}\n\n## Realization`);
+  const record = extractFile('design.md', source);
+  assert.deepEqual(record.units.find(unit => unit.address === 'design:audio/preview#decision:retain-buffer')?.data?.generated, [declaration]);
+  const invalid = extractFile('design.md', design.replace('## Realization', '**Generated:** {"output":"a"}\n\n## Realization'));
+  assert.ok(invalid.diagnostics.some(diagnostic => diagnostic.code === 'generated-declaration-invalid'));
+});

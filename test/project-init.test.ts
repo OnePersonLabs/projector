@@ -2,9 +2,43 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, symlink, access } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { initProject } from '../src/host/index.ts';
 import { applyDesignDelta, parseDesignDelta } from '../src/documents/index.ts';
 import { fixture } from './helpers.ts';
+
+test('legitimate no-delta refactor has available concrete task instructions without a fabricated design', async t => {
+  const project = await fixture({
+    'openspec/changes/refactor-only/.openspec.yaml': 'schema: projector\nskip_specs: true\n',
+    'openspec/changes/refactor-only/proposal.md': '# Simplify module loading\n\nPreserve current observable behavior.\n',
+  });
+  t.after(project.cleanup);
+  await initProject({ root: project.root });
+  const cli = fileURLToPath(new URL('../node_modules/@fission-ai/openspec/bin/openspec.js', import.meta.url));
+  const result = await promisify(execFile)(process.execPath, [cli, 'status', '--change', 'refactor-only', '--json'], { cwd: project.root, windowsHide: true });
+  const status = JSON.parse(result.stdout) as { artifacts: { id: string; status: string }[] };
+  assert.equal(status.artifacts.find(item => item.id === 'tasks')?.status, 'ready');
+  await assert.rejects(access(join(project.root, 'openspec/changes/refactor-only/designs')), { code: 'ENOENT' });
+});
+
+test('known stock task template upgrades while a customization prevents all upgrades', async t => {
+  const oldTasks = '# Implementation tasks\n\n## Change and verify\n\n- [ ] implement: Apply the reviewed decisions within their scopes and verify their changed contracts.\n- [ ] reconcile: Account for previous contributions and verify removal of obsolete consumers, registrations, dependencies, and routes.\n- [ ] evidence: Execute the required checks, obtain independent review for material choices, and verify the settled result.\n';
+  const project = await fixture({ 'openspec/schemas/projector/templates/tasks.md': oldTasks });
+  t.after(project.cleanup);
+  const result = await initProject({ root: project.root });
+  assert.equal(result.ready, true);
+  assert.deepEqual(result.upgraded, ['openspec/schemas/projector/templates/tasks.md']);
+  assert.equal(await readFile(join(project.root, 'openspec/schemas/projector/templates/tasks.md'), 'utf8'), '# Implementation tasks\n');
+  await writeFile(join(project.root, 'openspec/schemas/projector/templates/tasks.md'), oldTasks);
+  await writeFile(join(project.root, 'openspec/schemas/projector/schema.yaml'), 'name: custom\n');
+  const conflict = await initProject({ root: project.root });
+  assert.equal(conflict.ready, false);
+  assert.equal(await readFile(join(project.root, 'openspec/schemas/projector/templates/tasks.md'), 'utf8'), oldTasks);
+  await writeFile(join(project.root, 'openspec/schemas/projector/templates/tasks.md'), '# My custom tasks\n');
+  assert.equal((await initProject({ root: project.root })).ready, false);
+});
 
 test('installed schema setup preserves existing configuration and is repeatable', async t => {
   const project = await fixture({ 'openspec/config.yml': 'schema: spec-driven\ncontext: Keep this context\n', 'openspec/specs/old/spec.md': '# Existing requirements\n', '.gitignore': 'build/\n' });

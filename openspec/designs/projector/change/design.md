@@ -7,25 +7,23 @@ scope: src/change
 
 ## Contract
 
-Own the accepted baseline, exact prospective target, isolated implementation candidate, and evidence-bound completion. OpenSpec owns requirement merge and validation. The host owns working-current observation, including invalidating an enrolled candidate before lifecycle or subprocess writes.
+Own the accepted baseline, exact prospective target, selected implementation checkout, and evidence-bound completion. OpenSpec owns requirement merge and validation. The host owns working-current observation, including invalidating an enrolled candidate before lifecycle or subprocess writes.
 
 Applies: [[spec:projector/changes#Separate accepted proposed and actual views]] | {"kind":"path","root":".","prefix":"src/change"} | The lifecycle pins and preserves all three views.
 Applies: [[spec:projector/changes#Applicability and independent coverage]] | {"kind":"path","root":".","prefix":"src/change"} | Planning compares executable populations, actual changed artifacts, and declared contributions.
 Applies: [[spec:projector/changes#Current evidence and contribution disposition]] | {"kind":"path","root":".","prefix":"src/change"} | Evidence and contribution gates control completion.
 Applies: [[spec:projector/changes#Coherent recoverable finish]] | {"kind":"path","root":".","prefix":"src/change"} | Archive and expected-old-ref publication share a durable recovery record.
-Applies: [[spec:projector/changes#Clean evolution]] | {"kind":"path","root":".","prefix":"src/change"} | Previous symbol contributions remain explicit through revision and removal review.
-
+Applies: [[spec:projector/changes#Clean evolution]] | {"kind":"path","root":".","prefix":"src/change"} | Previous contributions across all domains remain explicit through revision and removal review.
 ## Decision: durable-candidate
 
-Choice: Allocate a linked worktree and candidate branch, retaining the accepted baseline and current/previous target as Git objects and refs.
+Choice: Default to the selected checkout, allow explicit isolated worktrees, and retain accepted and current/previous targets as Git objects and refs. Store versioned recovery state in the Git directory with an active artifact mirror.
 Reason: Actual implementation can diverge temporarily without redefining accepted requirements or losing prior ownership when a disposable cache disappears.
 Requires: [[spec:projector/changes#Separate accepted proposed and actual views]]
 Consequential: boundary
 Alternative: Edit accepted live documents in place and maintain inverse patches during every revision.
-Tradeoff: Worktree allocation has measurable Git and disk cost, but avoids repeated live unsync and preserves ordinary source/build behavior.
+Tradeoff: Shared-checkout enrollment requires one owning active change and precise selected-change inventory. Existing isolated sessions migrate without relocation; Git checkpoints preserve partial work without mandatory worktree allocation.
 Realizes: [[code:src/change/index.ts#ChangeService]]
 Evidence: The lifecycle revision/recovery integration tests inspect exact Git refs and preserved same-file content.
-
 ## Decision: supported-merge
 
 Choice: Project exact requirement targets using the pinned OpenSpec CLI and apply design deltas through the document module.
@@ -39,7 +37,7 @@ Evidence: Nested add/modify/archive integration uses the real pinned CLI and ver
 
 ## Decision: explicit-gates
 
-Choice: Compare actual changed artifacts, independently extracted changed declarations, and prior symbol contributions with executable applicability, current realization bindings, executed checks, and attributed review.
+Choice: Compare actual changed artifacts and domain-specific units against applicability, current bindings, all prior contribution dispositions, and versioned evidence. Parse actual task AST nodes; separate verification input identity from plan/review identity and preserve historical results.
 Reason: Links, checkboxes, selectors, and a successful command alone cannot establish behavioral or architectural correctness.
 Requires: [[spec:projector/changes#Applicability and independent coverage]], [[spec:projector/changes#Current evidence and contribution disposition]], [[spec:projector/changes#Coherent recoverable finish]], [[spec:projector/changes#Clean evolution]]
 Consequential: strategy
@@ -47,8 +45,28 @@ Alternative: Treat completed tasks and valid document links as sufficient comple
 Tradeoff: Semantic judgments remain bounded host/reviewer work; deterministic code can reject absent, stale, contradictory, or unsupported records but cannot authenticate an invented narrative.
 Realizes: [[code:src/change/index.ts#ChangeService]]
 Evidence: Missing-scope, unplanned-file, stale-evidence, task-edit, same-file contribution, and archived-prerequisite tests discriminate unsupported completion.
-
 ## Realization
 
 Process execution, exact hashes, bounded output, path containment, atomic state writes, and per-change queues inside the shared process owner support the lifecycle decisions. The host's OS-held endpoint owns process lifetime; direct library callers must provide an equivalent single-owner boundary. A stale PID file cannot supply cross-process exclusion.
 Realizes: [[code:src/change/io.ts]]
+
+## Decision: generated-support
+
+Choice: Track relevant generated contributions through producer and input/configuration identities, generation evidence, and tracked/disposable status. Treat removed producers and changed inputs as explicit disposition/regeneration obligations.
+Reason: A generated file does not justify its own retention or prove it matches current inputs.
+Requires: [[spec:projector/changes#Generated contribution provenance]] [[spec:projector/changes#Clean evolution]]
+Alternative: Ignore generated files or accept their existence as proof.
+Tradeoff: Missing relevant provenance remains an obligation without imposing a global provenance audit on unrelated artifacts.
+Realizes: [[code:src/change/index.ts#ChangeService]] [[code:src/change/types.ts]]
+Evidence: Remove a generator, change an input, retain justified tracked output, and reject stale derivation.
+
+## Decision: integrated-publication
+
+Choice: Assemble implementation and accepted authority in a temporary detached linked worktree, create the commit through normal hooks, qualify the resulting tree, and conditionally advance the selected target through journaled checkout and index installation.
+Reason: Candidate-only archive does not complete delivery, while resetting a dirty target loses user work.
+Requires: [[spec:projector/changes#Coherent recoverable finish]]
+Consequential: boundary
+Alternative: Publish only a permanent candidate branch or require a clean target and automatic stash.
+Tradeoff: Branch advancement is atomic but checkout installation needs recovery. Store pinned target and commit, before/after index bytes, touched file identities, and progress; preserve unexpected edits. Hook changes require fresh evidence and review before integration.
+Realizes: [[code:src/change/publication.ts]] [[code:src/change/index.ts#ChangeService]] [[code:src/change/types.ts]]
+Evidence: Exercise staged and unstaged residual edits, disjoint same-file changes, overlap, hooks, drift, interruption, resume, and settled no-op.

@@ -4,6 +4,10 @@ import type { FileRecord, Resolution, ResolveOptions, Unit } from './types.ts';
 import { component, normalizeName, populationHash, slash } from './common.ts';
 
 function moduleResolution(specifier: string, from: FileRecord, files: FileRecord[], options: ResolveOptions): { file?: FileRecord; reason?: string } {
+  if (from.resolvedImports && specifier in from.resolvedImports) {
+    const paths = from.resolvedImports[specifier]!;
+    return paths.length === 1 ? { file: files.find(file => file.path === paths[0]) } : { reason: paths.length ? 'The repository dependency is ambiguous.' : 'The repository dependency is unresolved.' };
+  }
   const fileMap = options.fileMap ?? new Map(files.map(file => [file.path, file]));
   const base = '/projector';
   const aliases = Object.entries(options.packages ?? {}).map(([name, pkg]) => ({ prefix: `node_modules/${name}`, ...pkg }));
@@ -41,6 +45,12 @@ export function resolveModule(specifier: string, from: FileRecord, files: FileRe
   return moduleResolution(specifier, from, files, options).file;
 }
 export function resolveDependencies(from: FileRecord, files: FileRecord[], options: ResolveOptions = {}): { files: FileRecord[]; unknown: boolean; diagnostics: Resolution['diagnostics'] } {
+  if (from.resolvedImports) {
+    const paths = Object.values(from.resolvedImports).flat();
+    const selected = files.filter(file => paths.includes(file.path));
+    const unknown = Object.values(from.resolvedImports).some(paths => !paths.length) || from.capabilities?.repository === 'partial' || from.capabilities?.repository === 'unknown';
+    return { files: selected, unknown, diagnostics: from.diagnostics.filter(diagnostic => diagnostic.code.startsWith('repository-')) };
+  }
   const resolved = from.imports.map(specifier => moduleResolution(specifier, from, files, options));
   return { files: [...new Map(resolved.flatMap(result => result.file ? [[result.file.path, result.file] as const] : [])).values()], unknown: resolved.some(result => !result.file), diagnostics: resolved.flatMap(result => result.file ? [] : [{ code: 'module-topology-unknown', message: result.reason ?? 'Resolved dependency is outside the indexed inventory.', path: from.path }]) };
 }
@@ -55,6 +65,7 @@ function exportsOf(file: FileRecord, name: string, files: FileRecord[], options:
     if (binding.module) {
       const target = resolveModule(binding.module, file, files, options);
       if (!target) unknown = true;
+      else if (file.language === 'python' && binding.imported === '*') units.push(...target.units.filter(unit => unit.kind === 'file'));
       else { const result = exportsOf(target, binding.imported, files, options, next); units.push(...result.units); unknown ||= result.unknown; }
     } else {
       const local = file.units.filter(unit => unit.kind === 'symbol' && unit.name === binding.local);
@@ -125,7 +136,7 @@ export function resolveReference(input: string, files: FileRecord[], options: Re
   let decoded: string, decodedParts: string[];
   try { decodedParts = address.split('#').map(part => decodeURIComponent(part)); decoded = decodedParts.join('#'); }
   catch { return { status: 'unresolved', candidates: [], population: populationHash([]), diagnostics: [{ code: 'address-invalid', message: 'Invalid percent escape in reference.', address }] }; }
-  if (/^(code|spec|design):/.test(address)) {
+  if (/^(code|spec|design|artifact):/.test(address)) {
     candidates = units.filter(unit => {
       try { return JSON.stringify(unit.address.split('#').map(part => decodeURIComponent(part))) === JSON.stringify(decodedParts); } catch { return false; }
     });
@@ -134,9 +145,14 @@ export function resolveReference(input: string, files: FileRecord[], options: Re
       const file = files.find(file => file.path === slash(path!));
       // An exact file address identifies bytes even when symbol inference is
       // incomplete. Keep those diagnostics; do not certify its declarations.
-      if (name) unknown ||= Boolean(file?.diagnostics.some(diagnostic => /unknown/.test(diagnostic.code)));
+      if (name) unknown ||= file?.capabilities?.units === 'unknown' || file?.capabilities?.units === 'partial' || Boolean(file?.diagnostics.some(diagnostic => /(?:syntax|units|symbol-identity|code-inventory)-unknown/.test(diagnostic.code)));
       else if (file) diagnostics.push(...file.diagnostics);
       if (file && name && !candidates.length) { const result = exportsOf(file, name, files, options); candidates = result.units; unknown ||= result.unknown; }
+    }
+    if (address.startsWith('artifact:') && decodedParts[1]) {
+      const path = decodedParts[0]!.replace(/^artifact:[^:]+:/, '');
+      const file = files.find(file => file.path === path);
+      unknown ||= file?.capabilities?.syntax === 'partial' || file?.capabilities?.units === 'unknown';
     }
   } else {
     const pieces = address.split('#').map(value => decodeURIComponent(value));
@@ -155,7 +171,7 @@ export function resolveReference(input: string, files: FileRecord[], options: Re
         else unknown = true;
       } else if (pieces.length === 1) {
         candidates = units.filter(unit => unit.kind === 'symbol' && unit.data?.topLevel && unit.key === key);
-        unknown ||= files.some(file => file.language === 'typescript' && file.diagnostics.some(diagnostic => /unknown/.test(diagnostic.code)));
+        unknown ||= files.some(file => file.diagnostics.some(diagnostic => /(?:syntax|units|symbol-identity|code-inventory)-unknown/.test(diagnostic.code)));
         // Export aliases enter the population only through a resolved logical declaration.
         for (const file of files) for (const binding of file.bindings ?? []) if (binding.exported && normalizeName(binding.exported) === key) {
           const result = exportsOf(file, binding.exported, files, options); candidates.push(...result.units); unknown ||= result.unknown;

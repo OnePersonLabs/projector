@@ -8,6 +8,13 @@ import { promisify } from 'node:util';
 export const VERSION = '4.2.0';
 export const PROTOCOL = 1;
 export const MAX_BYTES = 1024 * 1024;
+/** Evidence execution has its own bounded deadline; transport adds settlement time. */
+export function operationTimeout(input: Record<string, unknown>, defaultMs: number): number {
+  if (!['recordEvidence', 'finishChange', 'resumeChange'].includes(String(input.op))) return defaultMs;
+  const timeout = input.timeoutMs ?? (input.op === 'recordEvidence' ? 60000 : 600000);
+  if (typeof timeout !== 'number' || !Number.isInteger(timeout) || timeout <= 0 || timeout > 600000) throw new Error('timeoutMs must be an integer from 1 through 600000');
+  return Math.max(defaultMs, timeout + 15000);
+}
 export interface HostSettings { home: string; port: number; timeoutMs: number; startupMs: number }
 export function settings(overrides: Partial<HostSettings> = {}): HostSettings {
   const userHash = createHash('sha256').update(homedir()).digest().readUInt16BE();

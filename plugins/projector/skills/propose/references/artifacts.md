@@ -69,9 +69,19 @@ Use bracket references such as `[[spec:audio/preview#Immediate replay]]`, `[[des
 
 Declare executable Applies selectors in Contract as shown, or supply them through validatePlan. Capture consequential alternatives and tradeoffs explicitly; evidence prose describes intended verification but does not replace executed results.
 
+Keep non-code semantic units in qualified domains, for example `[[artifact:style:src/player.css#replay-button]]` or `[[artifact:framework-style:src/Player.tsx#styles.button]]`. Use actual returned addresses rather than guessing an extractor's identity. File-only ownership remains `[[code:path]]`, including opaque and binary artifacts. A file binding alone does not prove semantic or native-platform behavior.
+
+For relevant generated contributions, the owning decision can declare:
+
+```text
+Generated: {"output":"src/generated/messages.ts","producer":"tools/generate-messages.ts","inputs":["messages.json","generator-config.json"],"retention":"tracked"}
+```
+
+Inputs include configuration that affects generation. Use `retention:"disposable"` only for disposable outputs. Derivation does not justify retention by itself. Run the actual producer with `recordEvidence` and exact `generatedOutputs` to record input/output identity. Generation identity comes from execution, not an invented authored field. Changed inputs require fresh generation; a retired producer requires output removal or surviving rebinding. Missing relevant provenance remains an explicit obligation.
+
 ## Tasks, adoption, and validation
 
-Write one `tasks.md` with meaningful `- [ ]` implementation, reconciliation, and verification tasks. Each must have a checkable result. Keep dependency order and actual implementation scope visible. Check only performed work; keep missing evidence unchecked. Task edits propose scheduling or authority amendments and do not override requirements/designs.
+Write one `tasks.md` with concrete change-specific `- [ ]` work. Each task names work and a checkable result, such as wiring a named consumer or exercising a stated scenario. Keep dependency order and scope visible. Include specific verification tasks where useful; do not copy a universal implementation/reconciliation/evidence rubric. The shared $projector:verify skill owns procedure. Check only performed work; keep missing evidence unchecked. Task edits propose scheduling or authority amendments and do not override requirements/designs. For legitimate work without requirement deltas, set `skip_specs: true` in change metadata and preserve existing authority.
 
 When adopting an existing OpenSpec change, read its schema/status and actual artifacts. Preserve its proposal, requirements, decisions, and acceptance meaning; convert its relevant design.md into nested Projector deltas and select the projector schema for that change only. Do not replace repository-wide custom schemas or rewrite archives. If an external store owns the artifacts, resolve that ownership before creating any local counterpart.
 

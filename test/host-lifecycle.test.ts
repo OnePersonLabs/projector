@@ -17,12 +17,12 @@ async function freePort() {
   await new Promise<void>(done => server.close(() => done())); return address.port;
 }
 async function invoke(client: Client, name: string, arguments_: Record<string, unknown>) {
-  const response = await client.callTool({ name, arguments: arguments_ });
+  const response = await client.callTool({ name, arguments: arguments_ }, undefined, { timeout: ['finishChange', 'resumeChange'].includes(name) ? 615000 : 75000 });
   assert(!response.isError, JSON.stringify(response));
   return JSON.parse((response.content as { text: string }[])[0]!.text) as Record<string, unknown>;
 }
 
-test('T9 installed nested target plan, managed apply, revision, evidence, archive and settled repeat through two MCP clients', { timeout: 120000 }, async t => {
+test('T9 installed nested target plan, managed apply, revision, evidence, archive and settled repeat through two MCP clients', { timeout: 180000 }, async t => {
   const input = await fixture();
   const directory = await mkdtemp(join(tmpdir(), 'projector-lifecycle-install-'));
   const config = settings({ home: join(directory, 'state'), port: await freePort() });
@@ -46,8 +46,18 @@ test('T9 installed nested target plan, managed apply, revision, evidence, archiv
     return client;
   };
   const [a, b] = await Promise.all([connect('planner'), connect('implementer')]);
+  const selectedCheckout = await fixture();
+  t.after(async () => { await rm(selectedCheckout.root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); });
+  const direct = await invoke(a, 'prepareChange', { root: selectedCheckout.root, change: selectedCheckout.change });
+  ownerStarted = true;
+  assert.equal(direct.candidateRoot, selectedCheckout.root);
+  assert.equal(direct.workspaceMode, 'checkout');
+  const directOpened = await invoke(b, 'openRoot', { root: direct.candidateRoot, profile: 'managed', candidate: direct.candidateId });
+  await invoke(b, 'checkpoint', { rootId: directOpened.rootId });
+  assert.equal((await invoke(a, 'read', { rootId: directOpened.rootId, view: 'current', reference: '[[replay]]' })).freshness, 'validated');
+  await invoke(b, 'releaseRoot', { rootId: directOpened.rootId });
   const common = { root: input.root, change: input.change };
-  const prepared = await invoke(a, 'prepareChange', common); ownerStarted = true;
+  const prepared = await invoke(a, 'prepareChange', { ...common, workspaceMode: 'isolated' }); ownerStarted = true;
   assert.notEqual(prepared.targetId, input.baseline);
   const uncovered = await invoke(a, 'validatePlan', common); assert.equal(uncovered.valid, false);
   assert((uncovered.obligations as string[]).some(item => item.includes('applicability')));
@@ -82,7 +92,7 @@ test('T9 installed nested target plan, managed apply, revision, evidence, archiv
   const barrier = createServer(); barrier.listen(0, '127.0.0.1'); await once(barrier, 'listening');
   const barrierAddress = barrier.address(); assert(barrierAddress && typeof barrierAddress === 'object');
   const arrived = once(barrier, 'connection');
-  const runningEvidence = invoke(b, 'recordEvidence', { ...common, command: process.execPath, args: ['--input-type=module', '-e', `import assert from "node:assert/strict"; import {createConnection} from "node:net"; import {replay,retainEvent} from "./src/player.js"; assert.equal(replay(),1); assert.equal(retainEvent(),"user"); await new Promise(resolve=>{const socket=createConnection({host:"127.0.0.1",port:${barrierAddress.port}}); socket.on("error",error=>{throw error}); socket.write("ready"); socket.once("data",()=>{socket.end();resolve()})});`], scope: ['src/player.js'] });
+  const runningEvidence = invoke(b, 'recordEvidence', { ...common, purpose: 'diagnostic', command: process.execPath, args: ['--input-type=module', '-e', `import assert from "node:assert/strict"; import {createConnection} from "node:net"; import {replay,retainEvent} from "./src/player.js"; assert.equal(replay(),1); assert.equal(retainEvent(),"user"); await new Promise(resolve=>{const socket=createConnection({host:"127.0.0.1",port:${barrierAddress.port}}); socket.on("error",error=>{throw error}); socket.write("ready"); socket.once("data",()=>{socket.end();resolve()})});`], scope: ['src/player.js'] });
   const [evidenceSocket] = await arrived;
   evidenceSocket.resume();
   t.after(() => { evidenceSocket.destroy(); barrier.close(); });
@@ -94,6 +104,12 @@ test('T9 installed nested target plan, managed apply, revision, evidence, archiv
   const checked = await runningEvidence;
   await new Promise<void>(done => barrier.close(() => done()));
   assert.equal((checked.evidence as Record<string, unknown>).passed, true);
+  const slowResponse = await b.callTool({ name: 'recordEvidence', arguments: { ...common, command: process.execPath, args: ['--input-type=module', '-e', 'import assert from "node:assert/strict"; import {replay,retainEvent} from "./src/player.js"; await new Promise(resolve=>setTimeout(resolve,31000)); assert.equal(replay(),1); assert.equal(retainEvent(),"user");'], scope: ['src/player.js'], timeoutMs: 45000 } }, undefined, { timeout: 65000 });
+  assert(!slowResponse.isError, JSON.stringify(slowResponse));
+  const slowResult = JSON.parse((slowResponse.content as { text: string }[])[0]!.text) as { evidence: { passed: boolean; id?: string } };
+  assert.equal(slowResult.evidence.passed, true);
+  const afterSlow = await invoke(a, 'resumeChange', common);
+  assert.equal((afterSlow.evidence as { id?: string }[]).filter(item => item.id === slowResult.evidence.id).length, 1);
   // This exercises review-attestation validation; independent semantic review is
   // separate qualification evidence and is not claimed by this fixture string.
   await invoke(a, 'validatePlan', { ...common, review: { basis: reviewedPlan.basis, reviewer: 'simulated-review-attestation-for-protocol-test', findings: [], examined: ['src/player.js', 'openspec/designs/audio/preview/design.md'], alternative: 'The existing direct replay function satisfies this fixture; a strategy wrapper has no surviving responsibility.' } });
@@ -104,14 +120,13 @@ test('T9 installed nested target plan, managed apply, revision, evidence, archiv
   assert.equal(gitFixture(input.root, 'rev-parse', String(prepared.candidateBranch)), input.baseline);
   await invoke(b, 'completeBatch', { rootId, batchId: openWriter.batchId, actualPaths: [] });
   const finished = await invoke(a, 'finishChange', common); assert.equal(finished.complete, true, JSON.stringify(finished.obligations));
-  assert.equal(gitFixture(input.root, 'rev-parse', 'main'), input.baseline);
-  assert.equal(gitFixture(input.root, 'rev-parse', String(finished.candidateBranch)), finished.publication);
+  assert.equal(gitFixture(input.root, 'rev-parse', 'main'), finished.publication);
   assert.match(await readFile(join(candidate, 'openspec', 'specs', 'audio', 'preview', 'spec.md'), 'utf8'), /exactly once/);
   assert.match(await readFile(join(String(finished.archivePath), 'implementation-state.json'), 'utf8'), /previousSupport/);
   await a.close(); clients.splice(clients.indexOf(a), 1);
   const historical = await invoke(b, 'read', { rootId, view: 'revision', revision: finished.publication, reference: '[[spec:audio/preview#Immediate replay]]' }); assert.equal(historical.freshness, 'validated');
   const resumed = await invoke(b, 'resumeChange', common); assert.equal(resumed.publication, finished.publication); assert.equal(resumed.reused, true);
   const repeated = await invoke(b, 'finishChange', common); assert.equal(repeated.publication, finished.publication); assert.equal(repeated.reused, true);
-  assert.equal(gitFixture(candidate, 'status', '--porcelain'), '');
-  t.diagnostic(JSON.stringify({ installedVersion: VERSION, clients: 2, mainUnchanged: true, publication: finished.publication, archive: true, repeatedFinish: 'no-op', modelCalls: 0, semanticReview: 'separate from simulated protocol attestation' }));
+  assert.equal(gitFixture(input.root, 'status', '--porcelain'), '');
+  t.diagnostic(JSON.stringify({ installedVersion: VERSION, clients: 2, mainIntegrated: true, publication: finished.publication, archive: true, longCheck: true, repeatedFinish: 'no-op', modelCalls: 0, semanticReview: 'separate from simulated protocol attestation' }));
 });

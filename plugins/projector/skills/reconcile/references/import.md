@@ -1,5 +1,7 @@
 # Import selected uncommitted implementation safely
 
+Use this procedure only for explicit isolated mode. In selected-checkout mode the patch is already present: retain its selected paths/hunks and staging inventory without importing it over itself. Select only the intended implementation at final publication; unrelated work remains user-owned.
+
 1. Resolve repository HEAD and capture source status plus separate cached/uncached diffs. Set `GIT_OPTIONAL_LOCKS=0` for inspection commands so Git does not refresh the source index as an incidental write. Use porcelain v1 with NUL separators for filenames, `git diff --cached --binary`, `git diff --binary`, and `git ls-files --others --exclude-standard -z`. Read untracked content and inspect renames, deletions, binary files, and submodule changes explicitly. Capture source index bytes and selected/excluded file content hashes for preservation checks.
 2. Classify one coherent patch. Record included paths/hunks, final expected bytes or deletion, baseline identity, and excluded/ambiguous work. If unrelated edits share a file, construct a selected hunk patch against HEAD and validate it in the candidate; copying the whole file would import unrelated work.
 3. Recheck the source inventory before import. If it changed, recompute affected selections instead of importing a stale snapshot. Do not stage, stash, reset, clean, checkout, format, or rewrite source implementation/index to create the import.

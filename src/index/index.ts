@@ -4,6 +4,8 @@ import type { IndexBackend, Indexed, IndexJob } from './types.ts';
 export { emptyCounters, LIMITS } from './types.ts';
 export type { Counters, IndexBackend, Indexed, IndexJob } from './types.ts';
 export { git, hash, safePath, rootIdentity } from './git.ts';
+export { workingBytes, revisionSources } from './bytes.ts';
+export type { SourceBytes } from './bytes.ts';
 
 interface Task { job: IndexJob; resolve(value: Indexed): void; reject(error: Error): void; }
 interface Lane { worker: Worker; task?: Task; timer?: ReturnType<typeof setTimeout>; }
@@ -16,7 +18,8 @@ export class IndexPool implements IndexBackend {
   private closed = false;
   private readonly timeoutMs: number;
   private readonly workerFactory: (url: URL) => Worker;
-  constructor(timeoutMs = 30_000, workerFactory: (url: URL) => Worker = url => new Worker(url)) { this.timeoutMs = timeoutMs; this.workerFactory = workerFactory; }
+  constructor(timeoutMs = 30_000, workerFactory: (url: URL) => Worker = url => new Worker(url,
+    process.execArgv.some(argument => argument.startsWith('--input-type')) ? { execArgv: [] } : undefined)) { this.timeoutMs = timeoutMs; this.workerFactory = workerFactory; }
   run(job: IndexJob): Promise<Indexed> {
     if (this.closed) return Promise.reject(new Error('Index pool is closed'));
     if ([...this.queues.values()].reduce((n, q) => n + q.length, 0) >= LIMITS.queue) return Promise.reject(new Error('Index queue admission limit reached'));

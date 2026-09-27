@@ -57,7 +57,7 @@ function labeledFields(nodes: RootContent[]): Record<string, string[]> {
       const value = text(node);
       // Soft line breaks permit readable fields without requiring a list.
       for (const line of value.split(/\r?\n/)) {
-        const match = /^(Choice|Reason|Requires|Constraints|Alternative|Tradeoff|Realizes|Evidence|Reopen|Applies|Consequential):\s*(.+)$/i.exec(line.trim());
+        const match = /^(Choice|Reason|Requires|Constraints|Alternative|Tradeoff|Realizes|Evidence|Reopen|Applies|Consequential|Generated):\s*(.+)$/i.exec(line.trim());
         if (match) (fields[match[1]!.toLowerCase()] ??= []).push(match[2]!);
       }
     } else if ('children' in node) for (const child of node.children) visit(child as RootContent);
@@ -101,7 +101,6 @@ export function extractMarkdown(record: FileRecord): void {
     const seen = new Set<string>();
     if (!sections.some(section => section.depth === 2 && section.address === 'contract')) record.diagnostics.push({ code: 'design-contract-missing', message: 'A design needs a Contract part.', path: record.path });
     for (const section of sections.filter(section => section.depth >= 2)) {
-      if (section.depth === 2 && !partKey(section.name)) { record.diagnostics.push({ code: 'design-part-invalid', message: `Unknown H2 part: ${section.name}`, path: record.path }); continue; }
       const address = `design:${addressPath(designId)}#${section.address}`;
       if (seen.has(address)) record.diagnostics.push({ code: 'duplicate-part', message: `Duplicate address ${address}`, path: record.path, address });
       seen.add(address);
@@ -115,6 +114,13 @@ export function extractMarkdown(record: FileRecord): void {
         const consequential = fields.consequential?.some(value => /^(true|yes|boundary|dependency|abstraction|strategy)$/i.test(value));
         if (consequential) for (const required of ['alternative', 'tradeoff']) if (!fields[required]?.length) record.diagnostics.push({ code: 'decision-consequence-missing', message: `${section.name} declares a consequential choice and needs ${required}.`, path: record.path, address });
         if (fields.evidence) unit.data.evidence = fields.evidence.map(value => ({ text: value, status: 'pending' }));
+        if (fields.generated) unit.data.generated = fields.generated.flatMap(value => {
+          try {
+            const item: unknown = JSON.parse(value);
+            if (!item || typeof item !== 'object' || !('output' in item) || typeof item.output !== 'string' || !('producer' in item) || typeof item.producer !== 'string' || !('inputs' in item) || !Array.isArray(item.inputs) || !item.inputs.every(input => typeof input === 'string') || !('retention' in item) || !['tracked', 'disposable'].includes(String(item.retention))) throw new Error('Expected output, producer, inputs, and tracked/disposable retention.');
+            return [item];
+          } catch (error) { record.diagnostics.push({ code: 'generated-declaration-invalid', message: error instanceof Error ? error.message : 'Invalid generated declaration.', path: record.path, address }); return []; }
+        });
       }
     }
     if (root) root.contractHash = record.units.find(unit => unit.address === `${root.address}#contract`)?.bodyHash ?? hash('');

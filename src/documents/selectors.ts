@@ -1,7 +1,7 @@
 import { posix } from 'node:path';
 import type { FileRecord, ResolveOptions, Selection, Selector, Unit } from './types.ts';
 import { populationHash, slash } from './common.ts';
-import { resolveModule } from './resolver.ts';
+import { resolveDependencies } from './resolver.ts';
 
 export interface SelectOptions { roots?: Record<string, string>; inventoryComplete?: boolean; packages?: ResolveOptions['packages'] }
 const result = (units: Unit[], unknown = false, message = ''): Selection => ({
@@ -73,11 +73,11 @@ export function selectUnits(selector: Selector | unknown, files: FileRecord[], o
     let incomplete = unknown;
     const selected: FileRecord[] = [];
     const candidates = value.kind === 'imports' ? [file] : files;
-    for (const candidate of candidates) for (const module of candidate.imports) {
-      const dependency = resolveModule(module, candidate, files, options);
-      if (!dependency) { incomplete = true; continue; }
-      if (value.kind === 'imports') selected.push(dependency);
-      else if (dependency.path === file.path) selected.push(candidate);
+    for (const candidate of candidates) {
+      const dependencies = resolveDependencies(candidate, files, options);
+      incomplete ||= dependencies.unknown;
+      if (value.kind === 'imports') selected.push(...dependencies.files);
+      else if (dependencies.files.some(dependency => dependency.path === file.path)) selected.push(candidate);
     }
     return result(selected.flatMap(selectedFile => selectedFile.units.filter(unit => unit.kind === 'file')), incomplete);
   }

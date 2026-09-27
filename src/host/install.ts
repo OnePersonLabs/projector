@@ -16,7 +16,8 @@ export async function install(destination: string): Promise<{ plugin: string; ru
   await cp(join(packageRoot, 'openspec', 'schemas'), join(runtime, 'openspec', 'schemas'), { recursive: true });
   await cp(join(packageRoot, 'package.json'), join(runtime, 'package.json'));
   await cp(join(packageRoot, 'package-lock.json'), join(runtime, 'package-lock.json'));
-  const npmCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const npmRoot = process.platform === 'win32' ? dirname(process.execPath) : resolve(dirname(process.execPath), '..', 'lib');
+  const npmCli = join(npmRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js');
   await access(npmCli);
   const installCache = join(runtime, '.npm-cache');
   const environment = { ...process.env };

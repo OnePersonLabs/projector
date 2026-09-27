@@ -3,6 +3,8 @@ import { hash, normalizeName, slash } from './common.ts';
 import { extractMarkdown } from './markdown.ts';
 import { extractCode } from './code.ts';
 export type * from './types.ts';
+export { createDocumentIntelligence, metadataFile, parseArtifactAddress, resolveRepository, DOCUMENT_INTELLIGENCE_VERSION } from './providers.ts';
+export type { DocumentProvider } from './providers.ts';
 export { normalizeName, hash } from './common.ts';
 export { parseMarkdown, partKey } from './markdown.ts';
 export { resolveReference, resolveModule, resolveDependencies } from './resolver.ts';

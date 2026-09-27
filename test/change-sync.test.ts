@@ -19,7 +19,9 @@ test('sync materializes exact authority, invalidates evidence, repeats safely, a
   const candidate = String(state.candidateRoot), implementation = await read(candidate, 'src/player.js');
   const synchronized = await service.syncChange(input);
   assert.equal(synchronized.synchronized, true);
-  assert.deepEqual(synchronized.evidence, []);
+  const priorEvidence = synchronized.evidence as { id: string; passed: boolean }[];
+  assert.equal(priorEvidence.length, 1);
+  assert.equal(priorEvidence[0]!.passed, true);
   assert.equal((synchronized.plan as { review?: unknown }).review, undefined);
   assert.equal(await read(candidate, 'src/player.js'), implementation);
   assert.match(await read(candidate, 'openspec/specs/audio/preview/spec.md'), /exactly once/);
@@ -33,7 +35,8 @@ test('sync materializes exact authority, invalidates evidence, repeats safely, a
   await planAndEvidence(service, synchronized);
   const repeated = await service.syncChange(input);
   assert.equal(repeated.reused, true);
-  assert.equal((repeated.evidence as unknown[]).length, 1);
+  assert.equal((repeated.evidence as unknown[]).length, 2);
+  assert.ok((repeated.evidence as { id: string }[]).some(item => item.id === priorEvidence[0]!.id));
   const completed = await service.finishChange(input);
   assert.equal(completed.complete, true, JSON.stringify(completed.obligations));
   assert.equal(gitFixture(candidate, 'status', '--porcelain'), '');
@@ -56,11 +59,12 @@ test('sync then revise preserves implementation and replaces the previous synchr
   await put(input.root, delta, (await read(input.root, delta)).replace('durable event storage', 'durable event ownership'));
   const finalRevision = await service.reviseChange(input);
   await planAndEvidence(service, finalRevision);
-  assert.equal((await service.finishChange(input)).complete, true);
+  const finished = await service.finishChange(input);
+  assert.equal(finished.complete, true, JSON.stringify(finished.obligations));
   assert.match(await read(candidate, 'openspec/designs/audio/preview/design.md'), /durable event ownership/);
 });
 
-test('manual authority edits, deletion and extra files block sync before any writes and block finish', async () => {
+test('owned authority edits and deletion block sync while unrelated authority remains intact', async () => {
   const input = await fixture('sync-conflict-'), service = new ChangeService(), state = await service.prepareChange(input);
   const candidate = String(state.candidateRoot), specPath = 'openspec/specs/audio/preview/spec.md';
   const baselineSpec = await read(candidate, specPath);
@@ -73,12 +77,14 @@ test('manual authority edits, deletion and extra files block sync before any wri
   await assert.rejects(service.syncChange(input), /Live authority changed/);
   await put(candidate, specPath, expected);
   await put(candidate, 'openspec/designs/unplanned/design.md', '# Unplanned authority\n');
-  await assert.rejects(service.syncChange(input), /Live authority changed/);
-  const planned = await service.validatePlan(input);
-  assert.ok((planned.obligations as string[]).some(item => item.includes('Live authority') && item.includes('unplanned')));
+  await service.syncChange(input);
+  assert.equal(await read(candidate, 'openspec/designs/unplanned/design.md'), '# Unplanned authority\n');
+  const planned = await service.validatePlan({ ...input, ...disposition });
+  assert.equal(planned.valid, true, JSON.stringify(planned.obligations));
+  assert.ok(!(planned.obligations as string[]).some(item => item.includes('Live authority') && item.includes('unplanned')));
 });
 
-test('interrupted sync recovers its exact target and refuses unrelated edits during recovery', async () => {
+test('interrupted sync recovers its exact target without overwriting unrelated authority', async () => {
   const input = await fixture('sync-recovery-');
   let crash = true;
   const service = new ChangeService({ fault: point => { if (point === 'after-sync-file' && crash) { crash = false; throw new Error('interrupted synchronization'); } } });
@@ -87,9 +93,9 @@ test('interrupted sync recovers its exact target and refuses unrelated edits dur
   await assert.rejects(service.reviseChange(input), /Synchronization was interrupted/);
   const candidate = String(state.candidateRoot);
   await put(candidate, 'openspec/specs/unplanned/spec.md', '# Unexpected\n');
-  await assert.rejects(new ChangeService().syncChange(input), /Live authority changed/);
-  await unlink(path.join(candidate, 'openspec/specs/unplanned/spec.md'));
   const recovered = await new ChangeService().syncChange(input);
+  assert.equal(await read(candidate, 'openspec/specs/unplanned/spec.md'), '# Unexpected\n');
+  await unlink(path.join(candidate, 'openspec/specs/unplanned/spec.md'));
   assert.equal(recovered.synchronizedTarget, state.targetId);
   assert.equal(recovered.pendingSynchronization, undefined);
   await planAndEvidence(service, recovered);
@@ -112,7 +118,8 @@ test('interrupted sync recovers its stored target despite newer source edits, th
   const revised = await service.reviseChange(input);
   assert.notEqual(revised.targetId, state.targetId);
   await planAndEvidence(service, revised);
-  assert.equal((await service.finishChange(input)).complete, true);
+  const finished = await service.finishChange(input);
+  assert.equal(finished.complete, true, JSON.stringify(finished.obligations));
   assert.match(await read(String(state.candidateRoot), 'openspec/designs/audio/preview/design.md'), /revised event storage/);
 });
 
@@ -175,7 +182,7 @@ test('deleting an unbound baseline file requires a current decision but no dangl
 test('prepare provisions missing schema files while revision preserves repository-owned template edits', async () => {
   const input = await fixture('schema-preservation-');
   const templatePath = 'openspec/schemas/projector/templates/spec.md';
-  const baselineTemplate = '# Repository-owned requirements template\n';
+  const baselineTemplate = '# Improved repository requirements template\n\n## Purpose\nExplain the capability.\n';
   await put(input.root, templatePath, baselineTemplate);
   gitFixture(input.root, 'add', templatePath);
   gitFixture(input.root, 'commit', '-m', 'Own requirements template');
@@ -183,13 +190,11 @@ test('prepare provisions missing schema files while revision preserves repositor
   const service = new ChangeService(), state = await service.prepareChange(input), candidate = String(state.candidateRoot);
   assert.equal(await read(candidate, templatePath), baselineTemplate);
   await access(path.join(candidate, 'openspec/schemas/projector/schema.yaml'));
-  const editedTemplate = '# Improved repository requirements template\n\n## Purpose\nExplain the capability.\n';
-  await put(candidate, templatePath, editedTemplate);
   const proposalPath = `openspec/changes/${input.change}/proposal.md`;
   await put(input.root, proposalPath, (await read(input.root, proposalPath)) + '\nClarify replay requirements using the improved template.\n');
   await service.reviseChange(input);
-  assert.equal(await read(candidate, templatePath), editedTemplate);
+  assert.equal(await read(candidate, templatePath), baselineTemplate);
   await planAndEvidence(service, state);
   assert.equal((await service.finishChange(input)).complete, true);
-  assert.equal(await read(candidate, templatePath), editedTemplate);
+  assert.equal(await read(candidate, templatePath), baselineTemplate);
 });

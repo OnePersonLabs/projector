@@ -1,39 +1,102 @@
-# Getting started
+# Your first Projector change
 
-## Installation
+This guide takes you from local plugin installation to a checked integrated change. You need a local Git project; see the runtime reference for built-in language providers and their limits.
 
-Install Projector from the local Codex marketplace your agent registered. If you have this repository but no marketplace entry, ask:
+## Contents
 
-> Install this Projector checkout as a user-level Codex plugin. Handle the prerequisites and registration, then verify the installed skills and tools.
+- [Install the plugin](#install-the-plugin)
+- [Initialize the project](#initialize-the-project)
+- [Describe the result](#describe-the-result)
+- [Review the plan](#review-the-plan)
+- [Implement in the candidate](#implement-in-the-candidate)
+- [Verify and finish](#verify-and-finish)
+- [Integrate when ready](#integrate-when-ready)
 
-The agent follows [the installation procedure](development.md#local-plugin-installation). You do not need to build it or run runtime commands. This repository does not claim a public marketplace listing.
+## Install the plugin
 
-After installation or refresh, start a fresh Codex session to discover the updated skills. Type a skill name or select it in the skill picker.
+If your agent has this checkout, ask:
 
-## Initialize your project
+> Install this Projector checkout as a user-level Codex plugin. Handle prerequisites and local registration, then verify installed skills, MCP startup, and initialization.
 
-Open your project's Git repository and invoke `$projector:init`.
+The agent follows [local plugin installation](development.md#local-plugin-installation). It builds a complete package and registers it through Codex. This repository documents local delivery, not a public marketplace listing.
 
-The agent adds OpenSpec folders and the Projector schema while preserving existing specs and configuration. Repeating initialization is safe. Conflicting custom schema files are reported before replacement.
+Start a fresh Codex session after installation or refresh. Check that the Projector skills are available. Skill discovery and successful tool execution are separate checks; registration alone does not establish readiness.
 
-For an empty project, the agent helps establish the Git baseline needed for isolated implementation. It does not silently commit unrelated work.
+## Initialize the project
 
-## Describe your change
+Open the repository you want to change and invoke this in chat:
 
 ```text
-$projector:propose Add a dark mode toggle and remember the choice.
+$projector:init
 ```
 
-The agent reads your project, clarifies consequential choices, and writes the proposal, requirements, designs, and tasks under `openspec/changes/`. It presents a short summary and links to the artifacts.
+The agent inspects Git status, existing configuration, schemas, active changes, and archives. Initialization adds missing scaffolding and reports conflicts before replacing customized schema files. Repeating setup preserves existing configuration.
 
-Review the behavior and tradeoffs. Ask for revisions in ordinary language. You do not need to learn artifact syntax.
+Planning can proceed in a repository with no baseline commit. Before implementation, the agent must establish a valid baseline within your authorization and preserve unrelated work. Initialization itself does not silently commit files.
 
-## Implement and finish
+If you already use OpenSpec, read [existing projects](existing-projects.md).
 
-Use `$projector:apply` when the plan is ready. Changes happen in a separate working directory so incomplete implementation stays isolated.
+## Describe the result
 
-Use `$projector:verify` for a progress check, or `$projector:finish` to verify and complete the change. Finish requires actual checks and independent review.
+For an application with a search results list:
 
-The agent reports the resulting branch. Finishing does not merge into your working branch or deploy. Ask it to integrate the result when you want that action.
+```text
+$projector:propose Add keyboard navigation to search results.
+Arrow Up and Arrow Down move focus. Enter opens the focused result.
+Focus stays at the ends instead of wrapping.
+Typing in the search field must keep working.
+```
 
-To authorize planning, implementation, verification, and finish at once, say so in your original request.
+The agent reads the project and clarifies material behavior choices. It writes a proposal, nested requirement deltas, nested concern design deltas, and tasks under a named `openspec/changes/` directory.
+
+The proposal explains why and what changes. Requirements state observable behavior. Design states ownership and implementation choices. Tasks describe the work. See [the overview](overview.md) for an example directory.
+
+## Review the plan
+
+Open the linked artifacts and check whether the behavior matches your request. Consider empty results and a focused item that disappears after filtering. Ask for the handling you want rather than assuming the agent chose it.
+
+The agent writes the files; you review their meaning. Use ordinary language or `$projector:revise` for corrections. [Reviewing a change](reviewing-a-change.md) explains what to inspect.
+
+For one artifact at a time, request incremental planning. Use `$projector:continue` to advance the next requested layer. Otherwise, propose drafts the complete plan.
+
+## Implement in the candidate
+
+Once the plan is ready:
+
+```text
+$projector:apply
+```
+
+The agent pins the baseline and target, enrolls the selected checkout, validates obligations, and implements there. You can request isolated workspace mode when useful. It reports the implementation location. Changes to intended behavior route through revision.
+
+The original working directory and the candidate have different roles. Use the candidate to inspect and exercise implementation. Do not expect new application code in your original checkout before integration.
+
+## Verify and finish
+
+For a progress check without archive:
+
+```text
+$projector:verify
+```
+
+To verify and complete:
+
+```text
+$projector:finish
+```
+
+Finish requires current checks and independent review. It assembles the exact result in temporary isolation, runs normal hooks, and integrates code and accepted specifications together with recoverable checkout/index installation. Repeated settled finish is a no-op.
+
+Read the report: actual checks, review provenance, integrated commit, archive, and any unverified behavior. A checkbox or successful compilation alone cannot establish keyboard interaction behavior.
+
+If you want the agent to carry the whole lifecycle without stopping at proposal review, explicitly authorize it:
+
+> Use Projector to add keyboard navigation. Draft the plan, implement it, run the checks, and finish the change.
+
+Material uncertainty still requires clarification. That request does not include integration unless you also ask for it.
+
+## Integrate when ready
+
+Finish already integrates the selected change. Ask for `$projector:merge` with another source branch when needed. The agent checks and reviews the combined result in temporary isolation and preserves unrelated staging and working changes during publication. An uncertain conflict or moved target preserves the integration and produces a concrete next step.
+
+[Integration](integration.md) explains the prerequisites. [Practical stories](examples.md) shows revisions and interruptions. [Troubleshooting](troubleshooting.md) covers setup or completion failures.

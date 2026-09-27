@@ -5,12 +5,18 @@ export interface Unit {
   contractHash: string; bodyHash: string; parent?: string; exported?: boolean; scope?: string;
   data?: Record<string, unknown>;
 }
-export interface Reference { text: string; from: string; path: string; offset: number; kind: 'dependency' | 'observation' }
+export interface Reference { text: string; from: string; path: string; offset: number; kind: 'dependency' | 'observation'; derived?: boolean }
 export interface ModuleBinding { local: string; imported: string; module: string; exported?: string }
 export interface FileRecord {
   path: string; hash: string; units: Unit[]; references: Reference[]; diagnostics: Diagnostic[]; imports: string[];
-  source: string; bindings?: ModuleBinding[]; exportStars?: string[]; language?: 'markdown' | 'typescript' | 'opaque';
+  source: string; bindings?: ModuleBinding[]; exportStars?: string[]; language?: string;
+  byteLength?: number; providers?: string[]; capabilities?: Partial<Record<Capability, Completeness>>;
+  extractionCapabilities?: Partial<Record<Capability, Completeness>>;
+  resolvedImports?: Record<string, string[]>;
+  repositoryFingerprint?: string;
 }
+export type Capability = 'syntax' | 'units' | 'dependencies' | 'repository' | 'crossDomain';
+export type Completeness = 'complete' | 'partial' | 'unknown';
 export interface PolicyAdapter {
   name: string;
   check(context: { fromPath?: string; fromScope?: string; target: Unit; edge: 'dependency' | 'observation' }):

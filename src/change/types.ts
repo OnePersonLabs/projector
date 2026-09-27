@@ -1,3 +1,4 @@
+import type { GeneratedReceipt } from './generated.ts';
 export type JsonRequest = Record<string, unknown>;
 export type DispositionAction = 'retain' | 'remove' | 'replace' | 'revise';
 export interface Contribution {
@@ -33,6 +34,13 @@ export interface Plan {
 export interface Evidence {
   id: string;
   basis: string;
+  basisVersion?: 2;
+  verificationBasis?: string;
+  inputPaths?: string[];
+  timeoutMs?: number;
+  purpose?: 'verification' | 'diagnostic' | 'baseline' | 'red' | 'generation';
+  supersedes?: string[];
+  generated?: GeneratedReceipt[];
   command: string;
   args: string[];
   scope: string[];
@@ -42,6 +50,7 @@ export interface Evidence {
   outputHash: string;
   durationMs: number;
   runtime: string;
+  executionRoot?: string;
   recordedAt: string;
 }
 export interface Support {
@@ -51,7 +60,15 @@ export interface Support {
   target?: string;
 }
 export interface ChangeState {
-  version: 1;
+  version: 1 | 2;
+  workspaceMode?: 'checkout' | 'isolated';
+  targetBranch?: string;
+  integrationHead?: string;
+  authorityBase?: string;
+  authorityPaths?: string[];
+  initialTree?: string;
+  initialIndex?: string;
+  selectionTree?: string;
   root: string;
   change: string;
   baseline: string;
@@ -80,10 +97,31 @@ export interface ChangeState {
   candidateInputsHash?: string;
   verifiedTasksHash?: string;
   obligations: string[];
+  publicationTransaction?: PublicationTransaction;
+  finalizationRoot?: string;
+  finalizationExpectedTree?: string;
+  finalizationCommit?: string;
+  recoveryContexts?: string[];
+  pendingFinalizationArtifacts?: { path: string; hash: string | null }[];
+  finalizationDispositions?: { path: string; reason: string }[];
+}
+export interface StoredFile { blob: string; mode: string }
+export interface PublicationTransaction {
+  version: 1;
+  recoveryRef?: string;
+  directory: string;
+  targetBranch: string;
+  targetHead: string;
+  commit: string;
+  beforeIndex: string;
+  afterIndex: string;
+  files: { path: string; before?: StoredFile; after?: StoredFile }[];
+  installed: string[];
+  phase: 'prepared' | 'advanced' | 'installed';
 }
 export interface ChangeServiceOptions {
   openspecEntry?: string;
   now?: () => number;
   beforeCandidateMutation?: (candidateRoot: string, operation: string) => Promise<void>;
-  fault?: (point: 'after-target' | 'after-sync-file' | 'after-archive' | 'before-publication' | 'after-publication') => void | Promise<void>;
+  fault?: (point: 'after-target' | 'after-sync-file' | 'after-archive' | 'before-publication' | 'after-publication' | 'after-checkout-file') => void | Promise<void>;
 }

@@ -49,8 +49,13 @@ export async function evaluateTrial(root: string, trajectory: Trajectory, option
       const original = await realpath(root);
       const config = JSON.parse(await readFile(path.join(root, 'trial.json'), 'utf8')) as { trajectory: string; mode: string };
       if (config.trajectory !== trajectory) throw new Error('Trajectory identity differs from the assigned trial');
-      const state = JSON.parse(await readFile(path.join(root, 'openspec/changes/clean-evolution/implementation-state.json'), 'utf8')) as { baseline: string; candidateRoot: string; targetId: string; plan?: { targetId: string }; evidence: { passed: boolean; command: string; outputHash: string }[] };
-      if (!path.resolve(state.candidateRoot).startsWith(path.resolve(original) + path.sep + '.worktrees' + path.sep)) throw new Error('Candidate is outside the allocated trial worktree');
+      const gitDirectory = (await execute('git', ['rev-parse', '--absolute-git-dir'], { cwd: root, windowsHide: true })).stdout.trim();
+      const state = JSON.parse(await readFile(path.join(gitDirectory, 'projector-changes/clean-evolution.json'), 'utf8')) as { baseline: string; workspaceMode?: string; root: string; candidateRoot: string; targetId: string; plan?: { targetId: string }; evidence: { passed: boolean; command: string; outputHash: string }[] };
+      if (await realpath(state.root) !== original) throw new Error('Change belongs to another trial root');
+      if (state.workspaceMode === 'checkout' && await realpath(state.candidateRoot) !== original) throw new Error('Selected checkout is outside the trial root');
+      const originalCommon = (await execute('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: original, windowsHide: true })).stdout.trim();
+      const candidateCommon = (await execute('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: state.candidateRoot, windowsHide: true })).stdout.trim();
+      if (candidateCommon !== originalCommon) throw new Error('Candidate is not a worktree of this trial repository');
       if (!state.plan || state.plan.targetId !== state.targetId) fail('projector-plan', 'No current Projector plan supports the final target.');
       if (!state.evidence.some(evidence => evidence.passed && evidence.command && evidence.outputHash)) fail('projector-evidence', 'The real Projector candidate lacks executed final evidence.');
       if (config.mode === 'evolved') {

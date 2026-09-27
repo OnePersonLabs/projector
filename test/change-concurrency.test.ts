@@ -27,11 +27,13 @@ test('change exclusion serializes successors after failures and permits independ
   assert.equal(await exclusive('canonical-root-a', 'change', async () => 'settled'), 'settled');
 });
 
-test('concurrent ChangeService instances allocate exactly one candidate in the shared owner', async () => {
+test('concurrent ChangeService instances enroll exactly one selected checkout in the shared owner', async () => {
   const input = await fixture();
   const states = await Promise.all(Array.from({ length: 3 }, () => new ChangeService().prepareChange(input)));
   assert.equal(new Set(states.map(item => item.candidateId)).size, 1);
   assert.equal(new Set(states.map(item => item.candidateBranch)).size, 1);
   assert.equal(states.filter(item => item.reused === true).length, 2);
-  assert.equal(gitFixture(input.root, 'worktree', 'list', '--porcelain').match(/^worktree /gm)?.length, 2);
+  assert.equal(new Set(states.map(item => item.candidateRoot)).size, 1);
+  assert.equal(states[0]!.candidateRoot, input.root);
+  assert.equal(gitFixture(input.root, 'worktree', 'list', '--porcelain').match(/^worktree /gm)?.length, 1);
 });
