@@ -2,6 +2,10 @@
 
 Projector V4 development follows the repository's normal durable source, OpenSpec, and design artifacts.
 
+## Verification
+
+Use the local [canonical verification procedure](plugins/projector/skills/verify/SKILL.md) for verification planning, test maintenance, execution, and final review. Select its planning, ordinary repository, prepared-change, or branch-integration context from the actual work. This route does not activate Projector, require a prepared change, or depend on an installed plugin. Repository checks and completion gates still apply. Use [development commands](docs/development.md#focused-checks-and-complete-impact) for this checkout.
+
 ## Handoff isolation
 
 Files under `.temp/` are **one-way agent inputs only**. No tracked file outside `.temp/` may import, load, link to, cite, embed the path of, or otherwise depend on any file under `.temp/`.

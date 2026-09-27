@@ -24,7 +24,7 @@ The agent authors the artifacts and operates the runtime. You describe the desir
 | Draft a complete or incremental plan | `$projector:propose` | Proposal, requirement/design deltas, and tasks at the requested frontier |
 | Change the plan | `$projector:revise` | Coherent revised artifacts and contribution accounting |
 | Implement reviewed work | `$projector:apply` | Implementation in the selected managed candidate |
-| Check the candidate | `$projector:verify` | Current executed evidence and independent review, or explicit obligations |
+| Plan or execute checks | `$projector:verify` | Impact-aware protection decisions, actual evidence and review, or explicit obligations |
 | Inspect drift | `$projector:audit` | Findings with a fixed basis and evidence limits |
 | Materialize candidate authority | `$projector:sync` | Target requirements/design visible in the candidate |
 | Complete selected work | `$projector:finish` | Archived target and integrated commit, or a blocker |
@@ -63,7 +63,11 @@ Task reconciliation and reverse-task requests also route through revision. Actua
 
 `$projector:apply` prepares or resumes the selected checkout, validates applicability and contributions, and implements through managed batches. Explicit isolated mode is available when useful; requirement revisions do not require another checkout. Changed intent routes through revision.
 
-`$projector:verify` derives fresh obligations before reading assertions, creates a test-change plan, selects execution separately, and runs real checks at coherent checkpoints. It broadens uncertain impact and preserves required full checks. Verification input identity is separate from plan/review identity: checkbox updates do not automatically rerun application tests. Independent final review examines the actual result. Verification does not archive.
+`$projector:verify` uses the [canonical verification procedure](../plugins/projector/skills/verify/SKILL.md). For fresh work, it inventories behavior, invariants, and boundaries before reading existing assertions. It justifies keep, create, update, refactor, replace, and delete decisions separately from execution selection. It checks a practical baseline and an intended behavioral failure, or records the applicable exception. It executes checks before a slice, after a slice, after test maintenance, and at the final settled result, rather than after every edit.
+
+The procedure has four contexts. Planning derives obligations and validates artifacts without preparing implementation. Ordinary repository work uses normal commands and evidence notes without activating Projector. A prepared change retains its actual root, change, candidate, and baseline; it uses `recordEvidence` and `validatePlan` before authorized finish. Branch integration uses the pinned target-to-integration difference and normal commands, with mandatory independent review. It does not create a managed change or use those evidence APIs. Publication remains with `$projector:merge`.
+
+Verification reassesses the complete baseline difference, broadens uncertain selections, and preserves required repository, release, hook, and review gates. Matching evidence can be reused; checkbox updates do not automatically rerun application tests. Check freshness does not establish overall plan validity. The report names actual executed checks, review attribution, unexecuted checks, and remaining uncertainty. Verification does not archive.
 
 `$projector:audit` compares requirements, designs, tasks, implementation, and evidence at a selected basis. It distinguishes demonstrated defects from risks and unavailable evidence. Audit is read-only unless fixes are also authorized.
 
@@ -101,6 +105,8 @@ Observed implementation does not automatically become intended behavior. See [ex
 ## Integrate a branch
 
 `$projector:merge` pins one source branch and the original target while preserving unrelated local edits. It constructs an isolated merge, resolves supported conflicts, checks the complete result, and obtains independent adversarial review. The target advances only after revalidation. Uncertain conflicts produce a decision brief; moved targets and actual conflicting local edits preserve the integration.
+
+Its verification baseline is the pinned original `targetHead`. Use the branch-integration context of `$projector:verify` on the actual integration checkout, including corrections and hook writes. Keep command evidence and independent review with the integration record. Do not prepare a Projector change to qualify the merge.
 
 Name the actual source branch to merge, or refer to one unambiguous relevant published result. Finish already integrates the selected change. See [integration](integration.md).
 

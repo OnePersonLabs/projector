@@ -68,6 +68,8 @@ test('fresh installed runtime serves two actual MCP clients and qualified manage
   assert.deepEqual(result(await b.callTool({ name: 'initProject', arguments: { root: repository } })).created, []);
   const skills = (await readdir(join(plugin, 'skills'))).sort();
   assert.deepEqual(skills, ['apply', 'audit', 'continue', 'explore', 'finish', 'init', 'merge', 'propose', 'reconcile', 'revise', 'sync', 'verify'].sort());
+  assert.equal(await readFile(join(plugin, 'skills', 'verify', 'SKILL.md'), 'utf8'),
+    await readFile(new URL('../plugins/projector/skills/verify/SKILL.md', import.meta.url), 'utf8'));
   assert.equal(openedA.rootId, openedB.rootId); assert.equal(openedA.kernel, openedB.kernel);
   const rootId = String(openedA.rootId);
   const current = async () => result(await b.callTool({ name: 'read', arguments: { rootId, view: 'current', reference: '[[Before]]' } }));

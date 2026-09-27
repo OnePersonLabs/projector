@@ -1,0 +1,68 @@
+✖ baseline and red executions remain history and cannot authorize completion or selected-tree replay (13889.9094ms)
+✖ only current successful covering supersession retires evidence, and a failing rerun blocks older pass reuse (66481.7976ms)
+✖ declared source, test, transitive and configuration inputs stale scoped evidence while unrelated edits preserve eligibility (16525.5015ms)
+✔ preparation uses the selected checkout and finishes code and authority on its branch (30073.0069ms)
+✔ checkbox progress preserves check eligibility and does not rewrite fenced task examples (38598.146ms)
+✔ unrelated staged and unstaged edits survive direct publication (31349.4692ms)
+✔ recordEvidence captures real generator provenance without calling its mutation a passing verification (8488.2015ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 4
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 205853.9916
+
+✖ failing tests:
+
+test at test\change-readiness.test.ts:19:1
+✖ baseline and red executions remain history and cannot authorize completion or selected-tree replay (13889.9094ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///<projector>/test/change-readiness.test.ts:30:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test\change-readiness.test.ts:44:1
+✖ only current successful covering supersession retires evidence, and a failing rerun blocks older pass reuse (66481.7976ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///<projector>/test/change-readiness.test.ts:76:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test\change-readiness.test.ts:80:1
+✖ declared source, test, transitive and configuration inputs stale scoped evidence while unrelated edits preserve eligibility (16525.5015ms)
+  AssertionError [ERR_ASSERTION]: src/player.js
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///<projector>/test/change-readiness.test.ts:99:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

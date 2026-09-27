@@ -17,6 +17,39 @@ Runtime modules cover documents, indexing, the observation kernel, change lifecy
 
 For documentation-only work, inspect content and run bounded link, anchor, invocation, and diagram checks. The [documentation guide](documentation-guide.md) describes editorial acceptance.
 
+## Focused checks and complete impact
+
+Use the [canonical verification procedure](../plugins/projector/skills/verify/SKILL.md) with the context that matches the work. Normal development uses repository commands and evidence notes. A prepared change uses its retained candidate and evidence APIs. Branch integration uses the pinned target-to-integration difference and normal commands; `$projector:merge` owns publication. Planning does not require a prepared checkout, but complete artifacts still need strict validation.
+
+Select focused tests from the affected behavior, preserved invariants, boundaries, and dependencies. Run exact files directly with Node. Put Node options before file paths:
+
+```powershell
+node --test --test-concurrency=2 test/change.test.ts test/change-recovery.test.ts
+node --test --test-concurrency=2 --test-name-pattern="selected test name" test/change.test.ts
+```
+
+Replace the name pattern with the actual intended test name. Inspect the output to confirm that every expected named test executed. A no-match name filter can exit with status zero and report a passing file without executing the intended test. That result does not satisfy the selected obligation. Widen the selection when names or dependency coverage are uncertain.
+
+`npm test -- test/change.test.ts` does not narrow this repository's test glob. The npm script already supplies `test/**/*.test.ts`; appended arguments do not replace it. Use the direct commands above for focused execution. Build before checks that consume compiled runtime files.
+
+At the final checkpoint, compare against the actual selected baseline, rather than only the last commit or the unstaged patch:
+
+```powershell
+git diff --name-status --find-renames <baseline> --
+git ls-files --others --exclude-standard
+```
+
+Replace `<baseline>` with the pinned commit for the work. The first command includes committed, staged, and unstaged tracked differences from that baseline. The second identifies untracked files for separate inspection. Inspect the corresponding complete contents and diff, including renames, shared setup, configuration, and hook writes. Deduplicate checks with demonstrated overlapping coverage and widen uncertain selections. Do not discard unrelated work when assessing impact.
+
+Focused checks do not replace required full or release checks, hooks, or review. Use these repository backstops when the change requires full qualification:
+
+```powershell
+npm run check
+npx openspec validate --all --strict --json
+```
+
+The local locked dependency supplies OpenSpec; no global installation is required. Record commands, cases that executed, actual status, evidence locations, pre-existing failures, unexecuted checks, and remaining uncertainty. Reuse prior results only when their relevant code, inputs, configuration, environment, services, and coverage still match.
+
 ## Local plugin installation
 
 1. Build and check the checkout.

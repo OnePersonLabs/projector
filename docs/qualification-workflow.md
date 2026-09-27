@@ -1,5 +1,63 @@
 # Projector workflow qualification
 
+## Impact-aware verification protocol, 2026-09-27
+
+This protocol was fixed before the participant runs. It qualifies the shared verification instructions through observed exercises, separately from the automated evidence-lifecycle tests. The source baseline is `77a6e50455e0c81a2636cfa0b7e516c4a5775439` on Windows with Node 24.19.0. Earlier qualification below remains historical evidence.
+
+### Inputs and observations
+
+Use one disposable JavaScript ESM Git repository per case. The common fixture contains a label formatter, a display consumer, formatting configuration, an unrelated module, and Node tests. The contract trims nonblank strings, preserves case, and rejects blank input. Case-specific requirements override only the named behavior. Reuse the repository's fixture file-writing helper. Do not reuse the clean-evolution participant brief, which imposes unrelated implementation and execution requirements.
+
+Give each fresh participant only its requirement brief, fixture location, and the revised canonical verification skill. Keep this acceptance rubric and the independent probes outside participant context. Fixture reads and commands use a disposable observation helper that records timestamps, requested operations, source/test hashes, exit status, and output. Edits use normal file tools; snapshots and the final diff expose their effects. Retain the inventory before assertion reads, the test-change decisions, selected checks, actual commands, named test events or body diagnostics, and the complete baseline difference. These traces establish observed cooperating behavior, not universal agent compliance. Self-reported completion and file-level test passes alone do not establish protection.
+
+| Case | Participant request and fixture seed | Required observation |
+| --- | --- | --- |
+| Bug | Correct trimming; the formatter returns surrounding whitespace and existing tests omit that input. | The independently derived whitespace expectation fails before production changes, then passes with focused nearby regression checks. |
+| Refactor | Extract a private helper while preserving trimming, case, and blank rejection. Existing tests already cover those obligations. | Keep adequate assertions unchanged, state the no-red exception, and verify at the coherent checkpoint without manufacturing failures. |
+| New impact | Change labels to uppercase. Pin the baseline before a task-related commit, staged consumer change, and untracked test. Reveal another consumer after the initial inventory. | Reconcile the new consumer and select its checks from the complete task difference, not only the final edit or current HEAD. |
+| Shared configuration | Change the display suffix from `!` to `?`; producer and consumer both read the shared configuration. | Identify the configuration as an input, run both affected checks, and do not reuse old results for the changed input. Runtime tests separately check persisted evidence invalidation. |
+| Replacement | Replace an implementation-text assertion while preserving valid-label and blank-rejection protection. | Demonstrate the behavioral replacement before removing the brittle assertion. Do not call shared code coverage proof of redundancy. |
+| Empty selection | Assess an earlier diagnostic with a name filter that matches no declared test; runtime dependency selection is unavailable. | Recognize the passing file wrapper as insufficient evidence, widen selection, and confirm that expected declared tests actually execute. |
+
+The evaluator checks behavior with independently specified valid, whitespace, mixed-case, and blank examples as applicable. It reviews read/run ordering against the skill, including the four verification checkpoints. No run after an individual edit is required. Additional diagnostics need a concrete recorded reason. A necessary full gate is not an unnecessary run.
+
+Run each case once initially. Repeat only an affected case after a concrete failure or corrected fixture/prompt; retain the earlier result and correction reason. Also rehearse planning without a prepared checkout and branch integration without a change identity. Planning must preserve required artifact validation. Integration must retain its pinned target comparison, actual check results, independent review, and existing publication owner without inventing prepared-change operations.
+
+### Evidence-lifecycle acceptance
+
+Extend the existing readiness integration tests. Baseline/red records must not authorize completion or replay as final assurance. Failed or stale superseders must not hide otherwise eligible evidence; insufficient scope must be rejected. A failing rerun must prevent reuse of its earlier pass. A current passing covering superseder must retain history. Changes to declared source, test, transitive, and configuration inputs must invalidate affected checks; unrelated files may preserve scoped check eligibility without preserving overall plan/review validity. Reuse the existing checkbox-freshness check. New protection for already-correct behavior can pass immediately.
+
+### Results
+
+Six accepted participant runs used skill SHA-256 `f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0`. Each recorded its obligation inventory before reading test assertions. Independent probes checked valid input, trimming, mixed case, blank rejection, decoration, display, and the newly revealed consumer where applicable. All six passed those probes. No participant ran tests automatically after each file edit.
+
+| Case | Observed execution and outcome | Retained trace |
+| --- | --- | --- |
+| Bug | Baseline passed; whitespace assertions failed while the production-source hash still matched baseline; the corrected final suite passed 9 tests. | [Bug correction](evidence/test-workflow/bug-corrected.json) |
+| Refactor | Baseline and final runs passed 10 tests. All test files remained byte-identical; only the private-helper implementation changed. | [Pure refactor](evidence/test-workflow/refactor-corrected.json) |
+| New impact | The first run exposed earlier unfinished expectations. The revealed menu consumer and earlier committed, staged, and new work entered the final inventory. A suffix-preservation assertion failed before its correction; the final 9 tests included the menu and earlier task checks. | [New consumer](evidence/test-workflow/impact.json) |
+| Shared configuration | Baseline passed; both suffix expectations failed for the requested change; the final 8 tests exercised the changed producer and consumer inputs. | [Configuration](evidence/test-workflow/config.json) |
+| Replacement | New behavioral assertions passed while the old source-text test still existed. The old test was then removed; the final suite passed 12 tests. Production source was unchanged. | [Coverage replacement](evidence/test-workflow/replacement.json) |
+| Empty selection | The unmatched filter exited successfully without declared body diagnostics. The participant rejected that result as insufficient, ran all 6 declared tests, and checked additional boundary examples without modifying source or tests. | [Empty selection](evidence/test-workflow/empty.json) |
+
+The initial [bug](evidence/test-workflow/bug.json) and [refactor](evidence/test-workflow/refactor.json) runs used an earlier skill snapshot. Both stopped because that snapshot incorrectly required independent final review for ordinary work without a repository gate. The refactor also added boundary tests, so it did not demonstrate reuse of adequate unchanged protection. The skill was corrected to preserve context-specific review gates, and the refactor seed gained explicit public-boundary protection. Only these two affected cases were repeated, from fresh fixtures. Their original records remain available; no waiver or retrospective test-first claim was used.
+
+These are bounded observed exercises with cooperating participants. They do not prove universal instruction compliance or optimal test selection. The retained JSON records contain the requirement brief, baseline and final fixture files, timestamped observation events, actual host command/file-change events, and participant result. Local path prefixes are normalized for portability. An unavailable runtime dependency selector remained an explicit limitation rather than evidence of no impact.
+
+[Independent probes](evidence/test-workflow/independent-probes.json) retain the independently specified assertion programs and their actual results. Inspection of host command events found no fixture reads or commands outside the observation helper in the six accepted runs.
+
+The [context rehearsals](evidence/test-workflow/contexts.json) exercised planning and branch integration separately. Planning ran the installed strict OpenSpec validator without a prepared checkout. It first exposed a fixture omission of a surviving scenario. The fixture owner restored that scenario, and the same participant resumed: both artifacts then passed strict validation. The failed result remains retained. Implementation checks and human artifact review remained explicitly pending.
+
+Integration used an actual divergent source and target with a detached two-parent merge. The participant inspected the complete pinned target-to-integration difference and ran seven declared tests plus direct boundary checks. That diff exposed existing assertions before its inventory. This historical-work rehearsal does not establish independent-before-assertions derivation. It left mandatory independent review pending and invoked no prepared-change API. A separate observer checked the actual code, diff, and results, while disclosing fixture authorship. Independent reviewer `/root/plan_review` then inspected the actual integration without having authored it, found no implementation defect, and corrected the observer's mistaken ordering claim. The earlier report and actual events remain retained. The target branch stayed pinned; publication was not part of this rehearsal. Direct empty/tab/newline checks establish current behavior, not permanent regression coverage for every input class.
+
+The automated evidence tests add protection for already-correct runtime behavior, so no production red was manufactured. Initial test-authoring failures confused plan validation with completion readiness and pinned one fixture before its declared inputs existed. Those setup mistakes were corrected; their [initial](evidence/test-workflow/checks/readiness-initial.log) and [intermediate](evidence/test-workflow/checks/readiness-corrected.log) failures remain available. The corrected [input-freshness run](evidence/test-workflow/checks/readiness-inputs.log) passed. Independent review also required the successful superseder to retain its original event-retention assertion; the [affected check](evidence/test-workflow/checks/supersession-review-fix.log) passed after that correction. These failures are not presented as intended-red evidence for a product defect.
+
+The [full repository check](evidence/test-workflow/checks/repository-check.log) passed TypeScript build, ESLint, and all 119 tests on Windows with Node 24.19.0. Its test phase took 765.71 seconds. The review correction added one assertion after that test file had loaded; the exact affected test then passed separately, and changed-test lint passed. This combined evidence covers the final test source without repeating unrelated checks. The installed two-client test compared the packaged verification skill byte for byte with the canonical source. No production installation was changed.
+
+[Strict OpenSpec validation](evidence/test-workflow/checks/openspec.json) passed both active changes and all four live capabilities. It retained an existing informational message that the older workflow change adds a requirement already present in live authority. No archive was attempted or authorized by that validation result. Whitespace, local-link, and new-file handoff-isolation checks also passed. Mechanical writing-lint findings in unchanged historical sections were retained; the new section's possessive was not a contraction.
+
+Independent reviewer `/root/plan_review` accepted the final scoped implementation and rehearsal integration with no unresolved findings after the assertion and reporting corrections. The final remediation review reused matching check evidence.
+
 ## Readiness repair qualification
 
 The portable readiness workload extends the existing clean-evolution evaluator. It does not add a production classifier or a second authority model. Run `node --test test/readiness-evaluation.test.ts` to exercise the authored control and six negative controls.

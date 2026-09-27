@@ -1,0 +1,630 @@
+{
+  "case": "bug-corrected",
+  "request": "Fix formatLabel so it trims surrounding whitespace. Preserve case, reject blank strings, and preserve decoratedLabel/displayLabel behavior.",
+  "baseline": "ae914a50f2d0ca262674999ac12388b928641c18",
+  "correction": "Original policy snapshot imposed independent review on ordinary work; corrected policy applies repository gates. Refactor seed now explicitly covers preserved public boundary cases.",
+  "environment": {
+    "platform": "win32",
+    "node": "v24.19.0",
+    "model": "gpt-6-sol",
+    "reasoningEffort": "medium"
+  },
+  "skillSha256": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0",
+  "observation": {
+    "inventoryBeforeAssertions": true,
+    "testRuns": [
+      {
+        "at": "2026-09-27T09:32:11.955Z",
+        "args": [
+          "node",
+          "--test",
+          "test/format-label.test.js",
+          "test/display-label.test.js",
+          "test/unrelated.test.js"
+        ],
+        "exitCode": 0,
+        "bodies": [
+          "BODY:display",
+          "BODY:format-valid",
+          "BODY:format-blank",
+          "BODY:format-config",
+          "BODY:unrelated"
+        ]
+      },
+      {
+        "at": "2026-09-27T09:32:17.226Z",
+        "args": [
+          "node",
+          "--test",
+          "test/format-label.test.js",
+          "test/display-label.test.js"
+        ],
+        "exitCode": 1,
+        "bodies": [
+          "BODY:display",
+          "BODY:format-valid",
+          "BODY:format-blank",
+          "BODY:format-config"
+        ]
+      },
+      {
+        "at": "2026-09-27T09:32:39.668Z",
+        "args": [
+          "node",
+          "--test",
+          "test/*.test.js"
+        ],
+        "exitCode": 0,
+        "bodies": [
+          "BODY:display",
+          "BODY:format-valid",
+          "BODY:format-blank",
+          "BODY:format-config",
+          "BODY:unrelated"
+        ]
+      }
+    ]
+  },
+  "events": [
+    {
+      "at": "2026-09-27T09:31:11.588Z",
+      "operation": "read",
+      "args": [
+        "REQUIREMENTS.md",
+        "VERIFY.md"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "45bbca51c4e6024dad3174826a8b9928b85ff2ffdec5cd8b407c3fea60651ce4",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "b863f8302c987c2d9a75fdeb8a0365a4609c0027417f29b46ced7c1056a93176",
+        "test/format-label.test.js": "8fae67c8f5cd3f44651e60754c7b0f748913e8a0e50b6ca3eae9699b90359bb6",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "FILE REQUIREMENTS.md\n# Label contract\n\nformatLabel trims surrounding whitespace, preserves case, and rejects blank strings. decoratedLabel appends the configured suffix; displayLabel wraps that result in brackets. The unrelated module must remain unchanged.\n\n# Selected request\n\nFix formatLabel so it trims surrounding whitespace. Preserve case, reject blank strings, and preserve decoratedLabel/displayLabel behavior.\n\nFILE VERIFY.md\n---\nname: verify\ndescription: Plan impact-aware checks, preserve test protection, execute evidence at coherent checkpoints, and meet the applicable final review gates.\n---\n\nThis skill owns the shared verification procedure. Tasks describe concrete work for the selected change; do not copy this procedure into tasks.md. Read [the runtime contract](../apply/references/runtime.md) when using prepared-change operations.\n\n## Select the verification context\n\n- **Planning:** Derive obligations and a test-change plan while authoring artifacts. Validate complete artifacts with the bundled strict OpenSpec validator. Do not call `prepareChange` merely to plan checks or validate a draft. Report checks that require implementation as unexecuted.\n- **Ordinary repository work:** Use the actual checkout, its selected baseline, normal repository commands, and ordinary evidence notes. Preserve repository checks, hooks, release requirements, and review gates. This procedure does not activate Projector or require a managed change.\n- **Prepared Projector change:** Retain the actual source `root`, `change`, returned `candidateRoot`, and pinned baseline. Recover the selected candidate and state; do not substitute a newer checkout. Execute checks with `recordEvidence({root,change,command,args,scope,timeoutMs})`. Use `validatePlan` for current plan obligations and independent review. Continue to $projector:finish only when completion is authorized.\n- **Branch integration:** Use the pinned `targetHead` and isolated integration checkout supplied by $projector:merge. Assess the complete target-to-integration difference, including corrections and hook writes. Use normal repository commands and evidence notes, and obtain mandatory independent review. Do not call `prepareChange`, invent a change ID, or use `recordEvidence` or `validatePlan` for this context. Publication remains owned by $projector:merge.\n\n## Establish obligations and protection\n\n1. Read current requirements, designs, repository instructions, required checks, and relevant producers and consumers. Map affected behavior, preserved invariants, input/output boundaries, shared setup, and failure paths. For fresh behavioral work, write a compact independent inventory with discriminating examples **before inspecting existing assertions**. Use approved requirements and boundary behavior as the oracle; the edited implementation must not define its own expected result. For work that already exists, state the historical limitation. Do not invent retrospective test-first evidence.\n2. Inspect existing tests against that inventory. Make justified protection decisions from six categories. **Keep** valid surviving protection. **Create** missing protection. **Update** changed expectations, stating both old and new obligations. **Refactor** test structure while preserving assertions. **Replace** inadequate protection with specified equivalent or stronger protection. **Delete** tests only for retired requirements or when their protection is demonstrably preserved elsewhere. Shared code coverage alone does not establish redundant protection. Record the applicable decisions and reasons, not six artificial changes. Keep this test-change plan separate from execution selection. Author tests for each coherent slice; do not implement all planned tests speculatively up front. Never weaken expectations to fit the implementation. Deletion-only cleanup does not require an absence test. Add recurrence guards only when policy permits them and a concrete recurrence mechanism or protected invariant justifies them.\n3. Select execution from the inventory, complete baseline difference, dependency information, and repository commands. Deduplicate overlapping checks. A broader check can satisfy narrower obligations only when its actual assertions cover them. Investigate unknown relationships; do not treat them as no impact. Widen empty, uncertain, or unreliable selections. Keep required full checks, release checks, hooks, and review gates even when focused checks pass.\n\n## Check at four coherent checkpoints\n\nDo not automatically run tests after every edit. Use these checkpoints and revisit impact when new callers, fixtures, setup, configuration, dependencies, dynamic boundaries, or obligations appear.\n\n1. **Before each slice:** Establish a pre-edit baseline with relevant existing checks where practical. Reuse matching baseline evidence instead of repeating unchanged checks; report any baseline limitation. Separate pre-existing failures from failures introduced by the slice; preserve their output and precise remaining obligations. For a behavioral slice, specify the independent oracle and expected failure. Execute the discriminating check and confirm that it fails for the intended cause before implementation. An unrelated infrastructure failure is not the intended red. For a pure refactor, already-correct behavior, or nonbehavioral work, state why no new red is appropriate. Check the applicable preserved behavior. For historical work, report that a pre-edit red was not observed. Do not manufacture one by reversing accepted work.\n2. **After each slice:** Execute checks that discriminate the changed behavior and affected integration. Inspect actual output, exit status, and which cases ran. Resolve causal failures and revise impact when new dependencies appear. Build success, mock behavior, and dispatch-only checks establish only their actual coverage.\n3. **After test maintenance:** Check that the maintained tests still protect every surviving obligation. For test-infrastructure cleanup, first validate that the cleanup preserves the original checks before changing expectations. Before changing expectations in response to a failure, also check the infrastructure, fixtures, setup, and selection. Establish replacement protection before removing old protection for surviving obligations. Intentionally retired behavior can require removing obsolete assertions without replacement; document the retired obligation. Execute the maintained checks and inspect the cases that ran; do not accept a passing empty selection.\n4. **Final settled result:** Recompute impact from the complete selected-baseline difference, including committed, staged, unstaged, and untracked work. Include hook and generated writes. Reconcile the inventory, protection decisions, and execution selection; deduplicate covered checks and widen uncertain coverage. Execute every required full/release check and preserve normal hooks and review gates. Reuse matching evidence only when implementation, inputs, configuration, environment, services, and actual coverage still match. A new session alone is not a reason to repeat checks.\n\n## Record evidence and review\n\nKeep compact notes of commands, actual results, covered obligations, failures, and evidence locations in every execution context. Keep failed results as history. A failure needs a causal fix or a precise remaining obligation; a passing command does not erase an unresolved obligation.\n\nFor a prepared change, use `purpose:\"baseline\"` for pre-edit observations and `purpose:\"red\"` for intended failures. These records are history, not final assurance. Use current verification evidence for settled checks. `scope` names exact files meaningfully covered. Optional `inputPaths` must conservatively include actual test files, transitive implementation, fixtures, and relevant configuration. Omit it for conservative whole-checkout freshness when the inputs are uncertain; do not narrow it to obtain a fresh result.\n\nAn eligible passing current check can name earlier evidence IDs in `supersedes` only when its scope covers their scopes and its assertions preserve their obligations. Supersession preserves the earlier records as history. Runtime coverage validation does not prove assertion strength. Use `verificationBasis` for check freshness and the current plan/review `basis` for review. Fresh evidence alone does not establish overall plan validity. Checkbox changes and result bookkeeping do not automatically invalidate application checks; substantive task changes still need reconciliation. Changed source, tests, relevant configuration, or authority invalidate corresponding assurance. Historical passes are not current passes.\n\nFor a settled prepared change or branch integration, obtain a real independent final reviewer through a native subagent or separate reviewer environment. For ordinary repository work, follow the applicable repository review gates. Supply each required reviewer with the actual target, complete baseline difference, contribution dispositions where applicable, test-change plan, executed results, and remaining limits. Ask for missing consumers, unsupported structure, invented justification, incomplete migration, counterexamples, and the strongest simpler alternative. Do not require another agent for every slice or invent attribution. Resolve findings and obtain required review of material corrections; refresh checks whose inputs changed.\n\nFor a prepared change, call `validatePlan` with `review:{basis,reviewer,examined,alternative,findings}` using the actual current basis. For ordinary work and branch integration, keep the actual review and findings in normal evidence notes and honor the completion gates for that context. Planning retains its artifact validation and human review frontier; it does not claim implementation completion.\n\nReport protection decisions, commands and cases executed, and baseline and intended-red results or justified exceptions. Include final coverage, reused or superseded evidence, and independent review attribution. Identify unresolved failures, unexecuted checks, and remaining uncertainty. Keep the actual outcome compact and link evidence where available. Do not report inferred runtime or native behavior as observed behavior.\n\nCompletion: the required checks and review for the selected context support the settled result; otherwise report the precise obligations that prevent completion.\n\n",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:31:34.746Z",
+      "operation": "inventory",
+      "args": [],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "45bbca51c4e6024dad3174826a8b9928b85ff2ffdec5cd8b407c3fea60651ce4",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "b863f8302c987c2d9a75fdeb8a0365a4609c0027417f29b46ced7c1056a93176",
+        "test/format-label.test.js": "8fae67c8f5cd3f44651e60754c7b0f748913e8a0e50b6ca3eae9699b90359bb6",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "# Obligation inventory\n\nOracle: REQUIREMENTS.md; workflow: VERIFY.md. Selected immutable baseline: ae914a50f2d0ca262674999ac12388b928641c18. Inventory recorded before inspecting assertions.\n\n- formatLabel removes surrounding whitespace: `  MiXeD  ` becomes `MiXeD`; tabs and newlines around `Alpha` become `Alpha`.\n- Preserve case and interior whitespace: ` a B ` becomes `a B`.\n- Reject blank strings, including empty, spaces, and tab/newline-only input.\n- decoratedLabel appends the configured suffix to the trimmed, case-preserved label; displayLabel brackets that decorated result. Trace configuration and callers before selecting integration checks.\n- Keep the unrelated module unchanged; assess the complete difference against the immutable baseline and preserve other work.\n- Inspect repository commands and existing protection after this inventory. Establish baseline, run a discriminating intended red before fixing behavior, then affected integration and all required final checks. Preserve failed evidence.\n\nUnknowns to resolve: implementation boundaries, suffix configuration, existing tests, required full checks, and current checkout differences. No new context requested by the brief.\n",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:31:36.875Z",
+      "operation": "list",
+      "args": [],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "45bbca51c4e6024dad3174826a8b9928b85ff2ffdec5cd8b407c3fea60651ce4",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "b863f8302c987c2d9a75fdeb8a0365a4609c0027417f29b46ced7c1056a93176",
+        "test/format-label.test.js": "8fae67c8f5cd3f44651e60754c7b0f748913e8a0e50b6ca3eae9699b90359bb6",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": ".gitignore\nformat.json\ninventory.md\npackage.json\nREQUIREMENTS.md\nsrc/display-label.js\nsrc/format-label.js\nsrc/unrelated.js\ntest/display-label.test.js\ntest/format-label.test.js\ntest/unrelated.test.js\nVERIFY.md",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:31:38.946Z",
+      "operation": "run",
+      "args": [
+        "git",
+        "diff",
+        "ae914a50f2d0ca262674999ac12388b928641c18"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "45bbca51c4e6024dad3174826a8b9928b85ff2ffdec5cd8b407c3fea60651ce4",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "b863f8302c987c2d9a75fdeb8a0365a4609c0027417f29b46ced7c1056a93176",
+        "test/format-label.test.js": "8fae67c8f5cd3f44651e60754c7b0f748913e8a0e50b6ca3eae9699b90359bb6",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:31:48.096Z",
+      "operation": "read",
+      "args": [
+        "package.json",
+        "format.json",
+        "src/format-label.js",
+        "src/display-label.js",
+        "src/unrelated.js",
+        "test/format-label.test.js",
+        "test/display-label.test.js",
+        "test/unrelated.test.js",
+        ".gitignore"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "45bbca51c4e6024dad3174826a8b9928b85ff2ffdec5cd8b407c3fea60651ce4",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "b863f8302c987c2d9a75fdeb8a0365a4609c0027417f29b46ced7c1056a93176",
+        "test/format-label.test.js": "8fae67c8f5cd3f44651e60754c7b0f748913e8a0e50b6ca3eae9699b90359bb6",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "FILE package.json\n{\n  \"name\": \"workflow-bug\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test test/*.test.js\"\n  }\n}\n\nFILE format.json\n{\"suffix\":\"!\"}\n\nFILE src/format-label.js\nimport { readFileSync } from 'node:fs';\nconst config = JSON.parse(readFileSync(new URL('../format.json', import.meta.url), 'utf8'));\nexport function formatLabel(value) {\n  if (!value.trim()) throw new Error('blank label');\n  return value;\n}\nexport function decoratedLabel(value) { return formatLabel(value) + config.suffix; }\n\nFILE src/display-label.js\nimport { decoratedLabel } from './format-label.js';\nexport function displayLabel(value) { return '[' + decoratedLabel(value) + ']'; }\n\nFILE src/unrelated.js\nexport const answer = 42;\n\nFILE test/format-label.test.js\nimport test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { formatLabel, decoratedLabel } from '../src/format-label.js';\ntest('format valid label and preserve case', t => { assert.equal(formatLabel('MiXeD'), 'MiXeD'); t.diagnostic('BODY:format-valid'); });\ntest('reject blank label', t => { assert.throws(() => formatLabel('   '), /blank/); t.diagnostic('BODY:format-blank'); });\ntest('decorate with configured suffix', t => { assert.equal(decoratedLabel('hello'), 'hello!'); t.diagnostic('BODY:format-config'); });\n\nFILE test/display-label.test.js\nimport test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { displayLabel } from '../src/display-label.js';\ntest('display consumer', t => { assert.equal(displayLabel('hello'), '[hello!]'); t.diagnostic('BODY:display'); });\n\nFILE test/unrelated.test.js\nimport test from 'node:test'; import assert from 'node:assert/strict'; import { answer } from '../src/unrelated.js';\ntest('unrelated answer', t => { assert.equal(answer, 42); t.diagnostic('BODY:unrelated'); });\n\nFILE .gitignore\ninventory.md\nverification.md\n\n",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:31:50.414Z",
+      "operation": "run",
+      "args": [
+        "git",
+        "status",
+        "--short"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "45bbca51c4e6024dad3174826a8b9928b85ff2ffdec5cd8b407c3fea60651ce4",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "b863f8302c987c2d9a75fdeb8a0365a4609c0027417f29b46ced7c1056a93176",
+        "test/format-label.test.js": "8fae67c8f5cd3f44651e60754c7b0f748913e8a0e50b6ca3eae9699b90359bb6",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:32:11.955Z",
+      "operation": "run",
+      "args": [
+        "node",
+        "--test",
+        "test/format-label.test.js",
+        "test/display-label.test.js",
+        "test/unrelated.test.js"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "45bbca51c4e6024dad3174826a8b9928b85ff2ffdec5cd8b407c3fea60651ce4",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "b863f8302c987c2d9a75fdeb8a0365a4609c0027417f29b46ced7c1056a93176",
+        "test/format-label.test.js": "8fae67c8f5cd3f44651e60754c7b0f748913e8a0e50b6ca3eae9699b90359bb6",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "✔ display consumer (0.4379ms)\nℹ BODY:display\n✔ format valid label and preserve case (0.5775ms)\nℹ BODY:format-valid\n✔ reject blank label (0.2628ms)\nℹ BODY:format-blank\n✔ decorate with configured suffix (0.0669ms)\nℹ BODY:format-config\n✔ unrelated answer (0.3882ms)\nℹ BODY:unrelated\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 88.4514\n",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:32:17.226Z",
+      "operation": "run",
+      "args": [
+        "node",
+        "--test",
+        "test/format-label.test.js",
+        "test/display-label.test.js"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "45bbca51c4e6024dad3174826a8b9928b85ff2ffdec5cd8b407c3fea60651ce4",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "eaf46850a1324d91ad6b200ab1db0b3b5669ae9a5a4281137be64a63b2ab0638",
+        "test/format-label.test.js": "fc3fce059fcf79405c4ca2ac78bdb740172c2b01ba9778261395eb038d125431",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "✔ display consumer (0.4283ms)\nℹ BODY:display\n✖ display trims through the configured decorator and rejects blank input (0.5704ms)\n✔ format valid label and preserve case (0.483ms)\nℹ BODY:format-valid\n✔ reject blank label (0.7307ms)\nℹ BODY:format-blank\n✔ decorate with configured suffix (0.0795ms)\nℹ BODY:format-config\n✖ trim surrounding whitespace while preserving case and interior spaces (0.6042ms)\n✔ reject every blank string form (0.1005ms)\n✖ decorate trimmed labels and reject blank input (0.1237ms)\nℹ tests 8\nℹ suites 0\nℹ pass 5\nℹ fail 3\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 77.9069\n\n✖ failing tests:\n\ntest at test\\display-label.test.js:5:1\n✖ display trims through the configured decorator and rejects blank input (0.5704ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  + actual - expected\n  \n  + '[\\t MiXeD \\n!]'\n  - '[MiXeD!]'\n  \n      at TestContext.<anonymous> (file:///<qualification>/bug-corrected/test/display-label.test.js:6:10)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1382:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n      at Test.postRun (node:internal/test_runner/test:1522:19)\n      at Test.run (node:internal/test_runner/test:1447:12)\n      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: '[\\t MiXeD \\n!]',\n    expected: '[MiXeD!]',\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at test\\format-label.test.js:7:1\n✖ trim surrounding whitespace while preserving case and interior spaces (0.6042ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  + actual - expected\n  \n  + '  MiXeD  '\n  - 'MiXeD'\n  \n      at TestContext.<anonymous> (file:///<qualification>/bug-corrected/test/format-label.test.js:8:10)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1382:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n      at Test.postRun (node:internal/test_runner/test:1522:19)\n      at Test.run (node:internal/test_runner/test:1447:12)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: '  MiXeD  ',\n    expected: 'MiXeD',\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at test\\format-label.test.js:17:1\n✖ decorate trimmed labels and reject blank input (0.1237ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  + actual - expected\n  \n  + '  MiXeD  !'\n  - 'MiXeD!'\n  \n      at TestContext.<anonymous> (file:///<qualification>/bug-corrected/test/format-label.test.js:18:10)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1382:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n      at Test.postRun (node:internal/test_runner/test:1522:19)\n      at Test.run (node:internal/test_runner/test:1447:12)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: '  MiXeD  !',\n    expected: 'MiXeD!',\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n",
+      "exitCode": 1
+    },
+    {
+      "at": "2026-09-27T09:32:39.668Z",
+      "operation": "run",
+      "args": [
+        "node",
+        "--test",
+        "test/*.test.js"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "3175dd0551a9a264808dc9d6774b9f745004130129d898196369c3409aba4ffc",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "eaf46850a1324d91ad6b200ab1db0b3b5669ae9a5a4281137be64a63b2ab0638",
+        "test/format-label.test.js": "fc3fce059fcf79405c4ca2ac78bdb740172c2b01ba9778261395eb038d125431",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "✔ display consumer (0.5779ms)\nℹ BODY:display\n✔ display trims through the configured decorator and rejects blank input (0.2623ms)\n✔ format valid label and preserve case (0.4644ms)\nℹ BODY:format-valid\n✔ reject blank label (0.7183ms)\nℹ BODY:format-blank\n✔ decorate with configured suffix (0.0833ms)\nℹ BODY:format-config\n✔ trim surrounding whitespace while preserving case and interior spaces (0.0615ms)\n✔ reject every blank string form (0.0972ms)\n✔ decorate trimmed labels and reject blank input (0.0537ms)\n✔ unrelated answer (0.4099ms)\nℹ BODY:unrelated\nℹ tests 9\nℹ suites 0\nℹ pass 9\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 105.0556\n",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:32:41.514Z",
+      "operation": "run",
+      "args": [
+        "git",
+        "diff",
+        "ae914a50f2d0ca262674999ac12388b928641c18",
+        "--"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "3175dd0551a9a264808dc9d6774b9f745004130129d898196369c3409aba4ffc",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "eaf46850a1324d91ad6b200ab1db0b3b5669ae9a5a4281137be64a63b2ab0638",
+        "test/format-label.test.js": "fc3fce059fcf79405c4ca2ac78bdb740172c2b01ba9778261395eb038d125431",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "diff --git a/src/format-label.js b/src/format-label.js\nindex b16ba30..997c551 100644\n--- a/src/format-label.js\n+++ b/src/format-label.js\n@@ -1,7 +1,8 @@\n import { readFileSync } from 'node:fs';\n const config = JSON.parse(readFileSync(new URL('../format.json', import.meta.url), 'utf8'));\n export function formatLabel(value) {\n-  if (!value.trim()) throw new Error('blank label');\n-  return value;\n+  const label = value.trim();\n+  if (!label) throw new Error('blank label');\n+  return label;\n }\n export function decoratedLabel(value) { return formatLabel(value) + config.suffix; }\ndiff --git a/test/display-label.test.js b/test/display-label.test.js\nindex 7e9d950..fabfd3b 100644\n--- a/test/display-label.test.js\n+++ b/test/display-label.test.js\n@@ -2,3 +2,7 @@ import test from 'node:test';\n import assert from 'node:assert/strict';\n import { displayLabel } from '../src/display-label.js';\n test('display consumer', t => { assert.equal(displayLabel('hello'), '[hello!]'); t.diagnostic('BODY:display'); });\n+test('display trims through the configured decorator and rejects blank input', () => {\n+  assert.equal(displayLabel('\\t MiXeD \\n'), '[MiXeD!]');\n+  assert.throws(() => displayLabel(' \\t\\n'), /blank/);\n+});\ndiff --git a/test/format-label.test.js b/test/format-label.test.js\nindex a61afdd..458ea80 100644\n--- a/test/format-label.test.js\n+++ b/test/format-label.test.js\n@@ -4,3 +4,17 @@ import { formatLabel, decoratedLabel } from '../src/format-label.js';\n test('format valid label and preserve case', t => { assert.equal(formatLabel('MiXeD'), 'MiXeD'); t.diagnostic('BODY:format-valid'); });\n test('reject blank label', t => { assert.throws(() => formatLabel('   '), /blank/); t.diagnostic('BODY:format-blank'); });\n test('decorate with configured suffix', t => { assert.equal(decoratedLabel('hello'), 'hello!'); t.diagnostic('BODY:format-config'); });\n+test('trim surrounding whitespace while preserving case and interior spaces', () => {\n+  assert.equal(formatLabel('  MiXeD  '), 'MiXeD');\n+  assert.equal(formatLabel('\\t\\nAlpha\\r\\n'), 'Alpha');\n+  assert.equal(formatLabel(' a B '), 'a B');\n+});\n+test('reject every blank string form', () => {\n+  for (const value of ['', '   ', '\\t\\n\\r']) {\n+    assert.throws(() => formatLabel(value), /blank/);\n+  }\n+});\n+test('decorate trimmed labels and reject blank input', () => {\n+  assert.equal(decoratedLabel('  MiXeD  '), 'MiXeD!');\n+  assert.throws(() => decoratedLabel('\\t\\n'), /blank/);\n+});\n",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:32:44.083Z",
+      "operation": "run",
+      "args": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "3175dd0551a9a264808dc9d6774b9f745004130129d898196369c3409aba4ffc",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "eaf46850a1324d91ad6b200ab1db0b3b5669ae9a5a4281137be64a63b2ab0638",
+        "test/format-label.test.js": "fc3fce059fcf79405c4ca2ac78bdb740172c2b01ba9778261395eb038d125431",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:32:46.966Z",
+      "operation": "run",
+      "args": [
+        "git",
+        "status",
+        "--short",
+        "--untracked-files=all"
+      ],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "3175dd0551a9a264808dc9d6774b9f745004130129d898196369c3409aba4ffc",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "eaf46850a1324d91ad6b200ab1db0b3b5669ae9a5a4281137be64a63b2ab0638",
+        "test/format-label.test.js": "fc3fce059fcf79405c4ca2ac78bdb740172c2b01ba9778261395eb038d125431",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": " M src/format-label.js\n M test/display-label.test.js\n M test/format-label.test.js\n",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-09-27T09:33:18.050Z",
+      "operation": "notes",
+      "args": [],
+      "before": {
+        ".gitignore": "ccb822634b1178036ceabb7d55c9ab3a543dcfb4bee34fc89b3c3ea09210b63f",
+        "format.json": "6366ca21b58f1ee84b4164acb13c659408c5e14c91c89ba9b7fd8de6f7da2125",
+        "inventory.md": "5ec0f2f0c567a3958fc5c9a9ffde49f65df70217ce09f502e2924996236d5fa2",
+        "package.json": "9864f42251bcddeeb4be353657cd1c02b49d8b7d4968226167002adca61fc4fa",
+        "REQUIREMENTS.md": "0d73dd6d647543885ec9f5b18d23fdf2ec3a20f0e619f059619e884d03366bda",
+        "src/display-label.js": "19f29b615e533852e05e4d2a5221ee86b379c0335fd908c291144d7b2926263e",
+        "src/format-label.js": "3175dd0551a9a264808dc9d6774b9f745004130129d898196369c3409aba4ffc",
+        "src/unrelated.js": "a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+        "test/display-label.test.js": "eaf46850a1324d91ad6b200ab1db0b3b5669ae9a5a4281137be64a63b2ab0638",
+        "test/format-label.test.js": "fc3fce059fcf79405c4ca2ac78bdb740172c2b01ba9778261395eb038d125431",
+        "test/unrelated.test.js": "58200d9b1530ecec17beb749e1bb99653dce1f172244314a782a700f6fcfa1aa",
+        "verification.md": "fe214e1f2b462f4991b0b775d8e6e23146f7ee5e92584aa12c6eb069e3773655",
+        "VERIFY.md": "f3d52b6e6272355861bbecb972c55765e84155ab714a8d0f6199fb0c185355a0"
+      },
+      "output": "# Verification evidence\n\nAuthority: REQUIREMENTS.md and VERIFY.md only. Ordinary repository workflow; immutable baseline ae914a50f2d0ca262674999ac12388b928641c18. Initial diff and status were clean. Independent inventory was saved and recorded before reading tests. No reveal was requested.\n\n## Protection decisions\n\nKeep all five existing tests and assertions: valid case preservation, blank rejection, configured decoration, display consumer, unrelated answer. Create four tests for missing boundary protection: surrounding spaces/tabs/newlines, preserved interior spaces and case, empty/whitespace-only rejection, and real decorated/display integration with trimmed labels and propagated rejection. No changed expectations, replacements, deletions, test refactors, or repository-wide guards.\n\n## Execution selection and results\n\nAll operations used the observation helper; its timestamped records preserve actual outputs, including failures.\n\n- Baseline: `node --test test/format-label.test.js test/display-label.test.js test/unrelated.test.js`: exit 0; all 5 tests passed.\n- Intended red before implementation: `node --test test/format-label.test.js test/display-label.test.js`: exit 1; 8 tests ran, 5 passed and 3 failed. Actual untrimmed outputs differed from the independent required outputs for formatLabel, decoratedLabel, and displayLabel. Blank expansion passed. No infrastructure failure.\n- Settled full check: `node --test test/*.test.js`: exit 0; all 9 tests passed, none skipped/cancelled/todo. This is exactly the package.json test script command, executed directly because the permitted command interface accepts node/git. It covers all surviving tests, configuration loaded from format.json, real formatter/decorator/display dependencies, and unrelated behavior. The full run satisfies affected-slice, maintained-test, and final checkpoints without duplicate execution.\n- Final `git diff ae914a50f2d0ca262674999ac12388b928641c18 --`: exit 0; only src/format-label.js and the two affected test files changed. Config, display implementation, and unrelated module/test unchanged.\n- `git diff --check`: exit 0, no whitespace errors.\n- `git status --short --untracked-files=all`: exit 0; only those three modified files. inventory.md and verification.md are ignored work notes.\n\n## Impact and review\n\nformatLabel now trims once, rejects an empty trimmed result, and returns that result. Case and interior whitespace remain intact. decoratedLabel reads the existing suffix configuration and calls formatLabel; displayLabel calls decoratedLabel and brackets its result. Tests exercise that complete chain without mocks. Final baseline diff was inspected for missing consumers and scope changes; no further affected producer or consumer is present in the fixture file list. The simpler alternative of returning value.trim() duplicates trimming; the chosen local variable uses one result for validation and return.\n\nNo ordinary-repository independent-review gate is supplied. No independent reviewer was used; user prohibited descendants. No Projector activation, external services, commits, publication, or deletions occurred. No verification exceptions or unexecuted required checks remain. Git emitted a permission warning when reading the user-level ignore file; commands succeeded, and fixture-local .gitignore was read directly. Non-string inputs and alternate suffix values are outside the supplied contract and were not tested. No unresolved failure remains; intended-red failures remain preserved in helper evidence.\n",
+      "exitCode": 0
+    }
+  ],
+  "hostOperations": [
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_1",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected read REQUIREMENTS.md VERIFY.md'",
+        "aggregated_output": "FILE REQUIREMENTS.md\n# Label contract\n\nformatLabel trims surrounding whitespace, preserves case, and rejects blank strings. decoratedLabel appends the configured suffix; displayLabel wraps that result in brackets. The unrelated module must remain unchanged.\n\n# Selected request\n\nFix formatLabel so it trims surrounding whitespace. Preserve case, reject blank strings, and preserve decoratedLabel/displayLabel behavior.\n\nFILE VERIFY.md\n---\nname: verify\ndescription: Plan impact-aware checks, preserve test protection, execute evidence at coherent checkpoints, and meet the applicable final review gates.\n---\n\nThis skill owns the shared verification procedure. Tasks describe concrete work for the selected change; do not copy this procedure into tasks.md. Read [the runtime contract](../apply/references/runtime.md) when using prepared-change operations.\n\n## Select the verification context\n\n- **Planning:** Derive obligations and a test-change plan while authoring artifacts. Validate complete artifacts with the bundled strict OpenSpec validator. Do not call `prepareChange` merely to plan checks or validate a draft. Report checks that require implementation as unexecuted.\n- **Ordinary repository work:** Use the actual checkout, its selected baseline, normal repository commands, and ordinary evidence notes. Preserve repository checks, hooks, release requirements, and review gates. This procedure does not activate Projector or require a managed change.\n- **Prepared Projector change:** Retain the actual source `root`, `change`, returned `candidateRoot`, and pinned baseline. Recover the selected candidate and state; do not substitute a newer checkout. Execute checks with `recordEvidence({root,change,command,args,scope,timeoutMs})`. Use `validatePlan` for current plan obligations and independent review. Continue to $projector:finish only when completion is authorized.\n- **Branch integration:** Use the pinned `targetHead` and isolated integration checkout supplied by $projector:merge. Assess the complete target-to-integration difference, including corrections and hook writes. Use normal repository commands and evidence notes, and obtain mandatory independent review. Do not call `prepareChange`, invent a change ID, or use `recordEvidence` or `validatePlan` for this context. Publication remains owned by $projector:merge.\n\n## Establish obligations and protection\n\n1. Read current requirements, designs, repository instructions, required checks, and relevant producers and consumers. Map affected behavior, preserved invariants, input/output boundaries, shared setup, and failure paths. For fresh behavioral work, write a compact independent inventory with discriminating examples **before inspecting existing assertions**. Use approved requirements and boundary behavior as the oracle; the edited implementation must not define its own expected result. For work that already exists, state the historical limitation. Do not invent retrospective test-first evidence.\n2. Inspect existing tests against that inventory. Make justified protection decisions from six categories. **Keep** valid surviving protection. **Create** missing protection. **Update** changed expectations, stating both old and new obligations. **Refactor** test structure while preserving assertions. **Replace** inadequate protection with specified equivalent or stronger protection. **Delete** tests only for retired requirements or when their protection is demonstrably preserved elsewhere. Shared code coverage alone does not establish redundant protection. Record the applicable decisions and reasons, not six artificial changes. Keep this test-change plan separate from execution selection. Author tests for each coherent slice; do not implement all planned tests speculatively up front. Never weaken expectations to fit the implementation. Deletion-only cleanup does not require an absence test. Add recurrence guards only when policy permits them and a concrete recurrence mechanism or protected invariant justifies them.\n3. Select execution from the inventory, complete baseline difference, dependency information, and repository commands. Deduplicate overlapping checks. A broader check can satisfy narrower obligations only when its actual assertions cover them. Investigate unknown relationships; do not treat them as no impact. Widen empty, uncertain, or unreliable selections. Keep required full checks, release checks, hooks, and review gates even when focused checks pass.\n\n## Check at four coherent checkpoints\n\nDo not automatically run tests after every edit. Use these checkpoints and revisit impact when new callers, fixtures, setup, configuration, dependencies, dynamic boundaries, or obligations appear.\n\n1. **Before each slice:** Establish a pre-edit baseline with relevant existing checks where practical. Reuse matching baseline evidence instead of repeating unchanged checks; report any baseline limitation. Separate pre-existing failures from failures introduced by the slice; preserve their output and precise remaining obligations. For a behavioral slice, specify the independent oracle and expected failure. Execute the discriminating check and confirm that it fails for the intended cause before implementation. An unrelated infrastructure failure is not the intended red. For a pure refactor, already-correct behavior, or nonbehavioral work, state why no new red is appropriate. Check the applicable preserved behavior. For historical work, report that a pre-edit red was not observed. Do not manufacture one by reversing accepted work.\n2. **After each slice:** Execute checks that discriminate the changed behavior and affected integration. Inspect actual output, exit status, and which cases ran. Resolve causal failures and revise impact when new dependencies appear. Build success, mock behavior, and dispatch-only checks establish only their actual coverage.\n3. **After test maintenance:** Check that the maintained tests still protect every surviving obligation. For test-infrastructure cleanup, first validate that the cleanup preserves the original checks before changing expectations. Before changing expectations in response to a failure, also check the infrastructure, fixtures, setup, and selection. Establish replacement protection before removing old protection for surviving obligations. Intentionally retired behavior can require removing obsolete assertions without replacement; document the retired obligation. Execute the maintained checks and inspect the cases that ran; do not accept a passing empty selection.\n4. **Final settled result:** Recompute impact from the complete selected-baseline difference, including committed, staged, unstaged, and untracked work. Include hook and generated writes. Reconcile the inventory, protection decisions, and execution selection; deduplicate covered checks and widen uncertain coverage. Execute every required full/release check and preserve normal hooks and review gates. Reuse matching evidence only when implementation, inputs, configuration, environment, services, and actual coverage still match. A new session alone is not a reason to repeat checks.\n\n## Record evidence and review\n\nKeep compact notes of commands, actual results, covered obligations, failures, and evidence locations in every execution context. Keep failed results as history. A failure needs a causal fix or a precise remaining obligation; a passing command does not erase an unresolved obligation.\n\nFor a prepared change, use `purpose:\"baseline\"` for pre-edit observations and `purpose:\"red\"` for intended failures. These records are history, not final assurance. Use current verification evidence for settled checks. `scope` names exact files meaningfully covered. Optional `inputPaths` must conservatively include actual test files, transitive implementation, fixtures, and relevant configuration. Omit it for conservative whole-checkout freshness when the inputs are uncertain; do not narrow it to obtain a fresh result.\n\nAn eligible passing current check can name earlier evidence IDs in `supersedes` only when its scope covers their scopes and its assertions preserve their obligations. Supersession preserves the earlier records as history. Runtime coverage validation does not prove assertion strength. Use `verificationBasis` for check freshness and the current plan/review `basis` for review. Fresh evidence alone does not establish overall plan validity. Checkbox changes and result bookkeeping do not automatically invalidate application checks; substantive task changes still need reconciliation. Changed source, tests, relevant configuration, or authority invalidate corresponding assurance. Historical passes are not current passes.\n\nFor a settled prepared change or branch integration, obtain a real independent final reviewer through a native subagent or separate reviewer environment. For ordinary repository work, follow the applicable repository review gates. Supply each required reviewer with the actual target, complete baseline difference, contribution dispositions where applicable, test-change plan, executed results, and remaining limits. Ask for missing consumers, unsupported structure, invented justification, incomplete migration, counterexamples, and the strongest simpler alternative. Do not require another agent for every slice or invent attribution. Resolve findings and obtain required review of material corrections; refresh checks whose inputs changed.\n\nFor a prepared change, call `validatePlan` with `review:{basis,reviewer,examined,alternative,findings}` using the actual current basis. For ordinary work and branch integration, keep the actual review and findings in normal evidence notes and honor the completion gates for that context. Planning retains its artifact validation and human review frontier; it does not claim implementation completion.\n\nReport protection decisions, commands and cases executed, and baseline and intended-red results or justified exceptions. Include final coverage, reused or superseded evidence, and independent review attribution. Identify unresolved failures, unexecuted checks, and remaining uncertainty. Keep the actual outcome compact and link evidence where available. Do not report inferred runtime or native behavior as observed behavior.\n\nCompletion: the required checks and review for the selected context support the settled result; otherwise report the precise obligations that prevent completion.\n\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_2",
+        "type": "file_change",
+        "changes": [
+          {
+            "path": "<qualification>\\bug-corrected\\inventory.md",
+            "kind": "add"
+          }
+        ],
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_3",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected inventory'",
+        "aggregated_output": "# Obligation inventory\n\nOracle: REQUIREMENTS.md; workflow: VERIFY.md. Selected immutable baseline: ae914a50f2d0ca262674999ac12388b928641c18. Inventory recorded before inspecting assertions.\n\n- formatLabel removes surrounding whitespace: `  MiXeD  ` becomes `MiXeD`; tabs and newlines around `Alpha` become `Alpha`.\n- Preserve case and interior whitespace: ` a B ` becomes `a B`.\n- Reject blank strings, including empty, spaces, and tab/newline-only input.\n- decoratedLabel appends the configured suffix to the trimmed, case-preserved label; displayLabel brackets that decorated result. Trace configuration and callers before selecting integration checks.\n- Keep the unrelated module unchanged; assess the complete difference against the immutable baseline and preserve other work.\n- Inspect repository commands and existing protection after this inventory. Establish baseline, run a discriminating intended red before fixing behavior, then affected integration and all required final checks. Preserve failed evidence.\n\nUnknowns to resolve: implementation boundaries, suffix configuration, existing tests, required full checks, and current checkout differences. No new context requested by the brief.\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_4",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected list'",
+        "aggregated_output": ".gitignore\nformat.json\ninventory.md\npackage.json\nREQUIREMENTS.md\nsrc/display-label.js\nsrc/format-label.js\nsrc/unrelated.js\ntest/display-label.test.js\ntest/format-label.test.js\ntest/unrelated.test.js\nVERIFY.md",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_5",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected run git diff ae914a50f2d0ca262674999ac12388b928641c18'",
+        "aggregated_output": "warning: unable to access 'C:\\Users\\zethj/.config/git/ignore': Permission denied\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_6",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected read package.json format.json src/format-label.js src/display-label.js src/unrelated.js test/format-label.test.js test/display-label.test.js test/unrelated.test.js .gitignore'",
+        "aggregated_output": "FILE package.json\n{\n  \"name\": \"workflow-bug\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test test/*.test.js\"\n  }\n}\n\nFILE format.json\n{\"suffix\":\"!\"}\n\nFILE src/format-label.js\nimport { readFileSync } from 'node:fs';\nconst config = JSON.parse(readFileSync(new URL('../format.json', import.meta.url), 'utf8'));\nexport function formatLabel(value) {\n  if (!value.trim()) throw new Error('blank label');\n  return value;\n}\nexport function decoratedLabel(value) { return formatLabel(value) + config.suffix; }\n\nFILE src/display-label.js\nimport { decoratedLabel } from './format-label.js';\nexport function displayLabel(value) { return '[' + decoratedLabel(value) + ']'; }\n\nFILE src/unrelated.js\nexport const answer = 42;\n\nFILE test/format-label.test.js\nimport test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { formatLabel, decoratedLabel } from '../src/format-label.js';\ntest('format valid label and preserve case', t => { assert.equal(formatLabel('MiXeD'), 'MiXeD'); t.diagnostic('BODY:format-valid'); });\ntest('reject blank label', t => { assert.throws(() => formatLabel('   '), /blank/); t.diagnostic('BODY:format-blank'); });\ntest('decorate with configured suffix', t => { assert.equal(decoratedLabel('hello'), 'hello!'); t.diagnostic('BODY:format-config'); });\n\nFILE test/display-label.test.js\nimport test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { displayLabel } from '../src/display-label.js';\ntest('display consumer', t => { assert.equal(displayLabel('hello'), '[hello!]'); t.diagnostic('BODY:display'); });\n\nFILE test/unrelated.test.js\nimport test from 'node:test'; import assert from 'node:assert/strict'; import { answer } from '../src/unrelated.js';\ntest('unrelated answer', t => { assert.equal(answer, 42); t.diagnostic('BODY:unrelated'); });\n\nFILE .gitignore\ninventory.md\nverification.md\n\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_7",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected run git status --short'",
+        "aggregated_output": "warning: unable to access 'C:\\Users\\zethj/.config/git/ignore': Permission denied\nwarning: unable to access 'C:\\Users\\zethj/.config/git/ignore': Permission denied\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_8",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected run node --test test/format-label.test.js test/display-label.test.js test/unrelated.test.js'",
+        "aggregated_output": "✔ display consumer (0.4379ms)\nℹ BODY:display\n✔ format valid label and preserve case (0.5775ms)\nℹ BODY:format-valid\n✔ reject blank label (0.2628ms)\nℹ BODY:format-blank\n✔ decorate with configured suffix (0.0669ms)\nℹ BODY:format-config\n✔ unrelated answer (0.3882ms)\nℹ BODY:unrelated\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 88.4514\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_9",
+        "type": "file_change",
+        "changes": [
+          {
+            "path": "<qualification>\\bug-corrected\\test\\display-label.test.js",
+            "kind": "update"
+          },
+          {
+            "path": "<qualification>\\bug-corrected\\test\\format-label.test.js",
+            "kind": "update"
+          }
+        ],
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_10",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected run node --test test/format-label.test.js test/display-label.test.js'",
+        "aggregated_output": "✔ display consumer (0.4283ms)\nℹ BODY:display\n✖ display trims through the configured decorator and rejects blank input (0.5704ms)\n✔ format valid label and preserve case (0.483ms)\nℹ BODY:format-valid\n✔ reject blank label (0.7307ms)\nℹ BODY:format-blank\n✔ decorate with configured suffix (0.0795ms)\nℹ BODY:format-config\n✖ trim surrounding whitespace while preserving case and interior spaces (0.6042ms)\n✔ reject every blank string form (0.1005ms)\n✖ decorate trimmed labels and reject blank input (0.1237ms)\nℹ tests 8\nℹ suites 0\nℹ pass 5\nℹ fail 3\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 77.9069\n\n✖ failing tests:\n\ntest at test\\display-label.test.js:5:1\n✖ display trims through the configured decorator and rejects blank input (0.5704ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  + actual - expected\n  \n  + '[\\t MiXeD \\n!]'\n  - '[MiXeD!]'\n  \n      at TestContext.<anonymous> (file:///<qualification>/bug-corrected/test/display-label.test.js:6:10)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1382:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n      at Test.postRun (node:internal/test_runner/test:1522:19)\n      at Test.run (node:internal/test_runner/test:1447:12)\n      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: '[\\t MiXeD \\n!]',\n    expected: '[MiXeD!]',\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at test\\format-label.test.js:7:1\n✖ trim surrounding whitespace while preserving case and interior spaces (0.6042ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  + actual - expected\n  \n  + '  MiXeD  '\n  - 'MiXeD'\n  \n      at TestContext.<anonymous> (file:///<qualification>/bug-corrected/test/format-label.test.js:8:10)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1382:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n      at Test.postRun (node:internal/test_runner/test:1522:19)\n      at Test.run (node:internal/test_runner/test:1447:12)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: '  MiXeD  ',\n    expected: 'MiXeD',\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at test\\format-label.test.js:17:1\n✖ decorate trimmed labels and reject blank input (0.1237ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  + actual - expected\n  \n  + '  MiXeD  !'\n  - 'MiXeD!'\n  \n      at TestContext.<anonymous> (file:///<qualification>/bug-corrected/test/format-label.test.js:18:10)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1382:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n      at Test.postRun (node:internal/test_runner/test:1522:19)\n      at Test.run (node:internal/test_runner/test:1447:12)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: '  MiXeD  !',\n    expected: 'MiXeD!',\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n",
+        "exit_code": 1,
+        "status": "failed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_12",
+        "type": "file_change",
+        "changes": [
+          {
+            "path": "<qualification>\\bug-corrected\\src\\format-label.js",
+            "kind": "update"
+          }
+        ],
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_13",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected run node --test test/*.test.js'",
+        "aggregated_output": "✔ display consumer (0.5779ms)\nℹ BODY:display\n✔ display trims through the configured decorator and rejects blank input (0.2623ms)\n✔ format valid label and preserve case (0.4644ms)\nℹ BODY:format-valid\n✔ reject blank label (0.7183ms)\nℹ BODY:format-blank\n✔ decorate with configured suffix (0.0833ms)\nℹ BODY:format-config\n✔ trim surrounding whitespace while preserving case and interior spaces (0.0615ms)\n✔ reject every blank string form (0.0972ms)\n✔ decorate trimmed labels and reject blank input (0.0537ms)\n✔ unrelated answer (0.4099ms)\nℹ BODY:unrelated\nℹ tests 9\nℹ suites 0\nℹ pass 9\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 105.0556\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_14",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected run git diff ae914a50f2d0ca262674999ac12388b928641c18 --'",
+        "aggregated_output": "diff --git a/src/format-label.js b/src/format-label.js\nindex b16ba30..997c551 100644\n--- a/src/format-label.js\n+++ b/src/format-label.js\n@@ -1,7 +1,8 @@\n import { readFileSync } from 'node:fs';\n const config = JSON.parse(readFileSync(new URL('../format.json', import.meta.url), 'utf8'));\n export function formatLabel(value) {\n-  if (!value.trim()) throw new Error('blank label');\n-  return value;\n+  const label = value.trim();\n+  if (!label) throw new Error('blank label');\n+  return label;\n }\n export function decoratedLabel(value) { return formatLabel(value) + config.suffix; }\ndiff --git a/test/display-label.test.js b/test/display-label.test.js\nindex 7e9d950..fabfd3b 100644\n--- a/test/display-label.test.js\n+++ b/test/display-label.test.js\n@@ -2,3 +2,7 @@ import test from 'node:test';\n import assert from 'node:assert/strict';\n import { displayLabel } from '../src/display-label.js';\n test('display consumer', t => { assert.equal(displayLabel('hello'), '[hello!]'); t.diagnostic('BODY:display'); });\n+test('display trims through the configured decorator and rejects blank input', () => {\n+  assert.equal(displayLabel('\\t MiXeD \\n'), '[MiXeD!]');\n+  assert.throws(() => displayLabel(' \\t\\n'), /blank/);\n+});\ndiff --git a/test/format-label.test.js b/test/format-label.test.js\nindex a61afdd..458ea80 100644\n--- a/test/format-label.test.js\n+++ b/test/format-label.test.js\n@@ -4,3 +4,17 @@ import { formatLabel, decoratedLabel } from '../src/format-label.js';\n test('format valid label and preserve case', t => { assert.equal(formatLabel('MiXeD'), 'MiXeD'); t.diagnostic('BODY:format-valid'); });\n test('reject blank label', t => { assert.throws(() => formatLabel('   '), /blank/); t.diagnostic('BODY:format-blank'); });\n test('decorate with configured suffix', t => { assert.equal(decoratedLabel('hello'), 'hello!'); t.diagnostic('BODY:format-config'); });\n+test('trim surrounding whitespace while preserving case and interior spaces', () => {\n+  assert.equal(formatLabel('  MiXeD  '), 'MiXeD');\n+  assert.equal(formatLabel('\\t\\nAlpha\\r\\n'), 'Alpha');\n+  assert.equal(formatLabel(' a B '), 'a B');\n+});\n+test('reject every blank string form', () => {\n+  for (const value of ['', '   ', '\\t\\n\\r']) {\n+    assert.throws(() => formatLabel(value), /blank/);\n+  }\n+});\n+test('decorate trimmed labels and reject blank input', () => {\n+  assert.equal(decoratedLabel('  MiXeD  '), 'MiXeD!');\n+  assert.throws(() => decoratedLabel('\\t\\n'), /blank/);\n+});\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_15",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected run git diff --check'",
+        "aggregated_output": "",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_16",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected run git status --short --untracked-files=all'",
+        "aggregated_output": "warning: unable to access 'C:\\Users\\zethj/.config/git/ignore': Permission denied\nwarning: unable to access 'C:\\Users\\zethj/.config/git/ignore': Permission denied\n M src/format-label.js\n M test/display-label.test.js\n M test/format-label.test.js\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_17",
+        "type": "file_change",
+        "changes": [
+          {
+            "path": "<qualification>\\bug-corrected\\verification.md",
+            "kind": "add"
+          }
+        ],
+        "status": "completed"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_18",
+        "type": "command_execution",
+        "command": "\"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'node <qualification>/observe.mjs <qualification>/bug-corrected notes'",
+        "aggregated_output": "# Verification evidence\n\nAuthority: REQUIREMENTS.md and VERIFY.md only. Ordinary repository workflow; immutable baseline ae914a50f2d0ca262674999ac12388b928641c18. Initial diff and status were clean. Independent inventory was saved and recorded before reading tests. No reveal was requested.\n\n## Protection decisions\n\nKeep all five existing tests and assertions: valid case preservation, blank rejection, configured decoration, display consumer, unrelated answer. Create four tests for missing boundary protection: surrounding spaces/tabs/newlines, preserved interior spaces and case, empty/whitespace-only rejection, and real decorated/display integration with trimmed labels and propagated rejection. No changed expectations, replacements, deletions, test refactors, or repository-wide guards.\n\n## Execution selection and results\n\nAll operations used the observation helper; its timestamped records preserve actual outputs, including failures.\n\n- Baseline: `node --test test/format-label.test.js test/display-label.test.js test/unrelated.test.js`: exit 0; all 5 tests passed.\n- Intended red before implementation: `node --test test/format-label.test.js test/display-label.test.js`: exit 1; 8 tests ran, 5 passed and 3 failed. Actual untrimmed outputs differed from the independent required outputs for formatLabel, decoratedLabel, and displayLabel. Blank expansion passed. No infrastructure failure.\n- Settled full check: `node --test test/*.test.js`: exit 0; all 9 tests passed, none skipped/cancelled/todo. This is exactly the package.json test script command, executed directly because the permitted command interface accepts node/git. It covers all surviving tests, configuration loaded from format.json, real formatter/decorator/display dependencies, and unrelated behavior. The full run satisfies affected-slice, maintained-test, and final checkpoints without duplicate execution.\n- Final `git diff ae914a50f2d0ca262674999ac12388b928641c18 --`: exit 0; only src/format-label.js and the two affected test files changed. Config, display implementation, and unrelated module/test unchanged.\n- `git diff --check`: exit 0, no whitespace errors.\n- `git status --short --untracked-files=all`: exit 0; only those three modified files. inventory.md and verification.md are ignored work notes.\n\n## Impact and review\n\nformatLabel now trims once, rejects an empty trimmed result, and returns that result. Case and interior whitespace remain intact. decoratedLabel reads the existing suffix configuration and calls formatLabel; displayLabel calls decoratedLabel and brackets its result. Tests exercise that complete chain without mocks. Final baseline diff was inspected for missing consumers and scope changes; no further affected producer or consumer is present in the fixture file list. The simpler alternative of returning value.trim() duplicates trimming; the chosen local variable uses one result for validation and return.\n\nNo ordinary-repository independent-review gate is supplied. No independent reviewer was used; user prohibited descendants. No Projector activation, external services, commits, publication, or deletions occurred. No verification exceptions or unexecuted required checks remain. Git emitted a permission warning when reading the user-level ignore file; commands succeeded, and fixture-local .gitignore was read directly. Non-string inputs and alternate suffix values are outside the supplied contract and were not tested. No unresolved failure remains; intended-red failures remain preserved in helper evidence.\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    }
+  ],
+  "baselineFiles": {
+    ".gitignore": "inventory.md\nverification.md\n",
+    "REQUIREMENTS.md": "# Label contract\n\nformatLabel trims surrounding whitespace, preserves case, and rejects blank strings. decoratedLabel appends the configured suffix; displayLabel wraps that result in brackets. The unrelated module must remain unchanged.\n\n# Selected request\n\nFix formatLabel so it trims surrounding whitespace. Preserve case, reject blank strings, and preserve decoratedLabel/displayLabel behavior.\n",
+    "VERIFY.md": "---\nname: verify\ndescription: Plan impact-aware checks, preserve test protection, execute evidence at coherent checkpoints, and meet the applicable final review gates.\n---\n\nThis skill owns the shared verification procedure. Tasks describe concrete work for the selected change; do not copy this procedure into tasks.md. Read [the runtime contract](../apply/references/runtime.md) when using prepared-change operations.\n\n## Select the verification context\n\n- **Planning:** Derive obligations and a test-change plan while authoring artifacts. Validate complete artifacts with the bundled strict OpenSpec validator. Do not call `prepareChange` merely to plan checks or validate a draft. Report checks that require implementation as unexecuted.\n- **Ordinary repository work:** Use the actual checkout, its selected baseline, normal repository commands, and ordinary evidence notes. Preserve repository checks, hooks, release requirements, and review gates. This procedure does not activate Projector or require a managed change.\n- **Prepared Projector change:** Retain the actual source `root`, `change`, returned `candidateRoot`, and pinned baseline. Recover the selected candidate and state; do not substitute a newer checkout. Execute checks with `recordEvidence({root,change,command,args,scope,timeoutMs})`. Use `validatePlan` for current plan obligations and independent review. Continue to $projector:finish only when completion is authorized.\n- **Branch integration:** Use the pinned `targetHead` and isolated integration checkout supplied by $projector:merge. Assess the complete target-to-integration difference, including corrections and hook writes. Use normal repository commands and evidence notes, and obtain mandatory independent review. Do not call `prepareChange`, invent a change ID, or use `recordEvidence` or `validatePlan` for this context. Publication remains owned by $projector:merge.\n\n## Establish obligations and protection\n\n1. Read current requirements, designs, repository instructions, required checks, and relevant producers and consumers. Map affected behavior, preserved invariants, input/output boundaries, shared setup, and failure paths. For fresh behavioral work, write a compact independent inventory with discriminating examples **before inspecting existing assertions**. Use approved requirements and boundary behavior as the oracle; the edited implementation must not define its own expected result. For work that already exists, state the historical limitation. Do not invent retrospective test-first evidence.\n2. Inspect existing tests against that inventory. Make justified protection decisions from six categories. **Keep** valid surviving protection. **Create** missing protection. **Update** changed expectations, stating both old and new obligations. **Refactor** test structure while preserving assertions. **Replace** inadequate protection with specified equivalent or stronger protection. **Delete** tests only for retired requirements or when their protection is demonstrably preserved elsewhere. Shared code coverage alone does not establish redundant protection. Record the applicable decisions and reasons, not six artificial changes. Keep this test-change plan separate from execution selection. Author tests for each coherent slice; do not implement all planned tests speculatively up front. Never weaken expectations to fit the implementation. Deletion-only cleanup does not require an absence test. Add recurrence guards only when policy permits them and a concrete recurrence mechanism or protected invariant justifies them.\n3. Select execution from the inventory, complete baseline difference, dependency information, and repository commands. Deduplicate overlapping checks. A broader check can satisfy narrower obligations only when its actual assertions cover them. Investigate unknown relationships; do not treat them as no impact. Widen empty, uncertain, or unreliable selections. Keep required full checks, release checks, hooks, and review gates even when focused checks pass.\n\n## Check at four coherent checkpoints\n\nDo not automatically run tests after every edit. Use these checkpoints and revisit impact when new callers, fixtures, setup, configuration, dependencies, dynamic boundaries, or obligations appear.\n\n1. **Before each slice:** Establish a pre-edit baseline with relevant existing checks where practical. Reuse matching baseline evidence instead of repeating unchanged checks; report any baseline limitation. Separate pre-existing failures from failures introduced by the slice; preserve their output and precise remaining obligations. For a behavioral slice, specify the independent oracle and expected failure. Execute the discriminating check and confirm that it fails for the intended cause before implementation. An unrelated infrastructure failure is not the intended red. For a pure refactor, already-correct behavior, or nonbehavioral work, state why no new red is appropriate. Check the applicable preserved behavior. For historical work, report that a pre-edit red was not observed. Do not manufacture one by reversing accepted work.\n2. **After each slice:** Execute checks that discriminate the changed behavior and affected integration. Inspect actual output, exit status, and which cases ran. Resolve causal failures and revise impact when new dependencies appear. Build success, mock behavior, and dispatch-only checks establish only their actual coverage.\n3. **After test maintenance:** Check that the maintained tests still protect every surviving obligation. For test-infrastructure cleanup, first validate that the cleanup preserves the original checks before changing expectations. Before changing expectations in response to a failure, also check the infrastructure, fixtures, setup, and selection. Establish replacement protection before removing old protection for surviving obligations. Intentionally retired behavior can require removing obsolete assertions without replacement; document the retired obligation. Execute the maintained checks and inspect the cases that ran; do not accept a passing empty selection.\n4. **Final settled result:** Recompute impact from the complete selected-baseline difference, including committed, staged, unstaged, and untracked work. Include hook and generated writes. Reconcile the inventory, protection decisions, and execution selection; deduplicate covered checks and widen uncertain coverage. Execute every required full/release check and preserve normal hooks and review gates. Reuse matching evidence only when implementation, inputs, configuration, environment, services, and actual coverage still match. A new session alone is not a reason to repeat checks.\n\n## Record evidence and review\n\nKeep compact notes of commands, actual results, covered obligations, failures, and evidence locations in every execution context. Keep failed results as history. A failure needs a causal fix or a precise remaining obligation; a passing command does not erase an unresolved obligation.\n\nFor a prepared change, use `purpose:\"baseline\"` for pre-edit observations and `purpose:\"red\"` for intended failures. These records are history, not final assurance. Use current verification evidence for settled checks. `scope` names exact files meaningfully covered. Optional `inputPaths` must conservatively include actual test files, transitive implementation, fixtures, and relevant configuration. Omit it for conservative whole-checkout freshness when the inputs are uncertain; do not narrow it to obtain a fresh result.\n\nAn eligible passing current check can name earlier evidence IDs in `supersedes` only when its scope covers their scopes and its assertions preserve their obligations. Supersession preserves the earlier records as history. Runtime coverage validation does not prove assertion strength. Use `verificationBasis` for check freshness and the current plan/review `basis` for review. Fresh evidence alone does not establish overall plan validity. Checkbox changes and result bookkeeping do not automatically invalidate application checks; substantive task changes still need reconciliation. Changed source, tests, relevant configuration, or authority invalidate corresponding assurance. Historical passes are not current passes.\n\nFor a settled prepared change or branch integration, obtain a real independent final reviewer through a native subagent or separate reviewer environment. For ordinary repository work, follow the applicable repository review gates. Supply each required reviewer with the actual target, complete baseline difference, contribution dispositions where applicable, test-change plan, executed results, and remaining limits. Ask for missing consumers, unsupported structure, invented justification, incomplete migration, counterexamples, and the strongest simpler alternative. Do not require another agent for every slice or invent attribution. Resolve findings and obtain required review of material corrections; refresh checks whose inputs changed.\n\nFor a prepared change, call `validatePlan` with `review:{basis,reviewer,examined,alternative,findings}` using the actual current basis. For ordinary work and branch integration, keep the actual review and findings in normal evidence notes and honor the completion gates for that context. Planning retains its artifact validation and human review frontier; it does not claim implementation completion.\n\nReport protection decisions, commands and cases executed, and baseline and intended-red results or justified exceptions. Include final coverage, reused or superseded evidence, and independent review attribution. Identify unresolved failures, unexecuted checks, and remaining uncertainty. Keep the actual outcome compact and link evidence where available. Do not report inferred runtime or native behavior as observed behavior.\n\nCompletion: the required checks and review for the selected context support the settled result; otherwise report the precise obligations that prevent completion.\n",
+    "format.json": "{\"suffix\":\"!\"}\n",
+    "package.json": "{\n  \"name\": \"workflow-bug\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test test/*.test.js\"\n  }\n}\n",
+    "src/display-label.js": "import { decoratedLabel } from './format-label.js';\nexport function displayLabel(value) { return '[' + decoratedLabel(value) + ']'; }\n",
+    "src/format-label.js": "import { readFileSync } from 'node:fs';\nconst config = JSON.parse(readFileSync(new URL('../format.json', import.meta.url), 'utf8'));\nexport function formatLabel(value) {\n  if (!value.trim()) throw new Error('blank label');\n  return value;\n}\nexport function decoratedLabel(value) { return formatLabel(value) + config.suffix; }\n",
+    "src/unrelated.js": "export const answer = 42;\n",
+    "test/display-label.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { displayLabel } from '../src/display-label.js';\ntest('display consumer', t => { assert.equal(displayLabel('hello'), '[hello!]'); t.diagnostic('BODY:display'); });\n",
+    "test/format-label.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { formatLabel, decoratedLabel } from '../src/format-label.js';\ntest('format valid label and preserve case', t => { assert.equal(formatLabel('MiXeD'), 'MiXeD'); t.diagnostic('BODY:format-valid'); });\ntest('reject blank label', t => { assert.throws(() => formatLabel('   '), /blank/); t.diagnostic('BODY:format-blank'); });\ntest('decorate with configured suffix', t => { assert.equal(decoratedLabel('hello'), 'hello!'); t.diagnostic('BODY:format-config'); });\n",
+    "test/unrelated.test.js": "import test from 'node:test'; import assert from 'node:assert/strict'; import { answer } from '../src/unrelated.js';\ntest('unrelated answer', t => { assert.equal(answer, 42); t.diagnostic('BODY:unrelated'); });\n"
+  },
+  "finalFiles": {
+    ".gitignore": "inventory.md\nverification.md\n",
+    "format.json": "{\"suffix\":\"!\"}\n",
+    "inventory.md": "# Obligation inventory\n\nOracle: REQUIREMENTS.md; workflow: VERIFY.md. Selected immutable baseline: ae914a50f2d0ca262674999ac12388b928641c18. Inventory recorded before inspecting assertions.\n\n- formatLabel removes surrounding whitespace: `  MiXeD  ` becomes `MiXeD`; tabs and newlines around `Alpha` become `Alpha`.\n- Preserve case and interior whitespace: ` a B ` becomes `a B`.\n- Reject blank strings, including empty, spaces, and tab/newline-only input.\n- decoratedLabel appends the configured suffix to the trimmed, case-preserved label; displayLabel brackets that decorated result. Trace configuration and callers before selecting integration checks.\n- Keep the unrelated module unchanged; assess the complete difference against the immutable baseline and preserve other work.\n- Inspect repository commands and existing protection after this inventory. Establish baseline, run a discriminating intended red before fixing behavior, then affected integration and all required final checks. Preserve failed evidence.\n\nUnknowns to resolve: implementation boundaries, suffix configuration, existing tests, required full checks, and current checkout differences. No new context requested by the brief.\n",
+    "package.json": "{\n  \"name\": \"workflow-bug\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test test/*.test.js\"\n  }\n}\n",
+    "REQUIREMENTS.md": "# Label contract\n\nformatLabel trims surrounding whitespace, preserves case, and rejects blank strings. decoratedLabel appends the configured suffix; displayLabel wraps that result in brackets. The unrelated module must remain unchanged.\n\n# Selected request\n\nFix formatLabel so it trims surrounding whitespace. Preserve case, reject blank strings, and preserve decoratedLabel/displayLabel behavior.\n",
+    "src/display-label.js": "import { decoratedLabel } from './format-label.js';\nexport function displayLabel(value) { return '[' + decoratedLabel(value) + ']'; }\n",
+    "src/format-label.js": "import { readFileSync } from 'node:fs';\nconst config = JSON.parse(readFileSync(new URL('../format.json', import.meta.url), 'utf8'));\nexport function formatLabel(value) {\n  const label = value.trim();\n  if (!label) throw new Error('blank label');\n  return label;\n}\nexport function decoratedLabel(value) { return formatLabel(value) + config.suffix; }\n",
+    "src/unrelated.js": "export const answer = 42;\n",
+    "test/display-label.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { displayLabel } from '../src/display-label.js';\ntest('display consumer', t => { assert.equal(displayLabel('hello'), '[hello!]'); t.diagnostic('BODY:display'); });\ntest('display trims through the configured decorator and rejects blank input', () => {\n  assert.equal(displayLabel('\\t MiXeD \\n'), '[MiXeD!]');\n  assert.throws(() => displayLabel(' \\t\\n'), /blank/);\n});\n",
+    "test/format-label.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { formatLabel, decoratedLabel } from '../src/format-label.js';\ntest('format valid label and preserve case', t => { assert.equal(formatLabel('MiXeD'), 'MiXeD'); t.diagnostic('BODY:format-valid'); });\ntest('reject blank label', t => { assert.throws(() => formatLabel('   '), /blank/); t.diagnostic('BODY:format-blank'); });\ntest('decorate with configured suffix', t => { assert.equal(decoratedLabel('hello'), 'hello!'); t.diagnostic('BODY:format-config'); });\ntest('trim surrounding whitespace while preserving case and interior spaces', () => {\n  assert.equal(formatLabel('  MiXeD  '), 'MiXeD');\n  assert.equal(formatLabel('\\t\\nAlpha\\r\\n'), 'Alpha');\n  assert.equal(formatLabel(' a B '), 'a B');\n});\ntest('reject every blank string form', () => {\n  for (const value of ['', '   ', '\\t\\n\\r']) {\n    assert.throws(() => formatLabel(value), /blank/);\n  }\n});\ntest('decorate trimmed labels and reject blank input', () => {\n  assert.equal(decoratedLabel('  MiXeD  '), 'MiXeD!');\n  assert.throws(() => decoratedLabel('\\t\\n'), /blank/);\n});\n",
+    "test/unrelated.test.js": "import test from 'node:test'; import assert from 'node:assert/strict'; import { answer } from '../src/unrelated.js';\ntest('unrelated answer', t => { assert.equal(answer, 42); t.diagnostic('BODY:unrelated'); });\n",
+    "verification.md": "# Verification evidence\n\nAuthority: REQUIREMENTS.md and VERIFY.md only. Ordinary repository workflow; immutable baseline ae914a50f2d0ca262674999ac12388b928641c18. Initial diff and status were clean. Independent inventory was saved and recorded before reading tests. No reveal was requested.\n\n## Protection decisions\n\nKeep all five existing tests and assertions: valid case preservation, blank rejection, configured decoration, display consumer, unrelated answer. Create four tests for missing boundary protection: surrounding spaces/tabs/newlines, preserved interior spaces and case, empty/whitespace-only rejection, and real decorated/display integration with trimmed labels and propagated rejection. No changed expectations, replacements, deletions, test refactors, or repository-wide guards.\n\n## Execution selection and results\n\nAll operations used the observation helper; its timestamped records preserve actual outputs, including failures.\n\n- Baseline: `node --test test/format-label.test.js test/display-label.test.js test/unrelated.test.js`: exit 0; all 5 tests passed.\n- Intended red before implementation: `node --test test/format-label.test.js test/display-label.test.js`: exit 1; 8 tests ran, 5 passed and 3 failed. Actual untrimmed outputs differed from the independent required outputs for formatLabel, decoratedLabel, and displayLabel. Blank expansion passed. No infrastructure failure.\n- Settled full check: `node --test test/*.test.js`: exit 0; all 9 tests passed, none skipped/cancelled/todo. This is exactly the package.json test script command, executed directly because the permitted command interface accepts node/git. It covers all surviving tests, configuration loaded from format.json, real formatter/decorator/display dependencies, and unrelated behavior. The full run satisfies affected-slice, maintained-test, and final checkpoints without duplicate execution.\n- Final `git diff ae914a50f2d0ca262674999ac12388b928641c18 --`: exit 0; only src/format-label.js and the two affected test files changed. Config, display implementation, and unrelated module/test unchanged.\n- `git diff --check`: exit 0, no whitespace errors.\n- `git status --short --untracked-files=all`: exit 0; only those three modified files. inventory.md and verification.md are ignored work notes.\n\n## Impact and review\n\nformatLabel now trims once, rejects an empty trimmed result, and returns that result. Case and interior whitespace remain intact. decoratedLabel reads the existing suffix configuration and calls formatLabel; displayLabel calls decoratedLabel and brackets its result. Tests exercise that complete chain without mocks. Final baseline diff was inspected for missing consumers and scope changes; no further affected producer or consumer is present in the fixture file list. The simpler alternative of returning value.trim() duplicates trimming; the chosen local variable uses one result for validation and return.\n\nNo ordinary-repository independent-review gate is supplied. No independent reviewer was used; user prohibited descendants. No Projector activation, external services, commits, publication, or deletions occurred. No verification exceptions or unexecuted required checks remain. Git emitted a permission warning when reading the user-level ignore file; commands succeeded, and fixture-local .gitignore was read directly. Non-string inputs and alternate suffix values are outside the supplied contract and were not tested. No unresolved failure remains; intended-red failures remain preserved in helper evidence.\n",
+    "VERIFY.md": "---\nname: verify\ndescription: Plan impact-aware checks, preserve test protection, execute evidence at coherent checkpoints, and meet the applicable final review gates.\n---\n\nThis skill owns the shared verification procedure. Tasks describe concrete work for the selected change; do not copy this procedure into tasks.md. Read [the runtime contract](../apply/references/runtime.md) when using prepared-change operations.\n\n## Select the verification context\n\n- **Planning:** Derive obligations and a test-change plan while authoring artifacts. Validate complete artifacts with the bundled strict OpenSpec validator. Do not call `prepareChange` merely to plan checks or validate a draft. Report checks that require implementation as unexecuted.\n- **Ordinary repository work:** Use the actual checkout, its selected baseline, normal repository commands, and ordinary evidence notes. Preserve repository checks, hooks, release requirements, and review gates. This procedure does not activate Projector or require a managed change.\n- **Prepared Projector change:** Retain the actual source `root`, `change`, returned `candidateRoot`, and pinned baseline. Recover the selected candidate and state; do not substitute a newer checkout. Execute checks with `recordEvidence({root,change,command,args,scope,timeoutMs})`. Use `validatePlan` for current plan obligations and independent review. Continue to $projector:finish only when completion is authorized.\n- **Branch integration:** Use the pinned `targetHead` and isolated integration checkout supplied by $projector:merge. Assess the complete target-to-integration difference, including corrections and hook writes. Use normal repository commands and evidence notes, and obtain mandatory independent review. Do not call `prepareChange`, invent a change ID, or use `recordEvidence` or `validatePlan` for this context. Publication remains owned by $projector:merge.\n\n## Establish obligations and protection\n\n1. Read current requirements, designs, repository instructions, required checks, and relevant producers and consumers. Map affected behavior, preserved invariants, input/output boundaries, shared setup, and failure paths. For fresh behavioral work, write a compact independent inventory with discriminating examples **before inspecting existing assertions**. Use approved requirements and boundary behavior as the oracle; the edited implementation must not define its own expected result. For work that already exists, state the historical limitation. Do not invent retrospective test-first evidence.\n2. Inspect existing tests against that inventory. Make justified protection decisions from six categories. **Keep** valid surviving protection. **Create** missing protection. **Update** changed expectations, stating both old and new obligations. **Refactor** test structure while preserving assertions. **Replace** inadequate protection with specified equivalent or stronger protection. **Delete** tests only for retired requirements or when their protection is demonstrably preserved elsewhere. Shared code coverage alone does not establish redundant protection. Record the applicable decisions and reasons, not six artificial changes. Keep this test-change plan separate from execution selection. Author tests for each coherent slice; do not implement all planned tests speculatively up front. Never weaken expectations to fit the implementation. Deletion-only cleanup does not require an absence test. Add recurrence guards only when policy permits them and a concrete recurrence mechanism or protected invariant justifies them.\n3. Select execution from the inventory, complete baseline difference, dependency information, and repository commands. Deduplicate overlapping checks. A broader check can satisfy narrower obligations only when its actual assertions cover them. Investigate unknown relationships; do not treat them as no impact. Widen empty, uncertain, or unreliable selections. Keep required full checks, release checks, hooks, and review gates even when focused checks pass.\n\n## Check at four coherent checkpoints\n\nDo not automatically run tests after every edit. Use these checkpoints and revisit impact when new callers, fixtures, setup, configuration, dependencies, dynamic boundaries, or obligations appear.\n\n1. **Before each slice:** Establish a pre-edit baseline with relevant existing checks where practical. Reuse matching baseline evidence instead of repeating unchanged checks; report any baseline limitation. Separate pre-existing failures from failures introduced by the slice; preserve their output and precise remaining obligations. For a behavioral slice, specify the independent oracle and expected failure. Execute the discriminating check and confirm that it fails for the intended cause before implementation. An unrelated infrastructure failure is not the intended red. For a pure refactor, already-correct behavior, or nonbehavioral work, state why no new red is appropriate. Check the applicable preserved behavior. For historical work, report that a pre-edit red was not observed. Do not manufacture one by reversing accepted work.\n2. **After each slice:** Execute checks that discriminate the changed behavior and affected integration. Inspect actual output, exit status, and which cases ran. Resolve causal failures and revise impact when new dependencies appear. Build success, mock behavior, and dispatch-only checks establish only their actual coverage.\n3. **After test maintenance:** Check that the maintained tests still protect every surviving obligation. For test-infrastructure cleanup, first validate that the cleanup preserves the original checks before changing expectations. Before changing expectations in response to a failure, also check the infrastructure, fixtures, setup, and selection. Establish replacement protection before removing old protection for surviving obligations. Intentionally retired behavior can require removing obsolete assertions without replacement; document the retired obligation. Execute the maintained checks and inspect the cases that ran; do not accept a passing empty selection.\n4. **Final settled result:** Recompute impact from the complete selected-baseline difference, including committed, staged, unstaged, and untracked work. Include hook and generated writes. Reconcile the inventory, protection decisions, and execution selection; deduplicate covered checks and widen uncertain coverage. Execute every required full/release check and preserve normal hooks and review gates. Reuse matching evidence only when implementation, inputs, configuration, environment, services, and actual coverage still match. A new session alone is not a reason to repeat checks.\n\n## Record evidence and review\n\nKeep compact notes of commands, actual results, covered obligations, failures, and evidence locations in every execution context. Keep failed results as history. A failure needs a causal fix or a precise remaining obligation; a passing command does not erase an unresolved obligation.\n\nFor a prepared change, use `purpose:\"baseline\"` for pre-edit observations and `purpose:\"red\"` for intended failures. These records are history, not final assurance. Use current verification evidence for settled checks. `scope` names exact files meaningfully covered. Optional `inputPaths` must conservatively include actual test files, transitive implementation, fixtures, and relevant configuration. Omit it for conservative whole-checkout freshness when the inputs are uncertain; do not narrow it to obtain a fresh result.\n\nAn eligible passing current check can name earlier evidence IDs in `supersedes` only when its scope covers their scopes and its assertions preserve their obligations. Supersession preserves the earlier records as history. Runtime coverage validation does not prove assertion strength. Use `verificationBasis` for check freshness and the current plan/review `basis` for review. Fresh evidence alone does not establish overall plan validity. Checkbox changes and result bookkeeping do not automatically invalidate application checks; substantive task changes still need reconciliation. Changed source, tests, relevant configuration, or authority invalidate corresponding assurance. Historical passes are not current passes.\n\nFor a settled prepared change or branch integration, obtain a real independent final reviewer through a native subagent or separate reviewer environment. For ordinary repository work, follow the applicable repository review gates. Supply each required reviewer with the actual target, complete baseline difference, contribution dispositions where applicable, test-change plan, executed results, and remaining limits. Ask for missing consumers, unsupported structure, invented justification, incomplete migration, counterexamples, and the strongest simpler alternative. Do not require another agent for every slice or invent attribution. Resolve findings and obtain required review of material corrections; refresh checks whose inputs changed.\n\nFor a prepared change, call `validatePlan` with `review:{basis,reviewer,examined,alternative,findings}` using the actual current basis. For ordinary work and branch integration, keep the actual review and findings in normal evidence notes and honor the completion gates for that context. Planning retains its artifact validation and human review frontier; it does not claim implementation completion.\n\nReport protection decisions, commands and cases executed, and baseline and intended-red results or justified exceptions. Include final coverage, reused or superseded evidence, and independent review attribution. Identify unresolved failures, unexecuted checks, and remaining uncertainty. Keep the actual outcome compact and link evidence where available. Do not report inferred runtime or native behavior as observed behavior.\n\nCompletion: the required checks and review for the selected context support the settled result; otherwise report the precise obligations that prevent completion.\n"
+  },
+  "diff": "diff --git a/src/format-label.js b/src/format-label.js\nindex b16ba30..997c551 100644\n--- a/src/format-label.js\n+++ b/src/format-label.js\n@@ -1,7 +1,8 @@\n import { readFileSync } from 'node:fs';\n const config = JSON.parse(readFileSync(new URL('../format.json', import.meta.url), 'utf8'));\n export function formatLabel(value) {\n-  if (!value.trim()) throw new Error('blank label');\n-  return value;\n+  const label = value.trim();\n+  if (!label) throw new Error('blank label');\n+  return label;\n }\n export function decoratedLabel(value) { return formatLabel(value) + config.suffix; }\ndiff --git a/test/display-label.test.js b/test/display-label.test.js\nindex 7e9d950..fabfd3b 100644\n--- a/test/display-label.test.js\n+++ b/test/display-label.test.js\n@@ -2,3 +2,7 @@ import test from 'node:test';\n import assert from 'node:assert/strict';\n import { displayLabel } from '../src/display-label.js';\n test('display consumer', t => { assert.equal(displayLabel('hello'), '[hello!]'); t.diagnostic('BODY:display'); });\n+test('display trims through the configured decorator and rejects blank input', () => {\n+  assert.equal(displayLabel('\\t MiXeD \\n'), '[MiXeD!]');\n+  assert.throws(() => displayLabel(' \\t\\n'), /blank/);\n+});\ndiff --git a/test/format-label.test.js b/test/format-label.test.js\nindex a61afdd..458ea80 100644\n--- a/test/format-label.test.js\n+++ b/test/format-label.test.js\n@@ -4,3 +4,17 @@ import { formatLabel, decoratedLabel } from '../src/format-label.js';\n test('format valid label and preserve case', t => { assert.equal(formatLabel('MiXeD'), 'MiXeD'); t.diagnostic('BODY:format-valid'); });\n test('reject blank label', t => { assert.throws(() => formatLabel('   '), /blank/); t.diagnostic('BODY:format-blank'); });\n test('decorate with configured suffix', t => { assert.equal(decoratedLabel('hello'), 'hello!'); t.diagnostic('BODY:format-config'); });\n+test('trim surrounding whitespace while preserving case and interior spaces', () => {\n+  assert.equal(formatLabel('  MiXeD  '), 'MiXeD');\n+  assert.equal(formatLabel('\\t\\nAlpha\\r\\n'), 'Alpha');\n+  assert.equal(formatLabel(' a B '), 'a B');\n+});\n+test('reject every blank string form', () => {\n+  for (const value of ['', '   ', '\\t\\n\\r']) {\n+    assert.throws(() => formatLabel(value), /blank/);\n+  }\n+});\n+test('decorate trimmed labels and reject blank input', () => {\n+  assert.equal(decoratedLabel('  MiXeD  '), 'MiXeD!');\n+  assert.throws(() => decoratedLabel('\\t\\n'), /blank/);\n+});\n",
+  "staged": "",
+  "untracked": "",
+  "participantResult": "Completed: `formatLabel` now trims surrounding whitespace while preserving case and rejecting blanks. Decoration and display behavior remain intact; the unrelated module is unchanged.\n\nKept all existing tests and added four boundary/integration tests. Confirmed the intended failures before fixing; all 9 tests now pass. `git diff --check` passes.\n\nEvidence and remaining limits are recorded in [verification.md](<qualification>/bug-corrected/verification.md)."
+}
