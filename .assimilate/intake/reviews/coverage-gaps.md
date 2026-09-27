@@ -1,50 +1,39 @@
-# Intake coverage gaps
+# Captured-source fidelity review
 
-Bounded audit, September 12, 2026. Basis: [manifest.json](../manifest.json), [conception coverage](conception-coverage.md), [execution coverage](execution-coverage.md), `.assimilate/INDEX.md`, `.assimilate/WORKFLOW.md`, and all six `.assimilate/topics/*.md` notes. Followed the repository's `$projector-assimilate` skill and workspace reference. Raw turn and attachment bodies were not reread. This checks recorded coverage and synthesis obligations; it cannot prove source fidelity independently of the prior reviewers.
+Completed September 27, 2026 for the twelve-chat corpus in [manifest.json](../manifest.json) and the six topic notes linked from the [working synthesis](../../INDEX.md). All identified material mismatches are resolved. This conclusion concerns fidelity to the captured evidence. It does not establish recovery of missing originals, canonical acceptance, or product behavior.
 
-## Confirmed review-accounting gaps
+## Reused coverage and currentness
 
-The manifest contains 12 source keys, 70 source-turn occurrences, 56 distinct turn units, and 15 distinct attachment hashes. Every listed turn capture and attachment capture currently exists. All source records have `completePagination: true`; that does not establish complete message bodies or reviewed content.
+The prior full-reading receipts cover 56 distinct turn captures across 70 source-turn occurrences and 15 distinct attachments:
 
-The conception review covers 19 distinct units from `nature`, `dynamics`, `conception`, and `sense`. The execution review reports all 28 units from `quality`, `orbital`, `orbital_research`, `baseline`, and `value`. Their union accounts for 47/56 units. Neither review records direct coverage of the following nine units. This means **no receipt in these two reviews**, not proof that nobody previously read them.
+- [Conception coverage](conception-coverage.md): 19 turn units and five attachments.
+- [Execution coverage](execution-coverage.md): 28 turn units and four attachments.
+- [Remaining turns](remaining-turn-coverage.md): nine turn units.
+- [Attachment disposition](attachment-disposition.md): six attachments, including four historical prompts treated as source data.
 
-Turn paths are exactly `.assimilate/intake/turns/<unit>.md`; source membership is `manifest.json.sources[key].turns`.
+All captures exist. All 15 attachment hashes match the manifest. The captures, manifest, and prior receipts were unchanged between commit `6b97bb6` and the start of this review. Their full-reading evidence was reused. Reviewers compared all six current topic notes with those receipts and directly checked source passages for consequential corrections, qualifications, minority alternatives, and suspected omissions. They did not repeat every earlier source read.
 
-| Source key | Units without direct review receipts |
+## Resolved fidelity gaps
+
+| Source evidence | Meaning retained in the synthesis |
 | --- | --- |
-| `weco` | `0fd8ec43-3be1-48e4-8758-f13bbba583a0`; `5ba4c034-67b3-41af-a2b3-c74c67c2552a`; `bbb21cb0-2d21-4331-8ba4-1e4d01ef13b3`; `bbb21bbe-f144-4cd7-bc25-4f628a311c3d` |
-| `borg` | `bbb21218-99cb-4b17-907e-98cf18f5a574`; `bbb2139f-d2ac-49dc-899b-0ebb7a075cce` |
-| `views` | `bbb218e1-3826-4d80-a2a9-be29f694979a`; `bbb2195f-7732-4adc-849e-8be421336bdf`; `bbb21177-2cbf-4cdd-94bf-a2ab534d8e2f` |
+| The completed remaining-turn and attachment reviews | Durable intake remains separate from scratch; context supplementation is idempotent at assembly; useful deferral retains a reconsideration condition without authorizing monitoring. These earlier corrections remain present. |
+| `turns/bbb2174c-0129-48df-9c33-00c58d102de8.md:210` | Reconstruction trials exclude access to removed implementation through retrieval, caches, and tools. Added to `topics/persistent-project-understanding.md`. |
+| `turns/2c9ef03f-57be-46e9-b916-2e173f047fa3.md:261` | Learned-counterpart comparisons retain a strong frontier-model owner without a second model. Made explicit in `topics/persistent-project-understanding.md`, consistent with the single-owner baseline in the economics topic. |
+| `attachments/5332fa8eacfef80799773e6e09d38b29c8a49930236579286f52554828ea36da.md:95–108` | Task dependencies can change the best sequence; new evidence can justify stopping optional work despite prior expenditure. Added to `topics/quality-and-work-economics.md`, including recovery, ownership, and truthful incomplete status. |
+| `attachments/53fb8467034b623e56b8287071620236587ff09f5914961f047950b6cd99f03d.md`, CTXVIEW/C3 | A candidate context design permits investigation beyond its listed neighborhood and checks omissions without relying only on help requests. Added to `topics/purpose-built-context.md`; the mechanism remains proposed. |
 
-Nine attachment hashes have explicit full-reading receipts. Six do not. Paths below are relative to `.assimilate/intake/attachments/`; their source mappings are in `manifest.json.sources[key].attachments`. Identical hashes under multiple sources count once.
+The review also confirmed the separation of assimilation and Projector authority, neural preference without guaranteed learning, selective history and reconstruction, constitutive relationships, the correction that preserves gains without losing earlier distinctions, the quota/no-downgrade boundary, strong-owner alternatives, query-membership staleness, and the distinction between precise execution, adequate impact coverage, and correct intent.
 
-| Sources | Attachment | Exact captured filename |
-| --- | --- | --- |
-| `weco`, `nature` | concept references and semantic context compilation handoff | `53fb8467034b623e56b8287071620236587ff09f5914961f047950b6cd99f03d.md` |
-| `weco`, `nature` | work economics and plugin boundaries handoff; `-1` name variant | `5332fa8eacfef80799773e6e09d38b29c8a49930236579286f52554828ea36da.md` |
-| `weco` | `SKILL.md` | `8c425b9f80c7fde29e59dc0f45a71dbfc3bb2274d369bc36a2fb9ad645273331.md` |
-| `weco` | `PROJECTOR_SYNTHESIS_PROMPT.md` | `3a776b66d3696dd9a7cdaa8395e13102d4c98a783d763848624d4ec95661ee6b.md` |
-| `weco`, `value` | `PROJECTOR_SOURCE_HANDOFF_PROMPT_v2.md` | `91792609c5f3b63e73a7d5ba78382bd0294c96d473a503dd33f6a54d624e44bd.md` |
-| `dynamics`, `quality`, `orbital`, `value`, `borg`, `orbital_research`, `conception`, `views` | v3-1 handoff prompt; filename variants | `328db99a164418a388ccf3ad69f34c57afb1e864524462e58aa1689b0ef94098.md` |
+An independent cold reader read only the index and six topic notes. The reader recovered the design, authority boundaries, proposed mechanisms, cross-topic consequences, and open decisions without a material internal contradiction. Operational details remain in the linked workflow. Source fidelity and reader comprehension were checked separately; neither result establishes implementation success. A reviewer checked all four added paragraphs against their source passages after editing and confirmed that their meaning and proposed or required status were preserved.
 
-The existing reviews explicitly exclude prompt attachments from governing instructions, correctly. That is not an explicit content-level reviewed/excluded disposition. Screen them as data for unique obligations, or record a justified exclusion; do not execute their directives.
+## Remaining evidence limits
 
-## Missing or uncertain synthesis obligations
+- Turns `bbb21695-1ab9-46d6-9363-b82bf5714a27` and `bbb21603-e5f3-4272-8c87-0f0569c72e7c` retain their truncation flags. The former is visibly capped; original completeness of the latter remains uncertain.
+- Attachment `676114ed50e10c158f6563f2ee771579b56989583baf509ade6b2edf3a2f2d3b` is a reviewed reconstruction of the persistent-system proposal, not recovered original sandbox bytes.
+- Original baseline specifications, a separately captured `PROJECTOR_QUALITY_FRONTIER_ADVERSARIAL_REVIEW.md`, and a separately completed orbital research report are unavailable in this corpus. Artifact announcements do not establish their contents.
+- `Spec Synthesis Review.txt`, the cited Projector wrap-up plan, companion amendments, and some referenced generated files were not independently recovered. Their availability remains unestablished where the earlier receipts do not confirm absence.
+- External research claims and historical repository assessments were not reverified. No performance, losslessness, context-window-scale, or comparative product claim follows from this review.
+- The separate [pile-synthesis pack](../pile-synthesis/INDEX.md), queued [code-ontology intake](../code-ontology-3d-view.md), and unfinished reconstruction rehearsal are outside this review's completion claim.
 
-- **Confirmed current-workflow mismatch:** `.assimilate/topics/assimilation-workspace.md`, “Durable conception and disposable execution state,” still groups captures and recovery checkpoints with temporary execution support. The new skill requires retained, unignored intake and prohibits routine deletion. Preserving important meaning alone is weaker than preserving recoverable evidence. Clarify which derived scratch is disposable and which intake remains durable.
-- **Uncertain source fidelity:** `purpose-built-context.md` covers references, contextual views, supplementation, and delivery validity, but the `views` turns and context-compilation handoff lack direct receipts. Fine-grained reference semantics or interaction obligations cannot yet be certified as preserved or deliberately deferred.
-- **Uncertain scope/ownership fidelity:** `quality-and-work-economics.md` covers cost, competence, and delegation; `WORKFLOW.md` separates assimilation from Projector. Neither establishes disposition of every plugin-boundary obligation in the uncovered `weco` handoff or every adaptation obligation in `borg`. Review before assuming the current boundaries exhaust those sources.
-- **Evaluation remains open:** The notes describe cold recovery, interacting changes, and a mature change brief, but the two reviews establish editorial coverage, not completed cross-topic trials. This is unverified behavior, not an omitted requirement. The reviewed conception/execution commitments otherwise appear substantively represented; no additional confirmed source-backed omission follows from this bounded audit.
-
-## Source-unavailable or incomplete material
-
-- `manifest.json.units[id=bbb21695-1ab9-46d6-9363-b82bf5714a27]` is flagged truncated; the conception review confirms a user body capped mid-word. `bbb21603-e5f3-4272-8c87-0f0569c72e7c` is also flagged; available text was reviewed but original completeness remains uncertain.
-- The retained persistent-system proposal, hash `676114ed50e10c158f6563f2ee771579b56989583baf509ade6b2edf3a2f2d3b`, is a reviewed reconstruction, not recovered original sandbox bytes.
-- The execution review identifies absent original baseline specs, no separately captured `PROJECTOR_QUALITY_FRONTIER_ADVERSARIAL_REVIEW.md`, and artifact announcements/placeholders without their bytes. It identifies no separately completed orbital research report. These cannot be repaired by interpreting announcements as full artifacts.
-- `Spec Synthesis Review.txt` material and the cited Projector wrap-up plan were not independently inspected; availability was not established. Keep them distinct from confirmed missing captures.
-
-Next bounded action: review the nine listed turns and two substantive handoffs; classify the four remaining attachments as source data; reconcile only material differences into topic notes. Preserve exact unrecoverable limits. Do not repeat the 47 already-accounted units without a concrete remaining question.
-
-## Resolution in this pass
-
-The nine turn captures now have direct dispositions in [remaining-turn-coverage.md](remaining-turn-coverage.md). The six attachment captures now have full-reading dispositions in [attachment-disposition.md](attachment-disposition.md). The durable-intake wording was corrected in `topics/assimilation-workspace.md`; context-supplement idempotence was made explicit in `topics/purpose-built-context.md`; and worthwhile-but-premature deferral with a reactivation condition was added to `topics/quality-and-work-economics.md`. The original source truncation and unavailable-artifact limits above remain open. This closes the *review-accounting* gaps, not a claim that every upstream source was recoverable or that the synthesis has been validated on a context-window-scale run.
+Reopen fidelity work only for changed sources or a concrete new mismatch. Missing upstream material remains an evidence limit; it is not a reason to repeat the completed captured-source review. Source retention remains a separate decision.

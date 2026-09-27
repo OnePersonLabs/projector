@@ -101,8 +101,8 @@ export async function collectGitFacts(repositoryRoot: string, paths: readonly st
       message: "Confirmed non-Git repository has no Git identity or history.", recoverable: true, affectedClaimKinds: ["git-identity", "move-lineage"] }],
   };
   const budget = options.budget ?? new ObservationBudget();
-  const git = (args: readonly string[], allowedExitCodes?: readonly number[]): Promise<string> => observationGit(repositoryRoot, args, budget,
-    { ...(options.signal === undefined ? {} : { signal: options.signal }), ...(allowedExitCodes === undefined ? {} : { allowedExitCodes }) });
+  const git = (args: readonly string[], allowedExitCodes?: readonly number[], signal: AbortSignal | undefined = options.signal): Promise<string> => observationGit(repositoryRoot, args, budget,
+    { ...(signal === undefined ? {} : { signal }), ...(allowedExitCodes === undefined ? {} : { allowedExitCodes }) });
   const gitText = (args: readonly string[], input: string): Promise<string> => observationGit(repositoryRoot, args, budget,
     { ...(options.signal === undefined ? {} : { signal: options.signal }), input });
   const gitBytes = (args: readonly string[], input: string): Promise<Buffer> => observationGitBytes(repositoryRoot, args, budget,
@@ -127,18 +127,17 @@ export async function collectGitFacts(repositoryRoot: string, paths: readonly st
   const introductions = revision === "unborn" ? new Map<string, string>() : parseIntroductionHistory(await git([
     "log", "--no-ext-diff", "--diff-filter=A", "--format=%x1e%H%x00", "--name-only", "-z", "--",
   ]));
-  const identities: GitIdentityFact[] = [];
-  for (const path of paths) {
+  const identities = await observationMap(paths, async (path, signal): Promise<GitIdentityFact> => {
     budget.check("git-facts", path);
     const objectId = tracked.get(path);
-    if (objectId === undefined) { identities.push({ sourceClass: "derived", path, tracked: false, availability: "available", introductionHistory: "not-applicable" }); continue; }
+    if (objectId === undefined) return { sourceClass: "derived", path, tracked: false, availability: "available", introductionHistory: "not-applicable" };
     let introductionCommit = introductions.get(path);
     if (introductionCommit === undefined && revision !== "unborn") {
-      introductionCommit = (await git(["log", "--no-ext-diff", "--follow", "--diff-filter=A", "--format=%H", "--", path])).trim().split("\n").filter(Boolean).at(-1);
+      introductionCommit = (await git(["log", "--no-ext-diff", "--follow", "--diff-filter=A", "--format=%H", "--", path], undefined, signal)).trim().split("\n").filter(Boolean).at(-1);
     }
-    identities.push({ sourceClass: "derived", path, tracked: true, availability: "available", introductionHistory: revision === "unborn" ? "not-applicable" : "available", objectId,
-      ...(introductionCommit === undefined ? {} : { introductionCommit }) });
-  }
+    return { sourceClass: "derived", path, tracked: true, availability: "available", introductionHistory: revision === "unborn" ? "not-applicable" : "available", objectId,
+      ...(introductionCommit === undefined ? {} : { introductionCommit }) };
+  }, options.signal);
   let deleted: { path: string; content: string }[] = [];
   if (revision !== "unborn" && status.deleted.length > 0) {
     // The complete tree avoids shell/pathspec interpretation and remains bounded

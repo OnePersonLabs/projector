@@ -6,7 +6,7 @@ import { captureDecisionBaselines, triggerSubjectId } from "../knowledge/decisio
 import { assessKnowledgeDecisions } from "../knowledge/governance.js";
 import { KnowledgeValidatorRun } from "../knowledge/validators.js";
 import type { CompiledRepositoryChange } from "./compiler.js";
-import type { ChangeRepositoryObservation } from "./repository-observer.js";
+import { observeRepositoryState, type ChangeRepositoryObservation } from "./repository-observer.js";
 
 /** Check executable obligations against the actual post-state before the transaction commits. */
 export async function validatePostChangeKnowledge(
@@ -49,9 +49,10 @@ export async function validatePostChangeKnowledge(
     }
   }
   const retained = compiled.knowledgeContext === undefined ? undefined
-    : await (await RepositoryKnowledgeService.create({ repositoryRoot: observation.repositoryRoot, acceptedDecisionBaselines: decisionBaselines, now: completedAt })).reconcile(compiled.knowledgeContext.id, { signal });
+    : await (await RepositoryKnowledgeService.create({ repositoryRoot: observation.repositoryRoot, acceptedDecisionBaselines: decisionBaselines, now: completedAt })).reconcile(compiled.knowledgeContext.id, { signal, observation });
   if (retained !== undefined) {
     if (canonicalJson(retained.currentState) !== canonicalJson(observation.state)) reasons.push("Repository changed between post-state observation and retained-context reconciliation.");
+    if (canonicalJson(await observeRepositoryState(observation)) !== canonicalJson(observation.state)) reasons.push("Repository changed during post-state retained-context reconciliation.");
     // Exact approved writes necessarily stale the old context. Unknown or violated
     // obligations are not an expected consequence and must not pass as success.
     if (retained.status === "suspect" || retained.status === "unavailable") reasons.push(`Retained knowledge is ${retained.status}.`);

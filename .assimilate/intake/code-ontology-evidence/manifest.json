@@ -1,0 +1,277 @@
+{
+  "captured_date": "2026-09-27",
+  "source_kind": "installed plugin bundle",
+  "origin": "C:\\Users\\zethj\\.codex\\plugins\\cache\\openai-curated-remote\\code-ontology-companion\\0.6.0",
+  "version": "0.6.0",
+  "scope": "Code graph and spatial workbench assimilation; not a donor execution or full package audit",
+  "files": [
+    {
+      "path": ".codex-plugin/assets/composer-icon.png",
+      "bytes": 15421,
+      "sha256": "26973f1a407fbafbbccad488e4425ae7d34a2c8c68e775a8b17fd4f9e8cb963d",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": ".codex-plugin/assets/logo-dark.png",
+      "bytes": 630484,
+      "sha256": "55e9b379fdc891e2b02e9d11b604e542e3d32683e19deabce78e6962fc077ec3",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": ".codex-plugin/assets/logo.png",
+      "bytes": 671559,
+      "sha256": "41397a94f05b7f6c0dfab5364323f26c331fa318f676175572692bcc26ea12b3",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": ".codex-plugin/plugin.json",
+      "bytes": 3253,
+      "sha256": "5ba4ea7309e8ea5fac501d5f253dbd6c7bcc9579c075795faf8091a93da4b801",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "assets/composer-icon.png",
+      "bytes": 15421,
+      "sha256": "26973f1a407fbafbbccad488e4425ae7d34a2c8c68e775a8b17fd4f9e8cb963d",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "assets/logo-dark.png",
+      "bytes": 630484,
+      "sha256": "55e9b379fdc891e2b02e9d11b604e542e3d32683e19deabce78e6962fc077ec3",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "assets/logo.png",
+      "bytes": 671559,
+      "sha256": "41397a94f05b7f6c0dfab5364323f26c331fa318f676175572692bcc26ea12b3",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 11341,
+      "sha256": "6dede46a6959bbc8933ff89b4b526ddf8fcd896c4ce74714cc65144bcd17c742",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "NOTICE",
+      "bytes": 407,
+      "sha256": "4fa8d78c578615fac27530d4c2b1be20664ed03099c4eacecac07e6be68c3e27",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "SBOM.spdx.json",
+      "bytes": 4661,
+      "sha256": "8a2420bf4ca23a52e9f17ffab91546534b4cdf36166cfe18134bd0caaa4ca8ba",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/agents/openai.yaml",
+      "bytes": 314,
+      "sha256": "a7f794f364c6c78c646d2ba916b93acb1e846b21f40adebf1e5713c9902e338a",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/assets/vendor/cytoscape-3.34.0.min.js",
+      "bytes": 435328,
+      "sha256": "9c2a3bf2592e0b14a1f7bec07c03a54f16dedf32af9cd0af155c716aa6c87bc3",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/assets/vendor/elkjs-0.12.0.bundled.js",
+      "bytes": 1609707,
+      "sha256": "1222e44f953ce7746af23801e723708f8e6f436b8b377a6a5fc7552f34a307b3",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/assets/vendor/licenses/CYTOSCAPE-MIT.txt",
+      "bytes": 1082,
+      "sha256": "eb319c6e6f233607f71e8e2f450391751883cfc0eeb3ca7ef574c13d1d9c2203",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/assets/vendor/licenses/ELKJS-EPL-2.0.md",
+      "bytes": 14443,
+      "sha256": "637e81f4a1b6b4079535c499fca05e238cf7605c1ff5b76d60d7da7ce96700c9",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/assets/vendor/licenses/WEB-WORKER-APACHE-2.0.txt",
+      "bytes": 11356,
+      "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/assets/workbench.css",
+      "bytes": 27368,
+      "sha256": "3e3c4a7f46cb37c1186b16c8c1a9e038e9f9d562cfda610819ee0c1bdbdabce7",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/assets/workbench.html",
+      "bytes": 8850,
+      "sha256": "50f50e1a0c13dda75b9ecb3137422b6fa62d4906a152272fa20a619992924625",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/assets/workbench.js",
+      "bytes": 123474,
+      "sha256": "b8661f642bb2653430bd5665fffda66e81a1d068fca745ec79bd013eabf052e3",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/ai-data-contract.md",
+      "bytes": 2767,
+      "sha256": "e9bfb433b08f849937827c062c6210c895d66fc036af7bed0cdf6c43b6445505",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/code-reference.md",
+      "bytes": 5986,
+      "sha256": "340174ec6c25675d8271fb26ddb355112d9c004ed2a884e5bec1762d429f4e01",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/code-reference.schema.json",
+      "bytes": 6193,
+      "sha256": "33d5e5fc65b730be25c15ed68a4ef51265b8d4681c2c55e8186b87e2b17a1874",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/data-boundaries.md",
+      "bytes": 5666,
+      "sha256": "9387c6ac90f7af0f963f010040c0098dd6d6768407d40d32cf1b2bb8b70f8758",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/lineage-model.md",
+      "bytes": 2429,
+      "sha256": "a9d041e2a572e2d5dabdd1e3c82aae6cba28233dee49774b966f3ff6b892785e",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/local-llm.md",
+      "bytes": 7474,
+      "sha256": "739bc0df119af01c6e6a8025f21743da03b88c4e241c2fe04b5a366bca428a10",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/local-mcp.md",
+      "bytes": 5218,
+      "sha256": "d60dd7f9abbb175e03da39b79c1df9ca6c6589255f220b29dbc47e4ed03285c9",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/ontology-model.md",
+      "bytes": 3445,
+      "sha256": "a24ffa662d16e7c18e99f355e2291867666859de1e47142cda64ac4e48d259a6",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/provenance-schema.ttl",
+      "bytes": 871,
+      "sha256": "e6630c18aec4a438081440e8608b67004454af1bd8aa37ec39c21369164113a2",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/schema.ttl",
+      "bytes": 2209,
+      "sha256": "6977ddf0cc5c167cec2e6f35b402d1340b6a75039c17297a0c8d9d9f8d0e575c",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/references/workspace-setup.md",
+      "bytes": 5492,
+      "sha256": "778a685426584b95d02f1f553c43a9bee07a3e7f26a8be07dbbaa22d52b0f435",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/scripts/code_ontology_core.py",
+      "bytes": 163321,
+      "sha256": "3318c12dd1f37e1a8402f83c5e03a385a793de15b9776b9c2f5e4bc49eaea267",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/scripts/code_reference.py",
+      "bytes": 15224,
+      "sha256": "184da5e2f48d91ab982007b8f43c63ac380b91ca3063a1616474da9dfe6aca36",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/scripts/companion.py",
+      "bytes": 56584,
+      "sha256": "0226cfb9c6fc30b9229c2dbae7a986b3b5a7163fb0c6e1873e9772d67ebe0726",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/scripts/local_llm.py",
+      "bytes": 40454,
+      "sha256": "e010323520ed421163971f1a7bb20c91760ae8f408fb7dcd294d9b161c84b55b",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "skills/manage-code-ontology/SKILL.md",
+      "bytes": 6742,
+      "sha256": "e7e051fcb7ad72b21f5c85b0838598a2d4907f8881110ea00e356ede7862ce60",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 2894,
+      "sha256": "1ad5fe7f4fb4658279bf74ac335291b15e617d1dd24c9a4284b0c3f61c2d2b3b",
+      "coverage": "inventoried; inspection scope is in the review notes"
+    }
+  ],
+  "projector_context": {
+    "outcome": "failed",
+    "exit_code": 1,
+    "context_id": null,
+    "request": "Assimilate a navigable code-evidence view: source structure, dependencies, impact and snapshot changes. Preserve static source evidence versus accepted meaning, source-query coverage, freshness and authority boundaries.",
+    "stderr": "Projector: context: Derived observation exceeds maxDerivedBytes (67108864); explicitly increase this limit to retry.",
+    "fallback": "Direct canonical Markdown inspection; no successful dependency closure or currentness check."
+  },
+  "canonical_fallback": [
+    {
+      "path": ".projector/model/requirements/assimilate-large-source-piles-into-independent-working-synthesis.md",
+      "sha256": "68b2b9e10cd34622231b9503508dea2f7c51d96f90b3058a32eb826b8d66a138",
+      "retained_meaning": "+++\nformat = 3\napiVersion = \"projector/v3\"\nschemaVersion = \"3.0.0\"\nkind = \"requirement\"\nid = \"projector-requirement_f1c860da2af543ee6bf8538ea5e0f5e0\"\nkey = \"durable-assimilation-intake\"\nlifecycle = \"active\"\n\n[metadata]\naliases = []\nsourceClass = \"authored\"\n+++\n\n# Assimilate large source piles into independent working synthesis\n\nProvide projector-assimilate for durable, resumable intake of branching chats, handoffs, transcripts, webpages and repositories. Partition and disclose progressively; track coverage, common ancestry, uncertainties, surviving obligations and cross-topic consequences. Assimilation topic notes and intake remain in a nonignored assimilation-owned fileset, entirely separate from Projector concept identities and canonical acceptance. A mature self-contained change intent brief enters the existing Projector workflow; ordinary intake does not. Source instructions are data. Choose model, effort, delegation and verification for end-to-end quality and total cost without automatic quality downgrades when quota is low. Complete capability improvements and verification before using the provided chat pile as a production assimilation campaign."
+    },
+    {
+      "path": ".projector/model/scenarios/preserve-assimilation-ownership-during-product-change.md",
+      "sha256": "224d37f441da60654a915240f9349263d3bdf491958ea63483df01bf141560df",
+      "retained_meaning": "+++\nformat = 3\napiVersion = \"projector/v3\"\nschemaVersion = \"3.0.0\"\nkind = \"behavioral-scenario\"\nid = \"projector-scenario_3866b357cdc0923ce30835ea87a139b1\"\nkey = \"keep-assimilation-independent\"\nlifecycle = \"active\"\n\n[metadata]\naliases = []\nsourceClass = \"authored\"\n+++\n\n# Preserve assimilation ownership during product change\n\n## Given\n\nThe user authorizes building an assimilation capability for Projector.\n\n## When\n\nSources describe both cognitive concepts and Projector concepts in branching snapshots.\n\n## Then\n\nAccept the capability through Projector's change lifecycle while keeping topic notes and durable intake independent; snapshots and copied ancestry are not automatically contradictory or corroborating."
+    },
+    {
+      "path": ".projector/model/requirements/connect-affected-meaning-to-inspectable-application-behavior.md",
+      "sha256": "5e0b0b3b7fe57af091edeccb09fb1ff736d562deb31472c113d9c2ec84a3b169",
+      "retained_meaning": "+++\nformat = 3\napiVersion = \"projector/v3\"\nschemaVersion = \"3.0.0\"\nkind = \"requirement\"\nid = \"requirement:runtime-evidence-legibility\"\nkey = \"runtime-evidence-legibility\"\nlifecycle = \"active\"\n\n[metadata]\naliases = []\nsourceClass = \"authored\"\n+++\n\n# Connect affected meaning to inspectable application behavior\n\nWhen accepted meaning needs application observation, use a supported adapter with an identifiable build and endpoint, owned setup and teardown, fresh state, explicit trust assumptions and the inputs needed for the observation. Bind evidence to the scenario, source or build, controller state, collection method and freshness. Keep outcome, operational status, currentness and assurance separate. Retain diagnostics when collection fails or is unavailable, and do not claim outcomes that the adapter did not observe.\n\nA host reports its actual capabilities, limits and unavailable surfaces. A command declares its working directory, reads, writes, network need, environment, time, resources and side effects; pass opaque arguments without shell interpolation. Remote observations identify their adapter version and revision. Pin deterministic comparisons to the required snapshot. A refreshed remote state creates a new revision and may invalidate dependent work.\n\nKeep application observation, planning, approval, application and recovery as separate capabilities with explicit inputs and evidence. Do not retain an obsolete delivery transport or create a production interface solely to satisfy an isolated release test."
+    },
+    {
+      "path": ".projector/model/requirements/reuse-knowledge-with-scoped-invalidation.md",
+      "sha256": "569d321c0c94470d0fa49af4b3488cacf7a74eb6c382874e426f7862bf731f72",
+      "retained_meaning": "+++\nformat = 3\napiVersion = \"projector/v3\"\nschemaVersion = \"3.0.0\"\nkind = \"requirement\"\nid = \"requirement:scoped-invalidation\"\nkey = \"scoped-invalidation\"\nlifecycle = \"active\"\n\n[metadata]\naliases = [ \"stale knowledge\", \"dependency-scoped reuse\" ]\nsourceClass = \"authored\"\n+++\n\n# Reuse knowledge with scoped invalidation\n\nBind retained reasoning and derived artifacts to their exact semantic values and query results, including empty queries and selector membership. After a known delta, traverse exact derivation dependencies before versioned impact rules; pre-edit relevance is not dependency proof. Reuse unaffected knowledge despite unrelated changes. Backdate only when the registered signature profile proves every required preserved dimension; unchanged structure proves neither behavior nor validation. Changed dependencies or new consumers invalidate affected reasoning. Unknown profiles, missing baselines and open populations remain unknown; rebuilding them does not make runtime caches canonical.\n\nBind mutation authority to the exact session, plan and approval hash, value/query dependencies, operations, semantic/write scope, risk, expiry and representation profile. Relevant changed or unprovable dependencies invalidate authority. Unrelated root-digest changes trigger validation and may rebind without blanket invalidation. Execution mode changes permission only, never meaning or proof. Stale approvals cannot replay.\n\nBind transform applicability, preconditions, touched units and write scope to dependency-scoped state before preview and apply. Preserve composition dependencies and exclusive claims; fail on unresolved semantic anchors or overlapping claims. Verify declared postconditions with structured evidence. Preserve executable-lens composition/convergence and reverse-reconciliation upstream-first repair obligations. Full composition/repair enforcement remains unrealized until a named public planning or repair consumer exercises it; internal types and mappings are not fulfillment.\n\nPlans are immutable revisions. Partial execution preserves dependency integrity. Changed repository, canonical, toolchain or external state requires explicit refresh/rebase: recompute snapshot identity, validate/rebind scoped state, retain valid assumptions/closures, recompile stale capsules/packets, carry completed work only with valid proof, emit a new revision and invalidate stale approvals. Governance conflicts block execution pending resolution; automatic semantic Git conflict resolution is not required. A changed global snapshot with current bound values/queries permits lightweight immutable rebind without recomputing unaffected analysis; explain it separately from semantic rebase.\n\nBounded saved-context/lifecycle continuation and query/profile currentness explanations must retain independently valid work. Unrestricted multi-packet checkpoint orchestration remains unrealized; revisit when a supported multi-packet plan loses valid work or risks stale authority.\n\nRisk includes uncertainty, unresolved identity/ownership, weak coverage/validation, stale observations, open frontiers and limited rollback. More uncertainty never reduces risk or approvals. Highest-risk destructive, production-security, billing, identity or irreversible-release actions are not autonomous. Actual authorization and host permissions govern; historical risk tables grant neither permission nor confinement. Conflicting policies fail explicitly.\n\nRepository observation must complete its declared inventory within explicit finite resource limits or fail without publishing a usable partial snapshot or replacing a previous baseline. Completeness of inventory does not imply semantic completeness for unsupported constructs. Bind snapshots to versioned enumeration scope and effective exclusion inputs; incompatible observations require fresh context and cannot establish file additions or removals. Derived contexts and impact snapshots are disposable, size-bounded caches without age-based expiration. Evict least-recently-used eligible entries while preserving live operations and unfinished/recoverable lifecycle dependencies; admission fails when safe capacity cannot be established. Durable approvals, receipts, journals, canonical meaning and embedded historical lifecycle proof are not cache eviction targets."
+    },
+    {
+      "path": ".projector/model/requirements/determine-relevance-before-choosing-edits.md",
+      "sha256": "60dfcbb2a2d1f431072be27507a9f063c1c621e92b1bef4a3b3a4a72fd9e190e",
+      "retained_meaning": "+++\nformat = 3\napiVersion = \"projector/v3\"\nschemaVersion = \"3.0.0\"\nkind = \"requirement\"\nid = \"requirement:pre-edit-relevance\"\nkey = \"pre-edit-relevance\"\nlifecycle = \"active\"\n\n[metadata]\naliases = [ \"relevance before editing\", \"request-first context\" ]\nsourceClass = \"authored\"\n+++\n\n# Determine relevance before choosing edits\n\nGiven a requested outcome, retrieve existing meaning, constraints, decisions, and distant consumers before choosing implementation paths. Traverse typed canonical relations and implementation bindings with explicit reasons and bounds. Distinguish candidate interpretations and unknown frontiers from confirmed identity or absence. Post-edit impact analysis does not replace this step.\n\nOrder work from deterministic observation and transforms through cheap bounded classification to implementation and frontier review; use model rendering only for deterministic residue. Analysis facets may add applicable obligations but cannot choose technology. General multi-model routing remains deferred until a supported public workflow supplies a concrete consumer and measured need.\n\nRepeated historical/co-change relationships may seed possible relevance across semantic neighborhoods not explained by deterministic topology. They remain contextual/inferred: co-change alone establishes neither an exact dependency nor an impact rule or authority claim. Repeated observed Planning Surprises can provide stronger evidence of an omitted relationship, but still require explicit acceptance before promotion. Preserve independently sourced examples, alternatives, counterexamples and uncertainty rather than treating copied ancestry as corroboration."
+    },
+    {
+      "path": ".projector/model/requirements/expose-remaining-design-obligations-progressively.md",
+      "sha256": "a74802e00b1492df33139eb961135167c0a0c361dcd89b9204778ec165cbcadf",
+      "retained_meaning": "+++\nformat = 3\napiVersion = \"projector/v3\"\nschemaVersion = \"3.0.0\"\nkind = \"requirement\"\nid = \"requirement:evidence-bound-completion\"\nkey = \"evidence-bound-completion\"\nlifecycle = \"active\"\n\n[metadata]\naliases = []\nsourceClass = \"authored\"\n+++\n\n# Expose remaining design obligations progressively\n\nReport finite observed coverage and distinguish mapping from fulfillment. Preserve accepted capabilities before implementation. Rank concrete unresolved obligations and repair questions by observed effect and blocking status, with stable identities and state-bound evidence. Accepted meaning, satisfied predicates or explicit valid deferral may settle an issue; relevant new facts reopen only affected issues. Cleanup identifies actionable repairs without claiming execution or complete design from unavailable evidence.\n\nAn agent's completion assertion is non-normative. Completion requires current bindings, reconciled affected units, required evidence, allowed unknowns and explicit unavailable external actions. Evidence identifies lane, source, independence, side effects and assurance. Tests from the same packet or flawed suite are correlated; a model cannot solely validate its own compression. Release proof binds stable obligations to observations from the same revision/worktree with distinct negative controls. Self-report, caller counts, hash-shaped strings and default-zero metrics are not proof.\n\nSeparate exclusions for inventory, inference authority, mutation, reporting, model context and coverage denominators. One ignore rule cannot silently erase all semantic roles. Vendored code may inform dependencies while excluded from mutation/pattern authority; generated output may inform reconciliation without independent authority; secrets/configuration may be structurally inventoried but excluded from model context. Apply executable-lens authority and scoped invalidation.\n\nGovernance audit exposes contradictions, unreachable selectors, excessive exceptions, duplicate/equivalent rules, overbroad selectors, stale authority triggers, blocking rules without predicates/validators, deterministic mechanics expressed only in prose, transforms without idempotency evidence, disproportionate invalidation, and model/rule maintenance cost exceeding prevented divergence. Unavailable checks remain unknown.\n\nLayered exclusions and full rule-pressure audit remain active but unrealized public workflows: types, mappings and partial implementations do not establish consumers. Revisit exclusion carriers when a supported inventory, coverage, mutation or context workflow needs purpose-specific treatment; revisit audit checks when installed audit/coverage needs their results and conservative unknown disclosure. Preserve prerequisites until consumer evidence establishes realization.\n\nAudit, completion, migration and interrupted transactions yield resumable cleanup/continuation plans through existing services and the shared runner: current/stale/unknown evidence, missing advisory artifacts, unresolved work, recovery status and supported next action. Explain query/profile changes while retaining independently current work, including fresh-session checks. This remains release work despite unrestricted multi-packet limitations. Create no parallel progress store. General overlays/exceptions stay discoverable under their own requirements until consumers are demonstrated. Non-goals limit promises, not future commitments. Coverage preserves denominator assumptions, open-world limits and unavailable analyzers. Resumed agents inspect cleanup using retained context/lifecycle selectors before following a supported next action; unavailable evidence stays explicit.\n\nBound all observation, including secondary reads and synchronous computation, by finite file/directory/byte/process-output/memory/result/time limits. Explicit overrides cannot silently widen scope or weaken mutation checks. Limits fail the scan; transport byte ceilings preserve whole records. Bounded cache collection deletes only after complete protected-owner discovery; admission counts staging/metadata and cannot exceed capacity. Reuse immutable schemas, never changing candidate/repository authority. Preserve transaction freshness checks and drain cancellation before cleanup."
+    },
+    {
+      "path": ".projector/model/requirements/reconsider-architecture-when-its-reasons-change.md",
+      "sha256": "bed214daa17ed97f6554c6584739b3afd0431fa6f3724629940d9a7b6ed4878d",
+      "retained_meaning": "+++\nformat = 3\napiVersion = \"projector/v3\"\nschemaVersion = \"3.0.0\"\nkind = \"requirement\"\nid = \"requirement:scoped-reconsideration\"\nkey = \"scoped-reconsideration\"\nlifecycle = \"active\"\n\n[metadata]\naliases = [ \"architectural reconsideration\", \"assumptions and preferences\" ]\nsourceClass = \"authored\"\n+++\n\n# Reconsider architecture when its reasons change\n\nRetain architectural decisions about patterns, libraries, platforms, boundaries and implementation strategy together with alternatives, reasons, constraints, assumptions, evidence, tradeoffs and applicable scope. Make the choice and why retrievable before affected edits and after a fresh clone. Reconsider only affected decisions when those inputs or scope change; preserve the historical influence of adopted soft preferences. New non-advisory consequences require actual linked canonical products in the same accepted transaction. Neither an old approval nor repeating existing code proves that the decision remains suitable. Unsupported or stale validity evidence stays explicit.\n\nAgents and model providers may submit structured proposals but cannot silently promote governance, change authority, validators or scope, persist exceptions, redefine identity, or perform highest-risk or external actions. General orchestration, modernization, watch mode, and external adapters remain future capabilities until a real consumer reopens them; external adapters then require explicit capability, observability, relevance, impact, drift, snapshot, and open-world evidence.\n\nMaterial mutable option sets or constraints require fresh-enough concern-scoped evidence: current capabilities, support/security/lifecycle, changed alternatives, uncertain official constraints, contradictory local evidence or significant long-lived technology commitments. Verify the current viable options, not remembered choices decorated with citations. Do not research merely because time passed or perform a periodic repository-wide best-practices crawl. Record source, capture date, available source date/version, excerpt hash or concise excerpt, confidence and applicability; prefer official/primary evidence. Offline cached evidence exposes freshness. If policy requires unavailable fresh evidence for a blocking decision, block automatic acceptance; an explicit user decision may proceed with recorded uncertainty within actual authorization and remaining hard constraints. Research does not prove local implementation or force migration.\n\nHard constraints dominate preferences; explicitly adopted project preferences govern shared recommendations over softer organization/user preferences. Conflicting soft preferences remain visible and nonblocking unless explicitly promoted into constraints. Retain material preference influence by semantic hash; later personal changes do not retroactively revise accepted project architecture unless adopted as assumptions. Option evaluation should use a tradeoff matrix and eliminate infeasible options before optional weighted ranking; expose weights rather than claiming objective probability. Deferral needs a neutral/compatibility-preserving route, rationale, scope, preserved options, forbidden commitments, revisit triggers and risk/unknowns. A guardrail that commits to an option is a temporary decision, not concealed neutrality.\n\nModernization uses this same concern/evaluation/authority/consequence system. Trigger it from observed divergence, agent difficulty, surprises/missed relevance, broad invalidation, duplication, unsupported dependencies, security/support issues, slow feedback, erosion, repeated overlays, platform incompatibility or user request. Identify the problem before technology, with current/target state, observed cost, alternatives, evidence/counterevidence, affected meaning/relevance/units, compatibility, phases, rollback, cleanup, risk and confidence. Reject fashion-driven changes when current fit costs less, support is immature, migration exceeds recurring pain, scale benefits are speculative, rationale mismatches local constraints, or reversibility/evidence is weak. Approved modernization becomes a semantic change with appropriate transition obligations; it is not persisted-format upgrade readiness."
+    }
+  ],
+  "recipient_head": "f588a638dfa56c0b23f351b2c9f99f9cfd855876",
+  "recipient_dirty": true,
+  "limitations": [
+    "Installed bundle tests and release source are absent.",
+    "External source freshness was not checked; claims concern captured 0.6.0 bytes.",
+    "No donor workspace, target analysis, UI run or local inference was performed."
+  ]
+}

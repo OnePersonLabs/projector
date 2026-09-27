@@ -5,6 +5,8 @@ import { FileTransactionJournal, RepositoryPathService } from "@projector/runtim
 import { ChangeLifecycleStore } from "../change-lifecycle/store.js";
 import type { ApplicationEvidencePort } from "../knowledge/application-evidence.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
+import type { KnowledgeContextResult, KnowledgeReconciliationResult } from "../knowledge/types.js";
+import { KnowledgeContextAgentViewSchema, KnowledgeReconciliationAgentViewSchema, projectKnowledgeContext, projectKnowledgeReconciliation } from "../knowledge/transport.js";
 import { KnowledgeContextStore } from "../knowledge/store.js";
 import { RepositoryRepresentationInspectionService } from "../representation/service.js";
 
@@ -22,6 +24,7 @@ const evidenceSchema = z.strictObject({
 export const RepositoryContinuationSchema = z.strictObject({
   readOnly: z.literal(true),
   context: z.strictObject({ contextId: z.string(), status: freshnessSchema, governance: z.enum(["conformant", "violated", "unknown", "not-applicable"]) }).optional(),
+  restoration: z.strictObject({ meaning: KnowledgeReconciliationAgentViewSchema, context: KnowledgeContextAgentViewSchema.optional() }).optional(),
   lifecycle: z.strictObject({ changeSelector: z.string(), approvalSelector: z.string().optional(), status: z.enum(["unresolved", "recovery-required", "completed", "unknown"]), planFreshness: freshnessSchema }).optional(),
   advisoryNotes: z.strictObject({ status: z.literal("unobservable"), reason: z.string() }),
   evidence: z.array(evidenceSchema).max(50),
@@ -46,12 +49,13 @@ function isMissing(error: unknown): boolean {
 }
 
 /** Re-observes existing owners. This projection has no durable continuation state. */
-export async function inspectRepositoryContinuation(repositoryRoot: string, request: RepositoryContinuationRequest, options: { readonly signal?: AbortSignal; readonly applicationEvidence?: ApplicationEvidencePort } = {}): Promise<RepositoryContinuation> {
+export async function inspectRepositoryContinuation(repositoryRoot: string, request: RepositoryContinuationRequest, options: { readonly signal?: AbortSignal; readonly applicationEvidence?: ApplicationEvidencePort; readonly reconcileContext?: (retained: KnowledgeContextResult) => Promise<KnowledgeReconciliationResult> } = {}): Promise<RepositoryContinuation> {
   const input = ProjectorOperationInputSchemas.cleanup.parse(request);
   const signal = options.signal ?? new AbortController().signal;
   signal.throwIfAborted();
   const evidence: Evidence[] = [];
   let context: RepositoryContinuation["context"];
+  let restoration: RepositoryContinuation["restoration"];
   let lifecycle: RepositoryContinuation["lifecycle"];
   let nextAction: RepositoryContinuation["nextAction"] = null;
   let reason = "Inspect the cleanup questions for unresolved accepted work; no lifecycle authority was selected.";
@@ -74,9 +78,11 @@ export async function inspectRepositoryContinuation(repositoryRoot: string, requ
       nextAction = operation("context", { request: capture?.request ?? `Recover current meaning for the unavailable saved context ${contextId}`, persist: true });
       reason = "Retrieve current meaning before reusing unavailable saved reasoning.";
     } else {
-      const service = await RepositoryKnowledgeService.create({ repositoryRoot, ...(options.applicationEvidence === undefined ? {} : { applicationEvidence: options.applicationEvidence }) });
-      const reconciled = await service.reconcile(retained.id, { signal });
+      const reconciled = options.reconcileContext === undefined
+        ? await (await RepositoryKnowledgeService.create({ repositoryRoot, ...(options.applicationEvidence === undefined ? {} : { applicationEvidence: options.applicationEvidence }) })).reconcile(retained.id, { signal })
+        : await options.reconcileContext(retained);
       context = { contextId: retained.id, status: freshness(reconciled.status), governance: reconciled.governance.status };
+      restoration = { meaning: KnowledgeReconciliationAgentViewSchema.parse(projectKnowledgeReconciliation(reconciled)), ...(["current", "rebound"].includes(reconciled.status) ? { context: KnowledgeContextAgentViewSchema.parse(projectKnowledgeContext(retained)) } : {}) };
       for (const item of [{ id: "discovery", validation: reconciled.discoveryValidation }, ...reconciled.branches.map(({ branchId, validation }) => ({ id: branchId, validation }))]) {
         const bound = item.id === "discovery" ? retained.discoveryBinding : retained.branches.find(({ id }) => id === item.id)!.closure.boundState;
         evidence.push({ id: `${retained.id}:${item.id}`, owner: "knowledge", status: freshness(item.validation.status), availability: "present", required: true, reason: item.validation.reasons.join("; ") || "Bound values and query results remain current.", binding: { status: item.validation.status, compiledAgainst: bound.compiledAgainst, currentState: item.validation.currentState }, inspect: operation("reconcile", { contextId: retained.id }) });
@@ -183,7 +189,7 @@ export async function inspectRepositoryContinuation(repositoryRoot: string, requ
   const selected = evidence.slice(offset, offset + limit);
   const nextOffset = offset + selected.length < evidence.length ? offset + selected.length : null;
   return RepositoryContinuationSchema.parse({
-    readOnly: true, ...(context === undefined ? {} : { context }), ...(lifecycle === undefined ? {} : { lifecycle }),
+    readOnly: true, ...(context === undefined ? {} : { context }), ...(restoration === undefined ? {} : { restoration }), ...(lifecycle === undefined ? {} : { lifecycle }),
     advisoryNotes: { status: "unobservable", reason: "The selected existing owners do not name advisory notes. No note discovery or absence claim is inferred." },
     evidence: selected,
     counts: { current: evidence.filter(({ status }) => status === "current").length, stale: evidence.filter(({ status }) => status === "stale").length, unknown: evidence.filter(({ status }) => status === "unknown").length },

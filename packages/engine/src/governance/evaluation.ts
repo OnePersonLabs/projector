@@ -91,17 +91,12 @@ function canonicalPath(value: unknown): string | undefined {
 
 /** Evaluates data from an observer. Canonical strings never become executable commands. */
 export function evaluateEffectiveRuleBundle(bundle: EffectiveRuleBundle, observation: GovernanceObservation, options: GovernanceEvaluationOptions = {}): GovernanceBundleEvaluation {
-  const validatorFindings = new Map<string, ExternalGovernanceValidatorFinding>();
-  for (const finding of options.validatorFindings ?? []) {
-    if (finding.unitId !== bundle.unitId) continue;
-    if (validatorFindings.has(finding.validatorId)) throw new Error(`duplicate validator observation ${finding.validatorId} for ${bundle.unitId}`);
-    validatorFindings.set(finding.validatorId, finding);
-  }
-  const validatorCheck = (validatorId: string): Check => {
-    const finding = validatorFindings.get(validatorId);
-    return finding === undefined ? check("unknown", `Validator ${validatorId} has no registered evaluator for this rule.`)
-      : check(finding.status, finding.reason, finding.evidenceIds);
-  };
+  return prepareGovernanceEvaluator(observation, options.validatorFindings)(bundle, options);
+}
+
+/** A private observation snapshot and indexes, reused only within the caller's request. */
+export function prepareGovernanceEvaluator(input: GovernanceObservation, findings: readonly ExternalGovernanceValidatorFinding[] = []): (bundle: EffectiveRuleBundle, options?: Omit<GovernanceEvaluationOptions, "validatorFindings">) => GovernanceBundleEvaluation {
+  const observation = structuredClone(input);
   const subjects = new Map<string, SelectorSubject>();
   for (const subject of observation.subjects) {
     if (subjects.has(subject.id)) throw new Error(`duplicate governance subject ${subject.id}`);
@@ -120,92 +115,120 @@ export function evaluateEffectiveRuleBundle(bundle: EffectiveRuleBundle, observa
     unitIds,
     unitEnumeration: observation.unitEnumeration,
     dependencyEnumerations: [...enumerations.values()].sort((a, b) => a.unitId < b.unitId ? -1 : 1),
-    ...(validatorFindings.size === 0 ? {} : { validatorFindings: unique([...validatorFindings.values()]) }),
   };
-  const observationHash = hashFramedDomain("governance-observation", normalized);
-  const subject = subjects.get(bundle.unitId);
-  const enumeration = enumerations.get(bundle.unitId);
-  const outgoing = dependencies.filter(edge => edge.fromUnitId === bundle.unitId);
-  const suppressed = new Set(bundle.suppressedRules.map(({ ruleId }) => ruleId));
-  const rules = bundle.rules.filter(rule => isHardRule(rule) && !suppressed.has(rule.id));
-  const allowed = rules.filter(rule => rule.effect !== "forbid").flatMap(rule => rule.predicates)
-    .filter((predicate): predicate is Extract<NormalizedPredicate, { kind: "dependency-allowed" }> => predicate.kind === "dependency-allowed");
-
-  const evaluate = (predicate: NormalizedPredicate): Check => {
-    if (subject === undefined) return check("unknown", "The governed unit is not present in the observation.");
-    if (predicate.kind === "validator") return validatorCheck(predicate.validatorId);
-    if (predicate.kind === "path-under" || predicate.kind === "path-not-under") {
-      const path = canonicalPath(subject.values.path);
-      const root = canonicalPath(predicate.root);
-      if (path === undefined || root === undefined) return check("unknown", "A canonical repository path or predicate root is unavailable.");
-      const under = path === root || path.startsWith(`${root}/`);
-      const satisfied = predicate.kind === "path-under" ? under : !under;
-      return check(satisfied ? "satisfied" : "violated", `${path} ${under ? "is" : "is not"} under ${root}.`, subject.dependencyKeys);
-    }
-    if (predicate.kind === "dependency-forbidden" || predicate.kind === "dependency-allowed") {
-      const from = matches(predicate.from, subject);
-      if (from === undefined) return check("unknown", "Dependency source selector facts are incomplete.");
-      if (!from) return check("satisfied", "The dependency predicate does not apply to this source.");
-      let incomplete = !eligible(enumeration?.contract) || (enumeration?.unknowns.length ?? 0) > 0;
-      const allowedTargets = allowed.filter(item => matches(item.from, subject) === true).map(item => item.to);
-      const unknownAllowedSource = allowed.some(item => matches(item.from, subject) === undefined);
-      const violationEvidence: string[] = [];
-      const violatedSpecifiers: string[] = [];
-      for (const edge of outgoing) {
-        const target = edge.toSubjectId === undefined ? undefined : subjects.get(edge.toSubjectId);
-        if (target === undefined) { incomplete = true; continue; }
-        const targetMatches = predicate.kind === "dependency-forbidden"
-          ? matches(predicate.to, target) : matches({ op: "any", items: allowedTargets }, target);
-        if (targetMatches === undefined) { incomplete = true; continue; }
-        const violation = predicate.kind === "dependency-forbidden" ? targetMatches : !targetMatches;
-        if (violation && predicate.kind === "dependency-allowed" && unknownAllowedSource) { incomplete = true; continue; }
-        if (violation) { violatedSpecifiers.push(edge.specifier); violationEvidence.push(...edge.evidenceIds); }
+  const baseObservationHash = hashFramedDomain("governance-observation", normalized);
+  const outgoingByUnit = new Map<string, GovernanceDependency[]>();
+  for (const edge of dependencies) {
+    const outgoing = outgoingByUnit.get(edge.fromUnitId) ?? [];
+    outgoing.push(edge); outgoingByUnit.set(edge.fromUnitId, outgoing);
+  }
+  const findingsByUnit = new Map<string, ExternalGovernanceValidatorFinding[]>();
+  for (const finding of structuredClone(findings)) {
+    const unitFindings = findingsByUnit.get(finding.unitId) ?? [];
+    unitFindings.push(finding); findingsByUnit.set(finding.unitId, unitFindings);
+  }
+  const validatorObservations = new Map<string, { findings: ReadonlyMap<string, ExternalGovernanceValidatorFinding>; hash: ContentHash }>();
+  return (bundle, options = {}) => {
+    let validatorObservation = validatorObservations.get(bundle.unitId);
+    if (validatorObservation === undefined) {
+      const unitFindings = new Map<string, ExternalGovernanceValidatorFinding>();
+      for (const finding of findingsByUnit.get(bundle.unitId) ?? []) {
+        if (unitFindings.has(finding.validatorId)) throw new Error(`duplicate validator observation ${finding.validatorId} for ${bundle.unitId}`);
+        unitFindings.set(finding.validatorId, finding);
       }
-      if (violatedSpecifiers.length > 0) return check("violated", `Observed dependencies violate the boundary: ${strings(violatedSpecifiers).join(", ")}.`, violationEvidence);
-      if (incomplete) return check("unknown", `Dependency conformance is not established: ${enumeration?.unknowns.join("; ") || "incomplete dependency observations"}.`);
-      return check("satisfied", "Observed dependencies satisfy the predicate within the declared enumeration boundary.", outgoing.flatMap(edge => edge.evidenceIds));
+      validatorObservation = { findings: unitFindings, hash: unitFindings.size === 0 ? baseObservationHash : hashFramedDomain("governance-observation", { ...normalized, validatorFindings: unique([...unitFindings.values()]) }) };
+      validatorObservations.set(bundle.unitId, validatorObservation);
     }
-    if (predicate.kind === "cardinality") {
-      const { min, max } = predicate;
-      if ((min === undefined && max === undefined) || [min, max].some(value => value !== undefined && (!Number.isSafeInteger(value) || value < 0))
-        || (min !== undefined && max !== undefined && min > max)) return check("unknown", "Invalid cardinality bounds.");
-      const selections = unitIds.map(id => matches(predicate.selector, subjects.get(id)!));
-      const count = selections.filter(value => value === true).length;
-      if (max !== undefined && count > max) return check("violated", `${count} observed members exceed maximum ${max}.`);
-      if (!eligible(observation.unitEnumeration) || selections.includes(undefined)) return check("unknown", `Only ${count} members are known in an incomplete universe.`);
-      if (min !== undefined && count < min) return check("violated", `${count} members are below minimum ${min}.`);
-      return check("satisfied", `${count} observed members satisfy cardinality.`);
-    }
-    return check("unknown", `Predicate ${predicate.kind} has no registered evaluator.`);
-  };
+    const validatorCheck = (validatorId: string): Check => {
+      const finding = validatorObservation.findings.get(validatorId);
+      return finding === undefined ? check("unknown", `Validator ${validatorId} has no registered evaluator for this rule.`)
+        : check(finding.status, finding.reason, finding.evidenceIds);
+    };
+    const observationHash = validatorObservation.hash;
+    const subject = subjects.get(bundle.unitId);
+    const enumeration = enumerations.get(bundle.unitId);
+    const outgoing = outgoingByUnit.get(bundle.unitId) ?? [];
+    const suppressed = new Set(bundle.suppressedRules.map(({ ruleId }) => ruleId));
+    const rules = bundle.rules.filter(rule => isHardRule(rule) && !suppressed.has(rule.id));
+    const allowed = rules.filter(rule => rule.effect !== "forbid").flatMap(rule => rule.predicates)
+      .filter((predicate): predicate is Extract<NormalizedPredicate, { kind: "dependency-allowed" }> => predicate.kind === "dependency-allowed");
 
-  const findings: GovernanceFinding[] = [];
-  const add = (ruleId: string, predicate: unknown, result: Check) => {
-    const predicateHash = hashFramedDomain("governance-predicate", predicate);
-    const id = hashFramedDomain("governance-finding", { unitId: bundle.unitId, ruleId, predicateHash, ...result });
-    findings.push({ id, unitId: bundle.unitId, ruleId, predicateHash, ...result });
+    const evaluate = (predicate: NormalizedPredicate): Check => {
+      if (subject === undefined) return check("unknown", "The governed unit is not present in the observation.");
+      if (predicate.kind === "validator") return validatorCheck(predicate.validatorId);
+      if (predicate.kind === "path-under" || predicate.kind === "path-not-under") {
+        const path = canonicalPath(subject.values.path);
+        const root = canonicalPath(predicate.root);
+        if (path === undefined || root === undefined) return check("unknown", "A canonical repository path or predicate root is unavailable.");
+        const under = path === root || path.startsWith(`${root}/`);
+        const satisfied = predicate.kind === "path-under" ? under : !under;
+        return check(satisfied ? "satisfied" : "violated", `${path} ${under ? "is" : "is not"} under ${root}.`, subject.dependencyKeys);
+      }
+      if (predicate.kind === "dependency-forbidden" || predicate.kind === "dependency-allowed") {
+        const from = matches(predicate.from, subject);
+        if (from === undefined) return check("unknown", "Dependency source selector facts are incomplete.");
+        if (!from) return check("satisfied", "The dependency predicate does not apply to this source.");
+        let incomplete = !eligible(enumeration?.contract) || (enumeration?.unknowns.length ?? 0) > 0;
+        const allowedTargets = allowed.filter(item => matches(item.from, subject) === true).map(item => item.to);
+        const unknownAllowedSource = allowed.some(item => matches(item.from, subject) === undefined);
+        const violationEvidence: string[] = [];
+        const violatedSpecifiers: string[] = [];
+        for (const edge of outgoing) {
+          const target = edge.toSubjectId === undefined ? undefined : subjects.get(edge.toSubjectId);
+          if (target === undefined) { incomplete = true; continue; }
+          const targetMatches = predicate.kind === "dependency-forbidden"
+            ? matches(predicate.to, target) : matches({ op: "any", items: allowedTargets }, target);
+          if (targetMatches === undefined) { incomplete = true; continue; }
+          const violation = predicate.kind === "dependency-forbidden" ? targetMatches : !targetMatches;
+          if (violation && predicate.kind === "dependency-allowed" && unknownAllowedSource) { incomplete = true; continue; }
+          if (violation) { violatedSpecifiers.push(edge.specifier); violationEvidence.push(...edge.evidenceIds); }
+        }
+        if (violatedSpecifiers.length > 0) return check("violated", `Observed dependencies violate the boundary: ${strings(violatedSpecifiers).join(", ")}.`, violationEvidence);
+        if (incomplete) return check("unknown", `Dependency conformance is not established: ${enumeration?.unknowns.join("; ") || "incomplete dependency observations"}.`);
+        return check("satisfied", "Observed dependencies satisfy the predicate within the declared enumeration boundary.", outgoing.flatMap(edge => edge.evidenceIds));
+      }
+      if (predicate.kind === "cardinality") {
+        const { min, max } = predicate;
+        if ((min === undefined && max === undefined) || [min, max].some(value => value !== undefined && (!Number.isSafeInteger(value) || value < 0))
+          || (min !== undefined && max !== undefined && min > max)) return check("unknown", "Invalid cardinality bounds.");
+        const selections = unitIds.map(id => matches(predicate.selector, subjects.get(id)!));
+        const count = selections.filter(value => value === true).length;
+        if (max !== undefined && count > max) return check("violated", `${count} observed members exceed maximum ${max}.`);
+        if (!eligible(observation.unitEnumeration) || selections.includes(undefined)) return check("unknown", `Only ${count} members are known in an incomplete universe.`);
+        if (min !== undefined && count < min) return check("violated", `${count} members are below minimum ${min}.`);
+        return check("satisfied", `${count} observed members satisfy cardinality.`);
+      }
+      return check("unknown", `Predicate ${predicate.kind} has no registered evaluator.`);
+    };
+
+    const findings: GovernanceFinding[] = [];
+    const add = (ruleId: string, predicate: unknown, result: Check) => {
+      const predicateHash = hashFramedDomain("governance-predicate", predicate);
+      const id = hashFramedDomain("governance-finding", { unitId: bundle.unitId, ruleId, predicateHash, ...result });
+      findings.push({ id, unitId: bundle.unitId, ruleId, predicateHash, ...result });
+    };
+    for (const rule of rules) {
+      for (const predicate of unique(rule.predicates)) {
+        add(rule.id, predicate, ["require", "validate", "restrict"].includes(rule.effect)
+          ? evaluate(predicate) : check("unknown", `Rule effect ${rule.effect} has no registered execution semantics.`));
+      }
+      for (const validatorId of strings(rule.validatorIds)) {
+        const builtin = validatorId === "projector.builtin.static-dependency-boundary@1" && rule.predicates.length > 0
+          && rule.predicates.every(predicate => predicate.kind === "dependency-forbidden" || predicate.kind === "dependency-allowed");
+        if (!builtin) add(rule.id, { validatorId }, validatorCheck(validatorId));
+      }
+    }
+    const referencedValidators = new Set(rules.flatMap((rule) => [...rule.validatorIds, ...rule.predicates.flatMap((predicate) => predicate.kind === "validator" ? [predicate.validatorId] : [])]));
+    for (const validatorId of strings(options.requiredValidatorIds ?? [])) {
+      if (!referencedValidators.has(validatorId)) add(`validator:${validatorId}`, { validatorId }, validatorCheck(validatorId));
+    }
+    for (const conflict of bundle.conflicts) add(conflict.ruleIds.join(","), conflict, check("violated", conflict.explanation, conflict.evidenceIds));
+    const ordered = unique(findings);
+    const status = ordered.some(item => item.status === "violated") ? "violated"
+      : ordered.length === 0 || ordered.some(item => item.status === "unknown") ? "unknown" : "conformant";
+    const boundary = strings([observation.unitEnumeration.method, ...observation.unitEnumeration.assumptions, ...observation.unitEnumeration.blindSpots,
+      ...(enumeration === undefined ? [] : [enumeration.contract.method, ...enumeration.contract.assumptions, ...enumeration.contract.blindSpots])]);
+    const result = { unitId: bundle.unitId, status, findings: ordered, boundary, observationHash } as const;
+    return { ...result, contentHash: hashFramedDomain("governance-bundle-evaluation", result) };
   };
-  for (const rule of rules) {
-    for (const predicate of unique(rule.predicates)) {
-      add(rule.id, predicate, ["require", "validate", "restrict"].includes(rule.effect)
-        ? evaluate(predicate) : check("unknown", `Rule effect ${rule.effect} has no registered execution semantics.`));
-    }
-    for (const validatorId of strings(rule.validatorIds)) {
-      const builtin = validatorId === "projector.builtin.static-dependency-boundary@1" && rule.predicates.length > 0
-        && rule.predicates.every(predicate => predicate.kind === "dependency-forbidden" || predicate.kind === "dependency-allowed");
-      if (!builtin) add(rule.id, { validatorId }, validatorCheck(validatorId));
-    }
-  }
-  const referencedValidators = new Set(rules.flatMap((rule) => [...rule.validatorIds, ...rule.predicates.flatMap((predicate) => predicate.kind === "validator" ? [predicate.validatorId] : [])]));
-  for (const validatorId of strings(options.requiredValidatorIds ?? [])) {
-    if (!referencedValidators.has(validatorId)) add(`validator:${validatorId}`, { validatorId }, validatorCheck(validatorId));
-  }
-  for (const conflict of bundle.conflicts) add(conflict.ruleIds.join(","), conflict, check("violated", conflict.explanation, conflict.evidenceIds));
-  const ordered = unique(findings);
-  const status = ordered.some(item => item.status === "violated") ? "violated"
-    : ordered.length === 0 || ordered.some(item => item.status === "unknown") ? "unknown" : "conformant";
-  const boundary = strings([observation.unitEnumeration.method, ...observation.unitEnumeration.assumptions, ...observation.unitEnumeration.blindSpots,
-    ...(enumeration === undefined ? [] : [enumeration.contract.method, ...enumeration.contract.assumptions, ...enumeration.contract.blindSpots])]);
-  const result = { unitId: bundle.unitId, status, findings: ordered, boundary, observationHash } as const;
-  return { ...result, contentHash: hashFramedDomain("governance-bundle-evaluation", result) };
 }

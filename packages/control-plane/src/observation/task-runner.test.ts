@@ -34,7 +34,7 @@ describe("terminable observation worker", () => {
 
   it("rejects an oversized derived response instead of publishing it", async () => {
     await expect(runObservationTask("canonical", { sources: [] }, { limits, deadline: Date.now() + 10_000, maxDerivedBytes: 32 }))
-      .rejects.toThrow(/derived-data limit/u);
+      .rejects.toMatchObject({ code: "observation-limit-exceeded", stage: "derived-data", scope: ".", limit: "maxDerivedBytes", observed: expect.any(Number) });
   });
 
   it("terminates and drains a worker before returning a cancellation", async () => {

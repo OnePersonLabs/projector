@@ -17,3 +17,4 @@ export * from "./schemas/application-evidence-binding.js";
 export * from "./schemas/application-evidence-assessment.js";
 export * from "./schemas/application-observation.js";
 export * from "./schemas/representation-artifact.js";
+export * from "./schemas/completion-audit.js";

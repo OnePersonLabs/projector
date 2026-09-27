@@ -15,6 +15,9 @@ import { RepositoryChangeLifecycleService } from "./service.js";
 import { adjudicatedKnowledgeContext } from "./identity-adjudication.js";
 import { ChangeLifecycleStore } from "./store.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
+import * as observationTasks from "../observation/task-runner.js";
+import { compileRepositoryChange } from "./compiler.js";
+import { observeChangeRepository } from "./repository-observer.js";
 
 const exec = promisify(execFile);
 
@@ -96,6 +99,105 @@ function authority(id: string, subjectId: string): AuthorityRecord {
 }
 
 describe("repository change lifecycle service", () => {
+  it("accepts equivalent repository root spelling without accepting another repository observation", async () => {
+    const root = await repository();
+    try {
+      const equivalent = `${root.replaceAll("\\", "/")}/.`;
+      const service = await RepositoryChangeLifecycleService.create(equivalent);
+      const captured = await service.capture({ request: "Change greeting", proposal: proposal() });
+      const observation = await observeChangeRepository(root);
+      const input = { repositoryRoot: equivalent, request: "Change greeting", proposal: proposal(), ...(captured.compiled.knowledgeContext === undefined ? {} : { knowledgeContext: captured.compiled.knowledgeContext }) };
+      await expect(compileRepositoryChange(input, { observation })).resolves.toMatchObject({ executionKind: "repository-code" });
+      await expect(compileRepositoryChange({ ...input, repositoryRoot: join(root, "different") }, { observation })).rejects.toThrow("Compilation observation belongs to a different repository");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("reconsiders only exact unchanged missing decision baselines through an explicit canonical authority revision", async () => {
+    const root = await repository();
+    try {
+      const files = new CanonicalFileRepository(root);
+      const authorityRecord = { ...authority("authority:change", "concern:change"), reconsiderWhen: [{ type: "requirement-changed", subjectId: "requirement:legacy-greeting" }, { type: "scope-expanded", scopeKey: "src" }] };
+      const decision = { id: "decision:change", key: "change", concernId: "concern:change", title: "Greeting strategy", decision: "Preserve greeting ownership.", selectedOptionKey: "greeting", scope: { op: "atom", field: "path", matcher: "glob", value: "src/**" }, lifecycle: "active", authorityRecordId: authorityRecord.id, governanceBasis: [], consequences: [], appliedPreferences: [], supersedesDecisionIds: [] };
+      const concern = { id: decision.concernId, key: "change-concern", title: "Greeting ownership", question: "Where does greeting behavior belong?", scope: decision.scope, sourceClass: "authored", status: "resolved", materiality: "blocking-now", activationReasons: [], relatedConceptIds: [], relatedRequirementIds: ["requirement:legacy-greeting"], decisionIds: [decision.id], evidence: [] };
+      for (const [kind, payload, lifecycle] of [["architecture-concern", concern, "resolved"], ["architecture-decision", decision, "active"], ["authority-record", authorityRecord, "approved"]] as const) {
+        await files.write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind, id: payload.id, key: payload.key, lifecycle, payload: { ...payload, semanticHash: placeholder } }));
+      }
+      const knowledge = await RepositoryKnowledgeService.create(root);
+      const context = await knowledge.context({ request: "Explicitly reconsider greeting strategy", entities: [decision.id] });
+      const before = (await files.read("authority-record", authorityRecord.id))!;
+      const { semanticHash: _hash, discoveryHash: _discovery, ...payload } = before.payload;
+      const revision = { kind: "authority-record", operation: "revise", expectedSemanticHash: before.semanticHash, expectedDocumentHash: before.canonicalDocumentHash, payload: { ...payload, rationale: "Reaffirm after reviewing the complete current greeting scope." }, rationale: "Accept the current exact trigger observations." };
+      const proposed = { apiVersion: "projector.change-proposal/v1", architecture: null, analysisFacets: ["behavior", "architecture"], canonicalMutations: [revision] };
+      const service = await RepositoryChangeLifecycleService.create(root);
+      const reconciliation = await knowledge.reconcile(context.id);
+      expect(reconciliation.status).toBe("suspect");
+      expect(reconciliation.governance.status).toBe("unknown");
+      expect(reconciliation.governance.branches.flatMap(({ decisionValidity }) => decisionValidity ?? []).some(({ baseline }) => baseline.kind === "unavailable")).toBe(true);
+      await expect(service.capture({ request: "Change code", proposal: proposal(), knowledgeContextId: context.id })).rejects.toThrow(/binding is suspect/iu);
+      const unrelatedRequirement = (await files.read("requirement", "requirement:legacy-greeting"))!;
+      const { semanticHash: _requirementHash, discoveryHash: _requirementDiscovery, ...requirementPayload } = unrelatedRequirement.payload;
+      await expect(service.capture({ request: "Revise unrelated meaning", proposal: { ...proposed, canonicalMutations: [{ kind: "requirement", operation: "revise", expectedSemanticHash: unrelatedRequirement.semanticHash, expectedDocumentHash: unrelatedRequirement.canonicalDocumentHash, payload: { ...requirementPayload, statement: "The greeting includes the supplied name and punctuation." }, rationale: "Clarify greeting behavior." }] }, knowledgeContextId: context.id })).rejects.toThrow(/binding is suspect/iu);
+      const reconcile = RepositoryKnowledgeService.prototype.reconcile;
+      for (const invalidEvidence of ["unrelated-query", "changed-fingerprint", "unsupported-lane"] as const) {
+        const spy = vi.spyOn(RepositoryKnowledgeService.prototype, "reconcile").mockImplementation(async function (this: RepositoryKnowledgeService, ...args) {
+          const result = await reconcile.apply(this, args);
+          const unknown = result.branches.flatMap(({ validation }) => validation.observations ?? []).find((observed) => observed.kind === "query" && observed.status === "unknown");
+          if (unknown?.kind !== "query" || unknown.currentResult === undefined) throw new Error("test requires actual missing-baseline query evidence");
+          if (invalidEvidence === "unrelated-query") unknown.dependency.query.programId = "projector.knowledge.other-unavailable-query";
+          if (invalidEvidence === "changed-fingerprint") unknown.currentResult.resultHash = placeholder;
+          if (invalidEvidence === "unsupported-lane") {
+            unknown.dependency.priorResult.unavailableLanes.push("unsupported validator evidence");
+            unknown.currentResult.unavailableLanes.push("unsupported validator evidence");
+          }
+          return result;
+        });
+        try {
+          await expect(service.capture({ request: "Reaffirm without substituting unknown evidence", proposal: proposed, knowledgeContextId: context.id })).rejects.toThrow(/binding is suspect/iu);
+        } finally { spy.mockRestore(); }
+      }
+      const captured = await service.capture({ request: "Reaffirm greeting strategy", proposal: proposed, knowledgeContextId: context.id });
+      // The allowance does not manufacture a current binding or baseline.
+      expect((await knowledge.reconcile(context.id)).status).toBe("suspect");
+      const approved = await service.approve(captured.capture.semanticChangeId, captured.capture.planHash);
+      await writeFile(join(root, "src/new-member.mjs"), "export const additional = true;\n");
+      await expect(service.apply(approved.id)).rejects.toThrow(/stale|binding|dependencies/iu);
+      expect((await files.read("authority-record", authorityRecord.id))!.canonicalDocumentHash).toBe(before.canonicalDocumentHash);
+      await rm(join(root, "src/new-member.mjs"));
+      const accepted = await service.apply(approved.id);
+      expect(accepted.outcome, accepted.reasons.join("; ")).toBe("success");
+      expect(accepted.validations).toEqual(expect.arrayContaining([expect.objectContaining({ validatorId: "projector.canonical-decision-baselines", status: "passed" })]));
+      const fresh = await knowledge.context({ request: "Use reconsidered greeting strategy", entities: [decision.id] });
+      expect((await knowledge.reconcile(fresh.id)).status).toBe("current");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("shares one capture observation but refuses a source change after retained knowledge reconciliation", async () => {
+    const root = await repository();
+    const observations = vi.spyOn(observationTasks, "runObservationTask");
+    const storeCapture = vi.spyOn(ChangeLifecycleStore.prototype, "capture");
+    const reconcile = RepositoryKnowledgeService.prototype.reconcile;
+    let intercepted: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      const knowledge = await RepositoryKnowledgeService.create(root);
+      const context = await knowledge.context({ request: "Change greeting.", entities: ["requirement:legacy-greeting", "scenario:greet-supplied-name"] });
+      const lifecycle = await RepositoryChangeLifecycleService.create(root);
+      observations.mockClear();
+      const captured = await lifecycle.capture({ request: "Change greeting.", proposal: proposal(), knowledgeContextId: context.id });
+      expect(observations.mock.calls.filter(([type]) => type === "observe")).toHaveLength(1);
+      expect(observations.mock.calls.filter(([type]) => type === "knowledge-reconcile")).toHaveLength(1);
+      expect(captured.capture.stateBinding.compiledAgainst).toEqual(context.capturedState);
+      intercepted = vi.spyOn(RepositoryKnowledgeService.prototype, "reconcile").mockImplementation(async function (this: RepositoryKnowledgeService, contextId, options) {
+        expect(options?.observation).toBeDefined();
+        const result = await reconcile.call(this, contextId, options);
+        await writeFile(join(root, "src/late-consumer.mjs"), "import { greet } from './greeting.mjs'; export const greeting = greet();\n");
+        return result;
+      });
+      await expect(lifecycle.capture({ request: "Change greeting.", proposal: proposal(), knowledgeContextId: context.id })).rejects.toThrow("Repository changed during lifecycle compilation or knowledge reconciliation");
+      expect(storeCapture).toHaveBeenCalledTimes(1);
+      expect(await readFile(join(root, "src/greeting.mjs"), "utf8")).toBe(proposal().edits[0]!.before);
+    } finally { intercepted?.mockRestore(); storeCapture.mockRestore(); observations.mockRestore(); await rm(root, { recursive: true, force: true }); }
+  });
+
   it("reuses an exact reviewed direct context but rebuilds a narrower selection", async () => {
     const root = await repository();
     try {

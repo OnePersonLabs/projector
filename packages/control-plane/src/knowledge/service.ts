@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import {
   canonicalJson,
   hashFramedDomain,
@@ -18,7 +20,7 @@ import {
 } from "@projector/engine";
 import { currentObservationScope, withObservationScope, withDerivedCacheAdmission, type DerivedCacheWrite } from "@projector/runtime";
 
-import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
+import { observeChangeRepository, observeRepositoryState } from "../change-lifecycle/repository-observer.js";
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
 import { KnowledgeGraph } from "./graph.js";
 import { buildRepositoryImpactSnapshot, impactReference, impactSnapshotWrite, readRepositoryImpactSnapshot, reconcileRetainedImpact, type RepositoryImpactSnapshot } from "../impact/service.js";
@@ -55,23 +57,30 @@ const unique = (values: readonly string[]): string[] => [...new Set(values)].sor
 export function createKnowledgeComputeHostHandler(observation: ChangeRepositoryObservation, host: KnowledgeDecisionHost & KnowledgeValidatorHost & { readonly applicationEvidence?: ApplicationEvidencePort } = {}): (request: KnowledgeHostRequest, signal: AbortSignal) => Promise<unknown> {
   const baselines = new DecisionBaselineReader(observation);
   let validators: KnowledgeValidatorRun | undefined;
-  return async (request, signal) => {
+  const handle = async (request: KnowledgeHostRequest, signal: AbortSignal): Promise<unknown> => {
     const scope = currentObservationScope()!;
     const combined = AbortSignal.any([scope.signal, signal, AbortSignal.timeout(Math.max(1, scope.budget.remainingMs()))]);
     return withObservationScope({ signal: combined }, async () => {
     switch (request.type) {
-      case "coverage-continuation": return inspectRepositoryContinuation(observation.repositoryRoot, request.request, { signal: combined, ...(host.applicationEvidence === undefined ? {} : { applicationEvidence: host.applicationEvidence }) });
+      case "coverage-continuation": return inspectRepositoryContinuation(observation.repositoryRoot, request.request, {
+        signal: combined, ...(host.applicationEvidence === undefined ? {} : { applicationEvidence: host.applicationEvidence }),
+        reconcileContext: async (retained) => {
+          const { independentValidator: _validator, ...data } = observation;
+          return runObservationTask("knowledge-reconcile", { observation: data, retained, now: (host.now ?? (() => new Date().toISOString()))(), ...(host.acceptedDecisionBaselines === undefined ? {} : { acceptedDecisionBaselines: host.acceptedDecisionBaselines }) }, { ...currentObservationScope()!, onHostRequest: handle });
+        },
+      });
       case "baseline": return baselines.read(request.decision, request.authority);
       case "validators": {
         validators ??= new KnowledgeValidatorRun(observation, combined, host);
         return { findings: await validators.evaluateAll(request.requests), executed: validators.executed };
       }
       case "application-evidence": return assessKnowledgeApplicationEvidence({ observation, ownerIds: request.ownerIds, signal: combined, ...(host.applicationEvidence === undefined ? {} : { port: host.applicationEvidence }) });
-      case "fresh-state": return (await observeChangeRepository(observation.repositoryRoot)).state;
+      case "fresh-state": return observeRepositoryState(observation);
       case "read-impact": return readRepositoryImpactSnapshot(observation.repositoryRoot, request.reference);
     }
     });
   };
+  return handle;
 }
 
 const defaultPolicy: Required<KnowledgeContextPolicy> = {
@@ -182,13 +191,14 @@ export class RepositoryKnowledgeService {
   ) {}
 
   static async create(input: string | ({ readonly repositoryRoot: string; readonly applicationEvidence?: ApplicationEvidencePort } & KnowledgeDecisionHost & KnowledgeValidatorHost)): Promise<RepositoryKnowledgeService> {
-    const repositoryRoot = typeof input === "string" ? input : input.repositoryRoot;
+    const repositoryRoot = resolve(typeof input === "string" ? input : input.repositoryRoot);
     return new RepositoryKnowledgeService(repositoryRoot, await KnowledgeContextStore.create(repositoryRoot), typeof input === "string" ? {} : input);
   }
 
-  async context(input: KnowledgeContextRequest): Promise<KnowledgeContextResult> {
+  async context(input: KnowledgeContextRequest, options: { readonly observation?: ChangeRepositoryObservation } = {}): Promise<KnowledgeContextResult> {
     return withObservationScope({ ...(input.signal === undefined ? {} : { signal: input.signal }) }, async (scope) => {
-      const observation = await observeChangeRepository(this.repositoryRoot);
+      const observation = options.observation ?? await observeChangeRepository(this.repositoryRoot);
+      if (observation.repositoryRoot !== this.repositoryRoot) throw new Error("Knowledge observation belongs to a different repository");
       const { independentValidator: _validator, ...data } = observation;
       const { signal: _signal, ...request } = input;
       const prepared = await runObservationTask("knowledge-context", { observation: data, request, now: (this.host.now ?? (() => new Date().toISOString()))(), ...(this.host.acceptedDecisionBaselines === undefined ? {} : { acceptedDecisionBaselines: this.host.acceptedDecisionBaselines }) }, {
@@ -362,10 +372,11 @@ export class RepositoryKnowledgeService {
     return this.store!.read(contextId);
   }
 
-  async reconcile(contextId: string, options: { readonly signal?: AbortSignal } = {}): Promise<KnowledgeReconciliationResult> {
+  async reconcile(contextId: string, options: { readonly signal?: AbortSignal; readonly observation?: ChangeRepositoryObservation } = {}): Promise<KnowledgeReconciliationResult> {
     return withObservationScope(options, async (scope) => {
       const retained = await this.store!.read(contextId);
-      const observation = await observeChangeRepository(this.repositoryRoot);
+      const observation = options.observation ?? await observeChangeRepository(this.repositoryRoot);
+      if (observation.repositoryRoot !== this.repositoryRoot) throw new Error("Knowledge observation belongs to a different repository");
       const { independentValidator: _validator, ...data } = observation;
       return runObservationTask("knowledge-reconcile", { observation: data, retained, now: (this.host.now ?? (() => new Date().toISOString()))(), ...(this.host.acceptedDecisionBaselines === undefined ? {} : { acceptedDecisionBaselines: this.host.acceptedDecisionBaselines }) }, { ...scope, onHostRequest: this.hostRequests(observation) });
     });

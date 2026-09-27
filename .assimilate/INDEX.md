@@ -1,11 +1,6 @@
 # Working synthesis
 
-**September 20 delivery:** start with [implementation and verification](IMPLEMENTATION.md),
-[capability decisions](CAPABILITY-DECISIONS.md), and the [reconstruction](rehearsal/README.md).
-The user stopped further evaluation to protect usage quota and prioritized the
-software finish line. Large-project comparative value remains untested.
-
-> **Current ownership:** This Markdown fileset is assimilation's own working synthesis. Its topic notes and references do not share identity, schema, lifecycle, or authority with Projector's accepted concept records. Some topics describe ideas *about* Projector, including its concept system. That subject matter does not make them Projector records. This draft still needs a full fidelity review.
+> **Current ownership:** This Markdown fileset is assimilation's own working synthesis. Its topic notes and references do not share identity, schema, lifecycle, or authority with Projector's accepted concept records. Some topics describe ideas *about* Projector, including its concept system. That subject matter does not make them Projector records.
 
 This is the self-contained working synthesis maintained by assimilation. It explores a development system that can retain, refine, and apply a complex conception without requiring any one agent to hold it all at once. It preserves an immediately useful assimilation workflow and a more ambitious Projector research direction. It is not an accepted Projector implementation specification or a claim that the proposed mechanisms already work.
 
@@ -36,6 +31,8 @@ An interesting mechanism is not automatically a requirement. Markdown, learned m
 
 ## Where this stands
 
-This is a modular synthesis trial, not an exhaustive accepted Projector specification. Historical repository assessments have not been re-audited, model-allocation suggestions are not measured rankings, and no performance or losslessness claim is established. Some supplied conversation bodies were capped and some referenced generated files were unavailable; the synthesis cannot guarantee recovery of their missing details.
+The fidelity review of the captured twelve-chat corpus is complete. All identified material gaps were corrected, and an independent reader recovered the design and its authority boundaries from the index and six topic notes without the source archive. The [review record](intake/reviews/coverage-gaps.md) states the checked scope and evidence limits.
 
-The [source interpretation rules](SOURCE-INTERPRETATION.md) explain how old chat language is translated. The [assimilation-to-change workflow](WORKFLOW.md) defines how mature findings can enter Projector's existing change path without sharing identity. The [durable intake](intake/STATE.md) retains recoverable source evidence for this long-running work. The [next-work frontier](FRONTIER.md) keeps immediate work small. Individual topic notes retain the detail needed to pursue the broader ambition.
+This remains a working design, not an exhaustive accepted Projector specification. Historical repository assessments have not been re-audited, model-allocation suggestions are not measured rankings, and no performance or losslessness claim is established. Some supplied conversation bodies were capped and some referenced generated files were unavailable; the synthesis cannot guarantee recovery of their missing details. The separate pile-synthesis pack retains its own review limits, and [code-ontology intake](intake/code-ontology-3d-view.md) remains queued.
+
+The [source interpretation rules](SOURCE-INTERPRETATION.md) explain how old chat language is translated. The [assimilation-to-change workflow](WORKFLOW.md) defines how mature findings can enter Projector's existing change path without sharing identity. The [durable intake](intake/STATE.md) retains recoverable source evidence for this long-running work. Individual topic notes retain the detail needed to pursue the broader ambition.

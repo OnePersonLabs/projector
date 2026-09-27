@@ -1,12 +1,14 @@
 import { AnalyzerFailureSchema, ContentHashSchema, CoverageLaneSchema, CoverageSnapshotSchema, StateBindingSchema, StateBindingValidationSchema, type AnalyzerFailure, type ContentHash, type CoverageSnapshot, type StateBinding, type StateBindingValidation } from "@projector/core";
 import { z } from "zod";
+import { CompletionAssessmentSchema, CompletionRepairAlternativeSchema, CompletionRepairRouteSchema } from "@projector/core";
 import type { CompletionQuestion } from "./issues.js";
 import { KnowledgeApplicationEvidenceAssessmentSchema, type KnowledgeApplicationEvidenceAssessment } from "../knowledge/application-evidence.js";
 import { RepositoryContinuationSchema, type RepositoryContinuation } from "./continuation.js";
 
 export const CompletionQuestionSchema = z.object({
   id: z.string(), kind: z.enum(["governance", "unmapped-group", "unrealized-requirement", "unrealized-scenario", "realization-binding", "identity-overlap", "architecture-concern"]), blocking: z.boolean(), ownerIds: z.array(z.string()), affectedCount: z.number().int().nonnegative(), subjectCount: z.number().int().nonnegative(), examples: z.array(z.string()), question: z.string(), reasons: z.array(z.string()), reasonCount: z.number().int().nonnegative(), evidenceHash: ContentHashSchema,
-  resolution: z.object({ context: z.object({ command: z.literal("context"), request: z.string(), entities: z.array(z.string()), namedTargets: z.array(z.string()) }).strict(), route: z.literal("canonical-proposal"), instruction: z.string() }).strict(),
+  assessment: CompletionAssessmentSchema,
+  resolution: z.object({ context: z.object({ command: z.literal("context"), request: z.string(), entities: z.array(z.string()), namedTargets: z.array(z.string()) }).strict(), route: CompletionRepairRouteSchema, instruction: z.string(), alternatives: z.array(CompletionRepairAlternativeSchema) }).strict(),
 }).strict();
 
 const disclosureSchema = z.object({ total: z.number().int().nonnegative(), included: z.number().int().nonnegative(), omitted: z.number().int().nonnegative(), blocking: z.number().int().nonnegative() }).strict();

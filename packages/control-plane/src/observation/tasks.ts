@@ -9,7 +9,17 @@ import type { DecisionBaselineDataInput, DecisionBaselineDataResult } from "../k
 import type { RepositoryCoverageRequest } from "../coverage/service.js";
 import type { RepositoryCoverageMode, RepositoryCoverageResult } from "../coverage/transport.js";
 import type { computeRepositoryArchitecture } from "../knowledge/architecture-inspection.js";
-import type { AdapterContext, ContentHash, StateQuerySpec, StateQueryResultFingerprint } from "@projector/core";
+import type { AdapterContext, ContentHash, ObservationLimits, StateQuerySpec, StateQueryResultFingerprint } from "@projector/core";
+
+export interface ObservationTaskFailure {
+  readonly message: string;
+  readonly name?: string;
+  readonly code?: string;
+  readonly stage?: string;
+  readonly scope?: string;
+  readonly limit?: keyof ObservationLimits;
+  readonly observed?: number;
+}
 import type { CalculatedRepositoryRelevance, RepositoryRelevanceObservation } from "../change-lifecycle/query-programs.js";
 
 export type RepositoryObservationData = Omit<ChangeRepositoryObservation, "independentValidator">;

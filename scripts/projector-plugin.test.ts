@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, test } from "vitest";
 
-const sourcePluginRoot = resolve(import.meta.dirname, "../plugins/projector");
+const sourcePluginRoot = resolve(import.meta.dirname, "../plugins/projector-v3");
 const roots: string[] = [];
 
 afterEach(async () => {

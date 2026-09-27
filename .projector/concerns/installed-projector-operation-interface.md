@@ -69,7 +69,7 @@ value = "packages/control-plane/src/readiness/**"
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "plugins/projector/**"
+value = "plugins/projector-v3/**"
 
 [[scope.items]]
 op = "atom"

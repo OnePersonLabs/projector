@@ -5,6 +5,7 @@ import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import type { KnowledgeContextResult } from "../knowledge/types.js";
 import type { ApplicationEvidencePort } from "../knowledge/application-evidence.js";
 import type { CompiledRepositoryChange } from "./compiler.js";
+import type { ChangeRepositoryObservation } from "./repository-observer.js";
 
 const normalize = (value: string): string => value.normalize("NFKC").trim().toLocaleLowerCase("en-US");
 const durableKinds = new Set(["concept", "requirement", "behavioral-scenario", "architecture-decision", "architecture-concern", "developer-preference", "projection-lens"]);
@@ -76,11 +77,11 @@ export async function captureKnowledgeContextId(repositoryRoot: string, request:
 }
 
 /** Materialize selected candidate branches using the same context machinery and store. */
-export async function adjudicatedKnowledgeContext(repositoryRoot: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, applicationEvidence?: ApplicationEvidencePort): Promise<KnowledgeContextResult | undefined> {
+export async function adjudicatedKnowledgeContext(repositoryRoot: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, applicationEvidence?: ApplicationEvidencePort, observation?: ChangeRepositoryObservation): Promise<KnowledgeContextResult | undefined> {
   signal?.throwIfAborted();
   if (contextId === undefined) {
     if (proposal.identityResolution !== undefined) throw new Error("identity resolution requires its retained candidate context");
-    const snapshot = await new CanonicalFileRepository(repositoryRoot).snapshot();
+    const snapshot = observation?.canonical ?? await new CanonicalFileRepository(repositoryRoot).snapshot();
     signal?.throwIfAborted();
     if (snapshot.documents.some(({ kind }) => durableKinds.has(kind))) throw new Error("existing canonical meaning requires retained pre-edit knowledge; recapture this change");
     return undefined;
@@ -98,7 +99,7 @@ export async function adjudicatedKnowledgeContext(repositoryRoot: string, propos
   } else if (!retained.branches.some(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)) {
     throw new Error("knowledge context has no direct, accepted, usable interpretation branch; supply a reviewed identityResolution");
   }
-  const required = existingAddresses(proposal, (await new CanonicalFileRepository(repositoryRoot).snapshot()).documents);
+  const required = existingAddresses(proposal, (observation?.canonical ?? await new CanonicalFileRepository(repositoryRoot).snapshot()).documents);
   signal?.throwIfAborted();
   const covered = coveredIds(retained);
   if (resolution === undefined && required.every((id) => covered.has(id))) return retained;
@@ -115,7 +116,7 @@ export async function adjudicatedKnowledgeContext(repositoryRoot: string, propos
   // Bring every explicitly preserved/revised existing subject into the actual
   // governing context. An unrelated supplied context cannot omit its obligations.
   const selected = await knowledge.context({ request: retained.request, entities, namedTargets: retained.requestOptions.namedTargets,
-    operation: retained.operation, policy: { ...retained.requestOptions.policy, maxCandidates: Math.max(retained.requestOptions.policy.maxCandidates, entities.length + retained.requestOptions.namedTargets.length) }, ...(signal === undefined ? {} : { signal }) });
+    operation: retained.operation, policy: { ...retained.requestOptions.policy, maxCandidates: Math.max(retained.requestOptions.policy.maxCandidates, entities.length + retained.requestOptions.namedTargets.length) }, ...(signal === undefined ? {} : { signal }) }, observation === undefined ? {} : { observation });
   signal?.throwIfAborted();
   const directIds = new Set(selected.branches
     .filter(({ hypothesis, interpretation }) => !hypothesis && interpretation.direct)

@@ -1,6 +1,6 @@
 import { parentPort } from "node:worker_threads";
 import { assertBoundedObservationData } from "./data-bound.js";
-import type { ObservationTask } from "./tasks.js";
+import type { ObservationTask, ObservationTaskFailure } from "./tasks.js";
 import type { KnowledgeComputeHost, KnowledgeHostRequest } from "./knowledge-host.js";
 import { hashFramedDomain, ObservationError, DerivedObservationBudget } from "@projector/core";
 
@@ -10,7 +10,7 @@ let maxDerivedBytes = 0;
 let busy = false;
 let requestId = 0;
 const requests = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
-parentPort!.on("message", (message: WorkerTaskRequest | { id: number; ok: boolean; result?: unknown; error?: { message: string; name?: string; code?: string; stage?: string; scope?: string } }) => {
+parentPort!.on("message", (message: WorkerTaskRequest | { id: number; ok: boolean; result?: unknown; error?: ObservationTaskFailure }) => {
   if ("task" in message) { void run(message); return; }
   const request = requests.get(message.id);
   if (request === undefined) return;
@@ -18,7 +18,7 @@ parentPort!.on("message", (message: WorkerTaskRequest | { id: number; ok: boolea
   if (message.ok) request.resolve(message.result);
   else {
     const error = message.error?.code === "observation-limit-exceeded" || message.error?.code === "observation-failed"
-      ? new ObservationError(message.error.code, message.error.stage ?? "host", message.error.scope ?? ".", message.error.message)
+      ? new ObservationError(message.error.code, message.error.stage ?? "host", message.error.scope ?? ".", message.error.message, message.error.limit, message.error.observed)
       : new Error(message.error?.message ?? "Knowledge host operation failed");
     error.name = message.error?.name ?? error.name;
     request.reject(error);
@@ -112,7 +112,7 @@ async function run(request: WorkerTaskRequest): Promise<void> {
     assertBoundedObservationData(result, maxDerivedBytes, deadline);
     parentPort!.postMessage({ ok: true, result });
   } catch (error) {
-    const failure = error as { message?: string; name?: string; code?: string; stage?: string; scope?: string };
-    parentPort!.postMessage({ ok: false, error: { message: failure.message ?? String(error), name: failure.name, code: failure.code, stage: failure.stage, scope: failure.scope } });
+    const failure = error as Partial<ObservationTaskFailure>;
+    parentPort!.postMessage({ ok: false, error: { message: failure.message ?? String(error), name: failure.name, code: failure.code, stage: failure.stage, scope: failure.scope, limit: failure.limit, observed: failure.observed } });
   } finally { busy = false; }
 }

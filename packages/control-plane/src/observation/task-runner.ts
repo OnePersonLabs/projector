@@ -4,7 +4,7 @@ import { AsyncResource } from "node:async_hooks";
 import { ObservationError, type ObservationLimits } from "@projector/core";
 import { currentObservationScope, type ObservationScope } from "@projector/runtime";
 import { assertBoundedObservationData } from "./data-bound.js";
-import type { ObservationTaskInputs, ObservationTaskResults } from "./tasks.js";
+import type { ObservationTaskFailure, ObservationTaskInputs, ObservationTaskResults } from "./tasks.js";
 import type { KnowledgeHostRequest } from "./knowledge-host.js";
 
 export interface ObservationTaskOptions {
@@ -93,7 +93,7 @@ export async function runObservationTask<K extends keyof ObservationTaskInputs>(
         ? new ObservationError("observation-limit-exceeded", type, ".", "Observation worker exceeded maxWorkerHeapMiB; explicitly revise the finite allowance to retry.", "maxWorkerHeapMiB", maxWorkerHeapMiB)
         : error);
       const onExit = (code: number): void => reject(new Error(`Observation worker exited before returning ${type} (code ${code})`));
-      const onMessage = (message: { started?: boolean; hostRequest?: KnowledgeHostRequest; id?: number; ok: boolean; result?: ObservationTaskResults[K]; error?: { message: string; name?: string; code?: string; stage?: string; scope?: string } }): void => {
+      const onMessage = (message: { started?: boolean; hostRequest?: KnowledgeHostRequest; id?: number; ok: boolean; result?: ObservationTaskResults[K]; error?: ObservationTaskFailure }): void => {
         if (message.started === true) {
           try { options.onWorkerStarted?.(worker.threadId); } catch (error) { reject(error); }
           return;
@@ -107,8 +107,8 @@ export async function runObservationTask<K extends keyof ObservationTaskInputs>(
               assertBoundedObservationData(result, maxDerivedBytes, options.deadline);
               worker.postMessage({ id: message.id, ok: true, result });
             } catch (error) {
-              const failure = error as { message?: string; name?: string; code?: string; stage?: string; scope?: string };
-              worker.postMessage({ id: message.id, ok: false, error: { message: failure.message ?? String(error), name: failure.name, code: failure.code, stage: failure.stage, scope: failure.scope } });
+              const failure = error as Partial<ObservationTaskFailure>;
+              worker.postMessage({ id: message.id, ok: false, error: { message: failure.message ?? String(error), name: failure.name, code: failure.code, stage: failure.stage, scope: failure.scope, limit: failure.limit, observed: failure.observed } });
             }
           })();
           activeHost.add(pending);
@@ -117,7 +117,7 @@ export async function runObservationTask<K extends keyof ObservationTaskInputs>(
         }
         if (Date.now() >= options.deadline) { reject(deadlineError(type)); return; }
         if (message.ok) { succeeded = true; resolve(message.result!); }
-        else if (message.error?.code === "observation-limit-exceeded" || message.error?.code === "observation-failed") reject(new ObservationError(message.error.code, message.error.stage ?? type, message.error.scope ?? ".", message.error.message));
+        else if (message.error?.code === "observation-limit-exceeded" || message.error?.code === "observation-failed") reject(new ObservationError(message.error.code, message.error.stage ?? type, message.error.scope ?? ".", message.error.message, message.error.limit, message.error.observed));
         else {
           const error = new Error(message.error?.message ?? "Observation worker failed");
           error.name = message.error?.name ?? "Error";

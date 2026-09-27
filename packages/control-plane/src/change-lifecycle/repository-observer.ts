@@ -6,6 +6,13 @@ import { runObservationTask } from "../observation/task-runner.js";
 import type { RepositoryObservationData } from "../observation/tasks.js";
 
 const operationalPrefix = ".projector/";
+const observationInputs = new WeakMap<ChangeRepositoryObservation, { identity: ContentHash; state: StateDigest }>();
+
+function inputIdentity(collected: Awaited<ReturnType<typeof collectLocalRepositoryInputs>>, canonicalSources: Awaited<ReturnType<typeof collectCanonicalSnapshotSources>>): ContentHash {
+  // Complete bytes, Git inputs, enumeration and exclusion descriptors. The same
+  // loaded analyzer/profile implementation produces both observations.
+  return hashFramedDomain("repository-observation-inputs", { collected, canonicalSources });
+}
 
 function governedPath(path: string): boolean {
   return path !== ".projector" && !path.startsWith(operationalPrefix);
@@ -83,7 +90,7 @@ export async function observeChangeRepository(repositoryRoot: string): Promise<C
     const canonicalSources = await collectCanonicalSnapshotSources(repositoryRoot, scope.budget, scope.signal);
     const data = await runObservationTask("observe", { collected, canonicalSources }, scope);
     const paths = await RepositoryPathService.create(repositoryRoot);
-    return {
+    const observation: ChangeRepositoryObservation = {
     ...data,
     async independentValidator(path) {
       scope.signal.throwIfAborted();
@@ -107,5 +114,24 @@ export async function observeChangeRepository(repositoryRoot: string): Promise<C
       };
     },
     };
+    observationInputs.set(observation, { identity: inputIdentity(collected, canonicalSources), state: structuredClone(data.state) });
+    scope.budget.check("state-input-capture");
+    scope.signal.throwIfAborted();
+    return observation;
+  });
+}
+
+/** Independently collect all inputs; reuse analysis only after exact input proof. */
+export async function observeRepositoryState(previous: ChangeRepositoryObservation): Promise<StateDigest> {
+  return withObservationScope({}, async (scope) => {
+    const prior = observationInputs.get(previous);
+    if (prior === undefined) return (await observeChangeRepository(previous.repositoryRoot)).state;
+    const collected = await collectLocalRepositoryInputs({ repositoryRoot: previous.repositoryRoot, budget: scope.budget, signal: scope.signal });
+    const canonicalSources = await collectCanonicalSnapshotSources(previous.repositoryRoot, scope.budget, scope.signal);
+    const identity = inputIdentity(collected, canonicalSources);
+    scope.budget.check("state-input-proof");
+    scope.signal.throwIfAborted();
+    if (identity === prior.identity) return structuredClone(prior.state);
+    return (await runObservationTask("observe", { collected, canonicalSources }, scope)).state;
   });
 }

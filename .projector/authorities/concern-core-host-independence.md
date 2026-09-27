@@ -22,6 +22,8 @@ createdAt = "2026-09-09T00:00:00.000Z"
 
 Reaffirm the existing static core dependency boundary after its scope-expansion trigger. Fresh retained context knowledge_context_6204acbaff99f456aa7e24800a87b41d (sha256:v1:5290553931fc3960115742786629db7b6204acbaff99f456aa7e24800a87b41d) observes the current packages/core/src scope and reports every applicable projection unit conformant with rule:core-static-dependencies, with zero relevance frontiers. The repository build and focused public-export producer tests passed at ddb2e815663d60670479d4ca1b24a53425589f87; pnpm check:boundaries, runtime typecheck, and all 46 transaction-journal tests pass through 01ff51a. This reaffirms only the existing core-host-independence decision and its current applicability; it does not claim runtime dependency completeness, complete implementation, or economic advantage.
 
+The September 27 supported-workflow completion reaffirms this static dependency boundary over the expanded Core scope, including completion-audit contracts and hashing helpers. Fresh retained context knowledge_context_f951e067f08a7b80b9264b99ea604f0c, the passing integrated build, pnpm verify (1,138 tests passed; 2 skipped), and its independent package-boundary check support the unchanged obligation. Core may use external libraries and internal Core modules; it must not statically import repository implementation packages. This acceptance establishes the new scope baseline without asserting completeness for dynamic imports or runtime dependencies.
+
 <details>
 <summary>Structured record details</summary>
 
@@ -72,6 +74,10 @@ stance = "supports"
 
 [[evidence]]
 evidenceId = "knowledge_context_6204acbaff99f456aa7e24800a87b41d"
+stance = "supports"
+
+[[evidence]]
+evidenceId = "knowledge_context_f951e067f08a7b80b9264b99ea604f0c"
 stance = "supports"
 
 ```

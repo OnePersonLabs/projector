@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { EnumerationContract, NormalizedPredicate, SelectorExpr } from "@projector/core";
+import { hashFramedDomain, type EnumerationContract, type NormalizedPredicate, type SelectorExpr } from "@projector/core";
 import { compileEffectiveRuleBundle } from "./rules.js";
-import { evaluateEffectiveRuleBundle, type GovernanceObservation } from "./evaluation.js";
+import { evaluateEffectiveRuleBundle, prepareGovernanceEvaluator, type GovernanceObservation } from "./evaluation.js";
 import { projectionUnit, rule } from "./test-fixtures.js";
 
 const path = (value: string): SelectorExpr => ({ op: "atom", field: "path", matcher: "glob", value });
@@ -20,6 +20,55 @@ function evaluate(predicates: NormalizedPredicate[], observed = observation(), v
 const forbidden: NormalizedPredicate = { kind: "dependency-forbidden", from: path("packages/core/**"), to: path("packages/engine/**") };
 
 describe("observed predicate evaluation", () => {
+  it("prepares the full observation once for many bundles and preserves the original observation hash", () => {
+    const observed = observation();
+    let subjectReads = 0;
+    const input = { ...observed, get subjects() { subjectReads += 1; return observed.subjects; } };
+    const prepared = prepareGovernanceEvaluator(input);
+    const expectedHash = hashFramedDomain("governance-observation", {
+      ...observed,
+      subjects: [...observed.subjects].sort((a, b) => a.id < b.id ? -1 : 1),
+    });
+    for (let index = 0; index < 32; index += 1) {
+      const bundle = compileEffectiveRuleBundle({ unit: projectionUnit("core"), operation: "reconcile", rules: [rule(`rule-${index}`, { selector: all, predicates: [forbidden] })] });
+      const result = prepared(bundle);
+      expect(result.status).toBe("conformant");
+      expect(result.observationHash).toBe(expectedHash);
+      expect(result).toEqual(evaluateEffectiveRuleBundle(bundle, observed));
+    }
+    expect(subjectReads).toBe(1);
+  });
+
+  it("keeps prepared observations and per-unit validator hashes independent of later caller mutation", () => {
+    const subjects = [subject("core", "packages/core/src/value.ts"), subject("engine", "packages/engine/src/value.ts")];
+    const contract = { ...closed, assumptions: ["Original observation."] };
+    const observed = observation({ subjects, unitEnumeration: contract });
+    const finding = { unitId: "core", validatorId: "check@1", status: "satisfied" as "satisfied" | "violated", reason: "Checked", evidenceIds: ["proof:1"] };
+    const otherFinding = { ...finding, unitId: "engine", reason: "Another unit", evidenceIds: ["proof:2"] };
+    const bundle = compileEffectiveRuleBundle({ unit: projectionUnit("core"), operation: "reconcile", rules: [rule("checked", { selector: all, predicates: [forbidden], validatorIds: [finding.validatorId] })] });
+    const prepared = prepareGovernanceEvaluator(observed, [finding, otherFinding]);
+    const first = prepared(bundle);
+    expect(first.status).toBe("conformant");
+    expect(first.observationHash).toBe(hashFramedDomain("governance-observation", {
+      ...observed, subjects: [...subjects].sort((a, b) => a.id < b.id ? -1 : 1), validatorFindings: [finding],
+    }));
+    subjects[0]!.values.path = "outside/value.ts";
+    contract.assumptions.push("Changed after preparation.");
+    finding.status = "violated";
+    finding.evidenceIds.push("proof:changed");
+    expect(prepared(bundle)).toEqual(first);
+    expect(evaluateEffectiveRuleBundle(bundle, observed, { validatorFindings: [finding, otherFinding] }).status).toBe("violated");
+    expect(evaluateEffectiveRuleBundle(bundle, observed, { validatorFindings: [finding, otherFinding] }).observationHash).not.toBe(first.observationHash);
+  });
+
+  it("rejects duplicate validator findings when their unit is evaluated and retains unknowns", () => {
+    const bundle = compileEffectiveRuleBundle({ unit: projectionUnit("core"), operation: "reconcile", rules: [rule("cardinality", { selector: all, predicates: [{ kind: "cardinality", selector: all, min: 1 }] })] });
+    const finding = { unitId: "engine", validatorId: "check@1", status: "satisfied" as const, reason: "Checked", evidenceIds: [] };
+    const prepared = prepareGovernanceEvaluator(observation({ unitEnumeration: { ...closed, observability: "open" } }), [finding, finding]);
+    expect(prepared(bundle).status).toBe("unknown");
+    expect(() => prepared({ ...bundle, unitId: "engine" })).toThrow("duplicate validator observation check@1 for engine");
+  });
+
   it("accepts different handwritten implementations and respects path segments", () => {
     const predicate: NormalizedPredicate = { kind: "path-under", root: "packages/core" };
     for (const file of ["packages/core/src/a.ts", "packages/core/other/b.ts"]) {

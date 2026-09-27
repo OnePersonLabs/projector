@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
-import { ChangeProposalSchema, type ProjectorOperation } from "@projector/core";
-import { RepositoryKnowledgeService, projectKnowledgeContext } from "@projector/control-plane";
+import { ChangeProposalSchema, type ProjectorOperation, type ProjectorOperationError } from "@projector/core";
+import { RepositoryKnowledgeService } from "@projector/control-plane";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { z } from "zod";
 
@@ -11,6 +11,7 @@ export const publicCommandHelp = `Projector: retrieve meaning, change with Codex
   projector init
   projector context "task" [--entity ID] [--target path] [--budget characters]
   projector check [CONTEXT]
+  projector audit [--scope PATH] [--context CONTEXT] [--question-offset N] [--json]
   projector accept proposal.json [--context CONTEXT] [--request "reason"]
   projector accept --apply CHANGE --hash HASH
   projector resume CONTEXT|CHANGE|APPROVAL
@@ -18,12 +19,14 @@ export const publicCommandHelp = `Projector: retrieve meaning, change with Codex
   projector recover APPROVAL | --access
 
 Use --root PATH for another repository, --json for exact machine results.
+Use --timeout-ms N for a bounded observation timeout per operation (default 60000).
 Accept first previews a canonical change. Apply names that exact reviewed plan.
 Resume only inspects and restores authenticated context. Recovery never applies.
+Audit observes bounded repository evidence and proposes repair routes. It never applies repairs.
 `;
 
 type ObjectValue = Record<string, unknown>;
-type OperationResult = { status: string; exitCode: number; output?: unknown; error?: { message: string }; readiness: { status: string; reason?: string } };
+type OperationResult = { status: string; exitCode: number; output?: unknown; error?: Pick<ProjectorOperationError, "message" | "observation">; readiness: { status: string; reason?: string } };
 export interface PublicCommandRunner {
   execute(request: unknown): Promise<OperationResult>;
 }
@@ -43,7 +46,7 @@ function argumentsFor(args: readonly string[]) {
       if (flags.has(argument)) throw new Error(`Duplicate option ${argument}`);
       flags.set(argument, ["true"]); continue;
     }
-    if (!["--root", "--entity", "--target", "--budget", "--context", "--request", "--apply", "--hash"].includes(argument)) throw new Error(`Unknown option ${argument}`);
+    if (!["--root", "--entity", "--target", "--budget", "--context", "--request", "--apply", "--hash", "--scope", "--question-offset", "--timeout-ms"].includes(argument)) throw new Error(`Unknown option ${argument}`);
     const value = args[++i];
     if (value === undefined || value.startsWith("--")) throw new Error(`${argument} requires a value`);
     const previous = flags.get(argument) ?? [];
@@ -206,6 +209,75 @@ export function renderPublicResult(command: string, value: unknown): string {
       }
     }
     if (command === "resume") lines.push("Inspection only. No changes applied and no authority renewed.");
+  } else if (command === "audit") {
+    const completion = object(result.completion);
+    const binding = object(result.bindingValidation);
+    const disclosure = object(completion.questionDisclosure);
+    const page = object(completion.questionPage);
+    lines.push("Read-only audit: source and canonical records are unchanged. Operational observation artifacts may be created.");
+    lines.push(`Evidence: ${string(result.proofStatement) || "not established"}; binding ${string(binding.status) || "unknown"}.`);
+    if (result.continuation !== undefined) {
+      const continuation = object(result.continuation);
+      const context = object(continuation.context);
+      const lifecycle = object(continuation.lifecycle);
+      if (string(context.contextId)) lines.push(`Retained context ${context.contextId}: ${string(context.status) || "unknown"}; governance ${string(context.governance) || "unknown"}.`);
+      if (string(lifecycle.changeSelector)) lines.push(`Retained change ${lifecycle.changeSelector}: ${string(lifecycle.status) || "unknown"}; plan ${string(lifecycle.planFreshness) || "unknown"}${string(lifecycle.approvalSelector) ? `; approval ${lifecycle.approvalSelector}` : ""}.`);
+      if (string(continuation.reason)) lines.push(`Continuation: ${continuation.reason}`);
+      for (const raw of array(continuation.evidence)) {
+        const evidence = object(raw);
+        lines.push(`Retained evidence ${string(evidence.id) || "unspecified"}: ${string(evidence.status) || "unknown"}; ${string(evidence.availability) || "availability unknown"}${string(evidence.reason) ? ` -- ${evidence.reason}` : ""}`);
+      }
+      const evidencePage = object(continuation.page);
+      if (typeof evidencePage.omitted === "number" && evidencePage.omitted > 0) lines.push(`Retained evidence: ${evidencePage.omitted} omitted${typeof evidencePage.nextOffset === "number" ? `; next offset ${evidencePage.nextOffset}` : ""}.`);
+      const advisory = object(continuation.advisoryNotes);
+      if (string(advisory.reason)) lines.push(`Advisory evidence (${string(advisory.status) || "unknown"}): ${advisory.reason}`);
+      for (const limit of array(continuation.limits).map(string).filter(Boolean)) lines.push(`Continuation limit: ${limit}`);
+      const next = object(continuation.nextAction);
+      if (string(next.operation)) lines.push(`Next supported operation: ${next.operation}; input ${JSON.stringify(next.input ?? {})}`);
+    }
+    for (const laneValue of array(result.lanes)) {
+      const lane = object(laneValue);
+      const ratio = typeof lane.numerator === "number" && typeof lane.denominator === "number" ? ` ${lane.numerator}/${lane.denominator}` : "";
+      lines.push(`Evidence ${string(lane.key) || "unnamed"}: ${string(lane.observability) || "unknown"}${ratio}`);
+      for (const blindSpot of array(lane.blindSpots).map(string).filter(Boolean)) lines.push(`Unresolved coverage: ${blindSpot}`);
+    }
+    const analysis = object(result.localAnalysis);
+    const realizations = object(analysis.realizations);
+    lines.push(`Observed files: ${analysis.artifactCount ?? "unknown"}; projection units: ${analysis.projectionUnitCount ?? "unknown"}; matched realizations: ${realizations.matched ?? "unknown"}, unmatched: ${realizations.unmatched ?? "unknown"}, unsupported: ${realizations.unsupported ?? "unknown"}, unavailable: ${realizations.unavailable ?? "unknown"}.`);
+    for (const surface of array(result.unavailableSurfaceIds).map(string).filter(Boolean)) lines.push(`Unsupported or unavailable surface: ${surface}`);
+    for (const failureValue of array(analysis.analyzerFailures)) {
+      const failure = object(failureValue);
+      lines.push(`Observation unavailable: ${string(failure.title) || string(failure.code) || "analyzer failure"}${string(failure.message) ? ` -- ${string(failure.message)}` : ""}`);
+    }
+    for (const limit of array(completion.limits).map(string).filter(Boolean)) lines.push(`Coverage limit: ${limit}`);
+    lines.push(`Application evidence: ${string(object(result.applicationEvidence).status) || "unknown"}.`);
+    const questions = array(completion.questions);
+    lines.push(`Questions: ${questions.length} shown; ${typeof disclosure.total === "number" ? disclosure.total : questions.length} total, ${typeof disclosure.omitted === "number" ? disclosure.omitted : 0} omitted${page.nextOffset === null || page.nextOffset === undefined ? "" : `; next offset ${page.nextOffset}`}.`);
+    for (const raw of questions) {
+      const question = object(raw);
+      const assessment = object(question.assessment);
+      lines.push(`${question.blocking === true ? "Blocking" : "Open"} ${string(question.kind) || "question"}${string(assessment.status) ? ` (${assessment.status}${string(assessment.category) ? `: ${assessment.category}` : ""})` : ""}: ${string(question.question)}`);
+      if (array(question.ownerIds).length) lines.push(`Owners: ${array(question.ownerIds).map(string).join(", ")}`);
+      for (const reason of array(question.reasons).map(string).filter(Boolean)) lines.push(`Evidence: ${reason}`);
+      const resolution = object(question.resolution);
+      if (string(resolution.route)) lines.push(`Repair route: ${string(resolution.route)}`);
+      for (const alternativeValue of array(resolution.alternatives)) {
+        const alternative = object(alternativeValue);
+        const capabilities = array(alternative.capabilityIds).map(string).filter(Boolean);
+        lines.push(`Repair option: ${string(alternative.strategy) || "unspecified"} (${string(alternative.status) || "unknown"})${string(alternative.reason) ? ` -- ${string(alternative.reason)}` : ""}${capabilities.length ? `; capabilities: ${capabilities.join(", ")}` : ""}`);
+      }
+      if (string(resolution.instruction)) lines.push(`Next: ${string(resolution.instruction)}`);
+    }
+    for (const item of array(completion.repairPlan)) {
+      const repair = object(item);
+      const resolution = object(repair.resolution);
+      lines.push(`Repair plan ${string(repair.order)}: ${string(repair.questionId)} via ${string(resolution.route) || "route unspecified"}`);
+      for (const alternativeValue of array(resolution.alternatives)) {
+        const alternative = object(alternativeValue);
+        lines.push(`Repair option: ${string(alternative.strategy) || "unspecified"} (${string(alternative.status) || "unknown"})${string(alternative.reason) ? ` -- ${string(alternative.reason)}` : ""}`);
+      }
+    }
+    lines.push("Supported next actions: inspect a named record, retrieve focused context, use an available repair route, or rerun audit after changes.");
   } else {
     lines.push(`${command}: ${string(result.outcome) || string(result.status) || string(object(result.readiness).status) || "completed"}`);
     lines.push(...describeMeaning(result), ...findings(result));
@@ -219,12 +291,18 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
   const command = values.shift();
   if (command === undefined || command === "help" || flags.has("--help")) return { exitCode: 0, output: { help: publicCommandHelp }, text: publicCommandHelp };
   const repositoryRoot = resolve(input.cwd, one("--root") ?? ".");
-  const allowed: Record<string,string[]> = { init: [], context: ["--entity","--target","--budget"], check: [], accept: ["--context","--request","--apply","--hash"], resume: [], inspect: [], recover: ["--access"] };
+  const allowed: Record<string,string[]> = { init: [], context: ["--entity","--target","--budget"], check: [], audit: ["--scope","--context","--question-offset"], accept: ["--context","--request","--apply","--hash"], resume: [], inspect: [], recover: ["--access"] };
   if (!(command in allowed)) throw new Error(`Unknown command ${command}. Use --help.`);
-  for (const flag of flags.keys()) if (!["--root","--json","--help",...allowed[command]!].includes(flag)) throw new Error(`${flag} does not apply to ${command}`);
+  for (const flag of flags.keys()) if (!["--root","--json","--help","--timeout-ms",...allowed[command]!].includes(flag)) throw new Error(`${flag} does not apply to ${command}`);
+  const timeoutMs = one("--timeout-ms") === undefined ? undefined : Number(one("--timeout-ms"));
+  if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)) throw new Error("--timeout-ms requires a positive safe integer in milliseconds");
   const call = async (operation: ProjectorOperation, requestInput: unknown) => {
-    const result = await input.runner.execute({ apiVersion: "projector.operation/v1", operation, repositoryRoot, input: requestInput });
-    if (result.status !== "succeeded") throw new Error(`${operation}: ${result.error?.message ?? result.readiness.reason ?? result.status}`);
+    const result = await input.runner.execute({ apiVersion: "projector.operation/v1", operation, repositoryRoot, input: requestInput, ...(timeoutMs === undefined ? {} : { observationLimits: { timeoutMs } }) });
+    if (result.status !== "succeeded") {
+      const observation = result.error?.observation;
+      const detail = observation === undefined ? "" : ` (${observation.stage} at ${observation.scope}${observation.limit === undefined ? "" : `; ${observation.limit}${observation.observed === undefined ? "" : ` observed ${observation.observed}`}`})`;
+      throw new Error(`${operation}: ${result.error?.message ?? result.readiness.reason ?? result.status}${detail}`);
+    }
     return result.output;
   };
   const exactValues = (count: number) => { if (values.length !== count) throw new Error(`${command} requires ${count} argument${count === 1 ? "" : "s"}. Use --help.`); };
@@ -239,6 +317,14 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
   } else if (command === "check") {
     if (values.length > 1) throw new Error("check accepts at most one retained context");
     output = { repository: await call("repository.check", { mode: "full" }), ...(values[0] === undefined ? {} : { meaning: await call("reconcile", { contextId: values[0] }) }) };
+  } else if (command === "audit") {
+    exactValues(0);
+    const absoluteScope = resolve(repositoryRoot, one("--scope") ?? ".");
+    const relativeScope = relative(repositoryRoot, absoluteScope);
+    if (relativeScope === ".." || relativeScope.startsWith(`..${sep}`) || isAbsolute(relativeScope)) throw new Error("--scope must stay within the selected repository root");
+    const questionOffset = one("--question-offset") === undefined ? 0 : Number(one("--question-offset"));
+    if (!Number.isSafeInteger(questionOffset) || questionOffset < 0) throw new Error("--question-offset requires a nonnegative safe integer");
+    output = await call("cleanup", { scope: relativeScope ? relativeScope.split(sep).join("/") : ".", questionOffset, ...(one("--context") === undefined ? {} : { contextId: one("--context") }) });
   } else if (command === "accept") {
     if (one("--apply") !== undefined) {
       exactValues(0);
@@ -266,12 +352,8 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
     const key = anchor.startsWith("knowledge_context_") ? "contextId" : anchor.startsWith("semantic_change_") ? "changeSelector" : anchor.startsWith("lifecycle_approval_") ? "approvalSelector" : undefined;
     if (key === undefined) throw new Error("resume requires an actual retained context, change or approval ID; it never guesses latest");
     const continuation = await call("cleanup", { [key]: anchor, evidenceLimit: 5 });
-    if (key === "contextId") {
-      const meaning = await call("reconcile", { contextId: anchor });
-      const retained = await (await RepositoryKnowledgeService.create(repositoryRoot)).read(anchor);
-      const status = string(object(meaning).status) || string(object(object(meaning).validation).status);
-      output = { continuation, meaning, ...(["current", "rebound"].includes(status) ? { context: projectKnowledgeContext(retained) } : {}) };
-    } else output = { continuation };
+    const restoration = object(object(object(continuation).continuation).restoration);
+    output = { continuation, ...(restoration.meaning === undefined ? {} : { meaning: restoration.meaning }), ...(restoration.context === undefined ? {} : { context: restoration.context }) };
   } else if (command === "inspect") {
     exactValues(1);
     const anchor = values[0]!;

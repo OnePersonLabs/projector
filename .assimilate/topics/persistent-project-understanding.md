@@ -40,6 +40,8 @@ Learned judgment must remain bound to the project state it concerns. Between an 
 
 The user's strongest adequacy criterion is semantic reconstructability: remove a meaningful implementation region and regenerate recognizably this project from its maintained conception and allowed external contracts. Success includes material behavior, architecture, ownership, exceptions, migration obligations, and relevant quality properties. A generic replacement passing a shallow suite is insufficient. Exact source duplication is unnecessary where implementation details are genuinely free to vary.
 
+The removed implementation must also be inaccessible through retrieval, caches, and tools. Otherwise the trial can recover old source without demonstrating reconstruction from the maintained conception.
+
 This horizon requires learning from implementation. A material decision discovered while coding must already follow from the conception or become retained, properly classified experience. Otherwise source code becomes the only place important choices survive. Further along the horizon, code can be one execution projection alongside specialized models and adaptive interfaces. Deterministic artifacts retain value for precision, latency, transactions, and efficient execution. Model-mediated runtime software is a further research scope, not a prerequisite for investigating learned development judgment.
 
 ## What would establish value
@@ -47,3 +49,5 @@ This horizon requires learning from implementation. A material decision discover
 The experiment must preserve coupled concepts and accumulated change. An isolated concept can test machinery but cannot establish the claimed system benefit. Evolving trials should include distant consequences, altered premises, legitimate exceptions, and attractive changes that damage another quality. [Semantic dynamics](semantic-dynamics.md) develops this target.
 
 Strong comparisons should share accepted evidence and developer input while varying curation, retrieval, a generic counterpart, and project training. Shared-intervention and compiled-context interfaces should also be compared without assuming their benefits are separable from learning. Track valid changes completed, consequential degradation, false objections, developer repair, and total cost across sustained trajectories. Curriculum production, training, local inference, communication, and verification all count. A learned counterpart earns its place through better project evolution; the unresolved questions are how reliably it learns, how it remains current, and where its benefit exceeds its burden.
+
+Include a strong frontier-model owner without a second model, using the same accepted evidence and developer input. This comparison distinguishes the value of learned project state from the benefit of adding another reasoner.

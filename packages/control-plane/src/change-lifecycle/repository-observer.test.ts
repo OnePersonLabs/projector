@@ -4,9 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { hashFramedDomain, withCanonicalHashes } from "@projector/core";
+import { CanonicalFileRepository, withObservationScope } from "@projector/runtime";
+import * as observationTasks from "../observation/task-runner.js";
 
-import { observeChangeRepository } from "./repository-observer.js";
+import { observeChangeRepository, observeRepositoryState } from "./repository-observer.js";
 
 const exec = promisify(execFile);
 
@@ -26,6 +29,61 @@ async function repository(): Promise<string> {
 }
 
 describe("change repository observer", () => {
+  it("reuses state only after complete independent input parity and otherwise matches full analysis", async () => {
+    const root = await repository();
+    const calls = vi.spyOn(observationTasks, "runObservationTask");
+    try {
+      let before = await observeChangeRepository(root);
+      calls.mockClear();
+      expect(await observeRepositoryState(before)).toEqual(before.state);
+      expect(calls).not.toHaveBeenCalled();
+      const changes = [
+        () => writeFile(join(root, "src/greeting.mjs"), "// @generated\nexport const greet = () => 'hi';\n"),
+        () => writeFile(join(root, "src/new.mjs"), "export const added = true;\n"),
+        () => rm(join(root, "src/new.mjs")),
+        async () => {
+          const hash = hashFramedDomain("state-parity-test", "requirement");
+          await new CanonicalFileRepository(root).write(withCanonicalHashes({ apiVersion: "projector/v3", schemaVersion: "3.0.0", kind: "requirement", id: "requirement:greeting", key: "greeting", lifecycle: "active", payload: { id: "requirement:greeting", key: "greeting", title: "Greeting", statement: "The greeting preserves its name.", aliases: [], status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, evidence: [], origin: [], discoveryHash: hash, semanticHash: hash } }));
+        },
+        async () => { await writeFile(join(root, ".gitignore"), "ignored.mjs\n"); await writeFile(join(root, "ignored.mjs"), "export const ignored = true;\n"); },
+        () => writeFile(join(root, ".gitignore"), "# Include the new file\n"),
+        async () => { await exec("git", ["add", "."], { cwd: root }); await exec("git", ["commit", "-qm", "changed inputs"], { cwd: root }); },
+      ];
+      for (const change of changes) {
+        await change();
+        calls.mockClear();
+        const state = await observeRepositoryState(before);
+        expect(calls.mock.calls.filter(([type]) => type === "observe")).toHaveLength(1);
+        const full = await observeChangeRepository(root);
+        expect(state).toEqual(full.state);
+        expect(state).not.toEqual(before.state);
+        before = full;
+      }
+      await writeFile(join(root, "excluded-noise.mjs"), "export const ignored = false;\n");
+      await writeFile(join(root, ".gitignore"), "excluded-noise.mjs\n");
+      const excluded = await observeChangeRepository(root);
+      await writeFile(join(root, "excluded-noise.mjs"), "export const ignored = 'unobserved';\n");
+      calls.mockClear();
+      expect(await observeRepositoryState(excluded)).toEqual(excluded.state);
+      expect(calls).not.toHaveBeenCalled();
+      const uncaptured = { ...excluded };
+      calls.mockClear();
+      expect(await observeRepositoryState(uncaptured)).toEqual(excluded.state);
+      expect(calls.mock.calls.filter(([type]) => type === "observe")).toHaveLength(1);
+    } finally { calls.mockRestore(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("retains collection limits and cancellation during state reuse proof", async () => {
+    const root = await repository();
+    try {
+      const before = await observeChangeRepository(root);
+      await expect(withObservationScope({ limits: { maxFiles: 1 } }, () => observeRepositoryState(before))).rejects.toMatchObject({ code: "observation-limit-exceeded", limit: "maxFiles" });
+      const controller = new AbortController();
+      controller.abort(new Error("state proof cancelled"));
+      await expect(async () => withObservationScope({ signal: controller.signal }, () => observeRepositoryState(before))).rejects.toThrow("state proof cancelled");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("derives real state and excludes operational Projector records", async () => {
     const root = await repository();
     try {

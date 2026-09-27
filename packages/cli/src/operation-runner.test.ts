@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  ObservationError,
   ProjectReadinessSchema,
   ProjectorOperationInputSchemas,
   ProjectorOperationRequestSchema,
@@ -95,6 +96,16 @@ function handler(
 }
 
 describe("bounded Projector operation runner", () => {
+  test("retains structured observation failure details for callers", async () => {
+    const root = await packagedRoot();
+    const runner = await createProjectorOperationRunner({ packagedRoot: root, ports: ports(), handlers: [handler("verify", async () => {
+      throw new ObservationError("observation-limit-exceeded", "javascript-normalization", "src/generated.js", "Derived allocation exceeded", "maxDerivedBytes", 67108890);
+    })] });
+    expect(await runner.execute(request("verify"))).toMatchObject({ status: "failed", error: {
+      code: "observation-limit-exceeded", message: "Derived allocation exceeded", retriable: false,
+      observation: { stage: "javascript-normalization", scope: "src/generated.js", limit: "maxDerivedBytes", observed: 67108890 },
+    } });
+  });
   test("accepts explicit finite observation limits without widening operation input", async () => {
     const root = await packagedRoot();
     const runner = await createProjectorOperationRunner({ packagedRoot: root, ports: ports(), handlers: [handler()] });

@@ -13,7 +13,7 @@ September 12, 2026. Read six files through EOF in bounded slices under `$project
 
 ## Material finding
 
-The economics handoff, lines 91–108 and 159, distinguishes rejected work from worthwhile-but-premature work: retain a known reactivation condition, such as interface stabilization or recurring demand. That condition does not authorize monitoring. `topics/quality-and-work-economics.md:17,57` discusses timing and deferral without this explicit obligation. Add the distinction in ordinary topic prose. No other material omission was established; context compilation, delivery idempotence, conceptual authority, and separate plugin ownership are represented.
+The economics handoff, lines 91–108 and 159, distinguishes rejected work from worthwhile-but-premature work: retain a known reactivation condition, such as interface stabilization or recurring demand. That condition does not authorize monitoring. The distinction is now explicit in `topics/quality-and-work-economics.md`. The final [fidelity review](coverage-gaps.md) also checked dependency-based sequencing and reconsideration of optional continuation. Context compilation, delivery idempotence, conceptual authority, and separate plugin ownership are represented.
 
 ## Useful historical lessons
 
@@ -21,4 +21,4 @@ Retain specific constraints through silent summary loss; distinguish supported e
 
 ## Limits
 
-These complete captures contain inherited truncation and unavailable-artifact reports. Referenced baseline excerpts, companion Borg amendment, revised prompts, and external research were not independently recovered or verified here. Completeness of these six files does not establish completeness of their upstream sources or close the nine outstanding turn-review receipts.
+These complete captures contain inherited truncation and unavailable-artifact reports. Referenced baseline excerpts, companion Borg amendment, revised prompts, and external research were not independently recovered or verified here. Completeness of these six files does not establish completeness of their upstream sources. The nine remaining turn units are accounted for in [remaining-turn-coverage.md](remaining-turn-coverage.md).

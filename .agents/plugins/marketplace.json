@@ -1,14 +1,14 @@
 {
-  "name": "projector",
+  "name": "projector-v3",
   "interface": {
-    "displayName": "Projector"
+    "displayName": "Projector V3"
   },
   "plugins": [
     {
-      "name": "projector",
+      "name": "projector-v3",
       "source": {
         "source": "local",
-        "path": "./.temp/local-marketplace/plugins/projector"
+        "path": "./plugins/projector-v3"
       },
       "policy": {
         "installation": "AVAILABLE",

@@ -63,13 +63,13 @@ value = "packages/cli/src/**"
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "plugins/projector/scripts/**"
+value = "plugins/projector-v3/scripts/**"
 
 [[scope.items]]
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "plugins/projector/hooks/**"
+value = "plugins/projector-v3/hooks/**"
 
 [[scope.items]]
 op = "atom"

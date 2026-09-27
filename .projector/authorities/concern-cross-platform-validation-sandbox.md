@@ -22,6 +22,8 @@ createdAt = "2026-09-09T17:00:00.000Z"
 
 Reaffirm host-configured native execution after the runtime-evidence wording revision. The revised requirement preserves actual host permissions, exact source and mutation integrity, explicit unavailable capabilities, caller cancellation and journaled recovery. It removes retired delivery topology; it does not introduce a confinement backend, a Windows-to-WSL bridge, or guarantees against hostile same-user interference.
 
+The September 27 supported-workflow completion reaffirms the current decision scope after the plugin relocation to plugins/projector-v3. The relocation preserves the accepted decision, permission boundary, and lifecycle obligations. Its new baseline must come from the reviewed canonical transaction, not from clearing incomplete query observations.
+
 <details>
 <summary>Structured record details</summary>
 

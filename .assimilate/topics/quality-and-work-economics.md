@@ -18,6 +18,8 @@ An additional investigation earns its place when the likely improvement in a con
 
 Reject work whose expected value does not justify its burden; distinguish that from useful work whose right time has not arrived. A meaningful deferral keeps the condition that would make reconsideration worthwhile, such as a stabilized interface or repeated demand. Recording that condition does not itself authorize a background monitor or create an obligation to keep checking it.
 
+Work can change the economics of other work: an enabling fix or uncertainty-reducing probe may belong before a dependent refactor or feature. At material checkpoints, reconsider optional continuation using current evidence; prior expenditure alone does not justify continuing. Stopping must preserve recovery, ownership, and truthful incomplete status.
+
 ## Keep ownership where understanding is coupled
 
 A strong owner should directly handle work whose implementation continues to discover architectural meaning. Splitting every difficult question into a consultation can lose the accumulated understanding needed to recognize the next problem. The owner must remain an implementer and integrator, not a ceremonial manager who repeatedly reconstructs delegated work.

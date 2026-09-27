@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { hashFramedDomain, hashSemantic, withCanonicalHashes, type ApplicationEvidencePort, type AuthorityRecord, type CanonicalDocumentEnvelope, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
 import { KnowledgeGraph } from "../knowledge/graph.js";
 import { deriveCompletionQuestions } from "./issues.js";
-import { inspectRepositoryCoverage } from "./service.js";
+import { computeRepositoryCoverage, inspectRepositoryCoverage } from "./service.js";
 import { RepositoryCleanupOutputSchema, RepositoryCompletionOutputSchema, RepositoryCoverageOutputSchema } from "./transport.js";
 
 const hash = hashFramedDomain("coverage-test", "fixture");
@@ -21,6 +21,54 @@ function authority(): AuthorityRecord {
 }
 
 describe("observed progressive coverage", () => {
+  it("evaluates many lenses from one repository observation while preserving each governing owner", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-coverage-many-lenses-"));
+    try {
+      await mkdir(join(root, "src"));
+      const lensIds = Array.from({ length: 12 }, (_, index) => `lens:boundary-${index}`);
+      for (const [index, id] of lensIds.entries()) {
+        await writeFile(join(root, `src/value-${index}.mjs`), "import '@forbidden/pkg';\n");
+        const lensScope = { ...scope, matcher: "equals" as const, value: `src/value-${index}.mjs` };
+        const authorityRecord = { ...authority(), id: `authority:boundary-${index}`, key: `boundary-${index}`, subjectId: id };
+        const basis = [{ kind: "hard-constraint" as const, conceptId: "concept:boundary" }];
+        const base = createRepositoryScriptLens({ id, status: "active", authorityRecordId: authorityRecord.id, selector: lensScope, governanceBasis: basis });
+        const lens = { ...base, rules: [{ id: `rule:boundary-${index}`, key: `boundary-${index}`, version: "1", effect: "validate" as const, authorityClass: "active-lens" as const, governanceBasis: basis, selector: lensScope,
+          predicates: [{ kind: "dependency-forbidden" as const, from: lensScope, to: { op: "atom" as const, field: "package" as const, matcher: "equals" as const, value: "@forbidden/pkg" } }], rationale: "Preserve boundary.", evidence: [], conflictPolicy: "error" as const, validatorIds: ["projector.builtin.static-dependency-boundary@1"], transformIds: [], semanticHash: hash }],
+          validators: [{ id: "projector.builtin.static-dependency-boundary", version: "1", provider: "deterministic-governance", input: { ruleIds: [`rule:boundary-${index}`] }, required: true }],
+          expectedProjections: base.expectedProjections.map((item) => ({ ...item, expectation: { kind: "predicate-constrained", predicateIds: [`rule:boundary-${index}`], validatorIds: ["projector.builtin.static-dependency-boundary@1"] } })) };
+        await canonical(root, "authority-record", { ...authorityRecord });
+        await canonical(root, "projection-lens", { ...lens });
+      }
+      const { independentValidator: _validator, ...observation } = await observeChangeRepository(root);
+      expect(new KnowledgeGraph(observation).lensCompilationUnknown).toBeUndefined();
+      const observationCalls = vi.spyOn(KnowledgeGraph.prototype, "governanceObservation");
+      const obligationCalls = vi.spyOn(KnowledgeGraph.prototype, "lensObligations");
+      const evaluationCalls = vi.spyOn(KnowledgeGraph.prototype, "governanceEvaluationsWithProvenance");
+      try {
+        const result = await computeRepositoryCoverage(observation, { scope: "." }, "complete", {
+          validators: async () => ({ findings: [], executed: false }),
+          applicationEvidence: async () => [],
+          freshState: async () => observation.state,
+          baseline: async () => { throw new Error("Unexpected decision baseline request"); },
+          continuation: async () => { throw new Error("Unexpected continuation request"); },
+          readImpact: async () => { throw new Error("Unexpected impact request"); },
+          stageImpact: () => { throw new Error("Unexpected impact staging"); },
+        }, "2026-09-27T00:00:00.000Z");
+        expect(observationCalls).toHaveBeenCalledTimes(1);
+        expect(obligationCalls).toHaveBeenCalledTimes(2); // Validator requests and the complete evaluation pass.
+        expect(evaluationCalls).toHaveBeenCalledTimes(1);
+        const evaluations = evaluationCalls.mock.results[0]!.value;
+        expect(evaluations).toHaveLength(lensIds.length);
+        expect(evaluations.map(({ lensId }: { lensId: string }) => lensId).sort()).toEqual([...lensIds].sort());
+        expect(evaluations.every(({ evaluation }: { evaluation: { status: string } }) => evaluation.status === "violated")).toBe(true);
+        expect(result.completion.questionDisclosure.blocking).toBeGreaterThanOrEqual(lensIds.length);
+        expect(result.lanes.find(({ key }) => key === "lens")).toMatchObject({ numerator: lensIds.length, denominator: lensIds.length });
+      } finally {
+        observationCalls.mockRestore(); obligationCalls.mockRestore(); evaluationCalls.mockRestore();
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("emits strict mode-specific transport results", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-coverage-transport-"));
     try {
@@ -74,6 +122,10 @@ describe("observed progressive coverage", () => {
       };
       const result = await inspectRepositoryCoverage(root, { scope: "." }, "coverage", { applicationEvidence });
       expect(result.applicationEvidence).toMatchObject({ status: "unknown", assessments: [{ status: "assessed", assessment: { fulfillment: { status: "unknown" } } }] });
+      const completion = await inspectRepositoryCoverage(root, { scope: "." }, "complete", { applicationEvidence });
+      expect(completion.completion.questions.find(({ assessment }) => assessment.category === "missing-evidence")).toMatchObject({ assessment: { status: "unknown" }, resolution: { route: "missing-evidence" } });
+      const unavailable = await inspectRepositoryCoverage(root, { scope: "." }, "complete");
+      expect(unavailable.completion.questions.find(({ assessment }) => assessment.status === "unavailable")).toMatchObject({ resolution: { route: "missing-evidence" } });
       expect(result.boundState.valueDependencies.map(({ id }) => id)).toEqual(expect.arrayContaining([
         "scenario:keep-reload-replay-owned-moment",
       ]));
@@ -122,6 +174,34 @@ describe("observed progressive coverage", () => {
       expect(realizedMembership.proofStatement).toBe("not-established");
     } finally { await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 }); }
   });
+  it("routes contradictory rules to meaning review and does not infer validator support from an unrelated predicate", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-coverage-conflict-"));
+    try {
+      await mkdir(join(root, "src"));
+      await writeFile(join(root, "src/value.mjs"), "export const value = 1;\n");
+      const base = createRepositoryScriptLens({ id: "lens:boundary", status: "active", authorityRecordId: authority().id, selector: scope, governanceBasis: [{ kind: "hard-constraint", conceptId: "concept:boundary" }] });
+      const firstRule = { ...base.rules[0]!, id: "rule:inside", key: "inside", selector: scope,
+        predicates: [{ kind: "path-under" as const, root: "src" }], validatorIds: [], transformIds: [] };
+      const lens: ProjectionLens = { ...base,
+        validators: [{ id: "projector.builtin.static-dependency-boundary", version: "1", provider: "deterministic-governance", input: { ruleIds: [firstRule.id] }, required: true }],
+        expectedProjections: base.expectedProjections.map((item) => ({ ...item, expectation: { kind: "predicate-constrained", predicateIds: [firstRule.id, "rule:outside"], validatorIds: ["projector.builtin.static-dependency-boundary@1"] } })),
+        rules: [firstRule, { ...firstRule, id: "rule:outside", key: "outside", predicates: [{ kind: "path-not-under", root: "src" }] }],
+        transforms: [{ ...base.transforms[0]!, id: "exact-text-patch", version: "1" }] };
+      await canonical(root, "authority-record", { ...authority() });
+      await canonical(root, "projection-lens", { ...lens });
+      const conflictReport = await inspectRepositoryCoverage(root, { scope: "." }, "complete");
+      const conflict = conflictReport.completion.questions.find(({ assessment }) => assessment.category === "conflicting-rules");
+      expect(conflict?.assessment.status).toBe("violated");
+      expect(conflict?.resolution.route).toBe("canonical-proposal");
+      expect(conflict?.resolution.alternatives.find(({ strategy }) => strategy === "deterministic-patch")?.status).toBe("unavailable");
+      await canonical(root, "projection-lens", { ...lens, rules: [{ ...firstRule, validatorIds: ["projector.builtin.static-dependency-boundary@1"] }] });
+      const validatorReport = await inspectRepositoryCoverage(root, { scope: "." }, "complete");
+      const unavailable = validatorReport.completion.questions.find(({ ownerIds, assessment }) => ownerIds.includes(firstRule.id) && assessment.category === "missing-validator");
+      expect(unavailable?.assessment.status).toBe("unknown");
+      expect(unavailable?.resolution.alternatives.find(({ strategy }) => strategy === "revalidate")?.status).toBe("unavailable");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("groups executable violations by governing rule and binds changed members without claiming mapping satisfaction", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-coverage-rules-"));
     try {
@@ -131,12 +211,14 @@ describe("observed progressive coverage", () => {
       const basis = [{ kind: "hard-constraint" as const, conceptId: "concept:boundary" }];
       const base = createRepositoryScriptLens({ id: "lens:boundary", status: "active", authorityRecordId: authority().id, selector: scope, governanceBasis: basis });
       const rule = { id: "rule:boundary", key: "boundary", version: "1", effect: "validate" as const, authorityClass: "active-lens" as const, governanceBasis: basis, selector: scope,
-        predicates: [{ kind: "dependency-forbidden" as const, from: scope, to: { op: "atom" as const, field: "package" as const, matcher: "equals" as const, value: "@forbidden/pkg" } }], rationale: "Preserve boundary.", evidence: [], conflictPolicy: "error" as const, validatorIds: ["projector.builtin.static-dependency-boundary@1"], transformIds: [], semanticHash: hash };
+        predicates: [{ kind: "dependency-forbidden" as const, from: { op: "all" as const, items: [scope, { op: "all" as const, items: [] }] }, to: { op: "atom" as const, field: "package" as const, matcher: "equals" as const, value: "@forbidden/pkg" } }], rationale: "Preserve boundary.", evidence: [], conflictPolicy: "error" as const, validatorIds: ["projector.builtin.static-dependency-boundary@1"], transformIds: [], semanticHash: hash };
       const lens: ProjectionLens = { ...base, rules: [rule], validators: [{ id: "projector.builtin.static-dependency-boundary", version: "1", provider: "deterministic-governance", input: { ruleIds: [rule.id] }, required: true }], expectedProjections: base.expectedProjections.map((item) => ({ ...item, expectation: { kind: "predicate-constrained", predicateIds: [rule.id], validatorIds: ["projector.builtin.static-dependency-boundary@1"] } })) };
       await canonical(root, "authority-record", { ...authority() }); await canonical(root, "projection-lens", { ...lens });
       const first = await inspectRepositoryCoverage(root, { scope: "." }, "complete");
       const question = first.completion.questions.find(({ kind }) => kind === "governance")!;
       expect(question).toMatchObject({ blocking: true, affectedCount: 2, ownerIds: ["authority:boundary", "lens:boundary", "rule:boundary"] });
+      expect(question.resolution.route).toBe("implementation-repair");
+      expect(question.resolution.alternatives.find(({ strategy }) => strategy === "revalidate")).toMatchObject({ status: "available", capabilityIds: ["projector.builtin.static-dependency-boundary@1"] });
       expect(first.lanes.find(({ key }) => key === "rule-enforceability")).toMatchObject({ numerator: 2, denominator: 2 });
       expect(first.lanes.find(({ key }) => key === "validation-evidence")).toMatchObject({ numerator: 0, denominator: 2 });
       expect(first.lanes.find(({ key }) => key === "concept-mapping")).toMatchObject({ numerator: 0, denominator: 2 });
@@ -158,7 +240,8 @@ describe("observed progressive coverage", () => {
       const multiple = await inspectRepositoryCoverage(root, { scope: "." }, "complete");
       expect(multiple.lanes.find(({ key }) => key === "rule-enforceability"), JSON.stringify(multiple.completion.questions)).toMatchObject({ numerator: 6, denominator: 6 });
       expect(multiple.lanes.find(({ key }) => key === "validation-evidence")).toMatchObject({ numerator: 3, denominator: 6 });
-      expect(multiple.completion.questions.filter(({ kind }) => kind === "governance")).toEqual([expanded]);
+      expect(multiple.completion.questions.filter(({ assessment }) => assessment.category === "rule-violation")).toEqual([expanded]);
+      expect(multiple.completion.questions.find(({ ownerIds }) => ownerIds.includes("transform:move-repository-script@1"))).toMatchObject({ assessment: { status: "unavailable" }, resolution: { route: "missing-evidence" } });
     } finally { await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 }); }
   });
 

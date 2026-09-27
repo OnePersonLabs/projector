@@ -1,6 +1,6 @@
 import { canonicalJson, hashFramedDomain, type AdapterContext, type DerivedObservationBudget } from "@projector/core";
 import { withObservationScope } from "@projector/runtime";
-import { assessLensAuthority, createStateBinding, type GovernanceBundleEvaluation } from "@projector/engine";
+import { assessLensAuthority, createStateBinding } from "@projector/engine";
 import { compileAuthenticatedCoverageSnapshot, REQUIRED_COVERAGE_LANES, type CoverageEvidenceSnapshot, type CoverageLaneEvidence, type RequiredCoverageLaneKey } from "@projector/engine/coverage";
 import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
 import { KnowledgeGraph } from "../knowledge/graph.js";
@@ -57,7 +57,7 @@ export async function computeRepositoryCoverage(observation: RepositoryObservati
     const after = await host.freshState();
     if (canonicalJson(after) !== canonicalJson(currentState)) throw new Error("Repository changed while coverage validators ran; discard these observations and request fresh coverage.");
   }
-  const evaluations: Array<{ lensId: string; evaluation: GovernanceBundleEvaluation }> = activeLenses.flatMap((lens) => graph.governanceEvaluations(new Set([...unitIds, lens.id]), "inspect", findings).map((evaluation) => ({ lensId: lens.id, evaluation })));
+  const evaluations = graph.governanceEvaluationsWithProvenance(selectedIds, "inspect", findings);
   const authorityProblems: Array<{ ownerId: string; authorityId: string; reasons: string[] }> = [];
   for (const lens of activeLenses) {
     const assessment = assessLensAuthority(lens, graph.authorities);
@@ -70,13 +70,13 @@ export async function computeRepositoryCoverage(observation: RepositoryObservati
     }
   }
   if (graph.lensCompilationUnknown !== undefined) for (const lens of activeLenses.filter(({ id }) => !authorityProblems.some(({ ownerId }) => ownerId === id))) authorityProblems.push({ ownerId: lens.id, authorityId: lens.authorityRecordId, reasons: [graph.lensCompilationUnknown] });
-  const questions = deriveCompletionQuestions({ graph, unitIds, decisions: decisionResult.decisions, evaluations, authorityProblems, includeUnrealized: request.scope === ".", now });
   const intent = graph.entities.filter(({ accepted, kind, payload }) => accepted && ["concept", "requirement", "scenario"].includes(kind) && "status" in payload && payload.status === "active");
   const mapped = new Set(intent.flatMap(({ id }) => graph.implementationBindings(id).map((member) => String(member.id))).filter((id) => unitIds.has(id)));
   const ruleFindings = evaluations.flatMap(({ evaluation }) => evaluation.findings);
-  const identityOwners = new Set(questions.filter(({ kind }) => kind === "identity-overlap").flatMap(({ ownerIds }) => ownerIds));
   const scopedIntent = intent.filter(({ id }) => request.scope === "." || graph.implementationBindings(id).some((member) => unitIds.has(String(member.id))));
   const applicationEvidenceAssessments = await host.applicationEvidence(scopedIntent.filter(({ kind }) => kind === "requirement" || kind === "scenario").map(({ id }) => id));
+  const questions = deriveCompletionQuestions({ graph, unitIds, decisions: decisionResult.decisions, evaluations, authorityProblems, applicationEvidence: applicationEvidenceAssessments, includeUnrealized: request.scope === ".", now });
+  const identityOwners = new Set(questions.filter(({ kind }) => kind === "identity-overlap").flatMap(({ ownerIds }) => ownerIds));
   signal.throwIfAborted();
   const applicationEvidenceStatus = applicationEvidenceDisposition(applicationEvidenceAssessments);
   const applicationEvidenceReasons = applicationEvidenceAssessments.flatMap((item) => item.status === "unavailable" ? [item.reason] : item.assessment.fulfillment.status === "satisfied" ? [] : [item.assessment.fulfillment.reason]);

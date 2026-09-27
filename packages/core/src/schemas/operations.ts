@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ObservationLimitsOverrideSchema } from "../observation.js";
+import { ObservationLimitsOverrideSchema, ObservationLimitsSchema } from "../observation.js";
 
 import { ContentHashSchema } from "./contracts.js";
 import { ChangeProposalSchema } from "./change-proposal.js";
@@ -182,6 +182,12 @@ export const ProjectorOperationErrorSchema = z.strictObject({
   code: z.string().min(1),
   message: z.string().min(1),
   retriable: z.boolean(),
+  observation: z.strictObject({
+    stage: z.string().min(1),
+    scope: z.string().min(1),
+    limit: ObservationLimitsSchema.keyof().optional(),
+    observed: z.number().nonnegative().optional(),
+  }).optional(),
 });
 
 export const ProjectorOperationActionSchema = z.strictObject({

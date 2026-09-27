@@ -19,6 +19,7 @@ import { CanonicalFileRepository } from "@projector/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RepositoryKnowledgeService } from "./service.js";
+import { KnowledgeContextAgentViewSchema, projectKnowledgeContext } from "./transport.js";
 import { KnowledgeGraph } from "./graph.js";
 import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
 
@@ -114,6 +115,85 @@ afterEach(async () => {
 });
 
 describe("RepositoryKnowledgeService", () => {
+  it("normalizes repository spelling while rejecting observations from another repository", async () => {
+    const root = await repository();
+    const service = await RepositoryKnowledgeService.create(`${root}/.`);
+    const observation = await observeChangeRepository(root);
+    const context = await service.context({ request: "inspect repository" }, { observation });
+    expect((await service.reconcile(context.id, { observation })).currentState).toEqual(observation.state);
+
+    const other = await observeChangeRepository(await repository());
+    await expect(service.context({ request: "inspect repository" }, { observation: other }))
+      .rejects.toThrow("Knowledge observation belongs to a different repository");
+    await expect(service.reconcile(context.id, { observation: other }))
+      .rejects.toThrow("Knowledge observation belongs to a different repository");
+  });
+
+  it("retains distant qualified replay obligations without merging similar accepted input identities or clipping their conditions", async () => {
+    const root = await repository();
+    const authored = concept("concept:input-event", "input-event", "An authored input event is a new deliberate entry by the player.", ["session input"]);
+    const replayed = concept("concept:input-events", "input-events", "A replayed input event retrieves retained evidence; it is not a new authored entry.", ["session input"]);
+    const storage = concept("concept:retained-storage", "retained-storage", "Keep retained observations available after reload.");
+    const custody = concept("concept:evidence-custody", "evidence-custody", "Preserve the origin of retained observations through storage and retrieval.");
+    for (const value of [authored, replayed, storage, custody]) await writeConcept(root, value);
+    const normative = "Unknown-origin evidence MUST remain unknown during replay. Replay MUST NOT become new authored input.";
+    const requirement: Requirement = {
+      id: "requirement:replay-origin", key: "replay-origin", title: "Preserve origin during replay", statement: normative,
+      aliases: [], status: "active", sourceClass: "authored", scope: { op: "all", items: [] }, origin: [], evidence: [],
+      discoveryHash: hash("replay-origin:discovery"), semanticHash: hash("replay-origin:semantic"),
+    };
+    await writeRequirement(root, requirement);
+    const condition = "This rule applies while replay reads retained evidence; only a separately authenticated new player entry can establish authored origin.";
+    const authorityRecord = { ...authority("authority:replay-origin", "concern:replay-origin"), rationale: condition, assumptions: ["Retrieval preserves the retained origin marker."] };
+    const decision: ArchitectureDecision = {
+      id: "decision:replay-origin", key: "replay-origin-policy", concernId: authorityRecord.subjectId,
+      title: "Separate replay from authored input", decision: "Carry the retained origin marker through replay without synthesizing a player entry.", selectedOptionKey: "preserve-origin",
+      scope: { op: "all", items: [] }, lifecycle: "active", authorityRecordId: authorityRecord.id, governanceBasis: [],
+      consequences: [{ kind: "advisory", explanation: "Unknown origin is a valid retained uncertainty, not proof of authorship." }],
+      appliedPreferences: [], supersedesDecisionIds: [], semanticHash: hash("replay-origin:decision"),
+    };
+    await writeCanonical(root, "architecture-decision", decision.id, decision.key, decision.lifecycle, { ...decision });
+    const chain = [replayed.id, storage.id, custody.id, requirement.id, decision.id];
+    for (let index = 0; index + 1 < chain.length; index += 1) await writeRelation(root, {
+      id: `relation:replay-origin-${index}`, fromId: chain[index]!, toId: chain[index + 1]!, type: index === 3 ? "governed-by" : "requires",
+      sourceClass: "authored", confidence: 1, evidence: [], active: true, semanticHash: hash(`replay-origin:relation:${index}`),
+    });
+    for (const rationale of [condition, `${condition}\n${"Retained origin must not be inferred from retrieval alone. ".repeat(700)}\n${condition}`]) {
+      await writeCanonical(root, "authority-record", authorityRecord.id, authorityRecord.key, authorityRecord.status, { ...authorityRecord, rationale });
+      const report = await (await RepositoryKnowledgeService.create(root)).context({
+        request: "Review session input across keep, reload and replay", entities: [authored.id, replayed.id], persist: false,
+        policy: { maxDepth: 4, maxContextCost: 4 },
+      });
+      const branch = report.branches.find(({ hypothesis }) => !hypothesis)!;
+      expect(branch.closure.entries.filter(({ band }) => band === "direct").map(({ entityId }) => entityId).sort()).toEqual([authored.id, replayed.id].sort());
+      expect(branch.closure.entries).toEqual(expect.arrayContaining([
+        expect.objectContaining({ entityId: requirement.id, band: "governing", requiredForPlanning: true }),
+        expect.objectContaining({ entityId: decision.id, band: "governing", requiredForPlanning: true }),
+      ]));
+      expect(branch.closure.boundState.queryDependencies.filter(({ query }) => query.programId === "projector.knowledge.relations").length).toBeGreaterThanOrEqual(4);
+      expect(branch.closure.boundState.valueDependencies.map(({ id }) => id)).toContain(authorityRecord.id);
+      expect(branch.context.requiredBudgetOverrun).toBeGreaterThan(0);
+      const view = KnowledgeContextAgentViewSchema.parse(projectKnowledgeContext(report));
+      expect(view.meaning.sections).toEqual(expect.arrayContaining([
+        expect.objectContaining({ entityId: authored.id, kind: "statement", text: authored.statement }),
+        expect.objectContaining({ entityId: replayed.id, kind: "statement", text: replayed.statement }),
+        expect.objectContaining({ entityId: requirement.id, kind: "statement", text: normative }),
+      ]));
+      const qualifier = view.meaning.sections.find(({ entityId, kind }) => entityId === decision.id && kind === "qualifier");
+      if (rationale === condition) {
+        expect(qualifier?.text).toContain(`Rationale: ${condition}`);
+        expect(qualifier?.text).toContain(authorityRecord.assumptions[0]);
+      } else {
+        expect(qualifier).toBeUndefined();
+        expect(view.meaning.disclosure.omitted).toBeGreaterThan(0);
+        expect(view.branches.flatMap(({ context }) => context.items).find(({ entityId }) => entityId === decision.id)?.sectionDisclosure.omitted).toBeGreaterThan(0);
+        expect(view.fullEvidence.inputPatch).toEqual({ view: "full" });
+      }
+      const full = projectKnowledgeContext(report, "full") as typeof report;
+      expect(full.branches[0]!.context.items.find(({ entityId }) => entityId === decision.id)?.content).toContain(JSON.stringify(rationale));
+    }
+  });
+
   it("reruns declared application evidence and exposes changed negative dispositions", async () => {
     const root = await repository();
     const evidenceId = "artifact:test";

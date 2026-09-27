@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 
 import { buildReleasePackage, releasePackageName, releaseVersion } from "./build-release-package.mjs";
 import { isReleaseCommandCleanupUnconfirmed } from "./npm-command.mjs";
+import { bundlePluginRuntime } from "./bundle-plugin-runtime.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const pluginSource = join(repositoryRoot, "plugins/projector");
+const pluginSource = join(repositoryRoot, "plugins/projector-v3");
 const inside = (parent, child) => {
   const path = relative(parent, child);
   return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
@@ -62,7 +63,7 @@ export async function buildPluginRuntime(outputRoot, options = {}) {
     pluginManifest.version = releaseVersion;
     await writeFile(pluginManifestPath, `${JSON.stringify(pluginManifest, null, 2)}\n`);
     await mkdir(join(target, "runtime"), { recursive: true });
-    await cp(releaseRoot, join(target, "runtime/projector"), { recursive: true });
+    await bundlePluginRuntime(releaseRoot, join(target, "runtime/projector"), manifest, options);
     return { root: target, releaseVersion, nodeRuntime: { executable: "node", resolution: "host-path" } };
   } catch (error) {
     if (isReleaseCommandCleanupUnconfirmed(error)) {

@@ -1,4 +1,4 @@
-import { relative } from "node:path";
+import { relative, resolve } from "node:path";
 
 import {
   BehavioralScenarioSchema,
@@ -215,6 +215,7 @@ export interface CompileRepositoryChangeInput {
 }
 
 export interface CompileRepositoryChangeOptions {
+  readonly observation?: Awaited<ReturnType<typeof observeChangeRepository>>;
   readonly representationArtifacts?: RepresentationArtifactStore;
   readonly representationProfileKey?: BuiltInRepresentationProfileKey;
   readonly signal?: AbortSignal;
@@ -474,7 +475,8 @@ async function compileObservedRepositoryChange(
     if (deferralDurationMs > 366 * 24 * 60 * 60 * 1_000) throw new Error("architecture deferral horizon exceeds one year");
   }
 
-  const observation = await withCancellation(observeChangeRepository(input.repositoryRoot), options.signal);
+  const observation = options.observation ?? await withCancellation(observeChangeRepository(input.repositoryRoot), options.signal);
+  if (resolve(observation.repositoryRoot) !== resolve(input.repositoryRoot)) throw new Error("Compilation observation belongs to a different repository");
   const queryRegistry = createChangeQueryRegistry({ observation, now });
   const proposalHash = hashFramedDomain("repository-change-proposal", input.proposal);
   const context = { repositoryRoot: input.repositoryRoot, stateDigest: observation.state, config: {}, signal: options.signal ?? new AbortController().signal };

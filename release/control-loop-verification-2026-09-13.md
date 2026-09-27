@@ -1,6 +1,6 @@
 # Projector control-loop verification, 2026-09-13
 
-This record preserves the 2.1.7 checkout and installed Windows bundle exercises, followed by later checkout evidence. It is evidence for the existing canonical obligations and [harness guide](../plugins/projector/references/harness-guide.md), not a new progress owner or a claim of global completion.
+This record preserves the 2.1.7 checkout and installed Windows bundle exercises, followed by later checkout evidence. It is evidence for the existing canonical obligations and [harness guide](../plugins/projector-v3/references/harness-guide.md), not a new progress owner or a claim of global completion.
 
 | Exercise | Observed result | Assurance and limit |
 | --- | --- | --- |

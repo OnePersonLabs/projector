@@ -103,7 +103,7 @@ describe("local repository analyzer", () => {
   it("reserves derived space before accumulating export syntax facts", () => {
     const content = "export { a };";
     expect(() => analyzeJavaScript([{ path: "exports.ts", kind: "file", mediaType: "text/typescript", content,
-      contentHash: hashFramedDomain("test-content", content), generated: false }], new DerivedObservationBudget(1050))).toThrow(expect.objectContaining({
+      contentHash: hashFramedDomain("test-content", content), generated: false }], new DerivedObservationBudget(900))).toThrow(expect.objectContaining({
       code: "observation-limit-exceeded", limit: "maxDerivedBytes", stage: "javascript-export-facts",
     }));
   });

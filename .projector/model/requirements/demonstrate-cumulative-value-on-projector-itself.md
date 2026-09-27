@@ -53,7 +53,7 @@ value = "scripts/run-release-acceptance.mjs"
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "plugins/projector/skills/**"
+value = "plugins/projector-v3/skills/**"
 
 [[origin]]
 kind = "user-request"

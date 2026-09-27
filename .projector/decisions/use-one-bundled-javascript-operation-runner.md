@@ -22,11 +22,13 @@ authorityRecordId = "authority:bundled-operation-runner"
 
 ## Decision
 
-Expose short installed init, context, check, accept, resume, inspect and recover commands through the existing shared JavaScript services. Core typed contracts own inputs and results. The normal workflow retrieves relevant meaning, uses ordinary authorized Codex edits and checks affected meaning and behavior. Canonical acceptance provides a concise preview/apply route that retains exact-plan authority, current-state checks, journals and explicit recovery. Resume only inspects and rehydrates; it never silently reapplies work or renews authority.
+Expose short installed init, context, check, audit, accept, resume, inspect and recover commands through the existing shared JavaScript services. Core typed contracts own inputs and results. The normal workflow retrieves relevant meaning, uses ordinary authorized Codex edits and checks affected meaning and behavior. Canonical acceptance provides a concise preview/apply route that retains exact-plan authority, current-state checks, journals and explicit recovery. Resume only inspects and rehydrates; it never silently reapplies work or renews authority.
 
 Default output is compact readable meaning, evidence, consequences and actionable unknowns. Exact machine details remain available on inspection. Deduplicate repeated records before budgeting. Use task interpretation with typed relations and current source queries; lexical similarity alone does not establish applicability. Distinguish current knowledge, changed assumptions, new consumers, violated predicates and unavailable observations. Preserve unaffected conclusions.
 
 The installed plugin baseline and owning skills route Codex judgment; deterministic services own observation, parsing, state and recovery. Hooks are quiet on unchanged work and do not inject repetitive per-tool or per-prompt reminders. Retained context is checked before reuse. Canonical meaning and runtime lifecycle owners remain distinct from assimilation and task management. Use existing Codex execution/delegation, without a competing orchestrator. Psychord rehearsal specifics do not ship in the general runtime. Instruction delivery and operation success do not establish understanding or behavioral conformance.
+
+Audit uses the existing coverage, completion and cleanup services. It reads scoped observations and optionally a retained context, discloses evidence limits, and recommends supported next actions. It does not edit source or accepted meaning, apply a repair, or create a second task or completion store. Runtime observation artifacts remain owned by the existing lifecycle and knowledge services.
 
 <details>
 <summary>Structured record details</summary>
@@ -77,7 +79,7 @@ value = "packages/control-plane/src/readiness/**"
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "plugins/projector/**"
+value = "plugins/projector-v3/**"
 
 [[scope.items]]
 op = "atom"

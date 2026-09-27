@@ -194,8 +194,7 @@ describe("RepositoryRepresentationInspectionService", () => {
       const compile = internals.lifecycle.compile.bind(internals.lifecycle);
       internals.lifecycle.compile = async (...args) => {
         const current = await compile(...args);
-        return {
-          ...current,
+        return Object.assign(current, {
           compiledPlan: {
             ...current.compiledPlan,
             packets: current.compiledPlan.packets.map((packet) => {
@@ -210,7 +209,7 @@ describe("RepositoryRepresentationInspectionService", () => {
               };
             }),
           },
-        };
+        });
       };
 
       const result = await inspection.inspect({ changeSelector: captured.capture.semanticChangeId, approvalSelector: approval.id, view: "content" });

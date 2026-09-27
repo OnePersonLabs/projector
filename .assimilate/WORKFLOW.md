@@ -2,7 +2,7 @@
 
 ## The boundary
 
-`$projector-assimilate` is a proposed skill for developing complex project intent from mixed material. Its output first lives in assimilation's own Markdown workspace. Projector's accepted conceptual model remains a different system with its own identities, record types, authority, and change lifecycle.
+`$projector-assimilate` develops complex project intent from mixed material. Its output first lives in assimilation's own Markdown workspace. Projector's accepted conceptual model remains a different system with its own identities, record types, authority, and change lifecycle.
 
 The overlap is a **candidate change**, not a shared concept object. Assimilation can describe ideas about Projector's concepts, including proposals to change how Projector represents concepts, without making those assimilation files Projector records. A reference to an existing Projector ID is a claim to check against current Projector state, not proof that a local Markdown node is identical to that record.
 
@@ -40,7 +40,7 @@ The skill may ask the user a focused question when competing interpretations wou
 
 Projector retrieves current accepted meaning for the proposed outcome through its `context` operation. It resolves whether the proposal extends an existing requirement or scenario, revises an accepted identity, or establishes a genuinely new boundary. It checks relevant decisions, lenses, state binding, implementation evidence, and open retrieval frontiers. Source material, assimilation text, and model conclusions remain interpretation evidence until Projector's accepted route changes their status.
 
-Projector's current `$projector-change` path uses a strict typed proposal, then `change.capture`, `change.plan`, review, and authorized `change.approve` / `change.apply`. A model-only change can preserve future obligations without pretending they are implemented. The assimilation brief does not need to precompile the strict proposal. If the handoff is ready, the Projector change owner translates it using the current schema and exact current identities; the owner must not copy assimilation slugs into Projector IDs by convention.
+Projector 3's `$projector-change` path uses a strict typed proposal. `projector accept proposal.json --context <context ID> --request "reason"` prepares a preview. After reviewing its meaning, scope, dependencies and authorization, `projector accept --apply <change ID> --hash <reviewed hash>` applies that exact change. A model-only change can preserve future obligations without pretending they are implemented. The assimilation brief does not need to precompile the strict proposal. If the handoff is ready, the Projector change owner translates it using the current schema and exact current identities; the owner must not copy assimilation slugs into Projector IDs by convention.
 
 This is a one-way submission boundary, not a merge between assimilation topics and Projector concept records. If Projector accepts some of the proposal, assimilation may record that outcome as new input to its own evolving understanding. Rejection or revision likewise becomes evidence for the next assimilation pass. Neither outcome rewrites the other's files automatically.
 

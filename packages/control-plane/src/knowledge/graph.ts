@@ -40,7 +40,7 @@ import {
   assessLensAuthority,
   compileEffectiveRuleBundle,
   compileProjectionLenses,
-  evaluateEffectiveRuleBundle,
+  prepareGovernanceEvaluator,
   evaluateSelector,
   evaluateSelectorMembership,
   projectionUnitSelectorSubject,
@@ -481,14 +481,19 @@ export class KnowledgeGraph implements ContextSourcePort {
   }
 
   governanceEvaluations(entityIds: ReadonlySet<string>, operation: string, validatorFindings: readonly ExternalGovernanceValidatorFinding[] = []): GovernanceBundleEvaluation[] {
+    return this.governanceEvaluationsWithProvenance(entityIds, operation, validatorFindings).map(({ evaluation }) => evaluation);
+  }
+
+  governanceEvaluationsWithProvenance(entityIds: ReadonlySet<string>, operation: string, validatorFindings: readonly ExternalGovernanceValidatorFinding[] = []): Array<{ lensId: string; evaluation: GovernanceBundleEvaluation }> {
     if (this.lensCompilation === undefined) return [];
     const observation = this.governanceObservation();
+    const evaluate = prepareGovernanceEvaluator(observation, validatorFindings);
     const beforeObligations = this.derivedBudget.usedBytes;
     const obligations = this.lensObligations(entityIds, operation);
     const obligationBytes = this.derivedBudget.usedBytes - beforeObligations;
     try {
       const obligationsByLensAndUnit = new Map(obligations.map((item) => [`${item.lensId}\0${item.unitId}`, item]));
-      const evaluations: GovernanceBundleEvaluation[] = [];
+      const evaluations: Array<{ lensId: string; evaluation: GovernanceBundleEvaluation }> = [];
       for (const lens of this.lenses.filter(({ status, id }) => status === "active" && entityIds.has(id))) {
         const members = new Set(this.lensCompilation.memberships[lens.id] ?? []);
         for (const unit of this.units) {
@@ -499,10 +504,10 @@ export class KnowledgeGraph implements ContextSourcePort {
           const requiredValidatorIds = lens.validators.filter(({ required }) => required).map(({ id, version }) => `${id}@${version}`);
           const expected = obligationsByLensAndUnit.get(`${lens.id}\0${unit.id}`);
           const expectationIds = expected?.validatorIds ?? [];
-          evaluations.push(evaluateEffectiveRuleBundle(bundle, observation, { validatorFindings, requiredValidatorIds: unique([...requiredValidatorIds, ...expectationIds]) }));
+          evaluations.push({ lensId: lens.id, evaluation: evaluate(bundle, { requiredValidatorIds: unique([...requiredValidatorIds, ...expectationIds]) }) });
         }
       }
-      return evaluations.sort((left, right) => compare(left.unitId, right.unitId) || compare(left.contentHash, right.contentHash));
+      return evaluations.sort((left, right) => compare(left.evaluation.unitId, right.evaluation.unitId) || compare(left.evaluation.contentHash, right.evaluation.contentHash));
     } finally {
       this.derivedBudget.release(obligationBytes);
     }

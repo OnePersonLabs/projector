@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The proposed `$projector-assimilate` should accept heterogeneous material and maintain a coherent, evolving conception that remains usable across context resets, new conversations, and long pauses. Inputs may include handoffs, branched chats, transcripts, webpages, repositories, research, and unfinished thoughts. Requiring the user to pre-sort the pile defeats a central purpose of the system.
+`$projector-assimilate` accepts heterogeneous material and maintains a working synthesis intended to remain usable across context resets, new conversations, and long pauses. Inputs may include handoffs, branched chats, transcripts, webpages, repositories, research, and unfinished thoughts. Requiring the user to pre-sort the pile defeats a central purpose of the system. The installed workflow supports this process; its availability does not establish fidelity for every source pile.
 
 The result is not a larger summary. It is an organized account of current meaning: what the project is trying to accomplish, how its parts relate, what must hold, which mechanisms are proposed, which alternatives remain live, and what still needs to be discovered or decided. Its size may exceed a context window; its structure must make useful, coherent portions available without pretending those portions are the whole.
 

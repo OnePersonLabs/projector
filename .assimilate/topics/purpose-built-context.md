@@ -32,6 +32,8 @@ These are information obligations, not a demand to repeat a large template for e
 
 A view needs explicit boundaries. It should identify where further context is likely to matter and provide resolvable access to that context. An agent that discovers it is changing action ownership, for example, should know to load the authority and recovery constraints before proceeding.
 
+A candidate design should also let the agent investigate beyond the listed neighborhood and check for consequential omissions without relying only on requests for help. The supplied frontier can itself be incomplete.
+
 Expansion can happen proactively when a known relationship makes a dependency material, or reactively when work reveals a new uncertainty. A child agent should normally expand against the same basis for the task, rather than inheriting only a summary of a summary. For an assimilation worker, that basis is the assimilation fileset and relevant captured material. For a Projector development worker, it is Projector's accepted meaning and current evidence. Findings return to the relevant owner when they alter another task's assumptions.
 
 Supplementation is not pure set subtraction. Repeating a short governing constraint may be necessary to make a new view coherent even if those words appeared earlier. Avoid duplicate exposition, but do not optimize away the anchors that give new detail its meaning.

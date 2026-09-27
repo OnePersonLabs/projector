@@ -76,7 +76,7 @@ export class GitCommandError extends ObservationError {
   }
 }
 
-/** Calls are intentionally sequential at the collector; every child is drained before rejection. */
+/** Collectors use bounded, owned concurrency; every active child is drained before rejection. */
 export interface GitObservationOptions {
   readonly signal?: AbortSignal; readonly stage?: string; readonly input?: string; readonly allowedExitCodes?: readonly number[];
 }

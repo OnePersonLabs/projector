@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import {
   canonicalJson,
   hashFramedDomain,
@@ -8,7 +10,7 @@ import {
 } from "@projector/core";
 import { executionCapsuleHash, type BuiltInRepresentationProfileKey } from "@projector/engine";
 import { publishPreparedStateBoundChangeSuccess, type StateBoundChangeResult } from "@projector/engine";
-import { FileTransactionJournal, GovernedWorktreeRuntime, RepositoryPathService, WriterLeaseManager } from "@projector/runtime";
+import { FileTransactionJournal, GovernedWorktreeRuntime, RepositoryPathService, WriterLeaseManager, withObservationScope } from "@projector/runtime";
 
 import { compileRepositoryChange, type CompiledRepositoryChange } from "./compiler.js";
 import { executeCompiledRepositoryChange } from "./executor.js";
@@ -16,6 +18,7 @@ import { adjudicatedKnowledgeContext, assertIdentityDisposition, captureKnowledg
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import type { KnowledgeReconciliationResult } from "../knowledge/types.js";
 import type { ApplicationEvidencePort } from "../knowledge/application-evidence.js";
+import { observeChangeRepository, observeRepositoryState, type ChangeRepositoryObservation } from "./repository-observer.js";
 import { RepositoryRepresentationArtifactStore } from "../representation/artifact-store.js";
 import { validateCompiledRepositoryChangeCurrentness } from "./currentness.js";
 import {
@@ -31,6 +34,8 @@ export interface CaptureRepositoryChangeInput {
   /** Authenticated freshness/conformance evidence; it does not expand write authorization. */
   readonly knowledgeContextId?: string;
 }
+
+const compilationObservations = new WeakMap<CompiledRepositoryChange, ChangeRepositoryObservation>();
 
 export interface PlannedRepositoryChange {
   readonly capture: LifecycleCaptureRecord;
@@ -90,6 +95,42 @@ function permitsDecisionReconsideration(compiled: CompiledRepositoryChange, gove
   return resolvedReasons.size > 0 && governance.reasons.every((reason) => resolvedReasons.has(reason));
 }
 
+function permitsUnchangedDecisionBaselineBinding(compiled: CompiledRepositoryChange, reconciliation: KnowledgeReconciliationResult): boolean {
+  if (reconciliation.status !== "suspect" || !permitsDecisionReconsideration(compiled, reconciliation.governance)) return false;
+  if (reconciliation.discoveryValidation.status !== "current" && reconciliation.discoveryValidation.status !== "rebound") return false;
+  const revised = new Set((compiled.intentReview.canonicalMutations ?? []).filter(({ kind, operation }) => operation === "revise" && (kind === "architecture-decision" || kind === "authority-record")).map(({ id }) => id));
+  const baselineTriggers = new Set(["concept-changed", "requirement-changed", "scenario-changed", "relation-changed", "constraint-changed", "lens-changed", "scope-expanded"]);
+  let qualifyingQueries = 0;
+  for (const validation of [reconciliation.discoveryValidation, ...reconciliation.branches.map(({ validation }) => validation)]) {
+    if (validation.changedValueDependencyIds.length !== 0 || validation.changedQueryDependencyIds.length !== 0) return false;
+    if (validation.status !== "current" && validation.status !== "rebound" && validation.status !== "suspect") return false;
+    if (validation.status === "suspect" && !validation.observations?.length) return false;
+    for (const observed of validation.observations ?? []) {
+      if (observed.status === "current") continue;
+      if (observed.kind !== "query" || observed.status !== "unknown" || observed.basis === "unavailable" || observed.currentResult === undefined) return false;
+      const { query, priorResult } = observed.dependency;
+      const decisionId = query.input.decisionId;
+      if (typeof decisionId !== "string" || query.kind !== "custom" || query.programId !== "projector.knowledge.decision-triggers" || query.programVersion !== "1" || query.id !== `knowledge-decision-triggers:${decisionId}`) return false;
+      const current = observed.currentResult;
+      if (priorResult.queryHash !== query.semanticHash || current.queryHash !== query.semanticHash || priorResult.observability !== "closed" || current.observability !== "closed" || priorResult.resultCount !== 1 || current.resultCount !== 1 || canonicalJson(priorResult) !== canonicalJson(current)) return false;
+      const decisions = reconciliation.governance.branches.flatMap(({ decisionValidity }) => decisionValidity ?? []).filter((decision) => decision.decisionId === decisionId);
+      if (decisions.length === 0) return false;
+      for (const decision of decisions) {
+        if ((!revised.has(decision.decisionId) && !revised.has(decision.authorityId)) || decision.baseline.kind !== "unavailable" || decision.checks.some(({ status }) => status === "fired")) return false;
+        const unknown = decision.checks.filter(({ status }) => status === "unknown");
+        if (unknown.length === 0 || unknown.some(({ trigger, reason }) => !baselineTriggers.has(trigger.type) || !reason.startsWith(`No accepted baseline observation for ${trigger.type}: `))) return false;
+        const reasons = new Set(unknown.map(({ reason }) => reason));
+        const lanes = new Set([...priorResult.unavailableLanes, ...current.unavailableLanes]);
+        if (lanes.size !== reasons.size || [...lanes].some((reason) => !reasons.has(reason))) return false;
+      }
+      qualifyingQueries += 1;
+    }
+  }
+  // This permits explicit canonical reconsideration, not currentness or authority.
+  // Unknown evidence remains intact; post-state validation must accept the baseline.
+  return qualifyingQueries > 0;
+}
+
 function approvedCompilation(compiled: CompiledRepositoryChange, capture: LifecycleCaptureRecord): CompiledRepositoryChange {
   if (compiled.proposalHash !== capture.proposalHash || exactPatchInputHash(compiled) !== capture.exactPatchInputHash) {
     throw new Error("lifecycle approval dependencies are stale for the current repository observation");
@@ -136,6 +177,7 @@ export class RepositoryChangeLifecycleService {
     repositoryRoot: string,
     options: RepositoryChangeLifecycleServiceOptions = {},
   ): Promise<RepositoryChangeLifecycleService> {
+    repositoryRoot = resolve(repositoryRoot);
     const store = await ChangeLifecycleStore.create(repositoryRoot, options);
     const representationArtifacts = await RepositoryRepresentationArtifactStore.create(repositoryRoot);
     return new RepositoryChangeLifecycleService(repositoryRoot, store, representationArtifacts, options);
@@ -149,6 +191,7 @@ export class RepositoryChangeLifecycleService {
     const knowledgeContextId = await captureKnowledgeContextId(this.repositoryRoot, input.request, proposal, suppliedId, options.signal, this.applicationEvidence);
     const compiled = await this.compile(input.request, proposal, knowledgeContextId, options.signal);
     if (knowledgeContextId !== undefined) await this.assertKnowledgeContext(knowledgeContextId, compiled, proposal, options.signal);
+    else await this.assertObservationFresh(compiled, options.signal);
     options.signal?.throwIfAborted();
     const capture = await this.store.capture({
       request: input.request.normalize("NFKC").trim(),
@@ -170,6 +213,7 @@ export class RepositoryChangeLifecycleService {
     const proposal = parseChangeProposal(capture.proposal);
     const compiled = await this.compile(capture.request, proposal, capture.knowledgeContextId, options.signal);
     if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, compiled, proposal, options.signal);
+    else await this.assertObservationFresh(compiled, options.signal);
     const mismatches: string[] = [];
     if (compiled.compiledChange.change.id !== capture.semanticChangeId) mismatches.push("semantic change identity");
     if (compiled.proposalHash !== capture.proposalHash) mismatches.push("proposal hash");
@@ -193,6 +237,7 @@ export class RepositoryChangeLifecycleService {
     const proposal = parseChangeProposal(capture.proposal);
     const compiled = await this.compile(capture.request, proposal, capture.knowledgeContextId, options.signal, false);
     if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, compiled, proposal, options.signal);
+    else await this.assertObservationFresh(compiled, options.signal);
     const validation = await validateCompiledRepositoryChangeCurrentness({ repositoryRoot: this.repositoryRoot, compiled, binding: capture.stateBinding, ...(options.signal === undefined ? {} : { signal: options.signal }), now: this.now });
     if (validation.status !== "current") throw new Error(`lifecycle plan dependencies are ${validation.status}: ${validation.reasons.join("; ")}`);
     return { capture, compiled };
@@ -229,6 +274,7 @@ export class RepositoryChangeLifecycleService {
     const proposal = parseChangeProposal(capture.proposal);
     const currentCompilation = await this.compile(capture.request, proposal, capture.knowledgeContextId, options.signal);
     if (capture.knowledgeContextId !== undefined) await this.assertKnowledgeContext(capture.knowledgeContextId, currentCompilation, proposal, options.signal);
+    else await this.assertObservationFresh(currentCompilation, options.signal);
     const compiled = approvedCompilation(currentCompilation, capture);
     options.signal?.throwIfAborted();
     const attempt = await this.store.beginAttempt(approvalRecord.id);
@@ -350,34 +396,44 @@ export class RepositoryChangeLifecycleService {
   }
 
   private async compile(request: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, publishRepresentation = true): Promise<CompiledRepositoryChange> {
-    const knowledgeContext = await adjudicatedKnowledgeContext(this.repositoryRoot, proposal, contextId, signal, this.applicationEvidence);
+    return withObservationScope(signal === undefined ? {} : { signal }, async () => {
+    const observation = await observeChangeRepository(this.repositoryRoot);
+    const knowledgeContext = await adjudicatedKnowledgeContext(this.repositoryRoot, proposal, contextId, signal, this.applicationEvidence, observation);
     const compiled = await compileRepositoryChange(
       { repositoryRoot: this.repositoryRoot, request, proposal, now: this.now(), ...(knowledgeContext === undefined ? {} : { knowledgeContext }) },
       {
         ...(publishRepresentation ? { representationArtifacts: this.representationArtifacts } : {}),
         ...(this.representationProfileKey === undefined ? {} : { representationProfileKey: this.representationProfileKey }),
         ...(signal === undefined ? {} : { signal }),
+        observation,
       },
     );
     assertIdentityDisposition(compiled, proposal);
+    compilationObservations.set(compiled, observation);
     if (publishRepresentation) await this.representationArtifacts.publish(compiled.representationDetails);
     return compiled;
+    });
   }
 
   private async assertKnowledgeContext(contextId: string, compiled: CompiledRepositoryChange, proposal: ChangeProposal, signal?: AbortSignal): Promise<void> {
+    const observation = compilationObservations.get(compiled);
+    if (observation === undefined) throw new Error("Lifecycle compilation has no request-local repository observation");
     const knowledge = await RepositoryKnowledgeService.create(this.applicationEvidence === undefined ? this.repositoryRoot : { repositoryRoot: this.repositoryRoot, applicationEvidence: this.applicationEvidence });
-    const reconciliation = await knowledge.reconcile(contextId, signal === undefined ? {} : { signal });
+    const reconciliation = await knowledge.reconcile(contextId, { ...(signal === undefined ? {} : { signal }), observation });
     const expectedState = compiled.compiledPlan.plan.boundState.compiledAgainst;
     if (canonicalJson(reconciliation.currentState) !== canonicalJson(expectedState)) {
       throw new Error("knowledge context and lifecycle compilation observed different repository states; retry before mutation");
     }
-    if (reconciliation.status !== "current" && reconciliation.status !== "rebound") {
+    if (reconciliation.status !== "current" && reconciliation.status !== "rebound" && !permitsUnchangedDecisionBaselineBinding(compiled, reconciliation)) {
       throw new Error(`knowledge context binding is ${reconciliation.status}: ${reconciliation.reasons.join("; ")}`);
     }
     // Candidate discovery is retained for freshness. Only the reviewed selection
     // supplies governing meaning; unrelated hypothetical branches do not veto it.
     const selected = compiled.knowledgeContext;
-    const selectedReconciliation = selected !== undefined && selected.id !== contextId ? await knowledge.reconcile(selected.id, signal === undefined ? {} : { signal }) : reconciliation;
+    const selectedReconciliation = selected !== undefined && selected.id !== contextId ? await knowledge.reconcile(selected.id, { ...(signal === undefined ? {} : { signal }), observation }) : reconciliation;
+    if (selectedReconciliation.status !== "current" && selectedReconciliation.status !== "rebound" && !permitsUnchangedDecisionBaselineBinding(compiled, selectedReconciliation)) {
+      throw new Error(`selected knowledge context binding is ${selectedReconciliation.status}: ${selectedReconciliation.reasons.join("; ")}`);
+    }
     const governance = selectedReconciliation.governance;
     if (selectedReconciliation.applicationEvidence.status === "violated" || selectedReconciliation.applicationEvidence.status === "unknown") {
       throw new Error(`knowledge context application evidence is ${selectedReconciliation.applicationEvidence.status}: ${selectedReconciliation.applicationEvidence.branches.flatMap(({ reasons }) => reasons).join("; ")}`);
@@ -388,5 +444,15 @@ export class RepositoryChangeLifecycleService {
     if (canonicalJson(selectedReconciliation.currentState) !== canonicalJson(expectedState)) {
       throw new Error("selected knowledge and lifecycle compilation observed different repository states; retry before mutation");
     }
+    await this.assertObservationFresh(compiled, signal);
+  }
+
+  private async assertObservationFresh(compiled: CompiledRepositoryChange, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    const observation = compilationObservations.get(compiled);
+    if (observation === undefined) throw new Error("Lifecycle compilation has no request-local repository observation");
+    const current = await observeRepositoryState(observation);
+    signal?.throwIfAborted();
+    if (canonicalJson(current) !== canonicalJson(compiled.compiledPlan.plan.boundState.compiledAgainst)) throw new Error("Repository changed during lifecycle compilation or knowledge reconciliation; retry before mutation");
   }
 }

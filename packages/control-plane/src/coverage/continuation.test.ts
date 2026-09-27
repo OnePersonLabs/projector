@@ -10,6 +10,8 @@ import { afterEach, expect, vi } from "vitest";
 import { integrationTest as test } from "../../../../scripts/testing/integration-test.mjs";
 
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
+import { KnowledgeContextStore } from "../knowledge/store.js";
+import * as observationTasks from "../observation/task-runner.js";
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
 import { ChangeLifecycleStore } from "../change-lifecycle/store.js";
 import { inspectRepositoryCoverage } from "./service.js";
@@ -45,7 +47,13 @@ async function repository(): Promise<string> {
 test("cleanup resumes a saved context after reset and discloses a bounded evidence page", async () => {
   const root = await repository();
   const context = await (await RepositoryKnowledgeService.create(root)).context({ request: "Continue greeting work", entities: ["requirement:greeting"], persist: true });
+  const observationCalls = vi.spyOn(observationTasks, "runObservationTask");
+  const retainedReads = vi.spyOn(KnowledgeContextStore.prototype, "read");
   const report = await inspectRepositoryCoverage(root, { scope: ".", contextId: context.id, evidenceLimit: 1 }, "cleanup");
+  expect(observationCalls.mock.calls.filter(([type]) => type === "observe")).toHaveLength(1);
+  expect(observationCalls.mock.calls.filter(([type]) => type === "knowledge-reconcile")).toHaveLength(1);
+  expect(retainedReads).toHaveBeenCalledTimes(1);
+  expect(report.continuation!.restoration).toMatchObject({ meaning: { contextId: context.id, status: "current" }, context: { id: context.id } });
   expect(report.continuation).toMatchObject({
     readOnly: true,
     context: { contextId: context.id, status: "current" },
@@ -109,6 +117,7 @@ test("cleanup explains same-HEAD semantic changes and rebinds independently curr
   await writer.delete("requirement", "requirement:greeting");
   const unknown = await inspectRepositoryCoverage(root, request, "cleanup");
   expect(unknown.continuation!.context?.status).toBe("unknown");
+  expect(unknown.continuation!.restoration?.context).toBeUndefined();
   const missing = unknown.continuation!.evidence.find(({ dependency }) => dependency?.kind === "value" && dependency.dependency.id === "requirement:greeting")!;
   expect(missing).toMatchObject({ status: "unknown", availability: "unobservable", dependency: { basis: "observed", reason: expect.stringContaining("unavailable") } });
   expect(missing.dependency).not.toHaveProperty("currentVersionHash");
@@ -121,6 +130,7 @@ test("cleanup distinguishes an absent required context from unobservable advisor
   const report = await inspectRepositoryCoverage(root, { scope: ".", contextId: "knowledge_context_00000000000000000000000000000000" }, "cleanup");
   expect(report.continuation).toMatchObject({ context: { status: "unknown", governance: "unknown" }, advisoryNotes: { status: "unobservable" }, counts: { current: 0, stale: 0, unknown: 1 }, nextAction: { operation: "context" } });
   expect(report.continuation!.evidence[0]).toMatchObject({ availability: "missing", required: true });
+  expect(report.continuation!.restoration).toBeUndefined();
 });
 
 test("cleanup refreshes an approved plan after its exact source dependency changes", async () => {

@@ -83,7 +83,7 @@ value = "packages/cli/src/operation-runner.ts"
 op = "atom"
 field = "path"
 matcher = "glob"
-value = "plugins/projector/**"
+value = "plugins/projector-v3/**"
 
 [[origin]]
 kind = "document"

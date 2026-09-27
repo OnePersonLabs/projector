@@ -49,6 +49,10 @@ describe("standalone plugin assembly", () => {
     expect(result.nodeRuntime).toEqual({ executable: "node", resolution: "host-path" });
     expect(await readdir(join(plugin, "runtime"))).toEqual(["projector"]);
     expect(JSON.parse(await readFile(join(plugin, "runtime/projector/package.json"), "utf8"))).toMatchObject({ name: "@onepersonlabs/projector", version: releaseVersion });
+    await expect(access(join(plugin, "runtime/projector/node_modules"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(join(plugin, "runtime/projector/assets/windows-job-supervisor.ps1"), "utf8")).toContain("param");
+    expect(JSON.parse(await readFile(join(plugin, "runtime/projector/licenses/third-party.json"), "utf8"))).toContainEqual(expect.objectContaining({ name: "zod" }));
+    await access(join(plugin, "runtime/projector/licenses/zod/LICENSE"));
     await expect(access(join(plugin, ".mcp.json"))).rejects.toMatchObject({ code: "ENOENT" });
     const hostNode = await execute("node", ["--version"], { cwd: plugin, env: { ...process.env, NODE_PATH: "" }, encoding: "utf8" });
     expect(hostNode.stdout.trim()).toBe(process.version);
@@ -94,6 +98,11 @@ describe("standalone plugin assembly", () => {
 
     const help = await execute("node", [join(plugin, "scripts/projector.mjs"), "--help"], { cwd: repository, env, encoding: "utf8" });
     expect(help.stdout).toContain("context");
+    const statusScript = "import { createBundledProjectorOperationRunner } from './runtime/projector/exports/operations.js'; const runner = await createBundledProjectorOperationRunner({ packagedRoot: './runtime/projector' }); console.log(JSON.stringify(await runner.execute(JSON.parse(process.argv[1]))));";
+    const status = await execute("node", ["--input-type=module", "-e", statusScript, JSON.stringify({ ...request, operation: "status", requestId: "installed-status" })], { cwd: plugin, env, encoding: "utf8" });
+    expect(JSON.parse(status.stdout)).toMatchObject({ operation: "status", readiness: { status: "ready" } });
+    const context = await execute("node", [join(plugin, "scripts/projector.mjs"), "context", "Inspect the ordinary repository", "--json"], { cwd: repository, env, encoding: "utf8" });
+    expect(JSON.parse(context.stdout)).toHaveProperty("contentHash");
     const check = await execute("node", [join(plugin, "scripts/projector.mjs"), "check", "--json"], { cwd: repository, env, encoding: "utf8" });
     expect(JSON.parse(check.stdout)).toHaveProperty("repository");
   }, 30_000);

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { exportContractJsonSchemas, validateJsonSchemaReferences } from "@projector/core";
 
 const root = resolve(import.meta.dirname, "..");
-const directory = resolve(root, "plugins/projector/skills/projector-change");
+const directory = resolve(root, "plugins/projector-v3/skills/projector-change");
 const schemaPath = resolve(directory, "change-proposal.schema.json");
 const guidePath = resolve(directory, "proposal-schema.md");
 const schemas = exportContractJsonSchemas();

@@ -22,6 +22,8 @@ createdAt = "2026-09-10T00:00:00Z"
 
 The user explicitly authorized the Projector 3 implementation plan on 2026-09-20: human-friendly canonical artifacts, nimble evidence-bound workflows, no backwards compatibility, and a Psychord rebuild readiness comparison.
 
+The September 27 supported-workflow completion reaffirms the current decision scope after the plugin relocation to plugins/projector-v3. The relocation preserves the accepted decision, permission boundary, and lifecycle obligations. Its new baseline must come from the reviewed canonical transaction, not from clearing incomplete query observations.
+
 <details>
 <summary>Structured record details</summary>
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, realpath, rename, rm } from "node:fs/promises";
+import { cp, lstat, mkdir, realpath, rename, rm } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 import { buildPluginRuntime } from "./build-plugin-runtime.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const pluginParent = join(repositoryRoot, ".temp/local-marketplace/plugins");
-const pluginRoot = join(pluginParent, "projector");
+const pluginParent = join(repositoryRoot, ".build/local-marketplace/plugins");
+const pluginRoot = join(pluginParent, "projector-v3");
+const shippingRoot = join(repositoryRoot, "plugins/projector-v3");
 
 async function existingDirectory(path) {
   try {
@@ -26,7 +27,7 @@ async function assertOwnedParent() {
   const root = await realpath(repositoryRoot);
   const parent = await realpath(pluginParent);
   const suffix = relative(root, parent);
-  if (suffix !== `.temp${sep}local-marketplace${sep}plugins`) throw new Error(`local marketplace path escapes the repository: ${pluginParent}`);
+  if (suffix !== `.build${sep}local-marketplace${sep}plugins`) throw new Error(`local marketplace path escapes the repository: ${pluginParent}`);
 }
 
 async function renameDirectory(source, destination) {
@@ -58,13 +59,18 @@ export async function publishLocalBundle(staged, destination) {
 
 export async function prepareLocalMarketplace() {
   await assertOwnedParent();
+  if (await realpath(shippingRoot) !== join(await realpath(repositoryRoot), "plugins/projector-v3")) throw new Error("shipping plugin path escapes the repository");
   const staged = join(pluginParent, `.projector-next-${randomUUID()}`);
+  const stagedRuntime = join(pluginParent, `.projector-runtime-next-${randomUUID()}`);
   try {
     const result = await buildPluginRuntime(staged);
+    await cp(join(staged, "runtime"), stagedRuntime, { recursive: true });
+    await publishLocalBundle(stagedRuntime, join(shippingRoot, "runtime"));
     await publishLocalBundle(staged, pluginRoot);
-    return { root: pluginRoot, releaseVersion: result.releaseVersion };
+    return { root: pluginRoot, shippingRoot, releaseVersion: result.releaseVersion };
   } finally {
     if (await existingDirectory(staged)) await rm(staged, { recursive: true, maxRetries: 4, retryDelay: 100 });
+    if (await existingDirectory(stagedRuntime)) await rm(stagedRuntime, { recursive: true, maxRetries: 4, retryDelay: 100 });
   }
 }
 

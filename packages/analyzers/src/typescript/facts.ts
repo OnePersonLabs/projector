@@ -1,6 +1,6 @@
 import { extname, posix } from "node:path";
 
-import { DerivedObservationBudget, hashFramedDomain, type AnalyzerFailure, type ContentHash, type SourceClass } from "@projector/core";
+import { canonicalJson, DerivedObservationBudget, hashFramedCanonicalJsonChunks, hashFramedDomain, type AnalyzerFailure, type ContentHash, type SourceClass } from "@projector/core";
 
 import type { InventoryEntry } from "../filesystem/inventory.js";
 import { compareCodePoint } from "../ordering.js";
@@ -94,7 +94,10 @@ export interface JavaScriptFileFacts {
   readonly exports: string[];
   readonly lifecycleExports: string[];
   readonly testNames: string[];
-  readonly normalizedSemantics: string;
+  readonly semanticHash: ContentHash;
+  readonly fallbackHash: ContentHash;
+  readonly variantHash: ContentHash;
+  readonly participantId: string;
   readonly scopeKey: string;
   readonly declarations: SemanticDeclarationFact[];
   readonly exportFacts: ExportFact[];
@@ -273,6 +276,41 @@ function normalizeTokens(tokens: readonly Token[], budget: DerivedObservationBud
   budget.reserveString(length, "javascript-normalization", scope);
   return parts.join("|");
   } finally { budget.release(reservedBytes); }
+}
+
+// Stream exactly the existing framed canonical JSON representation. Each token
+// is escaped separately; no expanded whole-file normalization is retained.
+function hashNormalizedTokens(tokens: readonly Token[], domain: string, budget: DerivedObservationBudget, scope: string, envelope?: { readonly fields: Readonly<Record<string, unknown>>; readonly key: string }): ContentHash {
+  const keys = envelope === undefined ? [] : [...Object.keys(envelope.fields), envelope.key].sort(compareCodePoint);
+  let before = "", after = "";
+  if (envelope !== undefined) {
+    const index = keys.indexOf(envelope.key);
+    const field = (key: string): string => `${JSON.stringify(key)}:${canonicalJson(envelope.fields[key])}`;
+    before = `{${keys.slice(0, index).map(field).join(",")}${index > 0 ? "," : ""}${JSON.stringify(envelope.key)}:`;
+    after = `${index < keys.length - 1 ? "," : ""}${keys.slice(index + 1).map(field).join(",")}}`;
+  }
+  function* chunks(): Generator<string> {
+    yield before; yield '"';
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index]!;
+      const size = String(token.kind.length).length + token.kind.length + String(token.value.length).length + token.value.length + 3;
+      // JSON escaping can expand one UTF-16 code unit to six ASCII units.
+      const scratch = 96 + 16 * size;
+      budget.reserve(scratch, "javascript-normalization-hash", scope);
+      try {
+        if (index > 0) yield "|";
+        yield JSON.stringify(`${token.kind.length}:${token.kind}:${token.value.length}:${token.value}`).slice(1, -1);
+      } finally { budget.release(scratch); }
+    }
+    yield '"'; yield after;
+  }
+  return hashFramedCanonicalJsonChunks(domain, chunks);
+}
+
+export function hashJavaScriptSemantics(content: string, domain: string, budget = new DerivedObservationBudget(), scope = ".", envelope?: { readonly fields: Readonly<Record<string, unknown>>; readonly key: string }): ContentHash {
+  const lexed = lexJavaScript(content, budget, scope);
+  try { return hashNormalizedTokens(lexed.tokens, domain, budget, scope, envelope); }
+  finally { budget.release(lexed.reservedBytes); }
 }
 
 export function normalizeJavaScriptSemantics(content: string, budget = new DerivedObservationBudget(), scope = "."): string {
@@ -473,9 +511,11 @@ function extractExportFacts(content: string, declarations: readonly SemanticDecl
   return facts.sort((left, right) => compareCodePoint(left.exportedName ?? "*", right.exportedName ?? "*") || left.location.offset - right.location.offset);
 }
 
-function fileParticipantId(scopeKey: string, declarations: readonly SemanticDeclarationFact[], normalizedSemantics: string): string {
+function fileParticipantId(scopeKey: string, declarations: readonly SemanticDeclarationFact[], tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): string {
   const anchors = declarations.filter(({ exported }) => exported).map(({ name, kind }) => `${kind}:${name}`).sort(compareCodePoint);
-  return `ts_participant_${hashFramedDomain("typescript-participant", { scopeKey, anchor: anchors.length > 0 ? anchors : normalizedSemantics }).slice(-32)}`;
+  const hash = anchors.length > 0 ? hashFramedDomain("typescript-participant", { scopeKey, anchor: anchors })
+    : hashNormalizedTokens(tokens, "typescript-participant", budget, scope, { fields: { scopeKey }, key: "anchor" });
+  return `ts_participant_${hash.slice(-32)}`;
 }
 
 function extractEvents(tokens: readonly Token[], content: string, scopeKey: string, participantId: string, artifactHash: ContentHash, budget: DerivedObservationBudget, scope: string): { events: EventSyntaxFact[]; uncertainties: EventUncertaintyFact[]; unknowns: string[] } {
@@ -535,23 +575,25 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[], budget = n
   for (const entry of sourceEntries) {
     const lexed = lexJavaScript(entry.content, budget, entry.path), tokens = lexed.tokens;
     try {
-    const normalizedSemantics = normalizeTokens(tokens, budget, entry.path);
     const scopeKey = scopes.get(entry.path) ?? "local-repository";
     const declarations = extractDeclarations(entry.content, scopeKey, budget, entry.path);
     const exportFacts = extractExportFacts(entry.content, declarations, budget, entry.path);
     const exports = [...new Set(extractExports(tokens, budget, entry.path))].sort(compareCodePoint);
-    const participantId = fileParticipantId(scopeKey, declarations, normalizedSemantics);
+    const participantId = fileParticipantId(scopeKey, declarations, tokens, budget, entry.path);
     const extractedEvents = extractEvents(tokens, entry.content, scopeKey, participantId, entry.contentHash, budget, entry.path);
     budget.reserveItems(extractedEvents.events.length + extractedEvents.uncertainties.length, 8, "javascript-event-index", entry.path);
     for (const event of extractedEvents.events) events.push(event);
     for (const uncertainty of extractedEvents.uncertainties) eventUncertainties.push(uncertainty);
-    budget.reserve(256 + 2 * entry.path.length, "javascript-file-facts", entry.path);
+    budget.reserve(832 + 2 * entry.path.length, "javascript-file-facts", entry.path);
     files.push({
       path: entry.path,
       exports,
       lifecycleExports: exports.filter((name) => lifecycleNames.has(name)),
       testNames: extractTestNames(tokens, budget, entry.path),
-      normalizedSemantics,
+      semanticHash: hashNormalizedTokens(tokens, "projector.local-semantic", budget, entry.path),
+      fallbackHash: hashNormalizedTokens(tokens, "local-unit-fallback", budget, entry.path),
+      variantHash: hashNormalizedTokens(tokens, "local-unit-variant", budget, entry.path),
+      participantId,
       scopeKey,
       declarations,
       exportFacts,
@@ -637,13 +679,13 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[], budget = n
       budget.reserve(768 + 2 * (symbol.semanticKey.length + scopeKey.length), "javascript-contract-facts", symbol.exportPath);
       const exportFile = files.find(({ path }) => path === symbol.exportPath)!;
       const sourceEntry = sourceEntries.find(({ path }) => path === symbol.exportPath)!;
-      const participantId = fileParticipantId(scopeKey, exportFile.declarations, exportFile.normalizedSemantics);
+      const participantId = exportFile.participantId;
       const subjectId = `contract_${hashFramedDomain("public-contract-subject", { scopeKey, semanticKey: symbol.semanticKey }).slice(-32)}`;
       contracts.push({ subjectId, semanticKey: symbol.semanticKey, scopeKey, participantId, role: "producer", location: symbol.location, evidenceId: `contract_evidence_${hashFramedDomain("contract-evidence", { participantId, declarationId: symbol.declaration.id, semanticKey: symbol.semanticKey }).slice(-32)}`, artifactHash: sourceEntry.contentHash });
     }
   }
   for (const file of files) {
-    const participantId = fileParticipantId(file.scopeKey, file.declarations, file.normalizedSemantics);
+    const participantId = file.participantId;
     const sourceEntry = sourceEntries.find(({ path }) => path === file.path)!;
     for (const dependency of normalizedDependencies.filter(({ importerPath }) => importerPath === file.path)) {
       const sourceScope = dependency.resolvedPath === undefined ? dependency.specifier : scopes.get(dependency.resolvedPath) ?? dependency.specifier;

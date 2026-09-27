@@ -5,4 +5,7 @@
 # - https://developers.openai.com/codex/multi-agent
 
 [plugins."projector@projector"]
+enabled = false
+
+[plugins."projector-v3@projector-v3"]
 enabled = true

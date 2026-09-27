@@ -177,3 +177,31 @@ export function hashFramedDomain(domain: string, ...values: readonly unknown[]):
   }
   return `sha256:v1:${hash.digest("hex")}`;
 }
+
+/** Hash one canonical JSON value without materializing its complete string.
+ * The repeatable iterator must yield identical canonical JSON chunks on both
+ * passes. UTF-16 surrogate pairs can cross chunk boundaries.
+ */
+export function hashFramedCanonicalJsonChunks(domain: string, chunks: () => Iterable<string>): `sha256:v1:${string}` {
+  function* utf8Chunks(): Generator<string> {
+    let pending = "";
+    for (const chunk of chunks()) {
+      const value = pending + chunk;
+      const last = value.charCodeAt(value.length - 1);
+      const hasHighSurrogate = last >= 0xd800 && last <= 0xdbff;
+      pending = hasHighSurrogate ? value.slice(-1) : "";
+      yield hasHighSurrogate ? value.slice(0, -1) : value;
+    }
+    if (pending !== "") yield pending;
+  }
+  let byteLength = 0;
+  for (const chunk of utf8Chunks()) byteLength += Buffer.byteLength(chunk, "utf8");
+  const hash = createHash("sha256");
+  hash.update(frame(Buffer.from("projector\0sha256\0v1", "utf8")));
+  hash.update(frame(Buffer.from(domain, "utf8")));
+  const length = Buffer.allocUnsafe(8);
+  length.writeBigUInt64BE(BigInt(byteLength));
+  hash.update(length);
+  for (const chunk of utf8Chunks()) hash.update(chunk, "utf8");
+  return `sha256:v1:${hash.digest("hex")}`;
+}

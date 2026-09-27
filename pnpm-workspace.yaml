@@ -2,3 +2,10 @@ packages:
   - packages/*
 
 onlyBuiltDependencies: []
+
+# Keep native build tools usable in the shared Windows/WSL checkout.
+supportedArchitectures:
+  os:
+    - current
+    - win32
+    - linux

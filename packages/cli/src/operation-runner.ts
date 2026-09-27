@@ -672,6 +672,12 @@ async function executeOperation<TOutput>(
           ? `Project operation access was lost: ${message(accessSignal?.reason ?? error)}`
           : cancelled ? "Projector operation was cancelled" : message(error),
         retriable: false,
+        ...(!cancelled && error instanceof ObservationError ? { observation: {
+          stage: error.stage,
+          scope: error.scope,
+          ...(error.limit === undefined ? {} : { limit: error.limit }),
+          ...(error.observed === undefined ? {} : { observed: error.observed }),
+        } } : {}),
       },
     });
   }

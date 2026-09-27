@@ -1,0 +1,28 @@
+{
+  "name": "@onepersonlabs/projector",
+  "version": "3.0.0",
+  "description": "Readable project meaning, task context and consequence checks for Codex",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "projector": "./dist/command-main.mjs"
+  },
+  "exports": {
+    "./commands": "./exports/commands.js",
+    "./operations": "./exports/operations.js",
+    "./core": "./exports/core.js",
+    "./analyzers": "./exports/analyzers.js",
+    "./engine": "./exports/engine.js",
+    "./engine/architecture": "./exports/engine-architecture.js",
+    "./engine/coverage": "./exports/engine-coverage.js",
+    "./engine/modernization": "./exports/engine-modernization.js",
+    "./runtime": "./exports/runtime.js",
+    "./integrations": "./exports/integrations.js",
+    "./integrations/surfaces": "./exports/integrations-surfaces.js",
+    "./integrations/models": "./exports/integrations-models.js",
+    "./integrations/codex": "./exports/integrations-codex.js",
+    "./control-plane": "./exports/control-plane.js"
+  }
+}

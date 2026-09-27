@@ -22,6 +22,8 @@ createdAt = "2026-09-10T11:00:00-05:00"
 
 The user directed complete orchestrated delivery from the September 10 wrap-up plan. The selected route reduces duplicated wrapper parsing and subprocess delivery while preserving service-owned lifecycle, currentness and recovery semantics. The wrapper-to-CLI subprocess chain and standalone MCP/CLI delivery were rejected because the plan selects one bundled in-process runner and existing typed services already own behavior. Repairing task17 host dispatch was rejected because it has no product producer, drops instructions, observes incomplete state and overstates capabilities. This decision proves delivery only to the runner or tool boundary; Task 10.7 separately observes active-host consumption and resulting behavior.
 
+The September 27 supported-workflow completion reaffirms the current decision scope after the plugin relocation to plugins/projector-v3. The relocation preserves the accepted decision, permission boundary, and lifecycle obligations. Its new baseline must come from the reviewed canonical transaction, not from clearing incomplete query observations.
+
 <details>
 <summary>Structured record details</summary>
 

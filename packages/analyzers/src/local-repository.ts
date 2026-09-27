@@ -25,6 +25,7 @@ import { type EventContractTopology } from "./topology/index.js";
 import { compileRepositoryTopology, detectMechanicalDivergences, type AnalyzerDivergenceFact } from "./topology/repository.js";
 import {
   analyzeJavaScript,
+  hashJavaScriptSemantics,
   type JavaScriptFileFacts,
   type JavaScriptFacts,
   type ModuleDependencyFact,
@@ -306,9 +307,9 @@ function roleFor(
   return { role: "other", evidence };
 }
 
-function signature(profileId: string, scope: string, value: unknown): SemanticSignature {
+function signature(profileId: string, scope: string, value: unknown, hash?: ContentHash): SemanticSignature {
   return {
-    hash: hashFramedDomain(profileId, value),
+    hash: hash ?? hashFramedDomain(profileId, value),
     profileId,
     profileVersion: "1",
     scope,
@@ -328,7 +329,7 @@ function stableSemanticKey(entry: InventoryEntry, javaScript: JavaScriptFileFact
       // The malformed manifest retains a deterministic fallback observation.
     }
   }
-  return `${role}:${hashFramedDomain("local-unit-fallback", javaScript?.normalizedSemantics ?? entry.content)}`;
+  return `${role}:${javaScript?.fallbackHash ?? hashFramedDomain("local-unit-fallback", entry.content)}`;
 }
 
 function projectionRole(role: LocalSemanticRole): ProjectionUnit["role"] {
@@ -490,7 +491,7 @@ export function analyzeCollectedLocalRepository(collected: CollectedLocalReposit
     const baseSemanticKey = baseSemanticKeys.get(entry.path)!;
     const semanticKey = keyCounts.get(baseSemanticKey) === 1
       ? baseSemanticKey
-      : `${baseSemanticKey}:variant:${hashFramedDomain("local-unit-variant", javaScript?.normalizedSemantics ?? entry.content)}`;
+      : `${baseSemanticKey}:variant:${javaScript?.variantHash ?? hashFramedDomain("local-unit-variant", entry.content)}`;
     semanticKeys.set(entry.path, semanticKey);
   }
 
@@ -507,14 +508,17 @@ export function analyzeCollectedLocalRepository(collected: CollectedLocalReposit
     const observationKey = `source:${movedFrom ?? entry.path}`;
     const artifactId = deriveEntityId("projector.repository-artifact", observationKey);
     const unitId = deriveEntityId("projector.projection-unit", observationKey);
-    const structuralSignature = signature("projector.local-structural", semanticKey, {
+    const structuralFields = {
       role,
       exports: javaScript?.exports ?? [],
       lifecycleExports: javaScript?.lifecycleExports ?? [],
       dependencySpecifiers: javaScriptFacts.dependencies.filter((dependency) => dependency.importerPath === entry.path).map((dependency) => dependency.specifier).sort(compareCodePoint),
-      syntaxTokens: javaScript?.normalizedSemantics,
-    });
-    const semanticSignature = signature("projector.local-semantic", semanticKey, javaScript?.normalizedSemantics ?? entry.content);
+    };
+    const structuralSignature = signature("projector.local-structural", semanticKey, structuralFields,
+      javaScript === undefined ? undefined : hashJavaScriptSemantics(entry.content, "projector.local-structural", derivedBudget, entry.path, {
+        fields: structuralFields, key: "syntaxTokens",
+      }));
+    const semanticSignature = signature("projector.local-semantic", semanticKey, entry.content, javaScript?.semanticHash);
     const anchor = javaScript !== undefined && javaScript.exports.length > 0
       ? { kind: "symbol" as const, value: `exports:${javaScript.exports.join(",")}`, fallbackSignature: structuralSignature }
       : javaScript !== undefined && javaScript.testNames.length > 0
