@@ -1,4 +1,3 @@
-import { createRequire as __projectorCreateRequire } from "node:module"; const require = __projectorCreateRequire(import.meta.url);
 import {
   AUTHORITY_ORDER,
   AdjudicatedSemanticIdentityResolutionSchema,
@@ -40,6 +39,7 @@ import {
   assessLensAuthority,
   authenticatePreparedStateBoundChangeSuccess,
   authorityRank,
+  buildGovernancePopulation,
   canonicalRepresentationSourceFromSemanticChange,
   classifyPlanningSurprise,
   compareAuthority,
@@ -63,15 +63,18 @@ import {
   executionCapsuleHash,
   executionPlanHash,
   governanceBasisIsEndogenous,
+  governancePopulationEntry,
   groupCausalEvidence,
   inferPatternFamilies,
   isHardRule,
+  lensMembershipFingerprint,
   lintHumanTechnical,
   mandatoryVerticalSliceEvidenceDigest,
   mandatoryVerticalSliceExecutionContextDigest,
   normalizeRiskPolicy,
   planUpgradeInvalidation,
   prepareGovernanceEvaluator,
+  prepareIndexedGovernanceEvaluator,
   publishPreparedStateBoundChangeSuccess,
   rebaseExecutionPlan,
   reconcileRepresentationProfileUpgrade,
@@ -82,8 +85,10 @@ import {
   riskRank,
   scoutRelevance,
   summarizeEvidenceSupport,
+  summarizeGovernanceManifest,
+  summarizeGovernancePopulation,
   upgradeDeclarationHash
-} from "../chunks/shared-FZTNE5ZL.js";
+} from "../chunks/shared-WHVGNTKI.js";
 import {
   InMemoryCleanupPlanStore,
   InMemorySettledAnswerStore,
@@ -94,7 +99,7 @@ import {
   rankCompletionQuestions,
   resumeCleanupPlan,
   settleCompletionQuestion
-} from "../chunks/shared-RWHW46VO.js";
+} from "../chunks/shared-J7T6FT4R.js";
 import {
   PlanningClaimConflictError,
   PlanningDependencyCycleError,
@@ -111,7 +116,7 @@ import {
   orderPlannedTransforms,
   planGeneratedOutputRepair,
   researchConcern
-} from "../chunks/shared-GHDUIXJM.js";
+} from "../chunks/shared-ZSTDDELF.js";
 import {
   acceptArchitectureDecisions,
   auditArchitectureDecisions,
@@ -119,7 +124,7 @@ import {
   discoverArchitectureConcerns,
   explainArchitectureDecision,
   runArchitecturePreflight
-} from "../chunks/shared-UX72GU5O.js";
+} from "../chunks/shared-X5VGSBJI.js";
 import {
   BUILT_IN_QUERY_PROGRAM_IDS,
   DependencyScopedCache,
@@ -152,8 +157,9 @@ import {
   selectorHash,
   selectorLensDependencies,
   validateDecisionDeferral
-} from "../chunks/shared-ZKECJVYF.js";
-import "../chunks/shared-6VIFAIKJ.js";
+} from "../chunks/shared-TL2BKTVW.js";
+import "../chunks/shared-ZRBELDV4.js";
+import "../chunks/shared-WC2OT3WX.js";
 export {
   AUTHORITY_ORDER,
   AdjudicatedSemanticIdentityResolutionSchema,
@@ -218,6 +224,7 @@ export {
   authenticatePreparedStateBoundChangeSuccess,
   authorityRank,
   authorityRecordHashIsValid,
+  buildGovernancePopulation,
   canonicalRepresentationSourceFromSemanticChange,
   captureDecisionStateBinding,
   classifyPlanningSurprise,
@@ -265,9 +272,11 @@ export {
   executionPlanHash,
   explainArchitectureDecision,
   governanceBasisIsEndogenous,
+  governancePopulationEntry,
   groupCausalEvidence,
   inferPatternFamilies,
   isHardRule,
+  lensMembershipFingerprint,
   lintHumanTechnical,
   mandatoryVerticalSliceEvidenceDigest,
   mandatoryVerticalSliceExecutionContextDigest,
@@ -279,6 +288,7 @@ export {
   planGeneratedOutputRepair,
   planUpgradeInvalidation,
   prepareGovernanceEvaluator,
+  prepareIndexedGovernanceEvaluator,
   projectionUnitSelectorSubject,
   publishPreparedStateBoundChangeSuccess,
   rankCompletionQuestions,
@@ -297,6 +307,8 @@ export {
   selectorLensDependencies,
   settleCompletionQuestion,
   summarizeEvidenceSupport,
+  summarizeGovernanceManifest,
+  summarizeGovernancePopulation,
   upgradeDeclarationHash,
   validateDecisionDeferral
 };

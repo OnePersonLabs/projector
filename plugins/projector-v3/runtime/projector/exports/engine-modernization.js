@@ -1,13 +1,13 @@
-import { createRequire as __projectorCreateRequire } from "node:module"; const require = __projectorCreateRequire(import.meta.url);
 import {
   compileUpgradePlan,
   createFrictionObservation,
   createResearchRecord,
   evaluateModernization,
   researchConcern
-} from "../chunks/shared-GHDUIXJM.js";
-import "../chunks/shared-ZKECJVYF.js";
-import "../chunks/shared-6VIFAIKJ.js";
+} from "../chunks/shared-ZSTDDELF.js";
+import "../chunks/shared-TL2BKTVW.js";
+import "../chunks/shared-ZRBELDV4.js";
+import "../chunks/shared-WC2OT3WX.js";
 export {
   compileUpgradePlan,
   createFrictionObservation,

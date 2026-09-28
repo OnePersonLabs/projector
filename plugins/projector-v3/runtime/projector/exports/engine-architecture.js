@@ -1,4 +1,3 @@
-import { createRequire as __projectorCreateRequire } from "node:module"; const require = __projectorCreateRequire(import.meta.url);
 import {
   acceptArchitectureDecisions,
   auditArchitectureDecisions,
@@ -6,7 +5,7 @@ import {
   discoverArchitectureConcerns,
   explainArchitectureDecision,
   runArchitecturePreflight
-} from "../chunks/shared-UX72GU5O.js";
+} from "../chunks/shared-X5VGSBJI.js";
 import {
   assessDecisionDeferral,
   assessDecisionValidity,
@@ -15,8 +14,9 @@ import {
   developerPreferenceHashIsValid,
   evaluateDecisionOptions,
   validateDecisionDeferral
-} from "../chunks/shared-ZKECJVYF.js";
-import "../chunks/shared-6VIFAIKJ.js";
+} from "../chunks/shared-TL2BKTVW.js";
+import "../chunks/shared-ZRBELDV4.js";
+import "../chunks/shared-WC2OT3WX.js";
 export {
   acceptArchitectureDecisions,
   assessDecisionDeferral,

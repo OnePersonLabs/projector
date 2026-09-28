@@ -1,4 +1,3 @@
-import { createRequire as __projectorCreateRequire } from "node:module"; const require = __projectorCreateRequire(import.meta.url);
 import {
   FakeSurfaceAdapter,
   FileExternalOperationJournal,
@@ -8,13 +7,14 @@ import {
   captureSurfaceSnapshot,
   executeSurfacePlan,
   rebuildPinnedSurfaceSnapshot
-} from "../chunks/shared-QHFC37SI.js";
-import "../chunks/shared-FZTNE5ZL.js";
-import "../chunks/shared-RWHW46VO.js";
-import "../chunks/shared-GHDUIXJM.js";
-import "../chunks/shared-UX72GU5O.js";
-import "../chunks/shared-ZKECJVYF.js";
-import "../chunks/shared-6VIFAIKJ.js";
+} from "../chunks/shared-K6HGNFC2.js";
+import "../chunks/shared-WHVGNTKI.js";
+import "../chunks/shared-J7T6FT4R.js";
+import "../chunks/shared-ZSTDDELF.js";
+import "../chunks/shared-X5VGSBJI.js";
+import "../chunks/shared-TL2BKTVW.js";
+import "../chunks/shared-ZRBELDV4.js";
+import "../chunks/shared-WC2OT3WX.js";
 export {
   FakeSurfaceAdapter,
   FileExternalOperationJournal,

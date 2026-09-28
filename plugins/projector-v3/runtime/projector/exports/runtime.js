@@ -1,4 +1,3 @@
-import { createRequire as __projectorCreateRequire } from "node:module"; const require = __projectorCreateRequire(import.meta.url);
 import {
   ArtifactSetIncompleteError,
   ArtifactSetIntegrityError,
@@ -13,6 +12,7 @@ import {
   FileTransaction,
   FileTransactionJournal,
   FileWatchCheckpointStore,
+  GenerationWriterLeaseHandle,
   GovernedWorktreeRuntime,
   GovernedWorktreeSession,
   InvalidJournalTransitionError,
@@ -29,6 +29,7 @@ import {
   ProjectBackupError,
   RepositoryPathService,
   SqliteDerivedStore,
+  SqliteObservationStore,
   StateBoundCommandExecutor,
   StateBoundMutationError,
   TransformClaimConflictError,
@@ -44,6 +45,8 @@ import {
   canonicalEditorSchemaRelativePath,
   canonicalSchemaVersion,
   checkDerivedCacheBudget,
+  checkoutCacheLocation,
+  classifyCanonicalSource,
   collectCanonicalSnapshotSources,
   compareCanonicalSnapshots,
   configuredHostAssumptions,
@@ -71,10 +74,12 @@ import {
   parseOperationalReport,
   parseTomlDocument,
   processIsAlive,
+  readDerivedCacheSource,
   rebuildDerivedStore,
   recoverAbandonedProjectOperationAccess,
   redactBeforeBoundary,
   renderOperationalReport,
+  resolveDerivedCachePath,
   runWatchLifecycle,
   sqliteMigrationSetHash,
   stringifyCanonicalMarkdownDocument,
@@ -87,8 +92,9 @@ import {
   withDerivedCacheAdmission,
   withObservationScope,
   withProjectOperationAccess
-} from "../chunks/shared-3WNQLUKU.js";
-import "../chunks/shared-6VIFAIKJ.js";
+} from "../chunks/shared-7KQYZYKY.js";
+import "../chunks/shared-ZRBELDV4.js";
+import "../chunks/shared-WC2OT3WX.js";
 export {
   ArtifactSetIncompleteError,
   ArtifactSetIntegrityError,
@@ -103,6 +109,7 @@ export {
   FileTransaction,
   FileTransactionJournal,
   FileWatchCheckpointStore,
+  GenerationWriterLeaseHandle,
   GovernedWorktreeRuntime,
   GovernedWorktreeSession,
   InvalidJournalTransitionError,
@@ -119,6 +126,7 @@ export {
   ProjectBackupError,
   RepositoryPathService,
   SqliteDerivedStore,
+  SqliteObservationStore,
   StateBoundCommandExecutor,
   StateBoundMutationError,
   TransformClaimConflictError,
@@ -134,6 +142,8 @@ export {
   canonicalEditorSchemaRelativePath,
   canonicalSchemaVersion,
   checkDerivedCacheBudget,
+  checkoutCacheLocation,
+  classifyCanonicalSource,
   collectCanonicalSnapshotSources,
   compareCanonicalSnapshots,
   configuredHostAssumptions,
@@ -161,10 +171,12 @@ export {
   parseOperationalReport,
   parseTomlDocument,
   processIsAlive as projectOperationProcessIsAlive,
+  readDerivedCacheSource,
   rebuildDerivedStore,
   recoverAbandonedProjectOperationAccess,
   redactBeforeBoundary,
   renderOperationalReport,
+  resolveDerivedCachePath,
   runWatchLifecycle,
   sqliteMigrationSetHash,
   stringifyCanonicalMarkdownDocument,

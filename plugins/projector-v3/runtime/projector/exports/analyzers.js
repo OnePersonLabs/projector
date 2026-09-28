@@ -1,12 +1,13 @@
-import { createRequire as __projectorCreateRequire } from "node:module"; const require = __projectorCreateRequire(import.meta.url);
 import {
   GitCommandError,
   analyzeCollectedLocalRepository,
   analyzeDocuments,
+  analyzeGitTree,
   analyzeJavaScript,
   analyzeLocalRepository,
   checkObservation,
   collectGitFacts,
+  collectGitPathIdentities,
   collectLocalRepositoryInputs,
   compileAuthenticatedAnalyzerTopology,
   compileEventContractTopology,
@@ -18,21 +19,31 @@ import {
   hashJavaScriptSemantics,
   inventoryRepository,
   isExcludedInventoryPath,
+  localImportCandidates,
+  localRepositoryAdapterVersion,
+  localSemanticKey,
   normalizeJavaScriptSemantics,
   observationFailure,
   observationGit,
+  observationGitBytes,
   observationMap,
-  readObservationFile
-} from "../chunks/shared-IFURLTPX.js";
-import "../chunks/shared-6VIFAIKJ.js";
+  parseGitStatus,
+  readInventoryEntry,
+  readObservationFile,
+  syntaxProgramVersion
+} from "../chunks/shared-3KELGNMA.js";
+import "../chunks/shared-ZRBELDV4.js";
+import "../chunks/shared-WC2OT3WX.js";
 export {
   GitCommandError,
   analyzeCollectedLocalRepository,
   analyzeDocuments,
+  analyzeGitTree,
   analyzeJavaScript,
   analyzeLocalRepository,
   checkObservation,
   collectGitFacts,
+  collectGitPathIdentities,
   collectLocalRepositoryInputs,
   compileAuthenticatedAnalyzerTopology,
   compileEventContractTopology,
@@ -44,9 +55,16 @@ export {
   hashJavaScriptSemantics,
   inventoryRepository,
   isExcludedInventoryPath,
+  localImportCandidates,
+  localRepositoryAdapterVersion,
+  localSemanticKey,
   normalizeJavaScriptSemantics,
   observationFailure,
   observationGit,
+  observationGitBytes,
   observationMap,
-  readObservationFile
+  parseGitStatus,
+  readInventoryEntry,
+  readObservationFile,
+  syntaxProgramVersion
 };
