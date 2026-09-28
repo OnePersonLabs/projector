@@ -31,8 +31,8 @@ An interesting mechanism is not automatically a requirement. Markdown, learned m
 
 ## Where this stands
 
-The fidelity review of the captured twelve-chat corpus is complete. All identified material gaps were corrected, and an independent reader recovered the design and its authority boundaries from the index and six topic notes without the source archive. The [review record](intake/reviews/coverage-gaps.md) states the checked scope and evidence limits.
+The fidelity review of the captured twelve-chat corpus is complete. All identified material gaps were corrected, and an independent reader recovered the design and its authority boundaries from the index and six topic notes without the source archive.
 
 This remains a working design, not an exhaustive accepted Projector specification. Historical repository assessments have not been re-audited, model-allocation suggestions are not measured rankings, and no performance or losslessness claim is established. Some supplied conversation bodies were capped and some referenced generated files were unavailable; the synthesis cannot guarantee recovery of their missing details. The separate pile-synthesis pack retains its own review limits, and [code-ontology intake](intake/code-ontology-3d-view.md) remains queued.
 
-The [source interpretation rules](SOURCE-INTERPRETATION.md) explain how old chat language is translated. The [assimilation-to-change workflow](WORKFLOW.md) defines how mature findings can enter Projector's existing change path without sharing identity. The [durable intake](intake/STATE.md) retains recoverable source evidence for this long-running work. Individual topic notes retain the detail needed to pursue the broader ambition.
+The [source interpretation rules](SOURCE-INTERPRETATION.md) explain how old chat language is translated. The [assimilation-to-change workflow](WORKFLOW.md) defines how mature findings can enter Projector's existing change path without sharing identity. The [remaining intake](intake/STATE.md) tracks the sources still under consideration. Individual topic notes retain the detail needed to pursue the broader ambition.
