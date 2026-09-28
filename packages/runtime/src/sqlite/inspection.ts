@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, mkdtemp, open, rm } from "node:fs/promises";
+import { lstat, mkdtemp, open, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -18,27 +18,25 @@ import { assertSupportedCanonicalVersions } from "../persistence/index.js";
 import type { CanonicalIndexRow } from "./derived-store.js";
 import { currentSqliteSchemaVersion, migrateSqlite, sqliteMigrationSetHash } from "./migrations.js";
 
-const maximumDatabaseBytes = 256 * 1024 * 1024;
-const maximumRowsPerTable = 250_000;
-const inspectionTimeoutMs = 10_000;
 const childSource = String.raw`
 const { DatabaseSync } = require('node:sqlite');
-const db = new DatabaseSync(process.argv[1], { allowExtension:false, defensive:true, enableDoubleQuotedStringLiterals:false, enableForeignKeyConstraints:true, readOnly:true, timeout:5000 });
+const { toNamespacedPath } = require('node:path');
+const db = new DatabaseSync(toNamespacedPath(process.argv[1]), { allowExtension:false, defensive:true, enableDoubleQuotedStringLiterals:false, enableForeignKeyConstraints:true, readOnly:true, timeout:5000 });
 try {
   db.exec('PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;');
-  const maxRows = Number(process.argv[2]);
-  const maxBytes = Number(process.argv[3]);
+  const maxRows = process.argv[2] === 'null' ? null : Number(process.argv[2]);
+  const maxBytes = process.argv[3] === 'null' ? null : Number(process.argv[3]);
   const pageCount = db.prepare('PRAGMA page_count').get().page_count;
   const pageSize = db.prepare('PRAGMA page_size').get().page_size;
-  if (!Number.isSafeInteger(pageCount) || pageCount < 0 || !Number.isSafeInteger(pageSize) || pageSize < 512 || pageCount * pageSize > maxBytes) {
-    throw new Error('state.db page allocation exceeds bounded inspection limit');
+  if (!Number.isSafeInteger(pageCount) || pageCount < 0 || !Number.isSafeInteger(pageSize) || pageSize < 512 || (maxBytes !== null && pageCount * pageSize > maxBytes)) {
+    throw new Error('state.db page allocation is invalid or exceeds the requested inspection limit');
   }
-  const count = (table) => { const n=db.prepare('SELECT COUNT(*) AS count FROM '+table).get().count; if(!Number.isSafeInteger(n)||n<0||n>maxRows) throw new Error(table+' exceeds bounded row limit'); };
+  const count = (table) => { const n=db.prepare('SELECT COUNT(*) AS count FROM '+table).get().count; if(!Number.isSafeInteger(n)||n<0||(maxRows !== null && n>maxRows)) throw new Error(table+' exceeds the requested row limit'); };
   const tables=['schema_migrations','graph_state','canonical_documents','entities','requirements','behavioral_scenarios','relations','lineage_records','tombstones','governance_documents'];
   for (const table of tables) count(table);
   const integrity=db.prepare('PRAGMA integrity_check').get().integrity_check;
   if(integrity!=='ok') throw new Error('integrity check returned '+String(integrity));
-  process.stdout.write(JSON.stringify({
+  require('node:fs').writeFileSync(process.argv[4], JSON.stringify({
     pageCount,pageSize,
     migrations:db.prepare('SELECT version FROM schema_migrations ORDER BY version').all(),
     schema:db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name,tbl_name").all(),
@@ -67,20 +65,26 @@ export type ExistingSqliteDerivedState =
 export interface SqliteInspectionOptions {
   readonly signal?: AbortSignal;
   readonly launcher?: ProcessLauncher;
+  readonly maxDatabaseBytes?: number;
+  readonly maxRowsPerTable?: number;
+  readonly timeoutMs?: number;
   /** Test seam for a pathname replacement between the pre-observation and handle open. */
   readonly afterSourcePreflight?: () => void | Promise<void>;
 }
 
 export async function inspectExistingSqliteDerivedState(path: string, expectedRoot: ContentHash, options: SqliteInspectionOptions = {}): Promise<ExistingSqliteDerivedState> {
+  for (const [name, value] of Object.entries({ maxDatabaseBytes: options.maxDatabaseBytes, maxRowsPerTable: options.maxRowsPerTable, timeoutMs: options.timeoutMs })) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) throw new RangeError(`${name} must be a positive safe integer`);
+  }
   const initial = await lstat(path, { bigint: true }).catch((error: unknown) =>
     isCode(error, "ENOENT") ? undefined : Promise.reject(error),
   );
   if (initial === undefined) return { status: "absent" };
-  assertBoundedRegular(initial, path);
+  assertRegular(initial, path, options.maxDatabaseBytes);
   throwIfAborted(options.signal);
   const scratch = await mkdtemp(join(tmpdir(), "projector-sqlite-inspection-"));
   try {
-    await copyBounded(path, join(scratch, basename(path)), options.afterSourcePreflight, options.signal);
+    await copyBounded(path, join(scratch, basename(path)), options.afterSourcePreflight, options.signal, options.maxDatabaseBytes);
     const rollbackJournal = `${path}-journal`;
     const rollbackJournalStatus = await lstat(rollbackJournal, { bigint: true }).catch((error: unknown) =>
       isCode(error, "ENOENT") ? undefined : Promise.reject(error),
@@ -93,8 +97,8 @@ export async function inspectExistingSqliteDerivedState(path: string, expectedRo
       isCode(error, "ENOENT") ? undefined : Promise.reject(error),
     );
     if (walStatus !== undefined) {
-      assertBoundedRegular(walStatus, walPath);
-      await copyBounded(walPath, join(scratch, `${basename(path)}-wal`), undefined, options.signal);
+      assertRegular(walStatus, walPath, options.maxDatabaseBytes);
+      await copyBounded(walPath, join(scratch, `${basename(path)}-wal`), undefined, options.signal, options.maxDatabaseBytes);
     }
     await assertSidecarStateUnchanged(rollbackJournal, undefined);
     await assertSidecarStateUnchanged(walPath, walStatus);
@@ -106,20 +110,22 @@ export async function inspectExistingSqliteDerivedState(path: string, expectedRo
         "--eval",
         childSource,
         join(scratch, basename(path)),
-        String(maximumRowsPerTable),
-        String(maximumDatabaseBytes),
+        String(options.maxRowsPerTable ?? null),
+        String(options.maxDatabaseBytes ?? null),
+        join(scratch, "inspection.json"),
       ],
       cwd: scratch,
       env: { PATH: process.env.PATH ?? "" },
-      timeoutMs: inspectionTimeoutMs,
-      maxOutputBytes: maximumDatabaseBytes,
+      timeoutMs: options.timeoutMs ?? null,
+      maxOutputBytes: 64 * 1024,
+      outputOverflow: "truncate",
       signal,
     });
     if (result.exitCode !== 0) {
-      throw new Error(`state.db bounded inspection failed: ${result.stderr || `exit ${String(result.exitCode)}`}`);
+      throw new Error(`state.db inspection failed: ${result.stderr || `exit ${String(result.exitCode)}`}`);
     }
     throwIfAborted(options.signal);
-    return validateInspection(JSON.parse(result.stdout) as unknown, expectedRoot);
+    return validateInspection(JSON.parse(await readFile(join(scratch, "inspection.json"), "utf8")) as unknown, expectedRoot, options.maxDatabaseBytes);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
@@ -130,9 +136,10 @@ async function copyBounded(
   target: string,
   afterPreflight: (() => void | Promise<void>) | undefined,
   signal: AbortSignal | undefined,
+  maximumBytes: number | undefined,
 ): Promise<void> {
   const before = await lstat(source, { bigint: true });
-  assertBoundedRegular(before, source);
+  assertRegular(before, source, maximumBytes);
   await afterPreflight?.();
   const input = await open(source, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
@@ -147,7 +154,7 @@ async function copyBounded(
         const { bytesRead } = await input.read(buffer, 0, buffer.length, null);
         if (bytesRead === 0) break;
         copied += bytesRead;
-        if (copied > maximumDatabaseBytes) throw new Error(`${source} grew beyond the bounded inspection limit`);
+        if (maximumBytes !== undefined && copied > maximumBytes) throw new Error(`${source} grew beyond the requested inspection limit`);
         await writeAll(output, buffer.subarray(0, bytesRead));
       }
       await output.sync();
@@ -183,10 +190,10 @@ async function writeAll(output: Awaited<ReturnType<typeof open>>, bytes: Buffer)
 }
 
 type FileIdentity = { dev: bigint; ino: bigint; size: bigint; isFile(): boolean; isSymbolicLink(): boolean };
-function assertBoundedRegular(status: FileIdentity, label: string): void {
+function assertRegular(status: FileIdentity, label: string, maximumBytes?: number): void {
   if (status.isSymbolicLink() || !status.isFile()) throw new Error(`${label} must be a regular non-symlink file`);
-  if (status.size > BigInt(maximumDatabaseBytes)) {
-    throw new Error(`${label} exceeds the bounded ${maximumDatabaseBytes}-byte inspection limit`);
+  if (maximumBytes !== undefined && status.size > BigInt(maximumBytes)) {
+    throw new Error(`${label} exceeds the requested ${maximumBytes}-byte inspection limit`);
   }
 }
 function sameIdentity(a: FileIdentity, b: FileIdentity): boolean {
@@ -203,14 +210,14 @@ type Inspection = {
   logical: Record<string, unknown[]>;
 };
 
-function validateInspection(value: unknown, expectedRoot: ContentHash): ExistingSqliteDerivedState {
+function validateInspection(value: unknown, expectedRoot: ContentHash, maximumDatabaseBytes?: number): ExistingSqliteDerivedState {
   if (!isRecord(value)) throw new Error("state.db inspection returned malformed output");
   const inspection = value as unknown as Inspection;
   if (
     !Number.isSafeInteger(inspection.pageCount) || inspection.pageCount < 0 ||
     !Number.isSafeInteger(inspection.pageSize) || inspection.pageSize < 512 ||
-    inspection.pageCount * inspection.pageSize > maximumDatabaseBytes
-  ) throw new Error("state.db page allocation exceeds bounded inspection limit");
+    (maximumDatabaseBytes !== undefined && inspection.pageCount * inspection.pageSize > maximumDatabaseBytes)
+  ) throw new Error("state.db page allocation is invalid or exceeds the requested inspection limit");
   if (canonicalJson(inspection.migrations.map(({ version }) => version)) !== canonicalJson([currentSqliteSchemaVersion])) {
     throw new Error("state.db schema migrations do not match released version");
   }

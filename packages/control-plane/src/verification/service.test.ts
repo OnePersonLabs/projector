@@ -24,6 +24,18 @@ test("native execution needs no candidate or Git and completeInputs cannot estab
   await rm(join(root, "population", "new.txt")); await writeFile(join(root, "input.txt"), "changed");
   expect((await service.assess([record.id]))[0]?.observedInputsMatch).toBe(false);
 });
+test("retains complete process output beyond the former capture limit", async () => {
+  const { root, request } = await fixture();
+  await writeFile(join(root, "check.cjs"), "process.stdout.write('x'.repeat(1048577));process.stderr.write('diagnostic-tail')");
+  const service = await VerificationService.create(root);
+  const record = await service.execute(request);
+  expect(record.status).toBe("passed");
+  expect(record.stdout).toHaveLength(1_048_577);
+  expect(record.stderr).toBe("diagnostic-tail");
+  const retained = (await service.inspect([record.id])).records[0];
+  expect(retained?.stdout).toHaveLength(1_048_577);
+  expect(retained?.stderr).toBe("diagnostic-tail");
+});
 test("two independent roots retain source-independent immutable history and conflicting outcomes", async () => {
   const source = await fixture(); const destination = await fixture(); const shared = await mkdtemp(join(tmpdir(), "projector-retained-events-")); roots.push(shared);
   const origin = await VerificationService.create(source.root, { evidenceStoreRoot: shared });
@@ -64,16 +76,15 @@ test("path refusal and cancellation happen before native launch", async () => {
   await expect((await VerificationService.create(root, { signal: controller.signal })).execute(request)).rejects.toThrow();
   expect((await service.inspect()).records).toEqual([]);
 });
-test("empty population directories remain bounded before execution", async () => {
+test("empty population directories beyond the former default ceiling remain observable", async () => {
   const { root, request } = await fixture(); const service = await VerificationService.create(root, { observationTimeoutMs: 300000 });
   for (let start = 0; start < 10001; start += 100) {
     await Promise.all(Array.from({ length: Math.min(100, 10001 - start) }, (_, index) => mkdir(join(root, "population", `empty-${start + index}`))));
   }
-  await expect(service.execute(request)).rejects.toMatchObject({ code: "observation-limit-exceeded", stage: "verification-population", limit: "maxDirectories", observed: 10001 });
-  expect((await service.inspect()).records).toHaveLength(0);
+  expect((await service.execute(request)).status).toBe("passed");
 });
-test("discovery has its own deadline and polls cancellation before launch", async () => {
-  const { root, request } = await fixture(); const service = await VerificationService.create(root);
+test("explicit discovery deadline and cancellation are enforced before launch", async () => {
+  const { root, request } = await fixture(); const service = await VerificationService.create(root, { observationTimeoutMs: 30000 });
   const realNow = Date.now.bind(Date); let ticks = 0;
   const clock = vi.spyOn(Date, "now").mockImplementation(() => realNow() + ++ticks * 30001);
   try { await expect(service.execute(request)).rejects.toMatchObject({ code: "observation-limit-exceeded", limit: "timeoutMs" }); }

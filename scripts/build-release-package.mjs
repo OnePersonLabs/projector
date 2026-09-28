@@ -1,6 +1,6 @@
 import { cp as copyFiles, mkdir, readFile, writeFile, lstat } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { executeReleaseCommand, resolveNpmCommand } from "./npm-command.mjs";
@@ -12,11 +12,13 @@ const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 export { releasePackageName, releaseVersion };
 const internalPackages = ["core", "analyzers", "engine", "runtime", "integrations", "control-plane"];
 const bundledNames = internalPackages.map((name) => `@projector/${name}`);
-const exportTargets = { "./commands": "public-command", "./operations": "operation-runner", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./integrations/models": "integrations/models", "./integrations/codex": "integrations/codex", "./control-plane": "control-plane" };
-const operationRuntimeModules = ["operation-runner", "operational-verification", "public-command", "application-evidence-host"];
+const exportTargets = { "./commands": "public-command", "./operations": "operation-runner", "./mcp": "mcp-server", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./integrations/models": "integrations/models", "./integrations/codex": "integrations/codex", "./control-plane": "control-plane" };
+const operationRuntimeModules = ["operation-runner", "operational-verification", "public-command", "application-evidence-host", "mcp-server"];
 
 export async function buildReleasePackage(stagingRoot, packDestination, options = {}) {
   options.signal?.throwIfAborted();
+  stagingRoot = resolve(stagingRoot);
+  packDestination = resolve(packDestination);
   const cp = async (source, target, copyOptions = {}) => {
     await copyFiles(source, target, { ...copyOptions, filter: (from,to) => { options.signal?.throwIfAborted(); return copyOptions.filter?.(from,to) ?? true; } });
     options.signal?.throwIfAborted();
@@ -38,12 +40,13 @@ export async function buildReleasePackage(stagingRoot, packDestination, options 
     if ((await lstat(from)).isDirectory()) return true;
     const item = relative(join(source, "dist"), from);
     if (/\.test\.|\.tsbuildinfo$/u.test(item)) return false;
+    if (name === "analyzers" && /^code-intelligence[\\/]semanticdb[\\/]generated[\\/](?:semanticdb\.js|semanticdb\.d\.ts|UPSTREAM-LICENSE\.md)$/u.test(item)) return true;
     if (item.endsWith(".ps1")) return name === "runtime" && basename(item) === "windows-job-supervisor.ps1";
     const original = item.replace(/(?:\.d\.ts|\.js)(?:\.map)?$/u, ".ts");
     return original !== item && existsSync(join(source, "src", original));
   } }); const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8")); if (manifest.version !== releaseVersion) throw new Error(`${manifest.name} version does not match root release version ${releaseVersion}`); manifest.private = false; for (const group of ["dependencies", "optionalDependencies", "peerDependencies"]) if (manifest[group] !== undefined) for (const [dependency, version] of Object.entries(manifest[group])) if (typeof version === "string" && version.startsWith("workspace:")) manifest[group][dependency] = releaseVersion; await writeFile(join(target, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`); }
   const externalRequests = [];
-  for (const name of internalPackages) {
+  for (const name of [...internalPackages, "cli"]) {
     const from = join(repositoryRoot, "packages", name);
     const manifest = JSON.parse(await readFile(join(from, "package.json"), "utf8"));
     for (const dependency of Object.keys(manifest.dependencies ?? {})) if (!dependency.startsWith("@projector/")) externalRequests.push({ name: dependency, from });

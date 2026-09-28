@@ -12,6 +12,7 @@ import { candidateFor, KNOWLEDGE_QUERY_PROGRAMS, mergeCandidates, scoreLexical, 
 import { IndexedGraphReader } from "./indexed-graph-reader.js";
 import { IndexedQueryMemo } from "./indexed-query.js";
 import type { KnowledgeInterpretationCandidate } from "./types.js";
+import { SEMANTIC_TOPOLOGY_PROGRAM, type IndexedSemanticGraph } from "./code-graph.js";
 
 export type IndexedGovernancePort = Pick<KnowledgeContextGraph,
   "lensObligations" | "validatorRequests" | "relevantDecisions" | "bindDecisionApplicability"
@@ -39,14 +40,16 @@ export class IndexedKnowledgeGraph implements KnowledgeContextGraph {
     readonly store: SqliteObservationStore,
     governanceFactory: (registry: QueryDependencyRegistry) => IndexedGovernancePort,
     readonly derivedBudget: DerivedObservationBudget,
+    readonly semantic?: IndexedSemanticGraph,
   ) {
     this.core = new IndexedGraphReader(store, descriptor.generation);
-    this.memo = new IndexedQueryMemo(store, descriptor.generation);
+    this.memo = new IndexedQueryMemo(store, descriptor.generation, semantic === undefined ? undefined : key => semantic.version(key));
     this.registry = new QueryDependencyRegistry(this.core, false, this.memo);
     this.registerPrograms();
     this.governance = governanceFactory(this.registry);
   }
   row<T>(kind: string, key: string): T | undefined { return this.store.getAt<T>(this.descriptor.generation, kind, key); }
+  semanticSummary(unitIds: readonly string[]) { return this.semantic?.summary(unitIds, this.store); }
   population(selector: string, namespace?: string): string[] {
     if (this.row("population-version", selector) === undefined && (namespace === undefined || this.row("population-version", namespace) === undefined)) throw new Error(`Knowledge population ${selector} is not enrolled; rebuild the complete observation`);
     return this.store.populationAt(this.descriptor.generation, selector);
@@ -161,6 +164,12 @@ export class IndexedKnowledgeGraph implements KnowledgeContextGraph {
       const edges = this.relationEdges(subjectId, depth);
       edges.push(...this.implementationBindings(subjectId).map(({ id, reason }) => this.edge(subjectId, String(id), "consequence", 0.82, "implementation-binding", String(reason), "derived")));
       if (this.row<ProjectionUnit>("unit", subjectId) !== undefined) {
+        if (this.semantic?.generation !== undefined) {
+          const query = this.registry.createSpec({ id: `knowledge-code:${subjectId}`, programId: SEMANTIC_TOPOLOGY_PROGRAM, input: { unitId: subjectId } });
+          const observed = await this.registry.evaluateObserved(query, context);
+          dependencies.push({ query, priorResult: observed.fingerprint, role: `source-bound semantic relationships for ${subjectId}` });
+          for (const result of observed.observed.results) edges.push({ ...this.edge(subjectId, String(result.id), "consequence", 0.85, "package-dependency", `Compiler or structural code relationships connect the owning source units: ${String(result.path)}`, "derived"), reason: { ...this.edge(subjectId, String(result.id), "consequence", 0.85, "package-dependency", "Semantic code relationship", "derived").reason, evidenceIds: Array.isArray(result.evidenceIds) ? result.evidenceIds.map(String) : [] } });
+        }
         const decisions = await this.registry.evaluateObserved(this.registry.createSpec({ id: `knowledge-decisions:${subjectId}`, programId: KNOWLEDGE_QUERY_PROGRAMS.decisionMembership, input: { unitId: subjectId } }), context);
         const decisionQuery = this.registry.createSpec({ id: `knowledge-decisions:${subjectId}`, programId: KNOWLEDGE_QUERY_PROGRAMS.decisionMembership, input: { unitId: subjectId } });
         dependencies.push({ query: decisionQuery, priorResult: decisions.fingerprint, role: `active decision applicability for ${subjectId}` });
@@ -192,6 +201,7 @@ export class IndexedKnowledgeGraph implements KnowledgeContextGraph {
     return { entityId, band, score, requiredForPlanning, cost: 1, reason: { kind, fromId, weight: score, provenance, confidence: score, explanation, evidenceIds: [] } };
   }
   private registerPrograms(): void {
+    this.registry.register({ id: SEMANTIC_TOPOLOGY_PROGRAM, version: "1", kind: "package-dependency", normalizeInput: input => ({ unitId: String(input.unitId ?? "") }), evaluate: ({ input }) => this.semantic?.neighborhood(String(input.unitId), this.store) ?? { results: [], observability: "unavailable", assumptions: [], unavailableLanes: ["semantic-code-index:not-open"], dependencyKeys: [] } });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.identity, version: "1", kind: "semantic-identity-search", normalizeInput: (input) => ({ request: String(input.request ?? "").normalize("NFKC").trim(), addressed: unique(Array.isArray(input.addressed) ? input.addressed.map(String).map((item) => item.normalize("NFKC").trim()).filter(Boolean) : []), namedTargets: unique(Array.isArray(input.namedTargets) ? input.namedTargets.map(String).map((item) => item.replaceAll("\\", "/").normalize("NFKC").trim()).filter(Boolean) : []) }), evaluate: ({ input }) => ({ results: mergeCandidates([...this.search(input.request as string, input.addressed as string[], Number.MAX_SAFE_INTEGER), ...this.resolveNamedTargets(input.namedTargets as string[])]).map((item) => ({ id: item.entityId, ...item })), observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: ["canonical-identity-discovery", "canonical-lineage", "canonical-tombstones", "projection-unit-membership", ...((input.namedTargets as string[]).map((target) => `path:${target}`))] }) });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.relations, version: "1", kind: "relation-neighborhood", normalizeInput: (input) => ({ subjectId: String(input.subjectId ?? "") }), evaluate: ({ input }) => ({ results: this.core.getRelations(String(input.subjectId), "both").map(({ id, fromId, toId, type, semanticHash }) => ({ id, fromId, toId, type, semanticHash })), observability: "closed", assumptions: [], unavailableLanes: [], dependencyKeys: ["canonical-relations", `entity:${String(input.subjectId)}`] }) });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.implementation, version: "2", kind: "implementation-binding", normalizeInput: (input) => ({ subjectId: String(input.subjectId ?? "") }), evaluate: ({ input }) => {

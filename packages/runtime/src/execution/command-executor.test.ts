@@ -253,6 +253,21 @@ describe("NativeProcessLauncher", () => {
     ).rejects.toBeInstanceOf(ExecutionLimitError);
   });
 
+  it("preserves machine output after large diagnostics when no output limit was requested", async () => {
+    const result = await new NativeProcessLauncher().launch({
+      executable: process.execPath,
+      args: ["-e", "process.stderr.write('x'.repeat(300000)); process.stdout.write(JSON.stringify({status:'satisfied',reason:'ok'}))"],
+      cwd: process.cwd(),
+      env: {},
+      timeoutMs: null,
+      maxOutputBytes: null,
+      signal: new AbortController().signal,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toHaveLength(300_000);
+    expect(JSON.parse(result.stdout)).toEqual({ status: "satisfied", reason: "ok" });
+  });
+
   it("refuses unsupported CPU and memory limits before spawning the host command", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-exec-limits-"));
     const paths = await RepositoryPathService.create(root);

@@ -14,6 +14,9 @@ export interface IndexedObservationMetadata {
   readonly enumeration: InventoryResult["enumeration"];
   readonly analysisHeader: Pick<LocalRepositoryAnalysis,"surface"|"capabilities"|"observationDescriptor"> & { readonly git: Pick<LocalRepositoryAnalysis["git"],"availability"|"revision"> };
   readonly canonicalRootDigest: CanonicalSnapshot["rootDigest"];
+  /** Raw source boundaries used when a complete notification provider is absent. */
+  readonly canonicalSourceHash: ContentHash;
+  readonly gitSourceHash: ContentHash;
   readonly contractHash: ContentHash;
   readonly watchman?: WatchmanBaseline;
   readonly gitWatchmen: readonly WatchmanBaseline[];

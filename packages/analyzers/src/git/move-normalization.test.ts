@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DerivedObservationBudget } from "@projector/core";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { InventoryContentStore, type LegacyInventoryContentDescriptor } from "../filesystem/inventory-content-store.js";
 import { finalizeGitFacts } from "./facts.js";
 
 describe("working-tree move normalization", () => {
@@ -37,5 +41,30 @@ describe("working-tree move normalization", () => {
         untracked: [{ path: "new.json", content }, { path: "new.md", content: "Meaning // different meaning" }] },
     }, new DerivedObservationBudget(100_000));
     expect(result.moves).toEqual([{ sourceClass: "derived", fromPath: "old.json", toPath: "new.json", status: "working-tree-rename" }]);
+  });
+
+  it("disposes owned captures on early returns and errors while preserving borrowed captures", async () => {
+    const directory=await mkdtemp(join(tmpdir(),"projector-git-capture-"));
+    try {
+      const createCapture=()=>{
+        const store=InventoryContentStore.create(directory);
+        store.put({path:"new.ts",kind:"file",mediaType:"text/plain",contentHash:"sha256:v1:test" as never,contentBytes:1,generated:false},"x");
+        store.finish();store.close();return store.descriptor as LegacyInventoryContentDescriptor;
+      };
+      const owned=createCapture();
+      finalizeGitFacts({availability:"available",revision:"head",identities:[],moves:[],failures:[],moveCandidateContent:{...owned,disposeAfterUse:true},
+        pendingMoveCandidates:{deleted:[],untracked:[]}});
+      await expect(readdir(directory)).resolves.toEqual([]);
+
+      const ownedOnError=createCapture();
+      expect(()=>finalizeGitFacts({availability:"available",revision:"head",identities:[],moves:[],failures:[],moveCandidateContent:{...ownedOnError,disposeAfterUse:true},
+        pendingMoveCandidates:{deleted:[{path:"old.ts",content:"x"}],untracked:[{path:"new.ts",contentAddress:"new.ts"}]}},new DerivedObservationBudget(1))).toThrow();
+      await expect(readdir(directory)).resolves.toEqual([]);
+
+      const borrowed=createCapture();
+      finalizeGitFacts({availability:"available",revision:"head",identities:[],moves:[],failures:[],moveCandidateContent:borrowed,
+        pendingMoveCandidates:{deleted:[],untracked:[]}});
+      await expect(readdir(directory)).resolves.toEqual([borrowed.path.split(/[\\/]/u).at(-1)]);
+    } finally { await rm(directory,{recursive:true,force:true}); }
   });
 });

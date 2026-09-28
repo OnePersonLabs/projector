@@ -9,4 +9,4 @@ export type KnowledgeContextGraph = Pick<KnowledgeGraph,
   | "authorityUnknowns" | "topologyUnknowns" | "realizationUnknowns"
   | "lensObligations" | "validatorRequests" | "relevantDecisions" | "bindDecisionApplicability"
   | "bindDecisionTriggers" | "governanceEvaluations" | "registry" | "lensCompilationUnknown"
-> & { readonly decisionRun: Pick<KnowledgeDecisionRun, "observe"> };
+> & { readonly decisionRun: Pick<KnowledgeDecisionRun, "observe">; readonly semanticSummary?: (unitIds: readonly string[]) => import("@projector/core").CodeContextSummary | undefined };

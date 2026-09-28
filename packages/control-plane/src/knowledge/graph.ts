@@ -54,8 +54,11 @@ import {
   type RelevanceDiscoveryPort,
   type QueryMemoPort,
 } from "@projector/engine";
+import { verifyCodeInputBinding } from "@projector/analyzers";
+import { SqliteCodeStore, checkoutCacheLocation } from "@projector/runtime";
 
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
+import { SEMANTIC_TOPOLOGY_PROGRAM, projectSemanticNeighborhood } from "./code-graph.js";
 import { KnowledgeDecisionRun, type KnowledgeDecisionHost } from "./governance.js";
 import { compileKnowledgeLensObligation } from "./lens-obligations.js";
 import type { KnowledgeValidatorRequest } from "./validators.js";
@@ -575,6 +578,23 @@ export class KnowledgeGraph implements ContextSourcePort {
   }
 
   private registerPrograms(): void {
+    this.registry.register({ id: SEMANTIC_TOPOLOGY_PROGRAM, version: "1", kind: "package-dependency", normalizeInput: input => ({ unitId: String(input.unitId ?? "") }), evaluate: async ({ input }) => {
+      const unitId = String(input.unitId);
+      const path = this.unitById.get(unitId)?.key ?? unitId;
+      const unavailable = { results: [], observability: "unavailable" as const, assumptions: [], unavailableLanes: ["semantic-code-index:not-current"], dependencyKeys: [`code:neighborhood:${path}`] };
+      const checkout = await checkoutCacheLocation(this.observation.repositoryRoot);
+      const store = await SqliteCodeStore.open(this.observation.repositoryRoot);
+      try {
+        return store.withReadSnapshot(() => {
+          const head = store.head();
+          const manifest = head === null ? undefined : store.manifest(head);
+          if (head === null || manifest?.binding.checkoutId !== checkout.checkoutId ||
+            manifest.binding.worktreeDigest !== this.observation.state.worktreeDigest ||
+            manifest.binding.status !== "verified" || !verifyCodeInputBinding(manifest.binding, this.observation.repositoryRoot)) return unavailable;
+          return projectSemanticNeighborhood(path, store.neighborhood(head, path, 5000), relatedPath => this.units.filter(unit => unit.key === relatedPath).map(unit => unit.id));
+        });
+      } finally { store.close(); }
+    } });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.decisionApplicability, version: "1", kind: "decision-applicability", normalizeInput: (input) => ({ decisionId: String(input.decisionId) }), evaluate: ({ input }) => this.decisionApplicabilityResult(String(input.decisionId)) });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.decisionMembership, version: "1", kind: "selector-membership", normalizeInput: (input) => ({ unitId: String(input.unitId) }), evaluate: ({ input }) => ({ results: this.decisions.filter((decision) => this.implementationBindings(decision.id).some(({ id }) => id === input.unitId)).map(({ id, semanticHash }) => ({ id, semanticHash })), observability: this.observation.analysis.surface.enumeration.observability, assumptions: [], unavailableLanes: this.failureLanes(["projector.filesystem-local"]), dependencyKeys: ["canonical-decisions", "projection-unit-membership"] }) });
     this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.decisionTriggers, version: "1", kind: "custom", normalizeInput: (input) => ({ decisionId: String(input.decisionId), operation: String(input.operation) }), evaluate: async ({ input }) => {
@@ -614,6 +634,15 @@ export class KnowledgeGraph implements ContextSourcePort {
     dependencies.push(implementationDependency);
     edges.push(...this.implementationBindings(subjectId).map(({ id, reason }) => this.edge(subjectId, id as string, "consequence", 0.82, "implementation-binding", reason as string, "derived")));
     if (this.unitById.has(subjectId)) {
+      const query = this.registry.createSpec({ id: `knowledge-code:${subjectId}`, programId: SEMANTIC_TOPOLOGY_PROGRAM, input: { unitId: subjectId } });
+      const semantic = await this.registry.evaluateObserved(query, context);
+      if (semantic.observed.observability !== "unavailable") {
+        dependencies.push({ query, priorResult: semantic.fingerprint, role: `source-bound semantic relationships for ${subjectId}` });
+        for (const result of semantic.observed.results) {
+          const related = this.edge(subjectId, String(result.id), "consequence", 0.85, "package-dependency", `Compiler or structural code relationships connect the owning source units: ${String(result.path)}`, "derived");
+          edges.push({ ...related, reason: { ...related.reason, evidenceIds: Array.isArray(result.evidenceIds) ? result.evidenceIds.map(String) : [] } });
+        }
+      }
       const decisionDependency = await this.dependency(KNOWLEDGE_QUERY_PROGRAMS.decisionMembership, `knowledge-decisions:${subjectId}`, { unitId: subjectId }, `active decision applicability for ${subjectId}`, context);
       dependencies.push(decisionDependency);
       for (const decision of this.decisions.filter((item) => this.implementationBindings(item.id).some(({ id }) => id === subjectId))) edges.push(this.edge(subjectId, decision.id, "governing", 0.93, "selector-applicability", `active decision ${decision.id} applies to ${subjectId}`, "derived", true));

@@ -19,6 +19,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "@jridgewell/trace-mapping": "0.3.31",
     "@projector/analyzers": "workspace:*",
     "@projector/core": "workspace:*",
     "@projector/engine": "workspace:*",

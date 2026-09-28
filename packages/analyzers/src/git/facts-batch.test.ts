@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -38,6 +38,34 @@ afterEach(async () => {
 });
 
 describe("batched deleted Git facts", () => {
+  it("does not allocate a v2 move capture when either candidate side is empty", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-git-no-move-capture-"));
+    temporaryRoots.push(root);
+    mockTrackedPaths([], async () => "");
+    await collectGitFacts(root, [], { contentStore: { schemaVersion: "projector.source-content/v2", path: join(root, "index.sqlite"), captureId: "test" } });
+    await expect(readdir(`${join(root, "index.sqlite")}.temporary`)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("removes an owned v2 move capture when Git fails after capture creation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-git-failed-move-capture-"));
+    temporaryRoots.push(root);
+    const commitId = "b".repeat(40), failure = new Error("tree read failed");
+    vi.mocked(observationGit).mockImplementation(async (_root, args) => {
+      if (args[0] === "rev-parse") return `${commitId}\n`;
+      if (args[0] === "ls-files") return "";
+      if (args[0] === "status") return " D old.ts\0?? new.ts\0";
+      if (args[0] === "log") return "";
+      if (args[0] === "ls-tree") throw failure;
+      throw new Error(`Unexpected Git command: ${args.join(" ")}`);
+    });
+    const temporaryDirectory = `${join(root, "index.sqlite")}.temporary`;
+    await expect(collectGitFacts(root, [], {
+      contentStore: { schemaVersion: "projector.source-content/v2", path: join(root, "index.sqlite"), captureId: "test" },
+      entries: [{ path: "new.ts", kind: "file", mediaType: "text/plain", contentHash: "sha256:v1:test" as never, content: "x", generated: false }],
+    })).rejects.toBe(failure);
+    await expect(readdir(temporaryDirectory)).resolves.toEqual([]);
+  });
+
   it("reads many deleted objects through one tree lookup and two bounded batches", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-git-facts-batch-"));
     temporaryRoots.push(root);

@@ -419,8 +419,9 @@ async function runNodeValidators(
       args: [contentPath],
       cwd: repositoryRoot,
       env: {},
-      timeoutMs: 30_000,
+      timeoutMs: null,
       maxOutputBytes: 256 * 1_024,
+      outputOverflow: "truncate",
       signal,
     }));
     const afterContentHash = await hashObservedText(await readObservedText(contentPath, signal), signal);
@@ -448,7 +449,7 @@ async function runNodeValidators(
         executionSource: validator.source === "git-base" ? "exact-live-tracked-validator" : "exact-live-approved-validator",
         exactResolvedPath: contentPath,
         observedResult: { exitCode: execution.exitCode, signal: execution.signal, stdout: execution.stdout, stderr: execution.stderr },
-        enforcedBounds: { timeoutMs: 30_000, maxOutputBytes: 256 * 1_024, callerCancellation: true },
+        executionPolicy: { timeoutMs: null, diagnosticCaptureBytes: 256 * 1_024, diagnosticOverflow: "truncate", callerCancellation: true },
         hostAssumptions: configuredHostAssumptions,
       },
       startedAt,

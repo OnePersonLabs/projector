@@ -28,7 +28,6 @@ import { z } from "zod";
 import { maintainDerivedCache } from "../knowledge/cache-maintenance.js";
 
 const preparedConfigPath = join(".projector", "config.toml");
-const maximumConfigBytes = 16 * 1024;
 
 export interface ReadinessInspectionInput {
   readonly operation: ProjectorOperation;
@@ -177,16 +176,20 @@ type MetadataRead =
   | { readonly status: "present"; readonly source: string }
   | { readonly status: "unsafe"; readonly reason: string };
 
-async function readBoundedMetadata(path: string): Promise<MetadataRead> {
+async function readMetadata(path: string): Promise<MetadataRead> {
   try {
     const pathStatus = await lstat(path);
     if (!pathStatus.isFile() || pathStatus.isSymbolicLink()) return { status: "unsafe", reason: `${path} must be a regular non-symlink file` };
-    if (pathStatus.size > maximumConfigBytes) return { status: "unsafe", reason: `${path} exceeds ${maximumConfigBytes} bytes` };
     const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const handleStatus = await handle.stat();
-      if (!handleStatus.isFile() || handleStatus.size > maximumConfigBytes) return { status: "unsafe", reason: `${path} changed during bounded inspection` };
-      return { status: "present", source: await handle.readFile("utf8") };
+      if (!handleStatus.isFile() || handleStatus.size !== pathStatus.size) return { status: "unsafe", reason: `${path} changed during inspection` };
+      const source = await handle.readFile("utf8");
+      const after = await handle.stat();
+      if (Buffer.byteLength(source) !== handleStatus.size || after.size !== handleStatus.size || after.mtimeMs !== handleStatus.mtimeMs) {
+        return { status: "unsafe", reason: `${path} changed during inspection` };
+      }
+      return { status: "present", source };
     } finally {
       await handle.close();
     }
@@ -198,7 +201,7 @@ async function readBoundedMetadata(path: string): Promise<MetadataRead> {
 
 async function readRepositoryMetadata(paths: RepositoryPathService, relativePath: string): Promise<MetadataRead> {
   try {
-    return await readBoundedMetadata((await paths.resolveRead(relativePath)).realTarget);
+    return await readMetadata((await paths.resolveRead(relativePath)).realTarget);
   } catch (error) {
     return { status: "unsafe", reason: `Projector configuration path is unsafe at ${relativePath}: ${message(error)}` };
   }
@@ -233,7 +236,7 @@ async function publishPreparedFile(paths: RepositoryPathService, relativePath: s
       await link(temporary, target);
     } catch (error) {
       if (!isCode(error, "EEXIST")) throw error;
-      const existing = await readBoundedMetadata(target);
+      const existing = await readMetadata(target);
       if (existing.status !== "present" || (!preserveExisting && existing.source !== contents)) {
         throw new Error(`Prepared Projector metadata was concurrently published with different bytes: ${relativePath}`);
       }

@@ -2,6 +2,8 @@ import {
   AnalyzerCapabilitiesSchema,
   AnalyzerFailureSchema,
   ContentHashSchema,
+  CodeContextSummarySchema,
+  type CodeContextSummary,
   AuthorityReconsiderTriggerSchema,
   DecisionValidityAssessmentSchema,
   NormalizedPredicateSchema,
@@ -125,6 +127,7 @@ export interface KnowledgeDecisionValidity {
 }
 
 export interface KnowledgeContextResult {
+  readonly code?: CodeContextSummary;
   readonly impactBaseline?: RepositoryImpactReference;
   readonly apiVersion: typeof KNOWLEDGE_API_VERSION;
   readonly id: string;
@@ -300,6 +303,7 @@ export const KnowledgeContextBranchSchema = z.strictObject({
 }) as unknown as z.ZodType<KnowledgeContextBranch>;
 
 export const KnowledgeContextResultSchema = z.strictObject({
+  code: CodeContextSummarySchema.optional(),
   impactBaseline: RepositoryImpactReferenceSchema.optional(),
   apiVersion: z.literal(KNOWLEDGE_API_VERSION),
   id: z.string(),

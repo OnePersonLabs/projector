@@ -19,6 +19,8 @@ import {
   builtinCanonicalCheck,
   checkRepository,
   evaluateRepositoryArchitectureOptions,
+  executeCodeOperation,
+  executeCodeTestReplay,
   initializePreparedProject,
   inspectProjectReadiness,
   projectLifecycleApply,
@@ -27,12 +29,14 @@ import {
   projectLifecyclePlan,
   projectLifecycleRecovery,
   projectRepresentationProfileReconciliationOperation,
+  shutdownCodeIndexRuns,
   summarizeRepositoryIntentReview,
   withProjectOperationAccess
-} from "../chunks/shared-7XKALNZM.js";
+} from "../chunks/shared-RQAO52GP.js";
+import "../chunks/shared-YZHC7WTJ.js";
 import {
   inspectRepositoryArchitecture
-} from "../chunks/shared-ALNVJGKH.js";
+} from "../chunks/shared-7LB4PVNV.js";
 import {
   CompletionQuestionSchema,
   RepositoryCleanupOutputSchema,
@@ -40,7 +44,7 @@ import {
   RepositoryCoverageOutputSchema,
   inspectRepositoryCoverage,
   parseRepositoryCoverageResult
-} from "../chunks/shared-ZIBRFFY6.js";
+} from "../chunks/shared-PMEWHUNO.js";
 import {
   KnowledgeContextOperationOutputSchema,
   KnowledgeReconciliationOperationOutputSchema,
@@ -55,38 +59,43 @@ import {
   projectKnowledgeContext,
   projectKnowledgeReconciliation,
   projectRepresentationInspectionOperation
-} from "../chunks/shared-KKCSOX4K.js";
+} from "../chunks/shared-D3MXHIAY.js";
+import "../chunks/shared-PMEH6UKE.js";
+import "../chunks/shared-2B7P2BAO.js";
+import "../chunks/shared-PMI2YIJY.js";
 import {
   KnowledgeApplicationEvidenceAssessmentSchema,
   KnowledgeContextResultSchema,
   KnowledgeReconciliationResultSchema
-} from "../chunks/shared-O32TOHXV.js";
-import "../chunks/shared-CZSJNAK5.js";
-import "../chunks/shared-M3R3WXND.js";
-import "../chunks/shared-FWCBYCC7.js";
-import "../chunks/shared-MZY7PPBN.js";
+} from "../chunks/shared-TKNA4UJH.js";
 import {
   buildRepositoryImpactSnapshot,
   predictRepositoryImpact,
   reconcileRepositoryImpact
-} from "../chunks/shared-5FL4DL6C.js";
-import "../chunks/shared-3FCWERXF.js";
-import "../chunks/shared-TF7TIC3S.js";
-import "../chunks/shared-DP6EYTV3.js";
+} from "../chunks/shared-HUQ6JTJS.js";
+import "../chunks/shared-YMMDUUVJ.js";
+import "../chunks/shared-VQ4M4TY3.js";
+import "../chunks/shared-F7VGIPLU.js";
+import "../chunks/shared-SN3OO5CC.js";
+import "../chunks/shared-WY2QJ7AR.js";
 import {
-  runObservationTask
-} from "../chunks/shared-ADEWWTKT.js";
-import "../chunks/shared-7KQYZYKY.js";
-import "../chunks/shared-VNGUL66Q.js";
-import "../chunks/shared-3KELGNMA.js";
-import "../chunks/shared-WHVGNTKI.js";
-import "../chunks/shared-J7T6FT4R.js";
-import "../chunks/shared-ZSTDDELF.js";
-import "../chunks/shared-X5VGSBJI.js";
-import "../chunks/shared-TL2BKTVW.js";
+  ResidentObservationWorkerPool,
+  runObservationTask,
+  withResidentObservationWorkerPool
+} from "../chunks/shared-2INZJVA6.js";
+import "../chunks/shared-AHRONKDP.js";
+import "../chunks/shared-IVNK7NJ5.js";
+import "../chunks/shared-IFEDFPQ4.js";
+import "../chunks/shared-EHAKQ7RC.js";
+import "../chunks/shared-T66EWDMN.js";
+import "../chunks/shared-WYYVWFGB.js";
+import "../chunks/shared-3PXVRXWV.js";
+import "../chunks/shared-KWLM6SLK.js";
+import "../chunks/shared-2U2MJHPJ.js";
+import "../chunks/shared-HEBLUKDF.js";
 import {
   ArchitectureEvaluationOutputSchema
-} from "../chunks/shared-ZRBELDV4.js";
+} from "../chunks/shared-AJ5KBTH5.js";
 import "../chunks/shared-WC2OT3WX.js";
 export {
   ArchitectureEvaluationOutputSchema,
@@ -121,6 +130,7 @@ export {
   RepresentationProfileReconciliationOperationOutputSchema,
   RepresentationProfileReconciliationOutputSchema,
   RepresentationRecoveryOutputSchema,
+  ResidentObservationWorkerPool,
   StateBoundChangeResultSchema,
   VerificationService,
   assessGitIntegration,
@@ -128,6 +138,8 @@ export {
   builtinCanonicalCheck,
   checkRepository,
   evaluateRepositoryArchitectureOptions,
+  executeCodeOperation,
+  executeCodeTestReplay,
   initializePreparedProject,
   inspectProjectReadiness,
   inspectRepositoryArchitecture,
@@ -145,6 +157,8 @@ export {
   projectRepresentationProfileReconciliationOperation,
   reconcileRepositoryImpact,
   runObservationTask,
+  shutdownCodeIndexRuns,
   summarizeRepositoryIntentReview,
-  withProjectOperationAccess
+  withProjectOperationAccess,
+  withResidentObservationWorkerPool
 };

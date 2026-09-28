@@ -176,13 +176,13 @@ function protocolLauncher(calls: ProcessLaunchRequest[]): ProcessLauncher {
   return { capabilities: { cpuLimits: false, memoryLimits: false }, async launch(request) {
     calls.push(request);
     expect(request.env).toEqual({});
-    expect(request.timeoutMs).toBeGreaterThan(0);
-    expect(request.timeoutMs).toBeLessThanOrEqual(30_000);
+    expect(request.timeoutMs === null || request.timeoutMs > 0).toBe(true);
+    expect(request.maxOutputBytes).toBeNull();
     expect(request).not.toHaveProperty("network");
     expect(request).not.toHaveProperty("readRoots");
     expect(request).not.toHaveProperty("writeRoots");
     expect(request.args[0]).toBe(join(request.cwd, "validators/check.cjs"));
-    const { stdout, stderr } = await execute(process.execPath, [request.args[0]!, request.args[1]!], { cwd: request.cwd, env: {}, timeout: request.timeoutMs, signal: request.signal });
+    const { stdout, stderr } = await execute(process.execPath, [request.args[0]!, request.args[1]!], { cwd: request.cwd, env: {}, timeout: request.timeoutMs ?? 0, signal: request.signal });
     return { exitCode: 0, signal: null, stdout, stderr, durationMs: 0 };
   } };
 }
@@ -206,7 +206,7 @@ describe("public durable repository validators", () => {
     const { root } = await validatorFixture();
     const service = await RepositoryKnowledgeService.create({ repositoryRoot: root, createLauncher: async () => new NativeProcessLauncher() });
     const inspected = await service.context({ request: "inspect", entities: ["lens:validator"] });
-    expect(inspected.branches[0]?.governanceEvaluations?.[0]?.status).toBe("conformant");
+    expect(inspected.branches[0]?.governanceEvaluations?.[0]?.status, JSON.stringify(inspected.branches[0]?.governanceEvaluations?.[0])).toBe("conformant");
     expect(JSON.stringify(inspected.branches[0]?.governanceEvaluations?.[0])).toContain("configured host permissions");
   });
 

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, writeFile, rm, mkdir, copyFile, rename, readFile, symlink } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, mkdir, copyFile, rename, readFile, symlink, open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
@@ -47,6 +47,18 @@ test("no-op producer exposes unchanged existing bytes without claiming this run 
   await writeFile(join(root, "producer.cjs"), "process.exit(4)");
   expect((await service.inspect([request.producerId])).records[0]?.current).toBe(false);
 });
+test("streamed output hashes retain the legacy framing and accept files beyond 64 MiB", async () => {
+  const { root, request, service } = await fixture("process.exit(0)");
+  const oddBytes = Buffer.from("seven!!");
+  await writeFile(join(root, "cache.txt"), oddBytes);
+  const handle = await open(join(root, "output.txt"), "w");
+  try { await handle.truncate(64 * 1024 * 1024 + 1); }
+  finally { await handle.close(); }
+  const evidence = await service.execute(request);
+  expect(evidence.after["cache.txt"]).toBe(hashFramedDomain("generated-output-bytes", { bytes: oddBytes.toString("base64") }));
+  expect(evidence.after["output.txt"]).toMatch(/^sha256:v1:[0-9a-f]{64}$/u);
+  expect((await service.inspect([request.producerId])).records[0]?.current).toBe(true);
+});
 test("pending durable output evidence is visible and recovery never runs its producer again", async () => {
   const { root, request, service } = await fixture("require('node:fs').writeFileSync('output.txt','result');require('node:fs').writeFileSync('cache.txt','cache');");
   const evidence = await service.execute(request);
@@ -59,15 +71,9 @@ test("pending durable output evidence is visible and recovery never runs its pro
   expect(recovered.inspection.pendingPublications).toEqual([]);
   expect((await (await VerificationService.create(root)).inspect()).records).toHaveLength(1);
 });
-test("generated history overflow and cancellation preserve committed evidence without rerunning the producer", async () => {
+test("generated history cancellation preserves committed evidence without rerunning the producer", async () => {
   const { root, request, service } = await fixture("require('node:fs').writeFileSync('output.txt','result');require('node:fs').writeFileSync('cache.txt','cache');");
   await service.execute(request);
-  const published = join(root, ".projector/runtime/change-lifecycles/generated-outputs", "published");
-  const overflowNames = Array.from({ length: 10000 }, (_, index) => `overflow-${String(index).padStart(5, "0")}`);
-  await Promise.all(overflowNames.map((name) => mkdir(join(published, name))));
-  await expect(service.inspect([request.producerId])).rejects.toThrow(/maxFiles/u);
-  await Promise.all(overflowNames.map((name) => rm(join(published, name), { recursive: true })));
-
   const controller = new AbortController(); controller.abort();
   const cancelled = await GeneratedOutputService.create(root, { signal: controller.signal });
   await expect(cancelled.inspect([request.producerId])).rejects.toThrow();

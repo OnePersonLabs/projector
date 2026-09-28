@@ -1,5 +1,35 @@
 [
   {
+    "name": "@bufbuild/protobuf",
+    "version": "2.11.0",
+    "license": "(Apache-2.0 AND BSD-3-Clause)"
+  },
+  {
+    "name": "@jridgewell/resolve-uri",
+    "version": "3.1.2",
+    "license": "MIT"
+  },
+  {
+    "name": "@jridgewell/sourcemap-codec",
+    "version": "1.6.0",
+    "license": "MIT"
+  },
+  {
+    "name": "@jridgewell/trace-mapping",
+    "version": "0.3.31",
+    "license": "MIT"
+  },
+  {
+    "name": "@modelcontextprotocol/core",
+    "version": "2.1.0",
+    "license": "MIT"
+  },
+  {
+    "name": "@modelcontextprotocol/server",
+    "version": "2.1.0",
+    "license": "MIT"
+  },
+  {
     "name": "@projector/analyzers",
     "version": "3.0.0"
   },
@@ -22,6 +52,61 @@
   {
     "name": "@projector/runtime",
     "version": "3.0.0"
+  },
+  {
+    "name": "@protobufjs/aspromise",
+    "version": "1.1.2",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@protobufjs/base64",
+    "version": "1.1.2",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@protobufjs/codegen",
+    "version": "2.0.5",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@protobufjs/eventemitter",
+    "version": "1.1.1",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@protobufjs/fetch",
+    "version": "1.1.1",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@protobufjs/float",
+    "version": "1.0.2",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@protobufjs/inquire",
+    "version": "1.1.2",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@protobufjs/path",
+    "version": "1.1.2",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@protobufjs/pool",
+    "version": "1.1.0",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@protobufjs/utf8",
+    "version": "1.1.2",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "@scip-code/scip",
+    "version": "0.10.0",
+    "license": "Apache-2.0"
   },
   {
     "name": "@types/debug",
@@ -72,6 +157,11 @@
     "name": "devlop",
     "version": "1.1.0",
     "license": "MIT"
+  },
+  {
+    "name": "long",
+    "version": "5.3.2",
+    "license": "Apache-2.0"
   },
   {
     "name": "mdast-util-from-markdown",
@@ -194,9 +284,19 @@
     "license": "MIT"
   },
   {
+    "name": "protobufjs",
+    "version": "7.5.4",
+    "license": "BSD-3-Clause"
+  },
+  {
     "name": "smol-toml",
     "version": "1.8.0",
     "license": "BSD-3-Clause"
+  },
+  {
+    "name": "tree-sitter-wasm",
+    "version": "2.0.2",
+    "license": "MIT"
   },
   {
     "name": "typescript",
@@ -211,6 +311,11 @@
   {
     "name": "unist-util-stringify-position",
     "version": "4.0.0",
+    "license": "MIT"
+  },
+  {
+    "name": "web-tree-sitter",
+    "version": "0.27.0",
     "license": "MIT"
   },
   {

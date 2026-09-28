@@ -31,7 +31,7 @@ export async function checkoutCacheLocation(repositoryRoot: string): Promise<Che
 
 /** Existing derived addresses are virtual names; their physical owner is the user cache. */
 export async function resolveDerivedCachePath(repositoryRoot: string, relativePath: string): Promise<string> {
-  if (!/^\.projector\/runtime\/(?:knowledge\/contexts\/|impact\/|observations\/)/u.test(relativePath)) throw new Error("Path is not a disposable Projector cache address");
+  if (!/^\.projector\/runtime\/(?:knowledge\/contexts\/|impact\/|observations\/|code\/)/u.test(relativePath)) throw new Error("Path is not a disposable Projector cache address");
   const { cacheRoot } = await checkoutCacheLocation(repositoryRoot);
   const paths = await RepositoryPathService.create(cacheRoot);
   return (await paths.resolveWrite(relativePath)).realTarget;

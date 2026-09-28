@@ -10,9 +10,36 @@ export function assertBoundedObservationData(value: unknown, maximumBytes: numbe
     if (bytes > maximumBytes) throw new ObservationError("observation-limit-exceeded", "derived-data", ".", `Observation derived-data limit exceeded (${bytes} > ${maximumBytes} bytes)`, "maxDerivedBytes", bytes);
     if (++visited % 1024 === 0 && Date.now() >= deadline) throw new ObservationError("observation-limit-exceeded", "data-accounting", ".", "Observation deadline exceeded during data accounting", "timeoutMs");
   };
-  const visit = (item: unknown, depth: number): void => {
-    if (depth > 256) throw new Error("Observation data nesting limit exceeded (256)");
-    if (item === undefined || item === null) { add(4); return; }
+  type Frame =
+    | { kind: "value"; item: unknown }
+    | { kind: "array"; item: readonly unknown[]; index: number }
+    | { kind: "object"; item: Record<string, unknown>; keys: readonly string[]; index: number; emitted: boolean };
+  const frames: Frame[] = [{ kind: "value", item: value }];
+  if (Date.now() >= deadline) throw new ObservationError("observation-limit-exceeded", "data-accounting", ".", "Observation deadline exceeded before data accounting", "timeoutMs");
+  while (frames.length > 0) {
+    const frame = frames.pop()!;
+    if (frame.kind === "array") {
+      if (frame.index === frame.item.length) { ancestors.delete(frame.item); continue; }
+      if (frame.index > 0) add(1);
+      frames.push({ ...frame, index: frame.index + 1 });
+      frames.push({ kind: "value", item: frame.item[frame.index] });
+      continue;
+    }
+    if (frame.kind === "object") {
+      if (frame.index === frame.keys.length) { ancestors.delete(frame.item); continue; }
+      const key = frame.keys[frame.index]!;
+      const descriptor = Object.getOwnPropertyDescriptor(frame.item, key)!;
+      if (!("value" in descriptor)) throw new Error("Observation worker tasks cannot contain accessors");
+      if (descriptor.value === undefined) { frames.push({ ...frame, index: frame.index + 1 }); continue; }
+      if (frame.emitted) add(1);
+      add(1);
+      frames.push({ ...frame, index: frame.index + 1, emitted: true });
+      frames.push({ kind: "value", item: descriptor.value });
+      frames.push({ kind: "value", item: key });
+      continue;
+    }
+    const item = frame.item;
+    if (item === undefined || item === null) { add(4); continue; }
     if (typeof item === "string") {
       add(2);
       for (let i = 0; i < item.length; i += 1) {
@@ -25,36 +52,21 @@ export function assertBoundedObservationData(value: unknown, maximumBytes: numbe
         else if (code >= 0xd800 && code <= 0xdfff) add(6);
         else add(3);
       }
-      return;
+      continue;
     }
-    if (typeof item === "number") { add(Number.isFinite(item) ? String(item).length : 4); return; }
-    if (typeof item === "boolean") { add(item ? 4 : 5); return; }
+    if (typeof item === "number") { add(Number.isFinite(item) ? String(item).length : 4); continue; }
+    if (typeof item === "boolean") { add(item ? 4 : 5); continue; }
     if (typeof item !== "object") throw new Error("Observation worker tasks accept plain data only");
     if (ancestors.has(item)) throw new Error("Observation worker tasks cannot contain cyclic data");
     ancestors.add(item);
     add(2);
     if (Array.isArray(item)) {
-      let first = true;
-      for (const entry of item) { if (!first) add(1); first = false; visit(entry, depth + 1); }
+      frames.push({ kind: "array", item, index: 0 });
     } else {
       const prototype = Object.getPrototypeOf(item);
       if (prototype !== Object.prototype && prototype !== null) throw new Error("Observation worker tasks accept plain objects only");
-      let first = true;
-      for (const key in item) {
-        if (!Object.hasOwn(item, key)) continue;
-        const descriptor = Object.getOwnPropertyDescriptor(item, key)!;
-        if (!("value" in descriptor)) throw new Error("Observation worker tasks cannot contain accessors");
-        if (descriptor.value === undefined) continue;
-        if (!first) add(1);
-        first = false;
-        add(1);
-        visit(key, depth + 1);
-        visit(descriptor.value, depth + 1);
-      }
+      frames.push({ kind: "object", item: item as Record<string, unknown>, keys: Object.keys(item), index: 0, emitted: false });
     }
-    ancestors.delete(item);
-  };
-  if (Date.now() >= deadline) throw new ObservationError("observation-limit-exceeded", "data-accounting", ".", "Observation deadline exceeded before data accounting", "timeoutMs");
-  visit(value, 0);
+  }
   return bytes;
 }

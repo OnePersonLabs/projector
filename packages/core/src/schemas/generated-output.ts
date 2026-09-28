@@ -4,10 +4,10 @@ import { VerificationEvidenceSchema, VerificationPopulationSchema } from "./veri
 
 export const GeneratedOutputRequestSchema = z.object({
   producerId: z.string().min(1), executable: z.string().min(1), sourcePath: z.string().min(1),
-  args: z.array(z.string()).max(1024), inputPaths: z.array(z.string().min(1)).max(10000),
-  outputs: z.array(z.object({ path: z.string().min(1), ownership: z.enum(["retained", "disposable"]) }).strict()).min(1).max(10000),
-  environment: z.array(z.string().min(1)).max(256), timeoutMs: z.number().int().positive().max(300000),
-  completeInputs: z.boolean().optional(), populations: z.array(VerificationPopulationSchema).max(128),
+  args: z.array(z.string()), inputPaths: z.array(z.string().min(1)),
+  outputs: z.array(z.object({ path: z.string().min(1), ownership: z.enum(["retained", "disposable"]) }).strict()).min(1),
+  environment: z.array(z.string().min(1)), timeoutMs: z.number().int().positive().safe().nullable().default(null),
+  completeInputs: z.boolean().optional(), populations: z.array(VerificationPopulationSchema),
 }).strict();
 export type GeneratedOutputRequest = z.infer<typeof GeneratedOutputRequestSchema>;
 export const GeneratedOutputEvidenceSchema = z.object({

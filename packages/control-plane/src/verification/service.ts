@@ -9,7 +9,7 @@ import { retainImmutableRecord } from "./retention.js";
 export interface VerificationOptions {
     readonly launcher?: ProcessLauncher;
     readonly signal?: AbortSignal;
-    readonly observationTimeoutMs?: number;
+    readonly observationTimeoutMs?: number | null;
     readonly evidenceStoreRoot?: string;
 }
 export interface VerificationPendingPublication {
@@ -30,14 +30,14 @@ export function validateVerificationEvent(value: unknown): VerificationEvidence 
 function validate(bytes: Uint8Array) { return { manifest: validateVerificationEvent(JSON.parse(Buffer.from(bytes).toString("utf8"))), blobs: [] }; }
 /** Native execution records declared observations; it cannot certify complete dependencies or portable reuse. */
 export class VerificationService {
-    private constructor(private readonly paths: RepositoryPathService, private readonly localRoot: string, private readonly evidenceRoot: string | undefined, private readonly launcher: ProcessLauncher, private readonly signal: AbortSignal, private readonly observationTimeoutMs: number) { }
+    private constructor(private readonly paths: RepositoryPathService, private readonly localRoot: string, private readonly evidenceRoot: string | undefined, private readonly launcher: ProcessLauncher, private readonly signal: AbortSignal, private readonly observationTimeoutMs: number | null) { }
     static async create(root: string, options: VerificationOptions = {}) {
         const paths = await RepositoryPathService.create(root);
         if (options.evidenceStoreRoot !== undefined && !isAbsolute(options.evidenceStoreRoot))
             throw new Error("Host verification evidence store must be absolute");
-        return new VerificationService(paths, (await paths.resolveWrite(".projector/runtime/verification")).realTarget, options.evidenceStoreRoot, options.launcher ?? new NativeProcessLauncher(), options.signal ?? new AbortController().signal, new ObservationBudget({ timeoutMs: options.observationTimeoutMs ?? 30000 }).limits.timeoutMs);
+        return new VerificationService(paths, (await paths.resolveWrite(".projector/runtime/verification")).realTarget, options.evidenceStoreRoot, options.launcher ?? new NativeProcessLauncher(), options.signal ?? new AbortController().signal, new ObservationBudget({ timeoutMs: options.observationTimeoutMs ?? null }).limits.timeoutMs);
     }
-    private budget() { return new ObservationBudget({ timeoutMs: this.observationTimeoutMs, maxFiles: 10000, maxDirectories: 10000 }); }
+    private budget() { return new ObservationBudget({ timeoutMs: this.observationTimeoutMs }); }
     private store(root: string, budget = this.budget()) { return new DurableArtifactSetStore<VerificationEvidence>(root, validate, {}, { budget, signal: this.signal, derivedBudget: new DerivedObservationBudget(budget.limits.maxDerivedBytes) }); }
     private async save(record: VerificationEvidence) {
         // Publication must retain the terminal observation even when execution was cancelled.
@@ -143,7 +143,7 @@ export class VerificationService {
         try {
             if (retainStart !== undefined) await retainStart(seal({ ...start, status: "running" as const }));
             const args = request.sourcePath === undefined ? request.args : [(await this.paths.resolveRead(request.sourcePath)).realTarget, ...request.args];
-            const result = await this.launcher.launch({ executable: inputs.producerPath, args, cwd: this.paths.root, env: selectedEnvironment(request.environment), timeoutMs: request.timeoutMs, maxOutputBytes: 1024 * 1024, signal: this.signal });
+            const result = await this.launcher.launch({ executable: inputs.producerPath, args, cwd: this.paths.root, env: selectedEnvironment(request.environment), timeoutMs: request.timeoutMs, maxOutputBytes: null, signal: this.signal });
             const after = await this.snapshot(request);
             record = seal({ ...start, completedAt: new Date().toISOString(), status: canonicalJson(inputs) !== canonicalJson(after) ? "inputs-changed" : result.exitCode === 0 && result.signal === null ? "passed" : "failed", exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
         }
@@ -205,9 +205,6 @@ export class VerificationService {
     }
     private async files(paths: readonly string[], allowMissing = false, budget?: ObservationBudget): Promise<Record<string, ReturnType<typeof hashFramedDomain>>> {
         const files: Record<string, ReturnType<typeof hashFramedDomain>> = {};
-        let remainingBytes = 64 * 1024 * 1024;
-        if (paths.length > 10000)
-            throw new Error("Verification file inputs exceed 10000 paths");
         for (const path of this.canonicalPaths(paths)) {
             this.signal.throwIfAborted();
             budget?.check("verification-inputs", path);
@@ -216,10 +213,8 @@ export class VerificationService {
                 const metadata = await stat(target);
                 if (!metadata.isFile())
                     throw new Error(`Verification scope requires a regular file: ${path}`);
-                files[path] = await this.hashFile(target, Math.min(remainingBytes, 8 * 1024 * 1024), budget);
-                remainingBytes -= metadata.size;
-                if (remainingBytes < 0)
-                    throw new Error("Verification input set exceeds 64MiB");
+                budget?.assertFileBytes(metadata.size, path);
+                files[path] = await this.hashFile(target, budget);
             }
             catch (error) {
                 if (allowMissing && error instanceof Error && "code" in error && error.code === "ENOENT")
@@ -229,7 +224,7 @@ export class VerificationService {
         }
         return files;
     }
-    private async hashFile(path: string, maximumBytes: number, budget?: ObservationBudget): Promise<ReturnType<typeof hashFramedDomain>> {
+    private async hashFile(path: string, budget?: ObservationBudget): Promise<ReturnType<typeof hashFramedDomain>> {
         const digest = createHash("sha256");
         let bytes = 0;
         const stream = createReadStream(path, { signal: this.signal });
@@ -237,10 +232,8 @@ export class VerificationService {
             this.signal.throwIfAborted();
             budget?.check("verification-inputs", path);
             bytes += chunk.length;
-            if (bytes > maximumBytes) {
-                stream.destroy();
-                throw new Error(`Verification input exceeds ${maximumBytes} bytes: ${path}`);
-            }
+            budget?.assertFileBytes(bytes, path);
+            budget?.consume("maxTotalBytes", chunk.length, "verification-inputs", path);
             digest.update(chunk);
         }
         return hashFramedDomain("verification-file-bytes", { sha256: digest.digest("hex"), bytes });
@@ -274,8 +267,6 @@ export class VerificationService {
                     else if (entry.isFile()) {
                         budget.consume("maxFiles", 1, "verification-population", path);
                         members.push(path);
-                        if (members.length > 10000)
-                            throw new Error("Verification population exceeds 10000 files; narrow the declared population");
                     }
                     else if (!entry.isDirectory())
                         throw new Error(`Verification population has unsupported input: ${path}`);
@@ -285,7 +276,7 @@ export class VerificationService {
             populations.push({ ...population, members: members.sort() });
         }
         return { files: await this.files([...request.inputPaths, ...populations.flatMap((population) => population.members)], false, budget), populations,
-            producerPath, producerHash: await this.hashFile(producerPath, 256 * 1024 * 1024, budget),
+            producerPath, producerHash: await this.hashFile(producerPath, budget),
             environmentHash: hashFramedDomain("verification-environment", selectedEnvironment(request.environment)), platform: process.platform, architecture: process.arch, nodeVersion: process.version };
     }
 }

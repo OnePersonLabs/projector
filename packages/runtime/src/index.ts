@@ -12,3 +12,5 @@ export * from "./access/index.js";
 export * from "./cache/derived-cache.js";
 export * from "./migrations/index.js";
 export * from "./observation-scope.js";
+export * from "./code-intelligence/store.js";
+export * from "./code-intelligence/evidence-store.js";

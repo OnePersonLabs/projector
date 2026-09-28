@@ -1,4 +1,4 @@
-import { AnalyzerFailureSchema, ContentHashSchema, StateDigestSchema, ObservationError } from "@projector/core";
+import { AnalyzerFailureSchema, ContentHashSchema, StateDigestSchema, ObservationError, CodeContextSummarySchema } from "@projector/core";
 import { z } from "zod";
 import {
   KNOWLEDGE_API_VERSION, KnowledgeContextResultSchema, KnowledgeReconciliationResultSchema,
@@ -71,6 +71,7 @@ const contextBranchSchema = z.strictObject({
   safety: safetySchema,
 });
 export const KnowledgeContextAgentViewSchema = z.strictObject({
+  code: CodeContextSummarySchema.optional(),
   apiVersion: z.literal(KNOWLEDGE_API_VERSION), view: z.literal("agent"), id: z.string(), request: z.string(),
   persisted: z.boolean(), contentHash: ContentHashSchema, capturedState: StateDigestSchema,
   interpretation: z.strictObject({ status: z.enum(["direct", "candidates", "unresolved"]), candidates: z.array(KnowledgeInterpretationCandidateSchema), candidateDisclosure: countSchema, unknowns: z.array(z.string()), unknownDisclosure: countSchema }),
@@ -339,6 +340,7 @@ export function projectKnowledgeContext(report: KnowledgeContextResult, view: "a
   });
   const branches = sample(projected, branchBudget);
   return boundedResponse(KnowledgeContextAgentViewSchema.parse({
+    ...(report.code === undefined ? {} : { code: { ...report.code, symbols: report.code.symbols.slice(0, 20), edges: report.code.edges.slice(0, 40), unknowns: [...report.code.unknowns, ...(report.code.symbols.length > 20 || report.code.edges.length > 40 ? ["Additional semantic facts are retained; use code queries with the displayed generation"] : [])] } }),
     apiVersion: report.apiVersion, view: "agent", id: report.id, request: report.request,
     persisted: report.persisted, contentHash: report.contentHash, capturedState: report.capturedState,
     interpretation: { status: report.interpretation.status, candidates: candidates.values, candidateDisclosure: candidates.disclosure,

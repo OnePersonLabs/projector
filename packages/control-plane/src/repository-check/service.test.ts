@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, expect, test } from "vitest";
+import { CodeIndexRunSchema } from "@projector/core";
+import { SqliteCodeStore, withObservationScope } from "@projector/runtime";
+import { executeCodeOperation, shutdownCodeIndexRuns } from "../code-intelligence/service.js";
 import { checkRepository } from "./service.js";
 
 const exec = promisify(execFile);
@@ -22,17 +25,158 @@ async function repository() {
   return root;
 }
 afterEach(async () => {
+  await shutdownCodeIndexRuns();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })));
+});
+
+async function indexNative(root: string): Promise<string> {
+  const signal = new AbortController().signal;
+  const operation = (name: "code.index" | "code.index-wait", input: unknown) =>
+    withObservationScope({ signal, limits: { timeoutMs: 60_000 } }, () =>
+      executeCodeOperation(root, name, input, { signal, environment: process.env }),
+    );
+  const started = CodeIndexRunSchema.parse(await operation("code.index", { provider: "native", timeoutMs: 30_000 }));
+  const finished = started.state === "running"
+    ? CodeIndexRunSchema.parse(await operation("code.index-wait", { runId: started.id, timeoutMs: 30_000 }))
+    : started;
+  expect(finished.state, finished.error).toBe("published");
+  return finished.generation!;
+}
+
+test("pins the repository-check baseline across independent indexes and later impact", async () => {
+  const root = await repository();
+  const source = join(root, "value.ts");
+  await writeFile(source, "export const value = () => 1;\n");
+  const first = await checkRepository(root);
+  const baseline = first.semantic!.generation;
+  await writeFile(source, "export const value = () => 2;\n");
+  await indexNative(root);
+  await writeFile(source, "export const value = () => 3;\n");
+  await indexNative(root);
+  const store = await SqliteCodeStore.open(root);
+  try {
+    store.pruneUnpinned();
+    expect(store.hasGeneration(baseline)).toBe(true);
+  } finally { store.close(); }
+  const next = await checkRepository(root);
+  expect(next.status).toBe("changed");
+  expect(next.semantic?.affectedPaths).toContain("value.ts");
+  expect(next.semantic?.unknowns).not.toContain(expect.stringContaining("Prior semantic baseline is unavailable"));
+});
+
+test("a failed state publication retains the old semantic baseline pin", async () => {
+  const root = await repository();
+  const source = join(root, "value.ts");
+  await writeFile(source, "export const value = () => 1;\n");
+  const first = await checkRepository(root);
+  const baseline = first.semantic!.generation;
+  const cache = join(root, ".projector/runtime/repository-check/state.json");
+  const oldState = await readFile(cache, "utf8");
+  await writeFile(source, "export const value = () => 2;\n");
+  const temporary = `${cache}.${process.pid}.tmp`;
+  await writeFile(temporary, "occupied");
+  expect((await checkRepository(root)).status).toBe("incomplete");
+  expect(await readFile(cache, "utf8")).toBe(oldState);
+  const store = await SqliteCodeStore.open(root);
+  try {
+    store.pruneUnpinned();
+    expect(store.hasGeneration(baseline)).toBe(true);
+  } finally { store.close(); }
+  await rm(temporary);
+  expect((await checkRepository(root)).semantic?.affectedPaths).toContain("value.ts");
+});
+
+test("combined Git output respects the caller's allowance across separate commands", async () => {
+  const root = await repository();
+  await checkRepository(root);
+  const statePath = join(root, ".projector/runtime/repository-check/state.json");
+  const priorState = await readFile(statePath, "utf8");
+  for (let index = 0; index < 5; index++) {
+    await writeFile(join(root, `untracked-${index}-${"long-name".repeat(4)}.txt`), "content");
+  }
+
+  const pathspec = ["--", ".", ":(exclude).projector/runtime", ":(exclude).projector/runtime/**"];
+  const [topLevel, head, untracked] = await Promise.all([
+    git(root, "rev-parse", "--show-toplevel"),
+    git(root, "rev-parse", "--revs-only", "HEAD"),
+    git(root, "ls-files", "--others", "--exclude-standard", "-z", ...pathspec),
+  ]);
+  const individualBytes = [topLevel.stdout, head.stdout, untracked.stdout].map((output) => Buffer.byteLength(output));
+  const combinedBytes = individualBytes.reduce((sum, bytes) => sum + bytes, 0);
+  const allowance = combinedBytes - 1;
+  expect(Math.max(...individualBytes)).toBeLessThan(allowance);
+
+  const checked = await withObservationScope({ limits: { maxGitOutputBytes: allowance } }, () => checkRepository(root));
+  expect(checked.status).toBe("incomplete");
+  expect(checked.limitations).toEqual(expect.arrayContaining([expect.stringContaining("maxGitOutputBytes")]));
+  expect(await readFile(statePath, "utf8")).toBe(priorState);
+});
+
+test("parallel file inspection reserves one shared total-byte allowance", async () => {
+  const root = await repository();
+  await checkRepository(root);
+  const statePath = join(root, ".projector/runtime/repository-check/state.json");
+  const priorState = await readFile(statePath, "utf8");
+  for (let index = 0; index < 4; index++) {
+    await writeFile(join(root, `parallel-${index}.txt`), "four");
+  }
+
+  const checked = await checkRepository(root, {}, { maxFileBytes: 8, maxTotalBytes: 12 });
+  expect(checked.status).toBe("incomplete");
+  expect(checked.limitations).toEqual(expect.arrayContaining([expect.stringContaining("maxTotalBytes")]));
+  expect(await readFile(statePath, "utf8")).toBe(priorState);
+});
+
+test("a legacy pruned baseline reestablishes semantic history with an explicit unknown", async () => {
+  const root = await repository();
+  const source = join(root, "value.ts");
+  await writeFile(source, "export const value = () => 1;\n");
+  const first = await checkRepository(root);
+  const baseline = first.semantic!.generation;
+  const store = await SqliteCodeStore.open(root);
+  try { store.releaseRetained(baseline, "repository-check:baseline"); }
+  finally { store.close(); }
+  await writeFile(source, "export const value = () => 2;\n");
+  await indexNative(root);
+  await writeFile(source, "export const value = () => 3;\n");
+  await indexNative(root);
+  const pruner = await SqliteCodeStore.open(root);
+  try {
+    pruner.pruneUnpinned();
+    expect(pruner.hasGeneration(baseline)).toBe(false);
+  } finally { pruner.close(); }
+  const recovered = await checkRepository(root);
+  expect(recovered.status).toBe("changed");
+  expect(recovered.semantic?.unknowns).toEqual(expect.arrayContaining([
+    expect.stringContaining("Prior semantic baseline is unavailable"),
+  ]));
+  expect(recovered.semantic?.generation).not.toBe(baseline);
+  expect((await checkRepository(root)).status).toBe("unchanged");
 });
 
 test("first observation is explicitly unavailable as a comparison; exact handling is independent from observation", async () => {
   const root = await repository();
   const first = await checkRepository(root, { sessionId: "one" });
   expect(first).toMatchObject({ status: "no previous observation", offer: true, pending: { fromHead: null, baselineEvidenceIdentity: null, paths: [] } });
+  expect(first.semantic?.generation).toMatch(/^sha256:v1:/u);
   expect(await checkRepository(root, { mode: "commit-only", sessionId: "one" })).toMatchObject({ status: "unchanged", offer: false, pending: { findingId: first.pending!.findingId } });
   const handled = await checkRepository(root, { handled: { findingId: first.pending!.findingId, evidenceIdentity: first.pending!.evidenceIdentity } });
   expect(handled.pending).toBeUndefined();
   expect(await checkRepository(root)).toMatchObject({ status: "unchanged", offer: false });
+});
+
+test("full check publishes a current native generation and reports additive semantic paths", async () => {
+  const root = await repository();
+  await writeFile(join(root, "value.ts"), "export const value = () => 1;\n");
+  await writeFile(join(root, "consumer.ts"), "import { value } from './value.js'; export const consume = () => value();\n");
+  const before = await checkRepository(root);
+  expect(before.semantic?.generation).toMatch(/^sha256:v1:/u);
+  await writeFile(join(root, "value.ts"), "export const value = () => 2;\n");
+  const after = await checkRepository(root);
+  expect(after.status).toBe("changed");
+  expect(after.semantic?.generation).not.toBe(before.semantic?.generation);
+  expect(after.semantic?.affectedPaths).toContain("value.ts");
+  expect(after.pending?.paths).toContain("value.ts");
 });
 
 test("dirty bytes change repeatedly; commit-only is cheap; pending coalesces and stale handling cannot erase it", async () => {
@@ -43,6 +187,7 @@ test("dirty bytes change repeatedly; commit-only is cheap; pending coalesces and
   expect(cheap.status).toBe("unchanged");
   const second = await checkRepository(root, { sessionId: "one" });
   expect(second).toMatchObject({ status: "changed", offer: false, pending: { findingId: first.pending!.findingId, paths: ["file.txt"], fromHead: null } });
+  expect(second.semantic?.generation).not.toBe(first.semantic?.generation);
   await writeFile(join(root, "file.txt"), "dirty 2");
   const third = await checkRepository(root, { handled: { findingId: second.pending!.findingId, evidenceIdentity: second.pending!.evidenceIdentity }, sessionId: "one" });
   expect(third.status).toBe("incomplete");

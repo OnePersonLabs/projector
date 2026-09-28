@@ -85,7 +85,9 @@ export class KnowledgeValidatorRun {
         args: [target, canonicalJson(protocol)],
         cwd: this.observation.repositoryRoot,
         env: {},
-        timeoutMs: Math.min(30_000, Math.max(1, scope.budget.remainingMs())), maxOutputBytes: 256 * 1024, signal: this.signal,
+        timeoutMs: scope.limits.timeoutMs === null ? null : Math.max(1, scope.budget.remainingMs()),
+        maxOutputBytes: null,
+        signal: this.signal,
       });
       scope.budget.check("validator-execution", input.path);
       this.signal.throwIfAborted();

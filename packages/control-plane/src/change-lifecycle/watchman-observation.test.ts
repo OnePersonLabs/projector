@@ -20,7 +20,7 @@ vi.mock("node:child_process", () => ({
     return child;
   },
 }));
-import { enrollWatchman, watchmanByteReuse, validateWatchmanByteReuse } from "./watchman-observation.js";
+import { enrollWatchman, watchmanByteReuse, validateWatchmanByteReuse, WatchmanSynchronizationUnavailableError } from "./watchman-observation.js";
 const root = resolve("watchman-test-root");
 const inventory = {enumeration:{method:"recursive-filesystem-fallback",assumptions:[],blindSpots:[]}} as unknown as InventoryResult;
 const signal = new AbortController().signal;
@@ -30,6 +30,45 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 function enrollment(config: unknown = {}): void { protocol.replies.push({ watch: root }, { config }, { clock: "c:baseline" }); }
+
+it("retries synchronization timeouts without accepting an unsynchronized clock", async () => {
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    enrollment();
+    protocol.replies.splice(2, 0, { error: "synchronization failed: syncToNow: timed out waiting for cookie file to be observed by watcher within 5000 milliseconds: Operation timed out" });
+    expect(await enrollWatchman(root, new ObservationBudget(), signal)).toMatchObject({ clock: "c:baseline" });
+    expect(protocol.requests.slice(2)).toEqual([
+      ["clock", root, { sync_timeout: 5000 }],
+      ["clock", root, { sync_timeout: 10000 }],
+    ]);
+    expect(JSON.parse(warning.mock.calls[0]![0] as string)).toMatchObject({ event: "watchman-synchronization-retry", attempt: 1 });
+    protocol.requests.length = 0;
+    enrollment(); protocol.replies[2] = { error: "watch was removed" };
+    await expect(enrollWatchman(root, new ObservationBudget(), signal)).rejects.toThrow("watch was removed");
+    expect(protocol.requests).toHaveLength(3);
+  } finally { warning.mockRestore(); }
+});
+
+it("uses complete observation on macOS where cookie ordering cannot establish freshness", async () => {
+  vi.stubGlobal("process", { ...process, platform: "darwin" });
+  try {
+    expect(await enrollWatchman(root, new ObservationBudget(), signal)).toBeUndefined();
+    expect(protocol.requests).toEqual([]);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it("reports a repeatedly unsynchronized backend for complete-scan recovery", async () => {
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const timeout = { error: "syncToNow: timed out waiting for cookie file to be observed by watcher within 5000 milliseconds: Operation timed out" };
+  try {
+    enrollment(); const baseline = await enrollWatchman(root, new ObservationBudget(), signal);
+    protocol.replies.push({ config: {} }, timeout, timeout, timeout);
+    await expect(watchmanByteReuse(baseline, inventory, new ObservationBudget(), signal)).rejects.toBeInstanceOf(WatchmanSynchronizationUnavailableError);
+    expect(protocol.requests.slice(-3).map(request => request[2])).toEqual([5000, 10000, 20000].map(sync_timeout => ({ since: "c:baseline", fields: ["name", "exists", "type"], sync_timeout })));
+    enrollment(); protocol.replies.splice(2, 1, timeout, timeout, timeout);
+    expect(await enrollWatchman(root, new ObservationBudget(), signal)).toBeUndefined();
+  } finally { warning.mockRestore(); }
+});
 
 it("enrolls before reads and retains the original cursor with deleted and directory events", async () => {
   enrollment(); const budget = new ObservationBudget();
@@ -75,9 +114,9 @@ it("fails actionable on partial configuration, wrong root, malformed coverage or
   await expect(watchmanByteReuse(baseline, inventory, new ObservationBudget(), signal)).rejects.toThrow("complete non-fresh");
 });
 
-it("bounds output and cancellation and supports hosts with no optional backend", async () => {
+it("honors explicit output limits and cancellation and supports hosts with no optional backend", async () => {
   enrollment();
-  await expect(enrollWatchman(root, new ObservationBudget({ maxGitOutputBytes: 1 }), signal)).rejects.toThrow("output limit");
+  await expect(enrollWatchman(root, new ObservationBudget({ maxGitOutputBytes: 1 }), signal)).rejects.toThrow("declared maxGitOutputBytes limit");
   await expect(enrollWatchman(root, new ObservationBudget(), AbortSignal.abort())).rejects.toBeDefined();
   vi.stubEnv("PROJECTOR_WATCHMAN_EXECUTABLE", undefined); vi.stubEnv("PROJECTOR_WATCHMAN_SOCKET", undefined);
   expect(await enrollWatchman(root, new ObservationBudget(), signal)).toBeUndefined();

@@ -10,12 +10,12 @@ export const VerificationInputSnapshotSchema = z.object({
 }).strict();
 
 export const VerificationRequestSchema = z.object({
-  executable: z.string().min(1), args: z.array(z.string()).max(1024),
+  executable: z.string().min(1), args: z.array(z.string()),
   sourcePath: z.string().min(1).optional(),
-  inputPaths: z.array(z.string().min(1)).min(1).max(10000),
-  populations: z.array(VerificationPopulationSchema).max(128),
-  environment: z.array(z.string().min(1)).max(256),
-  timeoutMs: z.number().int().positive().max(300000),
+  inputPaths: z.array(z.string().min(1)).min(1),
+  populations: z.array(VerificationPopulationSchema),
+  environment: z.array(z.string().min(1)),
+  timeoutMs: z.number().int().positive().safe().nullable().default(null),
   completeInputs: z.boolean().optional(),
 }).strict();
 export type VerificationRequest = z.infer<typeof VerificationRequestSchema>;
@@ -32,7 +32,7 @@ export type VerificationEvidence = z.infer<typeof VerificationEvidenceSchema>;
 export const VerificationInspectionSchema = z.object({ records: z.array(VerificationEvidenceSchema), pendingPublications: z.array(z.object({ artifactSetId: z.string(), state: z.enum(["staged", "finalizing"]), recoverable: z.boolean() }).strict()) }).strict();
 export const VerificationRecoverySchema = z.object({ recoveredArtifactSetIds: z.array(z.string()), inspection: VerificationInspectionSchema }).strict();
 
-export const BuiltinVerificationRequestSchema = z.strictObject({ check: z.literal("projector.canonical-integrity/v1"), target: z.string().min(1), timeoutMs: z.number().int().positive().max(300000).optional() });
+export const BuiltinVerificationRequestSchema = z.strictObject({ check: z.literal("projector.canonical-integrity/v1"), target: z.string().min(1), timeoutMs: z.number().int().positive().safe().nullable().optional() });
 export type BuiltinVerificationRequest = z.infer<typeof BuiltinVerificationRequestSchema>;
 export const BuiltinVerificationArtifactSchema = z.strictObject({ path: z.string().min(1), sha256: z.string().regex(/^[a-f0-9]{64}$/u) });
 export const BuiltinVerificationEvidenceSchema = z.strictObject({

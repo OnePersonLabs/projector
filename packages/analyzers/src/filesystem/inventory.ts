@@ -1,16 +1,25 @@
-import { lstat, opendir, readlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, opendir, readlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { ObservationBudget, ObservationError, hashFramedDomain, type AnalyzerFailure, type ContentHash,
+import { ObservationBudget, ObservationError, hashFramedDomain, type AnalyzerFailure, type SourceContentEntry,
   type ObservationDescriptor, type ObservationLimits } from "@projector/core";
 import { compareCodePoint } from "../ordering.js";
-import { checkObservation, GitCommandError, observationFailure, observationGit, observationMap, readObservationFile } from "./observation-io.js";
+import { checkObservation, GitCommandError, observationFailure, observationGit, observationGitRecords, observationMap, readObservationFile } from "./observation-io.js";
+import { inventoryEntryChunks, inventoryEntryWithBytes, type InventoryContentDescriptor, type InventoryEntryMetadata } from "./inventory-content-store.js";
 
-export interface InventoryEntry {
-  readonly path: string; readonly kind: "file" | "symlink"; readonly mediaType: string;
-  readonly content: string; readonly contentHash: ContentHash; readonly generated: boolean;
-  readonly generatedReason?: "source-marker"; readonly symlinkTarget?: string;
+export interface InventoryEntry extends SourceContentEntry {}
+export interface InventoryCapturePort {
+  readonly descriptor: InventoryContentDescriptor;
+  capture(path: string, absolute: string, mediaType: string, budget: ObservationBudget, signal?: AbortSignal): Promise<InventoryEntry>;
+  put(metadata: InventoryEntryMetadata, content: string): InventoryEntry | Promise<InventoryEntry>;
+  putChunks(metadata: InventoryEntryMetadata, chunks: Iterable<Uint8Array>): InventoryEntry | Promise<InventoryEntry>;
+  linkExisting?(metadata: InventoryEntryMetadata, versionId: string): InventoryEntry;
+  finish(): void | Promise<void>;
+  beginAppend(): void | Promise<void>;
 }
 export interface InventoryResult {
+  readonly contentStore?: InventoryContentDescriptor;
   readonly entries: InventoryEntry[]; readonly failures: AnalyzerFailure[];
   readonly rootAvailability: "available" | "unavailable";
   /** Exact directory admission population, including inspected ignored candidates. */
@@ -21,12 +30,71 @@ export interface InventoryResult {
     readonly assumptions: readonly string[]; readonly blindSpots: readonly string[];
   };
 }
+export type InventoryIdentity = Pick<InventoryEntry, "path" | "kind" | "mediaType" | "contentHash" | "generated" | "generatedReason" | "symlinkTarget">;
+export type InventoryIdentityResult = Omit<InventoryResult, "entries" | "contentStore"> & { readonly entries: readonly InventoryIdentity[] };
 export interface InventoryByteReuse {
   readonly baseline: InventoryResult;
   readonly changedPaths: readonly string[];
   readonly uncoveredPrefixes: readonly string[];
 }
-export interface InventoryOptions { readonly observationLimits?: Partial<ObservationLimits>; readonly budget?: ObservationBudget; readonly signal?: AbortSignal; readonly byteReuse?: InventoryByteReuse; }
+export interface InventoryOptions { readonly observationLimits?: Partial<ObservationLimits>; readonly budget?: ObservationBudget; readonly signal?: AbortSignal; readonly byteReuse?: InventoryByteReuse; readonly contentStore?: InventoryCapturePort; readonly deferContentStoreFinish?: boolean; }
+
+class Base64ContentHasher {
+  private readonly hash = createHash("sha256");
+  private carry = Buffer.alloc(0);
+  constructor(size: number) {
+    for (const part of ["projector\0sha256\0v1", "repository-artifact-content"]) {
+      const bytes = Buffer.from(part);
+      const length = Buffer.allocUnsafe(8);
+      length.writeBigUInt64BE(BigInt(bytes.length));
+      this.hash.update(length).update(bytes);
+    }
+    const frameLength = Buffer.allocUnsafe(8);
+    frameLength.writeBigUInt64BE(4n * ((BigInt(size) + 2n) / 3n) + 2n);
+    this.hash.update(frameLength).update('"');
+  }
+  update(input: Uint8Array): void {
+    const bytes = this.carry.length === 0 ? Buffer.from(input) : Buffer.concat([this.carry, input]);
+    const complete = bytes.length - bytes.length % 3;
+    if (complete > 0) this.hash.update(bytes.subarray(0, complete).toString("base64"));
+    this.carry = Buffer.from(bytes.subarray(complete));
+  }
+  digest(): string {
+    if (this.carry.length > 0) this.hash.update(this.carry.toString("base64"));
+    this.hash.update('"');
+    return `sha256:v1:${this.hash.digest("hex")}`;
+  }
+}
+
+async function fileIdentity(path: string, absolute: string, media: string, budget: ObservationBudget, signal?: AbortSignal): Promise<InventoryIdentity> {
+  const handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const before = await handle.stat();
+    if (!before.isFile()) throw new ObservationError("observation-failed", "inventory-proof", path, "Inventory source is not a regular file");
+    budget.assertFileBytes(before.size, path);
+    const digest = new Base64ContentHasher(before.size);
+    let total = 0;
+    let prefix = Buffer.alloc(0);
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    while (true) {
+      checkObservation(budget, signal, "inventory-proof", path);
+      const { bytesRead } = await handle.read(buffer);
+      if (bytesRead === 0) break;
+      const bytes = buffer.subarray(0, bytesRead);
+      total += bytesRead;
+      budget.assertFileBytes(total, path);
+      budget.consume("maxTotalBytes", bytesRead, "inventory-proof", path);
+      digest.update(bytes);
+      if (prefix.length < 4096) prefix = Buffer.concat([prefix, bytes.subarray(0, 4096 - prefix.length)]);
+    }
+    const after = await handle.stat();
+    if (total !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs || after.ino !== before.ino)
+      throw new ObservationError("observation-failed", "inventory-proof", path, "Source changed during final inventory proof");
+    const generated = /(?:@generated|generated file|do not edit)/iu.test(prefix.toString("utf8").slice(0, 1024));
+    return {path,kind:"file",mediaType:media,contentHash:digest.digest() as InventoryEntry["contentHash"],generated,
+      ...(generated ? {generatedReason:"source-marker" as const} : {})};
+  } finally { await handle.close(); }
+}
 const inventoryBytes = new WeakMap<InventoryResult, { root: string; entries: ReadonlyMap<string, { entry: InventoryEntry; size: number }> }>();
 const excludedPrefixes = [".git", ".worktrees", ".projector/runtime"] as const;
 const fallbackDirectories = new Set([".git", ".worktrees", "node_modules"]);
@@ -43,7 +111,7 @@ function mediaType(path: string): string {
 }
 function missing(error: unknown): boolean { return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"; }
 /** Addressed leaf reads require a complete population delta from their caller. */
-export async function readInventoryEntry(repositoryRoot:string,path:string,budget:ObservationBudget,signal?:AbortSignal):Promise<InventoryEntry|undefined>{
+export async function readInventoryEntry(repositoryRoot:string,path:string,budget:ObservationBudget,signal?:AbortSignal,capture?:InventoryCapturePort):Promise<InventoryEntry|undefined>{
   const root=resolve(repositoryRoot);
   checkObservation(budget,signal,"delta-file-read",path);
   if(!path||isAbsolute(path)||path.includes("\\")||path.includes("\0")||path.split("/").some(part=>!part||part==="."||part===".."))throw new ObservationError("observation-failed","delta-file-read",path,"Invalid inventory delta path");
@@ -55,11 +123,13 @@ export async function readInventoryEntry(repositoryRoot:string,path:string,budge
   budget.consume("maxFiles",1,"delta-file-read",path);
   if(stat.isSymbolicLink()){
     const symlinkTarget=await readlink(absolute);const bytes=Buffer.byteLength(symlinkTarget);budget.assertFileBytes(bytes,path);budget.consume("maxTotalBytes",bytes,"delta-symlink-read",path);
-    return{path,kind:"symlink",mediaType:"inode/symlink",content:symlinkTarget,contentHash:hashFramedDomain("repository-artifact-content",symlinkTarget),generated:false,symlinkTarget};
+    const entry:InventoryEntry={path,kind:"symlink",mediaType:"inode/symlink",content:symlinkTarget,contentHash:hashFramedDomain("repository-artifact-content",symlinkTarget),generated:false,symlinkTarget};
+    return capture===undefined?entry:await capture.put({...entry,contentBytes:bytes},symlinkTarget);
   }
+  if(capture!==undefined)return capture.capture(path,absolute,mediaType(path),budget,signal);
   const bytes=await readObservationFile(absolute,budget,path,signal),content=bytes.toString("utf8");
   const generated=/(?:@generated|generated file|do not edit)/iu.test(content.slice(0,1024));
-  return{path,kind:"file",mediaType:mediaType(path),content,contentHash:hashFramedDomain("repository-artifact-content",bytes.toString("base64")),generated,...(generated?{generatedReason:"source-marker" as const}:{})};
+  return inventoryEntryWithBytes({path,kind:"file",mediaType:mediaType(path),content,contentHash:hashFramedDomain("repository-artifact-content",bytes.toString("base64")),generated,...(generated?{generatedReason:"source-marker" as const}:{})},bytes);
 }
 async function confirmedNonGit(root: string, error: unknown): Promise<boolean> {
   if (!(error instanceof GitCommandError) || !/not a git repository/iu.test(error.stderr)) return false;
@@ -70,7 +140,21 @@ async function confirmedNonGit(root: string, error: unknown): Promise<boolean> {
   }
 }
 
+export async function inventoryRepositoryIdentities(repositoryRoot: string, options: Omit<InventoryOptions, "contentStore" | "byteReuse"> = {}): Promise<InventoryIdentityResult> {
+  const scanned = await scanInventory(repositoryRoot, options, true);
+  return {entries: scanned.entries.map(({path,kind,mediaType,contentHash,generated,generatedReason,symlinkTarget}) =>
+    ({path,kind,mediaType,contentHash,generated,...(generatedReason === undefined ? {} : {generatedReason}),
+      ...(symlinkTarget === undefined ? {} : {symlinkTarget})})),
+    failures: scanned.failures, rootAvailability: scanned.rootAvailability,
+    ...(scanned.directories === undefined ? {} : {directories: scanned.directories}),
+    observationDescriptor: scanned.observationDescriptor, enumeration: scanned.enumeration};
+}
+
 export async function inventoryRepository(repositoryRoot: string, options: InventoryOptions = {}): Promise<InventoryResult> {
+  return scanInventory(repositoryRoot, options, false);
+}
+
+async function scanInventory(repositoryRoot: string, options: InventoryOptions, identitiesOnly: boolean): Promise<InventoryResult> {
   const root = resolve(repositoryRoot), budget = options.budget ?? new ObservationBudget(options.observationLimits);
   const signal = options.signal;
   const entries: InventoryEntry[] = [], ignoreSources: ObservationDescriptor["ignoreSources"] = [];
@@ -92,8 +176,10 @@ export async function inventoryRepository(repositoryRoot: string, options: Inven
     if (!countedDirectories.has(path)) { budget.consume("maxDirectories", 1, "directory-enumeration", path); countedDirectories.add(path); }
   };
   let method: InventoryResult["enumeration"]["method"] = "git-index-and-nonignored-untracked";
-  let output = "";
-  try { output = await observationGit(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], budget,
+  const paths=new Set<string>();
+  try { await observationGitRecords(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], budget,path=>{
+    if(path&&!isExcludedInventoryPath(path)){countFile(path);paths.add(path);}
+  },
     { ...(signal === undefined ? {} : { signal }), stage: "git-inventory" }); }
   catch (error) { if (!await confirmedNonGit(root, error)) throw observationFailure(error, "git-inventory"); method = "recursive-filesystem-fallback"; }
   const git = (args: readonly string[], input?: string, allowedExitCodes?: readonly number[]): Promise<string> => observationGit(root, args, budget,
@@ -126,22 +212,40 @@ export async function inventoryRepository(repositoryRoot: string, options: Inven
       !reuse.changedPaths.some((changed) => path === changed || path.startsWith(`${changed}/`)) &&
       !reuse.uncoveredPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`) || path.split("/").includes(prefix))) {
       budget.assertFileBytes(cached.size, path);
-      entries.push(cached.entry); capturedBytes.set(path, cached); return;
+      const sourceVersionId=(cached.entry as InventoryEntry & {sourceVersionId?:string}).sourceVersionId;
+      const cachedMetadata=Object.fromEntries(Object.keys(cached.entry).filter(key=>key!=="content").map(key=>
+        [key,(cached.entry as unknown as Record<string,unknown>)[key]])) as Omit<InventoryEntry,"content">;
+      const entry = options.contentStore === undefined ? cached.entry : sourceVersionId!==undefined&&options.contentStore.linkExisting!==undefined
+        ? options.contentStore.linkExisting({...cachedMetadata,contentBytes:cached.size},sourceVersionId)
+        : await options.contentStore.putChunks({...cachedMetadata,contentBytes:cached.size},inventoryEntryChunks(cached.entry));
+      entries.push(entry); capturedBytes.set(path, {entry,size:cached.size}); return;
     }
     if (stat.isSymbolicLink()) {
       const symlinkTarget = await readlink(absolute);
       const size = Buffer.byteLength(symlinkTarget); budget.assertFileBytes(size, path); budget.consume("maxTotalBytes", size, "symlink-read", path);
-      entries.push({ path, kind: "symlink", mediaType: "inode/symlink", content: symlinkTarget,
-        contentHash: hashFramedDomain("repository-artifact-content", symlinkTarget), generated: false, symlinkTarget });
-      capturedBytes.set(path, { entry: Object.freeze({ ...entries.at(-1)! }), size });
+      const entry: InventoryEntry = { path, kind: "symlink", mediaType: "inode/symlink", content: symlinkTarget,
+        contentHash: hashFramedDomain("repository-artifact-content", symlinkTarget), generated: false, symlinkTarget };
+      entries.push(options.contentStore === undefined ? entry : await options.contentStore.put({ ...entry, contentBytes: size },symlinkTarget));
+      capturedBytes.set(path, { entry: Object.freeze(Object.defineProperties({},Object.getOwnPropertyDescriptors(entries.at(-1)!))) as InventoryEntry, size });
       return;
+    }
+    if (identitiesOnly) {
+      const identity = await fileIdentity(path, absolute, mediaType(path), budget, activeSignal);
+      // This internal entry never escapes the identity-only projection above.
+      const entry = identity as InventoryEntry;
+      entries.push(entry);
+      return;
+    }
+    if (options.contentStore !== undefined) {
+      const entry = await options.contentStore.capture(path, absolute, mediaType(path), budget, activeSignal);
+      entries.push(entry); capturedBytes.set(path,{ entry, size:stat.size }); return;
     }
     const bytes = await readObservationFile(absolute, budget, path, activeSignal), content = bytes.toString("utf8");
     const generated = /(?:@generated|generated file|do not edit)/iu.test(content.slice(0, 1024));
-    entries.push({ path, kind: "file", mediaType: mediaType(path), content,
+    entries.push(inventoryEntryWithBytes({ path, kind: "file", mediaType: mediaType(path), content,
       contentHash: hashFramedDomain("repository-artifact-content", bytes.toString("base64")), generated,
-      ...(generated ? { generatedReason: "source-marker" as const } : {}) });
-    capturedBytes.set(path, { entry: Object.freeze({ ...entries.at(-1)! }), size: bytes.length });
+      ...(generated ? { generatedReason: "source-marker" as const } : {}) },bytes));
+    capturedBytes.set(path, { entry: Object.freeze(Object.defineProperties({},Object.getOwnPropertyDescriptors(entries.at(-1)!))) as InventoryEntry, size: bytes.length });
   }
   // Streaming traversal sees ignored .gitignore files in otherwise active directories.
   // Git itself decides which directory rules apply.
@@ -165,13 +269,6 @@ export async function inventoryRepository(repositoryRoot: string, options: Inven
   }
   try {
     if (method === "git-index-and-nonignored-untracked") {
-      const paths = new Set<string>();
-      for (let start = 0; start < output.length;) {
-        const end = output.indexOf("\0", start); if (end < 0) throw new Error("Git inventory is not NUL terminated");
-        const path = output.slice(start, end); start = end + 1;
-        if (path && !isExcludedInventoryPath(path)) { countFile(path); paths.add(path); }
-      }
-      output = "";
       const deleted = new Set((await git(["ls-files", "--deleted", "-z"])).split("\0").filter(Boolean));
       await observationMap([...paths].sort(compareCodePoint), (path, signal) => inspect(path, deleted.has(path), signal), signal);
       const boundary = await observationMap([
@@ -197,7 +294,8 @@ export async function inventoryRepository(repositoryRoot: string, options: Inven
   } catch (error) { throw observationFailure(error, "inventory"); }
   entries.sort((a, b) => compareCodePoint(a.path, b.path));
   ignoreSources.sort((a, b) => compareCodePoint(a.path, b.path));
-  const result: InventoryResult = { entries, failures: [], rootAvailability: "available",directories:[...countedDirectories].sort(compareCodePoint),
+  if(options.deferContentStoreFinish!==true)await options.contentStore?.finish();
+  const result: InventoryResult = { ...(options.contentStore === undefined ? {} : {contentStore:options.contentStore.descriptor}), entries, failures: [], rootAvailability: "available",directories:[...countedDirectories].sort(compareCodePoint),
     observationDescriptor: { schemaVersion: "projector.observation/v1", observerVersion: "3.0.0", scope: ".", enumerationMethod: method,
       limits: budget.limits, ignoreSources, excludedPaths: [...excludedPrefixes, ...(method === "recursive-filesystem-fallback" ? ["**/node_modules"] : [])], globalGitConfig: "disabled" },
     enumeration: { method, assumptions: [method === "git-index-and-nonignored-untracked" ? "Git CLI can read repository ignore and index metadata" : "repository root is readable"],

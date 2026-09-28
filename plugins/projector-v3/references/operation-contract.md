@@ -48,13 +48,87 @@ approvals.
 
 Core owns supported operations and input schemas. Every result has `status`, `exitCode`, `readiness`, and either `output` or an actionable error. Check the operation-specific outcome too. `init` publishes current configuration last. An unsupported authored format is left untouched. Package patch releases do not require semantic data migration.
 
-The default observation timeout is 60,000 milliseconds. Use the global CLI option
-`--timeout-ms N`, or the request field
-`observationLimits: { "timeoutMs": N }`, to select a positive, finite timeout.
-A CLI command that invokes several operations applies the value to each one. The
-override changes elapsed-time allowance only. It does not remove byte, inventory,
-cancellation, freshness or authorization checks. See `$projector` for the choice
-between targeted optimization and a longer bounded observation.
+The installed `.mcp.json` starts `scripts/projector-mcp.mjs` as a resident stdio host. Each Core operation with a registered input schema appears as `projector_<operation>` with periods and hyphens replaced by underscores. For example, `projector_repository_check` accepts `repositoryRoot`, `input`, and optional `observationLimits` and `requestId`; the tool fixes `apiVersion` and `operation`. Its structured result is the same versioned operation result as the machine entry. Initialization and tool discovery do not require repository observation. One connection reuses its runner and idle computation workers, while each call retains its own Core validation, cancellation, readiness, access, resource accounting, and any caller-requested limits. Read-only, build or test, and mutation annotations describe effects; they do not grant authorization.
+
+`projector code index request.json` creates a source-bound code generation from the request's provider and input binding. In a resident MCP connection, `projector_code_index` returns a run ID while work continues; use `projector_code_index_status`, `projector_code_index_wait`, or `projector_code_index_cancel` with that exact ID. The one-shot CLI waits for its index run to finish before exiting. `projector code query|impact|tests|evidence|export request.json` forwards each exact JSON input to the corresponding Core operation. `projector code test-run request.json` runs one explicitly named Vitest case with isolated JSON and V8 coverage artifacts and imports verified per-test evidence; it does not replace repository verification. Derived code facts and runtime evidence remain separate from accepted authored meaning; a pinned query reports its historical generation, while a current query checks live inputs before using or refreshing an index.
+
+`code.tests` returns `complete` and may return `nextCursor`. Pass that cursor with the same generation and path filter to read the next retained-evidence page. A cursor becomes invalid if retained evidence changes. A test may appear on multiple pages; merge its `reasons` and `evidenceIds` by `testId`. `complete: false` without a cursor means that semantic discovery or another stated uncertainty remains open. `code.export` returns inline `content` for small graphs. Set `artifactName` to a filename when the graph exceeds the inline `maxBytes` allowance; Projector writes a complete artifact in its derived code export directory and returns its path, byte count, and SHA-256 hash. GraphML artifacts include nodes before edges and retain unresolved endpoints.
+
+Code provider capabilities depend on language and evidence source:
+
+| Source language | Native TypeScript provider | Bundled syntax provider | Imported semantic evidence |
+| --- | --- | --- | --- |
+| TypeScript, TSX, JavaScript, JSX | Available with resolved project relationships when configuration and inputs bind | Partial declarations; resolved references, calls, imports, types, and implementations unavailable | SCIP when an external producer supplies a bound artifact |
+| Python, Go, Rust, Java, C#, C, C++, Scala | Unavailable | Partial declarations; resolved relationships unavailable | SCIP or SemanticDB only when a compatible external producer supplies a bound artifact |
+| Kotlin, Ruby, PHP, Swift, and other languages | Unavailable | Unavailable in this build | SCIP or SemanticDB only when a compatible external producer supplies a bound artifact |
+
+`code.index` reports provider and per-document coverage. A syntax generation does not imply resolved cross-file relationships. Imported facts carry their producer, artifact, and source binding; a toolchain listed as requiring configuration is not installed by Projector.
+
+Projector repository observation, semantic indexing, verification, and generation have no
+implicit execution timeout, repository-count ceiling, source-byte ceiling, or
+derived-data capacity ceiling. `null` means no caller-imposed limit. To constrain
+an operation explicitly, use the global CLI option `--timeout-ms N` or
+`observationLimits: { "timeoutMs": N }`. Other fields in `observationLimits`
+constrain file counts, directory counts, source bytes, derived bytes, or worker
+heap only when supplied. A CLI command that invokes several operations applies
+its explicit override to each operation. Cancellation, source-currentness,
+authorization, and atomic publication checks always apply.
+
+Source capture streams raw bytes into immutable chunked versions in the
+observation database. Inventory records reference these versions; they do not
+embed file contents as JSON. Workers read exact captured versions lazily, and
+unchanged files reuse existing versions after currentness verification. A final
+hash-only scan checks live membership and bytes without writing another capture.
+Without a trustworthy filesystem change journal, a warm currentness check still
+reads the selected files. macOS uses the complete scan because Watchman's
+FSEvents cookie ordering cannot establish this freshness guarantee. A repeatedly
+unsynchronized Watchman backend also requires the complete scan.
+
+Source versions are collected automatically when no capture owns them. Each
+capture producer and worker reader holds a shared operating-system lock in a
+separate SQLite activity database. Collection takes its exclusive lock before
+removing abandoned captures and versions absent from the published inventory.
+It runs when the observation store opens, before capture creation, and after
+capture release. An active capture delays collection; it has no age deadline.
+Process termination releases the activity locks without a shutdown callback.
+After a process or computer crash, the next repository access retries cleanup
+of abandoned source rows and owned temporary analysis files. Collection stays
+outside the atomic publication transaction. SQLite can reuse the freed database
+pages; deleting old versions does not necessarily reduce the database file's
+allocated length.
+
+The semantic database stores symbols, edges, paths, identities, and provenance
+in indexed columns. Provider contributions use an intermediate spool for ordered
+merging. Completed partitions enter their final typed tables before publication;
+an unpublished stage references those immutable versions. Unchanged partition
+digests reuse existing rows. Publication verifies the source binding and writer
+token, then atomically inserts generation membership and replaces the head.
+It does not copy all facts or prune old generations inside that transaction.
+Both observation and semantic databases use SQLite WAL, with one writer at a time.
+
+Readers use one complete generation. A default current query first checks that
+its generation matches the checkout observed for that request. A detected change
+requires refresh; the query does not silently return the old generation as
+current. An edit after that freshness barrier does not change the snapshot
+already being queried. Pinned queries explicitly select historical generations.
+Database locks do not prevent external source edits. Complete source bindings,
+including membership and dependencies, determine whether facts may be reused.
+
+Worker admission accounts for available host memory. These controls
+limit concurrent working sets; they do not reject a repository at a fixed size.
+Compiler programs still need project-wide state, and actual host resource
+exhaustion produces an error while preserving the previous completed generation.
+
+The harness controls MCP startup and response deadlines separately. The bundled
+Codex manifest requests a 3600-second tool response timeout. That timeout does
+not bound a retained index run: use its run ID for status, wait, or cancellation.
+Synchronous operations remain subject to the harness response deadline; use the
+direct CLI when they need to run beyond that deadline.
+
+`code.index-wait` waits at most the requested polling interval, then returns the
+current run state. Ending that wait does not cancel indexing. Use
+`code.index-cancel` for explicit cancellation. A resident host shutdown cancels
+its owned runs; incomplete stages cannot become a current generation.
 
 Full lifecycle operations remain available for integrations: `change.capture`, `change.plan`, `change.approve`, `change.apply`, and `change.recover`. Representation inspection distinguishes artifact integrity, dependency freshness, semantic fidelity and execution authorization. Hash agreement establishes byte or normalized-value agreement, not truth or agent understanding.
 
@@ -69,15 +143,14 @@ the result as canonical meaning.
 `verify check.json` parses a strict `VerificationRequestSchema` object.
 It passes that object to `verification.execute`. Required fields are
 `executable`, `args`,
-`inputPaths`, `populations`, `environment`, and `timeoutMs`. Optional fields are
-`sourcePath` and `completeInputs`; unknown fields are rejected. The executable
+`inputPaths`, `populations`, and `environment`. Optional fields are
+`timeoutMs`, `sourcePath`, and `completeInputs`; unknown fields are rejected. The executable
 must be an absolute path. If `sourcePath` is set, it must also be in
 `inputPaths`, and the service passes its resolved path as the first process
 argument. Each population has `directory` and boolean `recursive`.
-`inputPaths` contains 1--10,000 paths. `args` has at most 1,024 entries.
-`populations` has at most 128 entries. `environment` has at most 256 names.
-`timeoutMs` is positive and at most 300,000. Each input file is limited to 8 MiB;
-the snapshot is limited to 64 MiB. The executable is limited to 256 MiB.
+`inputPaths` contains at least one path. `timeoutMs` may be a positive safe
+integer or `null`; omission selects `null`. Input populations, file sizes, and
+executable sizes have no implicit capacity cutoff.
 Input paths must be canonical and cannot include `.projector/runtime`.
 A selected population must be an existing directory.
 Use `{ "directory": ".", "recursive": false }` for root files. Recursive `.`
@@ -113,14 +186,14 @@ records in the host store can be inspected after the source checkout is gone.
 Its input object has a single `generation` property. That property follows the
 strict `GeneratedOutputRequestSchema`. Required fields are
 `producerId`, `executable`, `sourcePath`, `args`, `inputPaths`, `outputs`,
-`environment`, `timeoutMs`, and `populations`; `completeInputs` is optional.
+`environment` and `populations`; `timeoutMs` and `completeInputs` are optional.
 Unknown fields are rejected. `sourcePath` must be a canonical repository-relative
 entrypoint. The service inserts its resolved absolute path as the first argument
 and includes it in observed inputs. Each output requires a canonical `path` and
 `ownership` (`retained` or `disposable`). Output paths must be unique and separate
 from inputs. Outputs cannot target `.projector` or `.git`, including case aliases.
-`args` has at most 1,024 entries. The combined `inputPaths` and
-`sourcePath` set has at most 10,000 unique paths. `outputs` has 1--10,000 items.
+`outputs` contains at least one item. Input and output populations have no
+implicit count ceiling.
 Generation uses the existing worktree writer lease. Its preparation reservation
 binds the request and output scope. Before launch, the immutable local intent
 binds the generation ID to actual input and pre-execution output observations.
@@ -128,23 +201,22 @@ Another governed writer in the same checkout prevents launch. Lease loss cancels
 the owned process. Different checkouts remain independent. Evidence inspection
 and publication-only recovery do not acquire a source-write lease. The lease
 does not grant canonical mutation authority or process confinement.
-`populations` has at most 128 items. `environment` has at most 256 names.
-`timeoutMs` is positive and at most 300,000. Use argument arrays, not shell
-command strings.
+`timeoutMs` may be a positive safe integer or `null`; omission selects `null`.
+Use argument arrays, not shell command strings.
 
 Include every relevant runtime, source, fixture, configuration and population
 dependency. Set `completeInputs: true` to declare input coverage, while treating
 that declaration as unverified. Relevant populations include empty directories.
 Paths use `/` separators and cannot include `.projector/runtime`; selected
-populations must be existing directories. Input files are limited to 8 MiB each
-and 64 MiB total. The executable is limited to 256 MiB. Declared output files
-and the complete output set are limited to 64 MiB. On Windows, the launcher also
+populations must be existing directories. Input, executable, and output sizes
+have no implicit byte ceiling. Output hashing streams file contents. On Windows,
+the launcher also
 passes and hashes available `SystemRoot`, `WINDIR`, `PATH`, `PATHEXT`, `TEMP` and
 `TMP` values. Native execution uses configured host permissions and does not
 prove exclusive causation or execution confinement.
 
 `generate --inspect producers.json` and `generate --recover producers.json` take a
-strict object containing only `activeProducerIds`, an array of at most 10,000
+strict object containing only `activeProducerIds`, an array of
 nonempty producer IDs. An empty array treats all observed producers as retired.
 They invoke `generated.inspect` and `generated.recover`, respectively, whose
 inputs contain only `activeProducerIds`. Inspection reports history, currentness,

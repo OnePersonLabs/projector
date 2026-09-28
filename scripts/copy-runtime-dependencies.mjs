@@ -1,22 +1,13 @@
 import { cp, mkdir, readFile, realpath, stat } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { dirname, join, parse } from "node:path";
+import { findPackageJSON } from "node:module";
+import { dirname, join } from "node:path";
 
 async function packageRoot(name, from) {
-  const require = createRequire(join(from, "package.json"));
-  try { return dirname(require.resolve(`${name}/package.json`)); }
-  catch (error) {
-    if (!["ERR_PACKAGE_PATH_NOT_EXPORTED", "MODULE_NOT_FOUND"].includes(error.code)) throw error;
-  }
-  let directory = dirname(require.resolve(name));
-  while (directory !== parse(directory).root) {
-    try {
-      const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
-      if (manifest.name === name) return directory;
-    } catch (error) { if (error.code !== "ENOENT") throw error; }
-    directory = dirname(directory);
-  }
-  throw new Error(`Cannot locate the installed manifest for ${name} from ${from}`);
+  const manifestPath = findPackageJSON(name, join(from, "package.json"));
+  if (manifestPath === undefined) throw Object.assign(new Error(`Cannot locate the installed manifest for ${name} from ${from}`), { code: "MODULE_NOT_FOUND" });
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (manifest.name !== name) throw new Error(`Installed dependency ${name} resolved to ${manifest.name} from ${from}`);
+  return dirname(manifestPath);
 }
 
 /** Copy the installed production dependency graph, preserving version conflicts.

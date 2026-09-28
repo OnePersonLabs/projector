@@ -3,11 +3,13 @@ import { resolve } from "node:path";
 import {
   canonicalJson,
   hashFramedDomain,
+  type ContentHash,
   type AdapterContext,
   type RelevanceClosure,
   type SemanticIdentityCandidate,
   type SemanticIdentityResolution,
   type StateBindingValidation,
+  type StateBinding,
   type StateQueryDependency,
   type StateValueDependencyRef,
   type DerivedObservationBudget,
@@ -38,6 +40,7 @@ import {
 import { KnowledgeContextStore, finalizeKnowledgeContext, knowledgeContextWrite } from "./store.js";
 import { DecisionBaselineReader } from "./decision-baselines.js";
 import { runObservationTask } from "../observation/task-runner.js";
+import { observationHostSignal } from "../observation/deadline-signal.js";
 import type { KnowledgeComputeHost, KnowledgeHostRequest } from "../observation/knowledge-host.js";
 import type { RepositoryObservationData } from "../observation/tasks.js";
 import { assertKnowledgeContextResponseSize } from "./transport.js";
@@ -63,8 +66,9 @@ export function createKnowledgeComputeHostHandler(observation: ChangeRepositoryO
   let validators: KnowledgeValidatorRun | undefined;
   const handle = async (request: KnowledgeHostRequest, signal: AbortSignal): Promise<unknown> => {
     const scope = currentObservationScope()!;
-    const combined = AbortSignal.any([scope.signal, signal, AbortSignal.timeout(Math.max(1, scope.budget.remainingMs()))]);
-    return withObservationScope({ signal: combined }, async () => {
+    const hostSignal = observationHostSignal(scope, signal);
+    const combined = hostSignal.signal;
+    try { return await withObservationScope({ signal: combined }, async () => {
     switch (request.type) {
       case "coverage-continuation": return inspectRepositoryContinuation(observation.repositoryRoot, request.request, {
         signal: combined, ...(host.applicationEvidence === undefined ? {} : { applicationEvidence: host.applicationEvidence }),
@@ -82,7 +86,7 @@ export function createKnowledgeComputeHostHandler(observation: ChangeRepositoryO
       case "fresh-state": return observeRepositoryState(observation);
       case "read-impact": return readRepositoryImpactSnapshot(observation.repositoryRoot, request.reference);
     }
-    });
+    }); } finally { hostSignal.close(); }
   };
   return handle;
 }
@@ -177,6 +181,24 @@ function rebindClosure(
   return { id: `relevance_closure_${contentHash.slice(-32)}`, ...basis, contentHash };
 }
 
+function closureWithBinding(closure: RelevanceClosure, boundState: StateBinding, resolutionId:string): RelevanceClosure {
+  const entries=closure.entries.map(entry=>({...entry,reasons:entry.reasons.map(reason=>reason.kind==="identity-match"?{...reason,fromId:resolutionId,explanation:`selected by semantic identity resolution ${resolutionId}`}:reason)}));
+  const basis = { requestHash: closure.requestHash, seeds: closure.seeds, entries,
+    activatedFacetKeys: closure.activatedFacetKeys, unknowns: closure.unknowns,
+    unavailableLanes: closure.unavailableLanes, boundState };
+  const contentHash = hashFramedDomain("relevance-closure", basis);
+  return { ...basis, id: `relevance_closure_${contentHash.slice(-32)}`, contentHash };
+}
+
+const reusable = (validation: StateBindingValidation | undefined): boolean => validation?.status === "current" || validation?.status === "rebound";
+
+interface ReconcileReuse {
+  readonly retained: KnowledgeContextResult;
+  readonly discovery: StateBindingValidation;
+  readonly branches: ReadonlyMap<string, StateBindingValidation>;
+  readonly applicationEvidence: ReadonlyMap<string, KnowledgeContextBranch["applicationEvidence"]>;
+}
+
 const validationRank: Record<StateBindingValidation["status"], number> = {
   current: 0,
   rebound: 1,
@@ -237,6 +259,7 @@ export class RepositoryKnowledgeService {
       if (options.observation === undefined) {
         const indexed = await observeIndexedRepository(this.repositoryRoot);
         try {
+          await runObservationTask("code-operation", { repositoryRoot: this.repositoryRoot, operation: "code.index", input: { provider: "native" }, descriptor: indexed.descriptor }, scope);
           const { signal: _signal, ...request } = input;
           const prepared = await runObservationTask("indexed-knowledge-context", { descriptor: indexed.descriptor, request, now: (this.host.now ?? (() => new Date().toISOString()))(), ...(this.host.acceptedDecisionBaselines === undefined ? {} : { acceptedDecisionBaselines: this.host.acceptedDecisionBaselines }) }, { ...scope, onHostRequest: createIndexedKnowledgeComputeHostHandler(indexed, this.host) });
           scope.signal.throwIfAborted();
@@ -274,6 +297,7 @@ export class RepositoryKnowledgeService {
     input: KnowledgeContextRequest,
     observation: KnowledgeContextObservation,
     graph: KnowledgeContextGraph,
+    reuse?: ReconcileReuse,
   ): Promise<KnowledgeContextResult> {
     input.signal?.throwIfAborted();
     const request = input.request.normalize("NFKC").trim();
@@ -289,7 +313,12 @@ export class RepositoryKnowledgeService {
       config: {},
       signal: input.signal ?? new AbortController().signal,
     };
-    const identity = await graph.bindIdentity(request, entities, namedTargets, adapterContext);
+    const retainedDiscovery = reusable(reuse?.discovery) ? reuse : undefined;
+    const reboundDiscovery = retainedDiscovery?.discovery.status === "rebound" ? retainedDiscovery.discovery.rebound : undefined;
+    const identity = retainedDiscovery === undefined ? await graph.bindIdentity(request, entities, namedTargets, adapterContext) : {
+      value: retainedDiscovery.retained.interpretation.candidates,
+      dependency: (reboundDiscovery ?? retainedDiscovery.retained.discoveryBinding).queryDependencies[0]!,
+    };
     const directCandidates = identity.value.filter(({ direct }) => direct);
     const directAddressGroup = entities.length > 1 && namedTargets.length === 0 && directCandidates.length > 1;
     // Several explicit accepted addresses name one requested body of meaning.
@@ -299,9 +328,9 @@ export class RepositoryKnowledgeService {
     const branchCandidates = directAddressGroup
       ? [directCandidates[0]!, ...candidates.filter(({ direct }) => !direct)]
       : candidates;
-    const missingAddresses = entities.filter((address) => graph.search(request, [address], 1).length === 0);
-    const missingTargets = namedTargets.filter((target) => graph.resolveNamedTargets([target]).length === 0);
-    const interpretationUnknowns = unique([
+    const missingAddresses = retainedDiscovery === undefined ? entities.filter((address) => graph.search(request, [address], 1).length === 0) : [];
+    const missingTargets = retainedDiscovery === undefined ? namedTargets.filter((target) => graph.resolveNamedTargets([target]).length === 0) : [];
+    const interpretationUnknowns = retainedDiscovery?.retained.interpretation.unknowns ?? unique([
       ...missingAddresses.map((address) => `explicit canonical address ${address} did not resolve`),
       ...missingTargets.map((target) => `named repository target ${target} did not resolve`),
       ...(candidates.length === 0 ? ["no supported canonical or observed interpretation candidate was found"] : []),
@@ -313,15 +342,23 @@ export class RepositoryKnowledgeService {
     let validatorsExecuted = false;
     for (const candidate of branchCandidates) {
       const selectedCandidates = directAddressGroup && candidate.entityId === directCandidates[0]!.entityId ? directCandidates : [candidate];
-      const resolution = identityResolution(request, selectedCandidates, observation.state, identity.dependency, graph);
+      const resolution=identityResolution(request, selectedCandidates, observation.state, identity.dependency, graph);
       const collectedQueries: StateQueryDependency[] = [];
+      const retainedBranch = retainedDiscovery?.retained.branches.find(branch=>branch.interpretation.entityId===candidate.entityId);
+      const branchValidation = retainedBranch===undefined?undefined:retainedDiscovery?.branches.get(retainedBranch.id);
+      const reuseBranch = retainedBranch!==undefined&&reusable(branchValidation)&&retainedBranch.hypothesis===!candidate.direct;
+      if(reuseBranch){
+        const binding=branchValidation?.status==="rebound"?branchValidation.rebound:retainedBranch!.closure.boundState;
+        if(binding===undefined)throw new Error("Rebound closure lacks its validated current binding");
+        collectedQueries.push(...binding.queryDependencies.filter(item=>item.query.id!==identity.dependency.query.id&&!item.query.id.startsWith("knowledge-decision-applicability:")&&!item.query.id.startsWith("knowledge-decision-triggers:")));
+      }
       const seeds = selectedCandidates.filter((selected) => coreCandidate(selected) === undefined).map((selected) => ({
         kind: selected.entityKind === "projection-unit" ? "projection-unit" as const : selected.entityKind === "architecture-decision" ? "decision" as const : "manual" as const,
         subjectId: selected.entityId,
         reason: selected.explanation,
         confidence: selected.score,
       }));
-      const compilation = await compileRelevanceClosure({
+      const compilation = reuseBranch ? {closure:closureWithBinding(retainedBranch!.closure,branchValidation?.status==="rebound"?branchValidation.rebound!:retainedBranch!.closure.boundState,resolution.id),metrics:retainedBranch!.metrics,frontier:retainedBranch!.frontier} : await compileRelevanceClosure({
         request,
         seeds: seeds.length > 0 ? seeds : candidate.direct ? [] : [{ kind: candidate.entityKind === "projection-unit" ? "projection-unit" : candidate.entityKind === "architecture-decision" ? "decision" : "manual", subjectId: candidate.entityId, reason: `hypothetical interpretation branch: ${candidate.explanation}`, confidence: candidate.score }],
         identityResolution: resolution,
@@ -335,7 +372,7 @@ export class RepositoryKnowledgeService {
       const closureIds = compilation.closure.entries.map(({ entityId }) => entityId);
       const decisionEvidence = await assessKnowledgeDecisions(graph, graph.relevantDecisions(new Set(closureIds)), operation, adapterContext);
       const decisionIds = decisionEvidence.decisions.map(({ decisionId }) => decisionId);
-      const applicationEvidence = await computeHost.applicationEvidence(closureIds);
+      const applicationEvidence = reuseBranch&&retainedBranch!==undefined ? retainedDiscovery!.applicationEvidence.get(retainedBranch.id) ?? await computeHost.applicationEvidence(closureIds) : await computeHost.applicationEvidence(closureIds);
       const closure = rebindClosure(compilation.closure, graph, [identity.dependency, ...collectedQueries, ...decisionEvidence.dependencies], decisionIds, applicationEvidenceDependencies(applicationEvidence));
       const baseContext = await compileContext(closure, graph, { maxCost: selectedPolicy.maxContextCost });
       const contextUnknowns = unique([...baseContext.unknowns, ...graph.authorityUnknowns(closureIds), ...graph.topologyUnknowns(closureIds), ...graph.realizationUnknowns(closureIds), ...decisionEvidence.decisions.flatMap(({ checks }) => checks.filter(({ status }) => status === "unknown").map(({ reason }) => reason)), ...applicationEvidence.flatMap((item) => item.status === "unavailable" ? [item.reason] : [])]);
@@ -387,7 +424,9 @@ export class RepositoryKnowledgeService {
       ...branches.flatMap(({ closure, context }) => [...closure.unknowns, ...context.unknowns]),
     ]);
     input.signal?.throwIfAborted();
+    const code = graph.semanticSummary?.(branches.flatMap(branch => branch.closure.entries.map(entry => entry.entityId)));
     const result = finalizeKnowledgeContext({
+      ...(code === undefined ? {} : { code }),
       apiVersion: KNOWLEDGE_API_VERSION,
       request,
       requestFingerprint: hashFramedDomain("knowledge-request", requestOptions),
@@ -421,6 +460,7 @@ export class RepositoryKnowledgeService {
       if (options.observation === undefined && retained.impactBaseline === undefined) {
         const indexed = await observeIndexedRepository(this.repositoryRoot);
         try {
+          await runObservationTask("code-operation", { repositoryRoot: this.repositoryRoot, operation: "code.index", input: { provider: "native" }, descriptor: indexed.descriptor }, scope);
           return await runObservationTask("indexed-knowledge-reconcile", { descriptor: indexed.descriptor, retained, now: (this.host.now ?? (() => new Date().toISOString()))(), ...(this.host.acceptedDecisionBaselines === undefined ? {} : { acceptedDecisionBaselines: this.host.acceptedDecisionBaselines }) }, { ...scope, onHostRequest: createIndexedKnowledgeComputeHostHandler(indexed, this.host) });
         } finally { indexed.close(); }
       }
@@ -439,30 +479,37 @@ export class RepositoryKnowledgeService {
     const contextId = retained.id;
     const options: { signal?: AbortSignal } = {};
     const adapterContext: AdapterContext = { repositoryRoot: observation.repositoryRoot, stateDigest: observation.state, config: {}, signal: options.signal ?? new AbortController().signal };
-    const current = await this.compileContext({
-      request: retained.request,
-      entities: retained.requestOptions.entities,
-      namedTargets: retained.requestOptions.namedTargets,
-      operation: retained.requestOptions.operation,
-      policy: retained.requestOptions.policy,
-      persist: false,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    }, observation, graph);
-    options.signal?.throwIfAborted();
-    const currentApplicationDependencies = new Map(current.branches
-      .flatMap(({ applicationEvidence }) => applicationEvidenceDependencies(applicationEvidence))
-      .map((dependency) => [dependency.id, dependency.versionHash] as const));
+    const currentApplicationDependencies = new Map<string,ContentHash>();
     const validator = new DependencyScopedStateBindingValidator({
       values: { readVersionHash: async (dependency) => currentApplicationDependencies.get(dependency.id) ?? graph.currentVersionHash(dependency) },
       queries: { evaluate: (query, context) => graph.registry.evaluate(query, context) },
     });
     const discoveryValidation = await validator.validate(retained.discoveryBinding, observation.state, adapterContext);
     options.signal?.throwIfAborted();
+    const contextInput:KnowledgeContextRequest={request:retained.request,entities:retained.requestOptions.entities,namedTargets:retained.requestOptions.namedTargets,operation:retained.requestOptions.operation,policy:retained.requestOptions.policy,persist:false};
+    const discoveryReusable=reusable(discoveryValidation)&&retained.discoveryBinding.queryDependencies.length===1;
+    let current:KnowledgeContextResult|undefined;
+    if(!discoveryReusable){
+      current=await this.compileContext(contextInput,observation,graph);
+      for(const dependency of current.branches.flatMap(({applicationEvidence})=>applicationEvidenceDependencies(applicationEvidence)))currentApplicationDependencies.set(dependency.id,dependency.versionHash);
+    }
+    const currentEvidence=new Map<string,KnowledgeContextBranch["applicationEvidence"]>();
+    if(discoveryReusable&&this.computeHost!==undefined){
+      for(const branch of retained.branches){
+        const evidence=await this.computeHost.applicationEvidence(branch.closure.entries.map(({entityId})=>entityId));
+        currentEvidence.set(branch.id,evidence);
+        for(const dependency of applicationEvidenceDependencies(evidence))currentApplicationDependencies.set(dependency.id,dependency.versionHash);
+      }
+    }
     const branches = [];
+    const branchValidations=new Map<string,StateBindingValidation>();
     for (const branch of retained.branches) {
-      branches.push({ branchId: branch.id, validation: await validator.validate(branch.closure.boundState, observation.state, adapterContext) });
+      const validation=await validator.validate(branch.closure.boundState, observation.state, adapterContext);
+      branches.push({ branchId: branch.id, validation });branchValidations.set(branch.id,validation);
       options.signal?.throwIfAborted();
     }
+    current??=await this.compileContext(contextInput, observation, graph, discoveryReusable?{retained,discovery:discoveryValidation,branches:branchValidations,applicationEvidence:currentEvidence}:undefined);
+    options.signal?.throwIfAborted();
     const validations = [discoveryValidation, ...branches.map(({ validation }) => validation)];
     let status = validations.reduce<StateBindingValidation["status"]>((worst, validation) => validationRank[validation.status] > validationRank[worst] ? validation.status : worst, "current");
     let reasons = unique(validations.flatMap(({ reasons: validationReasons }) => validationReasons));

@@ -22,6 +22,7 @@ import { RepositoryKnowledgeService } from "./service.js";
 import { KnowledgeContextAgentViewSchema, projectKnowledgeContext } from "./transport.js";
 import { KnowledgeGraph } from "./graph.js";
 import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
+import type { KnowledgeComputeHost } from "../observation/knowledge-host.js";
 
 const roots: string[] = [];
 const hash = (label: string) => hashFramedDomain("knowledge-test", label);
@@ -115,6 +116,38 @@ afterEach(async () => {
 });
 
 describe("RepositoryKnowledgeService", () => {
+  it("reuses proven discovery and closure traversal while refreshing validators", async () => {
+    const root=await repository();
+    await writeConcept(root,concept("concept:reuse","reuse","Keep the selected boundary."));
+    const observed=await observeChangeRepository(root);
+    const graph=new KnowledgeGraph(observed);
+    let validatorCalls=0,evidenceCalls=0;
+    const computeHost:KnowledgeComputeHost={
+      continuation:async()=>{throw new Error("Unexpected continuation");},
+      baseline:async()=>({kind:"unavailable",reason:"No accepted baseline."}),
+      validators:async()=>{validatorCalls++;return{findings:[],executed:false};},
+      applicationEvidence:async()=>{evidenceCalls++;return[];},
+      freshState:async()=>observed.state,
+      readImpact:async()=>{throw new Error("Unexpected impact read");},
+    };
+    const retained=(await RepositoryKnowledgeService.computeContext({request:"inspect",entities:["concept:reuse"],persist:false},observed,{},computeHost,undefined,graph)).result;
+    const identity=vi.spyOn(graph,"bindIdentity"),discovery=vi.spyOn(graph,"discovery");
+    const beforeValidators=validatorCalls,beforeEvidence=evidenceCalls;
+    const reconciled=await RepositoryKnowledgeService.computeReconciliation(retained,observed,{},computeHost,undefined,graph);
+    expect(reconciled.status).toBe("current");
+    expect(identity).not.toHaveBeenCalled();expect(discovery).not.toHaveBeenCalled();
+    expect(validatorCalls).toBeGreaterThan(beforeValidators);
+    expect(evidenceCalls).toBeGreaterThan(beforeEvidence);
+    await writeConcept(root,concept("concept:other","other","Unrelated canonical meaning."));
+    const reboundObservation=await observeChangeRepository(root);
+    const reboundGraph=new KnowledgeGraph(reboundObservation);
+    const reboundIdentity=vi.spyOn(reboundGraph,"bindIdentity"),reboundDiscovery=vi.spyOn(reboundGraph,"discovery");
+    const rebound=await RepositoryKnowledgeService.computeReconciliation(retained,reboundObservation,{},computeHost,undefined,reboundGraph);
+    expect(rebound.status).toBe("rebound");
+    expect(reboundIdentity).not.toHaveBeenCalled();expect(reboundDiscovery).not.toHaveBeenCalled();
+    const fullCurrent=(await RepositoryKnowledgeService.computeContext({request:"inspect",entities:["concept:reuse"],persist:false},reboundObservation,{},computeHost,undefined,new KnowledgeGraph(reboundObservation))).result;
+    expect(rebound.governance.regeneratedContextId).toBe(fullCurrent.id);
+  });
   it("normalizes repository spelling while rejecting observations from another repository", async () => {
     const root = await repository();
     const service = await RepositoryKnowledgeService.create(`${root}/.`);

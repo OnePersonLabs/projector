@@ -83,6 +83,9 @@ export {
   type RepresentationProfileReconciliationOutput,
 } from "./representation/profile-reconciliation.js";
 export { runObservationTask } from "./observation/task-runner.js";
+export { executeCodeOperation, shutdownCodeIndexRuns } from "./code-intelligence/service.js";
+export { executeCodeTestReplay } from "./code-intelligence/test-replay.js";
+export { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "./observation/resident-pool.js";
 export { VerificationService } from "./verification/service.js";
 export { BuiltinVerificationService, builtinCanonicalCheck, type BuiltinVerificationOptions } from "./verification/builtin-service.js";
 export { GeneratedOutputService } from "./change-lifecycle/generated-output.js";

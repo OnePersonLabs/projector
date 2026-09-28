@@ -7,6 +7,7 @@ import { ArchitectureEvaluationRequestSchema } from "./architecture-evaluation.j
 import { VerificationRequestSchema, BuiltinVerificationOperationSchema } from "./verification.js";
 import { GeneratedOutputRequestSchema } from "./generated-output.js";
 import { GitIntegrationRequestSchema } from "./git-integration.js";
+import { CodeQueryRequestSchema, CodeIndexRequestSchema, CodeIndexStatusRequestSchema, CodeIndexWaitRequestSchema, CodeIndexCancelRequestSchema, CodeImpactRequestSchema, CodeTestsRequestSchema, CodeTestRunRequestSchema, CodeEvidenceRequestSchema, CodeExportRequestSchema } from "../code-workflows.js";
 
 export const projectorOperationApiVersion = "projector.operation/v1" as const;
 export const projectorOperationResultApiVersion = "projector.operation-result/v1" as const;
@@ -41,6 +42,16 @@ export const ProjectorOperationSchema = z.enum([
   "generated.inspect",
   "generated.recover",
   "application.observe",
+  "code.query",
+  "code.index",
+  "code.index-status",
+  "code.index-wait",
+  "code.index-cancel",
+  "code.impact",
+  "code.tests",
+  "code.test-run",
+  "code.evidence",
+  "code.export",
 ]);
 
 export type ProjectorOperation = z.infer<typeof ProjectorOperationSchema>;
@@ -81,6 +92,16 @@ const knowledgePolicy = z.strictObject({
 });
 
 export const ProjectorOperationInputSchemas = Object.freeze({
+  "code.query": CodeQueryRequestSchema,
+  "code.index": CodeIndexRequestSchema,
+  "code.index-status": CodeIndexStatusRequestSchema,
+  "code.index-wait": CodeIndexWaitRequestSchema,
+  "code.index-cancel": CodeIndexCancelRequestSchema,
+  "code.impact": CodeImpactRequestSchema,
+  "code.tests": CodeTestsRequestSchema,
+  "code.test-run": CodeTestRunRequestSchema,
+  "code.evidence": CodeEvidenceRequestSchema,
+  "code.export": CodeExportRequestSchema,
   status: z.strictObject({}),
   init: z.strictObject({}),
   context: z.strictObject({
@@ -132,14 +153,24 @@ export const ProjectorOperationInputSchemas = Object.freeze({
   "architecture.evaluate": ArchitectureEvaluationRequestSchema,
   "verification.execute": VerificationRequestSchema,
   "verification.builtin": z.strictObject({ command: BuiltinVerificationOperationSchema }),
-  "verification.inspect": z.strictObject({ eventIds: z.array(z.string().min(1)).max(10000).optional() }),
+  "verification.inspect": z.strictObject({ eventIds: z.array(z.string().min(1)).optional() }),
   "verification.recover": z.strictObject({}),
   "generated.execute": z.strictObject({ generation: GeneratedOutputRequestSchema }),
-  "generated.inspect": z.strictObject({ activeProducerIds: z.array(z.string().min(1)).max(10000) }),
-  "generated.recover": z.strictObject({ activeProducerIds: z.array(z.string().min(1)).max(10000) }),
+  "generated.inspect": z.strictObject({ activeProducerIds: z.array(z.string().min(1)) }),
+  "generated.recover": z.strictObject({ activeProducerIds: z.array(z.string().min(1)) }),
 });
 
 export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation", [
+  createProjectorOperationRequestSchema("code.query", ProjectorOperationInputSchemas["code.query"]),
+  createProjectorOperationRequestSchema("code.index", ProjectorOperationInputSchemas["code.index"]),
+  createProjectorOperationRequestSchema("code.index-status", ProjectorOperationInputSchemas["code.index-status"]),
+  createProjectorOperationRequestSchema("code.index-wait", ProjectorOperationInputSchemas["code.index-wait"]),
+  createProjectorOperationRequestSchema("code.index-cancel", ProjectorOperationInputSchemas["code.index-cancel"]),
+  createProjectorOperationRequestSchema("code.impact", ProjectorOperationInputSchemas["code.impact"]),
+  createProjectorOperationRequestSchema("code.tests", ProjectorOperationInputSchemas["code.tests"]),
+  createProjectorOperationRequestSchema("code.test-run", ProjectorOperationInputSchemas["code.test-run"]),
+  createProjectorOperationRequestSchema("code.evidence", ProjectorOperationInputSchemas["code.evidence"]),
+  createProjectorOperationRequestSchema("code.export", ProjectorOperationInputSchemas["code.export"]),
   createProjectorOperationRequestSchema("status", ProjectorOperationInputSchemas.status),
   createProjectorOperationRequestSchema("init", ProjectorOperationInputSchemas.init),
   createProjectorOperationRequestSchema("context", ProjectorOperationInputSchemas.context),

@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { ObservationBudget, ObservationError } from "@projector/core";
+import { StringDecoder } from "node:string_decoder";
+import { ObservationBudget, ObservationError, observationLimitValue } from "@projector/core";
 
 export function observationFailure(error: unknown, stage: string, scope = "."): ObservationError {
   return error instanceof ObservationError ? error : new ObservationError("observation-failed", stage, scope,
@@ -49,7 +50,7 @@ export async function readObservationFile(path: string, budget: ObservationBudge
     while (true) {
       checkObservation(budget, signal, "file-read", scope);
       // At most one small sentinel byte beyond a boundary is read, never retained.
-      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, budget.limits.maxFileBytes - size + 1, budget.remaining("maxTotalBytes") + 1));
+      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, observationLimitValue(budget.limits.maxFileBytes) - size + 1, budget.remaining("maxTotalBytes") + 1));
       const { bytesRead } = await handle.read(buffer);
       if (bytesRead === 0) break;
       size += bytesRead;
@@ -80,6 +81,14 @@ export class GitCommandError extends ObservationError {
 export interface GitObservationOptions {
   readonly executable?: string;
   readonly signal?: AbortSignal; readonly stage?: string; readonly input?: string; readonly allowedExitCodes?: readonly number[];
+  readonly consumeStdout?: (chunk:Buffer)=>void;
+}
+/** Stream record boundaries without retaining another complete Git output. */
+export async function observationGitRecords(root:string,args:readonly string[],budget:ObservationBudget,consume:(record:string)=>void,options:GitObservationOptions={}):Promise<void>{
+  const decoder=new StringDecoder("utf8");let pending="";
+  const accept=(text:string):void=>{pending+=text;let start=0,end:number;while((end=pending.indexOf("\0",start))!==-1){consume(pending.slice(start,end));start=end+1;}pending=pending.slice(start);};
+  await observationGit(root,args,budget,{...options,consumeStdout:chunk=>accept(decoder.write(chunk))});
+  accept(decoder.end());if(pending!=="")throw new ObservationError("observation-failed",options.stage??"git-records",".","Git records are not NUL terminated");
 }
 export async function observationGit(root: string, args: readonly string[], budget: ObservationBudget, options: GitObservationOptions = {}): Promise<string> {
   return observationGitResult(root, args, budget, options, (output) => output.toString("utf8"));
@@ -118,14 +127,19 @@ async function observationGitResult<T>(root: string, args: readonly string[], bu
     };
     const onAbort = (): void => stop(new Error("Repository observation cancelled."));
     options.signal?.addEventListener("abort", onAbort, { once: true });
-    const timer = setTimeout(() => stop(new ObservationError("observation-limit-exceeded", stage, ".",
-      "Repository observation deadline exceeded; explicitly increase timeoutMs to retry.", "timeoutMs", budget.limits.timeoutMs)), budget.remainingMs());
+    const remaining = budget.remainingMs();
+    const timer = Number.isFinite(remaining) ? setTimeout(() => stop(new ObservationError("observation-limit-exceeded", stage, ".",
+      "Repository observation exceeded the caller-requested deadline.", "timeoutMs", budget.limits.timeoutMs ?? undefined)), remaining) : undefined;
     const collect = (target: Buffer[], chunk: Buffer): void => {
       if (failure !== undefined) return;
       try { budget.consume("maxGitOutputBytes", chunk.length, stage); target.push(chunk); }
       catch (error) { stop(error); }
     };
-    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
+    child.stdout.on("data", (chunk: Buffer) => {
+      if(options.consumeStdout===undefined){collect(stdout,chunk);return;}
+      if(failure!==undefined)return;
+      try{budget.consume("maxGitOutputBytes",chunk.length,stage);options.consumeStdout(chunk);}catch(error){stop(error);}
+    });
     child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
     child.on("error", stop);
     child.stdin.on("error", (error: NodeJS.ErrnoException) => { if (error.code !== "EPIPE") stop(error); });

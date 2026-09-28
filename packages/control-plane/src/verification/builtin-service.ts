@@ -63,7 +63,7 @@ export class BuiltinVerificationService {
   }
   private async save(record: BuiltinVerificationEvidence, artifacts: ReadonlyMap<string, Uint8Array>) {
     // Terminal publication intentionally survives cancellation and never reruns the check.
-    const store = new DurableArtifactSetStore<BuiltinVerificationEvidence>(this.storeRoot, validate, {}, { budget: new ObservationBudget({ timeoutMs: 30000 }), signal: new AbortController().signal }), artifactSetId = `${record.id}_${record.status === "running" ? "running" : "completed"}`;
+    const store = new DurableArtifactSetStore<BuiltinVerificationEvidence>(this.storeRoot, validate, {}, { budget: new ObservationBudget(), signal: new AbortController().signal }), artifactSetId = `${record.id}_${record.status === "running" ? "running" : "completed"}`;
     await store.begin({ artifactSetId });
     for (const [path, bytes] of artifacts) await store.stageBlob({ artifactSetId, path, bytes });
     await store.finalize({ artifactSetId, manifestBytes: Buffer.from(canonicalJson(record)) });
@@ -71,7 +71,7 @@ export class BuiltinVerificationService {
   async execute(supplied: BuiltinVerificationRequest) {
     const request = BuiltinVerificationRequestSchema.parse(supplied);
     if (!this.options.trustedChecks.includes(request.check)) throw new Error("Current host trust policy does not enable this built-in check");
-    return withObservationScope({ ...(this.options.signal ? { signal: this.options.signal } : {}), limits: { timeoutMs: request.timeoutMs ?? 60000 } }, async scope => {
+    return withObservationScope({ ...(this.options.signal ? { signal: this.options.signal } : {}), limits: { timeoutMs: request.timeoutMs ?? null } }, async scope => {
       const captured = await this.capture(request.target, scope);
       const inputBytes = Buffer.from(canonicalJson({ sources: captured.inputs.sources, files: captured.inputs.files, members: captured.inputs.members, issues: captured.inputs.issues }));
       const artifacts = new Map<string, Uint8Array>([["inputs.json", inputBytes]]);
@@ -102,7 +102,7 @@ export class BuiltinVerificationService {
   }
   private async names(directory: string) {
     let entries; try { entries = await opendir(directory); } catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return []; throw error; }
-    const names: string[] = []; for await (const entry of entries) { const scope = currentObservationScope(); scope?.signal.throwIfAborted(); scope?.budget.consume("maxFiles", 1, "builtin-verification-history", entry.name); if (names.length >= 10000) throw new Error("Built-in verification history exceeds finite record limit"); names.push(entry.name); } return names.sort();
+    const names: string[] = []; for await (const entry of entries) { const scope = currentObservationScope(); scope?.signal.throwIfAborted(); scope?.budget.consume("maxFiles", 1, "builtin-verification-history", entry.name); names.push(entry.name); } return names.sort();
   }
   async inspect() {
     return withObservationScope({ ...(this.options.signal ? { signal: this.options.signal } : {}) }, () => this.inspectRecords());

@@ -2,16 +2,16 @@ import { constants } from "node:fs";
 import { lstat, open, opendir } from "node:fs/promises";
 import { basename } from "node:path";
 
-import { DEFAULT_OBSERVATION_LIMITS, canonicalJson, hashFramedDomain } from "@projector/core";
+import { canonicalJson, hashFramedDomain, observationLimitValue } from "@projector/core";
 import { RepositoryPathService, fileTransactionJournalRelativePath, parseFileTransactionJournalSource, withObservationScope, type DurableTransactionRecord, type ObservationScope } from "@projector/runtime";
 import { runObservationTask } from "../observation/task-runner.js";
 
 import { ChangeLifecycleStore, type LifecycleApprovalRecord, type LifecycleAttemptRecord, type LifecycleAttemptResultRecord, type LifecycleCaptureRecord } from "../change-lifecycle/store.js";
 
 export interface CacheProtectionBudget {
-  deadline: number;
-  remainingEntries: number;
-  remainingBytes: number;
+  deadline: number | null;
+  remainingEntries: number | null;
+  remainingBytes: number | null;
 }
 
 const lifecycleRoot = ".projector/runtime/change-lifecycles";
@@ -31,12 +31,14 @@ interface MetadataFile {
 export interface CacheProtectionSources {
   readonly repositoryRoot: string;
   readonly sources: Readonly<Record<string, string>>;
-  readonly deadline: number;
-  readonly maxSourceBytes?: number;
+  readonly deadline: number | null;
+  readonly maxSourceBytes?: number | null;
 }
 
 function checkBudget(budget: CacheProtectionBudget): void {
-  if (Date.now() >= budget.deadline || budget.remainingEntries < 0 || budget.remainingBytes < 0) {
+  if ((budget.deadline !== null && Date.now() >= budget.deadline)
+    || (budget.remainingEntries !== null && budget.remainingEntries < 0)
+    || (budget.remainingBytes !== null && budget.remainingBytes < 0)) {
     throw new Error("Cache protection discovery bound exceeded; no complete protected-context proof is available. Reduce retained lifecycle metadata through its owner before retrying maintenance.");
   }
 }
@@ -57,7 +59,7 @@ async function discover(paths: RepositoryPathService, budget: CacheProtectionBud
     if (status.isSymbolicLink() || !status.isDirectory()) throw new Error(`Cache protection metadata directory is unsafe: ${relativePath}`);
     const directory = await opendir(resolved.realTarget);
     for await (const entry of directory) {
-      budget.remainingEntries -= 1;
+      if (budget.remainingEntries !== null) budget.remainingEntries -= 1;
       checkBudget(budget);
       const child = `${relativePath}/${entry.name}`;
       if (entry.isDirectory()) {
@@ -72,7 +74,7 @@ async function discover(paths: RepositoryPathService, budget: CacheProtectionBud
       const filePath = (await paths.resolveRead(child)).realTarget;
       const before = await lstat(filePath);
       if (!before.isFile() || before.isSymbolicLink()) throw new Error(`Unsafe cache protection metadata file: ${child}`);
-      budget.remainingBytes -= before.size;
+      if (budget.remainingBytes !== null) budget.remainingBytes -= before.size;
       checkBudget(budget);
       scope.budget.assertTotalBytes(before.size, child);
       const handle = await open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
@@ -116,16 +118,19 @@ function textField(value: Record<string, unknown>, field: string): string {
 /** Caller holds exclusive project access across this proof and any subsequent eviction. */
 export async function readProtectedKnowledgeContextIds(repositoryRoot: string, requestedBudget?: CacheProtectionBudget, signal?: AbortSignal): Promise<ReadonlySet<string>> {
   return withObservationScope({ ...(signal === undefined ? {} : { signal }) }, async (scope) => {
-    const budget = requestedBudget ?? { deadline: Date.now() + 5_000, remainingEntries: 10_000, remainingBytes: scope.limits.maxDerivedBytes };
-    if (!Number.isFinite(budget.deadline) || !Number.isSafeInteger(budget.remainingEntries) || !Number.isSafeInteger(budget.remainingBytes)) throw new Error("Cache protection discovery requires a finite bounded budget");
-    budget.deadline = Math.min(budget.deadline, Date.now() + 5_000, scope.deadline);
-    budget.remainingEntries = Math.min(budget.remainingEntries, 10_000);
-    budget.remainingBytes = Math.min(budget.remainingBytes, scope.limits.maxDerivedBytes, scope.budget.remaining("maxTotalBytes"));
+    const budget = requestedBudget ?? { deadline: null, remainingEntries: null, remainingBytes: null };
+    if ((budget.deadline !== null && !Number.isSafeInteger(budget.deadline))
+      || (budget.remainingEntries !== null && !Number.isSafeInteger(budget.remainingEntries))
+      || (budget.remainingBytes !== null && !Number.isSafeInteger(budget.remainingBytes))) throw new Error("Invalid cache protection discovery budget");
+    const deadline = Math.min(observationLimitValue(budget.deadline), scope.deadline);
+    budget.deadline = Number.isFinite(deadline) ? deadline : null;
+    const remainingBytes = Math.min(observationLimitValue(budget.remainingBytes), observationLimitValue(scope.limits.maxDerivedBytes), scope.budget.remaining("maxTotalBytes"));
+    budget.remainingBytes = Number.isFinite(remainingBytes) ? remainingBytes : null;
     const maxSourceBytes = budget.remainingBytes;
     checkBudget(budget);
     const paths = await RepositoryPathService.create(repositoryRoot);
     const sources = await discover(paths, budget, scope);
-    const result = await runObservationTask("cache-protection", { repositoryRoot, sources, deadline: budget.deadline, maxSourceBytes }, { ...scope, deadline: budget.deadline, maxDerivedBytes: scope.limits.maxDerivedBytes });
+    const result = await runObservationTask("cache-protection", { repositoryRoot, sources, deadline: budget.deadline, maxSourceBytes }, { ...scope, deadline: observationLimitValue(budget.deadline), maxDerivedBytes: scope.limits.maxDerivedBytes });
     checkBudget(budget);
     return new Set(result);
   });
@@ -134,16 +139,16 @@ export async function readProtectedKnowledgeContextIds(repositoryRoot: string, r
 /** Runs only on bounded collected strings: existing authenticators cannot reread the filesystem. */
 export async function authenticateCacheProtectionSources(input: CacheProtectionSources): Promise<string[]> {
   const { repositoryRoot, sources } = input;
-  if (!Number.isFinite(input.deadline)) throw new Error("Cache protection source deadline must be finite");
-  const maxSourceBytes = input.maxSourceBytes ?? DEFAULT_OBSERVATION_LIMITS.maxDerivedBytes;
-  if (!Number.isSafeInteger(maxSourceBytes) || maxSourceBytes < 0) throw new Error("Cache protection source allowance must be a nonnegative safe integer");
-  const budget: CacheProtectionBudget = { deadline: input.deadline, remainingEntries: 10_000, remainingBytes: maxSourceBytes };
+  if (input.deadline !== null && !Number.isSafeInteger(input.deadline)) throw new Error("Invalid cache protection source deadline");
+  const maxSourceBytes = input.maxSourceBytes ?? null;
+  if (maxSourceBytes !== null && (!Number.isSafeInteger(maxSourceBytes) || maxSourceBytes < 0)) throw new Error("Cache protection source allowance must be a nonnegative safe integer or null");
+  const budget: CacheProtectionBudget = { deadline: input.deadline, remainingEntries: null, remainingBytes: maxSourceBytes };
   const files: MetadataFile[] = [];
   for (const [relativePath, source] of Object.entries(sources)) {
     const directory = relativePath.slice(0, relativePath.lastIndexOf("/"));
     if (!allowedDirectories.has(directory) || directory === lifecycleRoot || directory === `${lifecycleRoot}/artifacts` || !/^[0-9a-f]{64}\.json$/u.test(basename(relativePath))) throw new Error(`Unknown collected cache protection source: ${relativePath}`);
-    budget.remainingEntries -= 1;
-    budget.remainingBytes -= Buffer.byteLength(source);
+    if (budget.remainingEntries !== null) budget.remainingEntries -= 1;
+    if (budget.remainingBytes !== null) budget.remainingBytes -= Buffer.byteLength(source);
     checkBudget(budget);
     const value: unknown = JSON.parse(source);
     if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error(`Malformed cache protection metadata: ${relativePath}`);

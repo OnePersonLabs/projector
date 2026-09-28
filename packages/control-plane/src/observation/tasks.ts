@@ -1,4 +1,4 @@
-import type { CollectedLocalRepositoryInputs, LocalRepositoryAnalysis } from "@projector/analyzers";
+import type { CollectedLocalRepositoryInputs, LocalRepositoryAnalysis, InventoryResult, JavaScriptFacts } from "@projector/analyzers";
 import type { CanonicalSnapshot, CanonicalSnapshotSource } from "@projector/runtime";
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
 import type { RepositoryImpactSnapshot, RepositoryImpactReport, RepositoryImpactReference } from "../impact/service.js";
@@ -22,18 +22,22 @@ export interface ObservationTaskFailure {
 }
 import type { CalculatedRepositoryRelevance, RepositoryRelevanceObservation } from "../change-lifecycle/query-programs.js";
 import type { IndexedObservationDescriptor } from "./indexed-types.js";
+import type { IndexedColdInput, IndexedColdResult } from "../change-lifecycle/indexed-cold.js";
 
 export type RepositoryObservationData = Omit<ChangeRepositoryObservation, "independentValidator">;
 export interface ObservationTaskInputs {
+  "observe-indexed": IndexedColdInput;
+  "code-operation": import("../code-intelligence/worker-service.js").CodeWorkerRequest;
   "indexed-knowledge-context": { descriptor: IndexedObservationDescriptor; request: Omit<KnowledgeContextRequest, "signal">; now: string; acceptedDecisionBaselines?: readonly KnowledgeDecisionBaseline[] };
   "indexed-knowledge-reconcile": { descriptor: IndexedObservationDescriptor; retained: KnowledgeContextResult; now: string; acceptedDecisionBaselines?: readonly KnowledgeDecisionBaseline[] };
   "indexed-graph-query": { descriptor: IndexedObservationDescriptor; query: StateQuerySpec; context: Omit<AdapterContext, "signal"> };
   "change-relevance": { observation: RepositoryRelevanceObservation; editedPaths: readonly string[] };
   "change-query": { observation: RepositoryObservationData; now: string; query: StateQuerySpec; context: Omit<AdapterContext, "signal"> };
-  "cache-protection": { repositoryRoot: string; sources: Record<string, string>; deadline: number; maxSourceBytes?: number };
+  "cache-protection": { repositoryRoot: string; sources: Record<string, string>; deadline: number | null; maxSourceBytes?: number | null };
   "authenticate-impact": { source: string; reference: RepositoryImpactReference };
   "prepare-impact": { observation: RepositoryObservationData; editedPaths: readonly string[]; canonicalChanges: readonly { id: string; kind: string }[]; affectedUnitIds: readonly string[] };
   "analyze-collected": { collected: CollectedLocalRepositoryInputs };
+  "analyze-javascript": { inventory: InventoryResult };
   "analyze-incremental": { collected:CollectedLocalRepositoryInputs; context?:Parameters<typeof import("@projector/analyzers").analyzeCollectedLocalRepository>[2] };
   coverage: { observation: RepositoryObservationData; request: RepositoryCoverageRequest; mode: RepositoryCoverageMode; now: string };
   architecture: { observation: RepositoryObservationData; now: string };
@@ -49,6 +53,8 @@ export interface ObservationTaskInputs {
   "reconcile-impact": { before: RepositoryImpactSnapshot; after: RepositoryImpactSnapshot; predictedUnitIds: readonly string[]; planId: string; predictedPaths?: readonly string[]; hasPrediction?: boolean };
 }
 export interface ObservationTaskResults {
+  "observe-indexed": IndexedColdResult;
+  "code-operation": unknown;
   "indexed-knowledge-context": { result: KnowledgeContextResult; writes: DerivedCacheWrite[] };
   "indexed-knowledge-reconcile": KnowledgeReconciliationResult;
   "indexed-graph-query": StateQueryResultFingerprint;
@@ -58,6 +64,7 @@ export interface ObservationTaskResults {
   "authenticate-impact": RepositoryImpactSnapshot;
   "prepare-impact": { baseline: RepositoryImpactSnapshot; prediction: RepositoryImpactReport; governanceMemberships: { lensId: string; unitId: string; path: string }[] };
   "analyze-collected": LocalRepositoryAnalysis;
+  "analyze-javascript": JavaScriptFacts;
   "analyze-incremental": LocalRepositoryAnalysis;
   coverage: RepositoryCoverageResult;
   architecture: Awaited<ReturnType<typeof computeRepositoryArchitecture>>;

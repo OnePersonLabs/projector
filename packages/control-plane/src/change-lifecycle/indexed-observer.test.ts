@@ -1,18 +1,21 @@
 import {EventEmitter} from "node:events";
 import {PassThrough,Writable} from "node:stream";
 import {execFile} from "node:child_process";
-import {mkdtemp,writeFile,rm,mkdir} from "node:fs/promises";
+import {writeFileSync} from "node:fs";
+import {mkdtemp,writeFile,rm,mkdir,symlink} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
 import {promisify} from "node:util";
 import {Worker} from "node:worker_threads";
+import {DatabaseSync} from "node:sqlite";
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 
 const feed=vi.hoisted(()=>({events:new Map<string,{name:string;exists:boolean;type:string}[]>(),fresh:false,afterQuery:undefined as ((root:string)=>void)|undefined}));
 const filesystemReads=vi.hoisted(()=>[] as string[]);
+const readHook=vi.hoisted(()=>({onRead:undefined as ((path:string)=>void)|undefined}));
 vi.mock("node:fs/promises",async importOriginal=>{
   const actual=await importOriginal<typeof import("node:fs/promises")>();
-  return {...actual,open:(...args:Parameters<typeof actual.open>)=>{filesystemReads.push(String(args[0]));return actual.open(...args);},readFile:(...args:Parameters<typeof actual.readFile>)=>{filesystemReads.push(String(args[0]));return actual.readFile(...args);}};
+  return {...actual,open:(...args:Parameters<typeof actual.open>)=>{filesystemReads.push(String(args[0]));readHook.onRead?.(String(args[0]));return actual.open(...args);},readFile:(...args:Parameters<typeof actual.readFile>)=>{filesystemReads.push(String(args[0]));return actual.readFile(...args);}};
 });
 vi.mock("node:child_process",async importOriginal=>{
   const actual=await importOriginal<typeof import("node:child_process")>();
@@ -38,15 +41,188 @@ import {observeChangeRepository,observeRepositoryState} from "./repository-obser
 import {RepositoryKnowledgeService} from "../knowledge/service.js";
 import { DerivedObservationBudget, hashFramedDomain, withCanonicalHashes, type AdapterContext, type AuthorityRecord } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
-import { CanonicalFileRepository } from "@projector/runtime";
+import { CanonicalFileRepository, SqliteObservationStore } from "@projector/runtime";
 import { KnowledgeGraph, KNOWLEDGE_QUERY_PROGRAMS } from "../knowledge/graph.js";
 import { IndexedKnowledgeGraph } from "../knowledge/indexed-graph.js";
 import { IndexedGovernance } from "../knowledge/indexed-governance.js";
 const exec=promisify(execFile),roots:string[]=[];
-beforeEach(()=>{feed.events.clear();feed.fresh=false;feed.afterQuery=undefined;vi.stubEnv("PROJECTOR_WATCHMAN_EXECUTABLE",process.execPath);vi.stubEnv("PROJECTOR_WATCHMAN_SOCKET","indexed-fixture");});
+// Multi-generation cases run several fresh compiler workers and complete SQL snapshots.
+vi.setConfig({testTimeout:30_000});
+beforeEach(()=>{feed.events.clear();feed.fresh=false;feed.afterQuery=undefined;readHook.onRead=undefined;vi.stubEnv("PROJECTOR_WATCHMAN_EXECUTABLE",process.execPath);vi.stubEnv("PROJECTOR_WATCHMAN_SOCKET","indexed-fixture");});
 afterEach(async()=>{vi.unstubAllEnvs();await Promise.all(roots.splice(0).map(root=>rm(root,{recursive:true,force:true})));});
 async function fixture(){const root=await mkdtemp(join(tmpdir(),"projector-indexed-observer-"));roots.push(root);const cache=await mkdtemp(join(tmpdir(),"projector-indexed-cache-"));roots.push(cache);vi.stubEnv("PROJECTOR_CACHE_DIRECTORY",cache);await mkdir(join(root,"src"));await writeFile(join(root,"package.json"),'{"type":"module"}\n');await writeFile(join(root,"src","a.mjs"),"export const a = 1;\n");await exec("git",["init","-q"],{cwd:root});await exec("git",["add","."],{cwd:root});await exec("git",["-c","user.name=Test","-c","user.email=test@example.invalid","commit","-qm","baseline"],{cwd:root});return root;}
 function changed(root:string,path:string,exists=true){const events=feed.events.get(resolve(root))??[];events.push({name:path,exists,type:"f"});feed.events.set(resolve(root),events);}
+function withoutWatchman(){vi.stubEnv("PROJECTOR_WATCHMAN_EXECUTABLE",undefined);vi.stubEnv("PROJECTOR_WATCHMAN_SOCKET",undefined);}
+
+for(const taskType of ["observe-indexed","analyze-incremental"] as const)it(`rejects source edits during ${taskType} without advancing the completed generation`,async()=>{
+  const root=await fixture();withoutWatchman();
+  const baseline=await observeIndexedRepository(root),generation=baseline.descriptor.generation;baseline.close();
+  await writeFile(join(root,"src","a.mjs"),"export const a = 2;\n");
+  const original=Worker.prototype.postMessage;let changedDuringAnalysis=false;
+  const post=vi.spyOn(Worker.prototype,"postMessage").mockImplementation(function(this:Worker,message:unknown,...rest:Parameters<Worker["postMessage"]> extends [unknown,...infer R]?R:never){
+    const request=message as {task?:{type?:string}};
+    if(request.task?.type===taskType&&!changedDuringAnalysis){changedDuringAnalysis=true;writeFileSync(join(root,"src","a.mjs"),"export const a = 3;\n");}
+    return original.call(this,message,...rest);
+  });
+  try{
+    await expect(observeIndexedRepository(root,{rebuild:taskType==="observe-indexed"})).rejects.toThrow("source changed during indexed computation");
+    expect(changedDuringAnalysis).toBe(true);
+    const store=await SqliteObservationStore.open(root);
+    try{expect(store.head()?.generation).toBe(generation);expect(store.get<{content:string}>("inventory","src/a.mjs")?.content).toBe("export const a = 1;\n");}finally{store.close();}
+  }finally{post.mockRestore();}
+});
+it("preserves raw binary bytes and byte counts across scoped inventory updates",async()=>{
+  const root=await fixture();withoutWatchman();
+  const before=await observeIndexedRepository(root),initialBytes=before.descriptor.metadata.counts.bytes;before.close();
+  for(const content of [Buffer.from([255,0,254]),Buffer.from([255,0,253,248])]){
+    await writeFile(join(root,"asset.bin"),content);
+    const observed=await observeIndexedRepository(root);
+    try{
+      expect(observed.mode).toBe("delta");expect(observed.descriptor.metadata.counts.bytes).toBe(initialBytes+content.length);
+      const entry=observed.store.get<{contentHash:string;contentChunks:()=>Iterable<Uint8Array>}>("inventory","asset.bin")!;
+      expect(entry.contentHash).toBe(hashFramedDomain("repository-artifact-content",content.toString("base64")));
+      expect(Buffer.concat([...entry.contentChunks()])).toEqual(content);
+    }finally{observed.close();}
+  }
+});
+
+it("retains an unchanged no-Watchman generation after complete source proof without a worker",async()=>{
+  const root=await fixture();withoutWatchman();
+  await symlink("src/a.mjs",join(root,"linked.mjs"));
+  let observed=await observeIndexedRepository(root);const generation=observed.descriptor.generation;observed.close();
+  const persisted=await SqliteObservationStore.open(root);
+  const database=new DatabaseSync(persisted.path);
+  persisted.close();
+  try{
+    for(const table of ["observation_source_versions","observation_source_chunks","observation_source_capture_entries"])
+      database.exec(`CREATE TRIGGER forbid_warm_${table} BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'unchanged warm scan wrote source content'); END;`);
+  }finally{database.close();}
+  const post=vi.spyOn(Worker.prototype,"postMessage");
+  try{
+    observed=await observeIndexedRepository(root);
+    expect(observed.mode).toBe("unchanged");expect(observed.descriptor.generation).toBe(generation);
+    expect(post).not.toHaveBeenCalled();observed.close();
+  }finally{post.mockRestore();}
+});
+
+it("uses a scoped no-Watchman delta for one edit, addition, and deletion with full parity",async()=>{
+  const root=await fixture();withoutWatchman();
+  let observed=await observeIndexedRepository(root);observed.close();
+  for(const [path,content] of [["src/a.mjs","export const a = 2;\n"],["src/b.mjs","export const b = 3;\n"],["src/b.mjs",undefined]] as const){
+    if(content===undefined)await rm(join(root,path));else await writeFile(join(root,path),content);
+    observed=await observeIndexedRepository(root);
+    try{
+      expect(observed.mode,`${path}: ${observed.descriptor.metadata.rebuildReason}`).toBe("delta");
+      const full=await observeChangeRepository(root);
+      expect(observed.materialize().analysis).toEqual(full.analysis);
+      expect(observed.descriptor.metadata.state).toEqual(full.state);
+    }finally{observed.close();}
+  }
+});
+
+it("rebuilds no-Watchman inventory when ignore membership changes",async()=>{
+  const root=await fixture();withoutWatchman();
+  await writeFile(join(root,".gitignore"),"generated/\n");await mkdir(join(root,"generated"));await writeFile(join(root,"generated","hidden.mjs"),"export const hidden = 1;\n");
+  let observed=await observeIndexedRepository(root);observed.close();
+  await writeFile(join(root,".gitignore"),"");
+  observed=await observeIndexedRepository(root);
+  try{expect(observed.mode).toBe("rebuild");expect(observed.materialize().analysis.files.some(file=>file.path==="generated/hidden.mjs")).toBe(true);}finally{observed.close();}
+});
+
+it("invalidates a no-Watchman generation when canonical source changes",async()=>{
+  const root=await fixture();withoutWatchman();
+  let observed=await observeIndexedRepository(root);const generation=observed.descriptor.generation;observed.close();
+  const canonical=new CanonicalFileRepository(root);
+  const authority:AuthorityRecord={id:"authority:canonical-proof",key:"canonical-proof",subjectId:"concept:canonical-proof",status:"approved",conclusion:"normalize",rationale:"Fixture authority.",alternatives:[],assumptions:[],reconsiderWhen:[{type:"manual-review"}],vector:{explicitDecisionAlignment:1,productConstraintFit:1,semanticFit:1,independentOccurrence:1,historicalStability:1,independentValidationSupport:1,boundaryCoherence:1,maintenanceOutcome:1,platformCompatibility:1,externalRationale:0,ecosystemHealth:0,securitySupport:0,reversibility:1,migrationCost:0,counterEvidence:0},assessmentConfidence:"high",evidence:[],governanceRiskClass:"R1",decidedBy:"user",createdAt:"2026-09-09T00:00:00.000Z",semanticHash:hashFramedDomain("test-authority","canonical-proof")};
+  await canonical.write(withCanonicalHashes({apiVersion:"projector/v3",schemaVersion:"3.0.0",kind:"authority-record",id:authority.id,key:authority.key,lifecycle:authority.status,payload:{...authority}}));
+  observed=await observeIndexedRepository(root);
+  try{expect(observed.mode).toBe("rebuild");expect(observed.descriptor.generation).toBeGreaterThan(generation);expect(observed.materialize().canonical.documents.some(document=>document.id===authority.id)).toBe(true);}finally{observed.close();}
+});
+
+it("keeps the completed no-Watchman generation after a canceled byte scan",async()=>{
+  const root=await fixture();withoutWatchman();
+  const first=await observeIndexedRepository(root),generation=first.descriptor.generation;first.close();
+  await writeFile(join(root,"src","a.mjs"),"export const a = 4;\n");
+  const controller=new AbortController();
+  readHook.onRead=path=>{if(path.replaceAll("\\","/").endsWith("/src/a.mjs"))controller.abort(new Error("Canceled scan"));};
+  const {withObservationScope,SqliteObservationStore}=await import("@projector/runtime");
+  await expect(withObservationScope({signal:controller.signal},()=>observeIndexedRepository(root))).rejects.toThrow("Canceled scan");
+  readHook.onRead=undefined;
+  const store=await SqliteObservationStore.open(root);
+  try{expect(store.head()?.generation).toBe(generation);}finally{store.close();}
+});
+
+it("keeps an unrelated document scoped when an event syntax lane is present",async()=>{
+  const root=await fixture();withoutWatchman();
+  await writeFile(join(root,"src","event.mjs"),"const bus = new EventEmitter(); bus.emit('ready');\n");
+  await writeFile(join(root,"README.md"),"first\n");
+  let observed=await observeIndexedRepository(root);
+  const eventCount=observed.materialize().analysis.javaScript.events.length;
+  expect(eventCount).toBeGreaterThan(0);observed.close();
+  await writeFile(join(root,"README.md"),"second\n");
+  observed=await observeIndexedRepository(root);
+  try{
+    expect(observed.mode,observed.descriptor.metadata.rebuildReason).toBe("delta");
+    const full=await observeChangeRepository(root);
+    expect(observed.materialize().analysis).toEqual(full.analysis);
+    expect(observed.descriptor.metadata.state).toEqual(full.state);
+  }finally{observed.close();}
+  await writeFile(join(root,"src","event.mjs"),"const bus = new EventEmitter(); bus.emit('updated');\n");
+  observed=await observeIndexedRepository(root);
+  try{
+    expect(observed.mode,observed.descriptor.metadata.rebuildReason).toBe("delta");
+    const full=await observeChangeRepository(root);
+    expect(observed.materialize().analysis).toEqual(full.analysis);
+    const eager=new KnowledgeGraph(full);
+    for(const id of observed.store.populationAt(observed.descriptor.generation,"unit-path:src/event.mjs"))expect(observed.store.getAt<{neighbors:unknown}>(observed.descriptor.generation,"knowledge-topology",id)?.neighbors).toEqual(eager.topologyNeighbors(id));
+  }finally{observed.close();}
+});
+
+it("updates package-wide contract facts through the scoped syntax lane",async()=>{
+  const root=await fixture();withoutWatchman();
+  await writeFile(join(root,"src","contract.ts"),"export interface Widget { id: string }\n");
+  await writeFile(join(root,"src","consumer.ts"),"import type { Widget } from './contract.js'; export const widget: Widget = { id: 'one' };\n");
+  let observed=await observeIndexedRepository(root);
+  expect(observed.materialize().analysis.javaScript.contracts.length).toBeGreaterThan(0);observed.close();
+  await writeFile(join(root,"src","contract.ts"),"export interface Widget { id: string; name?: string }\n");
+  observed=await observeIndexedRepository(root);
+  try{
+    expect(observed.mode,observed.descriptor.metadata.rebuildReason).toBe("delta");
+    const full=await observeChangeRepository(root);
+    expect(observed.materialize().analysis).toEqual(full.analysis);
+    expect(observed.descriptor.metadata.state).toEqual(full.state);
+    const eager=new KnowledgeGraph(full);
+    for(const path of ["src/contract.ts","src/consumer.ts"])for(const id of observed.store.populationAt(observed.descriptor.generation,`unit-path:${path}`))expect(observed.store.getAt<{neighbors:unknown}>(observed.descriptor.generation,"knowledge-topology",id)?.neighbors).toEqual(eager.topologyNeighbors(id));
+  }finally{observed.close();}
+});
+
+it("enrolls newly introduced global event facts without a full source rebuild",async()=>{
+  const root=await fixture();withoutWatchman();
+  let observed=await observeIndexedRepository(root);expect(observed.descriptor.metadata.incrementalSupport.globalSyntax).toBe(true);observed.close();
+  await writeFile(join(root,"src","a.mjs"),"const bus = new EventEmitter(); bus.emit('created');\n");
+  observed=await observeIndexedRepository(root);
+  try{
+    expect(observed.mode,observed.descriptor.metadata.rebuildReason).toBe("delta");
+    expect(observed.descriptor.metadata.incrementalSupport.globalSyntax).toBe(false);
+    expect(observed.materialize().analysis).toEqual((await observeChangeRepository(root)).analysis);
+  }finally{observed.close();}
+  await writeFile(join(root,"src","a.mjs"),"export const a = 1;\n");
+  observed=await observeIndexedRepository(root);
+  try{
+    expect(observed.mode,observed.descriptor.metadata.rebuildReason).toBe("delta");
+    expect(observed.descriptor.metadata.incrementalSupport.globalSyntax).toBe(true);
+    expect(observed.materialize().analysis).toEqual((await observeChangeRepository(root)).analysis);
+  }finally{observed.close();}
+});
+
+it("updates an event-bearing source with complete Watchman coverage",async()=>{
+  const root=await fixture();
+  await writeFile(join(root,"src","event.mjs"),"const bus = new EventEmitter(); bus.emit('ready');\n");
+  let observed=await observeIndexedRepository(root);observed.close();
+  await writeFile(join(root,"src","event.mjs"),"const bus = new EventEmitter(); bus.emit('changed');\n");changed(root,"src/event.mjs");
+  observed=await observeIndexedRepository(root);
+  try{expect(observed.mode,observed.descriptor.metadata.rebuildReason).toBe("delta");expect(observed.materialize().analysis).toEqual((await observeChangeRepository(root)).analysis);}finally{observed.close();}
+});
 
 it("ignores untracked output churn in both notification brackets while retaining tracked ignored sources",async()=>{
   const root=await fixture();await writeFile(join(root,".gitignore"),"generated/\n*.log\n");await writeFile(join(root,"tracked.log"),"tracked baseline\n");

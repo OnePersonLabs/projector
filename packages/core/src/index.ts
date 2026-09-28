@@ -1,5 +1,7 @@
 export * from "./domain/contracts.js";
 export * from "./observation.js";
+export * from "./source-content.js";
+export * from "./code-intelligence.js";
 export * from "./authorization/write-scope.js";
 export * from "./hashing/canonical-json.js";
 export * from "./hashing/merkle-manifest.js";
@@ -23,3 +25,4 @@ export * from "./schemas/architecture-evaluation.js";
 export * from "./schemas/verification.js";
 export * from "./schemas/git-integration.js";
 export * from "./schemas/generated-output.js";
+export * from "./code-workflows.js";

@@ -27,6 +27,30 @@ const rehash = (value: RepositoryImpactSnapshot): RepositoryImpactSnapshot => { 
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 
 describe("observed derivation impact", () => {
+  it("authenticates a v3 semantic generation and adds symbol-dependent paths to conservative file impact", async () => {
+    const root = await repository();
+    await writeFile(join(root, "unrelated.ts"), "export const unrelated = 1;\n");
+    const observed = await observeChangeRepository(root);
+    const before = buildRepositoryImpactSnapshot(observed, new KnowledgeGraph(observed), "code-before");
+    await writeFile(join(root, "value.ts"), "export const value = () => 2;\n");
+    const current = await observeChangeRepository(root);
+    const after = buildRepositoryImpactSnapshot(current, new KnowledgeGraph(current), "code-after");
+    const semantic = { before: "code-before", after: "code-after", changedSymbols: ["value"], affectedSymbols: ["value", "run"], affectedPaths: ["value.ts", "other.ts"], possiblePaths: ["unrelated.ts"], unknowns: ["Runtime dispatch remains open"], truncated: false };
+    const result = await reconcileRepositoryImpact(before, after, [], "plan:semantic", [], true, undefined, semantic);
+    expect(result.knownAffectedUnitIds).toContain(unit(after, "other.ts"));
+    expect(result.possibleFrontierUnitIds).toContain(unit(after, "unrelated.ts"));
+    expect(result.diagnostics).toContain("Runtime dispatch remains open");
+    expect(result.observedChangedUnitIds).toContain(unit(after, "value.ts"));
+    expect(() => impactSnapshotWrite(after)).not.toThrow();
+    await expect(reconcileRepositoryImpact(before, after, [], "plan:mismatch", [], true, undefined, { ...semantic, after: "wrong" })).rejects.toThrow(/generations/);
+  });
+
+  it("keeps authenticated v2 baselines readable while publishing only v3 snapshots", async () => {
+    const root = await repository();
+    const old = rehash({ ...await snapshot(root), version: "repository-impact@2" });
+    expect(() => impactSnapshotWrite(old)).toThrow(/Legacy impact proofs/);
+    expect((await reconcileRepositoryImpact(old, await snapshot(root), [], "plan:historical")).status).toBe("changed");
+  });
   it("folds independent event proofs without accumulating full per-event repository results", async () => {
     const root = await repository();
     const paths = Array.from({ length: 20 }, (_, index) => `independent-${index}.ts`);
@@ -67,7 +91,7 @@ describe("observed derivation impact", () => {
       expect(result).toMatchObject({ status: "unavailable", observedChangedUnitIds: [], knownAffectedUnitIds: [], surprises: [], candidateRelations: [] });
       expect(result.diagnostics.join(" ")).toContain("Capture fresh context");
     }
-    const largerLimits = rehash({ ...before, observationDescriptor: { ...descriptor, limits: { ...descriptor.limits, maxFiles: descriptor.limits.maxFiles + 1 } } });
+    const largerLimits = rehash({ ...before, observationDescriptor: { ...descriptor, limits: { ...descriptor.limits, maxFiles: (descriptor.limits.maxFiles ?? 0) + 1 } } });
     expect(await reconcileRepositoryImpact(before, largerLimits, [], "plan:compatible-limits")).toMatchObject({ repairRoute: "reuse", observedChangedUnitIds: [], surprises: [] });
   });
 

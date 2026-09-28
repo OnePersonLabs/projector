@@ -25,7 +25,7 @@ function source(): CanonicalRepresentationSource {
     sourceEntityIds: ["requirement:fixture"],
     statements: [{
       id: "requirement:fixture",
-      text: "Inspect the exact bounded representation.",
+      text: "Inspect the exact representation.",
       normativeForce: "require" as const,
       negated: false,
       scope: ["packages/fixture"],
@@ -50,6 +50,20 @@ function reference(projection: Awaited<ReturnType<RepresentationCompiler["compil
 }
 
 describe("RepositoryRepresentationArtifactStore", () => {
+  it("recovers and reads authenticated content larger than the former artifact limit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-representation-")); roots.push(root);
+    await mkdir(join(root, ".projector"));
+    const content = "large representation\n" + "x".repeat(8 * 1024 * 1024);
+    const contentHash = hashFramedDomain("representation-artifact", content);
+    const interrupted = await RepositoryRepresentationArtifactStore.create(root, {
+      afterStage: () => { throw new Error("interrupted large publication"); },
+    });
+    await expect(interrupted.put(contentHash, content)).rejects.toThrow("interrupted large publication");
+    const reopened = await RepositoryRepresentationArtifactStore.create(root);
+    await expect(reopened.recover()).resolves.toEqual([expect.objectContaining({ status: "recovered" })]);
+    await expect(reopened.get(contentHash)).resolves.toBe(content);
+  });
+
   it("accepts concurrent exact content publication without overwriting either writer", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-representation-")); roots.push(root);
     await mkdir(join(root, ".projector"));
@@ -148,7 +162,7 @@ describe("RepositoryRepresentationArtifactStore", () => {
 
     const reopened = await RepositoryRepresentationArtifactStore.create(root);
     await expect(reopened.read(reference(projection))).resolves.toMatchObject({
-      content: expect.stringContaining("Inspect the exact bounded representation"),
+      content: expect.stringContaining("Inspect the exact representation"),
       projection: { id: projection.id, preservation: { protectedDimensions: expect.arrayContaining(["normative-force", "negation", "scope"]) } },
       recordHash: expect.stringMatching(/^sha256:v1:/u),
     });

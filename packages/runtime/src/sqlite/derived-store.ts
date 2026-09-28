@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, toNamespacedPath } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -64,7 +64,7 @@ export class SqliteDerivedStore {
 
   constructor(readonly path: string) {
     mkdirSync(dirname(path), { recursive: true });
-    this.database = new DatabaseSync(path, {
+    this.database = new DatabaseSync(toNamespacedPath(path), {
       allowExtension: false,
       defensive: true,
       enableDoubleQuotedStringLiterals: false,

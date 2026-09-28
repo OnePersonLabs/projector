@@ -391,6 +391,19 @@ describe("FileTransactionJournal", () => {
     expect(exact.contentHash).toBe(hashFileTransactionJournalBytes(persisted));
   });
 
+  it("reads and confirms durability of a valid journal larger than the former record limit", async () => {
+    const { journal } = await harness();
+    const transactionId = "tx-large-compensation";
+    const instructions = "x".repeat(64 * 1024 * 1024 + 1);
+    const transaction = await journal.begin(beginInput(transactionId));
+    await transaction.recordCompensation({ externalOperationId: "large-external-operation", kind: "manual", instructions });
+
+    const exact = await journal.ensureRecordDurable(transactionId);
+    expect(exact.bytes.length).toBeGreaterThan(64 * 1024 * 1024);
+    expect(exact.record.compensations[0]?.instructions).toBe(instructions);
+    expect(exact.contentHash).toBe(hashFileTransactionJournalBytes(exact.bytes));
+  });
+
   it("reflushes an exact committed record after interruption between publication and file flush", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-journal-publication-"));
     const paths = await RepositoryPathService.create(root);

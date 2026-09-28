@@ -70,16 +70,25 @@ describe("configured application evidence HTTP host", () => {
       await expect(createConfiguredApplicationEvidencePort({ environment, repositoryRoot: "/repo", signal: controller.signal })!.assess(request, { signal: new AbortController().signal })).rejects.toThrow("Interrupted observation");
     });
   });
-  it("enforces the total deadline on a host that never responds", async () => {
-    await withServer(() => undefined, async (environment) => {
-      await expect(createConfiguredApplicationEvidencePort({ environment, repositoryRoot: "/repo" })!.assess(request, { signal: new AbortController().signal })).rejects.toThrow(/timeout/iu);
+  it("accepts a valid request and exact response beyond the former transport limit", async () => {
+    const largeRequest: ApplicationEvidenceAssessmentRequest = { ...request, binding: { ...(request.binding as Record<string, unknown>), case: "x".repeat(1_048_576) } };
+    await withServer((incoming, response) => {
+      const chunks: Buffer[] = [];
+      incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+      incoming.on("end", () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as { request: typeof largeRequest; host: { id: string; build: string } };
+        expect((body.request.binding as { case: string }).case).toHaveLength(1_048_576);
+        response.end(JSON.stringify({ protocol: "projector-application-evidence-http@1", host: body.host, assessment: assessment("satisfied", largeRequest) }));
+      });
+    }, async (environment) => {
+      const result = await createConfiguredApplicationEvidencePort({ environment, repositoryRoot: "/repo" })!.assess(largeRequest, { signal: new AbortController().signal });
+      expect((result.request.binding as { case: string }).case).toHaveLength(1_048_576);
     });
-  }, 12_000);
-  it("rejects wrong host builds, invalid JSON, oversized bodies, and redirects", async () => {
+  });
+  it("rejects wrong host builds, invalid JSON, and redirects", async () => {
     const handlers: ((req: IncomingMessage, res: ServerResponse) => void)[] = [
       (_req, res) => res.end(JSON.stringify({ protocol: "projector-application-evidence-http@1", host: { id: "owned-host", build: "build:other" }, assessment: assessment("satisfied") })),
       (_req, res) => res.end("not JSON"),
-      (_req, res) => res.end("x".repeat(1_048_577)),
       (_req, res) => { res.writeHead(302, { location: "/other" }); res.end(); },
     ];
     for (const handler of handlers) await withServer(handler, async (environment) => {

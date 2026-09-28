@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { readFile, opendir, stat, lstat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { opendir, stat, lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { canonicalJson, DerivedObservationBudget, hashFramedDomain, GeneratedOutputEvidenceSchema, GeneratedOutputRequestSchema, ObservationBudget, type GeneratedOutputEvidence, type GeneratedOutputRequest } from "@projector/core";
 import { DurableArtifactSetStore, RepositoryPathService, WriterLeaseManager, type GenerationWriterLeaseHandle, type ArtifactSetReadScope } from "@projector/runtime";
@@ -10,14 +11,14 @@ import { readObservationFile } from "@projector/analyzers";
 /** Executes a repository source entrypoint through a bound runtime. Evidence observes declared scope;
  * it does not prove exclusive causation, sandbox execution, or completeness of declared inputs. */
 export class GeneratedOutputService {
-  private constructor(private readonly paths: RepositoryPathService, private readonly verification: VerificationService, private readonly storage: string, private readonly signal: AbortSignal, private readonly observationTimeoutMs: number, private readonly retainedStorage: string | undefined, private readonly executionOptions: VerificationOptions) {}
+  private constructor(private readonly paths: RepositoryPathService, private readonly verification: VerificationService, private readonly storage: string, private readonly signal: AbortSignal, private readonly observationTimeoutMs: number | null, private readonly retainedStorage: string | undefined, private readonly executionOptions: VerificationOptions) {}
   static async create(root: string, options: VerificationOptions = {}): Promise<GeneratedOutputService> {
     const paths = await RepositoryPathService.create(root);
-    const observationTimeoutMs = new ObservationBudget({ timeoutMs: options.observationTimeoutMs ?? 30000 }).limits.timeoutMs;
+    const observationTimeoutMs = new ObservationBudget({ timeoutMs: options.observationTimeoutMs ?? null }).limits.timeoutMs;
     return new GeneratedOutputService(paths, await VerificationService.create(root, options), (await paths.resolveWrite(".projector/runtime/change-lifecycles/generated-outputs")).realTarget, options.signal ?? new AbortController().signal, observationTimeoutMs, options.evidenceStoreRoot === undefined ? undefined : join(options.evidenceStoreRoot, "generated-outputs"), options);
   }
   private observation() {
-    return new ObservationBudget({ timeoutMs: this.observationTimeoutMs, maxFiles: 10000, maxTotalBytes: 256 * 1024 * 1024, maxFileBytes: 64 * 1024 * 1024 });
+    return new ObservationBudget({ timeoutMs: this.observationTimeoutMs });
   }
   private store(readScope?: ArtifactSetReadScope, root = this.storage) {
     return new DurableArtifactSetStore<GeneratedOutputEvidence>(root, (bytes) => {
@@ -34,25 +35,51 @@ export class GeneratedOutputService {
   private readScope(budget: ObservationBudget): ArtifactSetReadScope {
     return { budget, signal: this.signal, derivedBudget: new DerivedObservationBudget(budget.limits.maxDerivedBytes) };
   }
+  private async hashOutput(path: string, size: number, budget: ObservationBudget): Promise<ReturnType<typeof hashFramedDomain>> {
+    const digest = createHash("sha256");
+    const frame = (length: bigint) => {
+      const header = Buffer.allocUnsafe(8);
+      header.writeBigUInt64BE(length);
+      digest.update(header);
+    };
+    const prefix = Buffer.from('{"bytes":"');
+    const suffix = Buffer.from('"}');
+    frame(BigInt(Buffer.byteLength("projector\0sha256\0v1")));
+    digest.update("projector\0sha256\0v1");
+    frame(BigInt(Buffer.byteLength("generated-output-bytes")));
+    digest.update("generated-output-bytes");
+    frame(4n * ((BigInt(size) + 2n) / 3n) + BigInt(prefix.length + suffix.length));
+    digest.update(prefix);
+    let remainder = Buffer.alloc(0);
+    let bytes = 0;
+    for await (const chunk of createReadStream(path, { signal: this.signal })) {
+      this.signal.throwIfAborted();
+      budget.check("generated-output", path);
+      bytes += chunk.length;
+      budget.assertFileBytes(bytes, path);
+      budget.consume("maxTotalBytes", chunk.length, "generated-output", path);
+      const joined = remainder.length === 0 ? chunk : Buffer.concat([remainder, chunk]);
+      const complete = joined.length - joined.length % 3;
+      if (complete > 0) digest.update(joined.subarray(0, complete).toString("base64"));
+      remainder = Buffer.from(joined.subarray(complete));
+    }
+    if (bytes !== size) throw new Error(`Generated output changed during observation: ${path}`);
+    if (remainder.length > 0) digest.update(remainder.toString("base64"));
+    digest.update(suffix);
+    return `sha256:v1:${digest.digest("hex")}`;
+  }
   private async outputs(request: GeneratedOutputRequest, budget: ObservationBudget) {
     const result: Record<string, ReturnType<typeof hashFramedDomain>> = {};
-    let remaining = 64 * 1024 * 1024;
     for (const output of request.outputs) {
       this.signal.throwIfAborted(); budget.check("generated-output", output.path);
       try {
         const path = await this.paths.resolveRead(output.path);
         const metadata = await stat(path.realTarget);
-        if (!metadata.isFile() || metadata.size > 64 * 1024 * 1024) throw new Error(`Generated output requires a regular file of at most 64MiB: ${output.path}`);
-        if (metadata.size > remaining) throw new Error("Generated output set exceeds 64MiB");
+        if (!metadata.isFile()) throw new Error(`Generated output requires a regular file: ${output.path}`);
         budget.assertFileBytes(metadata.size, output.path);
         budget.assertTotalBytes(metadata.size, output.path);
-        const bytes = await readFile(path.realTarget, { signal: this.signal });
+        result[output.path] = await this.hashOutput(path.realTarget, metadata.size, budget);
         this.signal.throwIfAborted(); budget.check("generated-output", output.path);
-        if (bytes.length > 64 * 1024 * 1024) throw new Error(`Generated output exceeds 64MiB: ${output.path}`);
-        budget.consume("maxTotalBytes", bytes.length, "generated-output", output.path);
-        result[output.path] = hashFramedDomain("generated-output-bytes", { bytes: bytes.toString("base64") });
-        remaining -= bytes.length;
-        if (remaining < 0) throw new Error("Generated output set exceeds 64MiB");
       } catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error; }
       this.signal.throwIfAborted(); budget.check("generated-output", output.path);
     }

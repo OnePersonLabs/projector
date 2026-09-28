@@ -16,6 +16,7 @@ import {
   ObservationBudget,
   ObservationError,
   DerivedObservationBudget,
+  observationLimitValue,
   type ObservationLimits,
 } from "@projector/core";
 
@@ -152,7 +153,7 @@ export async function collectCanonicalSnapshotSources(
     budget.assertTotalBytes(status.size, path);
     const chunks: Buffer[] = [];
     let bytes = 0;
-    const stream = createReadStream(path, { highWaterMark: Math.min(64 * 1024, budget.limits.maxFileBytes, budget.remaining("maxTotalBytes") + 1), ...(signal === undefined ? {} : { signal }) });
+    const stream = createReadStream(path, { highWaterMark: Math.min(64 * 1024, observationLimitValue(budget.limits.maxFileBytes), budget.remaining("maxTotalBytes") + 1), ...(signal === undefined ? {} : { signal }) });
     try {
       for await (const chunk of stream) {
         const buffer = chunk as Buffer;

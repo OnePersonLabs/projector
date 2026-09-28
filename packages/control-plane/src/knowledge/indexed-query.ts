@@ -6,11 +6,13 @@ import type { IndexedObservationDelta, SqliteObservationStore } from "@projector
  * and admitted by its publisher after the read transaction has ended. */
 export class IndexedQueryMemo implements QueryMemoPort {
   private readonly pending = new Map<ContentHash, QueryMemoEntry>();
-  constructor(private readonly store: SqliteObservationStore, private readonly generation: number) {}
+  constructor(private readonly store: SqliteObservationStore, private readonly generation: number, private readonly extraVersion?: (key: string) => ContentHash | undefined) {}
   read(queryHash: ContentHash): QueryMemoEntry | undefined {
     return this.pending.get(queryHash) ?? this.store.getAt<QueryMemoEntry>(this.generation, "query-result", queryHash);
   }
   version(dependencyKey: string): ContentHash | undefined {
+    const external = this.extraVersion?.(dependencyKey);
+    if (external !== undefined) return external;
     const version = this.store.getAt<ContentHash>(this.generation, "query-dependency-version", dependencyKey);
     if (version !== undefined) return version;
     const namespace = dependencyKey.startsWith("relations:") ? "relations"

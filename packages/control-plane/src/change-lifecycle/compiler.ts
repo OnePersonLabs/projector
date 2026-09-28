@@ -1,4 +1,5 @@
 import { relative, resolve } from "node:path";
+import { setImmediate } from "node:timers/promises";
 
 import {
   BehavioralScenarioSchema,
@@ -709,9 +710,7 @@ async function compileObservedRepositoryChange(
     .sort((left, right) => compare(left.id, right.id));
   const relatedRelations = new Map<string, Relation>();
   const candidateRelationIds = new Set<string>();
-  const commitmentFrontier = new Set<string>();
   const unresolvedCommitmentIds = new Set<string>();
-  const maximumCommitments = 128;
   // True semantic roots start two independent directed traversals. Prerequisite
   // discoveries never become dependent roots (and vice versa), which prevents two
   // subjects that share one prerequisite from recruiting each other as siblings.
@@ -719,9 +718,20 @@ async function compileObservedRepositoryChange(
   // Descriptive edges (documents, observes, variants, etc.) do not impose obligations.
   const dependencyRelations = new Set(["requires", "depends-on", "constrains"]);
   const forwardRelations = new Set(["owns", "has-requirement", "realizes", "demonstrated-by", "governed-by"]);
+  const prerequisiteRelations = new Map<string, Relation[]>();
+  const dependentRelations = new Map<string, Relation[]>();
+  for (const relation of relations) {
+    if (dependencyRelations.has(relation.type) || forwardRelations.has(relation.type)) {
+      const adjacent = prerequisiteRelations.get(relation.fromId) ?? [];
+      adjacent.push(relation); prerequisiteRelations.set(relation.fromId, adjacent);
+    }
+    if (dependencyRelations.has(relation.type)) {
+      const adjacent = dependentRelations.get(relation.toId) ?? [];
+      adjacent.push(relation); dependentRelations.set(relation.toId, adjacent);
+    }
+  }
   const canonicalObligationIds = new Set([...documentsAfter.values()].filter(({ kind }) => kind !== "relation").map(({ id }) => id));
   const observedProjectionIds = new Set(observation.analysis.projectionUnits.map(({ id }) => id));
-  const countedObligationIds = new Set<string>();
   const prerequisiteQueue: string[] = [];
   const dependentQueue: string[] = [];
   const prerequisiteVisited = new Set<string>();
@@ -734,10 +744,6 @@ async function compileObservedRepositoryChange(
     if (!canonicalObligationIds.has(id)) {
       if (!observedProjectionIds.has(id)) unresolvedCommitmentIds.add(id);
       return;
-    }
-    if (!countedObligationIds.has(id)) {
-      if (countedObligationIds.size >= maximumCommitments) { commitmentFrontier.add(id); return; }
-      countedObligationIds.add(id);
     }
     const enqueueDirection = (nextDirection: "prerequisite" | "dependent"): void => {
       const visited = nextDirection === "prerequisite" ? prerequisiteVisited : dependentVisited;
@@ -754,28 +760,25 @@ async function compileObservedRepositoryChange(
     enqueue(id, "prerequisite");
     enqueue(id, "dependent");
   }
-  const traverse = (queue: string[], direction: "prerequisite" | "dependent"): void => {
+  const traverse = async (queue: string[], direction: "prerequisite" | "dependent"): Promise<void> => {
+    const adjacency = direction === "prerequisite" ? prerequisiteRelations : dependentRelations;
     for (let offset = 0; offset < queue.length; offset += 1) {
+      if (offset > 0 && offset % 256 === 0) await setImmediate();
+      options.signal?.throwIfAborted();
       const currentId = queue[offset]!;
-      for (const relation of relations) {
-        const dependency = dependencyRelations.has(relation.type);
-        const forward = forwardRelations.has(relation.type);
-        let nextId: string | undefined;
-        if (direction === "prerequisite" && (dependency || forward) && relation.fromId === currentId) nextId = relation.toId;
-        if (direction === "dependent" && dependency && relation.toId === currentId) nextId = relation.fromId;
-        if (nextId === undefined) continue;
+      for (const relation of adjacency.get(currentId) ?? []) {
+        const nextId = direction === "prerequisite" ? relation.toId : relation.fromId;
         if (relation.sourceClass === "inferred") { candidateRelationIds.add(relation.id); continue; }
         relatedRelations.set(relation.id, relation);
         enqueue(nextId, direction);
       }
     }
   };
-  traverse(dependentQueue, "dependent");
-  traverse(prerequisiteQueue, "prerequisite");
+  await traverse(dependentQueue, "dependent");
+  await traverse(prerequisiteQueue, "prerequisite");
   const knownIds = new Set([...documentsAfter.keys(), ...retiredIds, ...observation.analysis.projectionUnits.map(({ id }) => id), ...identityResolutions.map(({ targetId }) => targetId)]);
   const blockingUnknowns = unique([
     ...[...unresolvedCommitmentIds].filter((id) => !knownIds.has(id)).sort(compare).map((id) => `related commitment has no current canonical entity or observed projection: ${id}`),
-    ...[...commitmentFrontier].sort(compare).map((id) => `conceptual obligation traversal reached its ${maximumCommitments}-entity bound before resolving ${id}`),
   ]);
   const reviewBasis = {
     ...(input.proposal.identityResolution === undefined ? {} : { identityResolution: input.proposal.identityResolution }),

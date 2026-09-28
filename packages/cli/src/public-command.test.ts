@@ -15,6 +15,31 @@ function runner(outputs: unknown[] = []) {
 }
 
 describe("public workflow", () => {
+  it("routes code requests and run controls through typed operations", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "projector-public-code-"));
+    try {
+      const requestPath = join(directory, "query.json");
+      const request = { kind: "symbols", name: "Clock" };
+      await writeFile(requestPath, JSON.stringify(request));
+      const indexPath = join(directory, "index.json");
+      await writeFile(indexPath, JSON.stringify({ provider: "native" }));
+      const fixture = runner([{ symbols: [] }, { state: "published" }, { head: null, runs: [], providers: [] }, { state: "running" }, { state: "cancelled" }]);
+      const queried = await runPublicCommand(["code", "query", requestPath], { runner: fixture.host, cwd: directory });
+      expect(queried.text).toContain("symbols");
+      await runPublicCommand(["code", "index", indexPath], { runner: fixture.host, cwd: directory });
+      await runPublicCommand(["code", "status"], { runner: fixture.host, cwd: directory });
+      await runPublicCommand(["code", "wait", "run:1"], { runner: fixture.host, cwd: directory });
+      await runPublicCommand(["code", "cancel", "run:1"], { runner: fixture.host, cwd: directory });
+      expect(fixture.calls.map(call => ({ operation: call.operation, input: call.input }))).toEqual([
+        { operation: "code.query", input: { ...request, freshness: "current", limit: 100 } },
+        { operation: "code.index", input: { provider: "native", buildVariant: "default", timeoutMs: null } },
+        { operation: "code.index-status", input: {} },
+        { operation: "code.index-wait", input: { runId: "run:1", timeoutMs: 20_000 } },
+        { operation: "code.index-cancel", input: { runId: "run:1" } },
+      ]);
+      await expect(runPublicCommand(["code", "wait"], { runner: fixture.host, cwd: directory })).rejects.toThrow("requires 1 argument");
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   it("exposes generated failures, stale output ownership and its explicit recovery route", () => {
     const failed = renderPublicResult("generate", { id: "generated:failed", check: { id: "check:failed", status: "interrupted", error: "Producer deadline exceeded" } });
     expect(failed).toContain("interrupted");

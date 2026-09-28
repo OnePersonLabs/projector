@@ -1,8 +1,7 @@
 import { SqliteObservationStore } from "../sqlite/observation-store.js";
 import { ObservationBudget } from "@projector/core";
 
-export const DERIVED_CACHE_MAX_BYTES = 256 * 1024 * 1024;
-export interface DerivedCacheBudget { deadline: number; remainingEntries: number; remainingBytes: number }
+export interface DerivedCacheBudget { deadline: number | null; remainingEntries: number | null; remainingBytes: number | null }
 export interface DerivedCacheWrite { readonly relativePath: string; readonly content: string }
 export interface DerivedCacheEntry { readonly relativePath: string; readonly bytes: number; readonly lastUsedMs: number; readonly kind: "context" | "impact" | "staging" }
 export interface DerivedCacheOptions { readonly maxBytes?: number; readonly signal?: AbortSignal; readonly deadline?: number; readonly budget?: DerivedCacheBudget }
@@ -27,18 +26,21 @@ function classify(path: string): DerivedCacheEntry["kind"] {
   return match[2] !== undefined ? "staging" : path.includes("/contexts/") ? "context" : "impact";
 }
 export function checkDerivedCacheBudget(budget: DerivedCacheBudget): void {
-  if (Date.now() > budget.deadline || budget.remainingEntries < 0 || budget.remainingBytes < 0) throw new DerivedCacheError("cache-budget", "Derived cache maintenance could not complete its bounded safety inspection; no unproven entries may be removed");
+  if ((budget.deadline !== null && Date.now() > budget.deadline)
+    || (budget.remainingEntries !== null && budget.remainingEntries < 0)
+    || (budget.remainingBytes !== null && budget.remainingBytes < 0))
+    throw new DerivedCacheError("cache-budget", "Derived cache maintenance could not complete its requested safety inspection; no unproven entries may be removed");
 }
-function checkAdmission(signal?: AbortSignal, deadline?: number): void {
+function checkAdmission(signal?: AbortSignal, deadline?: number | null): void {
   signal?.throwIfAborted();
-  if (deadline !== undefined && Date.now() >= deadline) throw new DerivedCacheError("cache-budget", "Derived cache publication exceeded the operation deadline; retry with an explicit larger observation allowance");
+  if (deadline !== undefined && deadline !== null && Date.now() >= deadline) throw new DerivedCacheError("cache-budget", "Derived cache publication exceeded the operation deadline; retry with an explicit larger observation allowance");
 }
 
 interface CacheSource { readonly content:string; readonly lastUsedMs:number }
 async function withIndexedCacheAdmission<T>(root:string,body:(session:DerivedCacheSession)=>Promise<T>,options:DerivedCacheOptions):Promise<T> {
   checkAdmission(options.signal,options.deadline ?? options.budget?.deadline);
-  const deadline=options.deadline ?? options.budget?.deadline ?? Date.now()+5000;
-  const store=await SqliteObservationStore.open(root,{ budget:new ObservationBudget({ timeoutMs:Math.max(1,Math.ceil(deadline-Date.now())), ...(options.budget === undefined ? {} : { maxDerivedBytes: options.budget.remainingBytes }) }), ...(options.signal===undefined?{}:{signal:options.signal}), ...(options.maxBytes===undefined?{}:{maxBytes:options.maxBytes}) });
+  const deadline=options.deadline ?? options.budget?.deadline ?? Number.POSITIVE_INFINITY;
+  const store=await SqliteObservationStore.open(root,{ budget:new ObservationBudget({ timeoutMs:Number.isFinite(deadline) ? Math.max(1,Math.ceil(deadline-Date.now())) : null, ...(options.budget === undefined ? {} : { maxDerivedBytes: options.budget.remainingBytes }) }), ...(options.signal===undefined?{}:{signal:options.signal}), ...(options.maxBytes===undefined?{}:{maxBytes:options.maxBytes}) });
   let active=true, inspected:Map<string,DerivedCacheEntry>|undefined;
   const inspectedHashes=new Map<string,string>();
   const check=():void=>{ if(!active)throw new DerivedCacheError("cache-busy","Cache admission session is closed"); checkAdmission(options.signal,deadline); };
@@ -47,7 +49,7 @@ async function withIndexedCacheAdmission<T>(root:string,body:(session:DerivedCac
     get entries(){
       check(); if(inspected===undefined){ inspected=new Map();inspectedHashes.clear();for(const record of store.cacheEntries()){
         const entry:DerivedCacheEntry={relativePath:record.key,bytes:record.bytes,lastUsedMs:record.lastUsedMs,kind:classify(record.key)};
-        if(options.budget!==undefined){options.budget.remainingEntries--;checkDerivedCacheBudget(options.budget);}
+        if(options.budget!==undefined){if(options.budget.remainingEntries!==null) options.budget.remainingEntries--;checkDerivedCacheBudget(options.budget);}
         inspected.set(record.key,entry);
         inspectedHashes.set(record.key,record.valueHash);
       }}return [...inspected.values()];

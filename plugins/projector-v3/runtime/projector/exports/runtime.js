@@ -2,7 +2,6 @@ import {
   ArtifactSetIncompleteError,
   ArtifactSetIntegrityError,
   CanonicalFileRepository,
-  DERIVED_CACHE_MAX_BYTES,
   DerivedCacheError,
   DurableArtifactSetStore,
   ExactTextPatchTransform,
@@ -28,7 +27,11 @@ import {
   PathSecurityError,
   ProjectBackupError,
   RepositoryPathService,
+  SqliteCodeEvidenceStore,
+  SqliteCodeStore,
   SqliteDerivedStore,
+  SqliteObservationSourceCapture,
+  SqliteObservationStage,
   SqliteObservationStore,
   StateBoundCommandExecutor,
   StateBoundMutationError,
@@ -41,6 +44,7 @@ import {
   WriterLeaseManager,
   assertSupportedCanonicalVersions,
   authenticateWatchCheckpoint,
+  beginSqliteWrite,
   canonicalApiVersion,
   canonicalEditorSchemaRelativePath,
   canonicalSchemaVersion,
@@ -64,6 +68,7 @@ import {
   initializeProjectLocalIgnore,
   inspectExistingSqliteDerivedState,
   inspectProjectActivation,
+  installObservationSourceSchema,
   installProjectorEditorSchemaBundle,
   isMarkdownCanonicalKind,
   markdownCanonicalKinds,
@@ -91,15 +96,15 @@ import {
   verifyProjectBackup,
   withDerivedCacheAdmission,
   withObservationScope,
-  withProjectOperationAccess
-} from "../chunks/shared-7KQYZYKY.js";
-import "../chunks/shared-ZRBELDV4.js";
+  withProjectOperationAccess,
+  withRetainedObservationScope
+} from "../chunks/shared-EHAKQ7RC.js";
+import "../chunks/shared-AJ5KBTH5.js";
 import "../chunks/shared-WC2OT3WX.js";
 export {
   ArtifactSetIncompleteError,
   ArtifactSetIntegrityError,
   CanonicalFileRepository,
-  DERIVED_CACHE_MAX_BYTES,
   DerivedCacheError,
   DurableArtifactSetStore,
   ExactTextPatchTransform,
@@ -125,7 +130,11 @@ export {
   PathSecurityError,
   ProjectBackupError,
   RepositoryPathService,
+  SqliteCodeEvidenceStore,
+  SqliteCodeStore,
   SqliteDerivedStore,
+  SqliteObservationSourceCapture,
+  SqliteObservationStage,
   SqliteObservationStore,
   StateBoundCommandExecutor,
   StateBoundMutationError,
@@ -138,6 +147,7 @@ export {
   WriterLeaseManager,
   assertSupportedCanonicalVersions,
   authenticateWatchCheckpoint,
+  beginSqliteWrite,
   canonicalApiVersion,
   canonicalEditorSchemaRelativePath,
   canonicalSchemaVersion,
@@ -161,6 +171,7 @@ export {
   initializeProjectLocalIgnore,
   inspectExistingSqliteDerivedState,
   inspectProjectActivation,
+  installObservationSourceSchema,
   installProjectorEditorSchemaBundle,
   isMarkdownCanonicalKind,
   markdownCanonicalKinds,
@@ -188,5 +199,6 @@ export {
   verifyProjectBackup,
   withDerivedCacheAdmission,
   withObservationScope,
-  withProjectOperationAccess
+  withProjectOperationAccess,
+  withRetainedObservationScope
 };

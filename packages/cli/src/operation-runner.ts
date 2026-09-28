@@ -19,6 +19,14 @@ import {
   ObservationLimitsOverrideSchema,
   ObservationLimitsSchema,
   DEFAULT_OBSERVATION_LIMITS,
+  CodeQueryEvidenceSchema,
+  CodeIndexRunSchema,
+  CodeTestRunResultSchema,
+  CodeIndexStatusSchema,
+  CodeImpactResultSchema,
+  CodeTestsResultSchema,
+  CodeEvidenceResultSchema,
+  CodeExportResultSchema,
   ProjectReadinessSchema,
   ProjectorOperationInputSchemas,
   ProjectorOperationSchema,
@@ -60,6 +68,8 @@ import {
   RepresentationProfileReconciliationOperationOutputSchema,
   RepresentationProfileReconciliationOutputSchema,
   RepositoryKnowledgeService,
+  executeCodeOperation,
+  executeCodeTestReplay,
   initializePreparedProject,
   inspectProjectReadiness,
   inspectRepositoryCoverage,
@@ -340,6 +350,24 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
     environment: context.environment,
   }) ?? createConfiguredApplicationEvidencePort({ repositoryRoot, signal: context.signal, environment: context.environment });
   const handlers: AnyProjectorOperationHandler[] = [
+    defineProjectorOperationHandler({
+      operation: "code.test-run", inputSchema: ProjectorOperationInputSchemas["code.test-run"], outputSchema: CodeTestRunResultSchema,
+      execute: async ({ repositoryRoot, input: request }, context) => CodeTestRunResultSchema.parse(await executeCodeTestReplay(repositoryRoot, request, { signal: context.signal, environment: context.environment })),
+    }),
+    ...([
+      ["code.query", CodeQueryEvidenceSchema],
+      ["code.index", CodeIndexRunSchema],
+      ["code.index-status", CodeIndexStatusSchema],
+      ["code.index-wait", CodeIndexRunSchema],
+      ["code.index-cancel", CodeIndexRunSchema],
+      ["code.impact", CodeImpactResultSchema],
+      ["code.tests", CodeTestsResultSchema],
+      ["code.evidence", CodeEvidenceResultSchema],
+      ["code.export", CodeExportResultSchema],
+    ] as const).map(([operation, outputSchema]) => defineProjectorOperationHandler({
+      operation, inputSchema: ProjectorOperationInputSchemas[operation], outputSchema,
+      execute: async ({ repositoryRoot, input: request }, context) => outputSchema.parse(await executeCodeOperation(repositoryRoot, operation, request, { signal: context.signal, environment: context.environment })),
+    })),
     defineProjectorOperationHandler({
       operation: "verification.builtin",
       inputSchema: ProjectorOperationInputSchemas["verification.builtin"],

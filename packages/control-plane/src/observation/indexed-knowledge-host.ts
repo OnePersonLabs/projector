@@ -11,6 +11,7 @@ import { createKnowledgeComputeHostHandler } from "../knowledge/service.js";
 import { runObservationTask } from "./task-runner.js";
 import type { IndexedRepositoryObservation } from "./indexed-types.js";
 import type { KnowledgeHostRequest } from "./knowledge-host.js";
+import { observationHostSignal } from "./deadline-signal.js";
 
 /** Host effects keep the same authority checks. Default metadata/application
  * reads and Git-bound validator identities are addressed. Legacy impact keeps
@@ -25,8 +26,9 @@ export function createIndexedKnowledgeComputeHostHandler(
   let validators: KnowledgeValidatorRun | undefined;
   const handle = async (request: KnowledgeHostRequest, signal: AbortSignal): Promise<unknown> => {
     const scope = currentObservationScope()!;
-    const combined = AbortSignal.any([scope.signal, signal, AbortSignal.timeout(Math.max(1, scope.budget.remainingMs()))]);
-    return withObservationScope({ signal: combined }, async () => {
+    const hostSignal = observationHostSignal(scope, signal);
+    const combined = hostSignal.signal;
+    try { return await withObservationScope({ signal: combined }, async () => {
       store.verifyGeneration(descriptor.generation);
       switch (request.type) {
         case "baseline": return baselines.read(request.decision, request.authority);
@@ -61,7 +63,7 @@ export function createIndexedKnowledgeComputeHostHandler(
           },
         });
       }
-    });
+    }); } finally { hostSignal.close(); }
   };
   return handle;
 }

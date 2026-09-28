@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
-import { ObservationBudget, ObservationError, hashFramedDomain } from "@projector/core";
+import { ObservationBudget, ObservationError, hashFramedDomain, observationLimitValue } from "@projector/core";
 import type { InventoryByteReuse, InventoryResult } from "@projector/analyzers";
 import { observationGit } from "@projector/analyzers";
 
@@ -21,10 +21,43 @@ function configuredHost(): WatchmanHost | undefined {
   const executable = process.env.PROJECTOR_WATCHMAN_EXECUTABLE, socket = process.env.PROJECTOR_WATCHMAN_SOCKET;
   if (executable === undefined && socket === undefined) return undefined;
   if (!executable || !socket || !isAbsolute(executable)) throw failure("Set both PROJECTOR_WATCHMAN_EXECUTABLE (absolute executable path) and PROJECTOR_WATCHMAN_SOCKET for an existing Watchman daemon, or unset both.");
+  // Watchman's macOS FSEvents backend cannot guarantee cookie ordering under
+  // load (https://facebook.github.io/watchman/docs/cookies). Use complete byte
+  // observation there until a backend with a reliable barrier is identified.
+  if (process.platform === "darwin") return undefined;
   return { executable, socket };
 }
-/** Only an owned client is started. --no-spawn and --no-local forbid daemon creation and local fallback. */
+class WatchmanSynchronizationTimeout extends Error {}
+export class WatchmanSynchronizationUnavailableError extends ObservationError {
+  constructor(message: string) { super("observation-failed", "watchman-observation", ".", `Watchman synchronization is unavailable; complete source observation is required: ${message}`); }
+}
+
+/** A cookie timeout is a retryable attempt failure, not a repository deadline.
+ * Keep synchronization enabled: sync_timeout=0 would permit stale deltas. */
 async function command(host: WatchmanHost, request: readonly unknown[], budget: ObservationBudget, signal: AbortSignal): Promise<Reply> {
+  let attemptRequest = request;
+  for (let attempt = 1; ; attempt++) {
+    budget.check("watchman-observation"); signal.throwIfAborted();
+    try { return await commandAttempt(host, attemptRequest, budget, signal); }
+    catch (error) {
+      if (!(error instanceof WatchmanSynchronizationTimeout)) throw error;
+      budget.check("watchman-observation"); signal.throwIfAborted();
+      if (attempt === 3) {
+        console.warn(JSON.stringify({ event: "watchman-synchronization-unavailable", root: request[1], command: request[0], attempt, error: error.message }));
+        throw new WatchmanSynchronizationUnavailableError(error.message);
+      }
+      const options = attemptRequest[2];
+      if (options === null || typeof options !== "object" || !("sync_timeout" in options) || typeof options.sync_timeout !== "number") throw error;
+      // This is an attempt wait, not an operation deadline. If synchronization
+      // remains unavailable, the observer must establish freshness by full scan.
+      const syncTimeout = Math.max(1, Math.min(options.sync_timeout * 2, 2_147_483_647, Math.ceil(budget.remainingMs())));
+      console.warn(JSON.stringify({ event: "watchman-synchronization-retry", root: request[1], command: request[0], attempt, syncTimeoutMs: syncTimeout, error: error.message }));
+      attemptRequest = [request[0], request[1], { ...options, sync_timeout: syncTimeout }];
+    }
+  }
+}
+/** Only an owned client is started. --no-spawn and --no-local forbid daemon creation and local fallback. */
+async function commandAttempt(host: WatchmanHost, request: readonly unknown[], budget: ObservationBudget, signal: AbortSignal): Promise<Reply> {
   budget.check("watchman-observation"); signal.throwIfAborted();
   return new Promise((accept, reject) => {
     const child = spawn(host.executable, ["--no-spawn", "--no-local", "--sockname", host.socket, "-j"], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
@@ -32,12 +65,15 @@ async function command(host: WatchmanHost, request: readonly unknown[], budget: 
     const stop = (reason: Error): void => { error ??= reason; child.kill(); };
     const abort = (): void => stop(failure("Watchman observation cancelled."));
     signal.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(() => stop(failure("Watchman client timed out; verify the configured existing daemon and socket.")), Math.min(10_000, budget.remainingMs()));
+    const remainingMs = budget.remainingMs();
+    const timer = Number.isFinite(remainingMs)
+      ? setTimeout(() => stop(failure("Watchman client exceeded the declared observation deadline.")), remainingMs)
+      : undefined;
     const receive = (chunk: Buffer, target: Buffer[]): void => {
       if (error !== undefined) return;
       try {
         budget.check("watchman-observation"); size += chunk.length;
-        if (size > Math.min(budget.limits.maxGitOutputBytes, 16 * 1024 * 1024)) throw failure("Watchman response exceeds the bounded observation output limit.");
+        if (size > observationLimitValue(budget.limits.maxGitOutputBytes)) throw failure("Watchman response exceeds the declared maxGitOutputBytes limit.");
         budget.consume("maxGitOutputBytes", chunk.length, "watchman-observation");
         target.push(chunk);
       } catch (cause) { stop(cause instanceof Error ? cause : failure(String(cause))); }
@@ -47,16 +83,22 @@ async function command(host: WatchmanHost, request: readonly unknown[], budget: 
     child.on("error", (cause) => { error ??= failure(`Cannot run configured Watchman client: ${cause.message}`); });
     child.stdin.on("error", (cause) => stop(failure(`Cannot send Watchman request: ${cause.message}`)));
     child.on("close", (code) => {
-      clearTimeout(timer); signal.removeEventListener("abort", abort);
+      if (timer !== undefined) clearTimeout(timer); signal.removeEventListener("abort", abort);
       if (error !== undefined) { reject(error); return; }
       try {
         budget.check("watchman-observation"); signal.throwIfAborted();
-        if (code !== 0) throw failure(`Configured Watchman client failed (${code}): ${Buffer.concat(errors).toString("utf8").slice(0, 1024)}`);
-        const reply: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        const output = Buffer.concat(chunks).toString("utf8");
+        if (code !== 0 && !output.trim()) throw failure(`Configured Watchman client failed (${code}): ${Buffer.concat(errors).toString("utf8").slice(0, 1024)}`);
+        const reply: unknown = JSON.parse(output);
         if (reply === null || typeof reply !== "object" || Array.isArray(reply)) throw failure("Watchman returned an invalid object response.");
-        if ("error" in reply) throw failure(`Watchman observation failed: ${String(reply.error)}`);
+        if ("error" in reply) {
+          const message = String(reply.error);
+          if (/syncToNow: timed out waiting for cookie file to be observed by watcher within \d+ milliseconds/u.test(message)) throw new WatchmanSynchronizationTimeout(message);
+          throw failure(`Watchman observation failed: ${message}`);
+        }
+        if (code !== 0) throw failure(`Configured Watchman client failed (${code}): ${Buffer.concat(errors).toString("utf8").slice(0, 1024)}`);
         accept(reply as Reply);
-      } catch (cause) { reject(cause instanceof ObservationError ? cause : failure(`Invalid Watchman response: ${String(cause)}`)); }
+      } catch (cause) { reject(cause instanceof ObservationError || cause instanceof WatchmanSynchronizationTimeout ? cause : failure(`Invalid Watchman response: ${String(cause)}`)); }
     });
     child.stdin.end(`${JSON.stringify(request)}\n`);
     if (signal.aborted) abort();
@@ -87,7 +129,9 @@ export async function enrollWatchman(repositoryRoot: string, budget: Observation
   if (typeof watch.watch !== "string" || resolve(watch.watch) !== root || watch.relative_path !== undefined) throw failure("Watchman must bind the exact repository root for byte reuse.");
   const config = await configuration(host, root, budget, signal);
   if (watch.warning !== undefined || config.warning) return undefined;
-  const reply = await command(host, ["clock", root, { sync_timeout: 5_000 }], budget, signal);
+  let reply: Reply;
+  try { reply = await command(host, ["clock", root, { sync_timeout: 5_000 }], budget, signal); }
+  catch (error) { if (error instanceof WatchmanSynchronizationUnavailableError) return undefined; throw error; }
   if (typeof reply.clock !== "string" || !reply.clock) throw failure("Watchman did not return an enrollment clock.");
   if (reply.warning !== undefined) return undefined;
   return { host, root, clock: reply.clock, configIdentity: config.identity, uncoveredPrefixes: config.uncovered };
@@ -95,7 +139,7 @@ export async function enrollWatchman(repositoryRoot: string, budget: Observation
 export interface WatchmanDeltaEvent { readonly path:string; readonly exists:boolean; readonly type:string }
 function delta(reply: Reply, budget: ObservationBudget): { clock: string; paths: string[]; events:WatchmanDeltaEvent[] } {
   if (reply.is_fresh_instance !== false || typeof reply.clock !== "string" || !reply.clock || !Array.isArray(reply.files)) throw failure("Watchman delta lacks a complete non-fresh clock and file population.");
-  if (reply.files.length > budget.limits.maxFiles + budget.limits.maxDirectories) throw failure("Watchman delta exceeds the bounded file and directory population.");
+  if (reply.files.length > observationLimitValue(budget.limits.maxFiles) + observationLimitValue(budget.limits.maxDirectories)) throw failure("Watchman delta exceeds the declared file and directory population.");
   const paths: string[] = [], events:WatchmanDeltaEvent[]=[];
   for (const file of reply.files) {
     if (file === null || typeof file !== "object" || typeof file.name !== "string" || typeof file.exists !== "boolean" || typeof file.type !== "string") throw failure("Watchman returned an invalid file delta.");

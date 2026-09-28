@@ -16,7 +16,6 @@ import {
 import { ArtifactSetIncompleteError, DurableArtifactSetStore, RepositoryPathService } from "@projector/runtime";
 
 const root = ".projector/runtime/representations";
-const maximumArtifactBytes = 8 * 1024 * 1024;
 const publicationRoot = ".projector/runtime/representation-publication";
 const publicationSchema = z.object({
   path: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/u),
@@ -73,23 +72,23 @@ function preservationSemanticHash(projection: RepresentationProjection): Content
   return hashFramedDomain("semantic-preservation-fingerprint", basis);
 }
 
-async function readBounded(path: string): Promise<string> {
+async function readArtifact(path: string): Promise<string> {
   const handle = await open(path, "r");
   try {
     const status = await handle.stat();
     if (!status.isFile()) throw new Error("representation artifact is not a regular file");
-    if (status.size > maximumArtifactBytes) throw new Error("representation artifact exceeds the bounded read limit");
-    const buffer = Buffer.alloc(Math.min(maximumArtifactBytes + 1, status.size + 1));
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    if (bytesRead > maximumArtifactBytes) throw new Error("representation artifact exceeds the bounded read limit");
-    return buffer.subarray(0, bytesRead).toString("utf8");
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    if (bytes.length !== status.size || after.size !== status.size || after.mtimeMs !== status.mtimeMs) {
+      throw new Error("representation artifact changed while it was read");
+    }
+    return bytes.toString("utf8");
   } finally {
     await handle.close();
   }
 }
 
 async function writeExact(paths: RepositoryPathService, path: string, bytes: string, stagedPath: string): Promise<void> {
-  if (Buffer.byteLength(bytes) > maximumArtifactBytes) throw new Error("representation artifact exceeds the bounded write limit");
   const resolved = await paths.resolveWrite(path);
   await mkdir(dirname(resolved.realTarget), { recursive: true });
   try {
@@ -106,7 +105,7 @@ async function writeExact(paths: RepositoryPathService, path: string, bytes: str
     }
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-    const existing = await readBounded((await paths.resolveRead(path)).realTarget);
+    const existing = await readArtifact((await paths.resolveRead(path)).realTarget);
     if (existing !== bytes) throw new Error(`conflicting durable representation artifact: ${path}`);
   }
 }
@@ -153,9 +152,8 @@ export class RepositoryRepresentationArtifactStore {
   }
 
   private async writePublication(path: string, content: string, association: { semanticChangeId?: string; projectionId?: string } = {}): Promise<void> {
-    if (Buffer.byteLength(content) > maximumArtifactBytes) throw new Error("representation artifact exceeds the bounded write limit");
     try {
-      const existing = await readBounded((await this.paths.resolveRead(path)).realTarget);
+      const existing = await readArtifact((await this.paths.resolveRead(path)).realTarget);
       if (existing !== content) throw new Error(`conflicting durable representation artifact: ${path}`);
       if (association.semanticChangeId === undefined) return;
     } catch (error) {
@@ -176,7 +174,7 @@ export class RepositoryRepresentationArtifactStore {
       if (!(error instanceof ArtifactSetIncompleteError) || (await this.publications.read(publicationId)).status !== "missing") throw error;
       // An exact concurrent writer can acknowledge and remove the shared journal.
       // Its immutable final bytes, rather than absence of staging, prove completion.
-      const existing = await readBounded((await this.paths.resolveRead(path)).realTarget);
+      const existing = await readArtifact((await this.paths.resolveRead(path)).realTarget);
       if (existing !== content) throw new Error(`conflicting durable representation artifact: ${path}`);
     }
     if (association.semanticChangeId === undefined) await this.removePublication(publicationId);
@@ -205,7 +203,7 @@ export class RepositoryRepresentationArtifactStore {
       if (current.status === "incomplete") {
         try {
           const manifestPath = (await this.paths.resolveRead(`${publicationRoot}/finalizing/${publicationId}/manifest.bin`)).realTarget;
-          association = validatePublication(Buffer.from(await readBounded(manifestPath))).manifest;
+          association = validatePublication(Buffer.from(await readArtifact(manifestPath))).manifest;
         } catch (error) {
           if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
         }
@@ -251,7 +249,7 @@ export class RepositoryRepresentationArtifactStore {
 
   async get(contentHash: ContentHash): Promise<string | undefined> {
     try {
-      return await readBounded((await this.paths.resolveRead(contentPath(contentHash))).realTarget);
+      return await readArtifact((await this.paths.resolveRead(contentPath(contentHash))).realTarget);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
       throw error;
@@ -271,7 +269,7 @@ export class RepositoryRepresentationArtifactStore {
   async read(reference: RepresentationProjectionRef): Promise<DurableRepresentationArtifact | undefined> {
     let source: string;
     try {
-      source = await readBounded((await this.paths.resolveRead(projectionPath(reference.projectionId))).realTarget);
+      source = await readArtifact((await this.paths.resolveRead(projectionPath(reference.projectionId))).realTarget);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
       throw error;
@@ -306,7 +304,7 @@ export async function validateRetainedRepresentationArtifacts(input: {
   const paths = await RepositoryPathService.create(input.repositoryRoot);
   for (const file of files) {
     input.signal.throwIfAborted();
-    const source = await readBounded((await paths.resolveRead(file.path)).realTarget);
+    const source = await readArtifact((await paths.resolveRead(file.path)).realTarget);
     if (Buffer.byteLength(source) !== file.length || createHash("sha256").update(source).digest("hex") !== file.sha256) {
       throw new Error(`retained representation artifact changed during validation: ${file.path}`);
     }

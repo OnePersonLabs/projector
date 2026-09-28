@@ -54,7 +54,10 @@ describe("standalone plugin assembly", () => {
     expect(await readFile(join(plugin, "runtime/projector/assets/windows-job-supervisor.ps1"), "utf8")).toContain("param");
     expect(JSON.parse(await readFile(join(plugin, "runtime/projector/licenses/third-party.json"), "utf8"))).toContainEqual(expect.objectContaining({ name: "zod" }));
     await access(join(plugin, "runtime/projector/licenses/zod/LICENSE"));
-    await expect(access(join(plugin, ".mcp.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    const mcp = JSON.parse(await readFile(join(plugin, ".mcp.json"), "utf8"));
+    expect(mcp.mcpServers.projector).toMatchObject({ command: "node", cwd: ".", args: ["./scripts/projector-mcp.mjs"] });
+    await access(join(plugin, "scripts/projector-mcp.mjs"));
+    await access(join(plugin, "runtime/projector/exports/mcp.js"));
     const hostNode = await execute("node", ["--version"], { cwd: plugin, env: { ...process.env, NODE_PATH: "" }, encoding: "utf8" });
     expect(hostNode.stdout.trim()).toBe(process.version);
     const hooks = JSON.parse(await readFile(join(plugin, "hooks/hooks.json"), "utf8")).hooks;
@@ -108,7 +111,9 @@ describe("standalone plugin assembly", () => {
     expect(JSON.parse(context.stdout)).toHaveProperty("contentHash");
     const check = await execute("node", [join(plugin, "scripts/projector.mjs"), "check", "--json"], { cwd: repository, env, encoding: "utf8" });
     expect(JSON.parse(check.stdout)).toHaveProperty("repository");
-  }, 30_000);
+  // This integration check packages the compiler and language grammars, then
+  // starts the installed CLI for init, context and check on a fresh checkout.
+  }, 120_000);
 
   it("preserves nonempty output, source ancestors, supplied inputs, and linked directories", async () => {
     const root = await temporary();

@@ -2,7 +2,7 @@
 
 Projector owns accepted meaning, evidence bindings, reconciliation and controlled-write recovery. Codex owns task execution, tools, delegation and conversation. Use ordinary host edits for implementation that preserves accepted meaning; a second run through Projector adds no behavioral assurance.
 
-The normal installed entry is `scripts/projector.mjs`. The [operation contract](operation-contract.md) describes its short commands and the machine entry. Both call existing package services; neither keeps a parallel authority or task store.
+The plugin's `.mcp.json` starts one resident stdio host per connection through `scripts/projector-mcp.mjs`. Each `projector_*` tool calls the registered in-process operation runner with Core validation, an explicit repository root, and the host's cancellation signal. The host shares loaded code and idle computation workers across calls while each operation keeps its own cancellation, resource accounting, readiness, access, recovery checks, and any explicit caller constraints. Default operations have no execution deadline or repository-size ceiling. Retained indexing returns a run ID; polling does not stop the run. The normal shell entry is `scripts/projector.mjs`. The [operation contract](operation-contract.md) describes its short commands and machine entry. These routes call the same package services and keep no parallel authority or task store.
 
 Keep instructions at their actual scope. Plugin `AGENTS.md` provides the small shared baseline. Owning skills supply task-specific judgment. Hooks may report a meaningful session-boundary change; repeated prompts and tool calls need no reminder. Hooks never accept meaning or authorize a write.
 

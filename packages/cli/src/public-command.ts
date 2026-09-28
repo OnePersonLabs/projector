@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-import { ChangeProposalSchema, type ProjectorOperation, type ProjectorOperationError } from "@projector/core";
+import { ChangeProposalSchema, ProjectorOperationInputSchemas, type ProjectorOperation, type ProjectorOperationError } from "@projector/core";
 import { RepositoryKnowledgeService } from "@projector/control-plane";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { z } from "zod";
@@ -27,6 +27,8 @@ export const publicCommandHelp = `Projector: retrieve meaning, change with Codex
   projector verify --builtin --inspect | --recover
   projector generate generation.json
   projector generate --inspect producers.json | --recover producers.json
+  projector code query|index|impact|tests|test-run|evidence|export request.json
+  projector code status [RUN] | wait RUN | cancel RUN
 
 Use --root PATH for another repository, --json for exact machine results.
 Use --timeout-ms N for a bounded observation timeout per operation (default 60000).
@@ -161,6 +163,7 @@ function findings(value: unknown): string[] {
 /** Human output is a view of service results. It never changes acceptance or currentness. */
 export function renderPublicResult(command: string, value: unknown): string {
   const result = object(value);
+  if (command === "code") return `${JSON.stringify(value, null, 2)}\n`;
   const lines: string[] = [];
   if (command === "context") {
     const navigation = new Map<string, { kinds: string[]; bands: string[]; reasons: string[]; uncertainty: string[] }>();
@@ -409,7 +412,7 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
   const command = values.shift();
   if (command === undefined || command === "help" || flags.has("--help")) return { exitCode: 0, output: { help: publicCommandHelp }, text: publicCommandHelp };
   const repositoryRoot = resolve(input.cwd, one("--root") ?? ".");
-  const allowed: Record<string,string[]> = { init: [], context: ["--entity","--target","--budget","--full"], check: [], integration: ["--target","--incoming","--base","--result"], audit: ["--scope","--context","--question-offset"], accept: ["--context","--request","--apply","--hash"], resume: [], inspect: ["--representations"], recover: ["--access","--representations"], verify: ["--inspect","--recover","--builtin","--assess","--target"], generate: ["--inspect","--recover"], evaluate: [] };
+  const allowed: Record<string,string[]> = { init: [], context: ["--entity","--target","--budget","--full"], check: [], integration: ["--target","--incoming","--base","--result"], audit: ["--scope","--context","--question-offset"], accept: ["--context","--request","--apply","--hash"], resume: [], inspect: ["--representations"], recover: ["--access","--representations"], verify: ["--inspect","--recover","--builtin","--assess","--target"], generate: ["--inspect","--recover"], evaluate: [], code: [] };
   if (!(command in allowed)) throw new Error(`Unknown command ${command}. Use --help.`);
   for (const flag of flags.keys()) if (!["--root","--json","--help","--timeout-ms",...allowed[command]!].includes(flag)) throw new Error(`${flag} does not apply to ${command}`);
   const timeoutMs = one("--timeout-ms") === undefined ? undefined : Number(one("--timeout-ms"));
@@ -427,7 +430,30 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
   const jsonInput = async (path: string): Promise<unknown> => JSON.parse(await readFile(resolve(input.cwd, path), "utf8"));
   let output: unknown;
   let view = command;
-  if (command === "init") { exactValues(0); output = await call("init", {}); }
+  if (command === "code") {
+    const action = values.shift();
+    const operations = {
+      query: "code.query", index: "code.index", status: "code.index-status", wait: "code.index-wait", cancel: "code.index-cancel",
+      impact: "code.impact", tests: "code.tests", "test-run": "code.test-run", evidence: "code.evidence", export: "code.export",
+    } as const;
+    if (action === undefined || !(action in operations)) throw new Error("code requires query, index, status, wait, cancel, impact, tests, test-run, evidence or export. Use --help.");
+    const operation = operations[action as keyof typeof operations];
+    let request: unknown;
+    if (action === "status") {
+      if (values.length > 1) throw new Error("code status accepts at most one run ID");
+      request = values[0] === undefined ? {} : { runId: values[0] };
+    } else if (action === "wait" || action === "cancel") {
+      exactValues(1);
+      request = { runId: values[0] };
+    } else {
+      exactValues(1);
+      request = await jsonInput(values[0]!);
+    }
+    output = await call(operation as ProjectorOperation, ProjectorOperationInputSchemas[operation].parse(request));
+    if (action === "index" && ["failed", "cancelled", "interrupted"].includes(string(object(output).state))) {
+      return { exitCode: 6, output, text: flags.has("--json") ? `${JSON.stringify(output, null, 2)}\n` : renderPublicResult("code", output) };
+    }
+  } else if (command === "init") { exactValues(0); output = await call("init", {}); }
   else if (command === "context") {
     if (!values.length) throw new Error("context requires a task description");
     const budget = one("--budget") === undefined ? undefined : Number(one("--budget"));

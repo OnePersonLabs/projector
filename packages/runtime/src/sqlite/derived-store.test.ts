@@ -574,7 +574,7 @@ describe("SQLite derived canonical index", () => {
     const path = join(root, ".projector", "state.db");
     await writeFile(path, "");
     await truncate(path, 256 * 1024 * 1024 + 1);
-    await expect(inspectExistingSqliteDerivedState(path, zeroHash)).rejects.toThrow(/bounded.*inspection limit/i);
+    await expect(inspectExistingSqliteDerivedState(path, zeroHash, { maxDatabaseBytes: 256 * 1024 * 1024 })).rejects.toThrow(/requested.*inspection limit/i);
 
     await truncate(path, 0);
     await writeFile(`${path}-journal`, "pending rollback");
@@ -605,7 +605,7 @@ describe("SQLite derived canonical index", () => {
     `);
     database.close();
 
-    await expect(inspectExistingSqliteDerivedState(path, zeroHash)).rejects.toThrow(/canonical_documents exceeds bounded row limit/i);
+    await expect(inspectExistingSqliteDerivedState(path, zeroHash, { maxRowsPerTable: 250_000 })).rejects.toThrow(/canonical_documents exceeds the requested row limit/i);
   });
 
   test("rejects negative graph revisions from the copied database", async () => {

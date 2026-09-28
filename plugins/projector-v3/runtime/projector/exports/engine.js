@@ -88,7 +88,15 @@ import {
   summarizeGovernanceManifest,
   summarizeGovernancePopulation,
   upgradeDeclarationHash
-} from "../chunks/shared-WHVGNTKI.js";
+} from "../chunks/shared-WYYVWFGB.js";
+import {
+  acceptArchitectureDecisions,
+  auditArchitectureDecisions,
+  convergeDecisionGroup,
+  discoverArchitectureConcerns,
+  explainArchitectureDecision,
+  runArchitecturePreflight
+} from "../chunks/shared-3PXVRXWV.js";
 import {
   InMemoryCleanupPlanStore,
   InMemorySettledAnswerStore,
@@ -99,7 +107,7 @@ import {
   rankCompletionQuestions,
   resumeCleanupPlan,
   settleCompletionQuestion
-} from "../chunks/shared-J7T6FT4R.js";
+} from "../chunks/shared-KWLM6SLK.js";
 import {
   PlanningClaimConflictError,
   PlanningDependencyCycleError,
@@ -116,15 +124,7 @@ import {
   orderPlannedTransforms,
   planGeneratedOutputRepair,
   researchConcern
-} from "../chunks/shared-ZSTDDELF.js";
-import {
-  acceptArchitectureDecisions,
-  auditArchitectureDecisions,
-  convergeDecisionGroup,
-  discoverArchitectureConcerns,
-  explainArchitectureDecision,
-  runArchitecturePreflight
-} from "../chunks/shared-X5VGSBJI.js";
+} from "../chunks/shared-2U2MJHPJ.js";
 import {
   BUILT_IN_QUERY_PROGRAM_IDS,
   DependencyScopedCache,
@@ -157,8 +157,8 @@ import {
   selectorHash,
   selectorLensDependencies,
   validateDecisionDeferral
-} from "../chunks/shared-TL2BKTVW.js";
-import "../chunks/shared-ZRBELDV4.js";
+} from "../chunks/shared-HEBLUKDF.js";
+import "../chunks/shared-AJ5KBTH5.js";
 import "../chunks/shared-WC2OT3WX.js";
 export {
   AUTHORITY_ORDER,

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
 import { access, lstat, opendir, readFile, realpath } from "node:fs/promises";
 import { delimiter, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { createRequire } from "node:module";
+import { findPackageJSON } from "node:module";
 import { fileURLToPath } from "node:url";
 import { hashFramedDomain, type ContentHash, type ObservationBudget } from "@projector/core";
 
@@ -59,15 +59,12 @@ export async function captureBuiltinProducer(entryUrl: string, budget: Observati
     }
     if (manifest.name.startsWith("@projector/")) await walk(join(root, "dist"), "dist");
     else await walk(root, "");
-    const require = createRequire(join(root, "package.json"));
     for (const name of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies }).sort()) {
-      let entry: string;
-      try { entry = require.resolve(name); }
-      catch (error) {
-        try { entry = require.resolve(`${name}/package.json`); }
-        catch { throw new Error(`Installed producer dependency is unavailable: ${identity}: ${name}`, { cause: error }); }
-      }
-      await visitPackage(await packageRoot(entry));
+      const manifestPath = findPackageJSON(name, join(root, "package.json"));
+      if (manifestPath === undefined) throw new Error(`Installed producer dependency is unavailable: ${identity}: ${name}`);
+      const dependency = JSON.parse(await readFile(manifestPath, "utf8")) as { name?: string };
+      if (dependency.name !== name) throw new Error(`Installed producer dependency resolved to a different package: ${identity}: ${name}`);
+      await visitPackage(dirname(manifestPath));
     }
   }
   const entry = fileURLToPath(entryUrl), root = await packageRoot(entry);

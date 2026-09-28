@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { analyzeLocalRepository } from "../local-repository.js";
-import { inventoryRepository } from "./inventory.js";
+import { inventoryRepository, inventoryRepositoryIdentities } from "./inventory.js";
 
 const execFileAsync = promisify(execFile);
 const temporaryRoots: string[] = [];
@@ -24,6 +24,19 @@ afterEach(async () => {
 });
 
 describe("repository inventory boundary", () => {
+  it("proves complete binary identities and boundaries without returning source bytes", async () => {
+    const root=await repository();
+    await writeFile(join(root,"binary.dat"),Buffer.from([0xff,0x00,0xc3,0xa9]));
+    await writeFile(join(root,"source.ts"),"// @generated\nexport const value=1;");
+    const captured=await inventoryRepository(root);
+    const proof=await inventoryRepositoryIdentities(root);
+    expect(proof.entries).toEqual(captured.entries.map(({path,kind,mediaType,contentHash,generated,generatedReason,symlinkTarget})=>
+      ({path,kind,mediaType,contentHash,generated,
+        ...(generatedReason===undefined?{}:{generatedReason}),...(symlinkTarget===undefined?{}:{symlinkTarget})})));
+    expect(proof.directories).toEqual(captured.directories);
+    expect(proof.observationDescriptor).toEqual(captured.observationDescriptor);
+    expect(proof.entries.every(entry=>!("content" in entry))).toBe(true);
+  });
   it("reuses exact private bytes while refreshing changed, new and deleted members", async () => {
     const root = await repository();
     await mkdir(join(root, "nested"));

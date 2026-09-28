@@ -1,13 +1,13 @@
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
-import { ObservationError } from "@projector/core";
+import { ObservationError, observationLimitValue } from "@projector/core";
 import type { ObservationScope } from "@projector/runtime";
 
 /** Read a disposable record; the worker authenticates its exact content afterward. */
 export async function readDerivedObservationSource(path: string, label: string, scope: ObservationScope): Promise<string> {
   const check = (): void => { scope.signal.throwIfAborted(); scope.budget.check("derived-read", label); };
   const checkBytes = (size: number): void => {
-    if (size > scope.limits.maxDerivedBytes) throw new ObservationError("observation-limit-exceeded", "derived-read", label, "Retained derived record exceeds maxDerivedBytes; explicitly increase the allowance or retrieve a smaller context", "maxDerivedBytes", size);
+    if (size > observationLimitValue(scope.limits.maxDerivedBytes)) throw new ObservationError("observation-limit-exceeded", "derived-read", label, "Retained derived record exceeds maxDerivedBytes; explicitly increase the allowance or retrieve a smaller context", "maxDerivedBytes", size);
   };
   check();
   const before = await lstat(path, { bigint: true });
@@ -22,7 +22,7 @@ export async function readDerivedObservationSource(path: string, label: string, 
     let size = 0;
     while (true) {
       check();
-      const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, scope.limits.maxDerivedBytes - size + 1, scope.budget.remaining("maxTotalBytes") + 1));
+      const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, observationLimitValue(scope.limits.maxDerivedBytes) - size + 1, scope.budget.remaining("maxTotalBytes") + 1));
       const { bytesRead } = await handle.read(chunk);
       if (bytesRead === 0) break;
       size += bytesRead;

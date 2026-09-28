@@ -65,7 +65,7 @@ describe("knowledge cache protection from durable owners", () => {
         await writeFile(path, (await readFile(path, "utf8")).padEnd(3 * 1024 * 1024, " "));
       }
     }
-    const result = await withObservationScope({}, async (scope) => ({ ids: [...await readProtectedKnowledgeContextIds(root)], remainingBytes: scope.budget.remaining("maxTotalBytes") }));
+    const result = await withObservationScope({ limits: { maxTotalBytes: 256 * 1024 * 1024 } }, async (scope) => ({ ids: [...await readProtectedKnowledgeContextIds(root)], remainingBytes: scope.budget.remaining("maxTotalBytes") }));
     expect(result).toEqual({ ids: [contextId], remainingBytes: 238 * 1024 * 1024 });
   });
   test("authenticates only collected source bytes when backing metadata is enlarged afterward", async () => {

@@ -16,6 +16,17 @@ export function currentObservationScope(): ObservationScope | undefined {
   return scopes.getStore();
 }
 
+/** Starts an explicitly retained analysis run. Its allowance belongs to that run,
+ * not to the short request that starts or inspects it. Ordinary nested observers
+ * must continue to use withObservationScope and inherit the caller's allowance.
+ */
+export function withRetainedObservationScope<T>(
+  options: { readonly limits: Partial<ObservationLimits>; readonly signal: AbortSignal },
+  operation: (scope: ObservationScope) => Promise<T>,
+): Promise<T> {
+  return scopes.exit(() => withObservationScope(options, operation));
+}
+
 /** Nested observers share the original allowance; they cannot silently renew it. */
 export function withObservationScope<T>(
   options: { readonly limits?: Partial<ObservationLimits>; readonly signal?: AbortSignal },

@@ -1,6 +1,5 @@
 import { basename } from "node:path";
-import { DEFAULT_OBSERVATION_LIMITS } from "@projector/core";
-import { DERIVED_CACHE_MAX_BYTES, checkDerivedCacheBudget, currentObservationScope, tryWithProjectExclusiveAccess, withDerivedCacheAdmission, withObservationScope, type DerivedCacheBudget, type DerivedCacheEntry } from "@projector/runtime";
+import { SqliteCodeStore, checkDerivedCacheBudget, tryWithProjectExclusiveAccess, withDerivedCacheAdmission, withObservationScope, type DerivedCacheBudget, type DerivedCacheEntry } from "@projector/runtime";
 import { readRepositoryImpactSnapshot, type RepositoryImpactReference } from "../impact/service.js";
 import { readProtectedKnowledgeContextIds } from "./cache-protection.js";
 import { KnowledgeContextStore } from "./store.js";
@@ -20,16 +19,16 @@ export interface DerivedCacheMaintenanceResult {
 
 /** Run outside ordinary shared operations. The complete authenticated proof precedes every deletion. */
 export async function maintainDerivedCache(root: string, options: DerivedCacheMaintenanceOptions = {}): Promise<DerivedCacheMaintenanceResult> {
-  const target = options.targetBytes ?? Math.floor(DERIVED_CACHE_MAX_BYTES * 0.75);
-  if (!Number.isSafeInteger(target) || target < 0 || target > DERIVED_CACHE_MAX_BYTES) throw new RangeError("Invalid cache maintenance target");
+  const target = options.targetBytes ?? Number.POSITIVE_INFINITY;
+  if (options.targetBytes !== undefined && (!Number.isSafeInteger(target) || target < 0)) throw new RangeError("Invalid cache maintenance target");
   const preservedIds = (options.preserveContextIds ?? []).map((id) => {
     const match = /^(?:knowledge_context_)?([0-9a-f]{32})$/u.exec(id);
     if (match === null) throw new Error(`Invalid preserved context identity: ${id}`);
     return `knowledge_context_${match[1]}`;
   });
   const result = await tryWithProjectExclusiveAccess(root, "derived-cache-maintenance", async (access) => {
-    const budget = options.budget ?? { deadline: Date.now() + 5_000, remainingEntries: 10_000, remainingBytes: (currentObservationScope()?.limits ?? DEFAULT_OBSERVATION_LIMITS).maxDerivedBytes };
-    return withObservationScope({ signal: access.signal, limits: { timeoutMs: Math.max(1, budget.deadline - Date.now()) } }, async () => withDerivedCacheAdmission(root, async (cache): Promise<DerivedCacheMaintenanceResult> => {
+    const budget = options.budget ?? { deadline: null, remainingEntries: null, remainingBytes: null };
+    return withObservationScope({ signal: access.signal, limits: { timeoutMs: budget.deadline === null ? null : Math.max(1, budget.deadline - Date.now()) } }, async () => withDerivedCacheAdmission(root, async (cache): Promise<DerivedCacheMaintenanceResult> => {
       const disposableBytes = (): number => cache.entries.reduce((bytes, entry) => bytes + entry.bytes, 0);
       if (disposableBytes() <= target && cache.entries.every(({ kind }) => kind !== "staging")) return { status: "unchanged", removedEntries: 0, retainedBytes: disposableBytes() };
       const protectedIds = new Set([...await readProtectedKnowledgeContextIds(root, budget, access.signal), ...preservedIds]);
@@ -60,12 +59,8 @@ export async function maintainDerivedCache(root: string, options: DerivedCacheMa
       for (const entry of newestContexts) {
         if (!protectedPaths.has(entry.relativePath) && retainedBytes + entry.bytes <= target) retain(entry);
       }
-      let remainingPayloadBytes = DERIVED_CACHE_MAX_BYTES;
       for (const entry of [...retained.values()]) {
-        budget.remainingBytes -= entry.bytes;
-        checkDerivedCacheBudget(budget);
-        remainingPayloadBytes -= entry.bytes;
-        if (remainingPayloadBytes < 0) throw new Error("Protected or selected cache payloads exceed the 256 MiB inspection bound; narrow the retention target or finish protected operations before retrying");
+        if (budget.remainingBytes !== null) budget.remainingBytes -= entry.bytes;
         checkDerivedCacheBudget(budget);
         const id = `knowledge_context_${basename(entry.relativePath, ".json")}`;
         const context = await store.read(id, false);
@@ -98,10 +93,7 @@ export async function maintainDerivedCache(root: string, options: DerivedCacheMa
       }
       for (const entry of retained.values()) {
         if (entry.kind !== "impact") continue;
-        budget.remainingBytes -= entry.bytes;
-        checkDerivedCacheBudget(budget);
-        remainingPayloadBytes -= entry.bytes;
-        if (remainingPayloadBytes < 0) throw new Error("Retained cache proof exceeds the 256 MiB inspection bound; narrow the retention target before retrying");
+        if (budget.remainingBytes !== null) budget.remainingBytes -= entry.bytes;
         checkDerivedCacheBudget(budget);
         await readRepositoryImpactSnapshot(root, references.get(entry.relativePath)!, false);
       }
@@ -110,11 +102,16 @@ export async function maintainDerivedCache(root: string, options: DerivedCacheMa
         .sort((a, b) => Number(a.kind === "impact") - Number(b.kind === "impact") || a.relativePath.localeCompare(b.relativePath));
       checkDerivedCacheBudget(budget);
       await access.assertOwned();
-      for (const entry of selected) {
-        access.signal.throwIfAborted();
-        checkDerivedCacheBudget(budget);
-        await cache.remove(entry);
-      }
+      const codeStore = selected.some(({ kind }) => kind === "impact" || kind === "context") ? await SqliteCodeStore.open(root) : undefined;
+      try {
+        for (const entry of selected) {
+          access.signal.throwIfAborted();
+          checkDerivedCacheBudget(budget);
+          await cache.remove(entry);
+          if (entry.kind === "impact") codeStore?.releaseRetainedOwner(`sha256:v1:${basename(entry.relativePath, ".json")}`);
+          if (entry.kind === "context") codeStore?.releaseRetainedOwner(`knowledge_context_${basename(entry.relativePath, ".json")}`);
+        }
+      } finally { codeStore?.close(); }
       return { status: selected.length === 0 ? "unchanged" : "collected", removedEntries: selected.length, retainedBytes: disposableBytes() };
     }, { signal: access.signal, budget }));
   }, options.signal);

@@ -10,6 +10,10 @@ Use `node <plugin>/scripts/projector.mjs` as `projector` below. Resolve
 `<plugin>` from the skill directory. The command requires Node 24 or later. It
 works without a repository package-manager command. Use `--root <absolute
 repository>` when the target differs from the current directory.
+When the installed `projector_*` MCP tools are available, use the matching
+operation tool with an explicit absolute `repositoryRoot`. The resident MCP
+process uses the same registered operation runner and Core input contracts as
+the command. Keep the CLI route for shells and hosts without the MCP connection.
 
 ## Everyday work
 
@@ -29,16 +33,16 @@ For an interrupted controlled write, inspect its actual approval and use `projec
 
 ## Inspect when necessary
 
-An observation deadline is a configurable resource budget. On a timeout, inspect
+Normal observation has no implicit execution deadline or repository-size ceiling.
+A caller may request a finite limit explicitly. If that limit expires, inspect
 the reported stage and retained evidence. Fix an obvious recurring inefficiency
-when expected savings warrant its implementation and verification. Do not turn
-the default deadline into an open-ended optimization task. If legitimate
-repository work needs more time, retry with a bounded `--timeout-ms` value and
-state why. For example, `projector audit --timeout-ms 120000` allows two minutes
-per operation. Keep coverage, unknowns and authority checks intact. A timeout
-does not establish conformance or authorize a mutation. Before retrying a write
-that may have stopped, inspect its actual change or approval ID. Use explicit
-recovery when required.
+when expected savings warrant its implementation and verification. Choose any
+subsequent limit to match the user's request and the work. For example,
+`projector audit --timeout-ms 120000` explicitly allows two minutes per operation.
+Keep coverage, unknowns and authority checks intact. A timeout does not establish
+conformance or authorize a mutation. Before retrying a write that may have
+stopped, inspect its actual change or approval ID. Use explicit recovery when
+required.
 
 Run `projector audit --scope <path> --context <context ID>` to inspect unresolved accepted work. Omit `--context` when no retained context applies. Read evidence availability, repair recommendations and omitted question counts. A current audit observation does not make a stale retained context current. Audit does not edit source or accepted meaning or execute repairs; existing services may create runtime observation artifacts. Implement existing meaning with ordinary Codex tools, obtain missing evidence, or use `$projector-change` when accepted meaning must change. An advertised transform is usable only when the report establishes its executable binding.
 

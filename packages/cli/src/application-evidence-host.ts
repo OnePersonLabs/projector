@@ -4,7 +4,6 @@ import { z } from "zod";
 const protocol = "projector-application-evidence-http@1";
 const identity = z.string().min(1).max(512).regex(/^[^\0\r\n]+$/u);
 const responseSchema = z.strictObject({ protocol: z.literal(protocol), host: z.strictObject({ id: identity, build: identity }), assessment: z.unknown() });
-const maximumBytes = 1_048_576;
 
 /** Explicit host configuration is a trust decision; repository files cannot configure this port. */
 export function createConfiguredApplicationEvidencePort(input: { readonly environment?: NodeJS.ProcessEnv; readonly signal?: AbortSignal; readonly repositoryRoot: string }): ApplicationEvidencePort | undefined {
@@ -23,10 +22,9 @@ export function createConfiguredApplicationEvidencePort(input: { readonly enviro
   return {
     async assess(request, context) {
       const exact = ApplicationEvidenceAssessmentRequestSchema.parse(request);
-      const signal = AbortSignal.any([context.signal, ...(input.signal === undefined ? [] : [input.signal]), AbortSignal.timeout(10_000)]);
+      const signal = AbortSignal.any([context.signal, ...(input.signal === undefined ? [] : [input.signal])]);
       signal.throwIfAborted();
       const body = JSON.stringify({ protocol, host, request: exact });
-      if (Buffer.byteLength(body) > maximumBytes) throw new Error("Application evidence request exceeds the 1 MiB limit");
       const assessment = await assessApplicationEvidence({ async assess() {
         for (let attempt = 1; attempt <= 2; attempt++) {
           const response = await fetch(url, { method: "POST", redirect: "error", headers: { "content-type": "application/json", accept: "application/json" }, body, signal });
@@ -42,13 +40,10 @@ export function createConfiguredApplicationEvidencePort(input: { readonly enviro
           const reader = response.body?.getReader();
           if (reader === undefined) throw new Error("Application evidence host returned no response body");
           const chunks: Uint8Array[] = [];
-          let bytes = 0;
           try {
             for (;;) {
               const item = await reader.read();
               if (item.done) break;
-              bytes += item.value.byteLength;
-              if (bytes > maximumBytes) throw new Error("Application evidence response exceeds the 1 MiB limit");
               chunks.push(item.value);
             }
           } catch (error) {

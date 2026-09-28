@@ -28,6 +28,7 @@
     "@projector/runtime": "workspace:*",
     "@projector/testkit": "workspace:*",
     "@types/node": "^24.2.1",
+    "@vitest/coverage-v8": "5.0.1",
     "esbuild": "0.28.1",
     "fast-check": "^4.2.0",
     "typescript": "^5.9.2",

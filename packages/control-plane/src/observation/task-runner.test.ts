@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveObservationLimits } from "@projector/core";
 import { withObservationScope } from "@projector/runtime";
 import { runObservationTask } from "./task-runner.js";
+import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "./resident-pool.js";
 
 const limits = resolveObservationLimits();
 describe("terminable observation worker", () => {
@@ -24,6 +25,59 @@ describe("terminable observation worker", () => {
     expect(workers).toHaveLength(3);
     expect(workers[0]).toBe(workers[1]);
     expect(workers[2]).not.toBe(workers[0]);
+  });
+  it("reuses a resident worker across independent observation scopes and drains it on close", async () => {
+    const pool = new ResidentObservationWorkerPool(1);
+    const workers: number[] = [];
+    try {
+      for (let index = 0; index < 2; index += 1) {
+        await withResidentObservationWorkerPool(pool, () => withObservationScope({}, (scope) =>
+          runObservationTask("hash-content", { content: `resident ${index}` }, { ...scope, onWorkerStarted: (id) => { workers.push(id); } })));
+      }
+      expect(workers).toHaveLength(2);
+      expect(workers[0]).toBe(workers[1]);
+    } finally {
+      await pool.close();
+    }
+    await expect(pool.acquire(new URL("./task-worker.js", import.meta.url), 128, Date.now() + 1000)).rejects.toThrow("closed");
+  });
+
+  it("removes a cancelled resident waiter without consuming the next worker lease", async () => {
+    const pool = new ResidentObservationWorkerPool(1);
+    const entry = new URL("../../dist/observation/task-worker.js", import.meta.url);
+    const first = await pool.acquire(entry, 128, Date.now() + 10_000);
+    const controller = new AbortController();
+    const pending = pool.acquire(entry, 128, Date.now() + 10_000, controller.signal);
+    controller.abort(new Error("cancel waiting request"));
+    await expect(pending).rejects.toThrow("cancel waiting request");
+    pool.release(first);
+    const next = await pool.acquire(entry, 128, Date.now() + 10_000);
+    expect(next.worker.threadId).toBe(first.worker.threadId);
+    pool.release(next);
+    await pool.close();
+  });
+  it("admits nested auto-memory work while its parent worker awaits a host reply", async () => {
+    const pool = new ResidentObservationWorkerPool(2);
+    const entry = new URL("../../dist/observation/task-worker.js", import.meta.url);
+    const deadline = Date.now() + 5_000;
+    const chain = [await pool.acquire(entry, 128, deadline, undefined, true)];
+    try {
+      for (let depth = 0; depth < 4; depth += 1) {
+        const parent = chain.at(-1)!;
+        const childPending = pool.acquire(entry, 128, deadline, undefined, true);
+        pool.suspendForHostRequest(parent);
+        const child = await childPending;
+        expect(child.worker.threadId).not.toBe(parent.worker.threadId);
+        chain.push(child);
+      }
+    } finally {
+      while (chain.length > 1) {
+        pool.release(chain.pop()!);
+        pool.resumeAfterHostRequest(chain.at(-1)!);
+      }
+      pool.release(chain.pop()!);
+      await pool.close();
+    }
   });
   it("parses canonical observations using the compiled shipped worker", async () => {
     const result = await runObservationTask("canonical", { sources: [] }, { limits, deadline: Date.now() + 10_000 });

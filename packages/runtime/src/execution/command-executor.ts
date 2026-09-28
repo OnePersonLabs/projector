@@ -73,10 +73,12 @@ export interface ProcessLaunchRequest {
   args: string[];
   cwd: string;
   env: Record<string, string>;
-  timeoutMs: number;
+  timeoutMs: number | null;
   cpuBudgetMs?: number;
   memoryBudgetMb?: number;
-  maxOutputBytes: number;
+  maxOutputBytes: number | null;
+  /** Retain bounded diagnostics without killing a producer for verbose output. */
+  outputOverflow?: "truncate";
   signal: AbortSignal;
 }
 
@@ -86,6 +88,7 @@ export interface ProcessExecutionResult {
   stdout: string;
   stderr: string;
   durationMs: number;
+  outputTruncated?: boolean;
 }
 
 export interface HostExecutionAssumptions {
@@ -328,6 +331,7 @@ export class NativeProcessLauncher implements ProcessLauncher {
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
       let outputBytes = 0;
+      let outputTruncated = false;
       let limitError: ExecutionLimitError | undefined;
       let cleanup: Promise<ProcessCleanupObservation> | undefined;
 
@@ -339,7 +343,8 @@ export class NativeProcessLauncher implements ProcessLauncher {
       };
       const capture = (target: Buffer[], chunk: Buffer) => {
         outputBytes += chunk.byteLength;
-        if (outputBytes > request.maxOutputBytes) {
+        if (request.maxOutputBytes !== null && outputBytes > request.maxOutputBytes) {
+          if (request.outputOverflow === "truncate") { outputTruncated = true; return; }
           stopFor(new ExecutionLimitError("output", `Process exceeded ${request.maxOutputBytes} output bytes`));
           return;
         }
@@ -348,21 +353,21 @@ export class NativeProcessLauncher implements ProcessLauncher {
       child.stdout.on("data", (chunk: Buffer) => capture(stdout, chunk));
       child.stderr.on("data", (chunk: Buffer) => capture(stderr, chunk));
 
-      const timeout = setTimeout(() => {
+      const timeout = request.timeoutMs === null ? undefined : setTimeout(() => {
         stopFor(new ExecutionLimitError("timeout", `Process exceeded ${request.timeoutMs}ms`));
       }, request.timeoutMs);
-      timeout.unref();
+      timeout?.unref();
       const abort = () => stopFor(new ExecutionLimitError("aborted", "Process execution was aborted"));
       request.signal.addEventListener("abort", abort, { once: true });
       if (request.signal.aborted) abort();
 
       child.once("error", (error) => {
-        clearTimeout(timeout);
+        if (timeout !== undefined) clearTimeout(timeout);
         request.signal.removeEventListener("abort", abort);
         reject(error);
       });
       child.once("close", async (exitCode, signal) => {
-        clearTimeout(timeout);
+        if (timeout !== undefined) clearTimeout(timeout);
         request.signal.removeEventListener("abort", abort);
         if (limitError !== undefined) {
           try {
@@ -396,6 +401,7 @@ export class NativeProcessLauncher implements ProcessLauncher {
           stdout: Buffer.concat(stdout).toString("utf8"),
           stderr: Buffer.concat(stderr).toString("utf8"),
           durationMs: performance.now() - startedAt,
+          ...(outputTruncated ? { outputTruncated: true } : {}),
         });
       });
     });

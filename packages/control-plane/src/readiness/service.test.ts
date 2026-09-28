@@ -70,6 +70,19 @@ describe("project readiness metadata inspection", () => {
     });
   });
 
+  test("accepts a valid prepared config with comments beyond the former metadata limit", async () => {
+    const root = await repository();
+    await mkdir(join(root, ".projector"));
+    const config = 'apiVersion = "projector.config/v3"\nenabled = true\nprojectorVersion = "2.1.0"\n' +
+      `# ${"comment ".repeat(3 * 1024)}\n`;
+    expect(Buffer.byteLength(config)).toBeGreaterThan(16 * 1024);
+    await writeFile(join(root, ".projector", "config.toml"), config);
+    await expect(inspectProjectReadiness(root, { operation: "context", package: packageIdentity })).resolves.toMatchObject({
+      status: "ready",
+      observed: { configApiVersion: "projector.config/v3", preparedProjectorVersion: "2.1.0" },
+    });
+  });
+
   test("keeps current-format data ready across package patch versions", async () => {
     const root = await repository();
     await initializePreparedProject(root, { package: { name: "projector", version: "3.0.0" } });

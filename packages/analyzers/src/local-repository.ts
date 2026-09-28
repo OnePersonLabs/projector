@@ -18,6 +18,8 @@ import {
 } from "@projector/core";
 
 import { inventoryRepository, type InventoryEntry, type InventoryResult, type InventoryByteReuse } from "./filesystem/inventory.js";
+import {inventoryTextHash} from "./filesystem/inventory-content-store.js";
+import type {InventoryCapturePort} from "./filesystem/inventory.js";
 import { analyzeDocuments, type ActionsWorkflowFact, type DocumentFact, type MarkdownFact } from "./formats/documents.js";
 import { collectGitFacts, finalizeGitFacts, type GitFacts, type GitIdentityFact, type GitMoveFact } from "./git/facts.js";
 import { compareCodePoint } from "./ordering.js";
@@ -97,6 +99,7 @@ export interface LocalRepositoryAnalysis {
 }
 
 export interface AnalyzeLocalRepositoryOptions {
+  readonly contentStore?: InventoryCapturePort;
   readonly repositoryRoot: string;
   readonly observedAt?: string;
   readonly observationRevision?: string;
@@ -332,7 +335,7 @@ export function localSemanticKey(entry: InventoryEntry, javaScript: JavaScriptFi
       // The malformed manifest retains a deterministic fallback observation.
     }
   }
-  return `${role}:${javaScript?.fallbackHash ?? hashFramedDomain("local-unit-fallback", entry.content)}`;
+  return `${role}:${javaScript?.fallbackHash ?? inventoryTextHash(entry,"local-unit-fallback")}`;
 }
 
 function projectionRole(role: LocalSemanticRole): ProjectionUnit["role"] {
@@ -419,9 +422,10 @@ export async function collectLocalRepositoryInputs(options: AnalyzeLocalReposito
   const repositoryRoot = resolve(options.repositoryRoot);
   const budget = options.budget ?? new ObservationBudget(options.observationLimits);
   const signalOption = options.signal === undefined ? {} : { signal: options.signal };
-  const inventoryResult = await inventoryRepository(repositoryRoot, { budget, ...signalOption, ...(options.byteReuse === undefined ? {} : { byteReuse: options.byteReuse }) });
+  const inventoryResult = await inventoryRepository(repositoryRoot, { budget, ...signalOption, ...(options.contentStore === undefined ? {} : { contentStore: options.contentStore }), ...(options.byteReuse === undefined ? {} : { byteReuse: options.byteReuse }) });
   const gitFacts = await collectGitFacts(repositoryRoot, inventoryResult.entries.map((entry) => entry.path), {
     budget, ...signalOption, entries: inventoryResult.entries,
+    ...(inventoryResult.contentStore===undefined?{}:{contentStore:inventoryResult.contentStore}),
     confirmedNonGit: inventoryResult.enumeration.method === "recursive-filesystem-fallback",
   });
   budget.check("collection");
@@ -441,6 +445,13 @@ export function analyzeCollectedLocalRepository(collected: CollectedLocalReposit
   const hookReachable = hookReachablePaths(javaScriptFacts.files, javaScriptFacts.dependencies);
   const javaScriptByPath = new Map(javaScriptFacts.files.map((facts) => [facts.path, facts]));
   const gitByPath = new Map(gitFacts.identities.map((identity) => [identity.path, identity]));
+  const movedFromByPath = new Map(gitFacts.moves.map(move => [move.toPath,move.fromPath]));
+  const specifiersByPath = new Map<string,string[]>();
+  for(const dependency of javaScriptFacts.dependencies){
+    const specifiers=specifiersByPath.get(dependency.importerPath)??[];
+    specifiers.push(dependency.specifier);specifiersByPath.set(dependency.importerPath,specifiers);
+  }
+  for(const specifiers of specifiersByPath.values()) specifiers.sort(compareCodePoint);
   const rootAvailable = inventoryResult.rootAvailability === "available";
   const surfaceId = deriveEntityId("projector.repository-surface", packageFacts.repositoryKey);
   const surface: Surface = {
@@ -495,7 +506,7 @@ export function analyzeCollectedLocalRepository(collected: CollectedLocalReposit
     const baseSemanticKey = baseSemanticKeys.get(entry.path)!;
     const semanticKey = (context?.semanticKeyCounts?.[baseSemanticKey] ?? keyCounts.get(baseSemanticKey)) === 1
       ? baseSemanticKey
-      : `${baseSemanticKey}:variant:${javaScript?.variantHash ?? hashFramedDomain("local-unit-variant", entry.content)}`;
+      : `${baseSemanticKey}:variant:${javaScript?.variantHash ?? inventoryTextHash(entry,"local-unit-variant")}`;
     semanticKeys.set(entry.path, semanticKey);
   }
 
@@ -508,7 +519,7 @@ export function analyzeCollectedLocalRepository(collected: CollectedLocalReposit
     // file has the same contents. Available Git move evidence preserves the
     // source address across the observed move. Canonical conceptual identities
     // and semantic signatures remain separate from this observation identity.
-    const movedFrom = gitFacts.moves.find(move => move.toPath === entry.path)?.fromPath;
+    const movedFrom = movedFromByPath.get(entry.path);
     const observationKey = `source:${movedFrom ?? entry.path}`;
     const artifactId = deriveEntityId("projector.repository-artifact", observationKey);
     const unitId = deriveEntityId("projector.projection-unit", observationKey);
@@ -516,13 +527,13 @@ export function analyzeCollectedLocalRepository(collected: CollectedLocalReposit
       role,
       exports: javaScript?.exports ?? [],
       lifecycleExports: javaScript?.lifecycleExports ?? [],
-      dependencySpecifiers: javaScriptFacts.dependencies.filter((dependency) => dependency.importerPath === entry.path).map((dependency) => dependency.specifier).sort(compareCodePoint),
+      dependencySpecifiers: specifiersByPath.get(entry.path)??[],
     };
     const structuralSignature = signature("projector.local-structural", semanticKey, structuralFields,
       javaScript === undefined ? undefined : hashJavaScriptSemantics(entry.content, "projector.local-structural", derivedBudget, entry.path, {
         fields: structuralFields, key: "syntaxTokens",
       }));
-    const semanticSignature = signature("projector.local-semantic", semanticKey, entry.content, javaScript?.semanticHash);
+    const semanticSignature = signature("projector.local-semantic", semanticKey, undefined, javaScript?.semanticHash??inventoryTextHash(entry,"projector.local-semantic"));
     const anchor = javaScript !== undefined && javaScript.exports.length > 0
       ? { kind: "symbol" as const, value: `exports:${javaScript.exports.join(",")}`, fallbackSignature: structuralSignature }
       : javaScript !== undefined && javaScript.testNames.length > 0

@@ -24,7 +24,6 @@ import {
 import type { RepositoryPathService } from "../security/index.js";
 
 const journalRoot = ".projector/runtime/journal";
-const maximumJournalBytes = 64 * 1024 * 1024;
 const transientWindowsRenameCodes = new Set(["EACCES", "EBUSY", "EPERM"]);
 
 async function publishJournalRecord(source: string, destination: string, renameRecord: typeof rename, platform: NodeJS.Platform): Promise<void> {
@@ -361,14 +360,14 @@ export class FileTransactionJournal {
 
   async readExact(transactionId: string): Promise<ExactFileTransactionJournalRecord> {
     const path = await this.recordPath(transactionId);
-    const bytes = await readBoundedRegularFile(path, maximumJournalBytes);
+    const bytes = await readRegularFile(path);
     const record = parseFileTransactionJournalSource(bytes.toString("utf8"), transactionId, this.paths.root);
     return { record, bytes, contentHash: hashFileTransactionJournalBytes(bytes) };
   }
 
   async ensureRecordDurable(transactionId: string): Promise<ExactFileTransactionJournalRecord> {
     const path = await this.recordPath(transactionId);
-    const expected = await readBoundedRegularFile(path, maximumJournalBytes);
+    const expected = await readRegularFile(path);
     await flushPublishedJournalRecord(path, expected);
     const exact = await this.readExact(transactionId);
     if (!exact.bytes.equals(expected)) {
@@ -727,13 +726,10 @@ function recordFileName(transactionId: string): string {
   return `${createHash("sha256").update(transactionId).digest("hex")}.json`;
 }
 
-async function readBoundedRegularFile(path: string, maximumBytes: number): Promise<Buffer> {
+async function readRegularFile(path: string): Promise<Buffer> {
   const before = await lstat(path);
   if (!before.isFile() || before.isSymbolicLink()) {
     throw new JournalRecoveryRequiredError(`Journal path is not a regular file: ${path}`);
-  }
-  if (before.size > maximumBytes) {
-    throw new JournalRecoveryRequiredError(`Journal record exceeds ${maximumBytes} bytes: ${path}`);
   }
   const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {

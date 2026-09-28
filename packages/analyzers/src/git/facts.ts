@@ -4,6 +4,8 @@ import { compareCodePoint } from "../ordering.js";
 import { normalizeJavaScriptSemantics } from "../typescript/facts.js";
 import { isExcludedInventoryPath, type InventoryEntry } from "../filesystem/inventory.js";
 import { observationGit, observationGitBytes, observationMap } from "../filesystem/observation-io.js";
+import { InventoryContentStore, inventoryEntryBytes, inventoryEntryChunks, type InventoryContentDescriptor } from "../filesystem/inventory-content-store.js";
+import { hashFramedDomain } from "@projector/core";
 
 export interface GitIdentityFact {
   readonly sourceClass: SourceClass; readonly path: string; readonly tracked: boolean | "unknown";
@@ -18,8 +20,10 @@ export interface GitMoveFact {
 export interface GitFacts {
   readonly availability: "available" | "unavailable"; readonly revision: string;
   readonly identities: GitIdentityFact[]; readonly moves: GitMoveFact[]; readonly failures: AnalyzerFailure[];
-  readonly pendingMoveCandidates?: { readonly deleted: readonly { path: string; content: string }[]; readonly untracked: readonly { path: string; content: string }[] };
+  readonly moveCandidateContent?:InventoryContentDescriptor;
+  readonly pendingMoveCandidates?: { readonly deleted: readonly GitMoveCandidate[]; readonly untracked: readonly GitMoveCandidate[] };
 }
+type GitMoveCandidate={readonly path:string;readonly content:string}|{readonly path:string;readonly contentAddress:string};
 function parseTracked(output: string): Map<string, string> {
   const result = new Map<string, string>();
   for (const record of output.split("\0")) {
@@ -112,7 +116,7 @@ function parseBatchContents(bytes: Buffer, objectIds: readonly string[], sizes: 
 
 /** Parent-side bounded I/O only; semantic move matching is deferred to the analysis worker. */
 export async function collectGitFacts(repositoryRoot: string, paths: readonly string[], options: {
-  budget?: ObservationBudget; signal?: AbortSignal; confirmedNonGit?: boolean; entries?: readonly InventoryEntry[];
+  budget?: ObservationBudget; signal?: AbortSignal; confirmedNonGit?: boolean; entries?: readonly InventoryEntry[]; contentStore?:InventoryContentDescriptor;
 } = {}): Promise<GitFacts> {
   if (options.confirmedNonGit) return {
     availability: "unavailable", revision: "filesystem", moves: [],
@@ -158,7 +162,16 @@ export async function collectGitFacts(repositoryRoot: string, paths: readonly st
     return { sourceClass: "derived", path, tracked: true, availability: "available", introductionHistory: revision === "unborn" ? "not-applicable" : "available", objectId,
       ...(introductionCommit === undefined ? {} : { introductionCommit }) };
   }, options.signal);
-  let deleted: { path: string; content: string }[] = [];
+  const entryByPath = new Map((options.entries ?? []).filter((entry) => entry.kind === "file").map((entry) => [entry.path, entry]));
+  const untrackedPaths=status.untracked.filter((path)=>entryByPath.has(path));
+  const needsMoveCapture=revision!=="unborn"&&status.deleted.length>0&&untrackedPaths.length>0;
+  const capture=options.contentStore===undefined||!needsMoveCapture?undefined:options.contentStore.schemaVersion==="projector.inventory-content/v1"
+    ? InventoryContentStore.append(options.contentStore)
+    : InventoryContentStore.create(`${options.contentStore.path}.temporary`);
+  const ownsCapture=options.contentStore?.schemaVersion==="projector.source-content/v2"&&capture!==undefined;
+  let captureHandedOff=false;
+  try {
+  const deleted: GitMoveCandidate[] = [];
   if (revision !== "unborn" && status.deleted.length > 0) {
     // The complete tree avoids shell/pathspec interpretation and remains bounded
     // by maxGitOutputBytes before a path-to-object map is retained.
@@ -174,15 +187,39 @@ export async function collectGitFacts(repositoryRoot: string, paths: readonly st
       const path = status.deleted[index]!, size = sizes[index]!;
       budget.check("git-facts", path); budget.assertFileBytes(size, path); budget.consume("maxTotalBytes", size, "git-move-content", path);
     }
-    deleted = parseBatchContents(await gitBytes(["cat-file", "--batch"], `${objectIds.join("\n")}\n`), objectIds, sizes, status.deleted);
-    for (const candidate of deleted) budget.assertFileBytes(Buffer.byteLength(candidate.content), candidate.path);
+    // Bound a batch's working set, never the admitted repository or file size.
+    for(let start=0;start<objectIds.length;){
+      let end=start+1,total=sizes[start]!;
+      while(end<objectIds.length&&end-start<64&&total+sizes[end]!<=8*1024*1024)total+=sizes[end++]!;
+      const candidates=parseBatchContents(await gitBytes(["cat-file", "--batch"], `${objectIds.slice(start,end).join("\n")}\n`),objectIds.slice(start,end),sizes.slice(start,end),status.deleted.slice(start,end));
+      for(const candidate of candidates){
+        budget.assertFileBytes(Buffer.byteLength(candidate.content),candidate.path);
+        if(capture===undefined)deleted.push(candidate);
+        else {
+          const address=`git-deleted:${candidate.path}`;
+          capture.put({path:address,kind:"file",mediaType:"application/octet-stream",contentHash:hashFramedDomain("git-move-capture",candidate.content),contentBytes:Buffer.byteLength(candidate.content),generated:false},candidate.content);
+          deleted.push({path:candidate.path,contentAddress:address});
+        }
+      }
+      start=end;
+    }
   }
-  const entryByPath = new Map((options.entries ?? []).filter((entry) => entry.kind === "file").map((entry) => [entry.path, entry]));
-  const untracked = status.untracked.flatMap((path) => {
-    const entry = entryByPath.get(path); return entry === undefined ? [] : [{ path, content: entry.content }];
+  const untracked = status.untracked.flatMap((path):GitMoveCandidate[] => {
+    const entry = entryByPath.get(path);
+    if(entry===undefined)return [];
+    if(capture===undefined)return [{path,content:entry.content}];
+    if(options.contentStore?.schemaVersion==="projector.source-content/v2"){
+      const fields=Object.fromEntries(Object.keys(entry).filter(key=>key!=="content").map(key=>[key,(entry as unknown as Record<string,unknown>)[key]]));
+      capture.putChunks({...fields,contentBytes:inventoryEntryBytes(entry)} as Parameters<typeof capture.putChunks>[0],inventoryEntryChunks(entry));
+    }
+    return [{path,contentAddress:path}];
   });
-  return { availability: "available", revision, identities: identities.sort((a, b) => compareCodePoint(a.path, b.path)),
-    moves: status.moves, failures: [], pendingMoveCandidates: { deleted, untracked } };
+  capture?.finish();
+  const facts={ availability: "available" as const, revision, identities: identities.sort((a, b) => compareCodePoint(a.path, b.path)),
+    moves: status.moves, failures: [], pendingMoveCandidates: { deleted, untracked },...(capture===undefined?{}:{moveCandidateContent:{...capture.descriptor,...(ownsCapture?{disposeAfterUse:true}:{})}}) };
+  captureHandedOff=ownsCapture;
+  return facts;
+  }finally{if(ownsCapture&&!captureHandedOff)capture?.dispose();else capture?.close();}
 }
 
 function moveFingerprint(path: string, content: string, budget: DerivedObservationBudget): string | undefined {
@@ -203,21 +240,29 @@ function moveFingerprint(path: string, content: string, budget: DerivedObservati
 /** Pure semantic analysis; safe to execute in a terminable worker. */
 export function finalizeGitFacts(facts: GitFacts, budget = new DerivedObservationBudget()): GitFacts {
   const candidates = facts.pendingMoveCandidates;
+  const startedBytes = budget.usedBytes;
+  let retainedMoveBytes = 0;
+  const capture=facts.moveCandidateContent===undefined?undefined:InventoryContentStore.open(facts.moveCandidateContent as Extract<InventoryContentDescriptor,{schemaVersion:"projector.inventory-content/v1"}>);
+  try {
   if (candidates === undefined) return facts;
   if (candidates.deleted.length === 0 || candidates.untracked.length === 0) return {
     availability: facts.availability, revision: facts.revision, identities: facts.identities, failures: facts.failures,
     moves: [...facts.moves].sort((a, b) => compareCodePoint(a.fromPath, b.fromPath) || compareCodePoint(a.toPath, b.toPath)),
   };
-  const startedBytes = budget.usedBytes;
-  let retainedMoveBytes = 0;
-  try {
+  const contentOf=(candidate:GitMoveCandidate):string=>{
+    if("content" in candidate)return candidate.content;
+    if(capture===undefined)throw new Error("Git move candidate capture is missing");
+    return capture.read(candidate.contentAddress);
+  };
   budget.reserveItems(candidates.untracked.length, 128, "git-move-candidates");
-  const contents = new Map(candidates.untracked.flatMap(({ path, content }) => {
+  const contents = new Map(candidates.untracked.flatMap((candidate) => {
+    const path=candidate.path,content=contentOf(candidate);
     const fingerprint = moveFingerprint(path, content, budget);
     return fingerprint === undefined ? [] : [[path, fingerprint] as const];
   }));
   const moves = [...facts.moves];
-  for (const { path: fromPath, content } of candidates.deleted) {
+  for (const candidate of candidates.deleted) {
+    const fromPath=candidate.path,content=contentOf(candidate);
     const temporaryStart = budget.usedBytes;
     const retainedStart = retainedMoveBytes;
     try {
@@ -238,5 +283,5 @@ export function finalizeGitFacts(facts: GitFacts, budget = new DerivedObservatio
   return { availability: facts.availability, revision: facts.revision, identities: facts.identities, failures: facts.failures,
     moves: moves.filter((move, index) => moves.findIndex((candidate) => candidate.fromPath === move.fromPath && candidate.toPath === move.toPath) === index)
       .sort((a, b) => compareCodePoint(a.fromPath, b.fromPath) || compareCodePoint(a.toPath, b.toPath)) };
-  } finally { budget.release(budget.usedBytes - startedBytes - retainedMoveBytes); }
+  } finally { if(facts.moveCandidateContent?.schemaVersion==="projector.inventory-content/v1"&&facts.moveCandidateContent.disposeAfterUse)capture?.dispose();else capture?.close();budget.release(budget.usedBytes - startedBytes - retainedMoveBytes); }
 }

@@ -8,14 +8,18 @@ import {
   createStateBinding, projectionUnitSelectorSubject,
   type InvalidationRunResult, type SelectorSubject,
 } from "@projector/engine";
-import { RepositoryPathService, readDerivedCacheSource, touchDerivedCacheEntry, withDerivedCacheAdmission, withObservationScope, type DerivedCacheSession, type DerivedCacheWrite } from "@projector/runtime";
+import { RepositoryPathService, SqliteCodeStore, readDerivedCacheSource, touchDerivedCacheEntry, withDerivedCacheAdmission, withObservationScope, currentObservationScope, type DerivedCacheSession, type DerivedCacheWrite } from "@projector/runtime";
 import { z } from "zod";
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
 import { KnowledgeGraph } from "../knowledge/graph.js";
 import { readDerivedObservationSource } from "../observation/read-derived.js";
 import { runObservationTask } from "../observation/task-runner.js";
+import { CodeImpactResultSchema, type CodeImpactResult } from "@projector/core";
+import { verifyCodeInputBinding } from "@projector/analyzers";
+import { executeCodeWorker } from "../code-intelligence/worker-service.js";
 
-const version = "repository-impact@2" as const;
+const version = "repository-impact@3" as const;
+const previousVersion = "repository-impact@2" as const;
 const legacyVersion = "repository-impact@1" as const;
 const profileId = "projector.exact-observed-inputs";
 const profileVersion = "2.0.0";
@@ -25,7 +29,7 @@ const unique = (values: readonly string[]): string[] => [...new Set(values)].sor
 const ordered = <T>(items: readonly T[]): T[] => [...items].sort((a, b) => canonicalJson(a) < canonicalJson(b) ? -1 : canonicalJson(a) > canonicalJson(b) ? 1 : 0);
 
 export interface RepositoryImpactReference {
-  readonly version: typeof version | typeof legacyVersion;
+  readonly version: typeof version | typeof previousVersion | typeof legacyVersion;
   readonly contentHash: ContentHash;
   readonly state: StateDigest;
 }
@@ -33,6 +37,7 @@ export interface RepositoryImpactReference {
 export interface RepositoryImpactSnapshot extends RepositoryImpactReference {
   /** Absent only on authenticated historical v1 proofs, which cannot establish comparison coverage. */
   readonly observationDescriptor?: ObservationDescriptor;
+  readonly codeGeneration?: string;
   readonly records: readonly DerivationRecord[];
   readonly files: readonly { path: string; artifactId: string; contentHash: ContentHash; unitIds: readonly string[] }[];
   readonly canonical: readonly { id: string; kind: string; versionHash: ContentHash }[];
@@ -62,7 +67,7 @@ export interface RepositoryImpactReport {
 
 const contentHashSchema = z.string().regex(/^sha256:v1:[0-9a-f]{64}$/u);
 const stateSchema = z.strictObject({ gitBase: z.string(), worktreeDigest: contentHashSchema, canonicalProjectorDigest: contentHashSchema, toolchainDigest: contentHashSchema, pinnedExternalSnapshotDigest: contentHashSchema.optional() });
-export const RepositoryImpactReferenceSchema = z.strictObject({ version: z.enum([version, legacyVersion]), contentHash: contentHashSchema, state: stateSchema }) as z.ZodType<RepositoryImpactReference>;
+export const RepositoryImpactReferenceSchema = z.strictObject({ version: z.enum([version, previousVersion, legacyVersion]), contentHash: contentHashSchema, state: stateSchema }) as z.ZodType<RepositoryImpactReference>;
 const snapshotFields = {
   contentHash: contentHashSchema, state: stateSchema,
   records: z.array(DerivationRecordSchema),
@@ -73,7 +78,8 @@ const snapshotFields = {
   relations: z.array(RelationSchema), possibleUnitIds: z.array(z.string()), unknowns: z.array(z.string()),
 };
 const snapshotSchema = z.discriminatedUnion("version", [
-  z.strictObject({ ...snapshotFields, version: z.literal(version), observationDescriptor: ObservationDescriptorSchema }),
+  z.strictObject({ ...snapshotFields, version: z.literal(version), observationDescriptor: ObservationDescriptorSchema, codeGeneration: z.string().min(1).max(256).optional() }),
+  z.strictObject({ ...snapshotFields, version: z.literal(previousVersion), observationDescriptor: ObservationDescriptorSchema }),
   z.strictObject({ ...snapshotFields, version: z.literal(legacyVersion) }),
 ]);
 export const RepositoryImpactReportSchema = z.strictObject({
@@ -96,6 +102,17 @@ export function impactReference(snapshot: RepositoryImpactSnapshot): RepositoryI
   return { version: snapshot.version, contentHash: snapshot.contentHash, state: snapshot.state };
 }
 
+/** An existing semantic generation may be attached only when its complete input binding still matches this observation. */
+export async function verifiedCurrentCodeGeneration(repositoryRoot: string, state: StateDigest): Promise<string | undefined> {
+  const store = await SqliteCodeStore.open(repositoryRoot);
+  try {
+    const generation = store.head();
+    const manifest = generation === null ? undefined : store.manifest(generation);
+    if (manifest?.binding.status !== "verified" || manifest.binding.worktreeDigest !== state.worktreeDigest || !verifyCodeInputBinding(manifest.binding, repositoryRoot)) return undefined;
+    return generation!;
+  } finally { store.close(); }
+}
+
 /** Approval binds the proof it used; unrelated whole-repository changes may rebind. */
 export function repositoryImpactProofHash(snapshot: RepositoryImpactSnapshot, prediction: RepositoryImpactReport): ContentHash {
   const selected = new Set([...prediction.knownAffectedUnitIds, ...prediction.possibleFrontierUnitIds, ...prediction.blockedUnitIds]);
@@ -113,7 +130,7 @@ export function repositoryImpactProofHash(snapshot: RepositoryImpactSnapshot, pr
 }
 
 /** This index records observed derivation inputs, never relevance edges. */
-export function buildRepositoryImpactSnapshot(observation: Omit<ChangeRepositoryObservation, "independentValidator">, graph = new KnowledgeGraph(observation)): RepositoryImpactSnapshot {
+export function buildRepositoryImpactSnapshot(observation: Omit<ChangeRepositoryObservation, "independentValidator">, graph = new KnowledgeGraph(observation), codeGeneration?: string): RepositoryImpactSnapshot {
   const registry = profiles();
   const analysis = observation.analysis;
   const budget = graph.derivedBudget;
@@ -192,7 +209,7 @@ export function buildRepositoryImpactSnapshot(observation: Omit<ChangeRepository
     records.push({ unitId: unit.id, engineVersion: profileVersion, adapterVersion: analysis.capabilities.map(({ analyzerId, adapterVersion }) => `${analyzerId}@${adapterVersion}`).sort().join(","), inputs: normalizedInputs, ruleBundleHash, outputSemanticSignature: signature, outputStructuralSignature: signature, membershipHash, establishedAt: "1970-01-01T00:00:00.000Z", validators: [] });
   }
   const basis = {
-    version, observationDescriptor: ObservationDescriptorSchema.parse(analysis.observationDescriptor), state: observation.state, records: new DerivationIndex(records).records(), files,
+    version, observationDescriptor: ObservationDescriptorSchema.parse(analysis.observationDescriptor), ...(codeGeneration === undefined ? {} : { codeGeneration }), state: observation.state, records: new DerivationIndex(records).records(), files,
     canonical: observation.canonical.documents.map(({ id, kind, semanticHash, canonicalDocumentHash }) => ({ id, kind, versionHash: semanticHash ?? canonicalDocumentHash })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     subjects: graph.units.map((unit) => projectionUnitSelectorSubject(unit, { path: filesByArtifact.get(unit.artifactId)?.path ?? unit.key, surface: analysis.surface.kind })),
     rules: activeLenses.flatMap((lens) => lens.impactRules.map((rule) => ({ lensId: lens.id, memberIds: graph.lensCompilation?.memberships[lens.id] ?? [], rule }))),
@@ -253,6 +270,13 @@ export function impactSnapshotWrite(snapshot: RepositoryImpactSnapshot): Derived
 /** Rebuildable derived cache. An enclosing admission session keeps context links protected. */
 export async function persistRepositoryImpactSnapshot(repositoryRoot: string, snapshot: RepositoryImpactSnapshot, session?: DerivedCacheSession): Promise<void> {
   const write = impactSnapshotWrite(snapshot);
+  if (snapshot.codeGeneration !== undefined) {
+    const store = await SqliteCodeStore.open(repositoryRoot);
+    try { store.pinRetained(snapshot.codeGeneration, snapshot.contentHash); }
+    finally { store.close(); }
+  }
+  // Protect the addressed generation before making the retained artifact visible.
+  // A failed publication can retain extra cache data, but cannot publish a broken link.
   if (session !== undefined) await session.publishAll([write]);
   else await withDerivedCacheAdmission(repositoryRoot, (admission) => admission.publishAll([write]));
 }
@@ -408,27 +432,30 @@ function changedUnits(before: RepositoryImpactSnapshot, after: RepositoryImpactS
   }));
 }
 
-function report(before: RepositoryImpactReference, after: RepositoryImpactSnapshot, runs: readonly InvalidationRunResult[], predicted: readonly string[], observed: readonly string[], planId: string, unavailable?: string, hasPrediction = true): RepositoryImpactReport {
-  const known = unique([...observed, ...runs.flatMap(({ invalidation }) => [...invalidation.directlyAffected, ...invalidation.transitivelyAffected])]);
-  const possible = unique([...runs.flatMap(({ invalidation }) => [...invalidation.possibleFrontier, ...invalidation.unavailable]), ...(runs.length > 0 || unavailable !== undefined ? after.possibleUnitIds : []), ...(unavailable === undefined ? [] : after.records.map(({ unitId }) => unitId))]).filter((id) => !known.includes(id));
+function report(before: RepositoryImpactReference, after: RepositoryImpactSnapshot, runs: readonly InvalidationRunResult[], predicted: readonly string[], observed: readonly string[], planId: string, unavailable?: string, hasPrediction = true, semantic?: CodeImpactResult): RepositoryImpactReport {
+  const semanticUnits = (paths: readonly string[]): string[] => unique(after.files.filter(({ path }) => paths.includes(path)).flatMap(({ unitIds }) => unitIds));
+  const semanticKnownPaths = (semantic?.affectedPaths ?? []).filter((path) => !semantic?.possiblePaths.includes(path));
+  const known = unique([...observed, ...runs.flatMap(({ invalidation }) => [...invalidation.directlyAffected, ...invalidation.transitivelyAffected]), ...semanticUnits(semanticKnownPaths)]);
+  const possible = unique([...runs.flatMap(({ invalidation }) => [...invalidation.possibleFrontier, ...invalidation.unavailable]), ...(runs.length > 0 || unavailable !== undefined ? after.possibleUnitIds : []), ...(unavailable === undefined || semantic?.truncated !== true ? [] : after.records.map(({ unitId }) => unitId)), ...semanticUnits(semantic?.possiblePaths ?? [])]).filter((id) => !known.includes(id));
   const unexpected = hasPrediction ? observed.filter((id) => !predicted.includes(id)) : [];
   const evidenceHash = hash({ before: before.contentHash, after: after.contentHash, predicted, observed });
   const candidateRelations = unexpected.flatMap((toId) => predicted.filter((id) => observed.includes(id)).slice(0, 8).map((fromId) => ({ id: `candidate_relation_${hash({ fromId, toId, evidenceHash }).slice(-32)}`, fromId, toId, sourceClass: "inferred" as const, evidenceHash, explanation: "Co-change outside the predicted boundary suggests investigation; it does not prove dependency or shared meaning." })));
   const surpriseBasis = { planId, kind: "unpredicted-code-impact" as const, predictedEntityIds: [...predicted], observedEntityIds: [...observed], unexpectedEntityIds: unexpected, evidence: [{ evidenceId: `evidence_${evidenceHash.slice(-32)}`, stance: "supports" as const }], explanation: "Observed source changes extend beyond the retained prediction. Review the extra scope and candidate relations before accepting any canonical meaning.", disposition: "unresolved" as const, proposedRelationIds: candidateRelations.map(({ id }) => id) };
   const surpriseHash = hash(surpriseBasis);
   const blockedUnitIds = unique(runs.flatMap(({ blockedUnitIds }) => blockedUnitIds));
-  const diagnostics = unique([...(unavailable === undefined ? [] : [unavailable]), ...runs.flatMap(({ diagnostics }) => diagnostics), ...(possible.length === 0 ? [] : after.unknowns)]);
+  const diagnostics = unique([...(unavailable === undefined ? [] : [unavailable]), ...runs.flatMap(({ diagnostics }) => diagnostics), ...(possible.length === 0 ? [] : after.unknowns), ...(semantic?.unknowns ?? [])]);
   const basis = { baseline: { version: before.version, contentHash: before.contentHash, state: before.state }, current: impactReference(after), status: unavailable !== undefined ? "unavailable" as const : before.contentHash === after.contentHash ? "current" as const : "changed" as const, predictedUnitIds: unique(predicted), observedChangedUnitIds: unique(observed), knownAffectedUnitIds: known, possibleFrontierUnitIds: possible, backdatedUnitIds: unique(runs.flatMap(({ backdatedUnitIds }) => backdatedUnitIds)).filter((id) => !runs.some(({ invalidation, backdatedUnitIds }) => [...invalidation.directlyAffected, ...invalidation.transitivelyAffected].includes(id) && !backdatedUnitIds.includes(id))), blockedUnitIds, repairRoute: blockedUnitIds.length > 0 ? "human-decision" as const : possible.length > 0 || unexpected.length > 0 || unavailable !== undefined ? "widen-analysis" as const : known.length > 0 ? "revalidate" as const : "reuse" as const, surprises: unexpected.length === 0 ? [] : [{ ...surpriseBasis, id: `planning_surprise_${surpriseHash.slice(-32)}`, contentHash: surpriseHash }], candidateRelations, diagnostics };
   return { ...basis, contentHash: hash(basis) };
 }
 
-export async function reconcileRepositoryImpact(before: RepositoryImpactSnapshot, after: RepositoryImpactSnapshot, predictedUnitIds: readonly string[], planId: string, predictedPaths: readonly string[] = [], hasPrediction = true, derivedBudget?: DerivedObservationBudget): Promise<RepositoryImpactReport> {
+export async function reconcileRepositoryImpact(before: RepositoryImpactSnapshot, after: RepositoryImpactSnapshot, predictedUnitIds: readonly string[], planId: string, predictedPaths: readonly string[] = [], hasPrediction = true, derivedBudget?: DerivedObservationBudget, semantic?: CodeImpactResult): Promise<RepositoryImpactReport> {
   authenticate(before, impactReference(before)); authenticate(after, impactReference(after));
   const unavailable = comparisonUnavailable(before, after);
   if (unavailable !== undefined) return report(before, after, [], predictedUnitIds, [], planId, unavailable, hasPrediction);
   const paths = new Set([...predictedPaths, ...before.files.filter(({ unitIds }) => unitIds.some((id) => predictedUnitIds.includes(id))).map(({ path }) => path)]);
   const predicted = unique([...predictedUnitIds, ...after.files.filter(({ path }) => paths.has(path)).flatMap(({ unitIds }) => unitIds)]);
-  return report(before, after, await runImpact(before, after, eventChanges(before, after), false, derivedBudget), predicted, changedUnits(before, after), planId, undefined, hasPrediction);
+  if (semantic !== undefined && (semantic.before !== before.codeGeneration || semantic.after !== after.codeGeneration)) throw new Error("Semantic impact generations do not match the authenticated repository snapshots");
+  return report(before, after, await runImpact(before, after, eventChanges(before, after), false, derivedBudget), predicted, changedUnits(before, after), planId, undefined, hasPrediction, semantic);
 }
 
 function comparisonUnavailable(before: RepositoryImpactSnapshot, after: RepositoryImpactSnapshot): string | undefined {
@@ -455,5 +482,10 @@ export async function reconcileRetainedImpact(repositoryRoot: string, reference:
     if (error instanceof ObservationError || (error instanceof Error && error.name === "AbortError")) throw error;
     return report(reference, after, [], predictedUnitIds, [], contextId, `Retained derivation proof unavailable: ${error instanceof Error ? error.message : String(error)}. Capture fresh context to rebuild the current derived snapshot.`);
   }
-  return reconcileRepositoryImpact(before, after, predictedUnitIds, contextId, [], hasPrediction, derivedBudget);
+  let semantic: CodeImpactResult | undefined;
+  if (before.codeGeneration !== undefined && after.codeGeneration !== undefined) {
+    if (await verifiedCurrentCodeGeneration(repositoryRoot, after.state) !== after.codeGeneration) throw new Error("Current semantic generation does not match the authenticated impact snapshot");
+    semantic = CodeImpactResultSchema.parse(await executeCodeWorker({ repositoryRoot, operation: "code.impact", input: { before: before.codeGeneration, after: after.codeGeneration } }, currentObservationScope()?.deadline ?? Number.POSITIVE_INFINITY));
+  }
+  return reconcileRepositoryImpact(before, after, predictedUnitIds, contextId, [], hasPrediction, derivedBudget, semantic);
 }

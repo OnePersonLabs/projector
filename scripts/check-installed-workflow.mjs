@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { buildReleasePackage } from "./build-release-package.mjs";
 import { buildPluginRuntime } from "./build-plugin-runtime.mjs";
 import { executeReleaseCommand, resolveNpmCommand } from "./npm-command.mjs";
@@ -27,6 +29,8 @@ await executeReleaseCommand(npm.executable,npm.arguments,{cwd:isolated,env:insta
 const installed=join(isolated,"node_modules/@onepersonlabs/projector");
 const plugin=join(isolated,"plugin");
 await buildPluginRuntime(plugin,{releaseRoot:installed});
+const mcpManifest=JSON.parse(await readFile(join(plugin,".mcp.json"),"utf8"));
+if(mcpManifest.mcpServers?.projector?.command!=="node"||!mcpManifest.mcpServers.projector.args.includes("./scripts/projector-mcp.mjs"))throw new Error("Installed plugin does not advertise the resident MCP host");
 let repository=join(isolated,"fresh-project");await mkdir(repository);
 env.PROJECTOR_VERIFICATION_EVIDENCE_STORE=join(isolated,"retained-execution-evidence");
 const run=(executable,args,cwd=repository)=>executeReleaseCommand(executable,args,{cwd,env,timeout:120_000,maxBuffer:8*1024*1024});
@@ -54,6 +58,48 @@ const operation=async(name,input)=>{
 const binResult=await run(process.execPath,[join(installed,"dist/command-main.mjs"),"init","--json"]);
 const initialized=JSON.parse(binResult.stdout);transcript.push({args:["init"],entry:"npm package bin",value:initialized});
 if(initialized.readiness.status!=="ready")throw new Error("Installed init was not ready");
+const mcp=spawn(process.execPath,[join(plugin,"scripts/projector-mcp.mjs")],{cwd:repository,env,stdio:["pipe","pipe","pipe"]});
+const mcpResponses=new Map();
+const mcpPending=new Map();
+const mcpStderr=[];
+createInterface({input:mcp.stdout}).on("line",line=>{
+ let message;
+ try{message=JSON.parse(line);}catch{mcpStderr.push(`Invalid MCP stdout: ${line}`);return;}
+ if(message.id===undefined)return;
+ const pending=mcpPending.get(message.id);
+ if(pending){mcpPending.delete(message.id);pending(message);}else mcpResponses.set(message.id,message);
+});
+mcp.stderr.on("data",chunk=>mcpStderr.push(String(chunk)));
+let mcpNextId=1;
+const mcpRequest=async(method,params)=>{
+ const id=mcpNextId++;
+ const response=new Promise((resolve,reject)=>{
+  const timer=setTimeout(()=>{mcpPending.delete(id);reject(new Error(`MCP ${method} timed out: ${mcpStderr.join("")}`));},15_000);
+  mcpPending.set(id,value=>{clearTimeout(timer);resolve(value);});
+  if(mcpResponses.has(id)){const value=mcpResponses.get(id);mcpResponses.delete(id);mcpPending.get(id)(value);}
+ });
+ mcp.stdin.write(JSON.stringify({jsonrpc:"2.0",id,method,params})+"\n");
+ return response;
+};
+try{
+ const hello=await mcpRequest("initialize",{protocolVersion:"2025-06-18",capabilities:{},clientInfo:{name:"projector-installed-check",version:"1"}});
+ if(hello.error||!hello.result?.serverInfo)throw new Error(`Installed MCP initialization failed: ${JSON.stringify(hello)}`);
+ mcp.stdin.write(JSON.stringify({jsonrpc:"2.0",method:"notifications/initialized"})+"\n");
+ const listed=await mcpRequest("tools/list",{});
+ const tools=listed.result?.tools??[];
+ if(!tools.some(tool=>tool.name==="projector_status")||!tools.some(tool=>tool.name==="projector_context"))throw new Error("Installed MCP omitted registered operation tools");
+ const invalid=await mcpRequest("tools/call",{name:"projector_status",arguments:{repositoryRoot:repository,input:{invalid:true}}});
+ if(!invalid.error&&!invalid.result?.isError)throw new Error("Installed MCP accepted invalid operation input");
+ for(let index=0;index<2;index++){
+  const response=await mcpRequest("tools/call",{name:"projector_status",arguments:{repositoryRoot:repository,input:{}}});
+  if(response.result?.structuredContent?.status!=="succeeded")throw new Error(`Installed resident MCP status failed: ${JSON.stringify(response)}`);
+ }
+}finally{
+ mcp.stdin.end();
+ let closeTimer;
+ try{await Promise.race([once(mcp,"close"),new Promise((_,reject)=>{closeTimer=setTimeout(()=>reject(new Error(`Installed MCP did not close after EOF: ${mcpStderr.join("")}`)),10_000);})]);}
+ finally{clearTimeout(closeTimer);}
+}
 if(!(await readFile(join(repository,".projector/README.md"),"utf8")).includes("#"))throw new Error("Installed init omitted the human index");
 const context=await command(["context","Document the project's clock boundary"]);
 const proposal={apiVersion:"projector.change-proposal/v1",requirements:[],scenarios:[],architecture:null,edits:[],validation:{independentNodeTests:[],supplementalNodeTests:[]},analysisFacets:["architecture","behavior"],identityResolution:{contextId:context.id,contextHash:context.contentHash,outcome:"create-new",selectedEntityIds:[],rationale:"The fresh project has no existing clock boundary record.",newBoundary:{owns:["Domain time inputs"],excludes:["Clock implementation and scheduling"],nearestEntityIds:[],rationale:"Record the time input obligation independently of implementation."}},canonicalMutations:[{kind:"concept",operation:"add",expectedAbsent:true,rationale:"Preserve the time boundary for later changes.",payload:{id:"concept:clock",key:"clock",kind:"invariant",name:"Clock boundary",aliases:[],statement:"All domain time enters through the clock port.",status:"active",sourceClass:"authored",confidence:1,tags:["time"],evidence:[]}}]};
@@ -266,7 +312,7 @@ catch(error){
 }
 if(!droppedContribution?.contributions.some(c=>c.entityId==="concept:cloud-b"&&c.status==="lost"))throw new Error("Installed integration failed to detect a silently dropped contribution");
 if(await sourceIdentity()!==beforeIntegration||(await run("git",["ls-files","--stage","-z"])).stdout!==beforeIntegrationIndex||(await run("git",["rev-parse","HEAD"])).stdout.trim()!==integrationBase)throw new Error("Integration assessment changed destination source, index or HEAD");
-const report={status:"passed",tarball,plugin,isolated,records:1,checks:["offline npm tarball installation outside the source tree","standalone bundled dependency resolution","npm package bin init and human index","exact preview/apply","Markdown round trip","compact context","check","fresh-process read-only resume","inspect","read-only audit with retained context","late-consumer currentness with unaffected meaning reuse","stale approval refusal without canonical mutation","stable concept identity after source rename","bounded-context omission disclosure"],limitations:["Interruption and committed-result recovery are exercised by the lifecycle and continuation suites; this installed smoke does not establish comparative advantage or domain reconstruction.","Consumer discovery covers static imports and re-exports; dynamic resolution and unsupported runtime mechanisms remain unknown.","Git integration checks contribution preservation, canonical integrity and static result consumers; named canonical-integrity evidence is separately reusable, while arbitrary behavioral reuse and dynamic governance remain unqualified."]};
+const report={status:"passed",tarball,plugin,isolated,records:1,checks:["offline npm tarball installation outside the source tree","standalone bundled dependency resolution","npm package bin init and human index","resident MCP initialization, discovery, validation, repeated calls and EOF shutdown","exact preview/apply","Markdown round trip","compact context","check","fresh-process read-only resume","inspect","read-only audit with retained context","late-consumer currentness with unaffected meaning reuse","stale approval refusal without canonical mutation","stable concept identity after source rename","bounded-context omission disclosure"],limitations:["Interruption and committed-result recovery are exercised by the lifecycle and continuation suites; this installed smoke does not establish comparative advantage or domain reconstruction.","Consumer discovery covers static imports and re-exports; dynamic resolution and unsupported runtime mechanisms remain unknown.","Git integration checks contribution preservation, canonical integrity and static result consumers; named canonical-integrity evidence is separately reusable, while arbitrary behavioral reuse and dynamic governance remain unqualified."]};
 report.checks.push("installed verification procedure byte parity","native check observation survives a fresh process and unrelated target movement","read-only representation publication inspection");
 report.checks.push("installed architecture evaluation refuses missing required research","installed HTTP host executes and reports satisfied and violated application predicates");
 report.checks.push("installed generation directly invokes the declared source and retains observed output evidence");

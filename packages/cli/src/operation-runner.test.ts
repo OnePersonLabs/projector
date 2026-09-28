@@ -14,6 +14,7 @@ import {
 } from "@projector/core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { currentObservationScope } from "@projector/runtime";
 
 import {
   createProjectorOperationRunner,
@@ -108,9 +109,18 @@ describe("bounded Projector operation runner", () => {
   });
   test("accepts explicit finite observation limits without widening operation input", async () => {
     const root = await packagedRoot();
-    const runner = await createProjectorOperationRunner({ packagedRoot: root, ports: ports(), handlers: [handler()] });
+    const observedLimits: (number | null)[] = [];
+    const runner = await createProjectorOperationRunner({ packagedRoot: root, ports: ports(), handlers: [handler("verify", async () => {
+      observedLimits.push(currentObservationScope()!.limits.maxTotalBytes);
+      return { valid: true };
+    })] });
+    await expect(runner.execute(request("verify")))
+      .resolves.toMatchObject({ status: "succeeded", output: { valid: true } });
     await expect(runner.execute({ ...request("verify"), observationLimits: { maxFiles: 3 } }))
       .resolves.toMatchObject({ status: "succeeded", output: { valid: true } });
+    await expect(runner.execute({ ...request("verify"), observationLimits: { maxTotalBytes: 4096 } }))
+      .resolves.toMatchObject({ status: "succeeded", output: { valid: true } });
+    expect(observedLimits).toEqual([null, null, 4096]);
     await expect(runner.execute({ ...request("verify"), observationLimits: { maxFiles: 0 } }))
       .rejects.toThrow();
   });

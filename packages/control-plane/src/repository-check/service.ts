@@ -4,20 +4,23 @@ import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
 
-import { ContentHashSchema, ProjectorOperationInputSchemas, canonicalJson, hashFramedDomain } from "@projector/core";
-import { RepositoryPathService } from "@projector/runtime";
+import { CodeImpactResultSchema, ContentHashSchema, DEFAULT_OBSERVATION_LIMITS, ProjectorOperationInputSchemas, canonicalJson, hashFramedDomain, observationLimitValue } from "@projector/core";
+import { RepositoryPathService, SqliteCodeStore, currentObservationScope, withObservationScope } from "@projector/runtime";
 import { z } from "zod";
+import { observeIndexedRepository } from "../change-lifecycle/indexed-observer.js";
+import { runObservationTask } from "../observation/task-runner.js";
 
 const gitExec = promisify(execFile);
 const cachePath = ".projector/runtime/repository-check/state.json";
 const lockPath = ".projector/runtime/repository-check/check.lock";
+const semanticBaselineOwner = "repository-check:baseline";
 const pathSchema = z.string().min(1).max(4096);
 const headSchema = z.string().regex(/^[a-f0-9]{40,64}$/u).nullable();
 const observationSchema = z.strictObject({
   head: headSchema,
   evidenceIdentity: ContentHashSchema,
   stagedIdentity: ContentHashSchema,
-  files: z.array(z.strictObject({ path: pathSchema, identity: ContentHashSchema })).max(10_000),
+  files: z.array(z.strictObject({ path: pathSchema, identity: ContentHashSchema })),
 });
 const pendingSchema = z.strictObject({
   findingId: z.string().min(1).max(128), evidenceIdentity: ContentHashSchema,
@@ -28,17 +31,19 @@ export const RepositoryCheckOutputSchema = z.strictObject({
   status: z.enum(["unchanged", "changed", "no previous observation", "incomplete"]),
   observation: z.strictObject({ head: headSchema, evidenceIdentity: ContentHashSchema }).optional(),
   pending: pendingSchema.optional(), offer: z.boolean(), limitations: z.array(z.string()).max(16), nextAction: z.string(),
+  semantic: z.strictObject({ generation: z.string().min(1), affectedPaths: z.array(pathSchema), possiblePaths: z.array(pathSchema), unknowns: z.array(z.string()), truncated: z.boolean() }).optional(),
 });
 const stateSchema = z.strictObject({
   version: z.literal(1), observation: observationSchema, pending: pendingSchema.optional(),
   offeredSessions: z.array(ContentHashSchema).max(128),
+  semanticGeneration: z.string().min(1).max(256).optional(),
 });
 type State = z.infer<typeof stateSchema>;
 type Observation = z.infer<typeof observationSchema>;
 type Output = z.infer<typeof RepositoryCheckOutputSchema>;
 type Input = z.infer<(typeof ProjectorOperationInputSchemas)["repository.check"]>;
 
-/** Operational bounds are service options, not caller-controlled operation inputs. */
+/** Service overrides may tighten the caller's declared observation allowance. */
 export interface RepositoryCheckOptions {
   signal?: AbortSignal;
   maxMilliseconds?: number;
@@ -58,9 +63,18 @@ function isCode(error: unknown, code: string): boolean {
 /** A bounded change detector. It never evaluates or accepts intended design. */
 export async function checkRepository(repositoryRoot: string, rawInput: Input = {}, options: RepositoryCheckOptions = {}): Promise<Output> {
   const input = ProjectorOperationInputSchemas["repository.check"].parse(rawInput);
-  const deadline = performance.now() + (options.maxMilliseconds ?? 5000);
+  const scope = currentObservationScope();
+  const limits = scope?.limits ?? DEFAULT_OBSERVATION_LIMITS;
+  const deadline = performance.now() + Math.min(scope?.budget.remainingMs() ?? observationLimitValue(limits.timeoutMs), options.maxMilliseconds ?? observationLimitValue(limits.timeoutMs));
+  const maxFileBytes = Math.min(options.maxFileBytes ?? Infinity, observationLimitValue(limits.maxFileBytes));
+  const maxTotalBytes = Math.min(options.maxTotalBytes ?? Infinity, observationLimitValue(limits.maxTotalBytes));
+  const maxPaths = Math.min(options.maxPaths ?? Infinity, observationLimitValue(limits.maxFiles));
+  const maxGitBytes = Math.min(options.maxGitBytes ?? Infinity, observationLimitValue(limits.maxGitOutputBytes));
+  const gitAbort = new AbortController();
+  const signal = AbortSignal.any([gitAbort.signal, ...(options.signal === undefined ? [] : [options.signal]), ...(scope === undefined ? [] : [scope.signal])]);
+  let gitBytes = 0;
   const checkpoint = () => {
-    options.signal?.throwIfAborted();
+    signal.throwIfAborted();
     if (performance.now() >= deadline) throw new Error("Repository check elapsed-time bound exceeded");
   };
   let paths: RepositoryPathService | undefined;
@@ -68,11 +82,16 @@ export async function checkRepository(repositoryRoot: string, rawInput: Input = 
   let lockTarget: string | undefined;
   let state: State | undefined;
   let storedState: State | undefined;
+  let codeStore: SqliteCodeStore | undefined;
+  let baselineMissing = false;
+  let statePublished = false;
+  let semantic: Output["semantic"];
   const limitations = ["Change evidence is not a design-conformance assessment; previous uncommitted bytes are not retained.", "Offer deduplication remembers the last 128 offered sessions.", "omittedPaths is a lower bound across coalesced updates; omitted path identities are not retained."];
   const result = (status: Output["status"], offer: boolean, nextAction: string): Output => ({
     status, offer, limitations, nextAction,
     ...(state === undefined ? {} : { observation: { head: state.observation.head, evidenceIdentity: state.observation.evidenceIdentity } }),
     ...(state?.pending === undefined ? {} : { pending: state.pending }),
+    ...(semantic === undefined ? {} : { semantic }),
   });
   try {
     checkpoint();
@@ -84,7 +103,7 @@ export async function checkRepository(repositoryRoot: string, rawInput: Input = 
     checkpoint();
     lock = await open(lockTarget, "wx", 0o600);
     await lock.writeFile(JSON.stringify({ processId: process.pid }));
-    const readBounded = async (path: string, limit: number): Promise<Buffer> => {
+    const readBounded = async (path: string, limit: number, reserve?: (bytes: number) => void): Promise<Buffer> => {
       checkpoint();
       const target = (await safePaths.resolveRead(path)).realTarget;
       const handle = await open(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
@@ -92,6 +111,7 @@ export async function checkRepository(repositoryRoot: string, rawInput: Input = 
         const before = await handle.stat();
         if (!before.isFile()) throw new Error(`Repository check refuses nonregular file: ${path}`);
         if (before.size > limit) throw new Error(`Repository check byte bound exceeded: ${path}`);
+        reserve?.(before.size);
         const bytes = Buffer.alloc(Math.min(before.size + 1, limit + 1));
         let offset = 0;
         while (offset < bytes.length) {
@@ -108,48 +128,85 @@ export async function checkRepository(repositoryRoot: string, rawInput: Input = 
       } finally { await handle.close(); }
     };
     try {
-      state = stateSchema.parse(JSON.parse((await readBounded(cachePath, 4 * 1024 * 1024)).toString("utf8")));
+      state = stateSchema.parse(JSON.parse((await readBounded(cachePath, observationLimitValue(limits.maxDerivedBytes))).toString("utf8")));
       const { evidenceIdentity, ...basis } = state.observation;
       if (hashFramedDomain("repository-check-observation", basis) !== evidenceIdentity) throw new Error("Repository observation cache identity is invalid");
       if (state.pending !== undefined && (state.pending.evidenceIdentity !== evidenceIdentity || state.pending.toHead !== state.observation.head)) throw new Error("Pending finding is not bound to its cached observation");
       storedState = structuredClone(state);
     } catch (error) { if (!isCode(error, "ENOENT")) throw error; }
+    codeStore = await SqliteCodeStore.open(safePaths.root);
+    baselineMissing = state !== undefined && (state.semanticGeneration === undefined || !codeStore.hasGeneration(state.semanticGeneration));
+    if (state?.semanticGeneration !== undefined && !baselineMissing)
+      codeStore.pinRetained(state.semanticGeneration, semanticBaselineOwner);
     const git = async (args: string[]): Promise<string> => {
       checkpoint();
       const environment: NodeJS.ProcessEnv = {};
       for (const key of ["PATH", "PATHEXT", "SystemRoot", "WINDIR", "TMP", "TEMP", "LANG", "LC_ALL"]) {
         if (process.env[key] !== undefined) environment[key] = process.env[key];
       }
-      const { stdout } = await gitExec("git", ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", ...args], {
-        cwd: safePaths.root, encoding: "utf8", timeout: Math.max(1, Math.floor(deadline - performance.now())),
-        maxBuffer: options.maxGitBytes ?? 1024 * 1024,
+      const running = gitExec("git", ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", ...args], {
+        cwd: safePaths.root, encoding: "utf8", timeout: Number.isFinite(deadline) ? Math.max(1, Math.floor(deadline - performance.now())) : 0,
+        maxBuffer: maxGitBytes,
         env: { ...environment, GIT_OPTIONAL_LOCKS: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null" },
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        signal,
       });
+      const accountOutput = (chunk: Buffer | string): void => {
+        try {
+          const bytes = Buffer.byteLength(chunk);
+          gitBytes += bytes;
+          if (gitBytes > maxGitBytes) throw new Error("Repository check exceeds the declared maxGitOutputBytes allowance");
+          scope?.budget.consume("maxGitOutputBytes", bytes, "repository-check-git");
+        } catch (error) { gitAbort.abort(error); }
+      };
+      running.child.stdout?.on("data", accountOutput);
+      running.child.stderr?.on("data", accountOutput);
+      let stdout: string;
+      try { ({ stdout } = await running); }
+      catch (error) { signal.throwIfAborted(); throw error; }
       checkpoint();
       return stdout;
     };
     const head = async (): Promise<string | null> => {
       // --verify alone cannot distinguish an unborn branch from a broken repository.
-      if (await realpath((await git(["rev-parse", "--show-toplevel"])).trim()) !== safePaths.root) throw new Error("Repository check root must be the Git checkout root");
-      const refs = await git(["rev-parse", "--revs-only", "HEAD"]);
+      const [topLevel, refs] = await Promise.all([
+        git(["rev-parse", "--show-toplevel"]),
+        git(["rev-parse", "--revs-only", "HEAD"]),
+      ]);
+      if (await realpath(topLevel.trim()) !== safePaths.root) throw new Error("Repository check root must be the Git checkout root");
       return headSchema.parse(refs.trim() || null);
     };
     const currentHead = await head();
     const previous = state?.observation;
     let status: Output["status"] = "unchanged";
-    if (input.mode !== "commit-only" || input.handled !== undefined || previous === undefined || previous.head !== currentHead) {
+    if (input.mode !== "commit-only" || input.handled !== undefined || previous === undefined || previous.head !== currentHead || baselineMissing) {
+      const remainingMs = Number.isFinite(deadline) ? Math.max(1, Math.floor(deadline - performance.now())) : null;
+      const phaseSignal = remainingMs === null ? signal : AbortSignal.any([signal, AbortSignal.timeout(remainingMs)]);
+      const indexed = await withObservationScope({ signal: phaseSignal, limits: { timeoutMs: remainingMs } }, async scope => {
+        const observation = await observeIndexedRepository(safePaths.root);
+        try {
+          const taskOptions = { ...scope, deadline: Math.min(scope.deadline, Number.isFinite(deadline) ? Date.now() + Math.max(0, Math.floor(deadline - performance.now())) : Infinity) };
+          const indexedResult = await runObservationTask("code-operation", { repositoryRoot: safePaths.root, operation: "code.index", input: { provider: "native" }, descriptor: observation.descriptor }, taskOptions) as { generation: string };
+          const generation = z.string().min(1).parse(indexedResult.generation);
+          codeStore!.pinRetained(generation, semanticBaselineOwner);
+          const prior = baselineMissing ? undefined : state?.semanticGeneration;
+          const impact = prior === undefined ? undefined : CodeImpactResultSchema.parse(await runObservationTask("code-operation", { repositoryRoot: safePaths.root, operation: "code.impact", input: { before: prior, after: generation }, descriptor: observation.descriptor }, taskOptions));
+          return { generation, impact };
+        } finally { observation.close(); }
+      });
+      semantic = { generation: indexed.generation, affectedPaths: indexed.impact?.affectedPaths ?? [], possiblePaths: indexed.impact?.possiblePaths ?? [], unknowns: [...(baselineMissing ? ["Prior semantic baseline is unavailable; file-level semantic impact before this check is unknown"] : []), ...(indexed.impact?.unknowns ?? [])], truncated: indexed.impact?.truncated ?? false };
       const pathspec = ["--", ".", ":(exclude).projector/runtime", ":(exclude).projector/runtime/**"];
-      const staged = await git(["diff", "--cached", "--raw", "--no-abbrev", "--no-renames", "--no-ext-diff", "-z", ...pathspec]);
+      const stagedDiff = () => git(["diff", "--cached", "--raw", "--no-abbrev", "--no-renames", "--no-ext-diff", "-z", ...pathspec]);
       const enumerate = async () => {
-        const dirty = await git(["diff", "--name-only", "--no-renames", "--no-ext-diff", "-z", ...pathspec]);
-        const indexed = await git(["diff", "--cached", "--name-only", "--no-renames", "--no-ext-diff", "-z", ...pathspec]);
-        const untracked = await git(["ls-files", "--others", "--exclude-standard", "-z", ...pathspec]);
+        const [dirty, indexed, untracked] = await Promise.all([
+          git(["diff", "--name-only", "--no-renames", "--no-ext-diff", "-z", ...pathspec]),
+          git(["diff", "--cached", "--name-only", "--no-renames", "--no-ext-diff", "-z", ...pathspec]),
+          git(["ls-files", "--others", "--exclude-standard", "-z", ...pathspec]),
+        ]);
         return [...new Set(`${dirty}${indexed}${untracked}`.split("\0").filter((path) => path && included(path)))].sort();
       };
-      const names = await enumerate();
-      if (names.length > Math.min(options.maxPaths ?? 10_000, 10_000)) throw new Error("Repository check path bound exceeded");
-      const files: Observation["files"] = [];
+      const [staged, names] = await Promise.all([stagedDiff(), enumerate()]);
+      if (names.length > maxPaths) throw new Error("Repository check exceeds the declared maxFiles allowance");
+      const files: Observation["files"] = new Array(names.length);
       const stamps = new Map<string, string | null>();
       const stamp = async (path: string) => {
         try {
@@ -158,24 +215,44 @@ export async function checkRepository(repositoryRoot: string, rawInput: Input = 
         } catch (error) { if (isCode(error, "ENOENT")) return null; throw error; }
       };
       let total = 0;
-      for (const path of names) {
-        pathSchema.parse(path);
-        let identity: z.infer<typeof ContentHashSchema>;
-        const beforeStamp = await stamp(path);
-        try {
-          const content = await readBounded(path, Math.min(options.maxFileBytes ?? 8 * 1024 * 1024, (options.maxTotalBytes ?? 32 * 1024 * 1024) - total));
-          total += content.length;
-          const mode = (await lstat((await safePaths.resolveRead(path)).realTarget)).mode;
-          identity = hashFramedDomain("repository-check-file", content.toString("base64"), mode);
-        } catch (error) {
-          if (!isCode(error, "ENOENT")) throw error;
-          identity = hashFramedDomain("repository-check-deleted", path);
+      let reserved = 0;
+      const reserveFileBytes = (bytes: number): void => {
+        if (reserved + bytes > maxTotalBytes) throw new Error("Repository check exceeds the declared maxTotalBytes allowance");
+        reserved += bytes;
+      };
+      let nextPath = 0;
+      let failed = false;
+      const inspectFiles = async (): Promise<void> => {
+        while (!failed && nextPath < names.length) {
+          const index = nextPath++;
+          try {
+            const path = pathSchema.parse(names[index]);
+            let identity: z.infer<typeof ContentHashSchema>;
+            const beforeStamp = await stamp(path);
+            try {
+              const content = await readBounded(path, Math.min(maxFileBytes, maxTotalBytes), reserveFileBytes);
+              total += content.length;
+              if (total > maxTotalBytes) throw new Error("Repository check exceeds the declared maxTotalBytes allowance");
+              const mode = (await lstat((await safePaths.resolveRead(path)).realTarget)).mode;
+              identity = hashFramedDomain("repository-check-file", content.toString("base64"), mode);
+            } catch (error) {
+              if (!isCode(error, "ENOENT")) throw error;
+              identity = hashFramedDomain("repository-check-deleted", path);
+            }
+            files[index] = { path, identity };
+            if (beforeStamp !== await stamp(path)) throw new Error(`Repository file changed during observation: ${path}`);
+            stamps.set(path, beforeStamp);
+          } catch (error) {
+            failed = true;
+            throw error;
+          }
         }
-        files.push({ path, identity });
-        if (beforeStamp !== await stamp(path)) throw new Error(`Repository file changed during observation: ${path}`);
-        stamps.set(path, beforeStamp);
-      }
-      if (currentHead !== await head() || canonicalJson(names) !== canonicalJson(await enumerate()) || staged !== await git(["diff", "--cached", "--raw", "--no-abbrev", "--no-renames", "--no-ext-diff", "-z", ...pathspec])) {
+      };
+      const inspected = await Promise.allSettled(Array.from({ length: Math.min(4, names.length) }, inspectFiles));
+      const inspectionFailure = inspected.find((item): item is PromiseRejectedResult => item.status === "rejected");
+      if (inspectionFailure !== undefined) throw inspectionFailure.reason;
+      const [finalHead, finalNames, finalStaged] = await Promise.all([head(), enumerate(), stagedDiff()]);
+      if (currentHead !== finalHead || canonicalJson(names) !== canonicalJson(finalNames) || staged !== finalStaged) {
         throw new Error("Repository changed during observation; retry a full check");
       }
       for (const [path, observedStamp] of stamps) {
@@ -197,7 +274,7 @@ export async function checkRepository(repositoryRoot: string, rawInput: Input = 
         }
         const sorted = [...changedPaths].sort();
         state = {
-          version: 1, observation, offeredSessions: state?.pending === undefined ? [] : state.offeredSessions,
+          version: 1, observation, semanticGeneration: indexed.generation, offeredSessions: state?.pending === undefined ? [] : state.offeredSessions,
           pending: {
             findingId: state?.pending?.findingId ?? `repository_finding_${observation.evidenceIdentity.slice(-32)}`,
             evidenceIdentity: observation.evidenceIdentity,
@@ -208,6 +285,8 @@ export async function checkRepository(repositoryRoot: string, rawInput: Input = 
           },
         };
       }
+      if (status === "unchanged" && state !== undefined && state.semanticGeneration !== indexed.generation) state.semanticGeneration = indexed.generation;
+      if (baselineMissing && status === "unchanged") status = "incomplete";
     } else limitations.push("Commit-only check skipped staged and working-tree observation because HEAD is unchanged.");
     if (state === undefined) throw new Error("Repository check did not establish an observation");
     if (input.handled !== undefined) {
@@ -224,21 +303,26 @@ export async function checkRepository(repositoryRoot: string, rawInput: Input = 
     if (offer && session !== undefined) state.offeredSessions = [...state.offeredSessions, session].slice(-128);
     checkpoint();
     const nextAction = state.pending === undefined ? "No pending investigation. Handling does not approve design." : "Investigate the pending finding against its HEAD anchors and current diff; mark handled only with its exact findingId and evidenceIdentity after investigation.";
-    if (storedState !== undefined && canonicalJson(storedState) === canonicalJson(state)) return result(status, offer, nextAction);
+    if (storedState !== undefined && canonicalJson(storedState) === canonicalJson(state)) {
+      codeStore.reconcileRetainedOwner(state.semanticGeneration!, semanticBaselineOwner);
+      return result(status, offer, nextAction);
+    }
     const destination = (await safePaths.resolveWrite(cachePath)).realTarget;
     const temporaryPath = `${cachePath}.${process.pid}.tmp`;
     const temporary = (await safePaths.resolveWrite(temporaryPath)).realTarget;
     const serialized = canonicalJson(stateSchema.parse(state));
-    if (Buffer.byteLength(serialized) > 4 * 1024 * 1024) throw new Error("Repository observation cache byte bound exceeded");
+    if (Buffer.byteLength(serialized) > observationLimitValue(limits.maxDerivedBytes)) throw new Error("Repository check state exceeds the declared maxDerivedBytes allowance");
     const handle = await open(temporary, "wx", 0o600);
     try { await handle.writeFile(serialized); await handle.sync(); } finally { await handle.close(); }
-    try { checkpoint(); await rename(temporary, destination); } finally { await rm(temporary, { force: true }); }
+    try { checkpoint(); await rename(temporary, destination); statePublished = true; } finally { await rm(temporary, { force: true }); }
+    codeStore.reconcileRetainedOwner(state.semanticGeneration!, semanticBaselineOwner);
     return result(status, offer, nextAction);
   } catch (error) {
-    state = storedState;
+    if (!statePublished) state = storedState;
     limitations.push(error instanceof Error ? error.message.slice(0, 2048) : String(error).slice(0, 2048));
-    return result("incomplete", false, isCode(error, "EEXIST") ? "A repository check lock or temporary file exists. Retry; for an interrupted owner, verify that its process has stopped before removing only its runtime lock or temporary file." : "Preserved prior observation and pending finding. Address the reported limitation and retry a full repository.check; do not infer conformance.");
+    return result("incomplete", false, isCode(error, "EEXIST") ? "A repository check lock or temporary file exists. Retry; for an interrupted owner, verify that its process has stopped before removing only its runtime lock or temporary file." : statePublished ? "The new observation is durable, but semantic pin cleanup failed. Retry a full repository.check; do not infer conformance." : "Preserved prior observation and pending finding. Address the reported limitation and retry a full repository.check; do not infer conformance.");
   } finally {
+    codeStore?.close();
     if (lock !== undefined) {
       await lock.close();
       if (lockTarget !== undefined) await rm(lockTarget, { force: true });

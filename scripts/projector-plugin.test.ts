@@ -132,10 +132,11 @@ describe("Projector installed operation entry", () => {
     await expect(runOperation(pluginRoot, undefined, [linked])).resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringMatching(/symbolic|link|too many levels/iu) });
   });
 
-  test("removes the replaced MCP and CLI-wrapper plugin surfaces", async () => {
+  test("declares the resident MCP server while keeping replaced CLI wrappers removed", async () => {
+    const mcp = JSON.parse(await readFile(join(sourcePluginRoot, ".mcp.json"), "utf8"));
+    expect(mcp.mcpServers.projector).toMatchObject({ command: "node", cwd: ".", args: ["./scripts/projector-mcp.mjs"] });
+    await access(join(sourcePluginRoot, "scripts/projector-mcp.mjs"));
     for (const path of [
-      ".mcp.json",
-      "scripts/projector-mcp.mjs",
       "scripts/projector-change.mjs",
       "scripts/projector-runtime.mjs",
     ]) {

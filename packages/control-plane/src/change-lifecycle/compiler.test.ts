@@ -722,7 +722,7 @@ describe("repository change compiler", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("reports a deterministic frontier when directed canonical obligations exceed the bound", async () => {
+  it("retains the complete directed obligation closure beyond 128 entities", async () => {
     const root = await repository();
     try {
       let fromId = "requirement:legacy-greeting";
@@ -733,8 +733,10 @@ describe("repository change compiler", () => {
         fromId = toId;
       }
       const oneSemanticRoot = requirementRevisionProposal(await new CanonicalFileRepository(root).read("requirement", "requirement:legacy-greeting"));
-      await expect(compileRepositoryChange({ repositoryRoot: root, request: "Implement greeting.", proposal: oneSemanticRoot }))
-        .rejects.toThrow(/conceptual obligation traversal reached its 128-entity bound before resolving requirement:chain-128/iu);
+      const compiled = await compileRepositoryChange({ repositoryRoot: root, request: "Implement greeting.", proposal: oneSemanticRoot });
+      expect(compiled.intentReview.relatedObligations).toHaveLength(129);
+      expect(compiled.intentReview.relatedObligations.map(({ id }) => id)).toContain("requirement:chain-128");
+      expect(compiled.intentReview.blockingUnknowns).toEqual([]);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
