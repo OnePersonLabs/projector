@@ -23,6 +23,26 @@ const stateBinding: StateBinding = {
 };
 
 describe("WriterLeaseManager", () => {
+  it("generation reservations share the lifecycle writer lease without supplying a global state digest", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-generation-lease-")); const manager = await leaseManager(root);
+    const generationId = "generated_11111111-1111-4111-8111-111111111111";
+    const reservation = { generationId, sessionId: generationId, processId: process.pid, requestHash: hash, writePaths: ["output.txt"] };
+    const generation = await manager.acquireGeneration(reservation);
+    expect(generation.record).toMatchObject({ version: 3, ownerKind: "generation", generationId });
+    expect("compiledAgainstSnapshot" in generation.record).toBe(false);
+    await generation.heartbeat(); await expect(manager.acquire(owner("lifecycle"))).rejects.toMatchObject({ code: "lease-held" });
+    await generation.release(); const lifecycle = await manager.acquire(owner("lifecycle"));
+    await expect(manager.acquireGeneration(reservation)).rejects.toMatchObject({ code: "lease-held" });
+    await lifecycle.release();
+  });
+  it("generation refuses authority aliases and unexpected reservation fields", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projector-generation-lease-")); const manager = await leaseManager(root);
+    const generationId = "generated_11111111-1111-4111-8111-111111111111";
+    const reservation = { generationId, sessionId: generationId, processId: process.pid, requestHash: hash, writePaths: ["output.txt"] };
+    for (const path of [".projector/config.toml", ".PROJECTOR/model/x", ".GIT/config", "../escape"]) await expect(manager.acquireGeneration({ ...reservation, writePaths: [path] })).rejects.toThrow();
+    await expect(manager.acquireGeneration({ ...reservation, leaseId: "forged" } as typeof reservation)).rejects.toThrow(/unexpected keys/u);
+    const lease = await manager.acquireGeneration(reservation); await lease.release();
+  });
   it("allows at most one writer and permits acquisition after explicit release", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-lease-"));
     const manager = await leaseManager(root);

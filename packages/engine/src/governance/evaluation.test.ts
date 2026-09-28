@@ -20,14 +20,22 @@ function evaluate(predicates: NormalizedPredicate[], observed = observation(), v
 const forbidden: NormalizedPredicate = { kind: "dependency-forbidden", from: path("packages/core/**"), to: path("packages/engine/**") };
 
 describe("observed predicate evaluation", () => {
-  it("prepares the full observation once for many bundles and preserves the original observation hash", () => {
+  it("retains local rule evidence when unrelated repository subjects change", () => {
+    const first = evaluate([forbidden]);
+    const unrelated = observation({ subjects: [...observation().subjects, subject("unrelated", "docs/guide.md")] });
+    expect(evaluate([forbidden], unrelated)).toEqual(first);
+    expect(evaluate([forbidden], observation({ dependencies: [{ fromUnitId: "core", toSubjectId: "engine", specifier: "engine", evidenceIds: ["edge"] }] })).observationHash).not.toBe(first.observationHash);
+  });
+
+  it("prepares the source indexes once and binds each evaluation to its scoped inputs", () => {
     const observed = observation();
     let subjectReads = 0;
     const input = { ...observed, get subjects() { subjectReads += 1; return observed.subjects; } };
     const prepared = prepareGovernanceEvaluator(input);
-    const expectedHash = hashFramedDomain("governance-observation", {
-      ...observed,
-      subjects: [...observed.subjects].sort((a, b) => a.id < b.id ? -1 : 1),
+    const expectedHash = hashFramedDomain("governance-observation/v2", {
+      subject: observed.subjects[0], enumeration: observed.dependencyEnumerations[0],
+      outgoing: [], targets: [], unitEnumeration: observed.unitEnumeration,
+      populations: [], validatorFindings: [],
     });
     for (let index = 0; index < 32; index += 1) {
       const bundle = compileEffectiveRuleBundle({ unit: projectionUnit("core"), operation: "reconcile", rules: [rule(`rule-${index}`, { selector: all, predicates: [forbidden] })] });
@@ -49,8 +57,10 @@ describe("observed predicate evaluation", () => {
     const prepared = prepareGovernanceEvaluator(observed, [finding, otherFinding]);
     const first = prepared(bundle);
     expect(first.status).toBe("conformant");
-    expect(first.observationHash).toBe(hashFramedDomain("governance-observation", {
-      ...observed, subjects: [...subjects].sort((a, b) => a.id < b.id ? -1 : 1), validatorFindings: [finding],
+    expect(first.observationHash).toBe(hashFramedDomain("governance-observation/v2", {
+      subject: observed.subjects[0], enumeration: observed.dependencyEnumerations[0],
+      outgoing: [], targets: [], unitEnumeration: observed.unitEnumeration,
+      populations: [], validatorFindings: [finding],
     }));
     subjects[0]!.values.path = "outside/value.ts";
     contract.assumptions.push("Changed after preparation.");

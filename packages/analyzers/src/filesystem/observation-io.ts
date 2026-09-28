@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { ObservationBudget, ObservationError } from "@projector/core";
 
 export function observationFailure(error: unknown, stage: string, scope = "."): ObservationError {
@@ -67,7 +67,7 @@ function environment(): NodeJS.ProcessEnv {
   for (const key of ["PATH", "PATHEXT", "SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR"]) {
     if (process.env[key] !== undefined) result[key] = process.env[key];
   }
-  return { ...result, LANG: "C", LC_ALL: "C", GIT_CONFIG_NOSYSTEM: "1",
+  return { ...result, LANG: "C", LC_ALL: "C", GIT_CONFIG_NOSYSTEM: "1", GIT_ATTR_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_OPTIONAL_LOCKS: "0" };
 }
 export class GitCommandError extends ObservationError {
@@ -78,6 +78,7 @@ export class GitCommandError extends ObservationError {
 
 /** Collectors use bounded, owned concurrency; every active child is drained before rejection. */
 export interface GitObservationOptions {
+  readonly executable?: string;
   readonly signal?: AbortSignal; readonly stage?: string; readonly input?: string; readonly allowedExitCodes?: readonly number[];
 }
 export async function observationGit(root: string, args: readonly string[], budget: ObservationBudget, options: GitObservationOptions = {}): Promise<string> {
@@ -90,8 +91,9 @@ export async function observationGitBytes(root: string, args: readonly string[],
 async function observationGitResult<T>(root: string, args: readonly string[], budget: ObservationBudget, options: GitObservationOptions, result: (output: Buffer) => T): Promise<T> {
   const stage = options.stage ?? "git-facts";
   checkObservation(budget, options.signal, stage);
+  if (options.executable !== undefined && !isAbsolute(options.executable)) throw new Error("Host-selected Git executable must be absolute");
   return new Promise<T>((resolve, reject) => {
-    const child = spawn("git", ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c",
+    const child = spawn(options.executable ?? "git", ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c",
       `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`, ...args],
     { cwd: root, env: environment(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
     const stdout: Buffer[] = [], stderr: Buffer[] = [];

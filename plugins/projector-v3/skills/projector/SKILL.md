@@ -6,7 +6,10 @@ disable-model-invocation: false
 
 # Projector
 
-Use `node <plugin>/scripts/projector.mjs` as `projector` below. Resolve `<plugin>` from this skill's directory. The command requires Node 24 or later and works without a repository package-manager command. Use `--root <absolute repository>` when the target differs from the current directory.
+Use `node <plugin>/scripts/projector.mjs` as `projector` below. Resolve
+`<plugin>` from the skill directory. The command requires Node 24 or later. It
+works without a repository package-manager command. Use `--root <absolute
+repository>` when the target differs from the current directory.
 
 ## Everyday work
 
@@ -26,8 +29,50 @@ For an interrupted controlled write, inspect its actual approval and use `projec
 
 ## Inspect when necessary
 
-An observation deadline is a configurable resource budget. On a timeout, inspect the reported stage and retained evidence. Fix an obvious recurring inefficiency when the expected saving warrants the implementation and verification time; do not turn the default deadline into an open-ended optimization task. If legitimate repository work needs longer, retry with a bounded `--timeout-ms` value and state why. For example, `projector audit --timeout-ms 120000` allows two minutes per operation. Keep coverage, unknowns and authority checks intact. A timeout does not establish conformance or authorize a mutation. Before retrying a possibly interrupted write, inspect its actual change or approval ID and use explicit recovery when required.
+An observation deadline is a configurable resource budget. On a timeout, inspect
+the reported stage and retained evidence. Fix an obvious recurring inefficiency
+when expected savings warrant its implementation and verification. Do not turn
+the default deadline into an open-ended optimization task. If legitimate
+repository work needs more time, retry with a bounded `--timeout-ms` value and
+state why. For example, `projector audit --timeout-ms 120000` allows two minutes
+per operation. Keep coverage, unknowns and authority checks intact. A timeout
+does not establish conformance or authorize a mutation. Before retrying a write
+that may have stopped, inspect its actual change or approval ID. Use explicit
+recovery when required.
 
 Run `projector audit --scope <path> --context <context ID>` to inspect unresolved accepted work. Omit `--context` when no retained context applies. Read evidence availability, repair recommendations and omitted question counts. A current audit observation does not make a stale retained context current. Audit does not edit source or accepted meaning or execute repairs; existing services may create runtime observation artifacts. Implement existing meaning with ordinary Codex tools, obtain missing evidence, or use `$projector-change` when accepted meaning must change. An advertised transform is usable only when the report establishes its executable binding.
 
-`projector inspect <ID>` exposes exact metadata, provenance, hashes and recovery detail. `--json` gives machine results for a command. Read [operation-contract.md](../../references/operation-contract.md) only for a custom integration or a lifecycle detail the short command does not expose. Use `$projector-review` for a consequential candidate review and `$projector-assimilate` for source synthesis that is not yet accepted meaning.
+`projector inspect <ID>` exposes exact metadata, provenance, hashes and recovery
+detail. `--json` gives machine results for a command. Read
+[operation-contract.md](../../references/operation-contract.md) only for a
+custom integration or a lifecycle detail the short command does not expose. Use
+`$projector-review` for a consequential change review and `$projector-assimilate`
+for source synthesis that is not yet accepted meaning.
+
+For a concrete question, start with context: what behavior exists, why it exists,
+what governs it, what depends on it, or which evidence is missing. Read the
+selection reasons and unresolved frontiers beside the selected records. Follow
+the displayed exact-record or retained-evidence route when the compact view
+omits detail. A focused expansion observes current state; it does not overwrite
+the earlier context. Use `context --full` when the full current result is needed.
+
+Use `$projector-verify` to choose checks and maintain their protection. For a
+native process check, use `verify check.json`; inspect history with
+`verify --inspect [EVENT]` and recover complete pending evidence with
+`verify --recover`. For generated files, use `generate generation.json`, inspect
+with `generate --inspect producers.json`, and recover with
+`generate --recover producers.json`. These operations need no candidate ID.
+Read [verification and generation contracts](../../references/operation-contract.md#native-verification-and-generation)
+for strict request schemas, complete-input limits and recovery behavior.
+
+For branch or incoming-change integration, run `projector integration --target
+REF --incoming REF` against the actual contributions. Use `--result REF` for an
+available ordinary or provider merge result. Read altered/lost contributions and
+the remaining verification gaps; a completed assessment is not a passing merge
+gate. Read [the integration contract](../../references/operation-contract.md#acceptance-and-recovery)
+when selecting the base or interpreting calculation limits. Continue through
+ordinary Git and the applicable review and verification gates.
+`evaluate options.json` exposes concern-scoped option and preference reasoning
+without accepting a decision. For interrupted representation publication,
+inspect with `inspect --representations` before explicit
+`recover --representations`. An uncaptured change remains uncaptured.

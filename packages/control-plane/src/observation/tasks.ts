@@ -21,15 +21,20 @@ export interface ObservationTaskFailure {
   readonly observed?: number;
 }
 import type { CalculatedRepositoryRelevance, RepositoryRelevanceObservation } from "../change-lifecycle/query-programs.js";
+import type { IndexedObservationDescriptor } from "./indexed-types.js";
 
 export type RepositoryObservationData = Omit<ChangeRepositoryObservation, "independentValidator">;
 export interface ObservationTaskInputs {
+  "indexed-knowledge-context": { descriptor: IndexedObservationDescriptor; request: Omit<KnowledgeContextRequest, "signal">; now: string; acceptedDecisionBaselines?: readonly KnowledgeDecisionBaseline[] };
+  "indexed-knowledge-reconcile": { descriptor: IndexedObservationDescriptor; retained: KnowledgeContextResult; now: string; acceptedDecisionBaselines?: readonly KnowledgeDecisionBaseline[] };
+  "indexed-graph-query": { descriptor: IndexedObservationDescriptor; query: StateQuerySpec; context: Omit<AdapterContext, "signal"> };
   "change-relevance": { observation: RepositoryRelevanceObservation; editedPaths: readonly string[] };
   "change-query": { observation: RepositoryObservationData; now: string; query: StateQuerySpec; context: Omit<AdapterContext, "signal"> };
   "cache-protection": { repositoryRoot: string; sources: Record<string, string>; deadline: number; maxSourceBytes?: number };
   "authenticate-impact": { source: string; reference: RepositoryImpactReference };
   "prepare-impact": { observation: RepositoryObservationData; editedPaths: readonly string[]; canonicalChanges: readonly { id: string; kind: string }[]; affectedUnitIds: readonly string[] };
   "analyze-collected": { collected: CollectedLocalRepositoryInputs };
+  "analyze-incremental": { collected:CollectedLocalRepositoryInputs; context?:Parameters<typeof import("@projector/analyzers").analyzeCollectedLocalRepository>[2] };
   coverage: { observation: RepositoryObservationData; request: RepositoryCoverageRequest; mode: RepositoryCoverageMode; now: string };
   architecture: { observation: RepositoryObservationData; now: string };
   "hash-content": { content: string };
@@ -44,12 +49,16 @@ export interface ObservationTaskInputs {
   "reconcile-impact": { before: RepositoryImpactSnapshot; after: RepositoryImpactSnapshot; predictedUnitIds: readonly string[]; planId: string; predictedPaths?: readonly string[]; hasPrediction?: boolean };
 }
 export interface ObservationTaskResults {
+  "indexed-knowledge-context": { result: KnowledgeContextResult; writes: DerivedCacheWrite[] };
+  "indexed-knowledge-reconcile": KnowledgeReconciliationResult;
+  "indexed-graph-query": StateQueryResultFingerprint;
   "change-relevance": CalculatedRepositoryRelevance;
   "change-query": StateQueryResultFingerprint;
   "cache-protection": string[];
   "authenticate-impact": RepositoryImpactSnapshot;
   "prepare-impact": { baseline: RepositoryImpactSnapshot; prediction: RepositoryImpactReport; governanceMemberships: { lensId: string; unitId: string; path: string }[] };
   "analyze-collected": LocalRepositoryAnalysis;
+  "analyze-incremental": LocalRepositoryAnalysis;
   coverage: RepositoryCoverageResult;
   architecture: Awaited<ReturnType<typeof computeRepositoryArchitecture>>;
   "hash-content": ContentHash;

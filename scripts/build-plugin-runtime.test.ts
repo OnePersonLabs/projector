@@ -49,7 +49,8 @@ describe("standalone plugin assembly", () => {
     expect(result.nodeRuntime).toEqual({ executable: "node", resolution: "host-path" });
     expect(await readdir(join(plugin, "runtime"))).toEqual(["projector"]);
     expect(JSON.parse(await readFile(join(plugin, "runtime/projector/package.json"), "utf8"))).toMatchObject({ name: "@onepersonlabs/projector", version: releaseVersion });
-    await expect(access(join(plugin, "runtime/projector/node_modules"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(JSON.parse(await readFile(join(plugin, "runtime/projector/node_modules/typescript/package.json"), "utf8"))).toMatchObject({name:"typescript",version:"5.9.3"});
+    expect(await readFile(join(plugin, "runtime/projector/node_modules/typescript/lib/typescript.js"), "utf8")).toBe(await readFile(resolve("node_modules/typescript/lib/typescript.js"),"utf8"));
     expect(await readFile(join(plugin, "runtime/projector/assets/windows-job-supervisor.ps1"), "utf8")).toContain("param");
     expect(JSON.parse(await readFile(join(plugin, "runtime/projector/licenses/third-party.json"), "utf8"))).toContainEqual(expect.objectContaining({ name: "zod" }));
     await access(join(plugin, "runtime/projector/licenses/zod/LICENSE"));
@@ -67,6 +68,8 @@ describe("standalone plugin assembly", () => {
     const repository = join(root, "ordinary repository");
     await mkdir(repository);
     await execute("git", ["init", "--quiet"], { cwd: repository });
+    await mkdir(join(repository,"src"));
+    await writeFile(join(repository,"src/typed.ts"),"export interface Contract { value: number }\nexport const typed: Contract = { value: 1 };\n");
     const env = { ...process.env, NODE_PATH: "" };
     const request = {
       apiVersion: "projector.operation/v1",
@@ -101,7 +104,7 @@ describe("standalone plugin assembly", () => {
     const statusScript = "import { createBundledProjectorOperationRunner } from './runtime/projector/exports/operations.js'; const runner = await createBundledProjectorOperationRunner({ packagedRoot: './runtime/projector' }); console.log(JSON.stringify(await runner.execute(JSON.parse(process.argv[1]))));";
     const status = await execute("node", ["--input-type=module", "-e", statusScript, JSON.stringify({ ...request, operation: "status", requestId: "installed-status" })], { cwd: plugin, env, encoding: "utf8" });
     expect(JSON.parse(status.stdout)).toMatchObject({ operation: "status", readiness: { status: "ready" } });
-    const context = await execute("node", [join(plugin, "scripts/projector.mjs"), "context", "Inspect the ordinary repository", "--json"], { cwd: repository, env, encoding: "utf8" });
+    const context = await execute("node", [join(plugin, "scripts/projector.mjs"), "context", "Inspect the ordinary repository", "--target","src/typed.ts", "--json"], { cwd: repository, env, encoding: "utf8" });
     expect(JSON.parse(context.stdout)).toHaveProperty("contentHash");
     const check = await execute("node", [join(plugin, "scripts/projector.mjs"), "check", "--json"], { cwd: repository, env, encoding: "utf8" });
     expect(JSON.parse(check.stdout)).toHaveProperty("repository");

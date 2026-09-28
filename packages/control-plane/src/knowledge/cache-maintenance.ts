@@ -30,7 +30,8 @@ export async function maintainDerivedCache(root: string, options: DerivedCacheMa
   const result = await tryWithProjectExclusiveAccess(root, "derived-cache-maintenance", async (access) => {
     const budget = options.budget ?? { deadline: Date.now() + 5_000, remainingEntries: 10_000, remainingBytes: (currentObservationScope()?.limits ?? DEFAULT_OBSERVATION_LIMITS).maxDerivedBytes };
     return withObservationScope({ signal: access.signal, limits: { timeoutMs: Math.max(1, budget.deadline - Date.now()) } }, async () => withDerivedCacheAdmission(root, async (cache): Promise<DerivedCacheMaintenanceResult> => {
-      if (cache.totalBytes <= target && cache.entries.every(({ kind }) => kind !== "staging")) return { status: "unchanged", removedEntries: 0, retainedBytes: cache.totalBytes };
+      const disposableBytes = (): number => cache.entries.reduce((bytes, entry) => bytes + entry.bytes, 0);
+      if (disposableBytes() <= target && cache.entries.every(({ kind }) => kind !== "staging")) return { status: "unchanged", removedEntries: 0, retainedBytes: disposableBytes() };
       const protectedIds = new Set([...await readProtectedKnowledgeContextIds(root, budget, access.signal), ...preservedIds]);
       const store = await KnowledgeContextStore.create(root);
       const contextDependencies = new Map<string, string>();
@@ -61,6 +62,8 @@ export async function maintainDerivedCache(root: string, options: DerivedCacheMa
       }
       let remainingPayloadBytes = DERIVED_CACHE_MAX_BYTES;
       for (const entry of [...retained.values()]) {
+        budget.remainingBytes -= entry.bytes;
+        checkDerivedCacheBudget(budget);
         remainingPayloadBytes -= entry.bytes;
         if (remainingPayloadBytes < 0) throw new Error("Protected or selected cache payloads exceed the 256 MiB inspection bound; narrow the retention target or finish protected operations before retrying");
         checkDerivedCacheBudget(budget);
@@ -95,6 +98,8 @@ export async function maintainDerivedCache(root: string, options: DerivedCacheMa
       }
       for (const entry of retained.values()) {
         if (entry.kind !== "impact") continue;
+        budget.remainingBytes -= entry.bytes;
+        checkDerivedCacheBudget(budget);
         remainingPayloadBytes -= entry.bytes;
         if (remainingPayloadBytes < 0) throw new Error("Retained cache proof exceeds the 256 MiB inspection bound; narrow the retention target before retrying");
         checkDerivedCacheBudget(budget);
@@ -110,7 +115,7 @@ export async function maintainDerivedCache(root: string, options: DerivedCacheMa
         checkDerivedCacheBudget(budget);
         await cache.remove(entry);
       }
-      return { status: selected.length === 0 ? "unchanged" : "collected", removedEntries: selected.length, retainedBytes: cache.totalBytes };
+      return { status: selected.length === 0 ? "unchanged" : "collected", removedEntries: selected.length, retainedBytes: disposableBytes() };
     }, { signal: access.signal, budget }));
   }, options.signal);
   return result.acquired ? result.value : { status: "busy", removedEntries: 0 };

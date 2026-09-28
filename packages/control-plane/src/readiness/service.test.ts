@@ -179,7 +179,7 @@ describe("project readiness metadata inspection", () => {
     expect(await readdir(join(root, ".projector", "runtime", "operation-access", "holders"))).toEqual([]);
   });
 
-  test("collects interrupted disposable staging before a context operation acquires shared access", async () => {
+  test("preserves historical local staging when a context operation uses the external disposable cache", async () => {
     const root = await repository();
     const cache = join(root, ".projector", "runtime", "knowledge", "contexts");
     await mkdir(cache, { recursive: true });
@@ -187,7 +187,7 @@ describe("project readiness metadata inspection", () => {
     const stage = join(cache, `${"a".repeat(32)}.json.999999.abc.tmp`);
     await writeFile(stage, "interrupted disposable bytes");
     await withProjectOperationAccess(root, { operation: "context", package: packageIdentity }, async () => {
-      await expect(stat(stage)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(stage, "utf8")).toBe("interrupted disposable bytes");
     });
   });
 

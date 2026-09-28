@@ -2,7 +2,17 @@ import { parentPort } from "node:worker_threads";
 import { assertBoundedObservationData } from "./data-bound.js";
 import type { ObservationTask, ObservationTaskFailure } from "./tasks.js";
 import type { KnowledgeComputeHost, KnowledgeHostRequest } from "./knowledge-host.js";
-import { hashFramedDomain, ObservationError, DerivedObservationBudget } from "@projector/core";
+import { hashFramedDomain, ObservationError, ObservationBudget, DerivedObservationBudget } from "@projector/core";
+import type { IndexedObservationDescriptor, IndexedObservationMetadata } from "./indexed-types.js";
+
+function assertIndexedDescriptor(descriptor: IndexedObservationDescriptor, head: { generation: number; contract: string; metadata: unknown } | undefined): asserts head is { generation: number; contract: string; metadata: IndexedObservationMetadata } {
+  const metadata = head?.metadata as IndexedObservationMetadata | undefined;
+  if (head?.generation !== descriptor.generation || head.contract !== descriptor.contractHash
+    || metadata?.checkoutId !== descriptor.checkoutId || metadata.repositoryRoot !== descriptor.repositoryRoot
+    || hashFramedDomain("indexed-descriptor-state", metadata.state) !== hashFramedDomain("indexed-descriptor-state", descriptor.metadata.state)) {
+    throw new Error("Indexed observation descriptor no longer matches its completed generation; retry observation");
+  }
+}
 
 interface WorkerTaskRequest { task: ObservationTask; deadline: number; maxDerivedBytes: number }
 let deadline = 0;
@@ -43,10 +53,59 @@ const host: KnowledgeComputeHost = {
   applicationEvidence: (ownerIds) => hostRequest({ type: "application-evidence", ownerIds }),
   freshState: () => hostRequest({ type: "fresh-state" }),
   readImpact: (reference) => hostRequest({ type: "read-impact", reference }),
-  stageImpact: () => { /* Reconciliation does not publish a derived snapshot. */ },
 };
 async function execute(task: ObservationTask, derivedBudget: DerivedObservationBudget): Promise<unknown> {
   switch (task.type) {
+    case "indexed-knowledge-context":
+    case "indexed-knowledge-reconcile": {
+      const { SqliteObservationStore } = await import("@projector/runtime");
+      const { IndexedKnowledgeGraph } = await import("../knowledge/indexed-graph.js");
+      const { IndexedGovernance } = await import("../knowledge/indexed-governance.js");
+      const { RepositoryKnowledgeService } = await import("../knowledge/service.js");
+      return start(async () => {
+        const { descriptor } = task.input;
+        const budget = new ObservationBudget({ ...descriptor.metadata.analysisHeader.observationDescriptor.limits, timeoutMs: Math.max(1, deadline - Date.now()) });
+        const store = await SqliteObservationStore.open(descriptor.repositoryRoot, { budget });
+        try {
+          const head = store.head();
+          assertIndexedDescriptor(descriptor, head);
+          const decisionHost = { now: () => task.input.now, readDecisionBaseline: host.baseline, ...(task.input.acceptedDecisionBaselines === undefined ? {} : { acceptedDecisionBaselines: task.input.acceptedDecisionBaselines }) };
+          const graph = new IndexedKnowledgeGraph(descriptor, store, (registry) => new IndexedGovernance(descriptor, store, registry, decisionHost, derivedBudget), derivedBudget);
+          const failures = store.getAt<import("@projector/core").AnalyzerFailure[]>(descriptor.generation, "knowledge-global", "failures");
+          if (failures === undefined) throw new Error("Indexed analyzer failure population is missing; rebuild the complete observation");
+          const observation = { repositoryRoot: descriptor.repositoryRoot, state: descriptor.metadata.state, analysis: { ...descriptor.metadata.analysisHeader, failures } };
+          const result = task.type === "indexed-knowledge-context"
+            ? await RepositoryKnowledgeService.computeContext(task.input.request, observation, decisionHost, host, derivedBudget, graph)
+            : await RepositoryKnowledgeService.computeReconciliation(task.input.retained, observation, decisionHost, host, derivedBudget, graph);
+          store.verifyGeneration(descriptor.generation);
+          const delta = graph.memo.delta();
+          if ((delta.upserts?.length ?? 0) > 0) store.publish(descriptor.generation, head, delta, { retainGeneration: true, preserveMetadata: true });
+          return result;
+        } finally { store.close(); }
+      });
+    }
+    case "indexed-graph-query": {
+      const { SqliteObservationStore } = await import("@projector/runtime");
+      const { QueryDependencyRegistry } = await import("@projector/engine");
+      const { IndexedGraphReader } = await import("../knowledge/indexed-graph-reader.js");
+      const { IndexedQueryMemo } = await import("../knowledge/indexed-query.js");
+      return start(async () => {
+        const { descriptor } = task.input;
+        const budget = new ObservationBudget({ ...descriptor.metadata.analysisHeader.observationDescriptor.limits, timeoutMs: Math.max(1, deadline - Date.now()) });
+        const store = await SqliteObservationStore.open(descriptor.repositoryRoot, { budget });
+        try {
+          const head = store.head();
+          assertIndexedDescriptor(descriptor, head);
+          const memo = new IndexedQueryMemo(store, descriptor.generation);
+          const registry = new QueryDependencyRegistry(new IndexedGraphReader(store, descriptor.generation), true, memo);
+          const result = await registry.evaluate(task.input.query, { ...task.input.context, signal: new AbortController().signal });
+          store.verifyGeneration(descriptor.generation);
+          const delta = memo.delta();
+          if ((delta.upserts?.length ?? 0) > 0) store.publish(descriptor.generation, head, delta, { retainGeneration: true, preserveMetadata: true });
+          return result;
+        } finally { store.close(); }
+      });
+    }
     case "change-relevance": return start((await import("../change-lifecycle/query-programs.js")).calculateRepositoryRelevance, task.input.observation, task.input.editedPaths, derivedBudget);
     case "change-query": {
       const { createChangeQueryRegistry } = await import("../change-lifecycle/query-programs.js");
@@ -54,6 +113,7 @@ async function execute(task: ObservationTask, derivedBudget: DerivedObservationB
     }
     case "cache-protection": return start((await import("../knowledge/cache-protection.js")).authenticateCacheProtectionSources, task.input);
     case "analyze-collected": return start((await import("@projector/analyzers")).analyzeCollectedLocalRepository, task.input.collected, derivedBudget);
+    case "analyze-incremental": return start((await import("@projector/analyzers")).analyzeCollectedLocalRepository,task.input.collected,derivedBudget,task.input.context);
     case "authenticate-impact": return start((await import("../impact/service.js")).authenticateRepositoryImpactSource, task.input.source, task.input.reference);
     case "prepare-impact": {
       const { KnowledgeGraph } = await import("../knowledge/graph.js");

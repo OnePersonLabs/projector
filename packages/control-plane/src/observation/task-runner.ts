@@ -61,7 +61,7 @@ export async function runObservationTask<K extends keyof ObservationTaskInputs>(
   }
   options.signal?.throwIfAborted();
   // Collected input is separately bounded by source bytes; impact tasks consume derived data.
-  let transferLimit = type === "observe" || type === "canonical" || type === "analyze-collected" ? options.limits.maxTotalBytes * 8 : maxDerivedBytes;
+  let transferLimit = type === "observe" || type === "canonical" || type === "analyze-collected" || type === "analyze-incremental" ? options.limits.maxTotalBytes * 8 : maxDerivedBytes;
   if (type === "authenticate-context" || type === "authenticate-impact") {
     const source = (input as ObservationTaskInputs["authenticate-context"]).source;
     const sourceBytes = Buffer.byteLength(source);

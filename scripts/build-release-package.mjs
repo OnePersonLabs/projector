@@ -13,7 +13,7 @@ export { releasePackageName, releaseVersion };
 const internalPackages = ["core", "analyzers", "engine", "runtime", "integrations", "control-plane"];
 const bundledNames = internalPackages.map((name) => `@projector/${name}`);
 const exportTargets = { "./commands": "public-command", "./operations": "operation-runner", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./integrations/models": "integrations/models", "./integrations/codex": "integrations/codex", "./control-plane": "control-plane" };
-const operationRuntimeModules = ["operation-runner", "operational-verification", "public-command"];
+const operationRuntimeModules = ["operation-runner", "operational-verification", "public-command", "application-evidence-host"];
 
 export async function buildReleasePackage(stagingRoot, packDestination, options = {}) {
   options.signal?.throwIfAborted();
@@ -59,7 +59,7 @@ export async function buildReleasePackage(stagingRoot, packDestination, options 
     'try {',
     ' const packagedRoot = fileURLToPath(new URL("..", import.meta.url));',
     ' const runner = await createBundledProjectorOperationRunner({ packagedRoot });',
-    ' const result = await runPublicCommand(process.argv.slice(2), { runner, cwd: process.cwd() });',
+    ' const result = await runPublicCommand(process.argv.slice(2), { runner: { execute: (request) => runner.execute(request, { environment: process.env }) }, cwd: process.cwd() });',
     ' process.stdout.write(result.text); process.exitCode = result.exitCode;',
     '} catch (error) { process.stderr.write(String(error.message ?? error) + "\\n"); process.exitCode = 2; }',
   ].join("\n") + "\n");

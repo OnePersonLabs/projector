@@ -6,6 +6,7 @@ import {
   ContentHashSchema,
   StateBindingSchema,
   StateDigestSchema,
+  PortableRelativePathSchema,
   type ContentHash,
   type StateBinding,
   type StateDigest,
@@ -44,6 +45,25 @@ export interface WriterLeaseRecord extends WriterLeaseOwner {
   compiledAgainstSnapshot: StateDigest;
 }
 
+/** Reserves preparation and writes; the local generation intent supplies the observed scoped basis. */
+export interface GenerationWriterLeaseOwner {
+  sessionId: string;
+  processId: number | string;
+  generationId: string;
+  requestHash: ContentHash;
+  writePaths: string[];
+}
+
+export interface GenerationWriterLeaseRecord extends GenerationWriterLeaseOwner {
+  version: 3;
+  ownerKind: "generation";
+  leaseId: string;
+  acquiredAt: string;
+  heartbeatAt: string;
+  expiresAt: string;
+  staleAfterMs: number;
+}
+
 export interface MigrationRecoveryWriterLeaseOwner {
   sessionId: string;
   processId: number | string;
@@ -64,7 +84,7 @@ export interface MigrationRecoveryWriterLeaseRecord extends MigrationRecoveryWri
   staleAfterMs: number;
 }
 
-type ActiveWriterLeaseRecord = WriterLeaseRecord | MigrationRecoveryWriterLeaseRecord;
+type ActiveWriterLeaseRecord = WriterLeaseRecord | MigrationRecoveryWriterLeaseRecord | GenerationWriterLeaseRecord;
 type WriterLeasePersistenceFields = Pick<
   ActiveWriterLeaseRecord,
   "leaseId" | "acquiredAt" | "heartbeatAt" | "expiresAt" | "staleAfterMs"
@@ -128,6 +148,20 @@ export class MigrationRecoveryWriterLeaseHandle {
   }
 }
 
+export class GenerationWriterLeaseHandle {
+  private released = false;
+  constructor(private readonly manager: WriterLeaseManager, readonly record: GenerationWriterLeaseRecord) {}
+  async heartbeat(): Promise<void> {
+    if (this.released) throw lostLease(this.record.leaseId);
+    await this.manager.heartbeat(this.record.leaseId);
+  }
+  async release(): Promise<void> {
+    if (this.released) throw lostLease(this.record.leaseId);
+    await this.manager.release(this.record.leaseId);
+    this.released = true;
+  }
+}
+
 export class WriterLeaseManager {
   private readonly staleAfterMs: number;
   private readonly now: () => Date;
@@ -155,6 +189,21 @@ export class WriterLeaseManager {
     }));
     if (record.version !== 1) throw new Error("Internal writer lease kind mismatch");
     return new WriterLeaseHandle(this, record);
+  }
+
+  async acquireGeneration(owner: GenerationWriterLeaseOwner): Promise<GenerationWriterLeaseHandle> {
+    assertOwnerIdentity(owner);
+    assertExactKeys(owner as unknown as Record<string, unknown>, ["generationId", "processId", "requestHash", "sessionId", "writePaths"]);
+    ContentHashSchema.parse(owner.requestHash);
+    if (!/^generated_[0-9a-f-]{36}$/u.test(owner.generationId) || owner.sessionId !== owner.generationId) throw new TypeError("Invalid generation lease identity");
+    if (owner.writePaths.length === 0 || owner.writePaths.length > 10000 || new Set(owner.writePaths).size !== owner.writePaths.length) throw new TypeError("Generation lease requires unique declared write paths");
+    for (const path of owner.writePaths) {
+      const reserved = path.toLowerCase();
+      if (this.paths.canonicalize(path) !== path || path === "." || reserved === ".git" || reserved.startsWith(".git/") || reserved === ".projector" || reserved.startsWith(".projector/")) throw new TypeError(`Invalid generation write scope: ${path}`);
+    }
+    const record = await this.acquireRecord(base => ({ ...base, ...owner, writePaths: [...owner.writePaths], version: 3, ownerKind: "generation" }));
+    if (record.version !== 3) throw new Error("Internal generation writer lease kind mismatch");
+    return new GenerationWriterLeaseHandle(this, record);
   }
 
   async acquireMigrationRecovery(owner: MigrationRecoveryWriterLeaseOwner): Promise<MigrationRecoveryWriterLeaseHandle> {
@@ -353,6 +402,10 @@ function isLeaseRecord(value: unknown): value is ActiveWriterLeaseRecord {
     typeof candidate.migrationId === "string" && /^[a-z0-9][a-z0-9._:-]{0,511}$/u.test(candidate.migrationId) &&
     ContentHashSchema.safeParse(candidate.manifestHash).success && ContentHashSchema.safeParse(candidate.targetSnapshotHash).success &&
     ContentHashSchema.safeParse(candidate.backupManifestHash).success;
+  if (candidate.version === 3) return candidate.ownerKind === "generation" &&
+    typeof candidate.generationId === "string" && /^generated_[0-9a-f-]{36}$/u.test(candidate.generationId) && candidate.sessionId === candidate.generationId &&
+    ContentHashSchema.safeParse(candidate.requestHash).success && Array.isArray(candidate.writePaths) && candidate.writePaths.length > 0 && candidate.writePaths.length <= 10000 &&
+    new Set(candidate.writePaths).size === candidate.writePaths.length && candidate.writePaths.every(path => typeof path === "string" && PortableRelativePathSchema.safeParse(path).success && path !== "." && ![".git", ".projector"].some(reserved => path.toLowerCase() === reserved || path.toLowerCase().startsWith(`${reserved}/`)));
   return false;
 }
 
@@ -368,7 +421,7 @@ function assertOwnerIdentity(owner: { sessionId: string; processId: number | str
 function assertExactKeys(value: Record<string, unknown>, expected: readonly string[]): void {
   const actual = Object.keys(value).sort();
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
-    throw new TypeError("Migration recovery lease owner contains unexpected keys or missing fields");
+    throw new TypeError("Writer lease owner contains unexpected keys or missing fields");
   }
 }
 

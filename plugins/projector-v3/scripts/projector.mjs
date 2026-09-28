@@ -9,7 +9,7 @@ try {
   const { createBundledProjectorOperationRunner } = await import(pathToFileURL(resolve(packagedRoot, "exports/operations.js")).href);
   const { runPublicCommand } = await import(pathToFileURL(resolve(packagedRoot, "exports/commands.js")).href);
   const runner = await createBundledProjectorOperationRunner({ packagedRoot });
-  const result = await runPublicCommand(process.argv.slice(2), { runner, cwd: process.cwd() });
+  const result = await runPublicCommand(process.argv.slice(2), { runner: { execute: (request) => runner.execute(request, { environment: process.env }) }, cwd: process.cwd() });
   process.stdout.write(result.text);
   process.exitCode = result.exitCode;
 } catch (error) {

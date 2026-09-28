@@ -13,13 +13,21 @@ export interface InventoryEntry {
 export interface InventoryResult {
   readonly entries: InventoryEntry[]; readonly failures: AnalyzerFailure[];
   readonly rootAvailability: "available" | "unavailable";
+  /** Exact directory admission population, including inspected ignored candidates. */
+  readonly directories?: readonly string[];
   readonly observationDescriptor: ObservationDescriptor;
   readonly enumeration: {
-    readonly method: "git-index-and-nonignored-untracked" | "recursive-filesystem-fallback";
+    readonly method: "git-index-and-nonignored-untracked" | "recursive-filesystem-fallback" | "git-immutable-tree";
     readonly assumptions: readonly string[]; readonly blindSpots: readonly string[];
   };
 }
-export interface InventoryOptions { readonly observationLimits?: Partial<ObservationLimits>; readonly budget?: ObservationBudget; readonly signal?: AbortSignal; }
+export interface InventoryByteReuse {
+  readonly baseline: InventoryResult;
+  readonly changedPaths: readonly string[];
+  readonly uncoveredPrefixes: readonly string[];
+}
+export interface InventoryOptions { readonly observationLimits?: Partial<ObservationLimits>; readonly budget?: ObservationBudget; readonly signal?: AbortSignal; readonly byteReuse?: InventoryByteReuse; }
+const inventoryBytes = new WeakMap<InventoryResult, { root: string; entries: ReadonlyMap<string, { entry: InventoryEntry; size: number }> }>();
 const excludedPrefixes = [".git", ".worktrees", ".projector/runtime"] as const;
 const fallbackDirectories = new Set([".git", ".worktrees", "node_modules"]);
 function repositoryPath(root: string, absolute: string): string { return relative(root, absolute).split(sep).join("/"); }
@@ -28,12 +36,31 @@ function mediaType(path: string): string {
   if (path.endsWith(".json")) return "application/json";
   if (/\.ya?ml$/u.test(path)) return "application/yaml";
   if (path.endsWith(".toml")) return "application/toml";
-  if (/\.(?:mjs|js)$/u.test(path)) return "text/javascript";
-  if (/\.(?:mts|ts)$/u.test(path)) return "text/typescript";
+  if (/\.(?:mjs|cjs|js|jsx)$/u.test(path)) return "text/javascript";
+  if (/\.(?:mts|cts|ts|tsx)$/u.test(path)) return "text/typescript";
   if (path.endsWith(".md")) return "text/markdown";
   return "application/octet-stream";
 }
 function missing(error: unknown): boolean { return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"; }
+/** Addressed leaf reads require a complete population delta from their caller. */
+export async function readInventoryEntry(repositoryRoot:string,path:string,budget:ObservationBudget,signal?:AbortSignal):Promise<InventoryEntry|undefined>{
+  const root=resolve(repositoryRoot);
+  checkObservation(budget,signal,"delta-file-read",path);
+  if(!path||isAbsolute(path)||path.includes("\\")||path.includes("\0")||path.split("/").some(part=>!part||part==="."||part===".."))throw new ObservationError("observation-failed","delta-file-read",path,"Invalid inventory delta path");
+  if(isExcludedInventoryPath(path))return undefined;
+  const absolute=resolve(root,...path.split("/"));
+  let stat;try{stat=await lstat(absolute);}catch(error){if(missing(error))return undefined;throw observationFailure(error,"delta-file-read",path);}
+  for(let parent=dirname(absolute);parent!==root;parent=dirname(parent))if((await lstat(parent)).isSymbolicLink())throw new ObservationError("observation-failed","symlink-parent",path,"Inventory delta traverses a symbolic-link parent");
+  if(!stat.isFile()&&!stat.isSymbolicLink())return undefined;
+  budget.consume("maxFiles",1,"delta-file-read",path);
+  if(stat.isSymbolicLink()){
+    const symlinkTarget=await readlink(absolute);const bytes=Buffer.byteLength(symlinkTarget);budget.assertFileBytes(bytes,path);budget.consume("maxTotalBytes",bytes,"delta-symlink-read",path);
+    return{path,kind:"symlink",mediaType:"inode/symlink",content:symlinkTarget,contentHash:hashFramedDomain("repository-artifact-content",symlinkTarget),generated:false,symlinkTarget};
+  }
+  const bytes=await readObservationFile(absolute,budget,path,signal),content=bytes.toString("utf8");
+  const generated=/(?:@generated|generated file|do not edit)/iu.test(content.slice(0,1024));
+  return{path,kind:"file",mediaType:mediaType(path),content,contentHash:hashFramedDomain("repository-artifact-content",bytes.toString("base64")),generated,...(generated?{generatedReason:"source-marker" as const}:{})};
+}
 async function confirmedNonGit(root: string, error: unknown): Promise<boolean> {
   if (!(error instanceof GitCommandError) || !/not a git repository/iu.test(error.stderr)) return false;
   for (let directory = root; ; directory = dirname(directory)) {
@@ -47,6 +74,16 @@ export async function inventoryRepository(repositoryRoot: string, options: Inven
   const root = resolve(repositoryRoot), budget = options.budget ?? new ObservationBudget(options.observationLimits);
   const signal = options.signal;
   const entries: InventoryEntry[] = [], ignoreSources: ObservationDescriptor["ignoreSources"] = [];
+  const capturedBytes = new Map<string, { entry: InventoryEntry; size: number }>();
+  const generation = options.byteReuse === undefined ? undefined : inventoryBytes.get(options.byteReuse.baseline);
+  const baseline = generation?.root === root ? generation.entries : undefined;
+  // The prior generation remains resident while new bytes are staged. Charge it
+  // once, including removed/dirty entries; unchanged reused bytes need no second allocation.
+  if (baseline !== undefined) for (const [path, cached] of baseline) {
+    checkObservation(budget, signal, "byte-reuse-admission", path);
+    budget.assertFileBytes(cached.size, path);
+    budget.consume("maxTotalBytes", cached.size, "byte-reuse-admission", path);
+  }
   const countedFiles = new Set<string>(), countedDirectories = new Set<string>();
   const countFile = (path: string): void => {
     if (!countedFiles.has(path)) { budget.consume("maxFiles", 1, "file-enumeration", path); countedFiles.add(path); }
@@ -83,11 +120,20 @@ export async function inventoryRepository(repositoryRoot: string, options: Inven
     }
     if (!stat.isFile() && !stat.isSymbolicLink()) return;
     countFile(path);
+    const cached = baseline?.get(path);
+    const reuse = options.byteReuse;
+    if (cached !== undefined && reuse !== undefined && cached.entry.kind === (stat.isSymbolicLink() ? "symlink" : "file") &&
+      !reuse.changedPaths.some((changed) => path === changed || path.startsWith(`${changed}/`)) &&
+      !reuse.uncoveredPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`) || path.split("/").includes(prefix))) {
+      budget.assertFileBytes(cached.size, path);
+      entries.push(cached.entry); capturedBytes.set(path, cached); return;
+    }
     if (stat.isSymbolicLink()) {
       const symlinkTarget = await readlink(absolute);
       const size = Buffer.byteLength(symlinkTarget); budget.assertFileBytes(size, path); budget.consume("maxTotalBytes", size, "symlink-read", path);
       entries.push({ path, kind: "symlink", mediaType: "inode/symlink", content: symlinkTarget,
         contentHash: hashFramedDomain("repository-artifact-content", symlinkTarget), generated: false, symlinkTarget });
+      capturedBytes.set(path, { entry: Object.freeze({ ...entries.at(-1)! }), size });
       return;
     }
     const bytes = await readObservationFile(absolute, budget, path, activeSignal), content = bytes.toString("utf8");
@@ -95,6 +141,7 @@ export async function inventoryRepository(repositoryRoot: string, options: Inven
     entries.push({ path, kind: "file", mediaType: mediaType(path), content,
       contentHash: hashFramedDomain("repository-artifact-content", bytes.toString("base64")), generated,
       ...(generated ? { generatedReason: "source-marker" as const } : {}) });
+    capturedBytes.set(path, { entry: Object.freeze({ ...entries.at(-1)! }), size: bytes.length });
   }
   // Streaming traversal sees ignored .gitignore files in otherwise active directories.
   // Git itself decides which directory rules apply.
@@ -150,10 +197,12 @@ export async function inventoryRepository(repositoryRoot: string, options: Inven
   } catch (error) { throw observationFailure(error, "inventory"); }
   entries.sort((a, b) => compareCodePoint(a.path, b.path));
   ignoreSources.sort((a, b) => compareCodePoint(a.path, b.path));
-  return { entries, failures: [], rootAvailability: "available",
+  const result: InventoryResult = { entries, failures: [], rootAvailability: "available",directories:[...countedDirectories].sort(compareCodePoint),
     observationDescriptor: { schemaVersion: "projector.observation/v1", observerVersion: "3.0.0", scope: ".", enumerationMethod: method,
       limits: budget.limits, ignoreSources, excludedPaths: [...excludedPrefixes, ...(method === "recursive-filesystem-fallback" ? ["**/node_modules"] : [])], globalGitConfig: "disabled" },
     enumeration: { method, assumptions: [method === "git-index-and-nonignored-untracked" ? "Git CLI can read repository ignore and index metadata" : "repository root is readable"],
       blindSpots: method === "git-index-and-nonignored-untracked" ? ["untracked Git-ignored files outside the repository inventory", "excluded .git, .worktrees, and .projector/runtime contents"]
         : ["confirmed non-Git repository; recursive bounded enumeration used", "excluded .git, .worktrees, node_modules, and .projector/runtime contents"] } };
+  inventoryBytes.set(result, { root, entries: capturedBytes });
+  return result;
 }

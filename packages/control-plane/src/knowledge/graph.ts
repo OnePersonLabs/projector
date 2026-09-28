@@ -41,7 +41,6 @@ import {
   compileEffectiveRuleBundle,
   compileProjectionLenses,
   prepareGovernanceEvaluator,
-  evaluateSelector,
   evaluateSelectorMembership,
   projectionUnitSelectorSubject,
   type ContextSource,
@@ -53,10 +52,12 @@ import {
   type ProjectionUnitSelectorFacts,
   type RelevanceDiscoveryEdge,
   type RelevanceDiscoveryPort,
+  type QueryMemoPort,
 } from "@projector/engine";
 
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
 import { KnowledgeDecisionRun, type KnowledgeDecisionHost } from "./governance.js";
+import { compileKnowledgeLensObligation } from "./lens-obligations.js";
 import type { KnowledgeValidatorRequest } from "./validators.js";
 import type {
   KnowledgeCandidateSignal,
@@ -68,9 +69,9 @@ import type {
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const unique = (values: readonly string[]): string[] => [...new Set(values)].sort(compare);
 const normalize = (value: string): string => value.normalize("NFKC").trim().toLocaleLowerCase("en-US");
-const tokens = (value: string): string[] => unique(normalize(value).split(/[^\p{L}\p{N}._:@/-]+/u).filter((item) => item.length > 1));
+export const tokens = (value: string): string[] => unique(normalize(value).split(/[^\p{L}\p{N}._:@/-]+/u).filter((item) => item.length > 1));
 
-interface SemanticEntity {
+export interface SemanticEntity {
   readonly id: string;
   readonly key: string;
   readonly kind: KnowledgeEntityKind;
@@ -83,12 +84,12 @@ interface SemanticEntity {
   readonly envelope: CanonicalDocumentEnvelope;
 }
 
-interface BoundQueryResult<T> {
+export interface BoundQueryResult<T> {
   readonly value: T;
   readonly dependency: StateQueryDependency;
 }
 
-const KNOWLEDGE_QUERY_PROGRAMS = Object.freeze({
+export const KNOWLEDGE_QUERY_PROGRAMS = Object.freeze({
   identity: "projector.knowledge.identity",
   relations: "projector.knowledge.relations",
   implementation: "projector.knowledge.implementation-binding",
@@ -103,7 +104,7 @@ function entityStatusAccepted(value: Concept | Requirement | BehavioralScenario)
   return value.status !== "candidate" && value.status !== "rejected";
 }
 
-function parseEntities(documents: readonly CanonicalDocumentEnvelope[]): SemanticEntity[] {
+export function parseEntities(documents: readonly CanonicalDocumentEnvelope[]): SemanticEntity[] {
   const result: SemanticEntity[] = [];
   for (const envelope of documents) {
     if (envelope.kind === "concept") {
@@ -132,7 +133,7 @@ function parseEntities(documents: readonly CanonicalDocumentEnvelope[]): Semanti
   return result.sort((left, right) => compare(left.id, right.id));
 }
 
-function scoreLexical(request: string, entity: SemanticEntity): number {
+export function scoreLexical(request: string, entity: SemanticEntity): number {
   const requestTokens = tokens(request);
   if (requestTokens.length === 0) return 0;
   const identityTokens = new Set(tokens([entity.key, ...entity.aliases].join(" ")));
@@ -143,7 +144,7 @@ function scoreLexical(request: string, entity: SemanticEntity): number {
   return Math.min(0.95, 0.2 + (0.5 * identityHits + 0.3 * allHits) / requestTokens.length);
 }
 
-function mergeCandidates(values: readonly KnowledgeInterpretationCandidate[]): KnowledgeInterpretationCandidate[] {
+export function mergeCandidates(values: readonly KnowledgeInterpretationCandidate[]): KnowledgeInterpretationCandidate[] {
   const byId = new Map<string, KnowledgeInterpretationCandidate>();
   for (const value of values) {
     const existing = byId.get(value.entityId);
@@ -159,7 +160,7 @@ function mergeCandidates(values: readonly KnowledgeInterpretationCandidate[]): K
   return [...byId.values()].sort((left, right) => Number(right.direct) - Number(left.direct) || right.score - left.score || compare(left.entityId, right.entityId));
 }
 
-function candidateFor(entity: SemanticEntity, signal: KnowledgeCandidateSignal, score: number, direct: boolean, continuityFromIds: readonly string[] = []): KnowledgeInterpretationCandidate {
+export function candidateFor(entity: SemanticEntity, signal: KnowledgeCandidateSignal, score: number, direct: boolean, continuityFromIds: readonly string[] = []): KnowledgeInterpretationCandidate {
   const explanation = signal === "lexical"
     ? "Lexical overlap retrieved this candidate; it is not proof of semantic identity."
     : signal === "lineage" || signal === "tombstone"
@@ -185,14 +186,18 @@ export class KnowledgeGraph implements ContextSourcePort {
 
   private readonly unitPath = new Map<string, string>();
   private readonly unitByPath = new Map<string, ProjectionUnit>();
+  private readonly unitById = new Map<string, ProjectionUnit>();
+  private readonly unitByIdentity = new Map<string, ProjectionUnit>();
+  private readonly fileByArtifact = new Map<string, ChangeRepositoryObservation["analysis"]["files"][number]>();
   private readonly selectorFactsByUnitId = new Map<string, ProjectionUnitSelectorFacts>();
   private readonly selectorSubjects: readonly ReturnType<typeof projectionUnitSelectorSubject>[];
   private readonly implementationBindingsBySubjectId = new Map<string, readonly Readonly<Record<string, unknown>>[]>();
+  private readonly directBindingsBySubjectId = new Map<string, Array<Record<string, unknown>>>();
   private readonly envelopeById = new Map<string, CanonicalDocumentEnvelope>();
   private readonly obligationBytesByLensId = new Map<string, number>();
   private readonly validatorBytes = new WeakMap<object, number>();
 
-  constructor(readonly observation: Omit<ChangeRepositoryObservation, "independentValidator">, decisionHost: KnowledgeDecisionHost = {}, readonly derivedBudget = new DerivedObservationBudget(observation.analysis.observationDescriptor.limits.maxDerivedBytes)) {
+  constructor(readonly observation: Omit<ChangeRepositoryObservation, "independentValidator">, decisionHost: KnowledgeDecisionHost = {}, readonly derivedBudget = new DerivedObservationBudget(observation.analysis.observationDescriptor.limits.maxDerivedBytes), memo?: QueryMemoPort, preparedLensCompilation?: { readonly compilation?: ProjectionLensCompilation; readonly unknown?: string }) {
     this.entities = parseEntities(observation.canonical.documents);
     this.entitiesById = new Map(this.entities.map((entity) => [entity.id, entity]));
     for (const envelope of observation.canonical.documents) this.envelopeById.set(envelope.id, envelope);
@@ -210,7 +215,15 @@ export class KnowledgeGraph implements ContextSourcePort {
     this.tombstones = observation.canonical.documents.filter(({ kind }) => kind === "tombstone").map(({ payload }) => TombstoneSchema.parse(payload) as Tombstone).sort((left, right) => compare(left.entityId, right.entityId));
     this.units = [...observation.analysis.projectionUnits].sort((left, right) => compare(left.id, right.id));
     const filesByArtifact = new Map(observation.analysis.files.map((file) => [file.artifactId, file]));
+    for (const [id, file] of filesByArtifact) this.fileByArtifact.set(id, file);
     for (const unit of this.units) {
+      this.unitById.set(unit.id, unit);
+      for (const address of [unit.id, unit.key]) if (!this.unitByIdentity.has(address)) this.unitByIdentity.set(address, unit);
+      for (const subjectId of new Set([...unit.conceptIds, ...unit.requirementIds, ...unit.scenarioIds])) {
+        const bindings = this.directBindingsBySubjectId.get(subjectId) ?? [];
+        bindings.push({ id: unit.id, reason: "typed projection-unit semantic binding" });
+        this.directBindingsBySubjectId.set(subjectId, bindings);
+      }
       const path = filesByArtifact.get(unit.artifactId)?.path;
       if (path !== undefined) {
         this.unitPath.set(unit.id, path);
@@ -229,7 +242,10 @@ export class KnowledgeGraph implements ContextSourcePort {
     this.selectorSubjects = this.units.map((unit) => projectionUnitSelectorSubject(unit, this.selectorFactsByUnitId.get(unit.id)));
     let compilation: ProjectionLensCompilation | undefined;
     let compilationUnknown: string | undefined;
-    try {
+    if (preparedLensCompilation !== undefined) {
+      compilation = preparedLensCompilation.compilation;
+      compilationUnknown = preparedLensCompilation.unknown;
+    } else try {
       compilation = compileProjectionLenses({ lenses: this.lenses, units: this.units, authorityRecords: this.authorities, selectorFactsByUnitId: this.selectorFactsByUnitId, derivedBudget });
     } catch (error) {
       if (error instanceof ObservationError) throw error;
@@ -244,7 +260,7 @@ export class KnowledgeGraph implements ContextSourcePort {
       projectionUnits: this.units,
       relations: this.relations,
     });
-    this.registry = new QueryDependencyRegistry(graph, false);
+    this.registry = new QueryDependencyRegistry(graph, false, memo);
     this.registerPrograms();
   }
 
@@ -300,7 +316,7 @@ export class KnowledgeGraph implements ContextSourcePort {
     const result: KnowledgeInterpretationCandidate[] = [];
     for (const target of unique(namedTargets)) {
       const normalized = target.replaceAll("\\", "/");
-      const unit = this.unitByPath.get(normalized) ?? this.units.find(({ id, key }) => id === target || key === target);
+      const unit = this.unitByPath.get(normalized) ?? this.unitByIdentity.get(target);
       if (unit === undefined) continue;
       result.push({
         entityId: unit.id,
@@ -317,8 +333,9 @@ export class KnowledgeGraph implements ContextSourcePort {
 
   async bindIdentity(request: string, addressed: readonly string[], namedTargets: readonly string[], context: AdapterContext): Promise<BoundQueryResult<KnowledgeInterpretationCandidate[]>> {
     const query = this.registry.createSpec({ id: `knowledge-identity:${hashFramedDomain("knowledge-identity-input", { request, addressed, namedTargets }).slice(-24)}`, programId: KNOWLEDGE_QUERY_PROGRAMS.identity, input: { request, addressed, namedTargets } });
-    const value = mergeCandidates([...this.search(request, addressed, Number.MAX_SAFE_INTEGER), ...this.resolveNamedTargets(namedTargets)]);
-    return { value, dependency: { query, priorResult: await this.registry.evaluate(query, context), role: "semantic identity candidates, accepted addresses, lineage, and tombstone continuity" } };
+    const evaluated = await this.registry.evaluateObserved(query, context);
+    const value = evaluated.observed.results.map(({ id: _id, ...candidate }) => candidate as unknown as KnowledgeInterpretationCandidate);
+    return { value, dependency: { query, priorResult: evaluated.fingerprint, role: "semantic identity candidates, accepted addresses, lineage, and tombstone continuity" } };
   }
 
   discovery(context: AdapterContext, collect: StateQueryDependency[]): RelevanceDiscoveryPort {
@@ -326,6 +343,10 @@ export class KnowledgeGraph implements ContextSourcePort {
   }
 
   async load(entityId: string): Promise<ContextSource | undefined> {
+    return this.loadSource(entityId);
+  }
+
+  loadSource(entityId: string): ContextSource | undefined {
     const entity = this.entitiesById.get(entityId);
     if (entity !== undefined) {
       const kind = entity.kind === "architecture-decision" ? "decision" : entity.kind === "projection-lens" || entity.kind === "architecture-concern" || entity.kind === "developer-preference" ? "other" : entity.kind;
@@ -344,7 +365,7 @@ export class KnowledgeGraph implements ContextSourcePort {
         summary: authority === undefined ? this.summary(entity) : `${this.summary(entity)} Authority rationale: ${authority.rationale}`,
       };
     }
-    const unit = this.units.find(({ id }) => id === entityId);
+    const unit = this.unitById.get(entityId);
     if (unit === undefined) return undefined;
     return { entityId, kind: "projection-unit", semanticHash: unit.semanticSignature.hash, full: canonicalJson(unit), summary: `${unit.role} ${this.unitPath.get(unit.id) ?? unit.key}` };
   }
@@ -352,7 +373,7 @@ export class KnowledgeGraph implements ContextSourcePort {
   valueDependency(entityId: string): StateValueDependencyRef | undefined {
     const entity = this.entitiesById.get(entityId);
     if (entity !== undefined) return { kind: entity.kind === "projection-lens" ? "canonical-governance" : "canonical-entity", id: entity.id, versionHash: entity.semanticHash, role: "knowledge semantic meaning" };
-    const unit = this.units.find(({ id }) => id === entityId);
+    const unit = this.unitById.get(entityId);
     return unit === undefined ? undefined : { kind: "projection-unit", id: unit.id, versionHash: unit.semanticSignature.hash, role: "knowledge observed semantic unit" };
   }
 
@@ -362,7 +383,7 @@ export class KnowledgeGraph implements ContextSourcePort {
       const sourceHash = this.sourceHash(id);
       if (sourceHash !== undefined) dependencies.push({ kind: "artifact", id: `knowledge-source:${id}`, versionHash: sourceHash, role: `exact source for knowledge ${id}` });
     }
-    for (const entity of this.entities.filter(({ id, kind }) => entityIds.includes(id) && (kind === "projection-lens" || kind === "architecture-decision"))) {
+    for (const entity of unique(entityIds).map((id) => this.entitiesById.get(id)).filter((entity): entity is SemanticEntity => entity !== undefined && (entity.kind === "projection-lens" || entity.kind === "architecture-decision"))) {
       const authority = this.referencedAuthority(entity);
       if (authority !== undefined) {
         dependencies.push({ kind: "canonical-governance", id: authority.id, versionHash: authority.semanticHash, role: `authority for knowledge ${entity.kind} ${entity.id}` });
@@ -374,8 +395,8 @@ export class KnowledgeGraph implements ContextSourcePort {
   }
 
   authorityUnknowns(entityIds: readonly string[]): string[] {
-    return this.entities
-      .filter(({ id, kind }) => entityIds.includes(id) && (kind === "projection-lens" || kind === "architecture-decision"))
+    return unique(entityIds).map((id) => this.entitiesById.get(id))
+      .filter((entity): entity is SemanticEntity => entity !== undefined && (entity.kind === "projection-lens" || entity.kind === "architecture-decision"))
       .filter((entity) => this.authorityFor(entity) === undefined)
       .map((entity) => `referenced authority for ${entity.kind} ${entity.id} is unavailable or does not govern its declared subject`)
       .sort(compare);
@@ -397,13 +418,13 @@ export class KnowledgeGraph implements ContextSourcePort {
     if (entity !== undefined) return entity.envelope.canonicalDocumentHash;
     const canonical = this.envelopeById.get(entityId);
     if (canonical !== undefined) return canonical.canonicalDocumentHash;
-    const unit = this.units.find(({ id }) => id === entityId);
+    const unit = this.unitById.get(entityId);
     if (unit === undefined) return undefined;
-    return this.observation.analysis.files.find(({ artifactId }) => artifactId === unit.artifactId)?.contentHash ?? unit.structuralSignature.hash;
+    return this.fileByArtifact.get(unit.artifactId)?.contentHash ?? unit.structuralSignature.hash;
   }
 
   semanticHash(entityId: string): ContentHash | undefined {
-    return this.entitiesById.get(entityId)?.semanticHash ?? this.units.find(({ id }) => id === entityId)?.semanticSignature.hash;
+    return this.entitiesById.get(entityId)?.semanticHash ?? this.unitById.get(entityId)?.semanticSignature.hash;
   }
 
   lensObligations(entityIds: ReadonlySet<string>, operation: string): KnowledgeLensObligation[] {
@@ -416,26 +437,7 @@ export class KnowledgeGraph implements ContextSourcePort {
       for (const unit of units) {
         if (!members.has(unit.id)) continue;
         this.derivedBudget.reserve(this.obligationBytesByLensId.get(lens.id)! + 2 * unit.id.length, "lens-obligation", lens.id);
-        const selectorFacts = { ...(this.selectorFactsByUnitId.get(unit.id) ?? {}), operation };
-        const subject = projectionUnitSelectorSubject(unit, selectorFacts);
-        const bundle = compileEffectiveRuleBundle({ unit, operation, rules: lens.rules, selectorFacts });
-        const expectations = lens.expectedProjections.filter((projection) => projection.role === unit.role && projection.surfaceKind === "repository" && evaluateSelector(projection.selector, subject).matched);
-        const expectationValidators = expectations.flatMap(({ expectation }) => expectation.kind === "predicate-constrained" ? expectation.validatorIds : []);
-        result.push({
-          lensId: lens.id,
-          lensVersion: lens.version,
-          lensSemanticHash: lens.semanticHash,
-          authorityRecordId: lens.authorityRecordId,
-          unitId: unit.id,
-          membershipFingerprint: this.lensCompilation.membershipFingerprints[lens.id] as ContentHash,
-          applicabilityFingerprint: hashFramedDomain("knowledge-lens-applicability", { lensId: lens.id, unitId: unit.id, operation, bundle: bundle.dependencyFingerprint, expectations: expectations.map(({ role, expectation }) => ({ role, kind: expectation.kind })) }),
-          ruleIds: bundle.rules.map(({ id }) => id),
-          predicates: bundle.predicates,
-          validatorIds: unique([...bundle.rules.flatMap(({ validatorIds }) => validatorIds), ...bundle.predicates.flatMap((predicate) => predicate.kind === "validator" ? [predicate.validatorId] : []), ...expectationValidators, ...lens.validators.filter(({ required }) => required).map(({ id, version }) => `${id}@${version}`)]),
-          expectationKinds: unique(expectations.map(({ expectation }) => expectation.kind)),
-          status: "applicable",
-          unknowns: [],
-        });
+        result.push(compileKnowledgeLensObligation(lens, unit, this.lensCompilation.membershipFingerprints[lens.id] as ContentHash, this.selectorFactsByUnitId.get(unit.id) ?? {}, operation));
       }
     }
     return result.sort((left, right) => compare(`${left.lensId}\0${left.unitId}`, `${right.lensId}\0${right.unitId}`));
@@ -567,7 +569,7 @@ export class KnowledgeGraph implements ContextSourcePort {
     if (dependency.kind === "artifact" && dependency.id.startsWith("knowledge-source:")) return this.sourceHash(dependency.id.slice("knowledge-source:".length));
     const entity = this.entitiesById.get(dependency.id);
     if (entity !== undefined) return entity.semanticHash;
-    const unit = this.units.find(({ id }) => id === dependency.id);
+    const unit = this.unitById.get(dependency.id);
     if (unit !== undefined) return unit.semanticSignature.hash;
     return this.authorities.find(({ id }) => id === dependency.id)?.semanticHash;
   }
@@ -596,7 +598,7 @@ export class KnowledgeGraph implements ContextSourcePort {
       const boundary = this.topologyObservationBoundary(unitId);
       return { results: [...this.topologyNeighbors(unitId), ...this.uncertainTopologyImporters()], ...boundary, dependencyKeys: ["repository-module-dependencies", "repository-test-targets", `projection-unit:${unitId}`] };
     } });
-    this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.lensMembership, version: "1", kind: "selector-membership", normalizeInput: (input) => ({ unitId: String(input.unitId ?? "") }), evaluate: ({ input }) => this.lensMembershipResult(String(input.unitId)) });
+    this.registry.register({ id: KNOWLEDGE_QUERY_PROGRAMS.lensMembership, version: "2", kind: "selector-membership", normalizeInput: (input) => ({ unitId: String(input.unitId ?? "") }), evaluate: ({ input }) => this.lensMembershipResult(String(input.unitId)) });
   }
 
   private async dependency(programId: string, id: string, input: Record<string, unknown>, role: string, context: AdapterContext): Promise<StateQueryDependency> {
@@ -611,7 +613,7 @@ export class KnowledgeGraph implements ContextSourcePort {
     const implementationDependency = await this.dependency(KNOWLEDGE_QUERY_PROGRAMS.implementation, `knowledge-implementation:${subjectId}`, { subjectId }, `implementation and selector bindings for ${subjectId}`, context);
     dependencies.push(implementationDependency);
     edges.push(...this.implementationBindings(subjectId).map(({ id, reason }) => this.edge(subjectId, id as string, "consequence", 0.82, "implementation-binding", reason as string, "derived")));
-    if (this.units.some(({ id }) => id === subjectId)) {
+    if (this.unitById.has(subjectId)) {
       const decisionDependency = await this.dependency(KNOWLEDGE_QUERY_PROGRAMS.decisionMembership, `knowledge-decisions:${subjectId}`, { unitId: subjectId }, `active decision applicability for ${subjectId}`, context);
       dependencies.push(decisionDependency);
       for (const decision of this.decisions.filter((item) => this.implementationBindings(item.id).some(({ id }) => id === subjectId))) edges.push(this.edge(subjectId, decision.id, "governing", 0.93, "selector-applicability", `active decision ${decision.id} applies to ${subjectId}`, "derived", true));
@@ -661,7 +663,7 @@ export class KnowledgeGraph implements ContextSourcePort {
   }
 
   private computeImplementationBindings(subjectId: string): Array<Record<string, unknown>> {
-    const direct = this.units.filter((unit) => unit.conceptIds.includes(subjectId) || unit.requirementIds.includes(subjectId) || unit.scenarioIds.includes(subjectId)).map(({ id }) => ({ id, reason: "typed projection-unit semantic binding" }));
+    const direct = (this.directBindingsBySubjectId.get(subjectId) ?? []).map((binding) => ({ ...binding }));
     const entity = this.entitiesById.get(subjectId);
     if (entity?.kind === "concept" || entity?.kind === "requirement" || entity?.kind === "scenario") return direct;
     // Preferences influence future options. They do not implicitly govern code or
@@ -674,7 +676,7 @@ export class KnowledgeGraph implements ContextSourcePort {
       .sort((left, right) => compare(String(left.id), String(right.id)));
   }
 
-  private decisionApplicabilityResult(decisionId: string) {
+  decisionApplicabilityResult(decisionId: string) {
     const decision = this.decisions.find(({ id }) => id === decisionId);
     const fields = (selector: ArchitectureDecision["scope"]): string[] => selector.op === "atom" ? [selector.field] : selector.op === "not" ? fields(selector.item) : selector.items.flatMap(fields);
     const supported = decision !== undefined && fields(decision.scope).every((field) => ["path", "surface", "package", "package-kind"].includes(field));
@@ -685,7 +687,7 @@ export class KnowledgeGraph implements ContextSourcePort {
       unavailableLanes: [...failures, ...(!supported ? ["decision selector requires facts outside the supported repository applicability observer"] : []), ...(!available ? ["repository inventory unavailable"] : [])], dependencyKeys: ["canonical-decisions", "projection-unit-membership"] };
   }
 
-  private topologyNeighbors(unitId: string): Array<{ readonly id: string; readonly reasons: string[]; readonly directions: string[] }> {
+  topologyNeighbors(unitId: string): Array<{ readonly id: string; readonly reasons: string[]; readonly directions: string[] }> {
     const path = this.unitPath.get(unitId);
     if (path === undefined) return [];
     const results = new Map<string, { reasons: Set<string>; directions: Set<string> }>();
@@ -717,7 +719,7 @@ export class KnowledgeGraph implements ContextSourcePort {
       .sort((left, right) => compare(left.id, right.id));
   }
 
-  private topologyObservationBoundary(unitId: string) {
+  topologyObservationBoundary(unitId: string) {
     const path = this.unitPath.get(unitId);
     const capability = this.observation.analysis.capabilities.find(({ analyzerId }) => analyzerId === "projector.javascript-local");
     const file = path === undefined ? undefined : this.observation.analysis.javaScript.files.find((candidate) => candidate.path === path);
@@ -745,12 +747,12 @@ export class KnowledgeGraph implements ContextSourcePort {
     };
   }
 
-  private supportsStaticTopology(unitId: string): boolean {
+  supportsStaticTopology(unitId: string): boolean {
     const path = this.unitPath.get(unitId);
     return path !== undefined && this.observation.analysis.javaScript.files.some((file) => file.path === path);
   }
 
-  private uncertainTopologyImporters(): Array<{ readonly id: string; readonly path: string; readonly sourceHash: ContentHash; readonly uncertainty: string[] }> {
+  uncertainTopologyImporters(): Array<{ readonly id: string; readonly path: string; readonly sourceHash: ContentHash; readonly uncertainty: string[] }> {
     const uncertaintyByPath = new Map<string, string[]>();
     for (const file of this.observation.analysis.javaScript.files) {
       const unknowns = file.unknowns.filter((item) => /import|module|dependency/iu.test(item));
@@ -766,7 +768,7 @@ export class KnowledgeGraph implements ContextSourcePort {
     }).sort((left, right) => compare(left.id, right.id));
   }
 
-  private lensMembershipResult(unitId: string) {
+  lensMembershipResult(unitId: string) {
     if (this.lensCompilation === undefined) return { results: [], observability: "unavailable" as const, assumptions: [], unavailableLanes: [this.lensCompilationUnknown ?? "lens compilation unavailable"], dependencyKeys: ["canonical-lenses", "canonical-authorities", `projection-unit:${unitId}`] };
     const results = this.lenses.filter(({ status, id }) => status === "active" && (this.lensCompilation!.memberships[id] ?? []).includes(unitId)).map(({ id, version, semanticHash, authorityRecordId }) => ({ id, version, semanticHash, authorityRecordId, membershipFingerprint: this.lensCompilation!.membershipFingerprints[id] }));
     return { results, observability: "bounded" as const, assumptions: this.observation.analysis.surface.enumeration.assumptions, unavailableLanes: [], dependencyKeys: ["canonical-lenses", "canonical-authorities", "projection-unit-membership", `projection-unit:${unitId}`] };

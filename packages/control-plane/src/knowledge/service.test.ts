@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,7 +15,7 @@ import {
   type Requirement,
 } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
-import { CanonicalFileRepository } from "@projector/runtime";
+import { CanonicalFileRepository, readDerivedCacheSource, SqliteObservationStore } from "@projector/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RepositoryKnowledgeService } from "./service.js";
@@ -345,12 +345,48 @@ describe("RepositoryKnowledgeService", () => {
     await writeConcept(root, concept("concept:loop", "conceptual-loop", "Close the loop."));
     const service = await RepositoryKnowledgeService.create(root);
     const context = await service.context({ request: "inspect", entities: ["concept:loop"] });
-    const path = join(root, ".projector", "runtime", "knowledge", "contexts", `${context.id.slice("knowledge_context_".length)}.json`);
-    const tampered = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+    const path = `.projector/runtime/knowledge/contexts/${context.id.slice("knowledge_context_".length)}.json`;
+    const tampered = JSON.parse((await readDerivedCacheSource(root, path))!) as Record<string, unknown>;
     tampered.request = "tampered";
-    await writeFile(path, JSON.stringify(tampered), "utf8");
+    const index = await SqliteObservationStore.open(root);
+    try {
+      const head = index.head()!;
+      index.publish(head.generation, head, { upserts: [{ kind: "cache-source", key: path, value: { content: JSON.stringify(tampered), lastUsedMs: Date.now() } }] }, { retainGeneration: true });
+    } finally { index.close(); }
 
     await expect(service.read(context.id)).rejects.toThrow(/content authentication/i);
+  });
+
+  it("reports scoped source changes and new consumers without manufacturing a plan baseline", async () => {
+    const root = await repository();
+    await mkdir(join(root, "src"));
+    await writeFile(join(root, "src", "value.ts"), "export const value = 1;\n");
+    const service = await RepositoryKnowledgeService.create(root);
+    const retained = await service.context({ request: "inspect inbound users", namedTargets: ["src/value.ts"] });
+    expect(retained.impactBaseline).toBeUndefined();
+    const selected = retained.interpretation.candidates.find(({ direct, entityKind }) => direct && entityKind === "projection-unit")!;
+    await writeFile(join(root, "src", "value.ts"), "// Changed documentation only.\nexport const value = 1;\n");
+    await writeFile(join(root, "src", "consumer.ts"), "import { value } from './value.js';\nexport const result = value;\n");
+    const changed = await service.reconcile(retained.id);
+    expect(changed.status).toBe("stale");
+    expect(changed.scopeChanges?.addedEntityIds.length).toBeGreaterThan(0);
+    expect(changed.scopeChanges?.changedSourceEntityIds).toContain(selected.entityId);
+    expect(changed.scopeChanges?.changedSemanticEntityIds).not.toContain(selected.entityId);
+    expect(changed.scopeChanges?.changedQueryIds).toContain(`knowledge-topology:${selected.entityId}`);
+    expect(changed.impact).toBeUndefined();
+  });
+
+  it("retains unresolved traversal frontiers in scoped reconciliation", async () => {
+    const root = await repository();
+    await writeConcept(root, concept("concept:root", "root", "The root boundary."));
+    await writeConcept(root, concept("concept:neighbor", "neighbor", "A neighboring boundary."));
+    await writeRelation(root, { id: "relation:neighbor", fromId: "concept:root", toId: "concept:neighbor", type: "depends-on", sourceClass: "authored", confidence: 1, evidence: [], active: true, semanticHash: hash("neighbor-relation") });
+    const service = await RepositoryKnowledgeService.create(root);
+    const retained = await service.context({ request: "inspect root", entities: ["concept:root"], policy: { maxEntries: 1 } });
+    expect(retained.branches.flatMap(({frontier}) => frontier)).toContain("concept:neighbor");
+    const current = await service.reconcile(retained.id);
+    expect(current.scopeChanges?.frontierEntityIds).toContain("concept:neighbor");
+    expect(current.scopeChanges?.removedFromContextEntityIds).toEqual([]);
   });
 
   it("rebinds an unrelated canonical root change and stales a selected semantic change", async () => {

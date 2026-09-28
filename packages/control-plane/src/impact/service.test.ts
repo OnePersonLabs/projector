@@ -1,14 +1,15 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DerivedObservationBudget, ObservationError, hashFramedDomain, withCanonicalHashes, type AuthorityRecord, type ImpactRule } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
-import { CanonicalFileRepository } from "@projector/runtime";
+import { CanonicalFileRepository, SqliteObservationStore, readDerivedCacheSource } from "@projector/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { observeChangeRepository } from "../change-lifecycle/repository-observer.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { KnowledgeGraph } from "../knowledge/graph.js";
-import { buildRepositoryImpactSnapshot, impactReference, persistRepositoryImpactSnapshot, predictRepositoryImpact, readRepositoryImpactSnapshot, reconcileRepositoryImpact, reconcileRetainedImpact, type RepositoryImpactSnapshot } from "./service.js";
+import { finalizeKnowledgeContext, KnowledgeContextStore } from "../knowledge/store.js";
+import { buildRepositoryImpactSnapshot, impactReference, impactSnapshotWrite, persistRepositoryImpactSnapshot, predictRepositoryImpact, readRepositoryImpactSnapshot, reconcileRepositoryImpact, reconcileRetainedImpact, type RepositoryImpactSnapshot } from "./service.js";
 
 const roots: string[] = [];
 async function repository(): Promise<string> {
@@ -107,38 +108,43 @@ describe("observed derivation impact", () => {
     await writeFile(join(root, "value.ts"), "export const value = () => 2;\n");
     await writeFile(join(root, "other.ts"), "export const other = 2;\n");
     const result = await service.reconcile(retained.id);
-    expect(result.impact?.surprises).toEqual([]);
-    expect(result.impact?.observedChangedUnitIds).toContain(unit(before, "other.ts"));
-    expect(result.impact?.candidateRelations).toEqual([]);
-    expect(result.impact?.repairRoute).toBe("revalidate");
+    expect(result.impact).toBeUndefined();
+    expect(result.scopeChanges?.scope).toBe("retained-context");
+    expect(result.scopeChanges?.changedSourceEntityIds).toContain(unit(before, "value.ts"));
+    expect(result.scopeChanges?.changedSourceEntityIds).not.toContain(unit(before, "other.ts"));
     const actualPlan = await reconcileRepositoryImpact(before, await snapshot(root), [unit(before, "value.ts")], "plan:value");
     expect(actualPlan.surprises).toHaveLength(1);
     expect(actualPlan.surprises[0]?.unexpectedEntityIds).toContain(unit(before, "other.ts"));
     expect(actualPlan.candidateRelations.length).toBeGreaterThan(0);
     expect(actualPlan.candidateRelations.every(({ sourceClass }) => sourceClass === "inferred")).toBe(true);
     expect((await observeChangeRepository(root)).canonical.documents).toHaveLength(0);
-    expect((await service.reconcile(retained.id)).impact?.contentHash).toBe(result.impact?.contentHash);
+    expect((await service.reconcile(retained.id)).scopeChanges).toEqual(result.scopeChanges);
   });
 
   it("rejects tampered cached proof without overwriting corruption during fresh capture", async () => {
     const root = await repository(); const service = await RepositoryKnowledgeService.create(root);
     const context = await service.context({ request: "Value", namedTargets: ["value.ts"] });
-    const directory = join(root, ".projector", "runtime", "impact");
-    const path = join(directory, (await readdir(directory))[0]!);
-    const original = await readFile(path, "utf8");
-    const tampered = JSON.parse(original) as RepositoryImpactSnapshot;
-    await writeFile(path, JSON.stringify({ ...tampered, records: [] }));
-    expect((await service.reconcile(context.id)).impact).toMatchObject({ status: "unavailable", repairRoute: "widen-analysis" });
-    await expect(service.context({ request: "Value", namedTargets: ["value.ts"] })).rejects.toThrow(/corrupt|mismatch|differ|conflict/i);
-    expect(await readFile(path, "utf8")).not.toBe(original);
+    const current = await snapshot(root), write = impactSnapshotWrite(current);
+    await persistRepositoryImpactSnapshot(root, current);
+    const { id: _id, contentHash: _contextHash, ...basis } = context;
+    const legacyContext = finalizeKnowledgeContext({ ...basis, impactBaseline: impactReference(current) });
+    await (await KnowledgeContextStore.create(root)).write(legacyContext);
+    const overwrite = async (relativePath: string, content: string) => {
+      const store = await SqliteObservationStore.open(root);
+      try { const head = store.head()!; store.publish(head.generation, head, { upserts: [{ kind: "cache-source", key: relativePath, value: { content, lastUsedMs: 1 } }] }, { retainGeneration: true }); }
+      finally { store.close(); }
+    };
+    await overwrite(write.relativePath, JSON.stringify({ ...current, records: [] }));
+    expect((await service.reconcile(legacyContext.id)).impact).toMatchObject({ status: "unavailable", repairRoute: "widen-analysis" });
+    await expect(persistRepositoryImpactSnapshot(root, current)).rejects.toThrow(/corrupt|mismatch|differ|conflict/i);
+    expect(await readDerivedCacheSource(root, write.relativePath)).not.toBe(write.content);
     // Explicitly restoring the original authenticated proof repairs this fixture's corrupted slot.
-    await writeFile(path, original);
-    expect((await service.reconcile(context.id)).impact?.status).toBe("current");
-    const current = await snapshot(root);
+    await overwrite(write.relativePath, write.content);
+    expect((await service.reconcile(legacyContext.id)).impact?.status).toBe("current");
     const { canonical: _canonical, contentHash: _hash, ...incompatible } = current;
     const malformed = { ...incompatible, contentHash: hashFramedDomain(current.version, incompatible) };
     const reference = { version: current.version, contentHash: malformed.contentHash, state: current.state };
-    await writeFile(join(directory, `${reference.contentHash.slice("sha256:v1:".length)}.json`), JSON.stringify(malformed));
+    await overwrite(`.projector/runtime/impact/${reference.contentHash.slice("sha256:v1:".length)}.json`, JSON.stringify(malformed));
     const unavailable = await reconcileRetainedImpact(root, reference, current, [], context.id);
     expect(unavailable).toMatchObject({ status: "unavailable", repairRoute: "widen-analysis" });
     expect(unavailable.diagnostics.join(" ")).toContain("canonical");

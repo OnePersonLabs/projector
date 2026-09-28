@@ -212,6 +212,21 @@ export interface RegisteredQueryProgram {
   evaluate(args: { input: Readonly<Record<string, unknown>>; graph: GraphReader; context: AdapterContext }): QueryProgramResult | Promise<QueryProgramResult>;
 }
 
+/** Versions must cover the complete named population, including absence. Unknown
+ * versions disable reuse. The owner pins one complete observation while evaluating. */
+export interface QueryMemoPort {
+  read(queryHash: ContentHash): QueryMemoEntry | undefined;
+  version(dependencyKey: string): ContentHash | undefined;
+  write(queryHash: ContentHash, entry: QueryMemoEntry): void;
+}
+
+export interface QueryMemoEntry {
+  readonly contextHash: ContentHash;
+  readonly result: StateQueryResultFingerprint;
+  readonly observed: QueryProgramResult;
+  readonly versions: Readonly<Record<string, ContentHash>>;
+}
+
 export class UnknownQueryProgramError extends Error {
   constructor(programId: string) {
     super(`unknown registered query program ${programId}`);
@@ -259,17 +274,18 @@ function optionalStringArray(input: Readonly<Record<string, unknown>>, key: stri
   return input[key] === undefined ? [] : requireStringArray(input, key);
 }
 
-function reverseClosure(graph: GraphReader, seedIds: readonly string[], excludedIds: readonly string[] = []): string[] {
+function reverseClosure(graph: GraphReader, seedIds: readonly string[], excludedIds: readonly string[] = [], visited = new Set<string>()): string[] {
   const seen = new Set<string>();
   const excluded = new Set(excludedIds);
   const pending = [...seedIds].sort(compareStrings);
-  while (pending.length > 0) {
-    const current = pending.shift()!;
+  for (let index = 0; index < pending.length; index++) {
+    const current = pending[index]!;
+    if (visited.has(current)) continue;
+    visited.add(current);
     for (const dependent of graph.reverseDerivationDependents(current).slice().sort(compareStrings)) {
       if (excluded.has(dependent) || seen.has(dependent)) continue;
       seen.add(dependent);
       pending.push(dependent);
-      pending.sort(compareStrings);
     }
   }
   return sortedUniqueStrings([...seen]);
@@ -408,7 +424,7 @@ function impactTraversalProgram(
 ): RegisteredQueryProgram {
   return {
     id,
-    version: "1",
+    version: "2",
     kind,
     normalizeInput: (input) => ({
       ...normalizeObservationInput(input, ["seedIds", "excludedIds"]),
@@ -416,12 +432,13 @@ function impactTraversalProgram(
     }),
     evaluate: ({ input, graph }) => {
       if (!requireBoolean(input, "rebindable")) throw new NonRebindableQueryError(id);
+      const visited = new Set<string>();
+      const results = idResults(reverseClosure(graph, requireStringArray(input, "seedIds"), requireStringArray(input, "excludedIds"), visited), "known");
+      const metadata = observationMetadata(input);
       return {
-        results: idResults(
-          reverseClosure(graph, requireStringArray(input, "seedIds"), requireStringArray(input, "excludedIds")),
-          "known",
-        ),
-        ...observationMetadata(input),
+        results,
+        ...metadata,
+        dependencyKeys: sortedUniqueStrings([...metadata.dependencyKeys, ...[...visited].map((subject) => `reverse-derivations:${subject}`)]),
       };
     },
   };
@@ -535,7 +552,7 @@ function builtInPrograms(): RegisteredQueryProgram[] {
     },
     {
       id: BUILT_IN_QUERY_PROGRAM_IDS.transitiveReverseDerivation,
-      version: "1",
+      version: "2",
       kind: "reverse-derivation",
       normalizeInput: (input) => ({
         ...structuredClone(input),
@@ -545,12 +562,14 @@ function builtInPrograms(): RegisteredQueryProgram[] {
       evaluate: ({ input, graph }) => {
         const seedIds = requireStringArray(input, "seedIds");
         const excludedIds = requireStringArray(input, "excludedIds");
+        const visited = new Set<string>();
+        const results = idResults(reverseClosure(graph, seedIds, excludedIds, visited));
         return {
-          results: idResults(reverseClosure(graph, seedIds, excludedIds)),
+          results,
           observability: "closed",
           assumptions: [],
           unavailableLanes: [],
-          dependencyKeys: seedIds.map((id) => `reverse-derivations:${id}`),
+          dependencyKeys: visited.size === 0 ? ["reverse-derivations"] : [...visited].map((id) => `reverse-derivations:${id}`),
         };
       },
     },
@@ -657,7 +676,7 @@ export class QueryDependencyRegistry implements StateQueryReader {
   private readonly programs = new Map<string, RegisteredQueryProgram>();
   private readonly versionHistory = new Map<string, Set<string>>();
 
-  constructor(private readonly graph: GraphReader, includeBuiltIns = true) {
+  constructor(private readonly graph: GraphReader, includeBuiltIns = true, private readonly memo?: QueryMemoPort) {
     if (includeBuiltIns) for (const program of builtInPrograms()) this.register(program);
   }
 
@@ -699,11 +718,37 @@ export class QueryDependencyRegistry implements StateQueryReader {
   }
 
   async evaluate(query: StateQuerySpec, context: AdapterContext): Promise<StateQueryResultFingerprint> {
+    return (await this.evaluateObserved(query, context)).fingerprint;
+  }
+
+  async evaluateObserved(query: StateQuerySpec, context: AdapterContext): Promise<{ fingerprint: StateQueryResultFingerprint; observed: QueryProgramResult }> {
+    context.signal.throwIfAborted();
     this.assertCurrent(query);
     const program = this.programs.get(query.programId)!;
     const expectedHash = querySemanticHash(query);
+    const contextHash = hashFramedDomain("state-query-memo-context", { config: context.config ?? null, toolchain: context.stateDigest?.toolchainDigest ?? null, externalSnapshot: context.stateDigest?.pinnedExternalSnapshotDigest ?? null });
+    const cached = this.memo?.read(expectedHash);
+    if (cached !== undefined && cached.contextHash === contextHash && cached.result.queryHash === expectedHash
+      && cached.result.dependencyKeys.length > 0
+      && cached.result.dependencyKeys.every((key) => cached.versions[key] !== undefined
+        && this.memo!.version(key) === cached.versions[key])) {
+      const authenticated = normalizeProgramResult(program.id, expectedHash, cached.observed);
+      if (canonicalJson(authenticated) !== canonicalJson(cached.result)) throw new Error(`Cached query ${query.id} failed result authentication`);
+      return { fingerprint: structuredClone(cached.result), observed: structuredClone(cached.observed) };
+    }
     const raw = await program.evaluate({ input: structuredClone(query.input), graph: this.graph, context });
-    return normalizeProgramResult(program.id, expectedHash, raw);
+    context.signal.throwIfAborted();
+    const result = normalizeProgramResult(program.id, expectedHash, raw);
+    if (this.memo !== undefined) {
+      const versions: Record<string, ContentHash> = {};
+      for (const key of result.dependencyKeys) {
+        const version = this.memo.version(key);
+        if (version === undefined) return { fingerprint: result, observed: raw };
+        versions[key] = version;
+      }
+      this.memo.write(expectedHash, { contextHash, result, observed: structuredClone(raw), versions });
+    }
+    return { fingerprint: result, observed: raw };
   }
 }
 

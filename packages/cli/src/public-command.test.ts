@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { renderPublicResult, runPublicCommand, type PublicCommandRunner } from "./public-command.js";
 
 function runner(outputs: unknown[] = []) {
@@ -12,6 +15,91 @@ function runner(outputs: unknown[] = []) {
 }
 
 describe("public workflow", () => {
+  it("exposes generated failures, stale output ownership and its explicit recovery route", () => {
+    const failed = renderPublicResult("generate", { id: "generated:failed", check: { id: "check:failed", status: "interrupted", error: "Producer deadline exceeded" } });
+    expect(failed).toContain("interrupted");
+    expect(failed).toContain("Producer deadline exceeded");
+    const stale = renderPublicResult("generate", { records: [{ evidence: { id: "generated:old" }, current: false, reason: "Producer retired", outputs: [{ path: "dist/view.js", ownership: "retained", observation: "unchanged-after-invocation", disposition: "preserve-and-review" }] }], pendingPublications: [{ artifactSetId: "generated:pending", state: "finalizing", recoverable: true }] });
+    expect(stale).toContain("generated:old: not current -- Producer retired");
+    expect(stale).toContain("dist/view.js (retained): preserve-and-review; unchanged-after-invocation");
+    expect(stale).toContain("generate --recover producers.json");
+  });
+  it("runs generation separately from inspection and recovery and retains failure status", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "projector-public-generated-"));
+    try {
+      const path = join(directory, "request.json");
+      await writeFile(path, JSON.stringify({ producerId: "producer:test" }));
+      const fixture = runner([{ check: { status: "failed" } }, { records: [], pendingPublications: [] }, { inspection: { pendingPublications: [{ artifactSetId: "pending" }] } }]);
+      expect((await runPublicCommand(["generate", path], { runner: fixture.host, cwd: directory })).exitCode).toBe(6);
+      await writeFile(path, JSON.stringify({ activeProducerIds: ["producer:test"] }));
+      await runPublicCommand(["generate", "--inspect", path], { runner: fixture.host, cwd: directory });
+      expect((await runPublicCommand(["generate", "--recover", path], { runner: fixture.host, cwd: directory })).exitCode).toBe(6);
+      expect(fixture.calls.map(call => call.operation)).toEqual(["generated.execute", "generated.inspect", "generated.recover"]);
+      expect(fixture.calls[1]?.input).toEqual({ activeProducerIds: ["producer:test"] });
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+  it("executes verification without a candidate and preserves failed check status", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "projector-public-work-"));
+    try {
+      const path = join(directory, "check.json");
+      const check = { executable: process.execPath, args: ["--version"], inputPaths: ["src/player.ts"], populations: [], environment: [], completeInputs: true, timeoutMs: 1000 };
+      await writeFile(path, JSON.stringify(check));
+      const fixture = runner([{ status: "failed", id: "check:a", exitCode: 1 }]);
+      const result = await runPublicCommand(["verify", path], { runner: fixture.host, cwd: directory });
+      expect(fixture.calls).toEqual([expect.objectContaining({ operation: "verification.execute", input: check })]);
+      expect(result.exitCode).toBe(6);
+      expect(result.text).toContain("failed");
+      expect(result.text).toContain("check:a");
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it("inspects verification events and recovers publications without executing again", async () => {
+    const fixture = runner([{ records: [{ id: "execution:past", status: "passed" }], pendingPublications: [] }, { recoveredArtifactSetIds: [], inspection: { records: [], pendingPublications: [] } }]);
+    const inspected = await runPublicCommand(["verify", "--inspect", "execution:past"], { runner: fixture.host, cwd: process.cwd() });
+    expect(inspected.text).toContain("historical");
+    expect(inspected.text).toContain("not proof of reusable success");
+    await runPublicCommand(["verify", "--recover"], { runner: fixture.host, cwd: process.cwd() });
+    expect(fixture.calls.map(call => call.operation)).toEqual(["verification.inspect", "verification.recover"]);
+    expect(fixture.calls[0]?.input).toEqual({ eventIds: ["execution:past"] });
+    await expect(runPublicCommand(["verify", "--inspect", "--recover"], { runner: fixture.host, cwd: process.cwd() })).rejects.toThrow("one");
+  });
+
+  it("separates representation inspection from explicitly requested recovery", async () => {
+    const fixture = runner([{ publications: [] }, { outcomes: [] }]);
+    await runPublicCommand(["inspect", "--representations"], { runner: fixture.host, cwd: process.cwd() });
+    await runPublicCommand(["recover", "--representations"], { runner: fixture.host, cwd: process.cwd() });
+    expect(fixture.calls.map(call => call.operation)).toEqual(["representation.pending", "representation.recover"]);
+    await expect(runPublicCommand(["recover", "--access", "--representations"], { runner: fixture.host, cwd: process.cwd() })).rejects.toThrow("one recovery route");
+  });
+
+  it("connects meaning to relevance, uncertainty and targeted continuation without duplicating sections", () => {
+    const text = renderPublicResult("context", {
+      id: "knowledge_context_navigation", request: "Change the player", view: "agent",
+      interpretation: { status: "candidates" },
+      meaning: { sections: [{ entityId: "requirement:origin", heading: "Preserve event origin", text: "Replay MUST retain the original source, except imported legacy events." }], disclosure: { total: 2, included: 1, omitted: 1 } },
+      branches: [{ id: "branch:origin", hypothesis: true, context: {
+        items: [{ entityId: "requirement:origin", kind: "requirement", band: "governing", relevanceReasons: ["concept:replay --requires--> requirement:origin", "scenario:import --demonstrates--> requirement:origin"], uncertainty: ["Imported event ownership is not observed."] }],
+        requiredExpansionIds: ["scenario:import"], requiredExpansionDisclosure: { omitted: 0 },
+      }, frontier: ["No binding for imported event ownership."], frontierDisclosure: { omitted: 0 } }],
+    });
+    expect(text.split("Replay MUST retain")).toHaveLength(2);
+    expect(text).toContain("Candidate interpretation");
+    expect(text).toContain("requirement:origin (requirement; governing)");
+    expect(text).toContain("concept:replay --requires--> requirement:origin");
+    expect(text).toContain("scenario:import --demonstrates--> requirement:origin");
+    expect(text).toContain("Imported event ownership is not observed.");
+    expect(text).toContain("No binding for imported event ownership.");
+    expect(text).toContain('projector context "Change the player" --entity "scenario:import"');
+    expect(text).toContain('projector inspect "requirement:origin"');
+    expect(text).toContain("1 meaning sections omitted");
+  });
+
+  it("allows exact full context through the existing public operation", async () => {
+    const fixture = runner([{}]);
+    await runPublicCommand(["context", "Explain event origin", "--full"], { runner: fixture.host, cwd: process.cwd() });
+    expect(fixture.calls).toEqual([expect.objectContaining({ operation: "context", input: { request: "Explain event origin", persist: true, view: "full" } })]);
+  });
+
   it("resumes an approval by inspection without recovering or applying", async () => {
     const fixture = runner([{ nextAction: { reason: "Explicit recovery required" } }]);
     const result = await runPublicCommand(["resume", "lifecycle_approval_retained"], { runner: fixture.host, cwd: process.cwd() });

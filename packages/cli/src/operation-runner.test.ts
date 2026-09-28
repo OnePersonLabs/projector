@@ -703,3 +703,10 @@ test("repository.check accepts only declared observation and exact handling inpu
   expect(ProjectorOperationRequestSchema.safeParse(request("repository.check", { handled: { findingId: "finding" } })).success).toBe(false);
   expect(ProjectorOperationRequestSchema.safeParse(request("repository.check", { acceptDesign: true })).success).toBe(false);
 });
+
+test("repository.integration identifies Git contributions without accepting lifecycle authority", () => {
+  expect(ProjectorOperationRequestSchema.parse(request("repository.integration", { target: "main", incoming: "topic", result: "integration" }))).toMatchObject({ input: { target: "main", incoming: "topic", result: "integration" } });
+  for (const input of [{ target: "main" }, { incoming: "topic" }, { target: "main", incoming: "topic", candidateId: "candidate:old" }, { target: "main", incoming: "topic", approved: true }]) {
+    expect(ProjectorOperationRequestSchema.safeParse(request("repository.integration", input)).success).toBe(false);
+  }
+});

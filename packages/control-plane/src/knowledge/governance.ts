@@ -3,7 +3,7 @@ import { DependencyScopedStateBindingValidator, assessDecisionValidity, createSt
 
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
 import { DecisionBaselineReader, captureDecisionTriggerObservations, type DecisionBaselineEvidence, type KnowledgeDecisionBaseline } from "./decision-baselines.js";
-import type { KnowledgeGraph } from "./graph.js";
+import type { KnowledgeContextGraph } from "./context-graph.js";
 import type { KnowledgeDecisionCheck, KnowledgeDecisionValidity } from "./types.js";
 
 const unique = (items: readonly string[]) => [...new Set(items)].sort();
@@ -21,15 +21,31 @@ export interface DecisionObservation {
   readonly checks: readonly KnowledgeDecisionCheck[];
   readonly observations: KnowledgeDecisionBaseline["observations"];
   readonly unknowns: readonly string[];
+  readonly staleEvidenceIds?: readonly string[];
+}
+
+/** Addressed reads from one complete observation generation. */
+export interface KnowledgeDecisionSource {
+  authority(decision: ArchitectureDecision): AuthorityRecord | undefined;
+  observations(decision: ArchitectureDecision, authority: AuthorityRecord): KnowledgeDecisionBaseline["observations"];
+  baseline(decision: ArchitectureDecision, authority: AuthorityRecord): Promise<DecisionBaselineEvidence>;
 }
 
 export class KnowledgeDecisionRun {
-  private readonly baselines: DecisionBaselineReader;
+  private readonly source: KnowledgeDecisionSource;
   private readonly observations = new Map<string, Promise<DecisionObservation>>();
   private readonly now: string;
 
-  constructor(private readonly observation: Omit<ChangeRepositoryObservation, "independentValidator">, private readonly host: KnowledgeDecisionHost = {}) {
-    this.baselines = new DecisionBaselineReader(observation);
+  constructor(observation: Omit<ChangeRepositoryObservation, "independentValidator"> | KnowledgeDecisionSource, private readonly host: KnowledgeDecisionHost = {}) {
+    if ("authority" in observation) this.source = observation;
+    else {
+      const baselines = new DecisionBaselineReader(observation);
+      this.source = {
+        authority: decision => observation.canonical.documents.find(({ id, kind }) => id === decision.authorityRecordId && kind === "authority-record")?.payload as unknown as AuthorityRecord | undefined,
+        observations: (decision, authority) => captureDecisionTriggerObservations(decision, authority, observation.canonical.documents, observation.analysis.files.map(({ path }) => path), observation.analysis.surface.kind),
+        baseline: (decision, authority) => baselines.read(decision, authority),
+      };
+    }
     this.now = (host.now ?? (() => new Date().toISOString()))();
   }
 
@@ -41,16 +57,24 @@ export class KnowledgeDecisionRun {
   }
 
   private async read(decision: ArchitectureDecision, operation: string): Promise<DecisionObservation> {
-    const authority = this.observation.canonical.documents.find(({ id, kind }) => id === decision.authorityRecordId && kind === "authority-record")?.payload as unknown as AuthorityRecord | undefined;
+    const authority = this.source.authority(decision);
     if (authority === undefined) return { decision, baseline: { kind: "unavailable", reason: "decision authority is missing" }, checks: [], observations: [], unknowns: ["decision authority is missing"] };
     const accepted = this.host.acceptedDecisionBaselines?.find((baseline) => baseline.decisionId === decision.id && baseline.decisionSemanticHash === decision.semanticHash && baseline.authorityId === authority.id && baseline.authoritySemanticHash === authority.semanticHash);
-    const evidence: DecisionBaselineEvidence = accepted === undefined ? await (this.host.readDecisionBaseline?.(decision, authority) ?? this.baselines.read(decision, authority))
+    const evidence: DecisionBaselineEvidence = accepted === undefined ? await (this.host.readDecisionBaseline?.(decision, authority) ?? this.source.baseline(decision, authority))
       : { kind: "authenticated-transaction", reference: "current-approved-canonical-transaction", baseline: accepted };
     const { baseline: captured, ...baseline } = evidence;
-    const observed = captureDecisionTriggerObservations(decision, authority, this.observation.canonical.documents, this.observation.analysis.files.map(({ path }) => path), this.observation.analysis.surface.kind);
+    const observed = this.source.observations(decision, authority);
     const currentValues = new Map(observed.map(({ key, value }) => [key, value]));
     const baselineValues = new Map(captured?.observations.map(({ key, value }) => [key, value]));
     const checks: KnowledgeDecisionCheck[] = [];
+    const staleEvidenceIds: string[] = [];
+    const evidenceUnknowns: string[] = [];
+    for (const { evidenceId } of authority.evidence) {
+      const prior = baselineValues.get(`evidence:${evidenceId}`) as { semanticHash?: unknown } | undefined;
+      const current = currentValues.get(`evidence:${evidenceId}`) as { semanticHash?: unknown } | undefined;
+      if (prior?.semanticHash == null) evidenceUnknowns.push(`Evidence ${evidenceId} has no supported accepted observation; external evidence validity is unknown.`);
+      else if (prior.semanticHash !== current?.semanticHash) staleEvidenceIds.push(evidenceId);
+    }
     const add = (trigger: AuthorityReconsiderTrigger, status: KnowledgeDecisionCheck["status"], reason: string) => checks.push({ trigger, status, reason });
     const clock = Date.parse(this.now);
     for (const trigger of authority.reconsiderWhen) {
@@ -90,11 +114,11 @@ export class KnowledgeDecisionRun {
     } else if (refresh?.mode === "version-sensitive") {
       add({ type: "evidence-refresh-required", policyKey: refresh.key }, "unknown", "Required version-sensitive evidence has no supported deterministic version observer.");
     }
-    return { decision, authority, baseline, checks, observations: observed, unknowns: unique(checks.filter(({ status }) => status === "unknown").map(({ reason }) => reason)) };
+    return { decision, authority, baseline, checks, observations: observed, staleEvidenceIds, unknowns: unique([...evidenceUnknowns, ...checks.filter(({ status }) => status === "unknown").map(({ reason }) => reason)]) };
   }
 }
 
-export async function assessKnowledgeDecisions(graph: KnowledgeGraph, decisions: readonly ArchitectureDecision[], operation: string, context: AdapterContext): Promise<{ decisions: KnowledgeDecisionValidity[]; dependencies: StateQueryDependency[] }> {
+export async function assessKnowledgeDecisions(graph: KnowledgeContextGraph, decisions: readonly ArchitectureDecision[], operation: string, context: AdapterContext): Promise<{ decisions: KnowledgeDecisionValidity[]; dependencies: StateQueryDependency[] }> {
   const result: KnowledgeDecisionValidity[] = [];
   const dependencies: StateQueryDependency[] = [];
   for (const decision of decisions) {
@@ -105,7 +129,7 @@ export async function assessKnowledgeDecisions(graph: KnowledgeGraph, decisions:
     const binding = createStateBinding({ compiledAgainst: context.stateDigest, valueDependencies: graph.valueDependencies([decision.id]), queryDependencies: [applicability, triggers] });
     const validator = new DependencyScopedStateBindingValidator({ values: { readVersionHash: async (ref) => graph.currentVersionHash(ref) }, queries: { evaluate: (query, adapter) => graph.registry.evaluate(query, adapter) } });
     const validity = await assessDecisionValidity({ decision, currentScope: decision.scope, binding, currentState: context.stateDigest, context,
-      firedTriggers: observed.checks.filter(({ status }) => status === "fired").map(({ trigger }) => trigger), invalidatedAssumptions: [], staleEvidenceIds: [] }, {
+      firedTriggers: observed.checks.filter(({ status }) => status === "fired").map(({ trigger }) => trigger), invalidatedAssumptions: observed.checks.filter(({ status, trigger }) => status === "fired" && trigger.type === "assumption-falsified").map(({ trigger }) => (trigger as Extract<AuthorityReconsiderTrigger, { type: "assumption-falsified" }>).assumptionKey), staleEvidenceIds: observed.staleEvidenceIds ?? [] }, {
       bindingValidator: validator,
       applicability: { evaluate: async () => ({ applicable: true, governedPopulationCount: applicability.priorResult.resultCount, dependency: applicability }) },
     });

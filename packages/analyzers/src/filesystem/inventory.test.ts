@@ -24,6 +24,44 @@ afterEach(async () => {
 });
 
 describe("repository inventory boundary", () => {
+  it("reuses exact private bytes while refreshing changed, new and deleted members", async () => {
+    const root = await repository();
+    await mkdir(join(root, "nested"));
+    await writeFile(join(root, "stable.bin"), Buffer.from([0xff, 0x00, 0xfe]));
+    await writeFile(join(root, "nested", "change.ts"), "old");
+    await writeFile(join(root, "deleted.ts"), "old");
+    const before = await inventoryRepository(root);
+    await writeFile(join(root, "nested", "change.ts"), "new");
+    await writeFile(join(root, "new.ts"), "new member");
+    await unlink(join(root, "deleted.ts"));
+    const after = await inventoryRepository(root, { byteReuse: { baseline: before, changedPaths: ["nested", "new.ts", "deleted.ts"], uncoveredPrefixes: [] } });
+    expect(after).toEqual(await inventoryRepository(root));
+    // Returned entry mutation cannot poison the private captured byte generation.
+    Object.assign(before.entries.find(({ path }) => path === "stable.bin")!, { content: "forged" });
+    expect((await inventoryRepository(root, { byteReuse: { baseline: before, changedPaths: ["nested"], uncoveredPrefixes: [] } })).entries.find(({ path }) => path === "stable.bin")).toBe(after.entries.find(({ path }) => path === "stable.bin"));
+  });
+
+  it("rereads tracked files outside watch coverage and charges reused raw byte lengths", async () => {
+    const root = await repository(); await mkdir(join(root, "hidden"));
+    await writeFile(join(root, ".gitignore"), "hidden/\n");
+    await writeFile(join(root, "hidden", "tracked.ts"), "old");
+    await execFileAsync("git", ["add", "--force", "hidden/tracked.ts"], { cwd: root });
+    const before = await inventoryRepository(root);
+    await writeFile(join(root, "hidden", "tracked.ts"), "changed outside watch coverage");
+    const after = await inventoryRepository(root, { byteReuse: { baseline: before, changedPaths: [], uncoveredPrefixes: ["hidden"] } });
+    expect(after).toEqual(await inventoryRepository(root));
+    await expect(inventoryRepository(root, { observationLimits: { maxTotalBytes: 1 }, byteReuse: { baseline: before, changedPaths: [], uncoveredPrefixes: [] } })).rejects.toMatchObject({ limit: "maxTotalBytes" });
+    await expect(inventoryRepository(root, { signal: AbortSignal.abort(), byteReuse: { baseline: before, changedPaths: [], uncoveredPrefixes: [] } })).rejects.toMatchObject({ code: "observation-failed" });
+  });
+
+  it("does not trust a baseline without a private completed generation", async () => {
+    const root = await repository(); await writeFile(join(root, "source.ts"), "old");
+    const before = await inventoryRepository(root);
+    await writeFile(join(root, "source.ts"), "new");
+    const after = await inventoryRepository(root, { byteReuse: { baseline: structuredClone(before), changedPaths: [], uncoveredPrefixes: [] } });
+    expect(after.entries[0]!.content).toBe("new");
+  });
+
   it("bounds cumulative bytes and filesystem cardinality without widening on failure", async () => {
     const root = await mkdtemp(join(tmpdir(), "projector-inventory-limits-")); temporaryRoots.push(root);
     await writeFile(join(root, "first.ts"), "123456");
@@ -128,11 +166,15 @@ describe("repository inventory boundary", () => {
     await mkdir(join(root, "linked"));
     await writeFile(join(root, "linked", "source.ts"), "export const original = true;\n");
     await execFileAsync("git", ["add", "linked/source.ts"], { cwd: root });
+    const baseline = await inventoryRepository(root);
     await rm(join(root, "linked"), { recursive: true });
     await writeFile(join(outside, "source.ts"), "export const escaped = true;\n");
     await symlink(outside, join(root, "linked"), process.platform === "win32" ? "junction" : "dir");
 
     await expect(inventoryRepository(root)).rejects.toMatchObject({
+      code: "observation-failed", stage: "symlink-parent", scope: "linked/source.ts",
+    });
+    await expect(inventoryRepository(root, { byteReuse: { baseline, changedPaths: [], uncoveredPrefixes: [] } })).rejects.toMatchObject({
       code: "observation-failed", stage: "symlink-parent", scope: "linked/source.ts",
     });
   });

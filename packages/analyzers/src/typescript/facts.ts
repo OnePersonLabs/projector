@@ -4,6 +4,7 @@ import { canonicalJson, DerivedObservationBudget, hashFramedCanonicalJsonChunks,
 
 import type { InventoryEntry } from "../filesystem/inventory.js";
 import { compareCodePoint } from "../ordering.js";
+import { analyzeCompilerSyntax, type EventCallSyntax } from "./compiler-syntax.js";
 
 export interface ModuleDependencyFact {
   readonly sourceClass: SourceClass;
@@ -121,7 +122,7 @@ interface Token {
   readonly value: string;
 }
 
-const sourceExtensions = [".mjs", ".js", ".cjs", ".mts", ".ts"];
+const sourceExtensions = [".mjs", ".js", ".cjs", ".mts", ".cts", ".ts", ".tsx", ".jsx"];
 const lifecycleNames = new Set(["onPreTool", "onPostTool", "onSessionStart", "onSessionEnd"]);
 const operators = [
   ">>>=", "===", "!==", "**=", ">>>", "<<=", ">>=", "=>", "==", "!=", "<=", ">=", "++", "--", "&&", "||", "??", "?.", "**", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<", ">>", "...",
@@ -308,135 +309,30 @@ function hashNormalizedTokens(tokens: readonly Token[], domain: string, budget: 
 }
 
 export function hashJavaScriptSemantics(content: string, domain: string, budget = new DerivedObservationBudget(), scope = ".", envelope?: { readonly fields: Readonly<Record<string, unknown>>; readonly key: string }): ContentHash {
+  if (/\.(?:tsx|jsx)$/u.test(scope)) {
+    const normalized = normalizeJavaScriptSemantics(content, budget, scope);
+    try { return hashFramedDomain(domain, envelope === undefined ? normalized : { ...envelope.fields, [envelope.key]: normalized }); }
+    finally { budget.release(32 + content.length * 2); }
+  }
   const lexed = lexJavaScript(content, budget, scope);
   try { return hashNormalizedTokens(lexed.tokens, domain, budget, scope, envelope); }
   finally { budget.release(lexed.reservedBytes); }
 }
 
 export function normalizeJavaScriptSemantics(content: string, budget = new DerivedObservationBudget(), scope = "."): string {
+  // JSX text is observable content. A JavaScript comment lexer cannot normalize it safely.
+  if (/\.(?:tsx|jsx)$/u.test(scope)) {
+    budget.reserve(32 + content.length * 2, "jsx-source-normalization", scope);
+    return content;
+  }
   const lexed = lexJavaScript(content, budget, scope);
   try { return normalizeTokens(lexed.tokens, budget, scope); }
   finally { budget.release(lexed.reservedBytes); }
 }
 
-function stringLiteralValue(raw: string): string {
-  const quote = raw[0];
-  const body = raw.slice(1, -1);
-  if (quote === "\"") {
-    try {
-      return JSON.parse(raw) as string;
-    } catch {
-      return body;
-    }
-  }
-  return body.replace(/\\([\\'])/gu, "$1");
-}
-
-function significantTokens(tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): Token[] {
-  budget.reserveItems(tokens.length, 8, "javascript-token-view", scope);
-  return tokens.filter((token) => token.kind !== "line-break");
-}
-
-function extractExports(tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): string[] {
-  const significant = significantTokens(tokens, budget, scope);
-  try {
-  const exports = new Set<string>();
-  for (let index = 0; index < significant.length; index += 1) {
-    if (significant[index]?.kind !== "identifier" || significant[index]?.value !== "export") continue;
-    let cursor = index + 1;
-    if (significant[cursor]?.value === "default") cursor += 1;
-    if (significant[cursor]?.value === "async") cursor += 1;
-    if (!["function", "class", "const", "let", "var"].includes(significant[cursor]?.value ?? "")) continue;
-    const name = significant[cursor + 1];
-    if (name?.kind === "identifier" && !exports.has(name.value)) { budget.reserve(64 + 2 * name.value.length, "javascript-exports", scope); exports.add(name.value); }
-  }
-  return [...exports].sort(compareCodePoint);
-  } finally { budget.release(tokens.length * 8); }
-}
-
-function extractTestNames(tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): string[] {
-  const significant = significantTokens(tokens, budget, scope);
-  try {
-  const names = new Set<string>();
-  for (let index = 0; index < significant.length - 2; index += 1) {
-    const token = significant[index];
-    if (token?.kind !== "identifier" || !["test", "it"].includes(token.value)) continue;
-    if (significant[index - 1]?.value === "." || significant[index + 1]?.value !== "(") continue;
-    const name = significant[index + 2];
-    if (name?.kind === "string") { budget.reserve(64 + 2 * name.value.length, "javascript-tests", scope); names.add(stringLiteralValue(name.value)); }
-  }
-  return [...names].sort(compareCodePoint);
-  } finally { budget.release(tokens.length * 8); }
-}
-
-interface ImportSyntax {
-  readonly specifier: string;
-  readonly bindings: ImportBindingFact[];
-  readonly typeOnly: boolean;
-}
-
 function sourceLocation(content: string, offset: number, endOffset: number): SourceLocationFact {
-  const before = content.slice(0, offset);
-  const lines = before.split(/\r?\n/u);
+  const lines = content.slice(0, offset).split(/\r?\n/u);
   return { line: lines.length, column: (lines.at(-1)?.length ?? 0) + 1, offset, endOffset };
-}
-
-function parseNamedBindings(body: string, statementTypeOnly: boolean, budget: DerivedObservationBudget, scope: string): ImportBindingFact[] {
-  const bindings: ImportBindingFact[] = [];
-  for (let start = 0; start < body.length;) {
-    const comma = body.indexOf(",", start), end = comma < 0 ? body.length : comma;
-    budget.reserveString(end - start, "javascript-import-bindings", scope);
-    const part = body.slice(start, end).trim(); start = end + 1;
-    if (!part) continue;
-    budget.reserve(160 + 4 * part.length, "javascript-import-bindings", scope);
-    const typeOnly = statementTypeOnly || part.startsWith("type ");
-    const normalized = part.replace(/^type\s+/u, "");
-    const [imported = "", local = imported] = normalized.split(/\s+as\s+/u);
-    bindings.push({ imported: imported.trim(), local: local.trim(), typeOnly });
-  }
-  return bindings.sort((left, right) => compareCodePoint(left.imported, right.imported) || compareCodePoint(left.local, right.local));
-}
-
-function extractImportSyntax(tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): ImportSyntax[] {
-  const imports: ImportSyntax[] = [];
-  const values = significantTokens(tokens, budget, scope);
-  try {
-  for (let index = 0; index < values.length; index += 1) {
-    if (values[index]?.kind !== "identifier" || values[index]?.value !== "import" || values[index + 1]?.value === "(" || values[index - 1]?.value === ".") continue;
-    if (values[index + 1]?.kind === "string") { budget.reserve(192 + 2 * values[index + 1]!.value.length, "javascript-imports", scope); imports.push({ specifier: stringLiteralValue(values[index + 1]!.value), bindings: [], typeOnly: false }); continue; }
-    let cursor = index + 1;
-    const typeOnly = values[cursor]?.value === "type";
-    if (typeOnly) cursor += 1;
-    const clauseStart = cursor;
-    while (cursor < values.length && values[cursor]?.value !== "from" && values[cursor]?.value !== ";") cursor += 1;
-    if (values[cursor]?.value !== "from" || values[cursor + 1]?.kind !== "string") continue;
-    budget.reserveItems(cursor - clauseStart, 8, "javascript-import-clause", scope);
-    const clause = values.slice(clauseStart, cursor);
-    const bindings: ImportBindingFact[] = [];
-    if (clause[0]?.kind === "identifier" && clause[0]?.value !== "type") { budget.reserve(128 + 2 * clause[0]!.value.length, "javascript-import-bindings", scope); bindings.push({ imported: "default", local: clause[0]!.value, typeOnly }); }
-    for (let part = 0; part < clause.length; part += 1) {
-      if (clause[part]?.value === "*" && clause[part + 1]?.value === "as" && clause[part + 2]?.kind === "identifier") { budget.reserve(128 + 2 * clause[part + 2]!.value.length, "javascript-import-bindings", scope); bindings.push({ imported: "*", local: clause[part + 2]!.value, typeOnly }); }
-      if (clause[part]?.value !== "{") continue;
-      part += 1;
-      while (part < clause.length && clause[part]?.value !== "}") {
-        const bindingTypeOnly = typeOnly || clause[part]?.value === "type";
-        if (clause[part]?.value === "type") part += 1;
-        const imported = clause[part]?.kind === "identifier" ? clause[part]!.value : undefined;
-        if (imported !== undefined) {
-          const local = clause[part + 1]?.value === "as" && clause[part + 2]?.kind === "identifier" ? clause[part + 2]!.value : imported;
-          budget.reserve(128 + 2 * (imported.length + local.length), "javascript-import-bindings", scope); bindings.push({ imported, local, typeOnly: bindingTypeOnly });
-        }
-        while (part < clause.length && ![",", "}"].includes(clause[part]?.value ?? "")) part += 1;
-        if (clause[part]?.value === ",") part += 1;
-      }
-    }
-    budget.reserve(192 + 2 * values[cursor + 1]!.value.length, "javascript-imports", scope);
-    imports.push({ specifier: stringLiteralValue(values[cursor + 1]!.value), bindings: bindings.sort((a, b) => compareCodePoint(a.imported, b.imported) || compareCodePoint(a.local, b.local)), typeOnly });
-    budget.release((cursor - clauseStart) * 8);
-    index = cursor + 1;
-  }
-  return imports;
-  } finally { budget.release(tokens.length * 8); }
 }
 
 function packageScopes(entries: readonly InventoryEntry[]): Map<string, string> {
@@ -455,62 +351,6 @@ function packageScopes(entries: readonly InventoryEntry[]): Map<string, string> 
   return result;
 }
 
-function maskCommentsAndLiterals(content: string): string {
-  let result = ""; let index = 0;
-  while (index < content.length) {
-    const character = content[index]!; const next = content[index + 1];
-    if (character === "/" && next === "/") { while (index < content.length && !/[\r\n]/u.test(content[index]!)) { result += " "; index += 1; } continue; }
-    if (character === "/" && next === "*") { result += "  "; index += 2; while (index < content.length && !(content[index] === "*" && content[index + 1] === "/")) { result += /[\r\n]/u.test(content[index]!) ? content[index]! : " "; index += 1; } if (index < content.length) { result += "  "; index += 2; } continue; }
-    if (character === "'" || character === "\"" || character === "`") { const end = scanQuoted(content, index, character); result += " ".repeat(end - index); index = end; continue; }
-    result += character; index += 1;
-  }
-  return result;
-}
-
-function extractDeclarations(content: string, scopeKey: string, budget: DerivedObservationBudget, scope: string): SemanticDeclarationFact[] {
-  const declarations: SemanticDeclarationFact[] = [];
-  budget.reserveString(content.length, "javascript-syntax-mask", scope);
-  try {
-  const syntax = maskCommentsAndLiterals(content);
-  const pattern = /\b(export\s+)?(default\s+)?(?:declare\s+)?(?:async\s+)?(function|class|interface|type|enum|namespace|const|let|var)\s+([A-Za-z_$][\w$]*)/gu;
-  for (const match of syntax.matchAll(pattern)) {
-    budget.reserve(640 + 2 * (scopeKey.length + match[0].length), "javascript-declarations", scope);
-    const rawKind = match[3]!;
-    const kind: SemanticDeclarationFact["kind"] = ["const", "let", "var"].includes(rawKind) ? "variable" : rawKind as SemanticDeclarationFact["kind"];
-    const name = match[4]!;
-    const exported = match[1] !== undefined;
-    const isDefault = match[2] !== undefined;
-    const tailStart = (match.index ?? 0) + match[0].length;
-    const nextLine = content.indexOf("\n", tailStart);
-    const tail = content.slice(tailStart, nextLine < 0 ? content.length : nextLine);
-    const overload = rawKind === "function" && /^[^{]*;/u.test(tail);
-    const semantic = { scopeKey, name, kind, exported, default: isDefault, overload };
-    const semanticHash = hashFramedDomain("typescript-semantic-declaration", semantic);
-    declarations.push({ id: `ts_decl_${hashFramedDomain("typescript-semantic-declaration-identity", { scopeKey, name, kind }).slice(-32)}`, ...semantic, location: sourceLocation(content, match.index ?? 0, (match.index ?? 0) + match[0].length), semanticHash });
-  }
-  return declarations.sort((left, right) => compareCodePoint(left.id, right.id) || left.location.offset - right.location.offset);
-  } finally { budget.release(24 + 2 * content.length); }
-}
-
-function extractExportFacts(content: string, declarations: readonly SemanticDeclarationFact[], budget: DerivedObservationBudget, scope: string): ExportFact[] {
-  const facts: ExportFact[] = [];
-  for (const declaration of declarations) if (declaration.exported) {
-    budget.reserve(192, "javascript-export-facts", scope);
-    facts.push({ exportedName: declaration.default ? "default" : declaration.name, localName: declaration.name, typeOnly: declaration.kind === "type" || declaration.kind === "interface", default: declaration.default, wildcard: false, location: declaration.location });
-  }
-  const named = /\bexport\s+(type\s+)?\{([^}]*)\}(?:\s+from\s+(["'])([^"']+)\3)?/gu;
-  for (const match of content.matchAll(named)) for (const binding of parseNamedBindings(match[2] ?? "", match[1] !== undefined, budget, scope)) {
-    budget.reserve(256 + 2 * (match[4]?.length ?? 0), "javascript-export-facts", scope);
-    facts.push({ exportedName: binding.local, localName: binding.imported, ...(match[4] === undefined ? {} : { from: match[4] }), typeOnly: binding.typeOnly, default: binding.local === "default", wildcard: false, location: sourceLocation(content, match.index ?? 0, (match.index ?? 0) + match[0].length) });
-  }
-  const wildcard = /\bexport\s+\*\s+from\s+(["'])([^"']+)\1/gu;
-  for (const match of content.matchAll(wildcard)) {
-    budget.reserve(256 + 2 * match[2]!.length, "javascript-export-facts", scope);
-    facts.push({ from: match[2]!, typeOnly: false, default: false, wildcard: true, location: sourceLocation(content, match.index ?? 0, (match.index ?? 0) + match[0].length) });
-  }
-  return facts.sort((left, right) => compareCodePoint(left.exportedName ?? "*", right.exportedName ?? "*") || left.location.offset - right.location.offset);
-}
-
 function fileParticipantId(scopeKey: string, declarations: readonly SemanticDeclarationFact[], tokens: readonly Token[], budget: DerivedObservationBudget, scope: string): string {
   const anchors = declarations.filter(({ exported }) => exported).map(({ name, kind }) => `${kind}:${name}`).sort(compareCodePoint);
   const hash = anchors.length > 0 ? hashFramedDomain("typescript-participant", { scopeKey, anchor: anchors })
@@ -518,45 +358,38 @@ function fileParticipantId(scopeKey: string, declarations: readonly SemanticDecl
   return `ts_participant_${hash.slice(-32)}`;
 }
 
-function extractEvents(tokens: readonly Token[], content: string, scopeKey: string, participantId: string, artifactHash: ContentHash, budget: DerivedObservationBudget, scope: string): { events: EventSyntaxFact[]; uncertainties: EventUncertaintyFact[]; unknowns: string[] } {
-  const events: EventSyntaxFact[] = [];
-  const uncertainties: EventUncertaintyFact[] = [];
-  const unknowns: string[] = [];
-  const values = significantTokens(tokens, budget, scope);
-  try {
-  for (let index = 0; index < values.length - 4; index += 1) {
-    if (values[index]?.kind !== "identifier" || values[index + 1]?.value !== "." || values[index + 2]?.kind !== "identifier" || values[index + 3]?.value !== "(") continue;
-    const receiver = values[index]!.value;
-    const operation = values[index + 2]!.value;
-    if (!["emit", "publish", "dispatchEvent", "on", "addEventListener", "subscribe"].includes(operation)) continue;
-    const argument = values[index + 4];
+function extractEvents(calls: readonly EventCallSyntax[], scopeKey: string, participantId: string, artifactHash: ContentHash, budget: DerivedObservationBudget, scope: string) {
+  const events: EventSyntaxFact[] = [], uncertainties: EventUncertaintyFact[] = [], unknowns: string[] = [];
+  for (const call of calls) {
+    const { receiver, operation, location } = call;
     const role = ["emit", "publish", "dispatchEvent"].includes(operation) ? "producer" as const : "consumer" as const;
-    if (argument?.kind !== "string") {
+    if (call.name === undefined) {
       budget.reserve(512 + 2 * (receiver.length + operation.length + scopeKey.length + participantId.length), "javascript-event-facts", scope);
       const evidenceId = `event_uncertainty_${hashFramedDomain("event-uncertainty", { receiver, role, scopeKey, participantId }).slice(-32)}`;
       uncertainties.push({ receiver, role, scopeKey, participantId, evidenceId, artifactHash });
       unknowns.push(`dynamic event name for ${receiver}.${operation}`);
       continue;
     }
-    budget.reserve(768 + 2 * (argument.value.length + receiver.length + scopeKey.length + participantId.length), "javascript-event-facts", scope);
-    const semanticKey = stringLiteralValue(argument.value);
+    const semanticKey = call.name;
+    budget.reserve(768 + 2 * (semanticKey.length + receiver.length + scopeKey.length + participantId.length), "javascript-event-facts", scope);
     const subjectId = `event_${hashFramedDomain("event-subject", { receiver, semanticKey }).slice(-32)}`;
-    const offset = content.indexOf(argument.value);
-    const location = sourceLocation(content, Math.max(0, offset), Math.max(0, offset) + argument.value.length);
-    events.push({ subjectId, semanticKey, receiver, scopeKey, participantId, role, dynamic: false, location, evidenceId: `event_evidence_${hashFramedDomain("event-evidence", { participantId, role, semanticKey, location }).slice(-32)}`, artifactHash });
+    events.push({ subjectId, semanticKey, receiver, scopeKey, participantId, role, dynamic: false, location,
+      evidenceId: `event_evidence_${hashFramedDomain("event-evidence", { participantId, role, semanticKey, location }).slice(-32)}`, artifactHash });
   }
-  if (values.some((token, index) => token.value === "import" && values[index + 1]?.value === "(")) { budget.reserve(128, "javascript-event-facts", scope); unknowns.push("dynamic import cannot prove a static dependency"); }
-  return { events: events.sort((left, right) => compareCodePoint(left.subjectId, right.subjectId) || compareCodePoint(left.participantId, right.participantId) || compareCodePoint(left.role, right.role)), uncertainties: uncertainties.sort((left, right) => compareCodePoint(left.receiver, right.receiver) || compareCodePoint(left.participantId, right.participantId)), unknowns: [...new Set(unknowns)].sort(compareCodePoint) };
-  } finally { budget.release(tokens.length * 8); }
+  return { events: events.sort((a, b) => compareCodePoint(a.subjectId, b.subjectId) || compareCodePoint(a.participantId, b.participantId) || compareCodePoint(a.role, b.role)),
+    uncertainties: uncertainties.sort((a, b) => compareCodePoint(a.receiver, b.receiver) || compareCodePoint(a.participantId, b.participantId)), unknowns: [...new Set(unknowns)].sort(compareCodePoint) };
 }
 
-function resolveLocalImport(importerPath: string, specifier: string, paths: ReadonlySet<string>): string | undefined {
-  if (!specifier.startsWith(".")) return undefined;
+export function localImportCandidates(importerPath:string,specifier:string):readonly string[]{
+  if (!specifier.startsWith(".")) return [];
   const base = posix.normalize(posix.join(posix.dirname(importerPath), specifier));
   const candidates = extname(base).length > 0
     ? [base, ...(base.endsWith(".js") ? [`${base.slice(0, -3)}.ts`, `${base.slice(0, -3)}.tsx`] : []), ...(base.endsWith(".mjs") ? [`${base.slice(0, -4)}.mts`] : []), ...(base.endsWith(".cjs") ? [`${base.slice(0, -4)}.cts`] : [])]
     : [...sourceExtensions.map((extension) => `${base}${extension}`), ...sourceExtensions.map((extension) => `${base}/index${extension}`)];
-  return candidates.find((candidate) => paths.has(candidate));
+  return candidates;
+}
+function resolveLocalImport(importerPath: string, specifier: string, paths: ReadonlySet<string>): string | undefined {
+  return localImportCandidates(importerPath,specifier).find(candidate=>paths.has(candidate));
 }
 
 export function analyzeJavaScript(entries: readonly InventoryEntry[], budget = new DerivedObservationBudget()): JavaScriptFacts {
@@ -576,11 +409,15 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[], budget = n
     const lexed = lexJavaScript(entry.content, budget, entry.path), tokens = lexed.tokens;
     try {
     const scopeKey = scopes.get(entry.path) ?? "local-repository";
-    const declarations = extractDeclarations(entry.content, scopeKey, budget, entry.path);
-    const exportFacts = extractExportFacts(entry.content, declarations, budget, entry.path);
-    const exports = [...new Set(extractExports(tokens, budget, entry.path))].sort(compareCodePoint);
+    const syntax = analyzeCompilerSyntax(entry.content, entry.path, scopeKey, budget);
+    const { declarations, exportFacts, exports } = syntax;
+    for (const diagnostic of syntax.diagnostics) {
+      budget.reserve(256 + 2 * (entry.path.length + diagnostic.length), "javascript-failures", entry.path);
+      failures.push({ analyzerId: "projector.javascript-local", capability: "syntax", scope: entry.path, message: diagnostic, recoverable: true,
+        affectedClaimKinds: ["dependency", "test-target", "hook-reachability", "semantic-declaration", "event-topology"] });
+    }
     const participantId = fileParticipantId(scopeKey, declarations, tokens, budget, entry.path);
-    const extractedEvents = extractEvents(tokens, entry.content, scopeKey, participantId, entry.contentHash, budget, entry.path);
+    const extractedEvents = extractEvents(syntax.eventCalls, scopeKey, participantId, entry.contentHash, budget, entry.path);
     budget.reserveItems(extractedEvents.events.length + extractedEvents.uncertainties.length, 8, "javascript-event-index", entry.path);
     for (const event of extractedEvents.events) events.push(event);
     for (const uncertainty of extractedEvents.uncertainties) eventUncertainties.push(uncertainty);
@@ -589,35 +426,35 @@ export function analyzeJavaScript(entries: readonly InventoryEntry[], budget = n
       path: entry.path,
       exports,
       lifecycleExports: exports.filter((name) => lifecycleNames.has(name)),
-      testNames: extractTestNames(tokens, budget, entry.path),
-      semanticHash: hashNormalizedTokens(tokens, "projector.local-semantic", budget, entry.path),
-      fallbackHash: hashNormalizedTokens(tokens, "local-unit-fallback", budget, entry.path),
-      variantHash: hashNormalizedTokens(tokens, "local-unit-variant", budget, entry.path),
+      testNames: syntax.testNames,
+      semanticHash: /\.(?:tsx|jsx)$/u.test(entry.path) ? hashJavaScriptSemantics(entry.content, "projector.local-semantic", budget, entry.path) : hashNormalizedTokens(tokens, "projector.local-semantic", budget, entry.path),
+      fallbackHash: /\.(?:tsx|jsx)$/u.test(entry.path) ? hashJavaScriptSemantics(entry.content, "local-unit-fallback", budget, entry.path) : hashNormalizedTokens(tokens, "local-unit-fallback", budget, entry.path),
+      variantHash: /\.(?:tsx|jsx)$/u.test(entry.path) ? hashJavaScriptSemantics(entry.content, "local-unit-variant", budget, entry.path) : hashNormalizedTokens(tokens, "local-unit-variant", budget, entry.path),
       participantId,
       scopeKey,
       declarations,
       exportFacts,
-      unknowns: extractedEvents.unknowns,
+      unknowns: [...new Set([...syntax.unknowns, ...extractedEvents.unknowns])].sort(compareCodePoint),
     });
-    for (const syntax of extractImportSyntax(tokens, budget, entry.path)) {
-      const resolvedPath = resolveLocalImport(entry.path, syntax.specifier, paths);
-      budget.reserve(256 + 2 * (entry.path.length + syntax.specifier.length + (resolvedPath?.length ?? 0)) + 32 * syntax.bindings.length, "javascript-dependencies", entry.path);
+    for (const importedSyntax of syntax.imports) {
+      const resolvedPath = resolveLocalImport(entry.path, importedSyntax.specifier, paths);
+      budget.reserve(256 + 2 * (entry.path.length + importedSyntax.specifier.length + (resolvedPath?.length ?? 0)) + 32 * importedSyntax.bindings.length, "javascript-dependencies", entry.path);
       dependencies.push({
         sourceClass: "derived",
         importerPath: entry.path,
-        specifier: syntax.specifier,
+        specifier: importedSyntax.specifier,
         ...(resolvedPath === undefined ? {} : { resolvedPath }),
-        importedBindings: [...new Set(syntax.bindings.map(({ imported }) => imported))].sort(compareCodePoint),
-        bindings: syntax.bindings,
-        typeOnly: syntax.typeOnly,
+        importedBindings: [...new Set(importedSyntax.bindings.map(({ imported }) => imported))].sort(compareCodePoint),
+        bindings: importedSyntax.bindings,
+        typeOnly: importedSyntax.typeOnly,
       });
-      if (syntax.specifier.startsWith(".") && resolvedPath === undefined) {
-        budget.reserve(256 + 2 * (entry.path.length + syntax.specifier.length), "javascript-failures", entry.path);
+      if (importedSyntax.specifier.startsWith(".") && resolvedPath === undefined) {
+        budget.reserve(256 + 2 * (entry.path.length + importedSyntax.specifier.length), "javascript-failures", entry.path);
         failures.push({
           analyzerId: "projector.javascript-local",
           capability: "module-resolution",
           scope: entry.path,
-          message: `Cannot resolve local module ${syntax.specifier}`,
+          message: `Cannot resolve local module ${importedSyntax.specifier}`,
           recoverable: true,
           affectedClaimKinds: ["dependency", "test-target", "hook-reachability"],
         });

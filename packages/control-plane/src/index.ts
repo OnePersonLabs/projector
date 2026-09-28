@@ -26,6 +26,7 @@ export {
 } from "./change-lifecycle/transport.js";
 export { RepositoryKnowledgeService } from "./knowledge/service.js";
 export { checkRepository, RepositoryCheckOutputSchema } from "./repository-check/service.js";
+export { assessGitIntegration } from "./integration/git-integration.js";
 export {
   KnowledgeApplicationEvidenceAssessmentSchema,
   type KnowledgeApplicationEvidenceAssessment,
@@ -82,3 +83,8 @@ export {
   type RepresentationProfileReconciliationOutput,
 } from "./representation/profile-reconciliation.js";
 export { runObservationTask } from "./observation/task-runner.js";
+export { VerificationService } from "./verification/service.js";
+export { BuiltinVerificationService, builtinCanonicalCheck, type BuiltinVerificationOptions } from "./verification/builtin-service.js";
+export { GeneratedOutputService } from "./change-lifecycle/generated-output.js";
+export { evaluateRepositoryArchitectureOptions, ArchitectureEvaluationOutputSchema } from "./architecture-evaluation/service.js";
+export { RepresentationPendingOutputSchema, RepresentationRecoveryOutputSchema, type LifecycleRepresentationPublicationState, type LifecycleRepresentationRecoveryOutcome } from "./change-lifecycle/service.js";

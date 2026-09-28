@@ -1,17 +1,30 @@
 import { collectLocalRepositoryInputs, observationGit, readObservationFile, type LocalRepositoryAnalysis } from "@projector/analyzers";
-import { hashFramedDomain, type ContentHash, type StateDigest, type DerivedObservationBudget } from "@projector/core";
+import { buildManifest, manifestKey, hashFramedDomain, type ContentHash, type StateDigest, type DerivedObservationBudget } from "@projector/core";
 import { collectCanonicalSnapshotSources, currentObservationScope, withObservationScope, RepositoryPathService, type CanonicalSnapshot } from "@projector/runtime";
 import { compileCanonicalRealizations, type CanonicalRealizationObservation } from "../knowledge/realizations.js";
 import { runObservationTask } from "../observation/task-runner.js";
 import type { RepositoryObservationData } from "../observation/tasks.js";
+import { enrollWatchman, watchmanByteReuse, validateWatchmanByteReuse, type WatchmanBaseline } from "./watchman-observation.js";
 
 const operationalPrefix = ".projector/";
-const observationInputs = new WeakMap<ChangeRepositoryObservation, { identity: ContentHash; state: StateDigest }>();
+const observationInputs = new WeakMap<ChangeRepositoryObservation, {
+  identity: ContentHash; state: StateDigest;
+  inventory: Awaited<ReturnType<typeof collectLocalRepositoryInputs>>["inventoryResult"];
+  watchman: WatchmanBaseline | undefined;
+}>();
 
 function inputIdentity(collected: Awaited<ReturnType<typeof collectLocalRepositoryInputs>>, canonicalSources: Awaited<ReturnType<typeof collectCanonicalSnapshotSources>>): ContentHash {
-  // Complete bytes, Git inputs, enumeration and exclusion descriptors. The same
-  // loaded analyzer/profile implementation produces both observations.
-  return hashFramedDomain("repository-observation-inputs", { collected, canonicalSources });
+  // The collector already hashes exact file bytes. Bind those hashes and every
+  // other analysis input without serializing and hashing the source strings a
+  // second time. This versioned identity is internal to this process; public
+  // semantic hashes and observation scope remain unchanged.
+  const { entries, ...inventory } = collected.inventoryResult;
+  return hashFramedDomain("repository-observation-inputs-v2", {
+    options: collected.options,
+    inventory: { ...inventory, entries: entries.map(({ content: _content, ...entry }) => entry) },
+    gitFacts: collected.gitFacts,
+    canonicalSources,
+  });
 }
 
 function governedPath(path: string): boolean {
@@ -46,9 +59,9 @@ function stateFrom(analysis: LocalRepositoryAnalysis, canonical: CanonicalSnapsh
   const fileManifest = analysis.files.map(({ path, contentHash, mediaType, generated }) => ({ path, contentHash, mediaType, generated }));
   return {
     gitBase: analysis.git.revision,
-    worktreeDigest: hashFramedDomain("repository-change-worktree", {
-      files: fileManifest,
-      moves: analysis.gitMoves,
+    worktreeDigest: hashFramedDomain("repository-change-worktree/v2", {
+      files: buildManifest(fileManifest.map(file=>({key:manifestKey(file.path),value:file}))).root,
+      moves: buildManifest(analysis.gitMoves.map(move=>({key:manifestKey(move.fromPath),value:move}))).root,
       surface: analysis.surface.enumeration,
     }),
     canonicalProjectorDigest: canonical.rootDigest,
@@ -74,6 +87,22 @@ export interface ChangeRepositoryObservation {
   independentValidator(path: string): Promise<IndependentValidatorObservation>;
 }
 
+/** Both eager and indexed hosts use the same exact Git-base validator proof. */
+export async function captureIndependentValidator(repositoryRoot: string, gitAvailability: LocalRepositoryAnalysis["git"]["availability"], readIdentity: (path: string) => LocalRepositoryAnalysis["gitIdentities"][number] | undefined, path: string): Promise<IndependentValidatorObservation> {
+  return withObservationScope({}, async scope => {
+    scope.signal.throwIfAborted(); scope.budget.check("independent-validator", path);
+    const identity = readIdentity(path);
+    if (gitAvailability !== "available" || identity?.tracked !== true || identity.objectId === undefined || identity.introductionCommit === undefined) throw new Error(`independent validator lacks tracked Git-base identity: ${path}`);
+    if (path.includes(":")) throw new Error(`independent validator path cannot contain colon: ${path}`);
+    const baseContent = await observationGit(repositoryRoot, ["show", `HEAD:${path}`], scope.budget, {signal:scope.signal,stage:"independent-validator"});
+    scope.budget.assertFileBytes(Buffer.byteLength(baseContent),path);
+    const paths = await RepositoryPathService.create(repositoryRoot);
+    const currentContent = (await readObservationFile((await paths.resolveRead(path)).realTarget,scope.budget,path,scope.signal)).toString("utf8");
+    if (baseContent !== currentContent) throw new Error(`independent validator must remain unchanged from Git base: ${path}`);
+    return {path,tracked:true,objectId:identity.objectId,introductionCommit:identity.introductionCommit,content:currentContent,contentHash:await runObservationTask("hash-content",{content:currentContent},scope)};
+  });
+}
+
 export function realizeChangeRepositoryData(repositoryRoot: string, rawAnalysis: LocalRepositoryAnalysis, canonical: CanonicalSnapshot, derivedBudget?: DerivedObservationBudget): RepositoryObservationData {
   const filtered = filterOperationalAnalysis(rawAnalysis);
   const realizations = compileCanonicalRealizations(filtered, canonical, derivedBudget);
@@ -85,36 +114,18 @@ export function realizeChangeRepositoryData(repositoryRoot: string, rawAnalysis:
 export async function observeChangeRepository(repositoryRoot: string): Promise<ChangeRepositoryObservation> {
   return withObservationScope({}, async () => {
     const scope = currentObservationScope()!;
+    const watchman = await enrollWatchman(repositoryRoot, scope.budget, scope.signal);
     // Sequential collection ensures rejection cannot leave a sibling Git child running.
     const collected = await collectLocalRepositoryInputs({ repositoryRoot, budget: scope.budget, signal: scope.signal });
     const canonicalSources = await collectCanonicalSnapshotSources(repositoryRoot, scope.budget, scope.signal);
     const data = await runObservationTask("observe", { collected, canonicalSources }, scope);
-    const paths = await RepositoryPathService.create(repositoryRoot);
     const observation: ChangeRepositoryObservation = {
     ...data,
     async independentValidator(path) {
-      scope.signal.throwIfAborted();
-      scope.budget.check("independent-validator", path);
-      const identity = data.analysis.gitIdentities.find((candidate) => candidate.path === path);
-      if (data.analysis.git.availability !== "available" || identity?.tracked !== true || identity.objectId === undefined || identity.introductionCommit === undefined) {
-        throw new Error(`independent validator lacks tracked Git-base identity: ${path}`);
-      }
-      if (path.includes(":")) throw new Error(`independent validator path cannot contain colon: ${path}`);
-      const baseContent = await observationGit(repositoryRoot, ["show", `HEAD:${path}`], scope.budget, { signal: scope.signal, stage: "independent-validator" });
-      scope.budget.assertFileBytes(Buffer.byteLength(baseContent), path);
-      const currentContent = (await readObservationFile((await paths.resolveRead(path)).realTarget, scope.budget, path, scope.signal)).toString("utf8");
-      if (baseContent !== currentContent) throw new Error(`independent validator must remain unchanged from Git base: ${path}`);
-      return {
-        path,
-        tracked: true,
-        objectId: identity.objectId,
-        introductionCommit: identity.introductionCommit,
-        content: currentContent,
-        contentHash: await runObservationTask("hash-content", { content: currentContent }, scope),
-      };
+      return captureIndependentValidator(repositoryRoot,data.analysis.git.availability,path=>data.analysis.gitIdentities.find(candidate=>candidate.path===path),path);
     },
     };
-    observationInputs.set(observation, { identity: inputIdentity(collected, canonicalSources), state: structuredClone(data.state) });
+    observationInputs.set(observation, { identity: inputIdentity(collected, canonicalSources), state: structuredClone(data.state), inventory: collected.inventoryResult, watchman });
     scope.budget.check("state-input-capture");
     scope.signal.throwIfAborted();
     return observation;
@@ -126,8 +137,12 @@ export async function observeRepositoryState(previous: ChangeRepositoryObservati
   return withObservationScope({}, async (scope) => {
     const prior = observationInputs.get(previous);
     if (prior === undefined) return (await observeChangeRepository(previous.repositoryRoot)).state;
-    const collected = await collectLocalRepositoryInputs({ repositoryRoot: previous.repositoryRoot, budget: scope.budget, signal: scope.signal });
+    const reuseResult = await watchmanByteReuse(prior.watchman, prior.inventory, scope.budget, scope.signal);
+    const byteReuse = reuseResult.kind === "reuse" ? reuseResult.reuse : undefined;
+    const collected = await collectLocalRepositoryInputs({ repositoryRoot: previous.repositoryRoot, budget: scope.budget, signal: scope.signal,
+      ...(byteReuse === undefined ? {} : { byteReuse }) });
     const canonicalSources = await collectCanonicalSnapshotSources(previous.repositoryRoot, scope.budget, scope.signal);
+    if (byteReuse !== undefined) await validateWatchmanByteReuse(byteReuse, scope.budget, scope.signal);
     const identity = inputIdentity(collected, canonicalSources);
     scope.budget.check("state-input-proof");
     scope.signal.throwIfAborted();

@@ -52,7 +52,6 @@ describe("observed progressive coverage", () => {
           baseline: async () => { throw new Error("Unexpected decision baseline request"); },
           continuation: async () => { throw new Error("Unexpected continuation request"); },
           readImpact: async () => { throw new Error("Unexpected impact request"); },
-          stageImpact: () => { throw new Error("Unexpected impact staging"); },
         }, "2026-09-27T00:00:00.000Z");
         expect(observationCalls).toHaveBeenCalledTimes(1);
         expect(obligationCalls).toHaveBeenCalledTimes(2); // Validator requests and the complete evaluation pass.

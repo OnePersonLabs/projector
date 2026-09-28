@@ -17,8 +17,6 @@ import {
 } from "@projector/core";
 import { z } from "zod";
 
-import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
-
 export type { ApplicationEvidencePort } from "@projector/core";
 
 const unavailable = z.strictObject({
@@ -56,8 +54,15 @@ export const KnowledgeApplicationEvidenceAssessmentSchema = z.discriminatedUnion
  * supplied port is still a trusted producer boundary: its hash binds a reply,
  * but cannot itself prove a real-world observation.
  */
+export interface ApplicationEvidenceObservation {
+  readonly canonical: {
+    readonly documents: readonly CanonicalDocumentEnvelope[];
+    readonly readDocument?: (id: string) => CanonicalDocumentEnvelope | undefined;
+  };
+}
+
 export async function assessKnowledgeApplicationEvidence(input: {
-  readonly observation: ChangeRepositoryObservation;
+  readonly observation: ApplicationEvidenceObservation;
   readonly ownerIds: readonly string[];
   readonly signal: AbortSignal;
   readonly port?: ApplicationEvidencePort;
@@ -132,12 +137,15 @@ function withHash<T extends Record<string, unknown>>(body: T): T & { contentHash
   return { ...body, contentHash: hashFramedDomain("knowledge-application-evidence-assessment/v1", body) };
 }
 
-function scenarioDisposition(observation: ChangeRepositoryObservation, binding: ApplicationEvidencePredicateBinding): {
+function scenarioDisposition(observation: ApplicationEvidenceObservation, binding: ApplicationEvidencePredicateBinding): {
   readonly status: "matched" | "missing" | "mismatched";
   readonly reason: string;
   readonly dependency: StateValueDependencyRef;
 } {
-  const envelope = observation.canonical.documents.find(({ kind, id }) => kind === "behavioral-scenario" && id === binding.scenario.id);
+  const addressed = observation.canonical.readDocument?.(binding.scenario.id);
+  const envelope = observation.canonical.readDocument === undefined
+    ? observation.canonical.documents.find(({ kind, id }) => kind === "behavioral-scenario" && id === binding.scenario.id)
+    : addressed?.kind === "behavioral-scenario" ? addressed : undefined;
   const observedSemanticHash = envelope !== undefined && typeof envelope.payload.semanticHash === "string" ? envelope.payload.semanticHash : null;
   const status = envelope === undefined ? "missing" as const : observedSemanticHash === binding.scenario.semanticHash ? "matched" as const : "mismatched" as const;
   const versionHash = hashFramedDomain("application-evidence-scenario-disposition/v1", { scenarioId: binding.scenario.id, status, canonicalDocumentHash: envelope?.canonicalDocumentHash ?? null, semanticHash: observedSemanticHash });

@@ -39,7 +39,27 @@ function parseIntroductionHistory(output: string): Map<string, string> {
   }
   return result;
 }
-function parseStatus(output: string): { moves: GitMoveFact[]; deleted: string[]; untracked: string[] } {
+
+/** Addressed index/history reads for a complete producer-selected path delta.
+ * Git owns index parsing and immutable history; paths use literal pathspecs. */
+export async function collectGitPathIdentities(repositoryRoot:string,paths:readonly string[],revision:string,known:ReadonlyMap<string,GitIdentityFact>,options:{readonly budget:ObservationBudget;readonly signal:AbortSignal;readonly ancestryPreserved:boolean}):Promise<GitIdentityFact[]>{
+  const tracked=new Map<string,string>();
+  // Bound argv independently of repository population and Windows command limits.
+  const batches:string[][]=[];let batch:string[]=[],characters=0;
+  for(const path of [...new Set(paths)].sort(compareCodePoint)){if(path.length>8000)throw new ObservationError("observation-failed","git-path-identities",path,"Git path exceeds the bounded literal command argument limit");if(batch.length>=64||characters+path.length>12000){batches.push(batch);batch=[];characters=0;}batch.push(path);characters+=path.length+4;}
+  if(batch.length>0)batches.push(batch);
+  for(const paths of batches){const output=await observationGit(repositoryRoot,["--literal-pathspecs","ls-files","--stage","-z","--",...paths],options.budget,{signal:options.signal,stage:"git-path-identities"});for(const[path,object]of parseTracked(output))tracked.set(path,object);}
+  const identities:GitIdentityFact[]=[];
+  for(const path of [...new Set(paths)].sort(compareCodePoint)){
+    options.budget.check("git-path-identities",path);options.signal.throwIfAborted();const objectId=tracked.get(path);
+    if(objectId===undefined){identities.push({sourceClass:"derived",path,tracked:false,availability:"available",introductionHistory:"not-applicable"});continue;}
+    let introductionCommit=options.ancestryPreserved?known.get(path)?.introductionCommit:undefined;
+    if(introductionCommit===undefined&&revision!=="unborn")introductionCommit=(await observationGit(repositoryRoot,["--literal-pathspecs","log","--no-ext-diff","--follow","--diff-filter=A","--format=%H","--",path],options.budget,{signal:options.signal,stage:"git-path-history"})).trim().split("\n").filter(Boolean).at(-1);
+    identities.push({sourceClass:"derived",path,tracked:true,availability:"available",introductionHistory:revision==="unborn"?"not-applicable":"available",objectId,...(introductionCommit===undefined?{}:{introductionCommit})});
+  }
+  return identities;
+}
+export function parseGitStatus(output: string): { moves: GitMoveFact[]; deleted: string[]; untracked: string[] } {
   const records = output.split("\0"), moves: GitMoveFact[] = [], deleted: string[] = [], untracked: string[] = [];
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index]; if (!record) continue;
@@ -123,7 +143,7 @@ export async function collectGitFacts(repositoryRoot: string, paths: readonly st
   }
   const revision = revisionOutput.trim() || "unborn";
   const tracked = parseTracked(commandResults[1]!);
-  const status = parseStatus(commandResults[2]!);
+  const status = parseGitStatus(commandResults[2]!);
   const introductions = revision === "unborn" ? new Map<string, string>() : parseIntroductionHistory(await git([
     "log", "--no-ext-diff", "--diff-filter=A", "--format=%x1e%H%x00", "--name-only", "-z", "--",
   ]));

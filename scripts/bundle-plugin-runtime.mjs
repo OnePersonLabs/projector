@@ -2,9 +2,13 @@ import { build } from "esbuild";
 import { cp, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { copyRuntimeDependencies } from "./copy-runtime-dependencies.mjs";
 
 /** Bundle executable exports while keeping the npm release packaging independent. */
 export async function bundlePluginRuntime(releaseRoot, outputRoot, manifest, options = {}) {
+  // Keep vendor package boundaries: Node supplies CommonJS filename/directory
+  // semantics and resolves package assets from the copied native closure.
+  const external = Object.keys(manifest.dependencies ?? {}).filter(name => !name.startsWith("@projector/")).sort();
   const entries = { "dist/command-main": join(releaseRoot, manifest.bin.projector), "workers/task-worker": join(releaseRoot, "node_modules/@projector/control-plane/dist/observation/task-worker.js") };
   const exports = {};
   for (const [name, target] of Object.entries(manifest.exports)) {
@@ -17,8 +21,7 @@ export async function bundlePluginRuntime(releaseRoot, outputRoot, manifest, opt
   const result = await build({
     entryPoints: entries, outdir: outputRoot, absWorkingDir: releaseRoot, bundle: true, splitting: true,
     platform: "node", target: "node24", format: "esm", chunkNames: "chunks/shared-[hash]",
-    outExtension: { ".js": ".js" }, metafile: true, legalComments: "linked",
-    banner: { js: 'import { createRequire as __projectorCreateRequire } from "node:module"; const require = __projectorCreateRequire(import.meta.url);' },
+    outExtension: { ".js": ".js" }, external, metafile: true, legalComments: "linked",
     plugins: [{ name: "projector-runtime-assets", setup(builder) {
       builder.onLoad({ filter: /[\\/]dist[\\/](observation[\\/]task-runner|execution[\\/]command-executor)\.js$/ }, async ({ path }) => {
         let contents = await readFile(path, "utf8");
@@ -36,6 +39,7 @@ export async function bundlePluginRuntime(releaseRoot, outputRoot, manifest, opt
     } }],
   });
   options.signal?.throwIfAborted();
+  const externalDependencies = await copyRuntimeDependencies(external.map(name => ({ name, from: releaseRoot })), outputRoot, options);
   // esbuild normalizes output extensions; the public executable keeps its .mjs path.
   const command = await readFile(join(outputRoot, "dist/command-main.js"), "utf8");
   await writeFile(join(outputRoot, "dist/command-main.mjs"), command);
@@ -43,12 +47,15 @@ export async function bundlePluginRuntime(releaseRoot, outputRoot, manifest, opt
   await mkdir(join(outputRoot, "assets"), { recursive: true });
   await cp(join(releaseRoot, "node_modules/@projector/runtime/dist/execution/windows-job-supervisor.ps1"), join(outputRoot, "assets/windows-job-supervisor.ps1"));
   const packages = new Map();
+  const packageNames = new Set(Object.keys(externalDependencies));
   for (const input of Object.keys(result.metafile.inputs)) {
     const absolute = join(releaseRoot, input);
     const path = relative(releaseRoot, absolute).replaceAll("\\", "/");
     const match = /^node_modules\/((?:@[^/]+\/)?[^/]+)\//u.exec(path);
     if (match === null) continue;
-    const name = match[1];
+    packageNames.add(match[1]);
+  }
+  for (const name of packageNames) {
     if (packages.has(name)) continue;
     const root = join(releaseRoot, "node_modules", name);
     const packageManifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -63,5 +70,5 @@ export async function bundlePluginRuntime(releaseRoot, outputRoot, manifest, opt
   await mkdir(join(outputRoot, "licenses"), { recursive: true });
   await writeFile(join(outputRoot, "licenses/third-party.json"), `${JSON.stringify([...packages.values()].sort((a, b) => a.name.localeCompare(b.name)), null, 2)}\n`);
   await cp(fileURLToPath(new URL("../LICENSE", import.meta.url)), join(outputRoot, "LICENSE"));
-  await writeFile(join(outputRoot, "package.json"), `${JSON.stringify({ name: manifest.name, version: manifest.version, description: manifest.description, type: "module", engines: manifest.engines, bin: manifest.bin, exports }, null, 2)}\n`);
+  await writeFile(join(outputRoot, "package.json"), `${JSON.stringify({ name: manifest.name, version: manifest.version, description: manifest.description, type: "module", engines: manifest.engines, bin: manifest.bin, exports, dependencies: externalDependencies }, null, 2)}\n`);
 }

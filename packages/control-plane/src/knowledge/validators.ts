@@ -27,7 +27,7 @@ export class KnowledgeValidatorRun {
   private readonly results = new Map<string, Promise<ExternalGovernanceValidatorFinding>>();
   executed = false;
 
-  constructor(private readonly observation: ChangeRepositoryObservation, private readonly signal: AbortSignal, private readonly host: KnowledgeValidatorHost = {}) {}
+  constructor(private readonly observation: Pick<ChangeRepositoryObservation, "repositoryRoot" | "independentValidator">, private readonly signal: AbortSignal, private readonly host: KnowledgeValidatorHost = {}) {}
 
   evaluate(request: KnowledgeValidatorRequest): Promise<ExternalGovernanceValidatorFinding> {
     const key = canonicalJson(request);

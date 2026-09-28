@@ -35,6 +35,7 @@ export function triggerSubjectId(trigger: AuthorityReconsiderTrigger): string | 
     case "relation-changed": return trigger.relationId;
     case "constraint-changed": return trigger.constraintId;
     case "lens-changed": return trigger.lensId;
+    case "evidence-invalidated": return trigger.evidenceId;
     default: return undefined;
   }
 }
@@ -63,6 +64,9 @@ export function captureDecisionTriggerObservations(
   surface: string,
 ): KnowledgeDecisionBaseline["observations"] {
   const result: KnowledgeDecisionBaseline["observations"] = [];
+  for (const { evidenceId } of authority.evidence) {
+    result.push({ key: `evidence:${evidenceId}`, value: { semanticHash: documents.find(({ id }) => id === evidenceId)?.semanticHash ?? null } });
+  }
   for (const trigger of authority.reconsiderWhen) {
     const subjectId = triggerSubjectId(trigger);
     if (subjectId !== undefined) {
@@ -99,15 +103,22 @@ function matches(baseline: KnowledgeDecisionBaseline, decision: ArchitectureDeci
 /** Reads existing authenticated lifecycle artifacts; no new baseline store or implicit authority write. */
 export class DecisionBaselineReader {
   private receipts: Promise<readonly DecisionBaselineReceipt[]> | undefined;
-  constructor(private readonly observation: Pick<ChangeRepositoryObservation, "repositoryRoot" | "canonical">) {}
+  constructor(private readonly observation: Pick<ChangeRepositoryObservation, "repositoryRoot" | "canonical"> | {
+    readonly repositoryRoot: string;
+    readonly readDocument: (id: string) => CanonicalDocumentEnvelope | undefined;
+  }) {}
+
+  private document(id: string): CanonicalDocumentEnvelope | undefined {
+    return "readDocument" in this.observation ? this.observation.readDocument(id) : this.observation.canonical.documents.find(document => document.id === id);
+  }
 
   async read(decision: ArchitectureDecision, authority: AuthorityRecord): Promise<DecisionBaselineEvidence> {
     return withObservationScope({}, async (scope) => {
     checkObservation(scope.budget, scope.signal, "decision-baseline");
     this.receipts ??= this.readReceipts();
     const matching = (await this.receipts).filter(({ baseline }) => matches(baseline, decision, authority));
-    const authorityDocument = this.observation.canonical.documents.find(({ id }) => id === authority.id)?.canonicalDocumentHash;
-    const decisionDocument = this.observation.canonical.documents.find(({ id }) => id === decision.id)?.canonicalDocumentHash;
+    const authorityDocument = this.document(authority.id)?.canonicalDocumentHash;
+    const decisionDocument = this.document(decision.id)?.canonicalDocumentHash;
     // An exact approved document revision disambiguates reaffirmation even under an injected/fixed clock.
     const exact = matching.filter(({ baseline }) => baseline.authorityDocumentHash === authorityDocument && baseline.decisionDocumentHash === decisionDocument);
     const candidates = exact.length > 0 ? exact : matching;
@@ -190,8 +201,8 @@ export class DecisionBaselineReader {
       if (anchor === undefined) throw new Error("authority has no tracked semantic baseline");
       const trackedPaths = new Set((await this.git(["ls-tree", "-r", "--name-only", "-z", anchor])).split("\0").filter(Boolean));
       const sources: { text: string; path: string; subjectId: string }[] = [];
-      for (const subjectId of strings(authority.reconsiderWhen.map(triggerSubjectId).filter((id): id is string => id !== undefined))) {
-        const current = this.observation.canonical.documents.find(({ id }) => id === subjectId);
+      for (const subjectId of strings([...authority.reconsiderWhen.map(triggerSubjectId).filter((id): id is string => id !== undefined), ...authority.evidence.map(({ evidenceId }) => evidenceId)])) {
+        const current = this.document(subjectId);
         const kinds = current === undefined ? ["concept", "requirement", "behavioral-scenario", "relation", "rule", "projection-lens"] as const : [current.kind];
         for (const kind of kinds) {
             const subjectLocator = await files.locate(kind as Parameters<CanonicalFileRepository["locate"]>[0], subjectId);

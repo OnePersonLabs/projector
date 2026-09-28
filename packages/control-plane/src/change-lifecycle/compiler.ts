@@ -18,8 +18,6 @@ import {
   hashSemantic,
   withCanonicalHashes,
   type BehavioralScenario,
-  type ArchitectureDecision,
-  type AuthorityRecord,
   type ChangeProposal,
   type ArchitectureConcern,
   type CanonicalDocumentEnvelope,
@@ -31,7 +29,6 @@ import {
   type ProposedRequirement,
   type ProposedScenario,
   type ProposedCanonicalMutation,
-  type ProjectionLens,
   type RepresentationProjection,
   type SelectorExpr,
   type StateQueryDependency,
@@ -46,7 +43,6 @@ import {
   canonicalRepresentationSourceFromSemanticChange,
   compileSemanticChange,
   compileSemanticChangePlan,
-  compileProjectionLenses,
   createStateBinding,
   discoverArchitectureConcerns,
   executionPlanHash,
@@ -65,6 +61,7 @@ import type { KnowledgeContextResult } from "../knowledge/types.js";
 import { runObservationTask } from "../observation/task-runner.js";
 import { readObservedText } from "../observation/source.js";
 import { validateArchitectureProducts } from "./architecture-products.js";
+import { validateStaticCanonicalGovernance, validateCanonicalRelationEndpoints } from "../knowledge/canonical-governance.js";
 import { repositoryImpactProofHash, type RepositoryImpactSnapshot, type RepositoryImpactReport } from "../impact/service.js";
 
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
@@ -417,19 +414,6 @@ function mutationKey(kind: PayloadCanonicalMutation["kind"], payload: Record<str
   return payload.key;
 }
 
-function assertEligibleAuthority(record: AuthorityRecord, subjectId: string, label: string): void {
-  if (record.subjectId !== subjectId) throw new Error(`${label} authority ${record.id} is bound to ${record.subjectId}, expected ${subjectId}`);
-  if (record.status !== "approved" && record.status !== "auto-approved") throw new Error(`${label} authority ${record.id} is not approved`);
-  if (record.conclusion === "unknown" || record.conclusion === "exception") throw new Error(`${label} authority ${record.id} does not authorize activation`);
-  if (record.decidedBy === "system" && record.status !== "auto-approved") throw new Error(`system authority ${record.id} lacks auto-approval`);
-}
-
-function isEligibleAuthority(record: AuthorityRecord): boolean {
-  return (record.status === "approved" || record.status === "auto-approved")
-    && record.conclusion !== "unknown"
-    && record.conclusion !== "exception"
-    && (record.decidedBy !== "system" || record.status === "auto-approved");
-}
 
 function defaultRepresentationArtifacts(): RepresentationArtifactStore {
   const values = new Map<ContentHash, string>();
@@ -686,67 +670,10 @@ async function compileObservedRepositoryChange(
   }
   for (const review of mutationReviews.filter(({ kind, after }) => kind === "relation" && after !== null)) {
     const relation = RelationSchema.parse(documentsAfter.get(review.id)!.payload) as Relation;
-    if (relation.active && (!knownAfterIds.has(relation.fromId) || !knownAfterIds.has(relation.toId))) throw new Error(`relation ${relation.id} has a dangling endpoint`);
+    validateCanonicalRelationEndpoints([relation], knownAfterIds, { populationComplete: true });
   }
-  const authoritiesAfter = [...documentsAfter.values()].filter(({ kind }) => kind === "authority-record").map(({ payload }) => AuthorityRecordSchema.parse(payload) as AuthorityRecord);
-  const authorityById = new Map(authoritiesAfter.map((record) => [record.id, record]));
-  const decisionsAfter = [...documentsAfter.values()].filter(({ kind }) => kind === "architecture-decision").map(({ payload }) => ArchitectureDecisionSchema.parse(payload) as ArchitectureDecision);
-  const lensesAfter = [...documentsAfter.values()].filter(({ kind }) => kind === "projection-lens").map(({ payload }) => ProjectionLensSchema.parse(payload) as ProjectionLens);
   validateArchitectureProducts([...documentsAfter.values()], now, new Set(canonicalWrites.map(({ id }) => id)));
-  if (mutationReviews.length > 0) {
-    const decisionConcernIds = new Set(decisionsAfter.map(({ concernId }) => concernId));
-    for (const authority of authoritiesAfter.filter(isEligibleAuthority)) if (!knownAfterIds.has(authority.subjectId) && !decisionConcernIds.has(authority.subjectId)) {
-      throw new Error(`authority ${authority.id} has a dangling subject ${authority.subjectId}`);
-    }
-    for (const decision of decisionsAfter.filter(({ lifecycle }) => lifecycle === "active")) {
-      const authority = authorityById.get(decision.authorityRecordId);
-      if (authority === undefined) throw new Error(`active decision ${decision.id} has no authority record ${decision.authorityRecordId}`);
-      assertEligibleAuthority(authority, decision.concernId, `active decision ${decision.id}`);
-    }
-    const activeByConcern = new Map<string, string[]>();
-    for (const decision of decisionsAfter) {
-      if (decision.lifecycle === "active") activeByConcern.set(decision.concernId, [...(activeByConcern.get(decision.concernId) ?? []), decision.id]);
-      for (const supersededId of decision.supersedesDecisionIds) {
-        const targetDocument = documentsAfter.get(supersededId);
-        if (targetDocument?.kind !== "architecture-decision") throw new Error(`decision ${decision.id} supersedes a missing or non-decision target ${supersededId}`);
-        const target = ArchitectureDecisionSchema.parse(targetDocument.payload) as ArchitectureDecision;
-        if (target.concernId !== decision.concernId) throw new Error(`decision ${decision.id} cannot supersede ${supersededId} from another concern`);
-        if (target.lifecycle !== "superseded") throw new Error(`superseded decision ${supersededId} must be superseded in the proposed final state`);
-      }
-    }
-    for (const [concernId, ids] of activeByConcern) if (ids.length > 1) throw new Error(`concern ${concernId} has multiple active decisions: ${ids.sort(compare).join(", ")}`);
-    for (const governed of [...decisionsAfter.filter(({ lifecycle }) => lifecycle === "active"), ...lensesAfter.filter(({ status }) => status === "active")]) for (const basis of governed.governanceBasis) {
-      const referencedId = basis.kind === "architecture-decision" ? basis.decisionId
-        : basis.kind === "hard-constraint" ? basis.conceptId
-          : basis.kind === "adopted-standard" ? basis.authorityRecordId
-            : basis.kind === "migration-overlay" ? basis.migrationId
-              : basis.kind === "active-lens" ? basis.lensId
-                : undefined;
-      if (referencedId === undefined) continue;
-      const target = documentsAfter.get(referencedId);
-      const expectedKind = basis.kind === "architecture-decision" ? "architecture-decision"
-        : basis.kind === "hard-constraint" ? "concept"
-          : basis.kind === "adopted-standard" ? "authority-record"
-            : basis.kind === "migration-overlay" ? "migration"
-              : "projection-lens";
-      if (target?.kind !== expectedKind) throw new Error(`${governed.id} governance basis ${basis.kind} references missing or wrong-kind ${referencedId}`);
-      if (basis.kind === "hard-constraint") {
-        const concept = ConceptSchema.parse(target.payload) as { status: string };
-        if (concept.status !== "active") throw new Error(`${governed.id} hard constraint ${referencedId} is not active`);
-      } else if (basis.kind === "architecture-decision") {
-        const decision = ArchitectureDecisionSchema.parse(target.payload) as ArchitectureDecision;
-        if (decision.lifecycle !== "active") throw new Error(`${governed.id} decision basis ${referencedId} is not active`);
-      } else if (basis.kind === "adopted-standard") {
-        const authority = AuthorityRecordSchema.parse(target.payload) as AuthorityRecord;
-        const subjectId = "concernId" in governed ? governed.concernId : governed.id;
-        assertEligibleAuthority(authority, subjectId, `${governed.id} adopted-standard basis`);
-      } else if (basis.kind === "active-lens") {
-        const lens = ProjectionLensSchema.parse(target.payload) as ProjectionLens;
-        if (lens.status !== "active") throw new Error(`${governed.id} lens basis ${referencedId} is not active`);
-      }
-    }
-    compileProjectionLenses({ lenses: lensesAfter, units: [], authorityRecords: authoritiesAfter });
-  }
+  if (mutationReviews.length > 0) validateStaticCanonicalGovernance([...documentsAfter.values()], knownAfterIds, { populationComplete: true });
   if (executionKind === "canonical-only" && canonicalWrites.length === 0) throw new Error("canonical-only proposal produces no model change");
   canonicalWrites.sort((left, right) => compare(left.path, right.path));
   const contextIds = input.knowledgeContext?.branches

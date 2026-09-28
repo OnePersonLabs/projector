@@ -172,6 +172,8 @@ export interface KnowledgeGovernanceReconciliation {
 
 export interface KnowledgeReconciliationResult {
   readonly impact?: RepositoryImpactReport;
+  /** Observed context membership, not a prediction or proof of repository deletion. */
+  readonly scopeChanges?: KnowledgeScopeChanges;
   readonly apiVersion: typeof KNOWLEDGE_API_VERSION;
   readonly contextId: string;
   readonly capturedState: StateDigest;
@@ -186,6 +188,18 @@ export interface KnowledgeReconciliationResult {
   };
   readonly reasons: readonly string[];
   readonly contentHash: ContentHash;
+}
+
+export interface KnowledgeScopeChanges {
+  readonly scope: "retained-context";
+  readonly addedEntityIds: readonly string[];
+  readonly removedFromContextEntityIds: readonly string[];
+  readonly changedSemanticEntityIds: readonly string[];
+  readonly changedSourceEntityIds: readonly string[];
+  readonly changedQueryIds: readonly string[];
+  readonly unknownDependencyIds: readonly string[];
+  readonly frontierEntityIds: readonly string[];
+  readonly unknowns: readonly string[];
 }
 
 const candidateSignalSchema = z.enum(["id", "key", "alias", "lexical", "lineage", "tombstone"]);
@@ -318,6 +332,12 @@ export const KnowledgeContextResultSchema = z.strictObject({
 
 export const KnowledgeReconciliationResultSchema = z.strictObject({
   impact: RepositoryImpactReportSchema.optional(),
+  scopeChanges: z.strictObject({
+    scope: z.literal("retained-context"), addedEntityIds: z.array(z.string()),
+    removedFromContextEntityIds: z.array(z.string()), changedSemanticEntityIds: z.array(z.string()),
+    changedSourceEntityIds: z.array(z.string()), changedQueryIds: z.array(z.string()),
+    unknownDependencyIds: z.array(z.string()), frontierEntityIds: z.array(z.string()), unknowns: z.array(z.string()),
+  }).optional(),
   apiVersion: z.literal(KNOWLEDGE_API_VERSION),
   contextId: z.string(),
   capturedState: StateDigestSchema,

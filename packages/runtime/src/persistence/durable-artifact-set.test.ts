@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { ObservationBudget } from "@projector/core";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { DurableArtifactSetStore } from "./durable-artifact-set.js";
@@ -325,5 +326,47 @@ describe("durable artifact set publication", () => {
     await mkdir(linked);
     await symlink(root, join(linked, "blobs"), "dir");
     expect(await store.read("linked")).toMatchObject({ status: "integrity-failed" });
+  });
+
+  test("scoped durable reads reject oversized manifests instead of returning partial success", async () => {
+    const { root, storageRoot, store } = await temporaryStore();
+    await store.begin({ artifactSetId: "bounded-read" });
+    await store.finalize({ artifactSetId: "bounded-read", manifestBytes: manifest([]) });
+    await writeFile(join(root, "published", "bounded-read", "manifest.bin"), Buffer.concat([manifest([]), Buffer.alloc(128, 0x20)]));
+
+    const scoped = new DurableArtifactSetStore(storageRoot, strictManifest, {}, {
+      budget: new ObservationBudget({ maxFileBytes: 64 }), signal: new AbortController().signal,
+    });
+    await expect(scoped.read("bounded-read")).rejects.toMatchObject({ code: "observation-limit-exceeded", limit: "maxFileBytes" });
+  });
+
+  test("scoped durable reads bound blob count and propagate cancellation", async () => {
+    const { storageRoot, store } = await temporaryStore();
+    const first = Buffer.from("first"); const second = Buffer.from("second");
+    await store.begin({ artifactSetId: "bounded-blobs" });
+    await store.stageBlob({ artifactSetId: "bounded-blobs", path: "first.bin", bytes: first });
+    await store.stageBlob({ artifactSetId: "bounded-blobs", path: "second.bin", bytes: second });
+    await store.finalize({ artifactSetId: "bounded-blobs", manifestBytes: manifest([{ path: "first.bin", bytes: first }, { path: "second.bin", bytes: second }]) });
+
+    const limited = new DurableArtifactSetStore(storageRoot, strictManifest, {}, {
+      budget: new ObservationBudget({ maxFiles: 2 }), signal: new AbortController().signal,
+    });
+    await expect(limited.read("bounded-blobs")).rejects.toMatchObject({ code: "observation-limit-exceeded", limit: "maxFiles" });
+    for (const [override, limit] of [
+      [{ maxDirectories: 1 }, "maxDirectories"],
+      [{ maxTotalBytes: 64 }, "maxTotalBytes"],
+      [{ maxDerivedBytes: 64 }, "maxDerivedBytes"],
+    ] as const) {
+      const constrained = new DurableArtifactSetStore(storageRoot, strictManifest, {}, {
+        budget: new ObservationBudget(override), signal: new AbortController().signal,
+      });
+      await expect(constrained.read("bounded-blobs")).rejects.toMatchObject({ code: "observation-limit-exceeded", limit });
+    }
+    const controller = new AbortController(); controller.abort(new Error("read cancelled"));
+    const cancelled = new DurableArtifactSetStore(storageRoot, strictManifest, {}, {
+      budget: new ObservationBudget(), signal: controller.signal,
+    });
+    await expect(cancelled.read("bounded-blobs")).rejects.toThrow("read cancelled");
+    expect(await store.read("bounded-blobs")).toMatchObject({ status: "published" });
   });
 });

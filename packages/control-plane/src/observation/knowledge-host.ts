@@ -14,7 +14,6 @@ export interface KnowledgeComputeHost {
   applicationEvidence(ownerIds: readonly string[]): ReturnType<typeof assessKnowledgeApplicationEvidence>;
   freshState(): Promise<StateDigest>;
   readImpact(reference: RepositoryImpactReference): Promise<RepositoryImpactSnapshot>;
-  stageImpact(snapshot: RepositoryImpactSnapshot): void;
 }
 export type KnowledgeHostRequest =
   | { type: "coverage-continuation"; request: RepositoryContinuationRequest }

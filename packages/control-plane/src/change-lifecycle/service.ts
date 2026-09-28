@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { z } from "zod";
 
 import {
   canonicalJson,
@@ -19,7 +20,7 @@ import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import type { KnowledgeReconciliationResult } from "../knowledge/types.js";
 import type { ApplicationEvidencePort } from "../knowledge/application-evidence.js";
 import { observeChangeRepository, observeRepositoryState, type ChangeRepositoryObservation } from "./repository-observer.js";
-import { RepositoryRepresentationArtifactStore } from "../representation/artifact-store.js";
+import { RepositoryRepresentationArtifactStore, type RepresentationPublicationState, type RepresentationRecoveryOutcome } from "../representation/artifact-store.js";
 import { validateCompiledRepositoryChangeCurrentness } from "./currentness.js";
 import {
   ChangeLifecycleStore,
@@ -61,6 +62,18 @@ export interface LifecycleRecoveryOutcome {
 export interface LifecycleOperationOptions {
   readonly signal?: AbortSignal;
 }
+
+export type LifecycleRepresentationPublicationState = RepresentationPublicationState & { readonly captureStatus: "captured" | "uncaptured" | "unassociated" };
+export type LifecycleRepresentationRecoveryOutcome = RepresentationRecoveryOutcome & { readonly captureStatus: "captured" | "uncaptured" | "unassociated" };
+const representationPublicationFields = {
+  publicationId: z.string().regex(/^[a-f0-9]{64}$/u),
+  semanticChangeId: z.string().optional(),
+  projectionId: z.string().optional(),
+  reason: z.string().optional(),
+  captureStatus: z.enum(["captured", "uncaptured", "unassociated"]),
+};
+export const RepresentationPendingOutputSchema = z.array(z.object({ ...representationPublicationFields, status: z.enum(["published", "incomplete", "integrity-failed"]) }).strict());
+export const RepresentationRecoveryOutputSchema = z.array(z.object({ ...representationPublicationFields, status: z.enum(["recovered", "recovery-required"]) }).strict());
 
 export interface CurrentLifecyclePlanInspection {
   readonly capture: LifecycleCaptureRecord;
@@ -189,7 +202,7 @@ export class RepositoryChangeLifecycleService {
     const suppliedId = input.knowledgeContextId?.normalize("NFKC").trim();
     if (input.knowledgeContextId !== undefined && !suppliedId) throw new Error("knowledge context ID must be nonblank");
     const knowledgeContextId = await captureKnowledgeContextId(this.repositoryRoot, input.request, proposal, suppliedId, options.signal, this.applicationEvidence);
-    const compiled = await this.compile(input.request, proposal, knowledgeContextId, options.signal);
+    const compiled = await this.compile(input.request, proposal, knowledgeContextId, options.signal, true, true);
     if (knowledgeContextId !== undefined) await this.assertKnowledgeContext(knowledgeContextId, compiled, proposal, options.signal);
     else await this.assertObservationFresh(compiled, options.signal);
     options.signal?.throwIfAborted();
@@ -203,7 +216,41 @@ export class RepositoryChangeLifecycleService {
       exactPatchInputHash: exactPatchInputHash(compiled),
       ...(knowledgeContextId === undefined ? {} : { knowledgeContextId }),
     });
+    await this.representationArtifacts.acknowledgeCapture(capture.semanticChangeId);
     return { capture, compiled };
+  }
+
+  private async representationCaptureStatus(semanticChangeId?: string, projectionId?: string): Promise<"captured" | "uncaptured" | "unassociated"> {
+    if (semanticChangeId === undefined) return "unassociated";
+    try {
+      const capture = await this.store.readCapture(semanticChangeId);
+      if (projectionId === undefined || !capture.capsules.some((capsule) => capsule.representation?.projectionId === projectionId)) throw new Error("representation publication does not match its authenticated lifecycle capture");
+      return "captured";
+    }
+    catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return "uncaptured";
+      throw error;
+    }
+  }
+
+  async pendingRepresentations(options: LifecycleOperationOptions = {}): Promise<LifecycleRepresentationPublicationState[]> {
+    const states = await this.representationArtifacts.pending(options);
+    return Promise.all(states.map(async (state) => ({ ...state, captureStatus: await this.representationCaptureStatus(state.semanticChangeId, state.projectionId) })));
+  }
+
+  async recoverRepresentations(options: LifecycleOperationOptions = {}): Promise<LifecycleRepresentationRecoveryOutcome[]> {
+    const outcomes = await this.representationArtifacts.recover(options);
+    const results: LifecycleRepresentationRecoveryOutcome[] = [];
+    for (const outcome of outcomes) {
+      options.signal?.throwIfAborted();
+      const captureStatus = await this.representationCaptureStatus(outcome.semanticChangeId, outcome.projectionId);
+      if (outcome.status === "recovered" && captureStatus === "captured") await this.representationArtifacts.acknowledgeCapture(outcome.semanticChangeId!);
+      if (outcome.status === "recovered" && captureStatus === "uncaptured") {
+        results.push({ ...outcome, status: "recovery-required", captureStatus,
+          reason: `Change ${outcome.semanticChangeId} has authenticated representation bytes but no lifecycle capture. Use inspect --representations to inspect the retained publication for projection ${outcome.projectionId}. If this change was never applied, re-present the original exact proposal to capture it. Recovery cannot reconstruct the missing capture or establish whether an external mutation occurred.` });
+      } else results.push({ ...outcome, captureStatus });
+    }
+    return results;
   }
 
   async plan(selector: string, options: LifecycleOperationOptions = {}): Promise<PlannedRepositoryChange> {
@@ -395,7 +442,7 @@ export class RepositoryChangeLifecycleService {
     }
   }
 
-  private async compile(request: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, publishRepresentation = true): Promise<CompiledRepositoryChange> {
+  private async compile(request: string, proposal: ChangeProposal, contextId?: string, signal?: AbortSignal, publishRepresentation = true, retainCaptureAssociation = false): Promise<CompiledRepositoryChange> {
     return withObservationScope(signal === undefined ? {} : { signal }, async () => {
     const observation = await observeChangeRepository(this.repositoryRoot);
     const knowledgeContext = await adjudicatedKnowledgeContext(this.repositoryRoot, proposal, contextId, signal, this.applicationEvidence, observation);
@@ -410,7 +457,7 @@ export class RepositoryChangeLifecycleService {
     );
     assertIdentityDisposition(compiled, proposal);
     compilationObservations.set(compiled, observation);
-    if (publishRepresentation) await this.representationArtifacts.publish(compiled.representationDetails);
+    if (publishRepresentation) await this.representationArtifacts.publish(compiled.representationDetails, retainCaptureAssociation ? compiled.compiledChange.change.id : undefined);
     return compiled;
     });
   }

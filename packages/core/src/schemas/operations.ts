@@ -3,6 +3,10 @@ import { ObservationLimitsOverrideSchema, ObservationLimitsSchema } from "../obs
 
 import { ContentHashSchema } from "./contracts.js";
 import { ChangeProposalSchema } from "./change-proposal.js";
+import { ArchitectureEvaluationRequestSchema } from "./architecture-evaluation.js";
+import { VerificationRequestSchema, BuiltinVerificationOperationSchema } from "./verification.js";
+import { GeneratedOutputRequestSchema } from "./generated-output.js";
+import { GitIntegrationRequestSchema } from "./git-integration.js";
 
 export const projectorOperationApiVersion = "projector.operation/v1" as const;
 export const projectorOperationResultApiVersion = "projector.operation-result/v1" as const;
@@ -13,6 +17,7 @@ export const ProjectorOperationSchema = z.enum([
   "context",
   "reconcile",
   "repository.check",
+  "repository.integration",
   "operation-access.recover",
   "change.capture",
   "change.plan",
@@ -25,6 +30,16 @@ export const ProjectorOperationSchema = z.enum([
   "verify",
   "representation.inspect",
   "representation.reconcile",
+  "representation.recover",
+  "representation.pending",
+  "architecture.evaluate",
+  "verification.execute",
+  "verification.builtin",
+  "verification.inspect",
+  "verification.recover",
+  "generated.execute",
+  "generated.inspect",
+  "generated.recover",
   "application.observe",
 ]);
 
@@ -83,6 +98,7 @@ export const ProjectorOperationInputSchemas = Object.freeze({
     sessionId: z.string().min(1).max(512).optional(),
     handled: z.strictObject({ findingId: z.string().min(1).max(128), evidenceIdentity: ContentHashSchema }).optional(),
   }),
+  "repository.integration": GitIntegrationRequestSchema,
   "operation-access.recover": z.strictObject({}),
   "change.capture": z.strictObject({ request: z.string().min(1), proposal: ChangeProposalSchema, contextId: z.string().min(1).optional() }),
   "change.plan": z.strictObject({ changeSelector: z.string().min(1) }),
@@ -111,6 +127,16 @@ export const ProjectorOperationInputSchemas = Object.freeze({
     changeSelector: z.string().min(1),
     approvalSelector: z.string().min(1).optional(),
   }),
+  "representation.recover": z.strictObject({}),
+  "representation.pending": z.strictObject({}),
+  "architecture.evaluate": ArchitectureEvaluationRequestSchema,
+  "verification.execute": VerificationRequestSchema,
+  "verification.builtin": z.strictObject({ command: BuiltinVerificationOperationSchema }),
+  "verification.inspect": z.strictObject({ eventIds: z.array(z.string().min(1)).max(10000).optional() }),
+  "verification.recover": z.strictObject({}),
+  "generated.execute": z.strictObject({ generation: GeneratedOutputRequestSchema }),
+  "generated.inspect": z.strictObject({ activeProducerIds: z.array(z.string().min(1)).max(10000) }),
+  "generated.recover": z.strictObject({ activeProducerIds: z.array(z.string().min(1)).max(10000) }),
 });
 
 export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation", [
@@ -119,6 +145,7 @@ export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation",
   createProjectorOperationRequestSchema("context", ProjectorOperationInputSchemas.context),
   createProjectorOperationRequestSchema("reconcile", ProjectorOperationInputSchemas.reconcile),
   createProjectorOperationRequestSchema("repository.check", ProjectorOperationInputSchemas["repository.check"]),
+  createProjectorOperationRequestSchema("repository.integration", ProjectorOperationInputSchemas["repository.integration"]),
   createProjectorOperationRequestSchema("operation-access.recover", ProjectorOperationInputSchemas["operation-access.recover"]),
   createProjectorOperationRequestSchema("change.capture", ProjectorOperationInputSchemas["change.capture"]),
   createProjectorOperationRequestSchema("change.plan", ProjectorOperationInputSchemas["change.plan"]),
@@ -131,6 +158,16 @@ export const ProjectorOperationRequestSchema = z.discriminatedUnion("operation",
   createProjectorOperationRequestSchema("verify", ProjectorOperationInputSchemas.verify),
   createProjectorOperationRequestSchema("representation.inspect", ProjectorOperationInputSchemas["representation.inspect"]),
   createProjectorOperationRequestSchema("representation.reconcile", ProjectorOperationInputSchemas["representation.reconcile"]),
+  createProjectorOperationRequestSchema("representation.recover", ProjectorOperationInputSchemas["representation.recover"]),
+  createProjectorOperationRequestSchema("representation.pending", ProjectorOperationInputSchemas["representation.pending"]),
+  createProjectorOperationRequestSchema("architecture.evaluate", ProjectorOperationInputSchemas["architecture.evaluate"]),
+  createProjectorOperationRequestSchema("verification.execute", ProjectorOperationInputSchemas["verification.execute"]),
+  createProjectorOperationRequestSchema("verification.builtin", ProjectorOperationInputSchemas["verification.builtin"]),
+  createProjectorOperationRequestSchema("verification.inspect", ProjectorOperationInputSchemas["verification.inspect"]),
+  createProjectorOperationRequestSchema("verification.recover", ProjectorOperationInputSchemas["verification.recover"]),
+  createProjectorOperationRequestSchema("generated.execute", ProjectorOperationInputSchemas["generated.execute"]),
+  createProjectorOperationRequestSchema("generated.inspect", ProjectorOperationInputSchemas["generated.inspect"]),
+  createProjectorOperationRequestSchema("generated.recover", ProjectorOperationInputSchemas["generated.recover"]),
 ]);
 
 export type ProjectorOperationRequest = z.infer<typeof ProjectorOperationRequestSchema>;

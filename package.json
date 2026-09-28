@@ -8,6 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "hooks:install": "node scripts/install-local-pre-push.mjs",
     "build": "pnpm -r --if-present build",
     "check:boundaries": "node scripts/check-package-boundaries.mjs",
     "plugin:proposal-schema": "node scripts/generate-plugin-proposal-schema.mjs",

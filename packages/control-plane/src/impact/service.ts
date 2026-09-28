@@ -8,7 +8,7 @@ import {
   createStateBinding, projectionUnitSelectorSubject,
   type InvalidationRunResult, type SelectorSubject,
 } from "@projector/engine";
-import { RepositoryPathService, touchDerivedCacheEntry, withDerivedCacheAdmission, withObservationScope, type DerivedCacheSession, type DerivedCacheWrite } from "@projector/runtime";
+import { RepositoryPathService, readDerivedCacheSource, touchDerivedCacheEntry, withDerivedCacheAdmission, withObservationScope, type DerivedCacheSession, type DerivedCacheWrite } from "@projector/runtime";
 import { z } from "zod";
 import type { ChangeRepositoryObservation } from "../change-lifecycle/repository-observer.js";
 import { KnowledgeGraph } from "../knowledge/graph.js";
@@ -18,7 +18,7 @@ import { runObservationTask } from "../observation/task-runner.js";
 const version = "repository-impact@2" as const;
 const legacyVersion = "repository-impact@1" as const;
 const profileId = "projector.exact-observed-inputs";
-const profileVersion = "1.0.0";
+const profileVersion = "2.0.0";
 const scope = "Exact source bytes, resolved static dependencies, and governing membership; no runtime behavior equivalence";
 const hash = (value: unknown): ContentHash => hashFramedDomain(version, value);
 const unique = (values: readonly string[]): string[] => [...new Set(values)].sort();
@@ -164,7 +164,7 @@ export function buildRepositoryImpactSnapshot(observation: Omit<ChangeRepository
     if (file === undefined) { possible.add(unit.id); unknowns.add(`No observed source bytes for ${unit.id}`); continue; }
     budget.reserve(1024 + 2 * unit.id.length, "impact-record", unit.id);
     const lenses = activeLenses.filter(({ id }) => graph.lensCompilation?.memberships[id]?.includes(unit.id));
-    const membershipHash = hash(lenses.map(({ id }) => ({ id, members: graph.lensCompilation?.memberships[id] ?? [] })));
+    const membershipHash = hash(lenses.map(({ id }) => ({ id, fingerprint: graph.lensCompilation?.membershipFingerprints[id] ?? null })));
     const ruleBundleHash = hash(lenses.map(({ id, semanticHash, rules, impactRules }) => ({ id, semanticHash, rules, impactRules })));
     budget.reserveItems(5, 512 + 2 * (file.artifactId.length + unit.id.length), "impact-input", unit.id);
     const inputs: DerivationInput[] = [
@@ -225,9 +225,12 @@ const snapshotPath = (reference: RepositoryImpactReference): string => {
 
 export async function readRepositoryImpactSnapshot(repositoryRoot: string, reference: RepositoryImpactReference, touch = true): Promise<RepositoryImpactSnapshot> {
   return withObservationScope({}, async (scope) => {
-    const paths = await RepositoryPathService.create(repositoryRoot);
-    const path = await paths.resolveRead(snapshotPath(reference));
-    const source = await readDerivedObservationSource(path.realTarget, reference.contentHash, scope);
+    let source = await readDerivedCacheSource(repositoryRoot, snapshotPath(reference), scope);
+    if (source === undefined) {
+      const paths = await RepositoryPathService.create(repositoryRoot);
+      const path = await paths.resolveRead(snapshotPath(reference));
+      source = await readDerivedObservationSource(path.realTarget, reference.contentHash, scope);
+    }
     const snapshot = await runObservationTask("authenticate-impact", { source, reference }, scope);
     scope.signal.throwIfAborted();
     scope.budget.check("impact-authentication");

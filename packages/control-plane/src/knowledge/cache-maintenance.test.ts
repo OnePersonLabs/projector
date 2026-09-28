@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, open, readFile, readdir, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalJson, hashFramedDomain, type ExecutionPlan } from "@projector/core";
-import { withDerivedCacheAdmission, withProjectOperationAccess, withObservationScope } from "@projector/runtime";
+import { SqliteObservationStore, readDerivedCacheSource, withDerivedCacheAdmission, withProjectOperationAccess, withObservationScope } from "@projector/runtime";
 import { expect, it } from "vitest";
 import { ChangeLifecycleStore } from "../change-lifecycle/store.js";
 import { impactReference, type RepositoryImpactSnapshot } from "../impact/service.js";
@@ -28,9 +28,15 @@ async function fixture() {
   const older = context("older"); const newer = context("newer");
   const writes = [{ relativePath: `.projector/runtime/impact/${snapshot.contentHash.slice("sha256:v1:".length)}.json`, content: `${canonicalJson(snapshot)}\n` }, knowledgeContextWrite(older), knowledgeContextWrite(newer)];
   await withDerivedCacheAdmission(root, (cache) => cache.publishAll(writes));
-  await utimes(join(root, writes[1]!.relativePath), new Date(1), new Date(1));
-  await utimes(join(root, writes[2]!.relativePath), new Date(2), new Date(2));
+  await cacheRow(root, writes[1]!.relativePath, writes[1]!.content, 1);
+  await cacheRow(root, writes[2]!.relativePath, writes[2]!.content, 2);
   return { root, older, newer, writes };
+}
+
+async function cacheRow(root: string, key: string, content: string, lastUsedMs = 0): Promise<void> {
+  const store = await SqliteObservationStore.open(root);
+  try { const head = store.head()!; store.publish(head.generation, head, { upserts: [{ kind: "cache-source", key, value: { content, lastUsedMs } }] }, { retainGeneration: true, preserveMetadata: true }); }
+  finally { store.close(); }
 }
 
 it("evicts least recently used context while retaining a snapshot shared by a retained context", async () => {
@@ -41,7 +47,7 @@ it("evicts least recently used context while retaining a snapshot shared by a re
   const store = await KnowledgeContextStore.create(root);
   await expect(store.read(older.id)).rejects.toThrow("request fresh persisted context");
   expect((await store.read(newer.id)).id).toBe(newer.id);
-  expect(await readFile(join(root, writes[0]!.relativePath), "utf8")).toBe(writes[0]!.content);
+  expect(await readDerivedCacheSource(root, writes[0]!.relativePath)).toBe(writes[0]!.content);
   expect(await maintainDerivedCache(root, { targetBytes: 0 })).toMatchObject({ removedEntries: 2, retainedBytes: 0 });
 });
 
@@ -50,7 +56,7 @@ it("does no deletion when lifecycle ownership or the protection budget is incomp
   await mkdir(join(root, ".projector/runtime/change-lifecycles/captures"), { recursive: true });
   await writeFile(join(root, ".projector/runtime/change-lifecycles/captures/unknown.json"), "{}");
   await expect(maintainDerivedCache(root, { targetBytes: 0 })).rejects.toThrow();
-  for (const write of writes) expect(await readFile(join(root, write.relativePath), "utf8")).toBe(write.content);
+  for (const write of writes) expect(await readDerivedCacheSource(root, write.relativePath)).toBe(write.content);
 });
 
 it("does not wait behind a live reader or leave a collector request", async () => {
@@ -63,33 +69,43 @@ it("does not wait behind a live reader or leave a collector request", async () =
 
 it("retires oversized unprotected payloads by metadata while preserving an explicit context and shared snapshot", async () => {
   const { root, older, newer, writes } = await fixture();
-  const oversized = join(root, `.projector/runtime/knowledge/contexts/${"d".repeat(32)}.json`);
-  const handle = await open(oversized, "wx");
-  try { await handle.truncate(512 * 1024 * 1024); } finally { await handle.close(); }
-  await utimes(oversized, new Date(0), new Date(0));
+  const oversized = `.projector/runtime/knowledge/contexts/${"d".repeat(32)}.json`;
+  await cacheRow(root, oversized, "not valid context JSON".repeat(1_000));
   const targetBytes = Buffer.byteLength(writes[0]!.content) + Buffer.byteLength(writes[1]!.content);
-  expect(await maintainDerivedCache(root, { targetBytes, preserveContextIds: [older.id.slice("knowledge_context_".length)] })).toMatchObject({ status: "collected", removedEntries: 2, retainedBytes: targetBytes });
+  expect(await withObservationScope({ limits: { maxDerivedBytes: targetBytes + 256 } }, () => maintainDerivedCache(root, { targetBytes, preserveContextIds: [older.id.slice("knowledge_context_".length)] }))).toMatchObject({ status: "collected", removedEntries: 2, retainedBytes: targetBytes });
   const store = await KnowledgeContextStore.create(root);
   expect((await store.read(older.id)).id).toBe(older.id);
   await expect(store.read(newer.id)).rejects.toThrow("request fresh persisted context");
-  expect(await readFile(join(root, writes[0]!.relativePath), "utf8")).toBe(writes[0]!.content);
-  await expect(readFile(oversized)).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await readDerivedCacheSource(root, writes[0]!.relativePath)).toBe(writes[0]!.content);
+  expect(await readDerivedCacheSource(root, oversized)).toBeUndefined();
 });
 
 it("does not delete any cache entries when an explicitly retained context is invalid", async () => {
   const { root, newer, writes } = await fixture();
   const corrupted = "{}".padEnd(Buffer.byteLength(writes[2]!.content), " ");
-  await writeFile(join(root, writes[2]!.relativePath), corrupted);
+  await cacheRow(root, writes[2]!.relativePath, corrupted, 2);
   await expect(maintainDerivedCache(root, { targetBytes: 0, preserveContextIds: [newer.id] })).rejects.toThrow();
-  expect(await readFile(join(root, writes[0]!.relativePath), "utf8")).toBe(writes[0]!.content);
-  expect(await readFile(join(root, writes[1]!.relativePath), "utf8")).toBe(writes[1]!.content);
-  expect(await readFile(join(root, writes[2]!.relativePath), "utf8")).toBe(corrupted);
+  expect(await readDerivedCacheSource(root, writes[0]!.relativePath)).toBe(writes[0]!.content);
+  expect(await readDerivedCacheSource(root, writes[1]!.relativePath)).toBe(writes[1]!.content);
+  expect(await readDerivedCacheSource(root, writes[2]!.relativePath)).toBe(corrupted);
 });
 
 it("rejects retained context larger than the operation's derived-data allowance before parsing", async () => {
   const { root, older } = await fixture();
   const store = await KnowledgeContextStore.create(root);
   await expect(withObservationScope({ limits: { maxDerivedBytes: 8 } }, async () => store.read(older.id))).rejects.toMatchObject({ code: "observation-limit-exceeded", limit: "maxDerivedBytes" });
+});
+
+it("does not evict fitting disposable payloads because the shared source index is larger than the retention target", async () => {
+  const { root, writes } = await fixture();
+  const store = await SqliteObservationStore.open(root);
+  try {
+    const head = store.head()!;
+    store.publish(head.generation, head, { upserts: [{ kind: "file", key: "src/unrelated.mjs", value: "x".repeat(32_000) }] });
+  } finally { store.close(); }
+  const targetBytes = writes.reduce((bytes, write) => bytes + Buffer.byteLength(write.content), 0);
+  expect(await maintainDerivedCache(root, { targetBytes })).toEqual({ status: "unchanged", removedEntries: 0, retainedBytes: targetBytes });
+  for (const write of writes) expect(await readDerivedCacheSource(root, write.relativePath)).toBe(write.content);
 });
 
 it("retains pending approved context and its shared dependency when collecting all disposable work", async () => {
@@ -114,5 +130,5 @@ it("retains pending approved context and its shared dependency when collecting a
   const store = await KnowledgeContextStore.create(root);
   expect((await store.read(older.id)).id).toBe(older.id);
   await expect(store.read(newer.id)).rejects.toThrow("request fresh persisted context");
-  expect(await readFile(join(root, writes[0]!.relativePath), "utf8")).toBe(writes[0]!.content);
+  expect(await readDerivedCacheSource(root, writes[0]!.relativePath)).toBe(writes[0]!.content);
 });

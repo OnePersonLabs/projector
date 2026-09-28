@@ -25,7 +25,7 @@ export function resolveObservationLimits(overrides: Partial<ObservationLimits> =
 export const ObservationDescriptorSchema = z.object({
   schemaVersion: z.literal("projector.observation/v1"),
   observerVersion: z.string(), scope: z.literal("."),
-  enumerationMethod: z.enum(["git-index-and-nonignored-untracked", "recursive-filesystem-fallback"]),
+  enumerationMethod: z.enum(["git-index-and-nonignored-untracked", "recursive-filesystem-fallback", "git-immutable-tree"]),
   limits: ObservationLimitsSchema,
   ignoreSources: z.array(z.object({ path: z.string(), contentHash: z.string() }).strict()),
   excludedPaths: z.array(z.string()), globalGitConfig: z.literal("disabled"),

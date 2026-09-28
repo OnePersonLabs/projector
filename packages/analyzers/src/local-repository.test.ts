@@ -104,7 +104,7 @@ describe("local repository analyzer", () => {
     const content = "export { a };";
     expect(() => analyzeJavaScript([{ path: "exports.ts", kind: "file", mediaType: "text/typescript", content,
       contentHash: hashFramedDomain("test-content", content), generated: false }], new DerivedObservationBudget(900))).toThrow(expect.objectContaining({
-      code: "observation-limit-exceeded", limit: "maxDerivedBytes", stage: "javascript-export-facts",
+      code: "observation-limit-exceeded", limit: "maxDerivedBytes", stage: "typescript-syntax-tree",
     }));
   });
   it("bounds deleted Git object contents used for move inference", async () => {
@@ -147,7 +147,8 @@ describe("local repository analyzer", () => {
     delete process.env.PROJECTOR_FIXTURE_EXECUTION_MARKER;
     await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     expect(result.capabilities.every((capability) => !capability.executesRepositoryCode)).toBe(true);
-    expect(result.capabilities.every(({ adapterVersion }) => adapterVersion === "2.2.0")).toBe(true);
+    expect(result.capabilities.every(({ adapterVersion }) => adapterVersion.startsWith("2.3.0"))).toBe(true);
+    expect(result.capabilities.filter(({ analyzerId }) => analyzerId === "projector.javascript-local" || analyzerId === "projector.typescript-semantic").map(({ adapterVersion }) => adapterVersion)).toEqual([expect.stringContaining("typescript-syntax-1."), expect.stringContaining("typescript-syntax-1.")]);
 
     const misplaced = result.files.find((file) => file.path === ".codex/hooks/validate-repo.mjs");
     expect(misplaced).toMatchObject({

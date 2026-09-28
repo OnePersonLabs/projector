@@ -1,5 +1,6 @@
 import {
   canonicalJson, hashFramedDomain, normalizeRepositoryRelativePath,
+  buildManifest, manifestKey, type ManifestUpdate,
   type ContentHash, type EffectiveRuleBundle, type EnumerationContract, type NormalizedPredicate, type SelectorExpr,
 } from "@projector/core";
 import { evaluateSelector, type SelectorSubject } from "./selectors.js";
@@ -24,6 +25,45 @@ export interface GovernanceObservation {
     readonly contract: EnumerationContract;
     readonly unknowns: readonly string[];
   }[];
+}
+
+/** A completed, version-bound population summary. Missing summaries are unknown. */
+export interface GovernancePopulationSummary {
+  readonly knownCount: number;
+  readonly unknownCount: number;
+  readonly fingerprint: ContentHash;
+}
+
+/** Reads must share one observation generation; the owner rejects concurrent replacement. */
+export interface GovernanceObservationReader {
+  readonly unitEnumeration: EnumerationContract;
+  subject(id: string): SelectorSubject | undefined;
+  outgoing(unitId: string): readonly GovernanceDependency[];
+  enumeration(unitId: string): GovernanceObservation["dependencyEnumerations"][number] | undefined;
+  cardinality(selector: SelectorExpr): GovernancePopulationSummary | undefined;
+}
+
+export function governancePopulationEntry(selector: SelectorExpr, subject: SelectorSubject): { key: string; value: { id: string; matched: true | null } } | undefined {
+  const matched = matches(selector, subject);
+  return matched === false ? undefined : { key: manifestKey(subject.id), value: { id: subject.id, matched: matched ?? null } };
+}
+
+export function summarizeGovernanceManifest(root: ContentHash, knownCount: number, unknownCount: number): GovernancePopulationSummary {
+  return {
+    knownCount, unknownCount,
+    fingerprint: hashFramedDomain("governance-selector-population/v2", { root, knownCount, unknownCount }),
+  };
+}
+
+export function buildGovernancePopulation(selector: SelectorExpr, subjects: readonly SelectorSubject[]): { readonly summary: GovernancePopulationSummary; readonly manifest: ManifestUpdate } {
+  const entries = subjects.flatMap(subject => { const entry = governancePopulationEntry(selector, subject); return entry === undefined ? [] : [entry]; });
+  const manifest = buildManifest(entries);
+  const known = entries.filter(({value}) => value.matched === true).length;
+  return { summary: summarizeGovernanceManifest(manifest.root, known, entries.length - known), manifest };
+}
+
+export function summarizeGovernancePopulation(selector: SelectorExpr, subjects: readonly SelectorSubject[]): GovernancePopulationSummary {
+  return buildGovernancePopulation(selector, subjects).summary;
 }
 
 export interface GovernanceFinding {
@@ -110,24 +150,37 @@ export function prepareGovernanceEvaluator(input: GovernanceObservation, finding
     enumerations.set(enumeration.unitId, { ...enumeration, unknowns: strings(enumeration.unknowns) });
   }
   const dependencies = unique(observation.dependencies.map(edge => ({ ...edge, evidenceIds: strings(edge.evidenceIds) })));
-  const normalized = {
-    subjects: [...subjects.values()].sort((a, b) => a.id < b.id ? -1 : 1), dependencies,
-    unitIds,
-    unitEnumeration: observation.unitEnumeration,
-    dependencyEnumerations: [...enumerations.values()].sort((a, b) => a.unitId < b.unitId ? -1 : 1),
-  };
-  const baseObservationHash = hashFramedDomain("governance-observation", normalized);
   const outgoingByUnit = new Map<string, GovernanceDependency[]>();
   for (const edge of dependencies) {
     const outgoing = outgoingByUnit.get(edge.fromUnitId) ?? [];
     outgoing.push(edge); outgoingByUnit.set(edge.fromUnitId, outgoing);
   }
+  const populations = new Map<ContentHash, GovernancePopulationSummary>();
+  return prepareIndexedGovernanceEvaluator({
+    unitEnumeration: observation.unitEnumeration,
+    subject: id => subjects.get(id),
+    outgoing: id => outgoingByUnit.get(id) ?? [],
+    enumeration: id => enumerations.get(id),
+    cardinality: selector => {
+      const key = hashFramedDomain("governance-selector", selector);
+      let population = populations.get(key);
+      if (population === undefined) {
+        population = summarizeGovernancePopulation(selector, unitIds.map(id => subjects.get(id)!));
+        populations.set(key, population);
+      }
+      return population;
+    },
+  }, findings);
+}
+
+/** Shares predicate semantics with the eager adapter; reads only the evaluated bundle's inputs. */
+export function prepareIndexedGovernanceEvaluator(observation: GovernanceObservationReader, findings: readonly ExternalGovernanceValidatorFinding[] = []): (bundle: EffectiveRuleBundle, options?: Omit<GovernanceEvaluationOptions, "validatorFindings">) => GovernanceBundleEvaluation {
   const findingsByUnit = new Map<string, ExternalGovernanceValidatorFinding[]>();
   for (const finding of structuredClone(findings)) {
     const unitFindings = findingsByUnit.get(finding.unitId) ?? [];
     unitFindings.push(finding); findingsByUnit.set(finding.unitId, unitFindings);
   }
-  const validatorObservations = new Map<string, { findings: ReadonlyMap<string, ExternalGovernanceValidatorFinding>; hash: ContentHash }>();
+  const validatorObservations = new Map<string, ReadonlyMap<string, ExternalGovernanceValidatorFinding>>();
   return (bundle, options = {}) => {
     let validatorObservation = validatorObservations.get(bundle.unitId);
     if (validatorObservation === undefined) {
@@ -136,18 +189,19 @@ export function prepareGovernanceEvaluator(input: GovernanceObservation, finding
         if (unitFindings.has(finding.validatorId)) throw new Error(`duplicate validator observation ${finding.validatorId} for ${bundle.unitId}`);
         unitFindings.set(finding.validatorId, finding);
       }
-      validatorObservation = { findings: unitFindings, hash: unitFindings.size === 0 ? baseObservationHash : hashFramedDomain("governance-observation", { ...normalized, validatorFindings: unique([...unitFindings.values()]) }) };
+      validatorObservation = unitFindings;
       validatorObservations.set(bundle.unitId, validatorObservation);
     }
     const validatorCheck = (validatorId: string): Check => {
-      const finding = validatorObservation.findings.get(validatorId);
+      const finding = validatorObservation.get(validatorId);
       return finding === undefined ? check("unknown", `Validator ${validatorId} has no registered evaluator for this rule.`)
         : check(finding.status, finding.reason, finding.evidenceIds);
     };
-    const observationHash = validatorObservation.hash;
-    const subject = subjects.get(bundle.unitId);
-    const enumeration = enumerations.get(bundle.unitId);
-    const outgoing = outgoingByUnit.get(bundle.unitId) ?? [];
+    const subject = observation.subject(bundle.unitId);
+    const enumeration = observation.enumeration(bundle.unitId);
+    const outgoing = unique(observation.outgoing(bundle.unitId).map(edge => ({ ...edge, evidenceIds: strings(edge.evidenceIds) })));
+    const targets = new Map(outgoing.flatMap(({toSubjectId}) => toSubjectId === undefined ? [] : [[toSubjectId, observation.subject(toSubjectId)] as const]));
+    const populations = new Map<ContentHash, GovernancePopulationSummary | undefined>();
     const suppressed = new Set(bundle.suppressedRules.map(({ ruleId }) => ruleId));
     const rules = bundle.rules.filter(rule => isHardRule(rule) && !suppressed.has(rule.id));
     const allowed = rules.filter(rule => rule.effect !== "forbid").flatMap(rule => rule.predicates)
@@ -174,7 +228,7 @@ export function prepareGovernanceEvaluator(input: GovernanceObservation, finding
         const violationEvidence: string[] = [];
         const violatedSpecifiers: string[] = [];
         for (const edge of outgoing) {
-          const target = edge.toSubjectId === undefined ? undefined : subjects.get(edge.toSubjectId);
+          const target = edge.toSubjectId === undefined ? undefined : targets.get(edge.toSubjectId);
           if (target === undefined) { incomplete = true; continue; }
           const targetMatches = predicate.kind === "dependency-forbidden"
             ? matches(predicate.to, target) : matches({ op: "any", items: allowedTargets }, target);
@@ -191,10 +245,13 @@ export function prepareGovernanceEvaluator(input: GovernanceObservation, finding
         const { min, max } = predicate;
         if ((min === undefined && max === undefined) || [min, max].some(value => value !== undefined && (!Number.isSafeInteger(value) || value < 0))
           || (min !== undefined && max !== undefined && min > max)) return check("unknown", "Invalid cardinality bounds.");
-        const selections = unitIds.map(id => matches(predicate.selector, subjects.get(id)!));
-        const count = selections.filter(value => value === true).length;
+        const selectorHash = hashFramedDomain("governance-selector", predicate.selector);
+        if (!populations.has(selectorHash)) populations.set(selectorHash, observation.cardinality(predicate.selector));
+        const population = populations.get(selectorHash);
+        if (population === undefined) return check("unknown", "The complete cardinality population is unavailable.");
+        const count = population.knownCount;
         if (max !== undefined && count > max) return check("violated", `${count} observed members exceed maximum ${max}.`);
-        if (!eligible(observation.unitEnumeration) || selections.includes(undefined)) return check("unknown", `Only ${count} members are known in an incomplete universe.`);
+        if (!eligible(observation.unitEnumeration) || population.unknownCount > 0) return check("unknown", `Only ${count} members are known in an incomplete universe.`);
         if (min !== undefined && count < min) return check("violated", `${count} members are below minimum ${min}.`);
         return check("satisfied", `${count} observed members satisfy cardinality.`);
       }
@@ -228,6 +285,13 @@ export function prepareGovernanceEvaluator(input: GovernanceObservation, finding
       : ordered.length === 0 || ordered.some(item => item.status === "unknown") ? "unknown" : "conformant";
     const boundary = strings([observation.unitEnumeration.method, ...observation.unitEnumeration.assumptions, ...observation.unitEnumeration.blindSpots,
       ...(enumeration === undefined ? [] : [enumeration.contract.method, ...enumeration.contract.assumptions, ...enumeration.contract.blindSpots])]);
+    const observationHash = hashFramedDomain("governance-observation/v2", {
+      subject: subject ?? null, enumeration: enumeration ?? null, outgoing,
+      targets: [...targets].sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0).map(([id,value]) => ({id,value:value ?? null})),
+      unitEnumeration: observation.unitEnumeration,
+      populations: [...populations].sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0).map(([selector,value]) => ({selector,value:value ?? null})),
+      validatorFindings: unique([...validatorObservation.values()]),
+    });
     const result = { unitId: bundle.unitId, status, findings: ordered, boundary, observationHash } as const;
     return { ...result, contentHash: hashFramedDomain("governance-bundle-evaluation", result) };
   };

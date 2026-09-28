@@ -1,6 +1,9 @@
 import {
   DerivedObservationBudget,
   hashFramedDomain,
+  buildManifest,
+  manifestKey,
+  type ContentHash,
   type AuthorityRecord,
   type GovernanceBasis,
   type ProjectionLens,
@@ -75,6 +78,10 @@ export interface ProjectionLensCompilation {
   membershipFingerprints: Record<string, string>;
   activeRules: Rule[];
   fixedPointIterations: Record<string, number>;
+}
+
+export function lensMembershipFingerprint(lensId: string, memberRoot: ContentHash): ContentHash {
+  return hashFramedDomain("lens-membership/v2", { lensId, memberRoot });
 }
 
 function stronglyConnectedComponents(lenses: readonly ProjectionLens[]): string[][] {
@@ -337,7 +344,7 @@ export function compileProjectionLenses(input: CompileProjectionLensesInput): Pr
     .map(([lensId, memberIds]) => [lensId, [...memberIds].sort(compareStrings)]));
   const membershipFingerprints = Object.fromEntries(Object.entries(membershipObject).map(([lensId, memberIds]) => [
     lensId,
-    hashFramedDomain("lens-membership", { lensId, memberIds }),
+    lensMembershipFingerprint(lensId, buildManifest(memberIds.map(id => ({ key: manifestKey(id), value: id }))).root),
   ]));
   const activeRules = lenses
     .filter(({ status }) => status === "active")

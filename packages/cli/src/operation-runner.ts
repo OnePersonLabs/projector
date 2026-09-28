@@ -4,6 +4,17 @@ import { join } from "node:path";
 
 import {
   PackageIdentitySchema,
+  VerificationEvidenceSchema,
+  VerificationInspectionSchema,
+  VerificationRecoverySchema,
+  BuiltinVerificationEvidenceSchema,
+  BuiltinVerificationAssessmentSchema,
+  BuiltinVerificationInspectionSchema,
+  BuiltinVerificationRecoverySchema,
+  GitIntegrationAssessmentSchema,
+  GeneratedOutputEvidenceSchema,
+  GeneratedOutputInspectionSchema,
+  GeneratedOutputRecoverySchema,
   ObservationError,
   ObservationLimitsOverrideSchema,
   ObservationLimitsSchema,
@@ -40,6 +51,7 @@ import {
   RepositoryCoverageOutputSchema,
   RepositoryCheckOutputSchema,
   checkRepository,
+  assessGitIntegration,
   RepositoryChangeLifecycleService,
   RepositoryRepresentationInspectionService,
   RepositoryRepresentationProfileReconciliationService,
@@ -60,13 +72,25 @@ import {
   projectRepresentationProfileReconciliationOperation,
   withProjectOperationAccess,
   type PreparedProjectInitializationResult,
+  VerificationService,
+  BuiltinVerificationService,
+  GeneratedOutputService,
+  evaluateRepositoryArchitectureOptions,
+  ArchitectureEvaluationOutputSchema,
+  RepresentationPendingOutputSchema,
+  RepresentationRecoveryOutputSchema,
 } from "@projector/control-plane";
 import { NativeProcessLauncher, OperationalReportSchema, withObservationScope } from "@projector/runtime";
 import { z } from "zod";
 
 import { runReadOnlyOperationalVerification } from "./operational-verification.js";
+import { createConfiguredApplicationEvidencePort } from "./application-evidence-host.js";
 
 const optionalApplicationEvidence = (port: ApplicationEvidencePort | undefined): { applicationEvidence?: ApplicationEvidencePort } => port === undefined ? {} : { applicationEvidence: port };
+const verificationOptions = (context: OperationHandlerContext) => ({
+  signal: context.signal,
+  ...(context.environment.PROJECTOR_VERIFICATION_EVIDENCE_STORE === undefined ? {} : { evidenceStoreRoot: context.environment.PROJECTOR_VERIFICATION_EVIDENCE_STORE }),
+});
 const maximumPackageManifestBytes = 16 * 1024;
 const ordinaryOperationSchema = ProjectorOperationSchema.exclude(["status", "init"]);
 const operationEnvelopeSchema = z.strictObject({
@@ -314,13 +338,88 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
     repositoryRoot,
     signal: context.signal,
     environment: context.environment,
-  });
+  }) ?? createConfiguredApplicationEvidencePort({ repositoryRoot, signal: context.signal, environment: context.environment });
   const handlers: AnyProjectorOperationHandler[] = [
+    defineProjectorOperationHandler({
+      operation: "verification.builtin",
+      inputSchema: ProjectorOperationInputSchemas["verification.builtin"],
+      outputSchema: z.union([BuiltinVerificationEvidenceSchema, BuiltinVerificationAssessmentSchema, BuiltinVerificationInspectionSchema, BuiltinVerificationRecoverySchema]),
+      execute: async ({ repositoryRoot, input }, context) => {
+        const evidenceStoreRoot = context.environment.PROJECTOR_VERIFICATION_EVIDENCE_STORE;
+        if (evidenceStoreRoot === undefined) throw new Error("Built-in verification requires host-configured PROJECTOR_VERIFICATION_EVIDENCE_STORE outside the checkout");
+        const service = await BuiltinVerificationService.create(repositoryRoot, { evidenceStoreRoot, trustedChecks: (context.environment.PROJECTOR_VERIFICATION_TRUST_POLICY ?? "").split(",").filter(Boolean), signal: context.signal, ...(context.environment.PROJECTOR_VERIFICATION_TRUST_POLICY_VERSION === undefined ? {} : { trustPolicyVersion: context.environment.PROJECTOR_VERIFICATION_TRUST_POLICY_VERSION }) });
+        const command = input.command;
+        if (command.action === "execute") return service.execute(command.request);
+        if (command.action === "assess") return service.assess(command);
+        if (command.action === "inspect") return service.inspect();
+        return service.recover();
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "verification.execute",
+      inputSchema: ProjectorOperationInputSchemas["verification.execute"],
+      outputSchema: VerificationEvidenceSchema,
+      execute: async ({ repositoryRoot, input }, context) => (await VerificationService.create(repositoryRoot, verificationOptions(context))).execute(input),
+    }),
+    defineProjectorOperationHandler({
+      operation: "verification.inspect",
+      inputSchema: ProjectorOperationInputSchemas["verification.inspect"],
+      outputSchema: VerificationInspectionSchema,
+      execute: async ({ repositoryRoot, input }, context) => (await VerificationService.create(repositoryRoot, verificationOptions(context))).inspect(input.eventIds),
+    }),
+    defineProjectorOperationHandler({
+      operation: "verification.recover",
+      inputSchema: ProjectorOperationInputSchemas["verification.recover"],
+      outputSchema: VerificationRecoverySchema,
+      execute: async ({ repositoryRoot }, context) => (await VerificationService.create(repositoryRoot, verificationOptions(context))).recover(),
+    }),
+    defineProjectorOperationHandler({
+      operation: "architecture.evaluate",
+      inputSchema: ProjectorOperationInputSchemas["architecture.evaluate"],
+      outputSchema: ArchitectureEvaluationOutputSchema,
+      execute: async ({ repositoryRoot, input }) => evaluateRepositoryArchitectureOptions(repositoryRoot, input),
+    }),
+    defineProjectorOperationHandler({
+      operation: "generated.execute",
+      inputSchema: ProjectorOperationInputSchemas["generated.execute"],
+      outputSchema: GeneratedOutputEvidenceSchema,
+      execute: async ({ repositoryRoot, input }, context) => (await GeneratedOutputService.create(repositoryRoot, verificationOptions(context))).execute(input.generation),
+    }),
+    defineProjectorOperationHandler({
+      operation: "generated.inspect",
+      inputSchema: ProjectorOperationInputSchemas["generated.inspect"],
+      outputSchema: GeneratedOutputInspectionSchema,
+      execute: async ({ repositoryRoot, input }, context) => (await GeneratedOutputService.create(repositoryRoot, verificationOptions(context))).inspect(input.activeProducerIds),
+    }),
+    defineProjectorOperationHandler({
+      operation: "generated.recover",
+      inputSchema: ProjectorOperationInputSchemas["generated.recover"],
+      outputSchema: GeneratedOutputRecoverySchema,
+      execute: async ({ repositoryRoot, input }, context) => (await GeneratedOutputService.create(repositoryRoot, verificationOptions(context))).recover(input.activeProducerIds),
+    }),
+    defineProjectorOperationHandler({
+      operation: "representation.pending",
+      inputSchema: ProjectorOperationInputSchemas["representation.pending"],
+      outputSchema: RepresentationPendingOutputSchema,
+      execute: async ({ repositoryRoot }, context) => (await RepositoryChangeLifecycleService.create(repositoryRoot)).pendingRepresentations({ signal: context.signal }),
+    }),
+    defineProjectorOperationHandler({
+      operation: "representation.recover",
+      inputSchema: ProjectorOperationInputSchemas["representation.recover"],
+      outputSchema: RepresentationRecoveryOutputSchema,
+      execute: async ({ repositoryRoot }, context) => (await RepositoryChangeLifecycleService.create(repositoryRoot)).recoverRepresentations({ signal: context.signal }),
+    }),
     defineProjectorOperationHandler({
       operation: "repository.check",
       inputSchema: ProjectorOperationInputSchemas["repository.check"],
       outputSchema: RepositoryCheckOutputSchema,
       execute: ({ repositoryRoot, input }, context) => checkRepository(repositoryRoot, input, { signal: context.signal }),
+    }),
+    defineProjectorOperationHandler({
+      operation: "repository.integration",
+      inputSchema: ProjectorOperationInputSchemas["repository.integration"],
+      outputSchema: GitIntegrationAssessmentSchema,
+      execute: ({ repositoryRoot, input }, context) => assessGitIntegration(repositoryRoot, input, { signal: context.signal }),
     }),
     defineProjectorOperationHandler({
       operation: "context",

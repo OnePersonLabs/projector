@@ -34,10 +34,12 @@ describe("canonical human technical check", () => {
     const { root, path } = await fixture(); await rm(path);
     await expect(checkAuthoritativeSpecification(root)).rejects.toThrow(/owners are missing/iu);
   });
-  it("routes package verification and CI through the canonical checker", async () => {
+  it("routes package verification and the local push gate through the canonical checker", async () => {
     const pkg = JSON.parse(await readFile("package.json", "utf8"));
     expect(pkg.scripts["spec:check"]).toBe("node scripts/check-spec-human-technical.mjs");
     expect(pkg.scripts.verify).toContain("pnpm spec:check");
-    expect(await readFile(".github/workflows/projector-operations.yml", "utf8")).toContain("pnpm verify");
+    const { selectPushChecks } = await import("./local-pre-push.mjs");
+    expect(selectPushChecks(["packages/core/src/index.ts"])).toContain("verify");
+    expect(selectPushChecks(["docs/model-and-context.md"])).toContain("spec:check");
   });
 });

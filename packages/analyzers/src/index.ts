@@ -1,8 +1,10 @@
 export * from "./filesystem/inventory.js";
-export { checkObservation, GitCommandError, observationFailure, observationGit, observationMap, readObservationFile } from "./filesystem/observation-io.js";
+export { checkObservation, GitCommandError, observationFailure, observationGit, observationGitBytes, observationMap, readObservationFile } from "./filesystem/observation-io.js";
 export * from "./formats/documents.js";
 export * from "./git/facts.js";
+export * from "./git/tree.js";
 export * from "./typescript/facts.js";
+export { syntaxProgramVersion } from "./typescript/compiler-syntax.js";
 export * from "./local-repository.js";
 export * from "./topology/index.js";
 export * from "./topology/repository.js";

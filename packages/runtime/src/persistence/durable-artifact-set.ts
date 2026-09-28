@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
+import { link, lstat, mkdir, open, opendir, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { PortableRelativePathSchema } from "@projector/core";
+import { DerivedObservationBudget, ObservationBudget, ObservationError, PortableRelativePathSchema } from "@projector/core";
+import { currentObservationScope } from "../observation-scope.js";
 
 export interface ArtifactBlobDeclaration { path: string; sha256: string }
 export interface ValidatedArtifactManifest<TManifest> {
@@ -42,6 +43,11 @@ interface ArtifactStoreTestHooks {
   beforeStageBlobTemporaryOpen?: () => void | Promise<void>;
   beforeStageBlobLink?: () => void | Promise<void>;
 }
+export interface ArtifactSetReadScope {
+  readonly budget: ObservationBudget;
+  readonly signal?: AbortSignal;
+  readonly derivedBudget?: DerivedObservationBudget;
+}
 class RecoverableArtifactSetValidationError extends ArtifactSetIntegrityError {}
 
 export class DurableArtifactSetStore<TManifest> {
@@ -49,6 +55,7 @@ export class DurableArtifactSetStore<TManifest> {
     readonly storageRoot: string,
     readonly validateManifest: ArtifactManifestValidator<TManifest>,
     private readonly testHooks: ArtifactStoreTestHooks = {},
+    private readonly explicitReadScope?: ArtifactSetReadScope,
   ) {
     if (storageRoot.length === 0) throw new TypeError("A durable storage root is required");
   }
@@ -190,6 +197,7 @@ export class DurableArtifactSetStore<TManifest> {
 
   async resumeFinalize(artifactSetId: string): Promise<PublishedArtifactSet<TManifest>> {
     assertArtifactSetId(artifactSetId);
+    checkReadScope(this.readScope(), "artifact-recovery", artifactSetId);
     await this.ensureLayout();
     const current = await this.read(artifactSetId);
     if (current.status === "published") return current;
@@ -201,40 +209,51 @@ export class DurableArtifactSetStore<TManifest> {
     if (!(await pathExists(finalizing)) || !(await pathExists(manifestPath))) {
       throw new ArtifactSetIncompleteError(artifactSetId, ["finalizing/manifest.bin"]);
     }
-    const manifestBytes = await readRegularFile(manifestPath, "artifact manifest");
+    const manifestBytes = await readRegularFile(manifestPath, "artifact manifest", this.readScope());
+    checkReadScope(this.readScope(), "artifact-recovery", artifactSetId);
     return this.finalize({ artifactSetId, manifestBytes });
   }
 
   async read(artifactSetId: string): Promise<ArtifactSetReadResult<TManifest>> {
     assertArtifactSetId(artifactSetId);
+    const scope = this.readScope();
+    checkReadScope(scope, "artifact-set", artifactSetId);
+    const derivedBudget = scope?.derivedBudget ?? (scope === undefined ? undefined : new DerivedObservationBudget(scope.budget.limits.maxDerivedBytes));
     const publishedPath = this.publishedPath(artifactSetId);
     if (await pathExists(publishedPath)) {
-      try { return await this.readCompleteSet(publishedPath, artifactSetId); }
-      catch (error) { return { status: "integrity-failed", artifactSetId, reason: errorMessage(error) }; }
+      try { const value = await this.readCompleteSet(publishedPath, artifactSetId, scope, derivedBudget); checkReadScope(scope, "artifact-set", artifactSetId); return value; }
+      catch (error) { rethrowReadInterruption(error, scope); return { status: "integrity-failed", artifactSetId, reason: errorMessage(error) }; }
     }
     const stage = this.stagePath(artifactSetId);
     const finalizing = this.finalizingPath(artifactSetId);
     if (await pathExists(stage) && await pathExists(finalizing)) {
+      checkReadScope(scope, "artifact-set", artifactSetId);
       return { status: "integrity-failed", artifactSetId, reason: "Artifact set has ambiguous staging and finalizing state" };
     }
     const incomplete = await pathExists(finalizing) ? finalizing : stage;
-    if (!(await pathExists(incomplete))) return { status: "missing", artifactSetId };
+    if (!(await pathExists(incomplete))) { checkReadScope(scope, "artifact-set", artifactSetId); return { status: "missing", artifactSetId }; }
     try {
       const manifestPath = join(incomplete, "manifest.bin");
-      if (await pathExists(manifestPath)) await this.readCompleteSet(incomplete, artifactSetId);
-      else await collectStagedBlobs(incomplete);
+      if (await pathExists(manifestPath)) await this.readCompleteSet(incomplete, artifactSetId, scope, derivedBudget);
+      else await collectStagedBlobs(incomplete, false, scope, derivedBudget);
+      checkReadScope(scope, "artifact-set", artifactSetId);
       return { status: "incomplete", artifactSetId };
     } catch (error) {
+      rethrowReadInterruption(error, scope);
       return { status: "integrity-failed", artifactSetId, reason: errorMessage(error) };
     }
   }
 
-  private async readCompleteSet(directory: string, artifactSetId: string): Promise<PublishedArtifactSet<TManifest>> {
+  private async readCompleteSet(directory: string, artifactSetId: string, scope = this.readScope(), inheritedDerivedBudget?: DerivedObservationBudget): Promise<PublishedArtifactSet<TManifest>> {
+    checkReadScope(scope, "artifact-set", artifactSetId);
     await assertDirectory(directory, "artifact set");
-    const manifest = await this.checkManifest(await readRegularFile(join(directory, "manifest.bin"), "artifact manifest"));
-    const staged = await collectStagedBlobs(directory, true);
+    const derivedBudget = inheritedDerivedBudget ?? scope?.derivedBudget ?? (scope === undefined ? undefined : new DerivedObservationBudget(scope.budget.limits.maxDerivedBytes));
+    const manifestBytes = await readRegularFile(join(directory, "manifest.bin"), "artifact manifest", scope, derivedBudget);
+    const manifest = await this.checkManifest(manifestBytes, scope, derivedBudget);
+    const staged = await collectStagedBlobs(directory, true, scope, derivedBudget);
     assertExactDeclaredSet(artifactSetId, manifest.blobs, staged);
-    verifyHashes(manifest.blobs, staged);
+    verifyHashes(manifest.blobs, staged, scope);
+    checkReadScope(scope, "artifact-set", artifactSetId);
     return {
       status: "published",
       artifactSetId,
@@ -244,7 +263,10 @@ export class DurableArtifactSetStore<TManifest> {
     };
   }
 
-  private async checkManifest(bytes: Uint8Array): Promise<CheckedManifest<TManifest>> {
+  private async checkManifest(bytes: Uint8Array, scope = this.readScope(), derivedBudget?: DerivedObservationBudget): Promise<CheckedManifest<TManifest>> {
+    checkReadScope(scope, "artifact-manifest", this.storageRoot);
+    scope?.budget.assertFileBytes(bytes.byteLength, this.storageRoot);
+    derivedBudget?.reserve(Math.min(Number.MAX_SAFE_INTEGER, bytes.byteLength * 3 + 256), "artifact-manifest", this.storageRoot);
     const manifestBytes = Buffer.from(bytes);
     const validated = await this.validateManifest(Buffer.from(manifestBytes));
     if (typeof validated !== "object" || validated === null || !Array.isArray(validated.blobs)) {
@@ -262,8 +284,11 @@ export class DurableArtifactSetStore<TManifest> {
         throw new TypeError(`Blob paths conflict as file and directory: ${prior}, ${declaration.path}`);
       }
       seen.add(declaration.path);
+      derivedBudget?.reserveString(declaration.path.length, "artifact-manifest", declaration.path);
+      derivedBudget?.reserve(128, "artifact-manifest", declaration.path);
     }
     const blobs = Object.freeze(validated.blobs.map(({ path, sha256 }) => Object.freeze({ path, sha256 })));
+    checkReadScope(scope, "artifact-manifest", this.storageRoot);
     return { manifestBytes, manifest: validated.manifest, blobs };
   }
 
@@ -276,10 +301,11 @@ export class DurableArtifactSetStore<TManifest> {
   }
 
   private async rollbackFinalizing(artifactSetId: string, manifestBytes: Buffer): Promise<void> {
+    const scope = this.readScope();
     const finalizing = this.finalizingPath(artifactSetId);
     const manifestPath = join(finalizing, "manifest.bin");
     try {
-      if ((await readRegularFile(manifestPath, "artifact manifest")).equals(manifestBytes)) {
+      if ((await readRegularFile(manifestPath, "artifact manifest", scope)).equals(manifestBytes)) {
         await rm(manifestPath);
         await syncDirectory(finalizing);
       }
@@ -288,9 +314,14 @@ export class DurableArtifactSetStore<TManifest> {
         await syncDirectory(this.stagingRoot());
         await syncDirectory(this.finalizingRoot());
       }
-    } catch {
+    } catch (error) {
+      rethrowReadInterruption(error, scope);
       // Preserve the exact finalizing state for a later integrity read/recovery.
     }
+  }
+
+  private readScope(): ArtifactSetReadScope | undefined {
+    return this.explicitReadScope ?? currentObservationScope();
   }
 
   private stagingRoot(): string { return join(this.storageRoot, "staging"); }
@@ -323,8 +354,10 @@ function assertExactDeclaredSet(
 function verifyHashes(
   declarations: readonly ArtifactBlobDeclaration[],
   staged: ReadonlyMap<string, Uint8Array>,
+  scope?: ArtifactSetReadScope,
 ): void {
   for (const declaration of declarations) {
+    checkReadScope(scope, "artifact-hash", declaration.path);
     const bytes = staged.get(declaration.path);
     if (bytes === undefined || hash(bytes) !== declaration.sha256) {
       throw new RecoverableArtifactSetValidationError(`Blob ${declaration.path} failed its declared SHA-256 hash`);
@@ -332,11 +365,14 @@ function verifyHashes(
   }
 }
 
-async function collectStagedBlobs(directory: string, allowManifest = false): Promise<Map<string, Uint8Array>> {
+async function collectStagedBlobs(directory: string, allowManifest = false, scope?: ArtifactSetReadScope, derivedBudget?: DerivedObservationBudget): Promise<Map<string, Uint8Array>> {
+  checkReadScope(scope, "artifact-blobs", directory);
+  scope?.budget.consume("maxDirectories", 1, "artifact-blobs", directory);
   await assertDirectory(directory, "artifact set");
-  const rootEntries = await readdir(directory, { withFileTypes: true });
   let foundBlobs = false;
-  for (const entry of rootEntries) {
+  const entries = await opendir(directory);
+  for await (const entry of entries) {
+    checkReadScope(scope, "artifact-blobs", directory);
     const status = await lstat(join(directory, entry.name));
     if (status.isSymbolicLink()) throw new ArtifactSetIntegrityError(`Artifact set contains a symbolic link: ${entry.name}`);
     if (entry.name === "blobs" && status.isDirectory()) foundBlobs = true;
@@ -344,24 +380,36 @@ async function collectStagedBlobs(directory: string, allowManifest = false): Pro
       throw new ArtifactSetIntegrityError(`Artifact set contains an unexpected entry: ${entry.name}`);
     }
   }
+  checkReadScope(scope, "artifact-blobs", directory);
   if (!foundBlobs) return new Map();
   const blobs = new Map<string, Uint8Array>();
-  await collectBlobDirectory(join(directory, "blobs"), "", blobs);
+  await collectBlobDirectory(join(directory, "blobs"), "", blobs, scope, derivedBudget);
   return blobs;
 }
 
-async function collectBlobDirectory(root: string, relative: string, blobs: Map<string, Uint8Array>): Promise<void> {
+async function collectBlobDirectory(root: string, relative: string, blobs: Map<string, Uint8Array>, scope?: ArtifactSetReadScope, derivedBudget?: DerivedObservationBudget): Promise<void> {
   const directory = relative.length === 0 ? root : join(root, ...relative.split("/"));
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
+  checkReadScope(scope, "artifact-blobs", directory);
+  scope?.budget.consume("maxDirectories", 1, "artifact-blobs", directory);
+  const entries = await opendir(directory);
+  for await (const entry of entries) {
+    checkReadScope(scope, "artifact-blobs", directory);
+    scope?.budget.check("artifact-blobs", entry.name);
     const path = relative.length === 0 ? entry.name : `${relative}/${entry.name}`;
     assertBlobPath(path);
     const absolute = join(directory, entry.name);
     const status = await lstat(absolute);
     if (status.isSymbolicLink()) throw new ArtifactSetIntegrityError(`Artifact set contains a symbolic link: blobs/${path}`);
-    if (status.isDirectory()) await collectBlobDirectory(root, path, blobs);
-    else if (status.isFile()) blobs.set(path, await readRegularFile(absolute, `blob ${path}`));
+    if (status.isDirectory()) await collectBlobDirectory(root, path, blobs, scope, derivedBudget);
+    else if (status.isFile()) {
+      const bytes = await readRegularFile(absolute, `blob ${path}`, scope, derivedBudget);
+      derivedBudget?.reserveString(path.length, "artifact-blobs", path);
+      derivedBudget?.reserve(128, "artifact-blobs", path);
+      blobs.set(path, bytes);
+    }
     else throw new ArtifactSetIntegrityError(`Artifact set contains a non-regular entry: blobs/${path}`);
   }
+  checkReadScope(scope, "artifact-blobs", directory);
 }
 
 function assertArtifactSetId(value: string): void {
@@ -428,12 +476,35 @@ async function assertDirectory(path: string, label: string): Promise<void> {
   const status = await lstat(path);
   if (status.isSymbolicLink() || !status.isDirectory()) throw new ArtifactSetIntegrityError(`${label} is not a regular directory`);
 }
-async function readRegularFile(path: string, label: string): Promise<Buffer> {
+async function readRegularFile(path: string, label: string, scope?: ArtifactSetReadScope, inheritedDerivedBudget?: DerivedObservationBudget): Promise<Buffer> {
+  checkReadScope(scope, "artifact-file", label);
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const status = await handle.stat();
     if (!status.isFile()) throw new ArtifactSetIntegrityError(`${label} is not a regular file`);
-    return await handle.readFile();
+    if (scope === undefined) return await handle.readFile();
+    scope.budget.consume("maxFiles", 1, "artifact-file", label);
+    scope.budget.assertFileBytes(status.size, label);
+    scope.budget.assertTotalBytes(status.size, label);
+    const derivedBudget = inheritedDerivedBudget ?? new DerivedObservationBudget(scope.budget.limits.maxDerivedBytes);
+    derivedBudget.reserve(Math.min(Number.MAX_SAFE_INTEGER, status.size * 2 + 128), "artifact-file", label);
+    const chunks: Buffer[] = [];
+    let total = 0;
+    const stream = handle.createReadStream({ autoClose: false, signal: scope.signal });
+    try {
+      for await (const chunk of stream) {
+        checkReadScope(scope, "artifact-file", label);
+        const bytes = Buffer.from(chunk);
+        total += bytes.length;
+        scope.budget.assertFileBytes(total, label);
+        scope.budget.consume("maxTotalBytes", bytes.length, "artifact-file", label);
+        if (total > status.size) derivedBudget.reserve((total - status.size) * 2, "artifact-file", label);
+        chunks.push(bytes);
+      }
+    } finally { stream.destroy(); }
+    checkReadScope(scope, "artifact-file", label);
+    if (total !== status.size) throw new ArtifactSetIntegrityError(`${label} changed while being read`);
+    return Buffer.concat(chunks, total);
   } finally { await handle.close(); }
 }
 async function writeDurableNewFile(
@@ -465,4 +536,12 @@ async function syncDirectory(path: string): Promise<void> {
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 function isCode(error: unknown, code: string): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === code;
+}
+function checkReadScope(scope: ArtifactSetReadScope | undefined, stage: string, scopeName: string): void {
+  scope?.signal?.throwIfAborted();
+  scope?.budget.check(stage, scopeName);
+}
+function rethrowReadInterruption(error: unknown, scope: ArtifactSetReadScope | undefined): void {
+  if (scope?.signal?.aborted) scope.signal.throwIfAborted();
+  if (error instanceof ObservationError) throw error;
 }

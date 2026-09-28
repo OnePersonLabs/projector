@@ -99,6 +99,44 @@ function authority(id: string, subjectId: string): AuthorityRecord {
 }
 
 describe("repository change lifecycle service", () => {
+  it("recovers an orphan representation without capturing or executing its change", async () => {
+    const root = await repository();
+    const interrupted = vi.spyOn(ChangeLifecycleStore.prototype, "capture").mockRejectedValueOnce(new Error("interrupted before capture"));
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      await expect(service.capture({ request: "Personalize greeting", proposal: proposal() })).rejects.toThrow("interrupted before capture");
+      interrupted.mockRestore();
+      const reopened = await RepositoryChangeLifecycleService.create(root);
+      const pending = await reopened.pendingRepresentations();
+      expect(pending).toEqual([expect.objectContaining({ captureStatus: "uncaptured", semanticChangeId: expect.any(String), projectionId: expect.any(String) })]);
+      expect(await reopened.recoverRepresentations()).toEqual([expect.objectContaining({
+        status: "recovery-required", captureStatus: "uncaptured", semanticChangeId: pending[0]!.semanticChangeId,
+        reason: expect.stringContaining(`Change ${pending[0]!.semanticChangeId}`),
+      })]);
+      await expect(ChangeLifecycleStore.create(root).then((store) => store.readCapture(pending[0]!.semanticChangeId!))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(root, "src/greeting.mjs"), "utf8")).toBe(proposal().edits[0]!.before);
+    } finally { interrupted.mockRestore(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("acknowledges an authenticated capture interrupted before publication cleanup", async () => {
+    const root = await repository();
+    const original = ChangeLifecycleStore.prototype.capture;
+    const interrupted = vi.spyOn(ChangeLifecycleStore.prototype, "capture").mockImplementationOnce(async function (this: ChangeLifecycleStore, input) {
+      await original.call(this, input);
+      throw new Error("interrupted after capture");
+    });
+    try {
+      const service = await RepositoryChangeLifecycleService.create(root);
+      await expect(service.capture({ request: "Personalize greeting", proposal: proposal() })).rejects.toThrow("interrupted after capture");
+      interrupted.mockRestore();
+      const reopened = await RepositoryChangeLifecycleService.create(root);
+      expect(await reopened.pendingRepresentations()).toEqual([expect.objectContaining({ captureStatus: "captured" })]);
+      expect(await reopened.recoverRepresentations()).toEqual([expect.objectContaining({ status: "recovered", captureStatus: "captured" })]);
+      expect(await reopened.pendingRepresentations()).toEqual([]);
+      expect(await readFile(join(root, "src/greeting.mjs"), "utf8")).toBe(proposal().edits[0]!.before);
+    } finally { interrupted.mockRestore(); await rm(root, { recursive: true, force: true }); }
+  });
+
   it("accepts equivalent repository root spelling without accepting another repository observation", async () => {
     const root = await repository();
     try {

@@ -77,6 +77,23 @@ const operationalTopLevelDirectories = new Set(["runtime", "task17-host-journals
 const operationalRootFiles = new Set(["dogfood.json", "governance.json"]);
 const readableIndexRootFiles = new Set(["README.md", "INDEX.md"]);
 
+/** Shared selection for filesystem and immutable Git-tree canonical sources. */
+export function classifyCanonicalSource(relativePath: string, type: "file" | "directory" | "symlink"): "source" | "ignore" | "visit" {
+  const [topLevel] = relativePath.split("/");
+  const name = relativePath.split("/").at(-1)!;
+  if (topLevel !== undefined && operationalTopLevelDirectories.has(topLevel)) return "ignore";
+  if (!relativePath.includes("/") && (operationalRootFiles.has(name) || readableIndexRootFiles.has(name))) return "ignore";
+  if (type === "file" && topLevel === "receipts" && !name.endsWith(".receipt.json")) return "ignore";
+  if (type === "symlink") {
+    if (topLevel !== undefined && derivedTopLevelDirectories.has(topLevel)) return "ignore";
+    throw new Error(`symlink canonical entry is not allowed: ${relativePath}`);
+  }
+  if (type === "directory") return "visit";
+  if (name.endsWith(".toml") || name.endsWith(".md")) return "source";
+  if (isLegacyCanonicalJson(relativePath)) throw new Error(`legacy or mixed canonical JSON requires project readiness migration: ${relativePath}`);
+  return "ignore";
+}
+
 async function canonicalSourceFiles(root: string, budget: ObservationBudget, signal?: AbortSignal): Promise<string[]> {
   const files: string[] = [];
   try {
@@ -97,20 +114,11 @@ async function canonicalSourceFiles(root: string, budget: ObservationBudget, sig
       budget.check("canonical-enumeration", directory);
       const path = join(directory, entry.name);
       const relativePath = relative(root, path).replaceAll("\\", "/");
-      const [topLevel] = relativePath.split("/");
-      if ((entry.isDirectory() && topLevel !== undefined && operationalTopLevelDirectories.has(topLevel))
-        || (entry.isFile() && !relativePath.includes("/") && operationalRootFiles.has(entry.name))
-        || (entry.isFile() && !relativePath.includes("/") && readableIndexRootFiles.has(entry.name))
-        || (entry.isFile() && topLevel === "receipts" && !entry.name.endsWith(".receipt.json"))) continue;
-      if (entry.isSymbolicLink()) {
-        if (topLevel === undefined || !derivedTopLevelDirectories.has(topLevel)) {
-          throw new Error(`symlink canonical entry is not allowed: ${path}`);
-        }
-        continue;
-      }
+      const selection = classifyCanonicalSource(relativePath, entry.isSymbolicLink() ? "symlink" : entry.isDirectory() ? "directory" : "file");
+      if (selection === "ignore") continue;
       if (entry.isDirectory()) {
         await visit(path);
-      } else if (entry.isFile() && (entry.name.endsWith(".toml") || entry.name.endsWith(".md"))) {
+      } else if (entry.isFile() && selection === "source") {
         budget.consume("maxFiles", 1, "canonical-enumeration", path);
         files.push(path);
       } else if (entry.isFile() && isLegacyCanonicalJson(relativePath)) {

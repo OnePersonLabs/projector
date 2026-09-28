@@ -17,10 +17,11 @@ import {
   type ObservationLimits,
 } from "@projector/core";
 
-import { inventoryRepository, type InventoryEntry, type InventoryResult } from "./filesystem/inventory.js";
+import { inventoryRepository, type InventoryEntry, type InventoryResult, type InventoryByteReuse } from "./filesystem/inventory.js";
 import { analyzeDocuments, type ActionsWorkflowFact, type DocumentFact, type MarkdownFact } from "./formats/documents.js";
 import { collectGitFacts, finalizeGitFacts, type GitFacts, type GitIdentityFact, type GitMoveFact } from "./git/facts.js";
 import { compareCodePoint } from "./ordering.js";
+import { syntaxProgramVersion } from "./typescript/compiler-syntax.js";
 import { type EventContractTopology } from "./topology/index.js";
 import { compileRepositoryTopology, detectMechanicalDivergences, type AnalyzerDivergenceFact } from "./topology/repository.js";
 import {
@@ -102,6 +103,7 @@ export interface AnalyzeLocalRepositoryOptions {
   readonly observationLimits?: Partial<ObservationLimits>;
   readonly signal?: AbortSignal;
   readonly budget?: ObservationBudget;
+  readonly byteReuse?: InventoryByteReuse;
 }
 
 export interface CollectedLocalRepositoryInputs {
@@ -110,7 +112,8 @@ export interface CollectedLocalRepositoryInputs {
   readonly gitFacts: GitFacts;
 }
 
-const adapterVersion = "2.2.0";
+export const localRepositoryAdapterVersion = "2.3.0";
+const adapterVersion = localRepositoryAdapterVersion;
 
 function tokenizeCommand(command: string): string[] {
   const tokens: string[] = [];
@@ -182,7 +185,7 @@ function executableTargets(tokens: readonly string[]): Array<{ runner: string; t
         continue;
       }
       if (target.startsWith("-")) continue;
-      if (/\.(?:mjs|js|cjs|mts|ts)$/u.test(target) && !target.includes("*")) result.push({ runner, target });
+      if (/\.(?:mjs|js|cjs|mts|cts|ts|tsx|jsx)$/u.test(target) && !target.includes("*")) result.push({ runner, target });
     }
     segment = [];
   };
@@ -297,7 +300,7 @@ function roleFor(
   }
   evidence.sort((left, right) => right.strength - left.strength || compareCodePoint(left.kind, right.kind) || compareCodePoint(left.detail, right.detail));
 
-  if (/\.test\.(?:mjs|js|cjs|mts|ts)$/u.test(entry.path)) return { role: "test", evidence };
+  if (/\.test\.(?:mjs|js|cjs|mts|cts|ts|tsx|jsx)$/u.test(entry.path)) return { role: "test", evidence };
   if (javaScript !== undefined && javaScript.lifecycleExports.length > 0) return { role: "hook-entrypoint", evidence };
   if (hookReachable.has(entry.path)) return { role: "hook-private-support", evidence };
   if (packageInvocations.length > 0 || targetingTests.length > 0) return { role: "repository-automation", evidence };
@@ -318,7 +321,7 @@ function signature(profileId: string, scope: string, value: unknown, hash?: Cont
   };
 }
 
-function stableSemanticKey(entry: InventoryEntry, javaScript: JavaScriptFileFacts | undefined, role: LocalSemanticRole): string {
+export function localSemanticKey(entry: InventoryEntry, javaScript: JavaScriptFileFacts | undefined, role: LocalSemanticRole): string {
   if (javaScript !== undefined && javaScript.exports.length > 0) return `exports:${javaScript.exports.join(",")}`;
   if (javaScript !== undefined && javaScript.testNames.length > 0) return `tests:${javaScript.testNames.join("|")}`;
   if (entry.path.endsWith("package.json")) {
@@ -372,21 +375,21 @@ function buildCapabilities(rootAvailable: boolean, inventoryEnumeration: Invento
     },
     {
       analyzerId: "projector.javascript-local",
-      adapterVersion,
+      adapterVersion: `${adapterVersion}+${syntaxProgramVersion}`,
       supportedLanguages: ["JavaScript", "TypeScript"],
-      supportedSemantics: ["static-imports", "named-exports", "test-targets", "hook-lifecycle", "package-script-invocations"],
+      supportedSemantics: ["static-imports", "static-reexports", "named-exports", "test-targets", "hook-lifecycle", "package-script-invocations"],
       enumeration: {
         observability: "bounded",
         method: "no-exec-local-syntax-extraction",
         assumptions: ["ES module syntax uses static string specifiers"],
-        blindSpots: ["dynamic imports", "computed module paths", "re-exports lists", "full TypeScript type semantics"],
+        blindSpots: ["dynamic imports", "computed module paths", "runtime require bindings", "full TypeScript type semantics"],
         dynamicMechanisms: ["dynamic import", "runtime module resolution"],
       },
       executesRepositoryCode: false,
     },
     {
       analyzerId: "projector.typescript-semantic",
-      adapterVersion,
+      adapterVersion: `${adapterVersion}+${syntaxProgramVersion}`,
       supportedLanguages: ["JavaScript", "TypeScript"],
       supportedSemantics: ["semantic-declarations", "scoped-symbol-identity", "event-topology", "public-contract-topology"],
       enumeration: rootAvailable ? {
@@ -416,7 +419,7 @@ export async function collectLocalRepositoryInputs(options: AnalyzeLocalReposito
   const repositoryRoot = resolve(options.repositoryRoot);
   const budget = options.budget ?? new ObservationBudget(options.observationLimits);
   const signalOption = options.signal === undefined ? {} : { signal: options.signal };
-  const inventoryResult = await inventoryRepository(repositoryRoot, { budget, ...signalOption });
+  const inventoryResult = await inventoryRepository(repositoryRoot, { budget, ...signalOption, ...(options.byteReuse === undefined ? {} : { byteReuse: options.byteReuse }) });
   const gitFacts = await collectGitFacts(repositoryRoot, inventoryResult.entries.map((entry) => entry.path), {
     budget, ...signalOption, entries: inventoryResult.entries,
     confirmedNonGit: inventoryResult.enumeration.method === "recursive-filesystem-fallback",
@@ -427,11 +430,12 @@ export async function collectLocalRepositoryInputs(options: AnalyzeLocalReposito
 }
 
 export function analyzeCollectedLocalRepository(collected: CollectedLocalRepositoryInputs,
-  derivedBudget = new DerivedObservationBudget(collected.inventoryResult.observationDescriptor.limits.maxDerivedBytes)): LocalRepositoryAnalysis {
+  derivedBudget = new DerivedObservationBudget(collected.inventoryResult.observationDescriptor.limits.maxDerivedBytes),
+  context?: { readonly javaScript?:JavaScriptFacts; readonly semanticKeyCounts?:Readonly<Record<string,number>>; readonly testTargets?:readonly TestTargetFact[] }): LocalRepositoryAnalysis {
   const { options, inventoryResult } = collected;
   const inventory = inventoryResult.entries;
   const packageFacts = analyzePackageScripts(inventory);
-  const javaScriptFacts = analyzeJavaScript(inventory, derivedBudget);
+  const javaScriptFacts = context?.javaScript ?? analyzeJavaScript(inventory, derivedBudget);
   const documentFacts = analyzeDocuments(inventory);
   const gitFacts = finalizeGitFacts(collected.gitFacts, derivedBudget);
   const hookReachable = hookReachablePaths(javaScriptFacts.files, javaScriptFacts.dependencies);
@@ -479,8 +483,8 @@ export function analyzeCollectedLocalRepository(collected: CollectedLocalReposit
   const keyCounts = new Map<string, number>();
   for (const entry of inventory) {
     const javaScript = javaScriptByPath.get(entry.path);
-    const { role } = roleFor(entry, javaScript, packageFacts.invocations, javaScriptFacts.testTargets, hookReachable);
-    const key = stableSemanticKey(entry, javaScript, role);
+    const { role } = roleFor(entry, javaScript, packageFacts.invocations, context?.testTargets ?? javaScriptFacts.testTargets, hookReachable);
+    const key = localSemanticKey(entry, javaScript, role);
     baseSemanticKeys.set(entry.path, key);
     keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
   }
@@ -489,7 +493,7 @@ export function analyzeCollectedLocalRepository(collected: CollectedLocalReposit
   for (const entry of inventory) {
     const javaScript = javaScriptByPath.get(entry.path);
     const baseSemanticKey = baseSemanticKeys.get(entry.path)!;
-    const semanticKey = keyCounts.get(baseSemanticKey) === 1
+    const semanticKey = (context?.semanticKeyCounts?.[baseSemanticKey] ?? keyCounts.get(baseSemanticKey)) === 1
       ? baseSemanticKey
       : `${baseSemanticKey}:variant:${javaScript?.variantHash ?? hashFramedDomain("local-unit-variant", entry.content)}`;
     semanticKeys.set(entry.path, semanticKey);
@@ -497,7 +501,7 @@ export function analyzeCollectedLocalRepository(collected: CollectedLocalReposit
 
   for (const entry of inventory) {
     const javaScript = javaScriptByPath.get(entry.path);
-    const { role, evidence } = roleFor(entry, javaScript, packageFacts.invocations, javaScriptFacts.testTargets, hookReachable);
+    const { role, evidence } = roleFor(entry, javaScript, packageFacts.invocations, context?.testTargets ?? javaScriptFacts.testTargets, hookReachable);
     derivedBudget.reserve(3072 + 4 * entry.path.length + 64 * evidence.length, "local-artifact-facts", entry.path);
     const semanticKey = semanticKeys.get(entry.path)!;
     // Physical source identity is independent of syntax and of whether another

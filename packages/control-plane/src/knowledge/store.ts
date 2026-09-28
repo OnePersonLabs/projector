@@ -1,5 +1,5 @@
 import { canonicalJson, hashFramedDomain } from "@projector/core";
-import { RepositoryPathService, withDerivedCacheAdmission, touchDerivedCacheEntry, withObservationScope, type DerivedCacheSession, type DerivedCacheWrite } from "@projector/runtime";
+import { RepositoryPathService, readDerivedCacheSource, withDerivedCacheAdmission, touchDerivedCacheEntry, withObservationScope, type DerivedCacheSession, type DerivedCacheWrite } from "@projector/runtime";
 import { runObservationTask } from "../observation/task-runner.js";
 import { readDerivedObservationSource } from "../observation/read-derived.js";
 
@@ -55,9 +55,15 @@ export class KnowledgeContextStore {
 
   async read(contextId: string, touch = true, authenticator?: (source: string) => KnowledgeContextResult | Promise<KnowledgeContextResult>): Promise<KnowledgeContextResult> {
     return withObservationScope({}, async (scope) => {
-      const path = await this.paths.resolveRead(`${storeRoot}/${filename(contextId)}`);
       let source: string;
-      try { source = await readDerivedObservationSource(path.realTarget, contextId, scope); }
+      try {
+        const cached = await readDerivedCacheSource(this.paths.root, `${storeRoot}/${filename(contextId)}`, scope);
+        if (cached !== undefined) source = cached;
+        else {
+          const path = await this.paths.resolveRead(`${storeRoot}/${filename(contextId)}`);
+          source = await readDerivedObservationSource(path.realTarget, contextId, scope);
+        }
+      }
       catch (error) {
         if (isCode(error, "ENOENT")) throw new Error(`Saved context ${contextId} is no longer in the disposable cache; request fresh persisted context and refresh or replan any dormant capture before approval`, { cause: error });
         throw error;

@@ -9,20 +9,32 @@ import { z } from "zod";
 export const publicCommandHelp = `Projector: retrieve meaning, change with Codex, check consequences.
 
   projector init
-  projector context "task" [--entity ID] [--target path] [--budget characters]
+  projector context "task" [--entity ID] [--target path] [--budget characters] [--full]
   projector check [CONTEXT]
+  projector integration --target REF --incoming REF [--base REF] [--result REF]
   projector audit [--scope PATH] [--context CONTEXT] [--question-offset N] [--json]
   projector accept proposal.json [--context CONTEXT] [--request "reason"]
   projector accept --apply CHANGE --hash HASH
   projector resume CONTEXT|CHANGE|APPROVAL
   projector inspect ID
-  projector recover APPROVAL | --access
+  projector inspect --representations
+  projector recover APPROVAL | --access | --representations
+  projector evaluate options.json
+  projector verify check.json
+  projector verify --inspect [EVENT] | --recover
+  projector verify --builtin --target REF
+  projector verify --builtin --assess EVENT --target REF
+  projector verify --builtin --inspect | --recover
+  projector generate generation.json
+  projector generate --inspect producers.json | --recover producers.json
 
 Use --root PATH for another repository, --json for exact machine results.
 Use --timeout-ms N for a bounded observation timeout per operation (default 60000).
 Accept first previews a canonical change. Apply names that exact reviewed plan.
 Resume only inspects and restores authenticated context. Recovery never applies.
 Audit observes bounded repository evidence and proposes repair routes. It never applies repairs.
+Integration compares Git contributions without changing refs, the index, or working files.
+Without --result, Git computes a proposed merge and may store immutable Git objects.
 `;
 
 type ObjectValue = Record<string, unknown>;
@@ -42,11 +54,11 @@ function argumentsFor(args: readonly string[]) {
   for (let i = 0; i < args.length; i++) {
     const argument = args[i]!;
     if (!argument.startsWith("--")) { values.push(argument); continue; }
-    if (["--json", "--access", "--help"].includes(argument)) {
+    if (["--json", "--access", "--help", "--full", "--representations", "--inspect", "--recover", "--builtin"].includes(argument)) {
       if (flags.has(argument)) throw new Error(`Duplicate option ${argument}`);
       flags.set(argument, ["true"]); continue;
     }
-    if (!["--root", "--entity", "--target", "--budget", "--context", "--request", "--apply", "--hash", "--scope", "--question-offset", "--timeout-ms"].includes(argument)) throw new Error(`Unknown option ${argument}`);
+    if (!["--root", "--entity", "--target", "--incoming", "--base", "--result", "--budget", "--context", "--request", "--apply", "--hash", "--scope", "--question-offset", "--timeout-ms", "--assess"].includes(argument)) throw new Error(`Unknown option ${argument}`);
     const value = args[++i];
     if (value === undefined || value.startsWith("--")) throw new Error(`${argument} requires a value`);
     const previous = flags.get(argument) ?? [];
@@ -151,24 +163,53 @@ export function renderPublicResult(command: string, value: unknown): string {
   const result = object(value);
   const lines: string[] = [];
   if (command === "context") {
+    const navigation = new Map<string, { kinds: string[]; bands: string[]; reasons: string[]; uncertainty: string[] }>();
     lines.push(string(result.request));
+    lines.push("Read-only view of accepted records and observed relationships. Candidate interpretations and unknowns require review.");
     lines.push(...describeMeaning(result));
     for (const branchValue of array(result.branches)) {
       const branch = object(branchValue);
       const context = object(branch.context);
+      if (branch.hypothesis === true) lines.push(`Candidate interpretation: ${string(object(branch.interpretation).entityId) || string(branch.id)}. Selection does not establish semantic identity.`);
       for (const item of array(context.items)) {
         const record = object(item);
         // Full/raw content is rendered only for an explicit full evidence result.
         lines.push(...describeMeaning(record));
         if (result.view === "full") lines.push(string(record.content));
+        const id = string(record.entityId);
+        if (id) {
+          const prior = navigation.get(id);
+          navigation.set(id, {
+            kinds: unique([...(prior?.kinds ?? []), string(record.kind)]),
+            bands: unique([...(prior?.bands ?? []), string(record.band)]),
+            reasons: unique([...(prior?.reasons ?? []), ...array(record.relevanceReasons).map(string)]),
+            uncertainty: unique([...(prior?.uncertainty ?? []), ...array(record.uncertainty).map(string)]),
+          });
+        }
       }
       lines.push(...findings(branch), ...disclose(context.itemsDisclosure, "context items"));
+      for (const frontier of unique(array(branch.frontier).map(string))) lines.push(`Unresolved frontier: ${frontier}`);
+      lines.push(...disclose(branch.frontierDisclosure, "frontier entries"));
+      for (const id of unique(array(context.requiredExpansionIds).map(string))) {
+        lines.push(`Required expansion (new current context): projector context ${JSON.stringify(string(result.request))} --entity ${JSON.stringify(id)}`);
+      }
+      lines.push(...disclose(context.requiredExpansionDisclosure, "required expansions"));
+    }
+    for (const [id, record] of navigation) {
+      const reasons = result.view === "full" ? record.reasons : record.reasons.slice(0, 2);
+      lines.push([
+        `${id} (${record.kinds.join(", ") || "record"}; ${record.bands.join(", ") || "relevance unspecified"})`,
+        ...reasons.map(reason => `Why included: ${reason}`),
+        ...(record.reasons.length > reasons.length ? [`${record.reasons.length - reasons.length} additional selection reasons are in the complete retained evidence.`] : []),
+        ...record.uncertainty.map(reason => `Uncertainty: ${reason}`),
+        `Exact record: projector inspect ${JSON.stringify(id)}`,
+      ].join("\n"));
     }
     lines.push(...findings(result), ...disclose(result.branchDisclosure, "branches"), ...disclose(object(result.meaning).disclosure, "meaning sections"));
     const safety = object(result.safety);
     const counters = Object.entries(safety).filter(([,count])=>typeof count === "number" && count > 0).map(([key,count])=>`${key}: ${count}`);
     if (counters.length) lines.push(`Coverage limits: ${counters.join(", ")}`);
-    if (result.id) lines.push(`Context: ${result.id}`);
+    if (result.id) lines.push(`Context: ${result.id}\nComplete retained evidence: projector inspect ${JSON.stringify(result.id)}`);
   } else if (command === "accept-preview") {
     const preview = object(result.preview);
     const review = object(preview.intentReview);
@@ -278,6 +319,83 @@ export function renderPublicResult(command: string, value: unknown): string {
       }
     }
     lines.push("Supported next actions: inspect a named record, retrieve focused context, use an available repair route, or rerun audit after changes.");
+  } else if (command === "recover" && Array.isArray(value)) {
+    for (const raw of value) {
+      const publication = object(raw);
+      lines.push(`${string(publication.publicationId)}: ${string(publication.status)}; capture ${string(publication.captureStatus)}${string(publication.reason) ? ` -- ${publication.reason}` : ""}`);
+    }
+    if (!value.length) lines.push("No representation publication needs recovery.");
+  } else if (command === "evaluate") {
+    const evaluation = object(result.evaluation);
+    lines.push(`Architecture evaluation: ${string(evaluation.outcome) || "observed"}; acceptance ${result.acceptanceBlocked === true ? "blocked" : "requires its normal authority"}.`);
+    lines.push(...findings(evaluation));
+    for (const key of ["recommendation", "rationale", "summary"]) if (typeof evaluation[key] === "string") lines.push(`${key}: ${evaluation[key]}`);
+    lines.push(...array(result.preferenceConflicts).map(string));
+    lines.push("This evaluation does not authorize canonical mutation. Use --json for the complete tradeoff matrix and evidence.");
+  } else if (command === "integration") {
+    lines.push(`Git integration: ${string(result.status) || "unknown"}.`);
+    lines.push(`Base: ${string(result.baseCommit)}; target: ${string(result.targetCommit)}; incoming: ${string(result.incomingCommit)}.`);
+    if (string(result.resultTree)) lines.push(`Result tree: ${string(result.resultTree)} (${string(result.resultSource)}).`);
+    for (const path of array(result.conflictPaths).map(string)) lines.push(`Git conflict: ${path}`);
+    const contributions = [...array(result.contributions).map(object), ...array(result.codeContributions).map(object)];
+    const retained = contributions.filter(item => item.status === "preserved");
+    const unresolved = contributions.filter(item => item.status !== "preserved");
+    lines.push(`Contributions: ${retained.length} preserved; ${unresolved.length} require resolution or review.`);
+    // Put unresolved work first and disclose any omitted detail in the human view.
+    const ordered = [...unresolved, ...retained];
+    for (const item of ordered.slice(0, 24)) lines.push(`${string(item.side)} ${string(item.entityId) || string(item.path)}: ${string(item.status)}${string(item.change) ? ` (${string(item.change)})` : ""}.`);
+    if (ordered.length > 24) lines.push(`${ordered.length - 24} contribution details omitted. Use --json for the complete assessment.`);
+    const validation = object(result.canonicalValidation);
+    lines.push(`Canonical checks (${string(validation.scope) || "record integrity only"}): ${string(validation.status) || "not assessed"}.`);
+    for (const issue of array(validation.issues).map(string)) lines.push(issue);
+    const governance = object(result.staticGovernanceValidation);
+    if (string(governance.status)) {
+      lines.push(`Static governance: ${string(governance.status)}.`);
+      for (const issue of array(governance.issues).map(string)) lines.push(issue);
+    }
+    const additionalPaths = array(result.resultOnlyPaths).map(string);
+    const reconciliation = object(result.resultReconciliation);
+    if (string(reconciliation.status)) {
+      const queries = array(reconciliation.consumerQueries).map(object);
+      const newConsumers = [...new Set(queries.flatMap(query => array(query.newlyRelevantConsumers).map(string)))];
+      lines.push(`Result reconciliation: ${string(reconciliation.status)}; ${queries.length} static consumer queries recomputed; ${newConsumers.length} newly relevant consumers.`);
+      for (const path of newConsumers.slice(0, 24)) lines.push(`Newly relevant consumer: ${path}`);
+      if (newConsumers.length > 24) lines.push(`${newConsumers.length - 24} consumer details omitted. Use --json for complete populations.`);
+      for (const issue of array(reconciliation.contradictions).map(string)) lines.push(`Result contradiction: ${issue}`);
+      for (const unknown of array(reconciliation.unknowns).map(string)) lines.push(`Result uncertainty: ${unknown}`);
+      lines.push("Source and static population findings do not establish behavioral equivalence; behavioral evidence is not reusable from this assessment.");
+    }
+    if (additionalPaths.length) lines.push(`Additional result changes: ${additionalPaths.slice(0, 24).join(", ")}${additionalPaths.length > 24 ? `; ${additionalPaths.length - 24} omitted, use --json` : ""}.`);
+    for (const gap of array(result.verificationGaps).map(string)) lines.push(`Still required: ${gap}`);
+    lines.push("This assessment does not authorize a merge or establish completed behavioral verification or independent review. Use --json for exact input identities and all findings.");
+  } else if (command === "verify" || command === "generate") {
+    const nestedCheck = object(result.check);
+    const inspection = result.inspection === undefined ? result : object(result.inspection);
+    const generated = command === "generate";
+    lines.push(`${generated ? "Generated output" : "Verification"} evidence: ${string(result.status) || string(nestedCheck.status) || "historical observations"}`);
+    if (result.id !== undefined) lines.push(`id: ${result.id}`);
+    const checks = generated ? (result.check === undefined ? [] : [nestedCheck]) : [...array(inspection.records).map(object), ...(typeof result.status === "string" ? [result] : [])];
+    for (const check of checks) {
+      lines.push(`${string(check.id)}: ${check.current === true ? "current" : string(check.status) || "not current"}${string(check.reason) ? ` -- ${check.reason}` : ""}`);
+      if (string(check.error)) lines.push(string(check.error));
+      if (check.exitCode !== undefined && check.exitCode !== null) lines.push(`Exit code: ${check.exitCode}`);
+    }
+    for (const record of (generated ? array(inspection.records).map(object) : [])) {
+      lines.push(`${string(object(record.evidence).id)}: ${record.current === true ? "current" : "not current"} -- ${string(record.reason)}`);
+      for (const output of array(record.outputs).map(object)) lines.push(`${string(output.path)} (${string(output.ownership)}): ${string(output.disposition)}; ${string(output.observation)}`);
+    }
+    const builtin = result.profile === "projector-closed-static/v1" || result.scope === "projector.canonical-integrity/v1" || inspection.scope === "projector.canonical-integrity/v1" || array(inspection.records).some(record => object(record).profile === "projector-closed-static/v1");
+    if (builtin) {
+      lines.push(`Built-in canonical/static check only: projector.canonical-integrity/v1${result.bindingStatus === undefined ? "" : `; ${string(result.bindingStatus)}`}${result.reusable === undefined ? "" : `; reusable: ${result.reusable === true ? "yes" : "no"}`}.`);
+      if (typeof result.targetTree === "string") lines.push(`Assessed target tree: ${result.targetTree}`);
+      lines.push(...array(result.reasons).map(string));
+      lines.push("This evidence does not authorize integration or mutation and does not establish runtime behavior or independent whole-result review. Use --json for complete retained inputs and artifacts.");
+    } else lines.push("Native evidence is a historical observation, not proof of reusable success, complete dependencies, or exclusive causation. Use --json for complete records.");
+    const recoveryCommand = generated ? "generate --recover producers.json" : builtin ? "verify --builtin --recover" : "verify --recover";
+    for (const pending of array(inspection.pendingPublications).map(object)) lines.push(`Pending publication ${string(pending.artifactSetId)}: ${string(pending.state)}; ${pending.recoverable === true ? `explicit ${recoveryCommand} can complete retained evidence without executing the command again` : "no complete result is available; inspect the retained execution and intent before taking further action"}.`);
+    const recovered = array(result.recoveredArtifactSetIds).map(string);
+    if (recovered.length) lines.push(`Recovered publication: ${recovered.join(", ")}. Checks were not executed again.`);
+    lines.push(...findings(result));
   } else {
     lines.push(`${command}: ${string(result.outcome) || string(result.status) || string(object(result.readiness).status) || "completed"}`);
     lines.push(...describeMeaning(result), ...findings(result));
@@ -291,7 +409,7 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
   const command = values.shift();
   if (command === undefined || command === "help" || flags.has("--help")) return { exitCode: 0, output: { help: publicCommandHelp }, text: publicCommandHelp };
   const repositoryRoot = resolve(input.cwd, one("--root") ?? ".");
-  const allowed: Record<string,string[]> = { init: [], context: ["--entity","--target","--budget"], check: [], audit: ["--scope","--context","--question-offset"], accept: ["--context","--request","--apply","--hash"], resume: [], inspect: [], recover: ["--access"] };
+  const allowed: Record<string,string[]> = { init: [], context: ["--entity","--target","--budget","--full"], check: [], integration: ["--target","--incoming","--base","--result"], audit: ["--scope","--context","--question-offset"], accept: ["--context","--request","--apply","--hash"], resume: [], inspect: ["--representations"], recover: ["--access","--representations"], verify: ["--inspect","--recover","--builtin","--assess","--target"], generate: ["--inspect","--recover"], evaluate: [] };
   if (!(command in allowed)) throw new Error(`Unknown command ${command}. Use --help.`);
   for (const flag of flags.keys()) if (!["--root","--json","--help","--timeout-ms",...allowed[command]!].includes(flag)) throw new Error(`${flag} does not apply to ${command}`);
   const timeoutMs = one("--timeout-ms") === undefined ? undefined : Number(one("--timeout-ms"));
@@ -306,6 +424,7 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
     return result.output;
   };
   const exactValues = (count: number) => { if (values.length !== count) throw new Error(`${command} requires ${count} argument${count === 1 ? "" : "s"}. Use --help.`); };
+  const jsonInput = async (path: string): Promise<unknown> => JSON.parse(await readFile(resolve(input.cwd, path), "utf8"));
   let output: unknown;
   let view = command;
   if (command === "init") { exactValues(0); output = await call("init", {}); }
@@ -313,10 +432,24 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
     if (!values.length) throw new Error("context requires a task description");
     const budget = one("--budget") === undefined ? undefined : Number(one("--budget"));
     if (budget !== undefined && (!Number.isSafeInteger(budget) || budget <= 0)) throw new Error("--budget requires a positive character count");
-    output = await call("context", { request: values.join(" "), persist: true, ...(flags.has("--entity") ? { entities: flags.get("--entity") } : {}), ...(flags.has("--target") ? { namedTargets: flags.get("--target") } : {}), ...(budget === undefined ? {} : { policy: { maxContextCost: budget } }) });
+    output = await call("context", { request: values.join(" "), persist: true, ...(flags.has("--full") ? { view: "full" } : {}), ...(flags.has("--entity") ? { entities: flags.get("--entity") } : {}), ...(flags.has("--target") ? { namedTargets: flags.get("--target") } : {}), ...(budget === undefined ? {} : { policy: { maxContextCost: budget } }) });
   } else if (command === "check") {
     if (values.length > 1) throw new Error("check accepts at most one retained context");
     output = { repository: await call("repository.check", { mode: "full" }), ...(values[0] === undefined ? {} : { meaning: await call("reconcile", { contextId: values[0] }) }) };
+  } else if (command === "integration") {
+    exactValues(0);
+    if (flags.get("--target")?.length !== 1 || one("--incoming") === undefined) throw new Error("integration requires one --target REF and one --incoming REF");
+    output = await call("repository.integration", {
+      target: one("--target"), incoming: one("--incoming"),
+      ...(one("--base") === undefined ? {} : { base: one("--base") }),
+      ...(one("--result") === undefined ? {} : { result: one("--result") }),
+    });
+    const report = object(output);
+    if (report.status === "conflicted" || report.status === "invalid" || ["failed", "incomplete"].includes(string(object(report.staticGovernanceValidation).status))
+      || ["failed", "incomplete"].includes(string(object(report.resultReconciliation).status))
+      || [...array(report.contributions), ...array(report.codeContributions)].some(item => ["lost", "altered"].includes(string(object(item).status)))) {
+      return { exitCode: 6, output, text: flags.has("--json") ? `${JSON.stringify(output, null, 2)}\n` : renderPublicResult(command, output) };
+    }
   } else if (command === "audit") {
     exactValues(0);
     const absoluteScope = resolve(repositoryRoot, one("--scope") ?? ".");
@@ -354,7 +487,44 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
     const continuation = await call("cleanup", { [key]: anchor, evidenceLimit: 5 });
     const restoration = object(object(object(continuation).continuation).restoration);
     output = { continuation, ...(restoration.meaning === undefined ? {} : { meaning: restoration.meaning }), ...(restoration.context === undefined ? {} : { context: restoration.context }) };
+  } else if (command === "evaluate") {
+    exactValues(1);
+    output = await call("architecture.evaluate", await jsonInput(values[0]!));
+  } else if (command === "verify" || command === "generate") {
+    if (flags.has("--inspect") && flags.has("--recover")) throw new Error("Select one evidence action: --inspect or --recover");
+    const inspecting = flags.has("--inspect"), recovering = flags.has("--recover");
+    if (command === "verify") {
+      if (flags.has("--builtin")) {
+        exactValues(0);
+        if (inspecting || recovering) {
+          if (flags.has("--target") || flags.has("--assess")) throw new Error("Built-in inspection/recovery does not accept a target or assessment event");
+          output = await call("verification.builtin", { command: { action: inspecting ? "inspect" : "recover" } });
+        } else {
+          if (flags.get("--target")?.length !== 1) throw new Error("Built-in verification requires one explicit --target REF");
+          output = await call("verification.builtin", { command: flags.has("--assess") ? { action: "assess", eventId: one("--assess"), target: one("--target") } : { action: "execute", request: { check: "projector.canonical-integrity/v1", target: one("--target") } } });
+        }
+      } else if (flags.has("--assess") || flags.has("--target")) throw new Error("--assess and --target require --builtin for verification");
+      else if (inspecting) {
+        if (values.length > 1) throw new Error("verify --inspect accepts at most one execution event ID");
+        output = await call("verification.inspect", values[0] === undefined ? {} : { eventIds: [values[0]] });
+      } else if (recovering) {
+        exactValues(0); output = await call("verification.recover", {});
+      } else {
+        exactValues(1); output = await call("verification.execute", await jsonInput(values[0]!));
+      }
+    } else {
+      exactValues(1);
+      const request = await jsonInput(values[0]!);
+      output = await call(inspecting ? "generated.inspect" : recovering ? "generated.recover" : "generated.execute", inspecting || recovering ? request : { generation: request });
+    }
+    const result = object(output);
+    const failedExecution = !inspecting && !recovering && (flags.has("--assess") ? result.reusable !== true : (command === "verify" ? result.status : object(result.check).status) !== "passed");
+    if (failedExecution || (recovering && array(object(result.inspection).pendingPublications).length > 0)) {
+      return { exitCode: 6, output, text: flags.has("--json") ? `${JSON.stringify(output, null, 2)}\n` : renderPublicResult(command, output) };
+    }
   } else if (command === "inspect") {
+    if (flags.has("--representations")) { exactValues(0); output = await call("representation.pending", {}); }
+    else {
     exactValues(1);
     const anchor = values[0]!;
     if (anchor.startsWith("knowledge_context_")) output = await (await RepositoryKnowledgeService.create(repositoryRoot)).read(anchor);
@@ -365,8 +535,14 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
       output = snapshot.documents.find(document => document.id === anchor);
       if (output === undefined) throw new Error(`No canonical record has ID ${anchor}`);
     }
+    }
   } else {
+    if (flags.has("--access") && flags.has("--representations")) throw new Error("Select one recovery route: approval, --access, or --representations");
     if (flags.has("--access")) { exactValues(0); output = await call("operation-access.recover", {}); }
+    else if (flags.has("--representations")) {
+      exactValues(0); output = await call("representation.recover", {});
+      if (array(output).some(item => object(item).status === "recovery-required")) return { exitCode: 6, output, text: flags.has("--json") ? `${JSON.stringify(output, null, 2)}\n` : renderPublicResult(command, output) };
+    }
     else { exactValues(1); output = await call("change.recover", { approvalSelector: values[0] }); }
   }
   return { exitCode: 0, output, text: flags.has("--json") || command === "inspect" ? `${JSON.stringify(output, null, 2)}\n` : renderPublicResult(view, output) };
