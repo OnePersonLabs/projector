@@ -8,7 +8,7 @@
       "name": "projector",
       "source": {
         "source": "local",
-        "path": "./plugins/projector"
+        "path": "./.plugin-build/projector"
       },
       "policy": {
         "installation": "AVAILABLE",

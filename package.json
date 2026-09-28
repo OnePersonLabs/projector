@@ -28,6 +28,7 @@
     "test": "node --test --test-concurrency=2 test/**/*.test.ts",
     "lint": "eslint src test evaluation",
     "check": "npm run build && npm run lint && npm test",
+    "plugin:prepare-local": "npm run build && node scripts/prepare-local.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {

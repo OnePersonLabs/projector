@@ -52,14 +52,11 @@ The local locked dependency supplies OpenSpec; no global installation is require
 
 ## Local plugin installation
 
-1. Build and check the checkout.
-2. Run `node dist/host/cli.js install <fresh-external-package-directory>`. The destination must be empty and outside the checkout.
-3. Create or update a local marketplace entry pointing to that complete package. Preserve other entries. Do not register the unbuilt plugin source directory.
-4. Register new marketplaces with `codex plugin marketplace add <marketplace-root> --json`. Keep the identity of an existing Projector marketplace.
-5. Run `codex plugin add projector@<marketplace-name> --json`. Codex owns its cache writes.
-6. Verify skill discovery and MCP startup in a fresh actual Codex host; exercise installed initialization. Record the returned version and cache path.
+The checked-in marketplace points at `.plugin-build/projector`, an ignored complete bundle. For a local refresh, check the checkout, then invoke `$opl:refresh-local-plugins` for this source checkout. Its helper runs the declared `plugin:prepare-local` script before comparing and installing bundles. That script builds and assembles the package while retaining the last complete bundle if assembly fails. The helper uses the existing marketplace registration and native Codex installer; do not register the unbuilt `plugins/projector` directory. Verify skill discovery and MCP startup in a fresh actual Codex host, exercise installed initialization, and record the returned version and cache path.
 
-The angle-bracket arguments identify local destinations and marketplace identities selected during installation. Replace them with the actual selected values. See the [official package documentation](https://developers.openai.com/plugins/build/plugins). Installed CLI help and actual results establish the local client's supported commands and cache layout.
+For a separate fresh external installation, build and check the checkout, then run `node dist/host/cli.js install <fresh-external-package-directory>`. The destination must be empty and outside the checkout. Point a separate local marketplace entry at that complete package, preserving other entries. Register a new marketplace with `codex plugin marketplace add <marketplace-root> --json`, then run `codex plugin add projector@<marketplace-name> --json`. Keep the identity of an existing Projector marketplace, and let Codex own its cache writes. Verify the installed plugin in a fresh host as above.
+
+The angle-bracket arguments identify destinations and marketplace identities selected during fresh external installation. Replace them with the actual selected values. See the [official package documentation](https://developers.openai.com/plugins/build/plugins). Installed CLI help and actual results establish the local client's supported commands and cache layout.
 
 A user can authorize this procedure in ordinary language, as shown in [getting started](getting-started.md#install-the-plugin). The user does not need to operate the terminal.
 
