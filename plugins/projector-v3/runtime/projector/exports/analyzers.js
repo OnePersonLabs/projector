@@ -44,9 +44,10 @@ import {
   parseGitStatus,
   readInventoryEntry,
   readObservationFile,
+  supportedTreeSitterLanguages,
   syntaxProgramVersion,
   verifyCodeInputBinding
-} from "../chunks/shared-BGCYVYNK.js";
+} from "../chunks/shared-XAKKJSHO.js";
 import "../chunks/shared-Q56AARV7.js";
 import "../chunks/shared-WC2OT3WX.js";
 export {
@@ -95,6 +96,7 @@ export {
   parseGitStatus,
   readInventoryEntry,
   readObservationFile,
+  supportedTreeSitterLanguages,
   syntaxProgramVersion,
   verifyCodeInputBinding
 };

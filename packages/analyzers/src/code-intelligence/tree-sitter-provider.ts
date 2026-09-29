@@ -40,6 +40,7 @@ const languageByExtension: Record<string, SupportedLanguage> = {
   ts: "typescript",
   tsx: "tsx",
 };
+export const supportedTreeSitterLanguages = [...new Set(Object.values(languageByExtension))].sort();
 const declarationKinds = new Set([
   "function_definition",
   "function_declaration",

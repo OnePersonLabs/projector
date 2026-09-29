@@ -4,6 +4,9 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { copyRuntimeDependencies } from "./copy-runtime-dependencies.mjs";
 
+export const bundledTreeSitterLanguages = ["c", "c_sharp", "cpp", "go", "java", "javascript", "python", "rust", "scala", "tsx", "typescript"];
+const bundledTreeSitterLanguageSet = new Set(bundledTreeSitterLanguages);
+
 /** Bundle executable exports while keeping the npm release packaging independent. */
 export async function bundlePluginRuntime(releaseRoot, outputRoot, manifest, options = {}) {
   // Keep vendor package boundaries: Node supplies CommonJS filename/directory
@@ -39,7 +42,13 @@ export async function bundlePluginRuntime(releaseRoot, outputRoot, manifest, opt
     } }],
   });
   options.signal?.throwIfAborted();
-  const externalDependencies = await copyRuntimeDependencies(external.map(name => ({ name, from: releaseRoot })), outputRoot, options);
+  const externalDependencies = await copyRuntimeDependencies(external.map(name => ({ name, from: releaseRoot })), outputRoot, {
+    ...options,
+    dependencyFileFilter(name, packagePath) {
+      if (name !== "tree-sitter-wasm" || packagePath === "out" || !packagePath.startsWith("out/")) return true;
+      return bundledTreeSitterLanguageSet.has(packagePath.split("/")[1]);
+    },
+  });
   // esbuild normalizes output extensions; the public executable keeps its .mjs path.
   const command = await readFile(join(outputRoot, "dist/command-main.js"), "utf8");
   await writeFile(join(outputRoot, "dist/command-main.mjs"), command);

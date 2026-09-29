@@ -7,8 +7,10 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildPluginRuntime, checkedBuildDirectory, pluginBuildOptions } from "./build-plugin-runtime.mjs";
+import { bundledTreeSitterLanguages } from "./bundle-plugin-runtime.mjs";
 import { releaseVersion } from "./build-release-package.mjs";
 import * as releasePackageBuilder from "./build-release-package.mjs";
+import { supportedTreeSitterLanguages } from "../packages/analyzers/src/code-intelligence/tree-sitter-provider.js";
 
 const execute = promisify(execFile);
 const executeShell = promisify(exec);
@@ -51,6 +53,8 @@ describe("standalone plugin assembly", () => {
     expect(JSON.parse(await readFile(join(plugin, "runtime/projector/package.json"), "utf8"))).toMatchObject({ name: "@onepersonlabs/projector", version: releaseVersion });
     expect(JSON.parse(await readFile(join(plugin, "runtime/projector/node_modules/typescript/package.json"), "utf8"))).toMatchObject({name:"typescript",version:"5.9.3"});
     expect(await readFile(join(plugin, "runtime/projector/node_modules/typescript/lib/typescript.js"), "utf8")).toBe(await readFile(resolve("node_modules/typescript/lib/typescript.js"),"utf8"));
+    expect(bundledTreeSitterLanguages).toEqual(supportedTreeSitterLanguages);
+    expect((await readdir(join(plugin, "runtime/projector/node_modules/tree-sitter-wasm/out"))).sort()).toEqual(bundledTreeSitterLanguages);
     expect(await readFile(join(plugin, "runtime/projector/assets/windows-job-supervisor.ps1"), "utf8")).toContain("param");
     expect(JSON.parse(await readFile(join(plugin, "runtime/projector/licenses/third-party.json"), "utf8"))).toContainEqual(expect.objectContaining({ name: "zod" }));
     await access(join(plugin, "runtime/projector/licenses/zod/LICENSE"));

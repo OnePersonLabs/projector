@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile, lstat, rename, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, writeFile, lstat, rename, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { buildReleasePackage } from "./build-release-package.mjs";
 import { buildPluginRuntime } from "./build-plugin-runtime.mjs";
+import { assertDirectoryTreeParity } from "./directory-tree-parity.mjs";
 import { executeReleaseCommand, resolveNpmCommand } from "./npm-command.mjs";
 
 const sourceRoot=fileURLToPath(new URL("..",import.meta.url));
@@ -27,8 +28,27 @@ await writeFile(join(isolated,"package.json"),JSON.stringify({name:"projector-in
 const installEnvironment=Object.fromEntries(Object.entries(env).filter(([key])=>!/^npm_config_allow[-_]scripts$/iu.test(key)));
 await executeReleaseCommand(npm.executable,npm.arguments,{cwd:isolated,env:installEnvironment,timeout:120_000,maxBuffer:8*1024*1024});
 const installed=join(isolated,"node_modules/@onepersonlabs/projector");
-const plugin=join(isolated,"plugin");
-await buildPluginRuntime(plugin,{releaseRoot:installed});
+const preparedPlugin=join(isolated,"plugin");
+await buildPluginRuntime(preparedPlugin,{releaseRoot:installed});
+await assertDirectoryTreeParity(
+ join(preparedPlugin,"runtime"),
+ join(sourceRoot,"plugins/projector-v3/runtime"),
+ "Checked-in plugin runtime differs from the fresh release bundle. Run pnpm plugin:prepare-local and commit plugins/projector-v3/runtime.",
+);
+// Keep the checked-in plugin outside both the repository and the npm install
+// tree. Node may otherwise satisfy a missing plugin dependency by walking to
+// an ancestor node_modules directory and make this standalone check lie.
+const trackedPluginRoot=await mkdtemp(join(tmpdir(),"projector-tracked-plugin-v3-"));
+const plugin=join(trackedPluginRoot,"plugin");
+const pluginPrefix="plugins/projector-v3/";
+const trackedPluginFiles=await executeReleaseCommand("git",["ls-files","-z","--",pluginPrefix],{cwd:sourceRoot,env,timeout:120_000,maxBuffer:8*1024*1024});
+for(const repositoryPath of trackedPluginFiles.stdout.split("\0").filter(Boolean)){
+ if(!repositoryPath.startsWith(pluginPrefix))throw new Error(`Tracked plugin path escaped its source root: ${repositoryPath}`);
+ const pluginPath=repositoryPath.slice(pluginPrefix.length);
+ const destination=join(plugin,pluginPath);
+ await mkdir(dirname(destination),{recursive:true});
+ await copyFile(join(sourceRoot,repositoryPath),destination);
+}
 const mcpManifest=JSON.parse(await readFile(join(plugin,".mcp.json"),"utf8"));
 if(mcpManifest.mcpServers?.projector?.command!=="node"||!mcpManifest.mcpServers.projector.args.includes("./scripts/projector-mcp.mjs"))throw new Error("Installed plugin does not advertise the resident MCP host");
 let repository=join(isolated,"fresh-project");await mkdir(repository);
@@ -39,6 +59,7 @@ await writeFile(join(repository,".gitignore"),".projector/runtime/\n.projector/s
 await writeFile(join(repository,"README.md"),"# Installed Projector exercise\n");
 await mkdir(join(repository,"src"));
 await writeFile(join(repository,"src/clock.ts"),"export const now = () => 0;\n");
+await writeFile(join(repository,"src/example.py"),"def answer():\n    return 42\n");
 await run("git",["add","."]);await run("git",["-c","user.name=Projector Check","-c","user.email=check@example.invalid","commit","-qm","Initial project"]);
 const transcript=[];
 const command=async(args,cwd=repository)=>{
@@ -102,6 +123,13 @@ try{
 }
 if(!(await readFile(join(repository,".projector/README.md"),"utf8")).includes("#"))throw new Error("Installed init omitted the human index");
 const context=await command(["context","Document the project's clock boundary"]);
+const syntaxContext=await command(["context","Inspect the Python syntax fallback","--target","src/example.py"]);
+if(typeof syntaxContext.contentHash!=="string")throw new Error("Checked-in plugin could not index a packaged Tree-sitter grammar");
+let syntaxRun=await operation("code.index",{provider:"syntax",buildVariant:"default",timeoutMs:null});
+while(syntaxRun.state==="running")syntaxRun=await operation("code.index-wait",{runId:syntaxRun.id,timeoutMs:30_000});
+if(syntaxRun.state!=="published"||typeof syntaxRun.generation!=="string")throw new Error(`Checked-in syntax index did not publish: ${JSON.stringify(syntaxRun)}`);
+const pythonDefinition=await operation("code.query",{kind:"definition",name:"answer",generation:syntaxRun.generation,freshness:"pinned",limit:100});
+if(!pythonDefinition.query?.symbols?.some(symbol=>symbol.name==="answer"&&symbol.definition?.path==="src/example.py"&&symbol.provenance?.provider==="projector.tree-sitter-syntax"))throw new Error("Checked-in plugin did not produce the Python Tree-sitter symbol");
 const proposal={apiVersion:"projector.change-proposal/v1",requirements:[],scenarios:[],architecture:null,edits:[],validation:{independentNodeTests:[],supplementalNodeTests:[]},analysisFacets:["architecture","behavior"],identityResolution:{contextId:context.id,contextHash:context.contentHash,outcome:"create-new",selectedEntityIds:[],rationale:"The fresh project has no existing clock boundary record.",newBoundary:{owns:["Domain time inputs"],excludes:["Clock implementation and scheduling"],nearestEntityIds:[],rationale:"Record the time input obligation independently of implementation."}},canonicalMutations:[{kind:"concept",operation:"add",expectedAbsent:true,rationale:"Preserve the time boundary for later changes.",payload:{id:"concept:clock",key:"clock",kind:"invariant",name:"Clock boundary",aliases:[],statement:"All domain time enters through the clock port.",status:"active",sourceClass:"authored",confidence:1,tags:["time"],evidence:[]}}]};
 const proposalPath=join(output,"clock-proposal.json");await writeFile(proposalPath,JSON.stringify(proposal,null,2));
 const preview=await command(["accept",proposalPath,"--context",context.id]);
@@ -160,7 +188,7 @@ await command(["resume",renamed.id]);
 const bounded=await command(["context","Inspect the clock obligation","--entity","concept:clock","--budget","100"]);
 if(!bounded.meaning.sections.some(section=>section.text.includes("All domain time enters through the clock port."))&&bounded.meaning.disclosure.omitted===0)throw new Error("Bounded context silently lost its obligation without omission disclosure");
 const verifySkill="skills/projector-verify/SKILL.md";
-if((await readFile(join(plugin,verifySkill),"utf8"))!==(await readFile(join(sourceRoot,"plugins/projector-v3",verifySkill),"utf8")))throw new Error("Installed verification procedure differs from its canonical source");
+if((await readFile(join(preparedPlugin,verifySkill),"utf8"))!==(await readFile(join(plugin,verifySkill),"utf8")))throw new Error("Installed verification procedure differs from its canonical source");
 const checkInput=join(output,"verification-check.json");
 await writeFile(checkInput,JSON.stringify({executable:process.execPath,args:["--input-type=module","--eval","import { readFileSync } from 'node:fs'; if (!readFileSync('src/time-port.ts','utf8').includes('=> 0')) process.exit(1);"],inputPaths:["src/time-port.ts"],populations:[],environment:[],timeoutMs:10000,completeInputs:true}));
 const checked=await command(["verify",checkInput]);
@@ -312,8 +340,9 @@ catch(error){
 }
 if(!droppedContribution?.contributions.some(c=>c.entityId==="concept:cloud-b"&&c.status==="lost"))throw new Error("Installed integration failed to detect a silently dropped contribution");
 if(await sourceIdentity()!==beforeIntegration||(await run("git",["ls-files","--stage","-z"])).stdout!==beforeIntegrationIndex||(await run("git",["rev-parse","HEAD"])).stdout.trim()!==integrationBase)throw new Error("Integration assessment changed destination source, index or HEAD");
-const report={status:"passed",tarball,plugin,isolated,records:1,checks:["offline npm tarball installation outside the source tree","standalone bundled dependency resolution","npm package bin init and human index","resident MCP initialization, discovery, validation, repeated calls and EOF shutdown","exact preview/apply","Markdown round trip","compact context","check","fresh-process read-only resume","inspect","read-only audit with retained context","late-consumer currentness with unaffected meaning reuse","stale approval refusal without canonical mutation","stable concept identity after source rename","bounded-context omission disclosure"],limitations:["Interruption and committed-result recovery are exercised by the lifecycle and continuation suites; this installed smoke does not establish comparative advantage or domain reconstruction.","Consumer discovery covers static imports and re-exports; dynamic resolution and unsupported runtime mechanisms remain unknown.","Git integration checks contribution preservation, canonical integrity and static result consumers; named canonical-integrity evidence is separately reusable, while arbitrary behavioral reuse and dynamic governance remain unqualified."]};
-report.checks.push("installed verification procedure byte parity","native check observation survives a fresh process and unrelated target movement","read-only representation publication inspection");
+const report={status:"passed",tarball,plugin,preparedPlugin,isolated,records:1,checks:["offline npm tarball installation outside the source tree","standalone checked-in plugin dependency resolution","npm package bin init and human index","resident MCP initialization, discovery, validation, repeated calls and EOF shutdown","exact preview/apply","Markdown round trip","compact context","check","fresh-process read-only resume","inspect","read-only audit with retained context","late-consumer currentness with unaffected meaning reuse","stale approval refusal without canonical mutation","stable concept identity after source rename","bounded-context omission disclosure"],limitations:["Interruption and committed-result recovery are exercised by the lifecycle and continuation suites; this installed smoke does not establish comparative advantage or domain reconstruction.","Consumer discovery covers static imports and re-exports; dynamic resolution and unsupported runtime mechanisms remain unknown.","Git integration checks contribution preservation, canonical integrity and static result consumers; named canonical-integrity evidence is separately reusable, while arbitrary behavioral reuse and dynamic governance remain unqualified."]};
+report.checks.push("checked-in plugin runtime byte parity","installed verification procedure byte parity","native check observation survives a fresh process and unrelated target movement","read-only representation publication inspection");
+report.checks.push("checked-in plugin loads its packaged Python Tree-sitter grammar");
 report.checks.push("installed architecture evaluation refuses missing required research","installed HTTP host executes and reports satisfied and violated application predicates");
 report.checks.push("installed generation directly invokes the declared source and retains observed output evidence");
 report.checks.push("independent Git clone contributions survive source clone deletion in both integration orders","supplied squash result preserves content-based contributions","lost incoming contribution fails without changing destination HEAD, index or dirty files");

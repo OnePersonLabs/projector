@@ -8,4 +8,6 @@ dist/
 .build/
 /.borg/
 *Zone.Identifier
+!plugins/projector-v3/runtime/projector/node_modules/
+!plugins/projector-v3/runtime/projector/node_modules/**
 

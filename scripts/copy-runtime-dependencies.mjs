@@ -1,6 +1,6 @@
 import { cp, mkdir, readFile, realpath, stat } from "node:fs/promises";
 import { findPackageJSON } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 async function packageRoot(name, from) {
   const manifestPath = findPackageJSON(name, join(from, "package.json"));
@@ -39,7 +39,12 @@ export async function copyRuntimeDependencies(requests, stagingRoot, options = {
       if (`${prior.name}@${prior.version}` !== key) throw new Error(`Conflicting installed dependencies at ${target}`);
       return;
     } catch (error) { if (error.code !== "ENOENT") throw error; }
-    await cp(source, target, { recursive: true, dereference: true, filter: path => { options.signal?.throwIfAborted(); return path !== join(source, "node_modules"); } });
+    await cp(source, target, { recursive: true, dereference: true, filter: path => {
+      options.signal?.throwIfAborted();
+      if (path === join(source, "node_modules")) return false;
+      const packagePath = relative(source, path).replaceAll("\\", "/");
+      return options.dependencyFileFilter?.(name, packagePath) ?? true;
+    } });
     const next = new Map(ancestors).set(name, key);
     for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) await copy(dependency, source, target, next);
     // Optional packages may legitimately be absent for this platform. Preserve an
