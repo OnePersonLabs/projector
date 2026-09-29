@@ -3,9 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hashFramedDomain, withCanonicalHashes, type CanonicalDocumentEnvelope } from "@projector/core";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { describe, expect } from "vitest";
-import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
+import { afterAll, describe, expect } from "vitest";
+import { integrationTest } from "../../../../scripts/testing/integration-test.mjs";
+import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "../observation/resident-pool.js";
 import { RepositoryChangeLifecycleService } from "./service.js";
+
+const observationWorkers = new ResidentObservationWorkerPool(4);
+afterAll(() => observationWorkers.close());
+const it: typeof integrationTest = (name, run) =>
+  integrationTest(name, (context) => withResidentObservationWorkerPool(observationWorkers, async () => run(context)));
 
 const scope = { op: "atom", field: "path", matcher: "glob", value: "src/**" } as const;
 const decision = (key: string, consequences: object[] = [], governanceBasis: object[] = []) => ({ id: `decision:${key}`, key: `decision-${key}`, concernId: `concern:${key}`, title: key, decision: "Use the accepted option.", selectedOptionKey: "simple", scope, lifecycle: "active", authorityRecordId: `authority:${key}`, governanceBasis, consequences, appliedPreferences: [], supersedesDecisionIds: [] });

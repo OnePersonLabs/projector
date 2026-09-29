@@ -8,8 +8,8 @@ import { fileURLToPath } from "node:url";
 import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type ChangeProposal, type Requirement } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository, FileTransactionJournal, RepositoryPathService } from "@projector/runtime";
-import { describe, expect, vi } from "vitest";
-import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
+import { afterAll, describe, expect, vi } from "vitest";
+import { integrationTest } from "../../../../scripts/testing/integration-test.mjs";
 
 import { RepositoryChangeLifecycleService } from "./service.js";
 import { adjudicatedKnowledgeContext } from "./identity-adjudication.js";
@@ -18,6 +18,7 @@ import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import * as observationTasks from "../observation/task-runner.js";
 import { compileRepositoryChange } from "./compiler.js";
 import { observeChangeRepository } from "./repository-observer.js";
+import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "../observation/resident-pool.js";
 
 const exec = promisify(execFile);
 
@@ -99,6 +100,11 @@ function authority(id: string, subjectId: string): AuthorityRecord {
 }
 
 describe("repository change lifecycle service", () => {
+  const observationWorkers = new ResidentObservationWorkerPool(4);
+  afterAll(() => observationWorkers.close());
+  const it: typeof integrationTest = (name, run) =>
+    integrationTest(name, (context) => withResidentObservationWorkerPool(observationWorkers, async () => run(context)));
+
   it("recovers an orphan representation without capturing or executing its change", async () => {
     const root = await repository();
     const interrupted = vi.spyOn(ChangeLifecycleStore.prototype, "capture").mockRejectedValueOnce(new Error("interrupted before capture"));

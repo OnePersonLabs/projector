@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -17,7 +17,14 @@ async function installedFixture() {
   roots.push(root);
   const pluginRoot = join(root, "projector");
   const packagedRoot = join(pluginRoot, "runtime/projector");
-  await cp(sourcePluginRoot, pluginRoot, { recursive: true });
+  await mkdir(join(pluginRoot, "hooks"), { recursive: true });
+  await mkdir(join(pluginRoot, "scripts"), { recursive: true });
+  await Promise.all([
+    copyFile(join(sourcePluginRoot, "AGENTS.md"), join(pluginRoot, "AGENTS.md")),
+    copyFile(join(sourcePluginRoot, "hooks/hooks.json"), join(pluginRoot, "hooks/hooks.json")),
+    copyFile(join(sourcePluginRoot, "hooks/projector-instructions.mjs"), join(pluginRoot, "hooks/projector-instructions.mjs")),
+    copyFile(join(sourcePluginRoot, "scripts/projector-operation.mjs"), join(pluginRoot, "scripts/projector-operation.mjs")),
+  ]);
   await mkdir(join(packagedRoot, "exports"), { recursive: true });
   await writeFile(join(packagedRoot, "package.json"), JSON.stringify({ name: "@onepersonlabs/projector", version: "9.8.7", type: "module" }));
   await writeFile(join(packagedRoot, "exports/operations.js"), [

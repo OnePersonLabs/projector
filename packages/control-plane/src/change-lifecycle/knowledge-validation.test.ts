@@ -6,13 +6,19 @@ import { promisify } from "node:util";
 import { hashFramedDomain, parseChangeProposal, withCanonicalHashes, type AuthorityRecord, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { expect } from "vitest";
-import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
+import { afterAll, expect } from "vitest";
+import { integrationTest } from "../../../../scripts/testing/integration-test.mjs";
+import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "../observation/resident-pool.js";
 
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { compileRepositoryChange } from "./compiler.js";
 import { validatePostChangeKnowledge } from "./knowledge-validation.js";
 import { observeChangeRepository } from "./repository-observer.js";
+
+const observationWorkers = new ResidentObservationWorkerPool(4);
+afterAll(() => observationWorkers.close());
+const it: typeof integrationTest = (name, run) =>
+  integrationTest(name, (context) => withResidentObservationWorkerPool(observationWorkers, async () => run(context)));
 
 const exec = promisify(execFile);
 const hash = hashFramedDomain("post-knowledge-test", null);

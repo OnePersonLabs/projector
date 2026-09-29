@@ -48,9 +48,9 @@ import {
   supportedTreeSitterLanguages,
   syntaxProgramVersion,
   verifyCodeInputBinding
-} from "../chunks/shared-D2LP2F6Z.js";
-import "../chunks/shared-Q56AARV7.js";
-import "../chunks/shared-WC2OT3WX.js";
+} from "./shared-D2LP2F6Z.js";
+import "./shared-Q56AARV7.js";
+import "./shared-WC2OT3WX.js";
 export {
   GitCommandError,
   InventoryContentStore,

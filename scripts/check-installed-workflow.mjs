@@ -51,6 +51,15 @@ for(const repositoryPath of trackedPluginFiles.stdout.split("\0").filter(Boolean
  await mkdir(dirname(destination),{recursive:true});
  await copyFile(join(sourceRoot,repositoryPath),destination);
 }
+const packagedRoot=join(plugin,"runtime/projector");
+const { createBundledProjectorOperationRunner } = await import(pathToFileURL(join(packagedRoot,"exports/operations.js")).href);
+const { runPublicCommand } = await import(pathToFileURL(join(packagedRoot,"exports/commands.js")).href);
+const { ResidentObservationWorkerPool, withResidentObservationWorkerPool } = await import(pathToFileURL(join(packagedRoot,"exports/control-plane.js")).href);
+const bundledRunner=await createBundledProjectorOperationRunner({packagedRoot});
+const pool=new ResidentObservationWorkerPool();
+const executeBundled=request=>withResidentObservationWorkerPool(pool,()=>bundledRunner.execute(request,{environment:env}));
+let report;
+try{
 const mcpManifest=JSON.parse(await readFile(join(plugin,".mcp.json"),"utf8"));
 if(mcpManifest.mcpServers?.projector?.command!=="node"||!mcpManifest.mcpServers.projector.args.includes("./scripts/projector-mcp.mjs"))throw new Error("Installed plugin does not advertise the resident MCP host");
 let repository=join(isolated,"fresh-project");await mkdir(repository);
@@ -64,16 +73,26 @@ await writeFile(join(repository,"src/clock.ts"),"export const now = () => 0;\n")
 await writeFile(join(repository,"src/example.py"),"def answer():\n    return 42\n");
 await run("git",["add","."]);await run("git",["-c","user.name=Projector Check","-c","user.email=check@example.invalid","commit","-qm","Initial project"]);
 const transcript=[];
-const command=async(args,cwd=repository)=>{
- const start=performance.now();const result=await run(process.execPath,[join(plugin,"scripts/projector.mjs"),...args,"--json"],cwd);
- const value=JSON.parse(result.stdout);transcript.push({args,elapsedMs:Math.round(performance.now()-start),value});
+const command=async(args,cwd=repository,{freshProcess=false}={})=>{
+ const start=performance.now();
+ const result=freshProcess
+  ?await run(process.execPath,[join(plugin,"scripts/projector.mjs"),...args,"--json"],cwd)
+  :await runPublicCommand([...args,"--json"],{runner:{execute:executeBundled},cwd});
+ const stdout=freshProcess?result.stdout:result.text;
+ if(!freshProcess&&result.exitCode!==0)throw Object.assign(new Error(`Installed command exited with code ${result.exitCode}`),{code:result.exitCode,stdout,stderr:""});
+ const value=JSON.parse(stdout);transcript.push({args,route:freshProcess?"fresh-process":"bundled",elapsedMs:Math.round(performance.now()-start),value});
  await writeFile(join(output,"installed-transcript.json"),JSON.stringify(transcript,null,2)+"\n");return value;
 };
-const operation=async(name,input)=>{
+const operation=async(name,input,{freshProcess=false}={})=>{
  const requestPath=join(output,`${name}-request.json`);
- await writeFile(requestPath,JSON.stringify({apiVersion:"projector.operation/v1",repositoryRoot:repository,operation:name,input}));
- const result=await run(process.execPath,[join(plugin,"scripts/projector-operation.mjs"),requestPath]);
- const value=JSON.parse(result.stdout);transcript.push({operation:name,input,value});
+ const request={apiVersion:"projector.operation/v1",repositoryRoot:repository,operation:name,input};
+ await writeFile(requestPath,JSON.stringify(request));
+ const start=performance.now();
+ const result=freshProcess
+  ?await run(process.execPath,[join(plugin,"scripts/projector-operation.mjs"),requestPath])
+  :await executeBundled(request);
+ const value=freshProcess?JSON.parse(result.stdout):result;
+ transcript.push({operation:name,input,route:freshProcess?"fresh-process":"bundled",elapsedMs:Math.round(performance.now()-start),value});
  await writeFile(join(output,"installed-transcript.json"),JSON.stringify(transcript,null,2)+"\n");
  if(value.status!=="succeeded")throw new Error(`${name}: ${JSON.stringify(value.error??value.readiness)}`);
  return value.output;
@@ -146,22 +165,22 @@ try{
 }
 if(!(await readFile(join(repository,".projector/README.md"),"utf8")).includes("#"))throw new Error("Installed init omitted the human index");
 const context=await command(["context","Document the project's clock boundary"]);
-const syntaxContext=await command(["context","Inspect the Python syntax fallback","--target","src/example.py"]);
+const syntaxContext=await command(["context","Inspect the Python syntax fallback","--target","src/example.py"],repository,{freshProcess:true});
 if(typeof syntaxContext.contentHash!=="string")throw new Error("Checked-in plugin could not index a packaged Tree-sitter grammar");
-let syntaxRun=await operation("code.index",{provider:"syntax",buildVariant:"default",timeoutMs:null});
-while(syntaxRun.state==="running")syntaxRun=await operation("code.index-wait",{runId:syntaxRun.id,timeoutMs:30_000});
+let syntaxRun=await operation("code.index",{provider:"syntax",buildVariant:"default",timeoutMs:null},{freshProcess:true});
+while(syntaxRun.state==="running")syntaxRun=await operation("code.index-wait",{runId:syntaxRun.id,timeoutMs:30_000},{freshProcess:true});
 if(syntaxRun.state!=="published"||typeof syntaxRun.generation!=="string")throw new Error(`Checked-in syntax index did not publish: ${JSON.stringify(syntaxRun)}`);
 const pythonDefinition=await operation("code.query",{kind:"definition",name:"answer",generation:syntaxRun.generation,freshness:"pinned",limit:100});
 if(!pythonDefinition.query?.symbols?.some(symbol=>symbol.name==="answer"&&symbol.definition?.path==="src/example.py"&&symbol.provenance?.provider==="projector.tree-sitter-syntax"))throw new Error("Checked-in plugin did not produce the Python Tree-sitter symbol");
 const proposal={apiVersion:"projector.change-proposal/v1",requirements:[],scenarios:[],architecture:null,edits:[],validation:{independentNodeTests:[],supplementalNodeTests:[]},analysisFacets:["architecture","behavior"],identityResolution:{contextId:context.id,contextHash:context.contentHash,outcome:"create-new",selectedEntityIds:[],rationale:"The fresh project has no existing clock boundary record.",newBoundary:{owns:["Domain time inputs"],excludes:["Clock implementation and scheduling"],nearestEntityIds:[],rationale:"Record the time input obligation independently of implementation."}},canonicalMutations:[{kind:"concept",operation:"add",expectedAbsent:true,rationale:"Preserve the time boundary for later changes.",payload:{id:"concept:clock",key:"clock",kind:"invariant",name:"Clock boundary",aliases:[],statement:"All domain time enters through the clock port.",status:"active",sourceClass:"authored",confidence:1,tags:["time"],evidence:[]}}]};
 const proposalPath=join(output,"clock-proposal.json");await writeFile(proposalPath,JSON.stringify(proposal,null,2));
-const preview=await command(["accept",proposalPath,"--context",context.id]);
-const applied=await command(["accept","--apply",preview.selector,"--hash",preview.immutablePlanHash]);
+const preview=await command(["accept",proposalPath,"--context",context.id],repository,{freshProcess:true});
+const applied=await command(["accept","--apply",preview.selector,"--hash",preview.immutablePlanHash],repository,{freshProcess:true});
 if(!["success","succeeded"].includes(applied.outcome))throw new Error("Installed canonical apply failed");
 const selected=await command(["context","Change domain time handling","--entity","concept:clock","--target","src/clock.ts"]);
 if(!selected.meaning.sections.some(section=>section.text.includes("All domain time")))throw new Error("Installed compact context omitted accepted meaning");
 await command(["check",selected.id]);
-const resumed=await command(["resume",selected.id]);
+const resumed=await command(["resume",selected.id],repository,{freshProcess:true});
 if(!resumed.context?.meaning.sections.some(section=>section.text.includes("All domain time")))throw new Error("Fresh-process resume did not restore the accepted clock boundary");
 const clock=await command(["inspect","concept:clock"]);
 const sourceIdentity=async()=>{
@@ -185,14 +204,14 @@ const revision={apiVersion:"projector.change-proposal/v1",architecture:null,anal
  rationale:"Exercise stale preview refusal through the installed lifecycle.",payload:{...clockPayload,statement:"All domain time enters through the clock port. Consumers preserve the supplied instant."}
 }]};
 const revisionPath=join(output,"stale-clock-proposal.json");await writeFile(revisionPath,JSON.stringify(revision,null,2));
-const stalePreview=await command(["accept",revisionPath,"--context",selected.id]);
-const staleApproval=await operation("change.approve",{changeSelector:stalePreview.selector,planHash:stalePreview.immutablePlanHash});
+const stalePreview=await command(["accept",revisionPath,"--context",selected.id],repository,{freshProcess:true});
+const staleApproval=await operation("change.approve",{changeSelector:stalePreview.selector,planHash:stalePreview.immutablePlanHash},{freshProcess:true});
 await writeFile(join(repository,"src/consumer.ts"),"import { now } from './clock.js';\nexport const observedNow = now();\n");
-const changed=await command(["check",selected.id]);
+const changed=await command(["check",selected.id],repository,{freshProcess:true});
 if(changed.meaning.status!=="stale")throw new Error("A late consumer did not stale the installed retained context");
 if(!changed.meaning.branches.some(branch=>["current","rebound"].includes(branch.validation.status)))throw new Error("A late consumer invalidated every branch instead of preserving unaffected meaning");
 let staleRefused=false;
-try{await operation("change.apply",{approvalSelector:staleApproval.selector});}
+try{await operation("change.apply",{approvalSelector:staleApproval.selector},{freshProcess:true});}
 catch(error){
  if(!/stale|dependenc|current|changed|before/iu.test(String(error.message)+String(error.stderr)+String(error.stdout)))throw error;
  staleRefused=true;
@@ -200,14 +219,14 @@ catch(error){
  await writeFile(join(output,"installed-transcript.json"),JSON.stringify(transcript,null,2)+"\n");
 }
 if(!staleRefused)throw new Error("Installed apply accepted a stale approval");
-if((await command(["inspect","concept:clock"])).semanticHash!==clock.semanticHash)throw new Error("Stale apply changed accepted meaning");
+if((await command(["inspect","concept:clock"],repository,{freshProcess:true})).semanticHash!==clock.semanticHash)throw new Error("Stale apply changed accepted meaning");
 
 // Semantic identity survives a source rename and a fresh process.
 await rename(join(repository,"src/clock.ts"),join(repository,"src/time-port.ts"));
 await writeFile(join(repository,"src/consumer.ts"),"import { now } from './time-port.js';\nexport const observedNow = now();\n");
 const renamed=await command(["context","Inspect the renamed clock port and its consumers","--entity","concept:clock","--target","src/time-port.ts"]);
 if(!renamed.meaning.sections.some(section=>section.entityId==="concept:clock"&&section.text.includes("All domain time")))throw new Error("Source rename lost stable accepted identity");
-await command(["resume",renamed.id]);
+await command(["resume",renamed.id],repository,{freshProcess:true});
 const bounded=await command(["context","Inspect the clock obligation","--entity","concept:clock","--budget","100"]);
 if(!bounded.meaning.sections.some(section=>section.text.includes("All domain time enters through the clock port."))&&bounded.meaning.disclosure.omitted===0)throw new Error("Bounded context silently lost its obligation without omission disclosure");
 const verifySkill="skills/projector-verify/SKILL.md";
@@ -218,7 +237,7 @@ const checked=await command(["verify",checkInput]);
 if(checked.status!=="passed"||checked.profile!=="native-observed/v1")throw new Error("Installed native check did not retain its observed result");
 await writeFile(join(repository,"unrelated.txt"),"Independent target movement\n");
 await run("git",["add","unrelated.txt"]);await run("git",["-c","user.name=Projector Check","-c","user.email=check@example.invalid","commit","-qm","Independent target movement"]);
-const retainedVerification=await command(["verify","--inspect",checked.id]);
+const retainedVerification=await command(["verify","--inspect",checked.id],repository,{freshProcess:true});
 if(!retainedVerification.records.some(check=>check.id===checked.id&&check.status==="passed"&&check.contentHash===checked.contentHash))throw new Error("Installed native observation did not survive a fresh process and unrelated target movement");
 if(!Array.isArray(await command(["inspect","--representations"])))throw new Error("Installed representation recovery inspection is unavailable");
 await writeFile(join(repository,"derive-clock.mjs"),"import { readFileSync, writeFileSync } from 'node:fs'; writeFileSync('generated-clock.ts',readFileSync('src/time-port.ts'));\n");
@@ -310,7 +329,7 @@ for(const [index,clone] of clonePaths.entries()){
  else await writeFile(join(clone,"src","shared-consumer.ts"),"export { shared as sharedThroughConsumer } from './shared.js';\n");
  const cloneCheckPath=join(output,`cloud-${side}-check.json`);
  await writeFile(cloneCheckPath,JSON.stringify({executable:process.execPath,args:["--input-type=module","--eval",`import { readFileSync } from 'node:fs'; if (!readFileSync('src/cloud-${side}.ts','utf8').includes("'${side}'")) process.exit(1);`],inputPaths:[`src/cloud-${side}.ts`],populations:[],environment:[],timeoutMs:10000}));
- const observed=await command(["verify",cloneCheckPath],clone);
+ const observed=await command(["verify",cloneCheckPath],clone,{freshProcess:true});
  if(observed.status!=="passed")throw new Error(`Installed independent ${side} execution failed`);
  cloneExecutions.push(observed);
  await run("git",["add","."],clone);
@@ -318,7 +337,7 @@ for(const [index,clone] of clonePaths.entries()){
  const commit=(await run("git",["rev-parse","HEAD"],clone)).stdout.trim();
  await run("git",["fetch","--quiet","--no-tags",clone,commit]);
  branchCommits.push(commit);
- const builtin=await command(["verify","--builtin","--target",commit],clone);
+ const builtin=await command(["verify","--builtin","--target",commit],clone,{freshProcess:true});
  if(builtin.status!=="passed")throw new Error(`Installed closed canonical check failed for ${side}`);
  cloneBuiltins.push(builtin);
 }
@@ -327,11 +346,11 @@ for(const clone of clonePaths){
  await rm(clone,{recursive:true,force:false});
 }
 for(const observed of cloneExecutions){
- const retained=await command(["verify","--inspect",observed.id]);
+ const retained=await command(["verify","--inspect",observed.id],repository,{freshProcess:true});
  if(retained.records.length!==1||retained.records[0]?.contentHash!==observed.contentHash)throw new Error("Installed execution history depends on a deleted source clone");
 }
 for(const [index,observed] of cloneBuiltins.entries()){
- const retained=await command(["verify","--builtin","--assess",observed.id,"--target",branchCommits[index]]);
+ const retained=await command(["verify","--builtin","--assess",observed.id,"--target",branchCommits[index]],repository,{freshProcess:true});
  if(retained.reusable!==true||retained.authorization!==false||retained.scope!=="projector.canonical-integrity/v1")throw new Error("Installed named canonical evidence did not survive source deletion with its narrow reuse contract");
 }
 await writeFile(join(repository,"local-uncommitted.txt"),"Preserve the destination overlay.\n");
@@ -363,7 +382,7 @@ catch(error){
 }
 if(!droppedContribution?.contributions.some(c=>c.entityId==="concept:cloud-b"&&c.status==="lost"))throw new Error("Installed integration failed to detect a silently dropped contribution");
 if(await sourceIdentity()!==beforeIntegration||(await run("git",["ls-files","--stage","-z"])).stdout!==beforeIntegrationIndex||(await run("git",["rev-parse","HEAD"])).stdout.trim()!==integrationBase)throw new Error("Integration assessment changed destination source, index or HEAD");
-const report={status:"passed",tarball,plugin,preparedPlugin,isolated,records:1,checks:["offline npm tarball installation outside the source tree","standalone checked-in plugin dependency resolution","npm package bin init and human index","resident MCP initialization, discovery, validation, repeated calls and EOF shutdown","exact preview/apply","Markdown round trip","compact context","check","fresh-process read-only resume","inspect","read-only audit with retained context","late-consumer currentness with unaffected meaning reuse","stale approval refusal without canonical mutation","stable concept identity after source rename","bounded-context omission disclosure"],limitations:["Interruption and committed-result recovery are exercised by the lifecycle and continuation suites; this installed smoke does not establish comparative advantage or domain reconstruction.","Consumer discovery covers static imports and re-exports; dynamic resolution and unsupported runtime mechanisms remain unknown.","Git integration checks contribution preservation, canonical integrity and static result consumers; named canonical-integrity evidence is separately reusable, while arbitrary behavioral reuse and dynamic governance remain unqualified."]};
+report={status:"passed",tarball,plugin,preparedPlugin,isolated,records:1,checks:["offline npm tarball installation outside the source tree","standalone checked-in plugin dependency resolution","npm package bin init and human index","resident MCP initialization, discovery, validation, repeated calls and EOF shutdown","exact preview/apply","Markdown round trip","compact context","check","fresh-process read-only resume","inspect","read-only audit with retained context","late-consumer currentness with unaffected meaning reuse","stale approval refusal without canonical mutation","stable concept identity after source rename","bounded-context omission disclosure"],limitations:["Interruption and committed-result recovery are exercised by the lifecycle and continuation suites; this installed smoke does not establish comparative advantage or domain reconstruction.","Consumer discovery covers static imports and re-exports; dynamic resolution and unsupported runtime mechanisms remain unknown.","Git integration checks contribution preservation, canonical integrity and static result consumers; named canonical-integrity evidence is separately reusable, while arbitrary behavioral reuse and dynamic governance remain unqualified."]};
 report.checks.push("checked-in plugin runtime byte parity","installed verification procedure byte parity","native check observation survives a fresh process and unrelated target movement","read-only representation publication inspection");
 report.checks.push("checked-in plugin loads its packaged Python Tree-sitter grammar");
 report.checks.push("installed architecture evaluation refuses missing required research","installed HTTP host executes and reports satisfied and violated application predicates");
@@ -371,5 +390,6 @@ report.checks.push("installed generation directly invokes the declared source an
 report.checks.push("independent Git clone contributions survive source clone deletion in both integration orders","supplied squash result preserves content-based contributions","lost incoming contribution fails without changing destination HEAD, index or dirty files");
 report.checks.push("independent execution observations survive source clone deletion through host-configured immutable retention");
 report.checks.push("installed closed canonical evidence remains reusable after source clone deletion without transferring authority","installed result reconciliation detects a re-export consumer in both merge orders");
+}finally{await pool.close();}
 await writeFile(join(output,"result.json"),JSON.stringify(report,null,2)+"\n");
 process.stdout.write(JSON.stringify(report,null,2)+"\n");

@@ -6,11 +6,17 @@ import { promisify } from "node:util";
 
 import { hashFramedDomain, parseChangeProposal, withCanonicalHashes, type Requirement } from "@projector/core";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { expect } from "vitest";
-import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
+import { afterAll, expect } from "vitest";
+import { integrationTest } from "../../../../scripts/testing/integration-test.mjs";
+import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "../observation/resident-pool.js";
 
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { RepositoryChangeLifecycleService } from "./service.js";
+
+const observationWorkers = new ResidentObservationWorkerPool(4);
+afterAll(() => observationWorkers.close());
+const it: typeof integrationTest = (name, run) =>
+  integrationTest(name, (context) => withResidentObservationWorkerPool(observationWorkers, async () => run(context)));
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("test", "lineage-chain");

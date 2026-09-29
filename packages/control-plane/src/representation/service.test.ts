@@ -7,14 +7,20 @@ import { promisify } from "node:util";
 import { canonicalJson, createDurableRepresentationArtifactRecord, hashFramedDomain, withCanonicalHashes, type BehavioralScenario, type RepresentationProjection, type Requirement } from "@projector/core";
 import { createStateBinding } from "@projector/engine";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { describe, expect } from "vitest";
-import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
+import { afterAll, describe, expect } from "vitest";
+import { integrationTest } from "../../../../scripts/testing/integration-test.mjs";
+import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "../observation/resident-pool.js";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
 import { ChangeLifecycleStore } from "../change-lifecycle/store.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { RepositoryRepresentationProfileReconciliationService } from "./profile-reconciliation.js";
 import { RepositoryRepresentationInspectionService, projectRepresentationInspectionOperation } from "./service.js";
+
+const observationWorkers = new ResidentObservationWorkerPool(4);
+afterAll(() => observationWorkers.close());
+const it: typeof integrationTest = (name, run) =>
+  integrationTest(name, (context) => withResidentObservationWorkerPool(observationWorkers, async () => run(context)));
 
 const exec = promisify(execFile);
 const placeholder = hashFramedDomain("representation-inspection-test", "placeholder");

@@ -2,7 +2,7 @@ import { hashFramedDomain } from "@projector/core";
 import { describe, expect, it } from "vitest";
 
 import type { InventoryEntry } from "../filesystem/inventory.js";
-import { analyzeJavaScript } from "./facts.js";
+import { analyzeJavaScript, isBundledRuntimeDependencyPath } from "./facts.js";
 
 const entry = (path: string, content: string): InventoryEntry => ({ path, kind: "file", mediaType: path.endsWith(".json") ? "application/json" : "text/typescript", content, contentHash: hashFramedDomain("fixture", content), generated: false });
 
@@ -50,5 +50,41 @@ describe("TS/JS semantic index", () => {
       entry("packages/b/package.json", '{"name":"@demo/b"}'), entry("packages/b/index.ts", "export interface Result {}"),
     ]).files.flatMap(({ declarations }) => declarations).filter(({ name }) => name === "Result");
     expect(new Set(siblings.map(({ id }) => id)).size).toBe(2);
+  });
+
+  it("keeps bundled runtime dependencies available for resolution without analyzing their source", () => {
+    const vendorRoot = "plugins/projector-v3/runtime/projector/node_modules/example";
+    const vendorFile = `${vendorRoot}/index.test.ts`;
+    const firstPartyFile = "plugins/projector-v3/runtime/projector/src/consumer.ts";
+    const result = analyzeJavaScript([
+      entry(`${vendorRoot}/package.json`, '{"name":"example"}'),
+      entry(vendorFile, [
+        "import './missing.js';",
+        "export interface VendorContract {}",
+        "export function activate() {}",
+        "test('vendor', () => {});",
+        "bus.emit('vendor.event');",
+      ].join("\n")),
+      entry("plugins/projector-v3/runtime/projector/package.json", '{"name":"@projector/runtime-bundle"}'),
+      entry(firstPartyFile, [
+        "import '../node_modules/example/index.test.js';",
+        "export interface FirstPartyContract {}",
+        "bus.emit('first-party.event');",
+      ].join("\n")),
+      entry("node_modules/other/index.ts", "export const ordinaryDependency = 1;"),
+    ]);
+
+    expect(isBundledRuntimeDependencyPath(vendorFile)).toBe(true);
+    expect(isBundledRuntimeDependencyPath("node_modules/other/index.ts")).toBe(false);
+    expect(result.files.map(({ path }) => path)).toEqual(["node_modules/other/index.ts", firstPartyFile]);
+    expect(result.files.find(({ path }) => path === firstPartyFile)).toMatchObject({
+      scopeKey: "@projector/runtime-bundle",
+      declarations: expect.arrayContaining([expect.objectContaining({ name: "FirstPartyContract" })]),
+    });
+    expect(result.dependencies).toEqual([expect.objectContaining({ importerPath: firstPartyFile, resolvedPath: vendorFile })]);
+    expect(result.events.map(({ semanticKey }) => semanticKey)).toEqual(["first-party.event"]);
+    expect(result.contracts.map(({ semanticKey }) => semanticKey)).toEqual(["FirstPartyContract"]);
+    expect(result.testTargets).toEqual([]);
+    expect(result.failures).toEqual([]);
   });
 });

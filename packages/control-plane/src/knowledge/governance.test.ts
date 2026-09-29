@@ -7,11 +7,17 @@ import { promisify } from "node:util";
 import { hashFramedDomain, withCanonicalHashes, type ArchitectureDecision, type AuthorityRecord, type CanonicalDocumentEnvelope, type Concept, type ProjectionLens } from "@projector/core";
 import { createRepositoryScriptLens } from "@projector/engine";
 import { CanonicalFileRepository, NativeProcessLauncher, canonicalApiVersion, canonicalSchemaVersion, type ProcessLauncher, type ProcessLaunchRequest } from "@projector/runtime";
-import { afterEach, describe, expect } from "vitest";
-import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
+import { afterAll, afterEach, describe, expect } from "vitest";
+import { integrationTest } from "../../../../scripts/testing/integration-test.mjs";
+import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "../observation/resident-pool.js";
 
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
 import { RepositoryKnowledgeService } from "./service.js";
+
+const observationWorkers = new ResidentObservationWorkerPool(4);
+afterAll(() => observationWorkers.close());
+const it: typeof integrationTest = (name, run) =>
+  integrationTest(name, (context) => withResidentObservationWorkerPool(observationWorkers, async () => run(context)));
 
 const execute = promisify(execFile);
 const roots: string[] = [];

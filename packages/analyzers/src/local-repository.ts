@@ -115,7 +115,7 @@ export interface CollectedLocalRepositoryInputs {
   readonly gitFacts: GitFacts;
 }
 
-export const localRepositoryAdapterVersion = "2.3.0";
+export const localRepositoryAdapterVersion = "2.3.1";
 const adapterVersion = localRepositoryAdapterVersion;
 
 function tokenizeCommand(command: string): string[] {

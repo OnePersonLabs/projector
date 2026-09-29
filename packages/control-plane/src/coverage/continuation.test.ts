@@ -6,8 +6,9 @@ import { promisify } from "node:util";
 
 import { hashFramedDomain, withCanonicalHashes } from "@projector/core";
 import { CanonicalFileRepository, FileTransactionJournal } from "@projector/runtime";
-import { afterEach, expect, vi } from "vitest";
-import { integrationTest as test } from "../../../../scripts/testing/integration-test.mjs";
+import { afterAll, afterEach, expect, vi } from "vitest";
+import { integrationTest } from "../../../../scripts/testing/integration-test.mjs";
+import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "../observation/resident-pool.js";
 
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { KnowledgeContextStore } from "../knowledge/store.js";
@@ -15,6 +16,11 @@ import * as observationTasks from "../observation/task-runner.js";
 import { RepositoryChangeLifecycleService } from "../change-lifecycle/service.js";
 import { ChangeLifecycleStore } from "../change-lifecycle/store.js";
 import { inspectRepositoryCoverage } from "./service.js";
+
+const observationWorkers = new ResidentObservationWorkerPool(4);
+afterAll(() => observationWorkers.close());
+const test: typeof integrationTest = (name, run) =>
+  integrationTest(name, (context) => withResidentObservationWorkerPool(observationWorkers, async () => run(context)));
 
 const exec = promisify(execFile);
 const roots: string[] = [];

@@ -5,13 +5,19 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { hashFramedDomain, hashSemantic, withCanonicalHashes, type AuthorityRecord } from "@projector/core";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { describe, expect, it as unitIt } from "vitest";
-import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
+import { afterAll, describe, expect, it as unitIt } from "vitest";
+import { integrationTest } from "../../../../scripts/testing/integration-test.mjs";
+import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "../observation/resident-pool.js";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { inspectRepositoryArchitecture } from "../knowledge/architecture-inspection.js";
 import { RepositoryChangeLifecycleService, permitsUnchangedDecisionBaselineBinding } from "./service.js";
 import type { CompiledRepositoryChange } from "./compiler.js";
 import type { KnowledgeReconciliationResult } from "../knowledge/types.js";
+
+const observationWorkers = new ResidentObservationWorkerPool(4);
+afterAll(() => observationWorkers.close());
+const it: typeof integrationTest = (name, run) =>
+  integrationTest(name, (context) => withResidentObservationWorkerPool(observationWorkers, async () => run(context)));
 
 const exec = promisify(execFile);
 const placeholder = hashSemantic("requirement", {});

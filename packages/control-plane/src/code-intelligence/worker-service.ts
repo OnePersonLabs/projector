@@ -40,6 +40,7 @@ import {
   TreeSitterCodeProvider,
   importScip,
   importSemanticDb,
+  isBundledRuntimeDependencyPath,
   type InventoryEntry,
 } from "@projector/analyzers";
 import {
@@ -76,10 +77,8 @@ const compilers = new Map<string, TypeScriptCodeProvider>();
 const syntax = new TreeSitterCodeProvider();
 const sourceExtensions =
   /\.(?:[cm]?[jt]sx?|py|pyi|rs|[ch](?:pp|xx|\+\+)?|cc|hh|java|kt|kts|scala|sc|cs|vb|go|rb|php|swift|sh|bash|vue|svelte)$/iu;
-const bundledRuntimeDependency =
-  /^plugins\/projector-v3\/runtime\/projector\/node_modules\//u;
 const isFirstPartyCodePath = (path: string): boolean =>
-  !bundledRuntimeDependency.test(path);
+  !isBundledRuntimeDependencyPath(path);
 const unique = (values: readonly string[]): string[] =>
   [...new Set(values)].sort();
 function compiler(key: string): TypeScriptCodeProvider {

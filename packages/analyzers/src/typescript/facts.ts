@@ -115,6 +115,10 @@ export interface JavaScriptFacts {
   readonly failures: AnalyzerFailure[];
 }
 
+export function isBundledRuntimeDependencyPath(path: string): boolean {
+  return path.startsWith("plugins/projector-v3/runtime/projector/node_modules/");
+}
+
 type TokenKind = "identifier" | "number" | "string" | "template" | "regex" | "punctuator" | "line-break";
 
 interface Token {
@@ -395,7 +399,7 @@ function resolveLocalImport(importerPath: string, specifier: string, paths: Read
 export function analyzeJavaScript(entries: readonly InventoryEntry[], budget = new DerivedObservationBudget()): JavaScriptFacts {
   budget.reserveItems(entries.length, 128, "javascript-file-index");
   let scratchBytes = entries.length * 128;
-  const sourceEntries = entries.filter((entry) => entry.kind === "file" && sourceExtensions.some((extension) => entry.path.endsWith(extension))).sort((left, right) => compareCodePoint(left.path, right.path));
+  const sourceEntries = entries.filter((entry) => entry.kind === "file" && !isBundledRuntimeDependencyPath(entry.path) && sourceExtensions.some((extension) => entry.path.endsWith(extension))).sort((left, right) => compareCodePoint(left.path, right.path));
   const paths = new Set(entries.filter((entry) => entry.kind === "file").map((entry) => entry.path));
   const scopes = packageScopes(entries);
   const files: JavaScriptFileFacts[] = [];
