@@ -12,14 +12,14 @@ The separately packaged CLI distribution exposes the bare `projector` command wh
 
 ```text
 projector init
-projector context "task" [--entity ID] [--target path] [--budget characters]
+projector context "task" [--entity ID] [--target path] [--budget characters] [--full]
 projector check [CONTEXT]
 projector integration --target REF --incoming REF [--base REF] [--result REF]
 projector audit [--scope PATH] [--context CONTEXT] [--question-offset N] [--json]
 projector accept proposal.json [--context CONTEXT] [--request "reason"]
 projector accept --apply CHANGE --hash HASH
 projector resume CONTEXT|CHANGE|APPROVAL
-projector inspect ID
+projector inspect ID [--cursor CURSOR] [--limit N] [--full]
 projector recover APPROVAL | --access
 projector verify check.json
 projector verify --inspect [EVENT] | --recover
@@ -27,7 +27,7 @@ projector generate generation.json
 projector generate --inspect producers.json | --recover producers.json
 ```
 
-Global options are `--root PATH` for another repository, `--json` for exact machine results, `--timeout-ms N` for a positive integer observation timeout in milliseconds, and `--help`. The default timeout is 60,000 milliseconds per operation. A longer bounded timeout is appropriate when legitimate repository work needs more time. It preserves other resource limits, currentness checks and mutation authority. Investigate a timeout proportionately; do not make meeting the default an open-ended optimization task. A flag only applies to operations that accept it. Unknown and duplicate options fail.
+Global options are `--root PATH` for another repository, `--json` for exact machine results, `--timeout-ms N` for an explicit positive integer observation timeout in milliseconds, and `--help`. There is no implicit elapsed-time deadline. An explicit timeout preserves other resource limits, currentness checks and mutation authority. Investigate a timeout proportionately; do not make meeting a chosen deadline an open-ended optimization task. A flag only applies to operations that accept it. Unknown and duplicate options fail.
 
 ## Operation notes
 
@@ -37,7 +37,7 @@ Takes no positional argument. Activates or validates Projector in the selected r
 
 ### `context`
 
-Requires a task description. `--entity ID` and `--target path` may each be repeated. `--budget characters` sets the retrieval budget. The result persists a context; retain the returned ID.
+Requires a task description. `--entity ID` and `--target path` may each be repeated. `--budget characters` sets the retrieval budget. The result persists a context; retain the returned ID. The default compact view reports omitted counts and an exact retained inspection route. `--full` returns a complete newly compiled context, which can differ from an earlier retained context if repository state changed.
 
 ### `check`
 
@@ -84,7 +84,9 @@ Takes an actual context, change, or approval ID. It inspects and restores retain
 
 ### `inspect`
 
-Takes an exact ID for a canonical record or retained operation detail. Output is JSON.
+Takes an exact ID for a canonical record or retained operation detail. Output is JSON. For a `knowledge_context_...` ID, inspection reads that authenticated retained context and returns a detail page. The first page includes a document skeleton. `records` gives JSON values at JSON Pointer paths, with nested arrays supplied by later records. Large strings use text records with `textOffset` and `last`; append their text in order at the named path to reconstruct the exact saved value. The page targets a small response size, while `--limit N` sets a maximum of 1--100 records (default 20). `disclosure.total`, `disclosure.included`, `disclosure.omitted`, and `offset` state exact record counts. Pass `nextCursor` through `--cursor CURSOR` until no cursor remains. Cursor identity must match the retained context ID and content hash; an evicted context must be compiled again. `inspect ID --full` returns the exact retained context in one response; it cannot be combined with paging options.
+
+Inspection reports `currentness: retained-only`: it authenticates saved content but does not check whether the repository has changed since capture. Use `check CONTEXT` or the `reconcile` operation to assess currentness. `context "task" --full` compiles a new complete context rather than exporting the exact retained one. Normal authored source sections remain available through ordinary file tools.
 
 Use `inspect --representations` to list interrupted representation publications
 and their capture association without changing them.

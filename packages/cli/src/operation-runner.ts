@@ -45,8 +45,10 @@ import {
 } from "@projector/core";
 import {
   KnowledgeContextOperationOutputSchema,
+  KnowledgeContextInspectOperationOutputSchema,
   KnowledgeReconciliationOperationOutputSchema,
   projectKnowledgeContext,
+  inspectKnowledgeContext,
   projectKnowledgeReconciliation,
   LifecycleApplyOutputSchema,
   LifecycleApprovalOutputSchema,
@@ -473,6 +475,19 @@ export async function createBundledProjectorOperationRunner(input: BundledProjec
             ...(input.policy.maxContextCost === undefined ? {} : { maxContextCost: input.policy.maxContextCost }),
           } }),
         }), input.view);
+      },
+    }),
+    defineProjectorOperationHandler({
+      operation: "context.inspect",
+      inputSchema: ProjectorOperationInputSchemas["context.inspect"],
+      outputSchema: KnowledgeContextInspectOperationOutputSchema,
+      execute: async ({ repositoryRoot, input }, context) => {
+        const service = await RepositoryKnowledgeService.create(repositoryRoot);
+        return inspectKnowledgeContext(await service.inspectContext(input.contextId, context.signal), {
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+          ...(input.limit === undefined ? {} : { limit: input.limit }),
+          ...(input.view === undefined ? {} : { view: input.view }),
+        });
       },
     }),
     defineProjectorOperationHandler({

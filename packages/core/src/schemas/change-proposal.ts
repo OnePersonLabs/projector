@@ -9,7 +9,9 @@ import { applicationEvidenceBindingIssues } from "./application-evidence-binding
 export const changeProposalApiVersion = "projector.change-proposal/v1" as const;
 const facets = ["behavior", "architecture", "events", "security", "realtime", "migration", "public-contract", "workspace-expansion", "persistence", "performance", "observability", "compatibility", "distribution", "cleanup", "external-surface"] as const;
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
-const text = (maximum = 4_096) => z.string().min(1).max(maximum).refine((value) => !value.includes("\0") && value.trim().length > 0, "must be nonblank bounded text").transform((value) => value.normalize("NFKC").trim());
+// Canonical prose can grow without losing its identity or becoming uneditable.
+// Explicit maxima below describe identifiers and labels, not document capacity.
+const text = (maximum?: number) => (maximum === undefined ? z.string().min(1) : z.string().min(1).max(maximum)).refine((value) => !value.includes("\0") && value.trim().length > 0, "must be nonblank text without NUL bytes").transform((value) => value.normalize("NFKC").trim());
 const key = text(160).refine((value) => /^[a-z0-9][a-z0-9._:-]*$/u.test(value.toLocaleLowerCase("en-US")), "must be a stable lowercase key").transform((value) => value.toLocaleLowerCase("en-US"));
 const repositoryPath = z.string().min(1).max(1_024).refine((value) => {
   const normalized = value.normalize("NFKC");
@@ -75,9 +77,9 @@ function canonicalPayloadWithoutDerivedHashes(schema: z.ZodType, hasDiscoveryHas
 const canonicalPayloadSchemas = {
   requirement: canonicalPayloadWithoutDerivedHashes(RequirementSchema, true).extend({ key, title: text(240), statement: text(), aliases: unique(text(512)) }),
   "behavioral-scenario": canonicalPayloadWithoutDerivedHashes(BehavioralScenarioSchema, true).extend({ key, title: text(240), aliases: unique(text(512)), steps: ScenarioStepsSchema }),
-  concept: canonicalPayloadWithoutDerivedHashes(ConceptSchema, true).extend({ key, name: text(240), statement: text(16_384), aliases: unique(text(512)) }),
+  concept: canonicalPayloadWithoutDerivedHashes(ConceptSchema, true).extend({ key, name: text(240), statement: text(), aliases: unique(text(512)) }),
   relation: canonicalPayloadWithoutDerivedHashes(RelationSchema),
-  "architecture-decision": canonicalPayloadWithoutDerivedHashes(ArchitectureDecisionSchema).extend({ key, title: text(240), decision: text(16_384) }),
+  "architecture-decision": canonicalPayloadWithoutDerivedHashes(ArchitectureDecisionSchema).extend({ key, title: text(240), decision: text() }),
   "architecture-concern": canonicalPayloadWithoutDerivedHashes(ArchitectureConcernSchema).extend({ key, title: text(240), question: text() }),
   "developer-preference": canonicalPayloadWithoutDerivedHashes(DeveloperPreferenceSchema).extend({ key, statement: text() }),
   "projection-lens": canonicalPayloadWithoutDerivedHashes(ProjectionLensSchema).extend({
@@ -85,7 +87,7 @@ const canonicalPayloadSchemas = {
     rules: z.array(canonicalPayloadWithoutDerivedHashes(RuleSchema)),
     impactRules: z.array(canonicalPayloadWithoutDerivedHashes(ImpactRuleSchema)),
   }),
-  "authority-record": canonicalPayloadWithoutDerivedHashes(AuthorityRecordSchema).extend({ key, rationale: text(16_384) }),
+  "authority-record": canonicalPayloadWithoutDerivedHashes(AuthorityRecordSchema).extend({ key, rationale: text() }),
 } as const;
 const canonicalMutationFor = <K extends keyof typeof canonicalPayloadSchemas>(kind: K, payload: (typeof canonicalPayloadSchemas)[K]) => z.discriminatedUnion("operation", [
   z.object({ kind: z.literal(kind), operation: z.literal("add"), expectedAbsent: z.literal(true), payload, rationale: text() }).strict(),

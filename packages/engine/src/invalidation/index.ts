@@ -111,6 +111,22 @@ function hasCorrelatedProvenance(result: Pick<ValidationResult, "evidenceLane" |
     || correlated.test(normalizedAuthor);
 }
 
+/** A conformance vote needs distinct, attributable evidence at the requested assurance. */
+export function qualifiesIndependentValidation(
+  result: ValidationResult,
+  minimumAssurance: ValidationResult["assurance"] = "strong",
+  disallowedEvidenceLanes: readonly ValidationResult["evidenceLane"][] = [],
+): boolean {
+  return result.status === "passed"
+    && validationAssuranceRank[result.assurance] >= validationAssuranceRank[minimumAssurance]
+    && !disallowedEvidenceLanes.includes(result.evidenceLane)
+    && result.independenceGroup.trim() !== ""
+    && result.independenceGroup.trim() !== "deterministic-transform"
+    && result.authorSource.trim() !== ""
+    && !hasCorrelatedProvenance(result)
+    && result.evidenceIds.some((evidenceId) => evidenceId.trim() !== "");
+}
+
 export interface RegisteredSemanticSignatureProfile {
   id: string;
   version: string;
@@ -1412,15 +1428,9 @@ export function compareCorrectnessOracles(input: CorrectnessOracleInput): Correc
     "same-packet-agent",
     ...(input.conformancePolicy?.disallowedEvidenceLanes ?? []),
   ]);
-  const qualifyingConformance = input.conformance.filter((result) =>
-    result.status === "passed"
-    && validationAssuranceRank[result.assurance] >= validationAssuranceRank[minimumAssurance]
-    && !disallowedEvidenceLanes.has(result.evidenceLane)
-    && result.independenceGroup.trim() !== ""
-    && result.authorSource.trim() !== ""
-    && !hasCorrelatedProvenance(result)
-    && result.evidenceIds.length > 0,
-  );
+  const qualifyingConformance = input.conformance.filter((result) => qualifiesIndependentValidation(
+    result, minimumAssurance, [...disallowedEvidenceLanes],
+  ));
   const independentGroups = new Set(qualifyingConformance.map(({ independenceGroup }) => independenceGroup.trim()));
   const conformancePassed = input.conformance.length > 0
     && input.conformance.every(({ status }) => status === "passed")

@@ -361,8 +361,9 @@ async function runNodeValidators(
   signal: AbortSignal,
   now: () => string,
   runWhileOwned: <T>(operation: () => Promise<T>) => Promise<T>,
-): Promise<ValidationResult[]> {
+): Promise<{ results: ValidationResult[]; resolvedIndependentValidations: Array<{ validatorId: string; evidenceIds: string[] }> }> {
   const results: ValidationResult[] = [];
+  const resolvedIndependentValidations: Array<{ validatorId: string; evidenceIds: string[] }> = [];
   for (const validatorId of validatorIds) {
     const validator = validationPath(validatorId);
     if (validator === undefined) continue;
@@ -427,7 +428,7 @@ async function runNodeValidators(
     const afterContentHash = await hashObservedText(await readObservedText(contentPath, signal), signal);
     const identityCurrent = afterContentHash === beforeContentHash && afterContentHash === expected;
     const passed = execution.exitCode === 0 && identityCurrent;
-    results.push({
+    const result: ValidationResult = {
       validatorId,
       status: passed ? "passed" : "failed",
       summary: passed
@@ -454,9 +455,13 @@ async function runNodeValidators(
       },
       startedAt,
       completedAt: now(),
-    });
+    };
+    results.push(result);
+    if (validator.source === "git-base" && identityCurrent) {
+      resolvedIndependentValidations.push({ validatorId, evidenceIds: result.evidenceIds });
+    }
   }
-  return results;
+  return { results, resolvedIndependentValidations };
 }
 
 export async function executeCompiledRepositoryChange(
@@ -487,23 +492,29 @@ export async function executeCompiledRepositoryChange(
   };
   let postObservation: RepositoryPostObservation | undefined;
   let refreshedImpact: RepositoryImpactSnapshot | undefined;
+  let resolvedIndependentValidations: Array<{ validatorId: string; evidenceIds: string[] }> = [];
   const transform = {
     preview: (transformInput: ExactTextPatchInput, context: TransformContext) => exact.preview(transformInput, context),
     apply: (transformInput: ExactTextPatchInput, context: TransformContext) => exact.apply(transformInput, context),
     verify: async (result: TransformResult, context: TransformContext) => {
+      const exactValidations = await exact.verify(result, context);
+      const hostValidation = launcher === undefined
+        ? { results: [] as ValidationResult[], resolvedIndependentValidations: [] as Array<{ validatorId: string; evidenceIds: string[] }> }
+        : await runNodeValidators(
+          launcher,
+          input.repositoryRoot,
+          paths,
+          capsule.requiredValidations,
+          input.compiled.independentValidators,
+          input.compiled.exactPatchInput.edits,
+          context.signal,
+          now,
+          (operation) => transaction.runWhileOwned(operation),
+        );
+      resolvedIndependentValidations = hostValidation.resolvedIndependentValidations;
       const validations = [
-        ...await exact.verify(result, context),
-        ...(launcher === undefined ? [] : await runNodeValidators(
-        launcher,
-        input.repositoryRoot,
-        paths,
-        capsule.requiredValidations,
-        input.compiled.independentValidators,
-        input.compiled.exactPatchInput.edits,
-        context.signal,
-        now,
-        (operation) => transaction.runWhileOwned(operation),
-      )),
+        ...exactValidations,
+        ...hostValidation.results,
       ];
       const observationStartedAt = now();
       const observation = await observeChangeRepository(input.repositoryRoot);
@@ -547,6 +558,7 @@ export async function executeCompiledRepositoryChange(
         newDivergenceIds: postObservation.planningSurpriseIds,
         unknowns: postObservation.unknowns,
         unavailableActions: [], availableArtifacts: [], cleanWorkingTree: false,
+        resolvedIndependentValidations,
         };
       },
     },

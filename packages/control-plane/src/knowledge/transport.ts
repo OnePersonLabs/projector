@@ -1,4 +1,4 @@
-import { AnalyzerFailureSchema, ContentHashSchema, StateDigestSchema, ObservationError, CodeContextSummarySchema } from "@projector/core";
+import { AnalyzerFailureSchema, ContentHashSchema, StateDigestSchema, CodeContextSummarySchema } from "@projector/core";
 import { z } from "zod";
 import {
   KNOWLEDGE_API_VERSION, KnowledgeContextResultSchema, KnowledgeReconciliationResultSchema,
@@ -14,20 +14,6 @@ const contentBudget = 32_000;
 const branchBudget = 48_000;
 const messageBudget = 2_048;
 const sampleLimit = 12;
-export const KNOWLEDGE_RESPONSE_LIMITS = Object.freeze({ agent: 1024 * 1024, full: 16 * 1024 * 1024 });
-
-function boundedResponse<T>(value: T, view: "agent" | "full"): T {
-  if (bytes(value) > KNOWLEDGE_RESPONSE_LIMITS[view]) {
-    throw new ObservationError("observation-limit-exceeded", "response", ".",
-      `Knowledge ${view} response exceeds its ${KNOWLEDGE_RESPONSE_LIMITS[view]} byte limit; request a narrower context.`);
-  }
-  return value;
-}
-
-/** Called before cache admission so an unusable public response cannot publish a new baseline. */
-export function assertKnowledgeContextResponseSize(report: KnowledgeContextResult, view: "agent" | "full" = "agent"): void {
-  projectKnowledgeContext(report, view);
-}
 const countSchema = z.strictObject({ total: z.number().int().nonnegative(), included: z.number().int().nonnegative(), omitted: z.number().int().nonnegative() });
 const stringsSchema = z.strictObject({ values: z.array(z.string()), disclosure: countSchema });
 const bindingStatusSchema = z.enum(["current", "rebound", "stale", "suspect", "unavailable"]);
@@ -81,6 +67,7 @@ export const KnowledgeContextAgentViewSchema = z.strictObject({
   analyzerFailures: z.array(AnalyzerFailureSchema), analyzerFailureDisclosure: countSchema,
   safety: safetySchema,
   fullEvidence: z.strictObject({ operation: z.literal("context"), inputPatch: z.strictObject({ view: z.literal("full") }), note: z.string() }),
+  retainedEvidence: z.strictObject({ operation: z.literal("context.inspect"), input: z.strictObject({ contextId: z.string() }) }).optional(),
 });
 
 const validationSchema = z.strictObject({
@@ -123,6 +110,112 @@ export const KnowledgeReconciliationAgentViewSchema = z.strictObject({
 });
 export const KnowledgeContextOperationOutputSchema = z.union([KnowledgeContextAgentViewSchema, KnowledgeContextResultSchema]);
 export const KnowledgeReconciliationOperationOutputSchema = z.union([KnowledgeReconciliationAgentViewSchema, KnowledgeReconciliationResultSchema]);
+
+export const KnowledgeContextInspectionOutputSchema = z.strictObject({
+  apiVersion: z.literal(KNOWLEDGE_API_VERSION), view: z.literal("detail"), contextId: z.string(), contentHash: ContentHashSchema,
+  capturedState: StateDigestSchema, currentness: z.literal("retained-only"),
+  document: z.unknown().optional(),
+  records: z.array(z.union([
+    z.strictObject({ path: z.string(), value: z.unknown() }),
+    z.strictObject({ path: z.string(), text: z.string(), textOffset: z.number().int().nonnegative(), last: z.boolean() }),
+  ])),
+  offset: z.number().int().nonnegative(), disclosure: countSchema, nextCursor: z.string().optional(),
+});
+export const KnowledgeContextInspectOperationOutputSchema = z.union([KnowledgeContextInspectionOutputSchema, KnowledgeContextResultSchema]);
+
+type DetailRecord = { readonly path: string; readonly value: unknown } | { readonly path: string; readonly text: string; readonly textOffset: number; readonly last: boolean };
+type DetailRecordSource = DetailRecord | { readonly path: string; readonly source: string; readonly chunkIndex: number };
+const pointerPart = (part: string | number): string => String(part).replaceAll("~", "~0").replaceAll("/", "~1");
+const inlineTextUnits = 4 * 1024;
+const textChunkUnits = 8 * 1024;
+const pageTargetBytes = 64 * 1024;
+
+function appendTextRecords(value: string, path: string, records: DetailRecordSource[]): void {
+  for (let chunkIndex = 0; chunkIndex < Math.ceil(value.length / textChunkUnits); chunkIndex++) {
+    records.push({ path, source: value, chunkIndex });
+  }
+}
+
+function textBoundary(value: string, boundary: number): number {
+  if (boundary > 0 && boundary < value.length && value.charCodeAt(boundary) >= 0xdc00 && value.charCodeAt(boundary) <= 0xdfff) return boundary + 1;
+  return boundary;
+}
+
+function detailRecord(source: DetailRecordSource): DetailRecord {
+  if (!("source" in source)) return source;
+  const start = textBoundary(source.source, source.chunkIndex * textChunkUnits);
+  const end = textBoundary(source.source, Math.min(source.source.length, (source.chunkIndex + 1) * textChunkUnits));
+  return { path: source.path, text: source.source.slice(start, end), textOffset: start, last: end === source.source.length };
+}
+
+// Arrays are expanded into addressable records. Each scalar or object field is
+// retained whole; the document and ordered records reconstruct the exact JSON.
+function detailSkeleton(value: unknown, path: string, records: DetailRecordSource[]): unknown {
+  if (typeof value === "string" && value.length > inlineTextUnits) {
+    appendTextRecords(value, path, records);
+    return "";
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      const itemPath = `${path}/${index}`;
+      const recordIndex = records.length;
+      records.push({ path: itemPath, value: null });
+      records[recordIndex] = { path: itemPath, value: detailSkeleton(item, itemPath, records) };
+    });
+    return [];
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, detailSkeleton(child, `${path}/${pointerPart(key)}`, records)]));
+  }
+  return value;
+}
+
+interface DetailCursor { readonly contextId: string; readonly contentHash: string; readonly offset: number }
+function decodeDetailCursor(cursor: string, report: KnowledgeContextResult): number {
+  let value: unknown;
+  try { value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")); }
+  catch { throw new Error("invalid knowledge context detail cursor"); }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid knowledge context detail cursor");
+  const decoded = value as Partial<DetailCursor>;
+  if (decoded.contextId !== report.id || decoded.contentHash !== report.contentHash
+    || typeof decoded.offset !== "number" || !Number.isSafeInteger(decoded.offset) || decoded.offset < 0) {
+    throw new Error("knowledge context detail cursor does not match the retained context identity");
+  }
+  return decoded.offset;
+}
+
+export function inspectKnowledgeContext(report: KnowledgeContextResult, input?: { readonly cursor?: string; readonly limit?: number }): z.infer<typeof KnowledgeContextInspectionOutputSchema>;
+export function inspectKnowledgeContext(report: KnowledgeContextResult, input: { readonly view: "full" }): KnowledgeContextResult;
+export function inspectKnowledgeContext(report: KnowledgeContextResult, input: { readonly cursor?: string; readonly limit?: number; readonly view?: "full" }): z.infer<typeof KnowledgeContextInspectionOutputSchema> | KnowledgeContextResult;
+export function inspectKnowledgeContext(report: KnowledgeContextResult, input: { readonly cursor?: string; readonly limit?: number; readonly view?: "full" } = {}) {
+  if (input.view === "full") {
+    if (input.cursor !== undefined || input.limit !== undefined) throw new Error("full retained context inspection does not accept paging options");
+    return report;
+  }
+  const limit = input.limit ?? 20;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("knowledge context detail limit must be between 1 and 100 records");
+  const records: DetailRecordSource[] = [];
+  const document = detailSkeleton(report, "", records);
+  const offset = input.cursor === undefined ? 0 : decodeDetailCursor(input.cursor, report);
+  if (offset > records.length) throw new Error("knowledge context detail cursor exceeds the retained record count");
+  const included: DetailRecord[] = [];
+  let pageBytes = 0;
+  for (const source of records.slice(offset, offset + limit)) {
+    const record = detailRecord(source);
+    const recordBytes = bytes(record);
+    if (included.length > 0 && pageBytes + recordBytes > pageTargetBytes) break;
+    included.push(record);
+    pageBytes += recordBytes;
+  }
+  const nextOffset = offset + included.length;
+  return KnowledgeContextInspectionOutputSchema.parse({
+    apiVersion: report.apiVersion, view: "detail", contextId: report.id, contentHash: report.contentHash,
+    capturedState: report.capturedState, currentness: "retained-only",
+    ...(offset === 0 ? { document } : {}), records: included, offset,
+    disclosure: count(records.length, included.length),
+    ...(nextOffset < records.length ? { nextCursor: Buffer.from(JSON.stringify({ contextId: report.id, contentHash: report.contentHash, offset: nextOffset }), "utf8").toString("base64url") } : {}),
+  });
+}
 
 function bytes(value: unknown): number { return Buffer.byteLength(JSON.stringify(value), "utf8"); }
 function count(total: number, included: number) { return { total, included, omitted: total - included }; }
@@ -293,7 +386,7 @@ function humanMeaning(report: KnowledgeContextResult) {
 
 /** Only the public transport is projected; saved context identities and hashes still name full proof. */
 export function projectKnowledgeContext(report: KnowledgeContextResult, view: "agent" | "full" = "agent") {
-  if (view === "full") return boundedResponse(report, view);
+  if (view === "full") return report;
   const candidates = sample(report.interpretation.candidates, 4_096);
   const interpretationUnknowns = sample(report.interpretation.unknowns);
   const unknowns = sample(report.unknowns);
@@ -339,7 +432,7 @@ export function projectKnowledgeContext(report: KnowledgeContextResult, view: "a
     };
   });
   const branches = sample(projected, branchBudget);
-  return boundedResponse(KnowledgeContextAgentViewSchema.parse({
+  return KnowledgeContextAgentViewSchema.parse({
     ...(report.code === undefined ? {} : { code: { ...report.code, symbols: report.code.symbols.slice(0, 20), edges: report.code.edges.slice(0, 40), unknowns: [...report.code.unknowns, ...(report.code.symbols.length > 20 || report.code.edges.length > 40 ? ["Additional semantic facts are retained; use code queries with the displayed generation"] : [])] } }),
     apiVersion: report.apiVersion, view: "agent", id: report.id, request: report.request,
     persisted: report.persisted, contentHash: report.contentHash, capturedState: report.capturedState,
@@ -350,8 +443,9 @@ export function projectKnowledgeContext(report: KnowledgeContextResult, view: "a
     unknowns: unknowns.values, unknownDisclosure: unknowns.disclosure,
     analyzerFailures: failures.values, analyzerFailureDisclosure: failures.disclosure,
     safety: safety(report.branches),
-    fullEvidence: { operation: "context", inputPatch: { view: "full" }, note: "Merge inputPatch into the original context input; it is not a complete request. Preserve request, entities, namedTargets, policy, operation and persist. The saved context and contentHash identify full retained evidence; omitted content is not an absent constraint." },
-  }), view);
+    fullEvidence: { operation: "context", inputPatch: { view: "full" }, note: "Merge inputPatch into the original context input; it is not a complete request. Preserve request, entities, namedTargets, policy, operation and persist. A persisted context can be inspected exactly through retainedEvidence; omitted content is not an absent constraint." },
+    ...(report.persisted ? { retainedEvidence: { operation: "context.inspect", input: { contextId: report.id } } } : {}),
+  });
 }
 
 function validation(value: KnowledgeReconciliationResult["discoveryValidation"]) {
@@ -363,7 +457,7 @@ function validation(value: KnowledgeReconciliationResult["discoveryValidation"])
     changedQueryDependencyIds: queries.values, changedQueryDependencyDisclosure: queries.disclosure };
 }
 export function projectKnowledgeReconciliation(report: KnowledgeReconciliationResult, view: "agent" | "full" = "agent") {
-  if (view === "full") return boundedResponse(report, view);
+  if (view === "full") return report;
   const reasons = sample(report.reasons);
   const branches = sample(report.branches.map((branch) => ({ branchId: branch.branchId, validation: validation(branch.validation) })), 8_000);
   const governanceReasons = sample(report.governance.reasons);
@@ -382,7 +476,7 @@ export function projectKnowledgeReconciliation(report: KnowledgeReconciliationRe
   }), 24_000);
   const applications = sample(report.applicationEvidence.branches, 4_096);
   const impact = report.impact;
-  return boundedResponse(KnowledgeReconciliationAgentViewSchema.parse({
+  return KnowledgeReconciliationAgentViewSchema.parse({
     apiVersion: report.apiVersion, view: "agent", contextId: report.contextId, contentHash: report.contentHash,
     capturedState: report.capturedState, currentState: report.currentState, status: report.status,
     discoveryValidation: validation(report.discoveryValidation), branches: branches.values, branchDisclosure: branches.disclosure,
@@ -399,5 +493,5 @@ export function projectKnowledgeReconciliation(report: KnowledgeReconciliationRe
       surpriseCount: impact.surprises.length, candidateRelationCount: impact.candidateRelations.length, diagnostics: sample(impact.diagnostics),
     } }),
     fullEvidence: { operation: "reconcile", input: { contextId: report.contextId, view: "full" } },
-  }), view);
+  });
 }

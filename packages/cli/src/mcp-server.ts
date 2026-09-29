@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/server";
+import { fromJsonSchema, McpServer, type JsonSchemaType } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import {
   ProjectorOperationInputSchemas,
@@ -14,7 +14,7 @@ import { createBundledProjectorOperationRunner } from "./operation-runner.js";
 type BundledRunner = Awaited<ReturnType<typeof createBundledProjectorOperationRunner>>;
 
 const readOnlyOperations = new Set<string>([
-  "status", "reconcile", "repository.check", "repository.integration", "coverage", "complete", "cleanup", "verify",
+  "status", "context.inspect", "reconcile", "repository.check", "repository.integration", "coverage", "complete", "cleanup", "verify",
   "representation.inspect", "representation.pending", "architecture.evaluate", "verification.inspect",
   "generated.inspect", "code.query", "code.index-status", "code.index-wait", "code.impact", "code.tests", "code.export",
 ]);
@@ -49,10 +49,16 @@ export function createProjectorMcpServer(input: {
     if (inputSchema === undefined) continue;
     const requestSchema = createProjectorOperationRequestSchema(operation, inputSchema);
     const toolSchema = requestSchema.omit({ apiVersion: true, operation: true });
+    // Several Projector contracts reuse substantial nested Zod schemas. Emit
+    // local JSON Schema definitions so tool discovery does not repeat them.
+    // The handler below still parses the authoritative Core request schema.
+    const advertisedSchema = fromJsonSchema<z.input<typeof toolSchema>>(
+      z.toJSONSchema(toolSchema, { io: "input", reused: "ref" }) as unknown as JsonSchemaType,
+    );
     server.registerTool(`projector_${operation.replaceAll(/[.-]/gu, "_")}`, {
       title: `Projector ${operation}`,
       description: descriptionFor(operation),
-      inputSchema: toolSchema,
+      inputSchema: advertisedSchema,
       annotations: annotationsFor(operation),
     }, async (args, context) => {
       const request = requestSchema.parse({ ...args, apiVersion: projectorOperationApiVersion, operation });

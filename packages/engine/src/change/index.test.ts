@@ -144,6 +144,7 @@ interface TestCompletionAssessment {
   unavailableActions: string[];
   availableArtifacts: string[];
   cleanWorkingTree: boolean;
+  resolvedIndependentValidations?: Array<{ validatorId: string; evidenceIds: string[] }>;
 }
 
 const completeAssessment = (overrides: Partial<TestCompletionAssessment> = {}): TestCompletionAssessment => ({
@@ -673,6 +674,82 @@ describe("state-bound deterministic change execution", () => {
     });
 
     expect(left.result.certificateHash).toBe(right.result.certificateHash);
+  });
+
+  const independent = (overrides: Partial<ValidationResult> = {}): ValidationResult => validation("passed", {
+    validatorId: "contract-check",
+    evidenceIds: ["evidence:executed-contract"],
+    evidenceLane: "test",
+    independenceGroup: "git-base:contract-check",
+    assurance: "strong",
+    authorSource: "tracked-git-base",
+    ...overrides,
+  });
+  const independentPlan = () => plan("plan:move", {
+    requiredValidators: ["move-reference-update.verify", "contract-check"],
+    minimumValidationAssurance: "strong",
+    requireIndependentValidation: true,
+  });
+  const resolved = (result: ValidationResult): TestCompletionAssessment => completeAssessment({
+    resolvedIndependentValidations: [{ validatorId: result.validatorId, evidenceIds: result.evidenceIds }],
+  });
+
+  it("accepts a resolved independent validator that satisfies the shared assurance rule", async () => {
+    const check = independent();
+    const { result } = await execute({
+      subjectPlan: independentPlan(),
+      transform: transformPort({ verify: [validation("passed"), check] }),
+      completionAssessment: resolved(check),
+    });
+    expect(result.outcome, result.reasons.join("; ")).toBe("success");
+  });
+
+  it("keeps strong assurance as the independent minimum when the general contract allows weak validation", async () => {
+    const check = independent({ assurance: "weak" });
+    const { result } = await execute({
+      subjectPlan: plan("plan:move", {
+        requiredValidators: ["move-reference-update.verify", "contract-check"],
+        minimumValidationAssurance: "weak",
+        requireIndependentValidation: true,
+      }),
+      transform: transformPort({ verify: [validation("passed"), check] }),
+      completionAssessment: resolved(check),
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain("completion requires an independent passing validation");
+  });
+
+  it.each([
+    { name: "unresolved evidence", check: independent(), assessment: completeAssessment() },
+    { name: "empty evidence", check: independent({ evidenceIds: [] }), assessment: completeAssessment({ resolvedIndependentValidations: [{ validatorId: "contract-check", evidenceIds: [] }] }) },
+    { name: "weak assurance", check: independent({ assurance: "weak" }), assessment: resolved(independent({ assurance: "weak" })) },
+    { name: "correlated authorship", check: independent({ authorSource: "same-packet-agent" }), assessment: resolved(independent({ authorSource: "same-packet-agent" })) },
+    { name: "correlated group", check: independent({ independenceGroup: "packet" }), assessment: resolved(independent({ independenceGroup: "packet" })) },
+    { name: "mismatched resolved evidence", check: independent(), assessment: completeAssessment({ resolvedIndependentValidations: [{ validatorId: "contract-check", evidenceIds: ["evidence:other"] }] }) },
+  ])("rejects $name as independent completion proof", async ({ check, assessment }) => {
+    const { result } = await execute({
+      subjectPlan: independentPlan(),
+      transform: transformPort({ verify: [validation("passed"), check] }),
+      completionAssessment: assessment,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain("completion requires an independent passing validation");
+  });
+
+  it("blocks a resolved independent contradiction despite a passing same-packet check", async () => {
+    const contradiction = independent({ status: "failed", summary: "contract behavior differs" });
+    const { result } = await execute({
+      subjectPlan: independentPlan(),
+      transform: transformPort({ verify: [
+        validation("passed"),
+        validation("passed", { validatorId: "packet-check", evidenceLane: "same-packet-agent", independenceGroup: "packet", evidenceIds: ["evidence:packet"] }),
+        contradiction,
+      ] }),
+      completionAssessment: resolved(contradiction),
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain("independent validation contract-check failed: contract behavior differs");
+    expect(result.reasons).toContain("completion requires an independent passing validation");
   });
 
   it.each([

@@ -24,11 +24,14 @@ Reaffirm host-configured native execution after the runtime-evidence wording rev
 
 The September 27 supported-workflow completion reaffirms the current decision scope after the plugin relocation to plugins/projector-v3. The relocation preserves the accepted decision, permission boundary, and lifecycle obligations. Its new baseline must come from the reviewed canonical transaction, not from clearing incomplete query observations.
 
+The September 29 revision retains knowledge_context_6204acbaff99f456aa7e24800a87b41d as unavailable historical context. It is not a canonical evidence record and cannot establish current runtime proof through the supported authority observer. Remove it from active evidence references while preserving this provenance. Reaffirm host-configured native execution and its existing integrity obligations with explicit caller-requested time and output limits. This acceptance establishes intent and a reviewed baseline; actual runtime verification remains separate. Independent validation support remains zero, and all reconsideration triggers remain active.
+
 <details>
 <summary>Structured record details</summary>
 
 ```toml
 assumptions = [ "The host supplies and enforces the permissions under which Projector runs.", "The supported workspace is trusted; same-user or host code can interfere with ordinary-process collection.", "Exact validator bytes, reviewed writes, source/state/version binding, cancellation and recovery remain enforceable without a Projector confinement backend.", "Unsupported CPU, memory, network, or filesystem-isolation controls are reported as unsupported and never silently claimed." ]
+evidence = []
 
 [[alternatives]]
 key = "landstrip-native"
@@ -90,10 +93,6 @@ securitySupport = 0
 reversibility = 1
 migrationCost = 1
 counterEvidence = 0
-
-[[evidence]]
-evidenceId = "knowledge_context_6204acbaff99f456aa7e24800a87b41d"
-stance = "supports"
 
 ```
 </details>

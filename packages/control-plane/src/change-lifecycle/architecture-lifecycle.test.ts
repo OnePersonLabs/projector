@@ -5,11 +5,13 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { hashFramedDomain, hashSemantic, withCanonicalHashes, type AuthorityRecord } from "@projector/core";
 import { CanonicalFileRepository } from "@projector/runtime";
-import { describe, expect } from "vitest";
+import { describe, expect, it as unitIt } from "vitest";
 import { integrationTest as it } from "../../../../scripts/testing/integration-test.mjs";
 import { RepositoryKnowledgeService } from "../knowledge/service.js";
 import { inspectRepositoryArchitecture } from "../knowledge/architecture-inspection.js";
-import { RepositoryChangeLifecycleService } from "./service.js";
+import { RepositoryChangeLifecycleService, permitsUnchangedDecisionBaselineBinding } from "./service.js";
+import type { CompiledRepositoryChange } from "./compiler.js";
+import type { KnowledgeReconciliationResult } from "../knowledge/types.js";
 
 const exec = promisify(execFile);
 const placeholder = hashSemantic("requirement", {});
@@ -31,6 +33,95 @@ async function repository() {
   await mkdir(join(root, "src")); await writeFile(join(root, "src/value.mjs"), "export const value = 1;\n");
   return root;
 }
+
+describe("unchanged decision evidence repair gate", () => {
+  const evidenceId = "evidence:unsupported-history";
+  const unknown = `Evidence ${evidenceId} has no supported accepted observation; external evidence validity is unknown.`;
+  const explanation = `decision ${decision.id} lost authenticated applicability or state-binding proof; reassessment may reaffirm the existing decision`;
+  const oldAuthority = { ...authority, semanticHash: hashFramedDomain("test-authority", "before"), evidence: [{ evidenceId, stance: "context" as const }] };
+  const repairedAuthority = { ...oldAuthority, semanticHash: hashFramedDomain("test-authority", "after"), evidence: [], rationale: `${oldAuthority.rationale}\n\nPreserve unavailable historical context ${evidenceId} in prose.` };
+  const queryHash = hashFramedDomain("test-query", "decision-triggers");
+  const fingerprint = { queryHash, observability: "closed", resultCount: 1, unavailableLanes: [unknown] };
+  const query = { id: `knowledge-decision-triggers:${decision.id}`, kind: "custom", programId: "projector.knowledge.decision-triggers", programVersion: "1", semanticHash: queryHash, input: { decisionId: decision.id } };
+  const observed = { kind: "query", status: "unknown", basis: "same-snapshot", dependency: { query, priorResult: fingerprint }, currentResult: fingerprint };
+  const current = { status: "current", changedValueDependencyIds: [], changedQueryDependencyIds: [], observations: [] };
+  const suspect = { status: "suspect", changedValueDependencyIds: [], changedQueryDependencyIds: [], observations: [observed] };
+  const validity = { decisionId: decision.id, authorityId: authority.id, baseline: { kind: "authenticated-transaction" }, checks: [{ trigger: { type: "manual-review" }, status: "unobserved" }], assessment: { blocksCurrentChange: true, explanation } };
+  const compiled = {
+    executionKind: "canonical-only",
+    intentReview: { canonicalMutations: [
+      { kind: "architecture-decision", operation: "revise", id: decision.id },
+      { kind: "authority-record", operation: "revise", id: authority.id, before: oldAuthority, after: repairedAuthority },
+    ] },
+  } as unknown as CompiledRepositoryChange;
+  const reconciliation = {
+    status: "suspect",
+    discoveryValidation: current,
+    branches: [{ validation: suspect }],
+    governance: { status: "unknown", reasons: [explanation], branches: [{ evaluations: [], decisionValidity: [validity] }] },
+  } as unknown as KnowledgeReconciliationResult;
+
+  unitIt("permits an explicit canonical revision to remove only unresolved active evidence from an authenticated baseline", () => {
+    expect(permitsUnchangedDecisionBaselineBinding(compiled, reconciliation)).toBe(true);
+  });
+
+  const withAuthorityRevision = (before: object, after: object) => ({
+    ...compiled,
+    intentReview: { canonicalMutations: [
+      { kind: "architecture-decision", operation: "revise", id: decision.id },
+      { kind: "authority-record", operation: "revise", id: authority.id, before, after },
+    ] },
+  });
+  const withQueryObservation = (observation: object) => ({
+    ...reconciliation,
+    branches: [{ validation: { ...suspect, observations: [observation] } }],
+  });
+  const unrelated = { ...fingerprint, unavailableLanes: [unknown, "unrelated observer failure"] };
+  unitIt.each([
+    {
+      name: "an unrelated unknown lane",
+      input: { reconciliation: withQueryObservation({ ...observed, dependency: { query, priorResult: unrelated }, currentResult: unrelated }) },
+    },
+    {
+      name: "a newly added evidence reference",
+      input: { compiled: withAuthorityRevision(oldAuthority, { ...repairedAuthority, evidence: [{ evidenceId: "evidence:new", stance: "context" }] }) },
+    },
+    {
+      name: "a changed authority conclusion hidden beside the evidence repair",
+      input: { compiled: withAuthorityRevision(oldAuthority, { ...repairedAuthority, conclusion: "replace" }) },
+    },
+    {
+      name: "replacement rationale that drops the removed evidence identity",
+      input: { compiled: withAuthorityRevision(oldAuthority, { ...repairedAuthority, rationale: "The evidence was historical." }) },
+    },
+    { name: "a mixed operational mutation", input: { compiled: { ...compiled, executionKind: "repository-code" } } },
+    {
+      name: "a changed query observation",
+      input: { reconciliation: withQueryObservation({ ...observed, currentResult: { ...fingerprint, resultCount: 2 } }) },
+    },
+    {
+      name: "a fired trigger",
+      input: { reconciliation: { ...reconciliation, governance: { ...reconciliation.governance, branches: [
+        { evaluations: [], decisionValidity: [{ ...validity, checks: [{ trigger: { type: "manual-review" }, status: "fired" }] }] },
+      ] } } },
+    },
+    {
+      name: "a removed reconsideration trigger",
+      input: { compiled: withAuthorityRevision(oldAuthority, { ...repairedAuthority, reconsiderWhen: [] }) },
+    },
+    {
+      name: "a weakened evidence refresh policy",
+      input: { compiled: withAuthorityRevision({ ...oldAuthority, evidenceRefreshPolicy: {
+        key: "host", mode: "max-age", maxAgeDays: 30, requireOfficialSourceWhenAvailable: true,
+      } }, repairedAuthority) },
+    },
+  ])("rejects $name", ({ input }) => {
+    expect(permitsUnchangedDecisionBaselineBinding(
+      (input.compiled ?? compiled) as CompiledRepositoryChange,
+      (input.reconciliation ?? reconciliation) as KnowledgeReconciliationResult,
+    )).toBe(false);
+  });
+});
 
 describe("public architectural products", () => {
   it("requires relevant decision reconsideration and accepts an explicit same-transaction reaffirmation", async () => {

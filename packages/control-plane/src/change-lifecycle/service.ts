@@ -5,6 +5,8 @@ import {
   canonicalJson,
   hashFramedDomain,
   parseChangeProposal,
+  AuthorityRecordSchema,
+  type AuthorityRecord,
   type ChangeProposal,
   type ContentHash,
   type ExecutionCapsule,
@@ -108,7 +110,36 @@ function permitsDecisionReconsideration(compiled: CompiledRepositoryChange, gove
   return resolvedReasons.size > 0 && governance.reasons.every((reason) => resolvedReasons.has(reason));
 }
 
-function permitsUnchangedDecisionBaselineBinding(compiled: CompiledRepositoryChange, reconciliation: KnowledgeReconciliationResult): boolean {
+function removedUnsupportedEvidenceReasons(compiled: CompiledRepositoryChange, authorityId: string): Set<string> | undefined {
+  const revisions = (compiled.intentReview.canonicalMutations ?? []).filter(({ kind, operation, id }) =>
+    kind === "authority-record" && operation === "revise" && id === authorityId);
+  if (revisions.length !== 1) return undefined;
+  const revision = revisions[0]!;
+  const before = AuthorityRecordSchema.safeParse(revision.before);
+  const after = AuthorityRecordSchema.safeParse(revision.after);
+  if (!before.success || !after.success) return undefined;
+  const prior = before.data as AuthorityRecord;
+  const revised = after.data as AuthorityRecord;
+  const stableFields = ({ evidence: _evidence, rationale: _rationale, semanticHash: _semanticHash, ...fields }: AuthorityRecord) => fields;
+  if (prior.id !== authorityId || revised.id !== authorityId
+    || canonicalJson(stableFields(prior)) !== canonicalJson(stableFields(revised))) return undefined;
+  const priorIds = new Set(prior.evidence.map(({ evidenceId }) => evidenceId));
+  const revisedIds = new Set(revised.evidence.map(({ evidenceId }) => evidenceId));
+  if (priorIds.size !== prior.evidence.length || revisedIds.size !== revised.evidence.length
+    || revised.evidence.some((reference) => {
+      const retained = prior.evidence.find(({ evidenceId }) => evidenceId === reference.evidenceId);
+      return retained === undefined || canonicalJson(retained) !== canonicalJson(reference);
+    })) return undefined;
+  const removedIds = [...priorIds].filter((id) => !revisedIds.has(id));
+  const rationalePrefix = `${prior.rationale.trimEnd()}\n\n`;
+  if (!revised.rationale.startsWith(rationalePrefix)
+    || removedIds.some((id) => !revised.rationale.slice(rationalePrefix.length).includes(id))) return undefined;
+  return removedIds.length === 0 ? undefined : new Set(removedIds.map((id) =>
+    `Evidence ${id} has no supported accepted observation; external evidence validity is unknown.`));
+}
+
+/** @internal Only an explicit canonical reconsideration may cross an unchanged, incomplete trigger query. */
+export function permitsUnchangedDecisionBaselineBinding(compiled: CompiledRepositoryChange, reconciliation: KnowledgeReconciliationResult): boolean {
   if (reconciliation.status !== "suspect" || !permitsDecisionReconsideration(compiled, reconciliation.governance)) return false;
   if (reconciliation.discoveryValidation.status !== "current" && reconciliation.discoveryValidation.status !== "rebound") return false;
   const revised = new Set((compiled.intentReview.canonicalMutations ?? []).filter(({ kind, operation }) => operation === "revise" && (kind === "architecture-decision" || kind === "authority-record")).map(({ id }) => id));
@@ -129,11 +160,18 @@ function permitsUnchangedDecisionBaselineBinding(compiled: CompiledRepositoryCha
       const decisions = reconciliation.governance.branches.flatMap(({ decisionValidity }) => decisionValidity ?? []).filter((decision) => decision.decisionId === decisionId);
       if (decisions.length === 0) return false;
       for (const decision of decisions) {
-        if ((!revised.has(decision.decisionId) && !revised.has(decision.authorityId)) || decision.baseline.kind !== "unavailable" || decision.checks.some(({ status }) => status === "fired")) return false;
-        const unknown = decision.checks.filter(({ status }) => status === "unknown");
-        if (unknown.length === 0 || unknown.some(({ trigger, reason }) => !baselineTriggers.has(trigger.type) || !reason.startsWith(`No accepted baseline observation for ${trigger.type}: `))) return false;
-        const reasons = new Set(unknown.map(({ reason }) => reason));
+        if ((!revised.has(decision.decisionId) && !revised.has(decision.authorityId)) || decision.checks.some(({ status }) => status === "fired")) return false;
         const lanes = new Set([...priorResult.unavailableLanes, ...current.unavailableLanes]);
+        let reasons: Set<string> | undefined;
+        if (decision.baseline.kind === "unavailable") {
+          const unknown = decision.checks.filter(({ status }) => status === "unknown");
+          if (unknown.length === 0 || unknown.some(({ trigger, reason }) => !baselineTriggers.has(trigger.type) || !reason.startsWith(`No accepted baseline observation for ${trigger.type}: `))) return false;
+          reasons = new Set(unknown.map(({ reason }) => reason));
+        } else if (decision.baseline.kind === "authenticated-transaction") {
+          if (decision.checks.some(({ status }) => status === "unknown")) return false;
+          reasons = removedUnsupportedEvidenceReasons(compiled, decision.authorityId);
+        }
+        if (reasons === undefined) return false;
         if (lanes.size !== reasons.size || [...lanes].some((reason) => !reasons.has(reason))) return false;
       }
       qualifyingQueries += 1;

@@ -159,6 +159,15 @@ describe("bounded Projector operation runner", () => {
     const context = await runner.execute({ ...request("context", { request: "Understand this repository", persist: true }), repositoryRoot: root });
     expect(context).toMatchObject({ status: "succeeded", output: { view: "agent", persisted: true, branchDisclosure: { total: expect.any(Number) } } });
     const { output: { id } } = z.object({ output: z.object({ id: z.string() }) }).parse(context);
+    const detail = await runner.execute({ ...request("context.inspect", { contextId: id, limit: 1 }), repositoryRoot: root });
+    expect(detail).toMatchObject({ status: "succeeded", output: { view: "detail", contextId: id, currentness: "retained-only", disclosure: { total: expect.any(Number) } } });
+    const retainedFull = await runner.execute({ ...request("context.inspect", { contextId: id, view: "full" }), repositoryRoot: root });
+    expect(retainedFull).toMatchObject({ status: "succeeded", output: { id, discoveryBinding: expect.any(Object) } });
+    const detailOutput = z.object({ output: z.object({ nextCursor: z.string().optional() }) }).parse(detail).output;
+    if (detailOutput.nextCursor !== undefined) {
+      const next = await runner.execute({ ...request("context.inspect", { contextId: id, cursor: detailOutput.nextCursor, limit: 1 }), repositoryRoot: root });
+      expect(next).toMatchObject({ status: "succeeded", output: { contextId: id, records: expect.any(Array) } });
+    }
     const full = await runner.execute({ ...request("context", { request: "Understand this repository", persist: true, view: "full" }), repositoryRoot: root });
     expect(full).toMatchObject({ status: "succeeded", output: { discoveryBinding: expect.any(Object) } });
     const reconciliation = await runner.execute({ ...request("reconcile", { contextId: id }), repositoryRoot: root });
@@ -166,6 +175,7 @@ describe("bounded Projector operation runner", () => {
     const fullReconciliation = await runner.execute({ ...request("reconcile", { contextId: id, view: "full" }), repositoryRoot: root });
     expect(fullReconciliation).toMatchObject({ status: "succeeded", output: { contextId: id, discoveryValidation: expect.any(Object) } });
     expect(ProjectorOperationInputSchemas.context.safeParse({ request: "x", view: "debug" }).success).toBe(false);
+    expect(ProjectorOperationInputSchemas["context.inspect"].safeParse({ contextId: id, limit: 101 }).success).toBe(false);
     expect(ProjectorOperationInputSchemas.reconcile.safeParse({ contextId: id, full: true }).success).toBe(false);
   });
 

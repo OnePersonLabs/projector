@@ -2,11 +2,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hashFramedDomain, withCanonicalHashes, ProjectorOperationInputSchemas } from "@projector/core";
-import { CanonicalFileRepository } from "@projector/runtime";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { CanonicalFileRepository, currentObservationScope } from "@projector/runtime";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { RepositoryKnowledgeService } from "./service.js";
+import { finalizeKnowledgeContext, KnowledgeContextStore } from "./store.js";
 import { type KnowledgeContextResult, type KnowledgeDecisionValidity, type KnowledgeReconciliationResult } from "./types.js";
-import { KnowledgeContextAgentViewSchema, KnowledgeContextOperationOutputSchema, KnowledgeReconciliationAgentViewSchema, KnowledgeReconciliationOperationOutputSchema, projectKnowledgeContext, projectKnowledgeReconciliation } from "./transport.js";
+import { KnowledgeContextAgentViewSchema, KnowledgeContextInspectionOutputSchema, KnowledgeContextOperationOutputSchema, KnowledgeReconciliationAgentViewSchema, KnowledgeReconciliationOperationOutputSchema, inspectKnowledgeContext, projectKnowledgeContext, projectKnowledgeReconciliation } from "./transport.js";
 
 const hash = hashFramedDomain("knowledge-transport-test", "fixture");
 let root: string;
@@ -39,10 +40,116 @@ function blockingDecision(): KnowledgeDecisionValidity {
 }
 
 describe("bounded knowledge transport", () => {
-  it("rejects oversized complete responses instead of emitting partial or oversized JSON", () => {
-    expect(() => projectKnowledgeContext({ ...context, request: "x".repeat(1024 * 1024) })).toThrow(/response.*limit/i);
-    expect(() => projectKnowledgeContext({ ...context, request: "x".repeat(16 * 1024 * 1024) }, "full")).toThrow(/response.*limit/i);
-    expect(() => projectKnowledgeReconciliation({ ...reconciliation, reasons: ["x".repeat(16 * 1024 * 1024)] }, "full")).toThrow(/response.*limit/i);
+  it("keeps large whole records available through full output and retained detail pages", () => {
+    const branch = context.branches[0]!;
+    const large = { ...branch.context.items[0]!, entityId: "concept:large", content: `${"a".repeat(8_191)}😀${"b".repeat(17 * 1024 * 1024)}` };
+    const report = { ...context, request: "root request ".repeat(8_000), branches: [{ ...branch, context: { ...branch.context, items: [large] } }] };
+    expect(projectKnowledgeContext(report, "full")).toBe(report);
+    expect(projectKnowledgeReconciliation({ ...reconciliation, reasons: ["x".repeat(17 * 1024 * 1024)] }, "full").reasons[0]).toHaveLength(17 * 1024 * 1024);
+    let cursor: string | undefined;
+    let rebuilt: unknown;
+    let found = false;
+    let total = 0;
+    do {
+      const page = KnowledgeContextInspectionOutputSchema.parse(inspectKnowledgeContext(report, { ...(cursor === undefined ? {} : { cursor }), limit: 100 }));
+      expect(Buffer.byteLength(JSON.stringify(page), "utf8")).toBeLessThan(80 * 1024);
+      expect(Buffer.byteLength(JSON.stringify({ structuredContent: page, content: [{ text: JSON.stringify(page) }] }), "utf8")).toBeLessThan(200 * 1024);
+      if (page.document !== undefined) rebuilt = page.document;
+      total = page.disclosure.total;
+      for (const record of page.records) {
+        const segments = record.path.slice(1).split("/").map((part) => part.replaceAll("~1", "/").replaceAll("~0", "~"));
+        let parent = rebuilt as Record<string, unknown>;
+        for (const segment of segments.slice(0, -1)) parent = parent[segment] as Record<string, unknown>;
+        const key = segments.at(-1)!;
+        if ("text" in record) {
+          if (record.path.endsWith("/context/items/0/content")) found = true;
+          const existing = parent[key] as string;
+          expect(existing.length).toBe(record.textOffset);
+          parent[key] = existing + record.text;
+        } else parent[key] = record.value;
+      }
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    expect(found).toBe(true);
+    expect(total).toBeGreaterThan(2_000);
+    expect(rebuilt).toEqual(report);
+    expect(inspectKnowledgeContext(report, { view: "full" })).toBe(report);
+  });
+  it("retains and inspects a context larger than the former full response ceiling", async () => {
+    const branch = context.branches[0]!;
+    const large = { ...branch.context.items[0]!, entityId: "concept:persisted-large", content: "a".repeat(17 * 1024 * 1024) };
+    const { id: _id, contentHash: _contentHash, ...basis } = context;
+    const saved = finalizeKnowledgeContext({ ...basis, branches: [{ ...branch, context: { ...branch.context, items: [large] } }] });
+    await (await KnowledgeContextStore.create(root)).write(saved);
+    const retained = await service.inspectContext(saved.id);
+    expect(retained.contentHash).toBe(saved.contentHash);
+    expect(retained.branches[0]!.context.items[0]!.content).toBe(large.content);
+    const first = inspectKnowledgeContext(retained, { limit: 1 });
+    expect(first.contextId).toBe(saved.id);
+    expect(first.nextCursor).toBeDefined();
+  });
+  it("binds detail cursors to the retained context and exposes exact page counts", () => {
+    const first = inspectKnowledgeContext(context, { limit: 1 });
+    expect(first.document).toBeDefined();
+    expect(first.disclosure).toEqual({ total: expect.any(Number), included: 1, omitted: expect.any(Number) });
+    const second = inspectKnowledgeContext(context, { cursor: first.nextCursor!, limit: 1 });
+    expect(second.document).toBeUndefined();
+    expect(second.records).toHaveLength(1);
+    expect(() => inspectKnowledgeContext({ ...context, id: "knowledge_context_other" }, { cursor: first.nextCursor! })).toThrow(/does not match/);
+    expect(() => inspectKnowledgeContext({ ...context, contentHash: hashFramedDomain("changed", "context") }, { cursor: first.nextCursor! })).toThrow(/does not match/);
+    expect(() => inspectKnowledgeContext(context, { cursor: "invalid" })).toThrow(/cursor/);
+    expect(() => inspectKnowledgeContext(context, { cursor: Buffer.from("null").toString("base64url") })).toThrow(/invalid.*cursor/);
+    const pastEnd = Buffer.from(JSON.stringify({ contextId: context.id, contentHash: context.contentHash, offset: Number.MAX_SAFE_INTEGER })).toString("base64url");
+    expect(() => inspectKnowledgeContext(context, { cursor: pastEnd })).toThrow(/exceeds.*record count/);
+    expect(() => inspectKnowledgeContext(context, { limit: 101 })).toThrow(/limit/);
+  });
+  it("pages every JSON value needed to reconstruct the retained context", () => {
+    let cursor: string | undefined;
+    let rebuilt: unknown;
+    let consumed = 0;
+    do {
+      const page = inspectKnowledgeContext(context, { ...(cursor === undefined ? {} : { cursor }), limit: 3 });
+      if (page.document !== undefined) rebuilt = page.document;
+      expect(page.offset).toBe(consumed);
+      for (const record of page.records) {
+        const segments = record.path.slice(1).split("/").map((part) => part.replaceAll("~1", "/").replaceAll("~0", "~"));
+        let parent = rebuilt as Record<string, unknown>;
+        for (const segment of segments.slice(0, -1)) parent = parent[segment] as Record<string, unknown>;
+        const key = segments.at(-1)!;
+        if ("text" in record) {
+          expect((parent[key] as string).length).toBe(record.textOffset);
+          parent[key] = (parent[key] as string) + record.text;
+        } else parent[key] = record.value;
+        consumed += 1;
+      }
+      cursor = page.nextCursor;
+      expect(page.disclosure.total).toBeGreaterThanOrEqual(consumed);
+    } while (cursor !== undefined);
+    expect(rebuilt).toEqual(context);
+  });
+  it("honors cancellation before retained inspection", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(service.inspectContext(context.id, controller.signal)).rejects.toThrow();
+  });
+  it("propagates cancellation into the retained store read scope", async () => {
+    const controller = new AbortController();
+    let entered!: () => void;
+    const inStore = new Promise<void>((resolve) => { entered = resolve; });
+    const read = vi.spyOn(KnowledgeContextStore.prototype, "read").mockImplementation(async () => {
+      const signal = currentObservationScope()?.signal;
+      expect(signal).toBeDefined();
+      entered();
+      return new Promise<KnowledgeContextResult>((_resolve, reject) => {
+        signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+      });
+    });
+    try {
+      const pending = service.inspectContext(context.id, controller.signal);
+      await inStore;
+      controller.abort(new Error("caller cancelled retained read"));
+      await expect(pending).rejects.toThrow("caller cancelled retained read");
+    } finally { read.mockRestore(); }
   });
   it("projects readable whole meaning while leaving raw persisted proof available for full disclosure", async () => {
     const source = JSON.stringify(context);
@@ -60,6 +167,8 @@ describe("bounded knowledge transport", () => {
     expect(JSON.stringify(view)).not.toContain('"discoveryHash"');
     expect(JSON.stringify(view)).not.toContain('"evidence"');
     expect(view.contentHash).toBe(context.contentHash);
+    expect(view.retainedEvidence).toEqual({ operation: "context.inspect", input: { contextId: context.id } });
+    expect(KnowledgeContextAgentViewSchema.parse(projectKnowledgeContext({ ...context, persisted: false })).retainedEvidence).toBeUndefined();
     expect(projectKnowledgeContext(context, "full")).toBe(context);
     expect(KnowledgeContextOperationOutputSchema.safeParse(projectKnowledgeContext(context, "full")).success).toBe(true);
     expect(ProjectorOperationInputSchemas.context.safeParse({ request: context.request, entities: ["concept:transport"], ...view.fullEvidence.inputPatch }).success).toBe(true);

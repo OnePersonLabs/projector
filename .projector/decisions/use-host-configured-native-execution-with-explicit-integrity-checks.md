@@ -22,7 +22,7 @@ authorityRecordId = "authority:windows-wsl-bubblewrap"
 
 ## Decision
 
-Execute Projector operations and validators through the host's configured permissions, using the native Node runner on Windows and the Linux Node runner for direct WSL. Projector does not require WSL bridging or provide a confinement backend. Preserve exact reviewed mutation authority, actual source/state/version checks, validator provenance and bytes, bounded time/output, caller cancellation and journaled recovery. Report only guarantees that the selected execution path establishes; unavailable required controls stop the affected operation rather than becoming optimistic evidence.
+Execute Projector operations and validators through the host's configured permissions, using the native Node runner on Windows and the Linux Node runner for direct WSL. Projector does not require WSL bridging or provide a confinement backend. Preserve exact reviewed mutation authority, actual source/state/version checks, validator provenance and bytes, explicit caller-requested time/output limits, caller cancellation and journaled recovery. Report only guarantees that the selected execution path establishes; unavailable required controls stop the affected operation rather than becoming optimistic evidence.
 
 <details>
 <summary>Structured record details</summary>

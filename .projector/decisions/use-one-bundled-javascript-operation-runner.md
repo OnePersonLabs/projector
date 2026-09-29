@@ -44,6 +44,10 @@ A waiting call may return the current run state without stopping the owned compu
 
 Store changed source bytes and semantic facts in their final immutable representations before publication. Reuse unchanged versions. Batch durable preparation writes and keep full fact insertion and bulk pruning outside the atomic head-publication transaction. A verified unchanged observation must not rewrite its captured source population. Current requests must validate their source binding at admission; they cannot silently use a known-stale generation when refresh is required. Concurrent readers retain one coherent completed snapshot, and explicitly pinned requests may select a historical generation. These guarantees do not claim that database locks prevent external source edits.
 
+Qualify additions to the agent reasoning workflow with the same facts, model, tools, tasks and allowance as a strong ordinary-agent baseline. An installed, artifact-grounded trial may use bounded real source slices and platform I/O fakes to evaluate causal reasoning; it does not replace broader reconstruction obligations or establish musical or hardware performance. Include setup, retrieval, fresh-session reconstruction, review and observed repair cost. A tie or unavailable cost evidence does not justify claiming a net advantage. Retain an added default procedure only when observed benefit pays for its cost.
+
+The September 29 Psychord-source trial rejected the candidate architecture reasoning procedure as a default. Both arms passed every sealed correctness checkpoint, while the Projector arm used 183.9 percent more input-plus-output model tokens and took 134.4 percent longer in the main workload. This result applies to the tested procedure and workload. It does not reject retained project meaning or the deterministic product improvements evaluated separately.
+
 <details>
 <summary>Structured record details</summary>
 

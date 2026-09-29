@@ -17,7 +17,7 @@ tags = [ "integrity", "host-execution", "cross-platform" ]
 
 # Host-executed validation integrity
 
-Projector executes operations and validators through the host's configured permissions. It must preserve exact reviewed mutation authority, validator provenance and bytes, actual source/state/version checks, bounded time and output, caller cancellation, observed results, and journaled recovery. Native Windows uses its Node runner and direct WSL uses its Linux Node runner; Projector requires neither a WSL bridge nor its own confinement backend. Report host permissions and unsupported controls honestly. An ordinary process is not a security boundary, and hashes or pinned inputs do not prevent malicious same-user interference.
+Projector executes operations and validators through the host's configured permissions. It must preserve exact reviewed mutation authority, validator provenance and bytes, actual source/state/version checks, explicit caller-requested time and output limits, caller cancellation, observed results, and journaled recovery. Native Windows uses its Node runner and direct WSL uses its Linux Node runner; Projector requires neither a WSL bridge nor its own confinement backend. Report host permissions and unsupported controls honestly. An ordinary process is not a security boundary, and hashes or pinned inputs do not prevent malicious same-user interference.
 
 <details>
 <summary>Structured record details</summary>

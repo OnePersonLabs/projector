@@ -43,7 +43,6 @@ import { runObservationTask } from "../observation/task-runner.js";
 import { observationHostSignal } from "../observation/deadline-signal.js";
 import type { KnowledgeComputeHost, KnowledgeHostRequest } from "../observation/knowledge-host.js";
 import type { RepositoryObservationData } from "../observation/tasks.js";
-import { assertKnowledgeContextResponseSize } from "./transport.js";
 import { inspectRepositoryContinuation } from "../coverage/continuation.js";
 import {
   KNOWLEDGE_API_VERSION,
@@ -254,6 +253,15 @@ export class RepositoryKnowledgeService {
     return new RepositoryKnowledgeService(repositoryRoot, await KnowledgeContextStore.create(repositoryRoot), typeof input === "string" ? {} : input);
   }
 
+  /** Read authenticated retained proof without compiling or refreshing context. */
+  async inspectContext(contextId: string, signal?: AbortSignal): Promise<KnowledgeContextResult> {
+    if (this.store === undefined) throw new Error("knowledge context inspection requires a repository-backed service");
+    signal?.throwIfAborted();
+    const context = await withObservationScope(signal === undefined ? {} : { signal }, () => this.store!.read(contextId));
+    signal?.throwIfAborted();
+    return context;
+  }
+
   async context(input: KnowledgeContextRequest, options: { readonly observation?: ChangeRepositoryObservation } = {}): Promise<KnowledgeContextResult> {
     return withObservationScope({ ...(input.signal === undefined ? {} : { signal: input.signal }) }, async (scope) => {
       if (options.observation === undefined) {
@@ -289,7 +297,6 @@ export class RepositoryKnowledgeService {
   static async computeContext(input: Omit<KnowledgeContextRequest, "signal">, observation: KnowledgeContextObservation, host: KnowledgeDecisionHost, computeHost: KnowledgeComputeHost, derivedBudget?: DerivedObservationBudget, graph?: KnowledgeContextGraph): Promise<{ result: KnowledgeContextResult; writes: DerivedCacheWrite[] }> {
     const service = new RepositoryKnowledgeService(observation.repositoryRoot, undefined, host, computeHost, derivedBudget);
     const result = await service.compileContext(input, observation, contextGraph(observation, host, derivedBudget, graph));
-    assertKnowledgeContextResponseSize(result, input.view ?? "agent");
     return { result, writes: result.persisted ? [knowledgeContextWrite(result)] : [] };
   }
 

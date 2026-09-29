@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { ChangeProposalSchema, ProjectorOperationInputSchemas, type ProjectorOperation, type ProjectorOperationError } from "@projector/core";
-import { RepositoryKnowledgeService } from "@projector/control-plane";
 import { CanonicalFileRepository } from "@projector/runtime";
 import { z } from "zod";
 
@@ -16,7 +15,7 @@ export const publicCommandHelp = `Projector: retrieve meaning, change with Codex
   projector accept proposal.json [--context CONTEXT] [--request "reason"]
   projector accept --apply CHANGE --hash HASH
   projector resume CONTEXT|CHANGE|APPROVAL
-  projector inspect ID
+  projector inspect ID [--cursor CURSOR] [--limit N] [--full]
   projector inspect --representations
   projector recover APPROVAL | --access | --representations
   projector evaluate options.json
@@ -31,7 +30,7 @@ export const publicCommandHelp = `Projector: retrieve meaning, change with Codex
   projector code status [RUN] | wait RUN | cancel RUN
 
 Use --root PATH for another repository, --json for exact machine results.
-Use --timeout-ms N for a bounded observation timeout per operation (default 60000).
+Use --timeout-ms N to request an explicit bounded observation timeout.
 Accept first previews a canonical change. Apply names that exact reviewed plan.
 Resume only inspects and restores authenticated context. Recovery never applies.
 Audit observes bounded repository evidence and proposes repair routes. It never applies repairs.
@@ -60,7 +59,7 @@ function argumentsFor(args: readonly string[]) {
       if (flags.has(argument)) throw new Error(`Duplicate option ${argument}`);
       flags.set(argument, ["true"]); continue;
     }
-    if (!["--root", "--entity", "--target", "--incoming", "--base", "--result", "--budget", "--context", "--request", "--apply", "--hash", "--scope", "--question-offset", "--timeout-ms", "--assess"].includes(argument)) throw new Error(`Unknown option ${argument}`);
+    if (!["--root", "--entity", "--target", "--incoming", "--base", "--result", "--budget", "--context", "--request", "--apply", "--hash", "--scope", "--question-offset", "--timeout-ms", "--assess", "--cursor", "--limit"].includes(argument)) throw new Error(`Unknown option ${argument}`);
     const value = args[++i];
     if (value === undefined || value.startsWith("--")) throw new Error(`${argument} requires a value`);
     const previous = flags.get(argument) ?? [];
@@ -412,7 +411,7 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
   const command = values.shift();
   if (command === undefined || command === "help" || flags.has("--help")) return { exitCode: 0, output: { help: publicCommandHelp }, text: publicCommandHelp };
   const repositoryRoot = resolve(input.cwd, one("--root") ?? ".");
-  const allowed: Record<string,string[]> = { init: [], context: ["--entity","--target","--budget","--full"], check: [], integration: ["--target","--incoming","--base","--result"], audit: ["--scope","--context","--question-offset"], accept: ["--context","--request","--apply","--hash"], resume: [], inspect: ["--representations"], recover: ["--access","--representations"], verify: ["--inspect","--recover","--builtin","--assess","--target"], generate: ["--inspect","--recover"], evaluate: [], code: [] };
+  const allowed: Record<string,string[]> = { init: [], context: ["--entity","--target","--budget","--full"], check: [], integration: ["--target","--incoming","--base","--result"], audit: ["--scope","--context","--question-offset"], accept: ["--context","--request","--apply","--hash"], resume: [], inspect: ["--representations","--cursor","--limit","--full"], recover: ["--access","--representations"], verify: ["--inspect","--recover","--builtin","--assess","--target"], generate: ["--inspect","--recover"], evaluate: [], code: [] };
   if (!(command in allowed)) throw new Error(`Unknown command ${command}. Use --help.`);
   for (const flag of flags.keys()) if (!["--root","--json","--help","--timeout-ms",...allowed[command]!].includes(flag)) throw new Error(`${flag} does not apply to ${command}`);
   const timeoutMs = one("--timeout-ms") === undefined ? undefined : Number(one("--timeout-ms"));
@@ -549,11 +548,22 @@ export async function runPublicCommand(args: readonly string[], input: { runner:
       return { exitCode: 6, output, text: flags.has("--json") ? `${JSON.stringify(output, null, 2)}\n` : renderPublicResult(command, output) };
     }
   } else if (command === "inspect") {
-    if (flags.has("--representations")) { exactValues(0); output = await call("representation.pending", {}); }
+    const paging = flags.has("--cursor") || flags.has("--limit");
+    if (flags.has("--representations")) {
+      exactValues(0);
+      if (paging || flags.has("--full")) throw new Error("--cursor, --limit and --full require a retained context ID");
+      output = await call("representation.pending", {});
+    }
     else {
     exactValues(1);
     const anchor = values[0]!;
-    if (anchor.startsWith("knowledge_context_")) output = await (await RepositoryKnowledgeService.create(repositoryRoot)).read(anchor);
+    if ((paging || flags.has("--full")) && !anchor.startsWith("knowledge_context_")) throw new Error("--cursor, --limit and --full require a retained context ID");
+    if (anchor.startsWith("knowledge_context_")) {
+      if (paging && flags.has("--full")) throw new Error("--full does not accept --cursor or --limit");
+      const limit = one("--limit") === undefined ? undefined : Number(one("--limit"));
+      if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)) throw new Error("--limit requires an integer from 1 to 100");
+      output = await call("context.inspect", ProjectorOperationInputSchemas["context.inspect"].parse({ contextId: anchor, ...(one("--cursor") === undefined ? {} : { cursor: one("--cursor") }), ...(limit === undefined ? {} : { limit }), ...(flags.has("--full") ? { view: "full" } : {}) }));
+    }
     else if (anchor.startsWith("semantic_change_")) output = await call("representation.inspect", { changeSelector: anchor, view: "content" });
     else if (anchor.startsWith("lifecycle_approval_")) output = await call("cleanup", { approvalSelector: anchor, evidenceLimit: 50 });
     else {

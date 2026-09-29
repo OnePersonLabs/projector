@@ -97,6 +97,28 @@ describe("public workflow", () => {
     await expect(runPublicCommand(["recover", "--access", "--representations"], { runner: fixture.host, cwd: process.cwd() })).rejects.toThrow("one recovery route");
   });
 
+  it("pages an exact retained context through the operation runner", async () => {
+    const contextId = "knowledge_context_0123456789abcdef0123456789abcdef";
+    const fixture = runner([{ view: "detail", contextId, disclosure: { total: 5, included: 2, omitted: 3 }, nextCursor: "next" }, { view: "detail", contextId, offset: 2, records: [] }, { id: contextId, request: "saved" }]);
+    const first = await runPublicCommand(["inspect", contextId, "--limit", "2"], { runner: fixture.host, cwd: process.cwd() });
+    expect(first.output).toMatchObject({ nextCursor: "next" });
+    expect(first.text).toContain('"nextCursor": "next"');
+    await runPublicCommand(["inspect", contextId, "--cursor", "next", "--limit", "2"], { runner: fixture.host, cwd: process.cwd() });
+    const full = await runPublicCommand(["inspect", contextId, "--full"], { runner: fixture.host, cwd: process.cwd() });
+    expect(full.output).toMatchObject({ id: contextId, request: "saved" });
+    expect(fixture.calls).toEqual([
+      expect.objectContaining({ operation: "context.inspect", input: { contextId, limit: 2 } }),
+      expect.objectContaining({ operation: "context.inspect", input: { contextId, cursor: "next", limit: 2 } }),
+      expect.objectContaining({ operation: "context.inspect", input: { contextId, view: "full" } }),
+    ]);
+    await expect(runPublicCommand(["inspect", contextId, "--limit", "0"], { runner: fixture.host, cwd: process.cwd() })).rejects.toThrow("--limit");
+    await expect(runPublicCommand(["inspect", contextId, "--limit", "101"], { runner: fixture.host, cwd: process.cwd() })).rejects.toThrow("--limit");
+    await expect(runPublicCommand(["inspect", "requirement:existing", "--cursor", "next"], { runner: fixture.host, cwd: process.cwd() })).rejects.toThrow("retained context ID");
+    await expect(runPublicCommand(["inspect", "--representations", "--limit", "2"], { runner: fixture.host, cwd: process.cwd() })).rejects.toThrow("retained context ID");
+    await expect(runPublicCommand(["inspect", contextId, "--full", "--limit", "2"], { runner: fixture.host, cwd: process.cwd() })).rejects.toThrow("does not accept");
+    expect(fixture.calls).toHaveLength(3);
+  });
+
   it("connects meaning to relevance, uncertainty and targeted continuation without duplicating sections", () => {
     const text = renderPublicResult("context", {
       id: "knowledge_context_navigation", request: "Change the player", view: "agent",

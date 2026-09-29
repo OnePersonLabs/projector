@@ -28,4 +28,8 @@ Canonical records under `.projector/` are the source of accepted meaning. Runtim
 
 Check behavior against source, tests, generated contracts, and installed workflow evidence. Use exact existing identifiers and invocation forms. The prose checks are advisory; review their findings in context. See the [documentation guide](documentation-guide.md) for page roles, stories, diagrams, and link conventions.
 
+## Experiments
+
+The [architecture reasoning workflow trial](experiments/architecture-reasoning-trial-2026-09-29.md) records the paired Psychord-source evaluation used to reject an expensive default reasoning procedure. Keep experiment claims scoped to their fixture, evaluator, and declared adoption rule.
+
 Continue with the [CLI reference](reference/cli.md) for the public interface or return to the [documentation home](README.md).

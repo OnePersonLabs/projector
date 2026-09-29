@@ -20,6 +20,7 @@ import {
   type TransformResult,
   type ValidationResult,
 } from "@projector/core";
+import { qualifiesIndependentValidation } from "../invalidation/index.js";
 
 export * from "./compiler.js";
 
@@ -111,6 +112,11 @@ export interface CompletionAssessment {
   readonly unavailableActions: readonly string[];
   readonly availableArtifacts: readonly string[];
   readonly cleanWorkingTree: boolean;
+  /** Evidence resolved by the trusted assessment adapter from observed validator executions. */
+  readonly resolvedIndependentValidations?: ReadonlyArray<{
+    readonly validatorId: string;
+    readonly evidenceIds: readonly EntityId[];
+  }>;
 }
 
 export interface CompletionAssessmentPort {
@@ -262,6 +268,12 @@ function normalizeCompletionAssessment(assessment: CompletionAssessment): Comple
     unavailableActions: sortedUnique(assessment.unavailableActions),
     availableArtifacts: sortedUnique(assessment.availableArtifacts),
     cleanWorkingTree: assessment.cleanWorkingTree,
+    ...(assessment.resolvedIndependentValidations === undefined ? {} : {
+      resolvedIndependentValidations: [...assessment.resolvedIndependentValidations].map(({ validatorId, evidenceIds }) => ({
+        validatorId,
+        evidenceIds: sortedUnique(evidenceIds),
+      })).sort((left, right) => compareStrings(left.validatorId, right.validatorId)),
+    }),
   };
 }
 
@@ -289,10 +301,23 @@ function completionContractReasons(
       reasons.push(`required validation ${validatorId} is below ${contract.minimumValidationAssurance} assurance`);
     }
   }
-  if (contract.requireIndependentValidation && !passed.some((validation) =>
-    validation.evidenceLane !== "same-packet-agent"
-    && validation.independenceGroup !== "deterministic-transform")) {
-    reasons.push("completion requires an independent passing validation");
+  if (contract.requireIndependentValidation) {
+    const requiredValidatorIds = new Set([...contract.requiredValidators, ...capsule.requiredValidations]);
+    const minimumIndependentAssurance = assuranceRank[contract.minimumValidationAssurance] < assuranceRank.strong
+      ? "strong" : contract.minimumValidationAssurance;
+    const resolved = assessment.resolvedIndependentValidations ?? [];
+    const resolvedResult = (validation: ValidationResult): boolean => resolved.some((evidence) =>
+      evidence.validatorId === validation.validatorId
+      && evidence.evidenceIds.length > 0
+      && canonicalJson(sortedUnique(evidence.evidenceIds)) === canonicalJson(sortedUnique(validation.evidenceIds)));
+    const independent = validations.filter((validation) =>
+      requiredValidatorIds.has(validation.validatorId) && resolvedResult(validation));
+    if (!independent.some((validation) => qualifiesIndependentValidation(validation, minimumIndependentAssurance))) {
+      reasons.push("completion requires an independent passing validation");
+    }
+    for (const validation of independent.filter(({ status }) => status === "failed" || status === "blocked")) {
+      reasons.push(`independent validation ${validation.validatorId} ${validation.status}: ${validation.summary}`);
+    }
   }
 
   const unitStates = new Map<EntityId, CompletionAssessment["unitStates"][number]["state"]>();
