@@ -128,6 +128,32 @@ describe("owned release subprocesses", () => {
       .rejects.toThrow(/100ms deadline/u);
   });
 
+  it("accepts an unlimited deadline while preserving explicit cancellation and finite deadline validation", async () => {
+    expect(await executeReleaseCommand(process.execPath, ["-e", "process.stdout.write('done')"], { timeout: null }))
+      .toMatchObject({ stdout: "done" });
+    const controller = new AbortController();
+    const running = executeReleaseCommand(process.execPath, ["-e", "setInterval(()=>{},1000)"], { timeout: null, signal: controller.signal });
+    controller.abort(new Error("cancelled without deadline"));
+    await expect(running).rejects.toThrow("cancelled without deadline");
+    await expect(executeReleaseCommand(process.execPath, ["-e", ""], { timeout: 0 })).rejects.toThrow(/positive integers/u);
+  });
+
+  it("streams output beyond the former ten megabyte capture bound without retaining it in memory", async () => {
+    let stdoutBytes = 0;
+    let stderr = "";
+    const result = await executeReleaseCommand(process.execPath, ["-e", "process.stdout.write(Buffer.alloc(11_000_000, 120)); process.stderr.write('diagnostic')"], {
+      timeout: null,
+      captureOutput: false,
+      onStdoutChunk: (chunk: Buffer) => { stdoutBytes += chunk.length; },
+      onStderrChunk: (chunk: Buffer) => { stderr += chunk.toString("utf8"); },
+    });
+    expect(stdoutBytes).toBe(11_000_000);
+    expect(stderr).toBe("diagnostic");
+    expect(result.stdout).toBe("");
+    await expect(executeReleaseCommand(process.execPath, ["-e", ""], { captureOutput: false }))
+      .rejects.toThrow(/requires stdout and stderr sinks/u);
+  });
+
   it("terminates an output-flooding child at the configured bound", async () => {
     await expect(executeReleaseCommand(process.execPath, ["-e", "setInterval(()=>process.stdout.write('x'.repeat(4096)),1)"], { maxBuffer: 1024 }))
       .rejects.toThrow(/output.*bound/iu);

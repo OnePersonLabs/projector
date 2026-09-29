@@ -30,12 +30,14 @@ export function isReleaseCommandCleanupUnconfirmed(error) {
   return false;
 }
 
-/** Cancellation confirms tree cleanup and pipe closure, or explicitly reports uncertainty after a finite grace. */
+/** Caller-requested bounds and cancellation confirm tree cleanup and pipe closure, or explicitly report uncertainty after a finite grace. */
 export async function executeReleaseCommand(file, args, options = {}) {
   options.signal?.throwIfAborted();
-  const maxBuffer = options.maxBuffer ?? 10_000_000;
-  const timeout = options.timeout ?? 300_000;
-  if (!Number.isSafeInteger(maxBuffer) || maxBuffer <= 0 || !Number.isSafeInteger(timeout) || timeout <= 0) throw new Error("Release command output and time bounds must be positive integers");
+  const captureOutput = options.captureOutput !== false;
+  const maxBuffer = options.maxBuffer ?? null;
+  const timeout = options.timeout ?? null;
+  if ((maxBuffer !== null && (!Number.isSafeInteger(maxBuffer) || maxBuffer <= 0)) || (timeout !== null && (!Number.isSafeInteger(timeout) || timeout <= 0))) throw new Error("Release command output and finite time bounds must be positive integers");
+  if (!captureOutput && (typeof options.onStdoutChunk !== "function" || typeof options.onStderrChunk !== "function")) throw new Error("Uncaptured release command output requires stdout and stderr sinks");
   return new Promise((resolve, reject) => {
     const started = performance.now();
     const supervised = process.platform === "win32";
@@ -44,6 +46,7 @@ export async function executeReleaseCommand(file, args, options = {}) {
       supervised ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", windowsSupervisor, payload] : args,
       { cwd: options.cwd, env: options.env, windowsHide: true, detached: !supervised, stdio: ["ignore", "pipe", "pipe"] });
     const stdout = [], stderr = [];
+    let stderrTail = Buffer.alloc(0);
     let bytes = 0;
     let failure;
     let settled = false;
@@ -51,7 +54,7 @@ export async function executeReleaseCommand(file, args, options = {}) {
     let exitCode;
     let cleanupComplete = false;
     let cleanupTimer;
-    const output = () => ({ stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") });
+    const output = () => ({ stdout: captureOutput ? Buffer.concat(stdout).toString("utf8") : "", stderr: captureOutput ? Buffer.concat(stderr).toString("utf8") : stderrTail.toString("utf8") });
     const releaseListeners = () => {
       clearTimeout(timer);
       clearTimeout(cleanupTimer);
@@ -104,19 +107,21 @@ export async function executeReleaseCommand(file, args, options = {}) {
       })().catch(unconfirmed);
     };
     const abort = () => stop(options.signal.reason ?? new Error("Release command cancelled"));
-    const timer = setTimeout(() => stop(new Error(`Release command exceeded its ${timeout}ms deadline`)), timeout);
+    const timer = timeout === null ? undefined : setTimeout(() => stop(new Error(`Release command exceeded its ${timeout}ms deadline`)), timeout);
     const slowWarning = setTimeout(() => console.warn(JSON.stringify({ event: "slow-release-command", executable: file, elapsedMs: 30_000 })), 30_000);
     slowWarning.unref();
     options.signal?.addEventListener("abort", abort, { once: true });
-    const collect = (chunks, chunk, onChunk) => {
+    const collect = (chunks, chunk, onChunk, onChunkBytes, isStderr) => {
       if (settled || failure !== undefined) return;
-      bytes += chunk.length;
-      if (bytes > maxBuffer) { stop(new Error(`Release command output exceeded its ${maxBuffer}-byte bound`)); return; }
-      chunks.push(chunk);
-      try { onChunk?.(chunk.toString("utf8")); } catch (error) { stop(error); }
+      if (captureOutput) {
+        bytes += chunk.length;
+        if (maxBuffer !== null && bytes > maxBuffer) { stop(new Error(`Release command output exceeded its ${maxBuffer}-byte bound`)); return; }
+        chunks.push(chunk);
+      } else if (isStderr) stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-8_192);
+      try { onChunkBytes?.(chunk); onChunk?.(chunk.toString("utf8")); } catch (error) { stop(error); }
     };
-    child.stdout.on("data", (chunk) => collect(stdout, chunk, options.onStdout));
-    child.stderr.on("data", (chunk) => collect(stderr, chunk));
+    child.stdout.on("data", (chunk) => collect(stdout, chunk, options.onStdout, options.onStdoutChunk, false));
+    child.stderr.on("data", (chunk) => collect(stderr, chunk, undefined, options.onStderrChunk, true));
     child.once("error", stop);
     child.once("close", (code) => {
       closed = true;

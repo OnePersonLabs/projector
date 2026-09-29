@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parsePushInput, selectPushChecks, verifyPush } from "./local-pre-push.mjs";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, writeFile, mkdir, readFile, rm, copyFile, chmod, access } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir, readFile, readdir, rm, copyFile, chmod, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,6 +52,29 @@ describe("actual committed trees and local remote lifecycle", () => {
         } });
       expect(seen).toEqual([tip, base]); expect(git(["status", "--porcelain=v1"])).toBe(before);
       expect(git(["write-tree"])).toBe(index); expect(git(["rev-parse", "HEAD"])).toBe(tip);
+    });
+  });
+  it("records each gate stage and runs all hook commands without an injected deadline", async () => {
+    await fixture(async ({ root, remote, base, tip }) => {
+      const stages: Array<{ event: string; stage: string; commit?: string; status: string; durationMs: number }> = [];
+      const checkOptions: Array<{ timeout?: number | null; captureOutput?: boolean }> = [];
+      const run = async (file: string, args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv; timeout?: number | null; captureOutput?: boolean }) => {
+        expect(options.timeout).toBeNull();
+        if (file === "git") return runner(file, args, options);
+        checkOptions.push(options);
+        return { stdout: "", stderr: "" };
+      };
+      await verifyPush({ root, remote, input: `HEAD ${tip} refs/heads/main ${base}\n`, run, onStage: (stage: typeof stages[number]) => stages.push(stage) });
+      expect(stages.map(({ stage }) => stage)).toEqual(["push gate", "setup", "checkout", "install", "build", "verify", "release-check", "push gate"]);
+      expect(stages.every(({ event, status, durationMs }) => event === "pre-push-stage" && status === "passed" && Number.isSafeInteger(durationMs) && durationMs >= 0)).toBe(true);
+      expect(stages.filter(({ commit }) => commit !== undefined).every(({ commit }) => commit === tip)).toBe(true);
+      expect(checkOptions).toHaveLength(4);
+      expect(checkOptions.every(({ timeout }) => timeout === null)).toBe(true);
+      expect(checkOptions.every(({ captureOutput }) => captureOutput === false)).toBe(true);
+      const failures: typeof stages = [];
+      await expect(verifyPush({ root, remote, input: `HEAD ${tip} refs/heads/main ${base}\n`, run: runner,
+        runChecks: async () => { throw new Error("gate failed"); }, onStage: (stage: typeof stages[number]) => failures.push(stage) })).rejects.toThrow("gate failed");
+      expect(failures.at(-1)).toMatchObject({ event: "pre-push-stage", stage: "checks", commit: tip, status: "failed" });
     });
   });
   it("blocks gate failures and destination movement; deletion runs no checks", async () => {
@@ -174,6 +197,17 @@ describe("actual committed trees and local remote lifecycle", () => {
       expect(records.filter((record) => record.commit === tip).map((record) => record.command)).toEqual(["install", "build", "verify", "release:check"]);
       expect(records.filter((record) => record.commit === merged).map((record) => record.command)).toEqual(["install", "build", "verify", "release:check"]);
       expect(records.filter((record) => record.commit === merged).every((record) => record.source === "committed plus change 2")).toBe(true);
+      for (const [repository, commit] of [[root, tip], [peer, merged]] as const) {
+        const logDirectory = join(repository, ".temp", "local-pre-push");
+        const logs = (await readdir(logDirectory)).filter((name) => name.endsWith(".log"));
+        expect(logs).toHaveLength(1);
+        const stages = (await readFile(join(logDirectory, logs[0]), "utf8")).split("\n")
+          .filter((line) => line.startsWith('{"event":"pre-push-stage"'))
+          .map((line) => JSON.parse(line));
+        expect(stages.map(({ stage }: { stage: string }) => stage)).toEqual(["push gate", "setup", "checkout", "install", "build", "verify", "release-check", "push gate"]);
+        expect(stages.every(({ durationMs, status }: { durationMs: number; status: string }) => Number.isSafeInteger(durationMs) && durationMs >= 0 && status === "passed")).toBe(true);
+        expect(stages.filter(({ commit: stageCommit }: { commit?: string }) => stageCommit !== undefined).every(({ commit: stageCommit }: { commit: string }) => stageCommit === commit)).toBe(true);
+      }
       expect(git(["rev-parse", "refs/heads/main"], remote)).toBe(merged);
     });
   });

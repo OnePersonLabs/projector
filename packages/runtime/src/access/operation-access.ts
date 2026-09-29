@@ -428,8 +428,16 @@ async function readAccessState(accessPath: string, permitAbandoned = false, perm
   const now = Date.now();
   for (const claim of allClaims) {
     const heartbeat = new Date(claim.heartbeatAt).getTime();
-    if (!permitAbandoned && (heartbeat > now + abandonedClaimAfterMs || now - heartbeat > abandonedClaimAfterMs)) {
-      throw corrupt(`Operation access claim ${claim.requestId} has an abandoned or invalid heartbeat and requires recovery`);
+    if (!permitAbandoned) {
+      if (heartbeat > now + abandonedClaimAfterMs) {
+        throw corrupt(`Operation access claim ${claim.requestId} has an invalid future heartbeat and requires recovery`);
+      }
+      // A paused event loop or suspended host can miss heartbeat intervals while
+      // the owner still holds the claim. Only a dead owner makes expiry abandoned.
+      // PID reuse can keep a dead claim held; explicit recovery remains fail-closed.
+      if (now - heartbeat > abandonedClaimAfterMs && !processIsAlive(claim.processId)) {
+        throw corrupt(`Operation access claim ${claim.requestId} has an abandoned heartbeat and requires recovery`);
+      }
     }
   }
   const requestIds = new Set<string>();

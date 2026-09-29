@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OperationAccessError, recoverAbandonedProjectOperationAccess, withProjectOperationAccess, tryWithProjectExclusiveAccess } from "./operation-access.js";
 
@@ -215,6 +215,26 @@ describe("withProjectOperationAccess", () => {
     await expect(fileExists(claimPath)).resolves.toBe(false);
     await delay(350);
     await expect(fileExists(claimPath)).resolves.toBe(false);
+  });
+
+  it("keeps a live claim held and renews it after the heartbeat interval expires", async () => {
+    const root = await readyProject();
+    const start = Date.now();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      await withProjectOperationAccess(root, { operation: "slow-inspection", mode: "shared" }, async (access) => {
+        vi.setSystemTime(start + 31_000);
+        expect(await tryWithProjectExclusiveAccess(root, "maintenance", async () => "unexpected"))
+          .toEqual({ acquired: false });
+        await access.assertOwned();
+        const holders = join(root, ".projector", "runtime", "operation-access", "holders");
+        const [name] = await readdir(holders);
+        const refreshed = JSON.parse(await readFile(join(holders, name!), "utf8")) as { heartbeatAt: string };
+        expect(new Date(refreshed.heartbeatAt).getTime()).toBeGreaterThanOrEqual(start + 31_000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("removes only expired claims from processes that have exited", async () => {

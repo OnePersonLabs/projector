@@ -58,7 +58,7 @@ export interface CodeWorkerRequest {
   readonly input: unknown;
   readonly descriptor?: IndexedObservationDescriptor;
 }
-const engineVersion = "projector.code-engine/v1";
+const engineVersion = "projector.code-engine/v2";
 interface CodeOperationMetrics {
   nativeUpdates: number;
   syntaxUpdates: number;
@@ -76,6 +76,10 @@ const compilers = new Map<string, TypeScriptCodeProvider>();
 const syntax = new TreeSitterCodeProvider();
 const sourceExtensions =
   /\.(?:[cm]?[jt]sx?|py|pyi|rs|[ch](?:pp|xx|\+\+)?|cc|hh|java|kt|kts|scala|sc|cs|vb|go|rb|php|swift|sh|bash|vue|svelte)$/iu;
+const bundledRuntimeDependency =
+  /^plugins\/projector-v3\/runtime\/projector\/node_modules\//u;
+const isFirstPartyCodePath = (path: string): boolean =>
+  !bundledRuntimeDependency.test(path);
 const unique = (values: readonly string[]): string[] =>
   [...new Set(values)].sort();
 function compiler(key: string): TypeScriptCodeProvider {
@@ -315,6 +319,7 @@ async function publishIndexLeased(
   const observed = await observedInputs(descriptor);
   try {
   const inventory = observed.entries;
+  const firstPartyInputs = inventory.filter((entry) => isFirstPartyCodePath(entry.path));
   const admittedPaths = new Set(inventory.map((entry) => entry.path));
   const canRetainPrior =
     prior !== undefined &&
@@ -363,7 +368,7 @@ async function publishIndexLeased(
   if (input.provider === "native") {
     const configurations =
       input.project === undefined
-        ? discoverTypeScriptProjects(inventory)
+        ? discoverTypeScriptProjects(firstPartyInputs)
         : [input.project];
     for (const configPath of configurations.length === 0
       ? [undefined]
@@ -372,7 +377,7 @@ async function publishIndexLeased(
       countMetric("nativeUpdates");
       const sink = bufferedSink(ordinal++);
       snapshots.push(metadataOnly(
-        compiler(key).update(inventory, {
+        compiler(key).update(firstPartyInputs, {
           repositoryRoot: request.repositoryRoot,
           binding: {
             ...binding,
@@ -388,20 +393,29 @@ async function publishIndexLeased(
   if (input.provider === "native" || input.provider === "syntax") {
     if (input.provider === "native" && prior !== undefined && canRetainPrior) {
       const sink = bufferedSink(ordinal++);
-      let retained = false;
+      const retainedPaths = new Set<string>();
       for (const path of iteratePaths(store, expected!)) {
+        if (!isFirstPartyCodePath(path)) continue;
         if (store.contributionHasPath(stageId, path)) continue;
         const partition = store.partition(expected!, path)!;
         if ([...partition.symbols, ...partition.edges].some((fact) =>
           fact.provenance.provider === "projector.scip" || fact.provenance.provider === "projector.semanticdb")) {
           sink.put(partition);
-          retained = true;
+          retainedPaths.add(path);
         }
       }
       sink.flush();
-      if (retained) snapshots.push({ ...prior, partitions: [] });
+      if (retainedPaths.size > 0) snapshots.push({
+        ...prior,
+        binding: {
+          ...prior.binding,
+          sourceInputs: prior.binding.sourceInputs.filter((source) => retainedPaths.has(source.path)),
+          configInputs: prior.binding.configInputs.filter((config) => isFirstPartyCodePath(config.path)),
+        },
+        partitions: [],
+      });
     }
-    const fallback = inventory.filter(
+    const fallback = firstPartyInputs.filter(
       (entry) => sourceExtensions.test(entry.path) && !store.contributionHasPath(stageId, entry.path),
     );
     if (fallback.length > 0) {

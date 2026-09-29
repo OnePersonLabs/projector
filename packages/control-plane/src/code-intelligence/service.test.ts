@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { codeInputHash } from "@projector/analyzers";
-import { resolveDerivedCachePath, withObservationScope } from "@projector/runtime";
+import { resolveDerivedCachePath, SqliteCodeStore, withObservationScope } from "@projector/runtime";
 import { ResidentObservationWorkerPool, withResidentObservationWorkerPool } from "../observation/resident-pool.js";
 import { executeCodeOperation, shutdownCodeIndexRuns } from "./service.js";
 import { executeCodeTestReplay } from "./test-replay.js";
@@ -80,6 +80,79 @@ describe("code index host lifecycle", () => {
     expect(query.query.symbols.map(symbol => symbol.name)).toContain("clock");
     expect(query.freshness).toBe("current");
   });
+
+  it("keeps bundled runtime dependencies out of syntax fallback", async () => {
+    const root = await fixture();
+    const dependency = join(root, "plugins/projector-v3/runtime/projector/node_modules/example");
+    await mkdir(dependency, { recursive: true });
+    await writeFile(join(dependency, "package.json"), '{"name":"example","type":"module","main":"index.js"}\n');
+    await writeFile(join(dependency, "index.js"), "export function bundledRuntimeOnly() { return 1; }\n");
+    await writeFile(join(root, "src/first-party.js"),
+      "export function firstPartyJs() { return 2; }\n");
+    await writeFile(join(root, "plugins/projector-v3/runtime/projector/entry.js"),
+      'import { bundledRuntimeOnly } from "example";\nexport const runtimeEntry = bundledRuntimeOnly();\n');
+    await writeFile(join(root, "tsconfig.json"),
+      '{"compilerOptions":{"allowJs":true,"module":"NodeNext","moduleResolution":"NodeNext","target":"ES2022"},"include":["src","plugins/projector-v3/runtime/projector/entry.js"]}\n');
+    await run("git", ["add", "."], { cwd: root });
+    await run("git", ["-c", "user.name=Projector Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "javascript sources"], { cwd: root });
+
+    const signal = new AbortController().signal;
+    const options = { signal, environment: process.env };
+    const execute = (operation: Parameters<typeof executeCodeOperation>[1], input: unknown) =>
+      withObservationScope({ signal }, () => executeCodeOperation(root, operation, input, options));
+    const indexed = await execute("code.index", { provider: "syntax", timeoutMs: 30_000 }) as { state: string };
+    expect(indexed.state, JSON.stringify(indexed)).toBe("published");
+    const firstParty = await execute("code.query", { kind: "symbols", name: "firstPartyJs" }) as { query: { symbols: { name: string; definition: { path: string } }[] } };
+    expect(firstParty.query.symbols).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "firstPartyJs", definition: expect.objectContaining({ path: "src/first-party.js" }) }),
+    ]));
+    const bundled = await execute("code.query", { kind: "symbols", name: "bundledRuntimeOnly" }) as { query: { symbols: unknown[] } };
+    expect(bundled.query.symbols).toEqual([]);
+
+    const native = await execute("code.index", { provider: "native", timeoutMs: 30_000 }) as { state: string };
+    expect(native.state, JSON.stringify(native)).toBe("published");
+    const store = await SqliteCodeStore.open(root);
+    try {
+      const head = store.head()!;
+      expect(store.partition(head, "plugins/projector-v3/runtime/projector/node_modules/example/index.js")).toBeUndefined();
+      expect(store.partition(head, "src/first-party.js")).toBeDefined();
+      expect(store.partition(head, "plugins/projector-v3/runtime/projector/entry.js")).toBeDefined();
+      expect(store.manifest(head)?.binding.resolutionInputs.some((entry) =>
+        entry.path === "plugins/projector-v3/runtime/projector/node_modules/example/package.json",
+      )).toBe(true);
+    } finally { store.close(); }
+  }, 60_000);
+
+  it("rebuilds a native index published under the previous admission policy", async () => {
+    const root = await fixture();
+    const signal = new AbortController().signal;
+    const options = { signal, environment: process.env };
+    const index = () => withObservationScope({ signal }, () =>
+      executeCodeOperation(root, "code.index", { provider: "native", timeoutMs: 30_000 }, options)) as Promise<{ state: string; generation: string }>;
+    const first = await index();
+    expect(first.state, JSON.stringify(first)).toBe("published");
+
+    const store = await SqliteCodeStore.open(root);
+    let previousGeneration: string;
+    try {
+      const previous = store.manifest(first.generation)!;
+      expect(previous.providerVersion).toBe("projector.code-engine/v2");
+      previousGeneration = store.publish(first.generation, {
+        ...previous,
+        providerVersion: "projector.code-engine/v1",
+        partitions: store.paths(first.generation, 1000).paths.map((path) => store.partition(first.generation, path)!),
+      });
+      expect(previousGeneration).not.toBe(first.generation);
+    } finally { store.close(); }
+
+    const rebuilt = await index();
+    expect(rebuilt.state, JSON.stringify(rebuilt)).toBe("published");
+    expect(rebuilt.generation).not.toBe(previousGeneration);
+    const updated = await SqliteCodeStore.open(root);
+    try {
+      expect(updated.manifest(rebuilt.generation)?.providerVersion).toBe("projector.code-engine/v2");
+    } finally { updated.close(); }
+  }, 60_000);
 
   it("returns a resident run ID and allows a later wait without starting another build", async () => {
     const root = await fixture();

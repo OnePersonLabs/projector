@@ -1,5 +1,6 @@
 import { copyFile, mkdir, mkdtemp, readFile, writeFile, lstat, rename, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -26,7 +27,8 @@ await writeFile(join(isolated,"package.json"),JSON.stringify({name:"projector-in
 // pnpm lifecycle environments export the host allowlist as an npm CLI policy.
 // npm rejects that policy for project installs; this check disables all scripts.
 const installEnvironment=Object.fromEntries(Object.entries(env).filter(([key])=>!/^npm_config_allow[-_]scripts$/iu.test(key)));
-await executeReleaseCommand(npm.executable,npm.arguments,{cwd:isolated,env:installEnvironment,timeout:120_000,maxBuffer:8*1024*1024});
+const forward=(fd,chunk)=>{for(let offset=0;offset<chunk.length;)offset+=writeSync(fd,chunk,offset,chunk.length-offset);};
+await executeReleaseCommand(npm.executable,npm.arguments,{cwd:isolated,env:installEnvironment,timeout:null,captureOutput:false,onStdoutChunk:chunk=>forward(1,chunk),onStderrChunk:chunk=>forward(2,chunk)});
 const installed=join(isolated,"node_modules/@onepersonlabs/projector");
 const preparedPlugin=join(isolated,"plugin");
 await buildPluginRuntime(preparedPlugin,{releaseRoot:installed});
@@ -41,7 +43,7 @@ await assertDirectoryTreeParity(
 const trackedPluginRoot=await mkdtemp(join(tmpdir(),"projector-tracked-plugin-v3-"));
 const plugin=join(trackedPluginRoot,"plugin");
 const pluginPrefix="plugins/projector-v3/";
-const trackedPluginFiles=await executeReleaseCommand("git",["ls-files","-z","--",pluginPrefix],{cwd:sourceRoot,env,timeout:120_000,maxBuffer:8*1024*1024});
+const trackedPluginFiles=await executeReleaseCommand("git",["ls-files","-z","--",pluginPrefix],{cwd:sourceRoot,env,timeout:null,maxBuffer:null});
 for(const repositoryPath of trackedPluginFiles.stdout.split("\0").filter(Boolean)){
  if(!repositoryPath.startsWith(pluginPrefix))throw new Error(`Tracked plugin path escaped its source root: ${repositoryPath}`);
  const pluginPath=repositoryPath.slice(pluginPrefix.length);
@@ -53,7 +55,7 @@ const mcpManifest=JSON.parse(await readFile(join(plugin,".mcp.json"),"utf8"));
 if(mcpManifest.mcpServers?.projector?.command!=="node"||!mcpManifest.mcpServers.projector.args.includes("./scripts/projector-mcp.mjs"))throw new Error("Installed plugin does not advertise the resident MCP host");
 let repository=join(isolated,"fresh-project");await mkdir(repository);
 env.PROJECTOR_VERIFICATION_EVIDENCE_STORE=join(isolated,"retained-execution-evidence");
-const run=(executable,args,cwd=repository)=>executeReleaseCommand(executable,args,{cwd,env,timeout:120_000,maxBuffer:8*1024*1024});
+const run=(executable,args,cwd=repository)=>executeReleaseCommand(executable,args,{cwd,env,timeout:null,maxBuffer:null});
 await run("git",["init","--quiet"]);
 await writeFile(join(repository,".gitignore"),".projector/runtime/\n.projector/state.db*\n");
 await writeFile(join(repository,"README.md"),"# Installed Projector exercise\n");
@@ -82,24 +84,33 @@ if(initialized.readiness.status!=="ready")throw new Error("Installed init was no
 const mcp=spawn(process.execPath,[join(plugin,"scripts/projector-mcp.mjs")],{cwd:repository,env,stdio:["pipe","pipe","pipe"]});
 const mcpResponses=new Map();
 const mcpPending=new Map();
-const mcpStderr=[];
+let mcpStderr="";
+let mcpClosed=false;
+const failPending=(error)=>{for(const pending of mcpPending.values())pending.reject(error);mcpPending.clear();};
+const mcpClose=new Promise(resolve=>mcp.once("close",(code,signal)=>{
+ mcpClosed=true;
+ failPending(new Error(`Installed MCP closed before responding (code ${code}, signal ${signal}): ${mcpStderr}`));
+ resolve();
+}));
+mcp.once("error",error=>failPending(error));
+mcp.stdin.on("error",error=>failPending(error));
 createInterface({input:mcp.stdout}).on("line",line=>{
  let message;
- try{message=JSON.parse(line);}catch{mcpStderr.push(`Invalid MCP stdout: ${line}`);return;}
+ try{message=JSON.parse(line);}catch{const invalid=`Invalid MCP stdout: ${line}\n`;mcpStderr=(mcpStderr+invalid).slice(-8_192);forward(2,Buffer.from(invalid));return;}
  if(message.id===undefined)return;
  const pending=mcpPending.get(message.id);
- if(pending){mcpPending.delete(message.id);pending(message);}else mcpResponses.set(message.id,message);
+ if(pending){mcpPending.delete(message.id);pending.resolve(message);}else mcpResponses.set(message.id,message);
 });
-mcp.stderr.on("data",chunk=>mcpStderr.push(String(chunk)));
+mcp.stderr.on("data",chunk=>{mcpStderr=(mcpStderr+String(chunk)).slice(-8_192);forward(2,chunk);});
 let mcpNextId=1;
 const mcpRequest=async(method,params)=>{
+ if(mcpClosed)throw new Error(`Installed MCP closed before ${method}: ${mcpStderr}`);
  const id=mcpNextId++;
  const response=new Promise((resolve,reject)=>{
-  const timer=setTimeout(()=>{mcpPending.delete(id);reject(new Error(`MCP ${method} timed out: ${mcpStderr.join("")}`));},15_000);
-  mcpPending.set(id,value=>{clearTimeout(timer);resolve(value);});
-  if(mcpResponses.has(id)){const value=mcpResponses.get(id);mcpResponses.delete(id);mcpPending.get(id)(value);}
+  mcpPending.set(id,{resolve,reject});
+  if(mcpResponses.has(id)){const value=mcpResponses.get(id);mcpResponses.delete(id);mcpPending.delete(id);resolve(value);}
  });
- mcp.stdin.write(JSON.stringify({jsonrpc:"2.0",id,method,params})+"\n");
+ mcp.stdin.write(JSON.stringify({jsonrpc:"2.0",id,method,params})+"\n",error=>{if(error){const pending=mcpPending.get(id);mcpPending.delete(id);pending?.reject(error);}});
  return response;
 };
 try{
@@ -116,9 +127,21 @@ try{
   if(response.result?.structuredContent?.status!=="succeeded")throw new Error(`Installed resident MCP status failed: ${JSON.stringify(response)}`);
  }
 }finally{
- mcp.stdin.end();
+ if(!mcp.stdin.destroyed)mcp.stdin.end();
  let closeTimer;
- try{await Promise.race([once(mcp,"close"),new Promise((_,reject)=>{closeTimer=setTimeout(()=>reject(new Error(`Installed MCP did not close after EOF: ${mcpStderr.join("")}`)),10_000);})]);}
+ try{
+  const closed=await Promise.race([mcpClose.then(()=>true),new Promise(resolve=>{closeTimer=setTimeout(()=>resolve(false),10_000);})]);
+  if(!closed){
+   let killError;
+   try{mcp.kill("SIGKILL");}catch(error){killError=error;}
+   let killTimer;
+   try{
+    const killed=await Promise.race([mcpClose.then(()=>true),new Promise(resolve=>{killTimer=setTimeout(()=>resolve(false),2_000);})]);
+    if(!killed)throw Object.assign(new Error(`Installed MCP cleanup unconfirmed after EOF; pid ${mcp.pid}; isolated checkout ${isolated}; termination error: ${killError?.message??"none"}; stderr: ${mcpStderr}`),{code:"RELEASE_COMMAND_CLEANUP_UNCONFIRMED"});
+   }finally{clearTimeout(killTimer);}
+   throw new Error(`Installed MCP required termination after EOF: ${mcpStderr}`);
+  }
+ }
  finally{clearTimeout(closeTimer);}
 }
 if(!(await readFile(join(repository,".projector/README.md"),"utf8")).includes("#"))throw new Error("Installed init omitted the human index");
