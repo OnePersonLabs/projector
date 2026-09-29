@@ -7,11 +7,11 @@ import {
   captureSurfaceSnapshot,
   executeSurfacePlan,
   rebuildPinnedSurfaceSnapshot
-} from "../chunks/shared-RGZTUUFR.js";
+} from "../chunks/shared-TJR6XE2K.js";
 import {
   InferenceFailure,
   runStructuredInference
-} from "../chunks/shared-COR67UF3.js";
+} from "../chunks/shared-2TZMVSH7.js";
 import {
   CodexExecProviderError,
   DISABLED_CODEX_EXEC_FEATURES,
@@ -24,15 +24,15 @@ import {
   createHostSessionRecord,
   hostSessionSelector,
   loadAuthenticatedRepositorySession
-} from "../chunks/shared-ZRCOKSFN.js";
-import "../chunks/shared-WYYVWFGB.js";
-import "../chunks/shared-3PXVRXWV.js";
-import "../chunks/shared-KWLM6SLK.js";
-import "../chunks/shared-2U2MJHPJ.js";
-import "../chunks/shared-HEBLUKDF.js";
+} from "../chunks/shared-J5UNDGIN.js";
+import "../chunks/shared-XN3IZTFL.js";
+import "../chunks/shared-EK2KJXX2.js";
+import "../chunks/shared-53BCDAHA.js";
+import "../chunks/shared-JRUJSZFM.js";
+import "../chunks/shared-RMBXVF7C.js";
 import {
   hashFramedDomain
-} from "../chunks/shared-AJ5KBTH5.js";
+} from "../chunks/shared-Q56AARV7.js";
 import "../chunks/shared-WC2OT3WX.js";
 
 // node_modules/@projector/integrations/dist/claude/adapter.js

@@ -46,9 +46,9 @@ import {
   readObservationFile,
   syntaxProgramVersion,
   verifyCodeInputBinding
-} from "../chunks/shared-BGCYVYNK.js";
-import "../chunks/shared-Q56AARV7.js";
-import "../chunks/shared-WC2OT3WX.js";
+} from "./shared-BGCYVYNK.js";
+import "./shared-Q56AARV7.js";
+import "./shared-WC2OT3WX.js";
 export {
   GitCommandError,
   InventoryContentStore,

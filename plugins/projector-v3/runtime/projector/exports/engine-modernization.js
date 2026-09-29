@@ -4,9 +4,9 @@ import {
   createResearchRecord,
   evaluateModernization,
   researchConcern
-} from "../chunks/shared-2U2MJHPJ.js";
-import "../chunks/shared-HEBLUKDF.js";
-import "../chunks/shared-AJ5KBTH5.js";
+} from "../chunks/shared-JRUJSZFM.js";
+import "../chunks/shared-RMBXVF7C.js";
+import "../chunks/shared-Q56AARV7.js";
 import "../chunks/shared-WC2OT3WX.js";
 export {
   compileUpgradePlan,

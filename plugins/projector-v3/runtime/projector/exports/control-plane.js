@@ -32,11 +32,11 @@ import {
   shutdownCodeIndexRuns,
   summarizeRepositoryIntentReview,
   withProjectOperationAccess
-} from "../chunks/shared-RQAO52GP.js";
-import "../chunks/shared-YZHC7WTJ.js";
+} from "../chunks/shared-KP2KQVTQ.js";
+import "../chunks/shared-QC25VWUM.js";
 import {
   inspectRepositoryArchitecture
-} from "../chunks/shared-7LB4PVNV.js";
+} from "../chunks/shared-VSPYHD5H.js";
 import {
   CompletionQuestionSchema,
   RepositoryCleanupOutputSchema,
@@ -44,8 +44,10 @@ import {
   RepositoryCoverageOutputSchema,
   inspectRepositoryCoverage,
   parseRepositoryCoverageResult
-} from "../chunks/shared-PMEWHUNO.js";
+} from "../chunks/shared-IBVT2KG2.js";
 import {
+  KnowledgeContextInspectOperationOutputSchema,
+  KnowledgeContextInspectionOutputSchema,
   KnowledgeContextOperationOutputSchema,
   KnowledgeReconciliationOperationOutputSchema,
   RepositoryChangeLifecycleService,
@@ -56,46 +58,47 @@ import {
   RepresentationInspectionOutputSchema,
   RepresentationPendingOutputSchema,
   RepresentationRecoveryOutputSchema,
+  inspectKnowledgeContext,
   projectKnowledgeContext,
   projectKnowledgeReconciliation,
   projectRepresentationInspectionOperation
-} from "../chunks/shared-D3MXHIAY.js";
-import "../chunks/shared-PMEH6UKE.js";
-import "../chunks/shared-2B7P2BAO.js";
-import "../chunks/shared-PMI2YIJY.js";
+} from "../chunks/shared-CPHR3K42.js";
+import "../chunks/shared-4VMBTM7P.js";
+import "../chunks/shared-DGXUSCZI.js";
+import "../chunks/shared-ZHCNFIWV.js";
 import {
   KnowledgeApplicationEvidenceAssessmentSchema,
   KnowledgeContextResultSchema,
   KnowledgeReconciliationResultSchema
-} from "../chunks/shared-TKNA4UJH.js";
+} from "../chunks/shared-ZG4NJD52.js";
 import {
   buildRepositoryImpactSnapshot,
   predictRepositoryImpact,
   reconcileRepositoryImpact
-} from "../chunks/shared-HUQ6JTJS.js";
-import "../chunks/shared-YMMDUUVJ.js";
-import "../chunks/shared-VQ4M4TY3.js";
-import "../chunks/shared-F7VGIPLU.js";
-import "../chunks/shared-SN3OO5CC.js";
-import "../chunks/shared-WY2QJ7AR.js";
+} from "../chunks/shared-EMQJ4CG6.js";
+import "../chunks/shared-4GV3JCWN.js";
+import "../chunks/shared-WPJ24CHV.js";
+import "../chunks/shared-SRZY32OS.js";
+import "../chunks/shared-BEDSHOK5.js";
+import "../chunks/shared-JM234DST.js";
 import {
   ResidentObservationWorkerPool,
   runObservationTask,
   withResidentObservationWorkerPool
-} from "../chunks/shared-2INZJVA6.js";
-import "../chunks/shared-AHRONKDP.js";
-import "../chunks/shared-IVNK7NJ5.js";
-import "../chunks/shared-IFEDFPQ4.js";
-import "../chunks/shared-EHAKQ7RC.js";
-import "../chunks/shared-T66EWDMN.js";
-import "../chunks/shared-WYYVWFGB.js";
-import "../chunks/shared-3PXVRXWV.js";
-import "../chunks/shared-KWLM6SLK.js";
-import "../chunks/shared-2U2MJHPJ.js";
-import "../chunks/shared-HEBLUKDF.js";
+} from "../chunks/shared-AIE6IGAJ.js";
+import "../chunks/shared-I4PDDX5T.js";
+import "../chunks/shared-YP2F3RSX.js";
+import "../chunks/shared-3OPGBX4O.js";
+import "../chunks/shared-QSFRBEBN.js";
+import "../chunks/shared-BGCYVYNK.js";
+import "../chunks/shared-XN3IZTFL.js";
+import "../chunks/shared-EK2KJXX2.js";
+import "../chunks/shared-53BCDAHA.js";
+import "../chunks/shared-JRUJSZFM.js";
+import "../chunks/shared-RMBXVF7C.js";
 import {
   ArchitectureEvaluationOutputSchema
-} from "../chunks/shared-AJ5KBTH5.js";
+} from "../chunks/shared-Q56AARV7.js";
 import "../chunks/shared-WC2OT3WX.js";
 export {
   ArchitectureEvaluationOutputSchema,
@@ -103,6 +106,8 @@ export {
   CompletionQuestionSchema,
   GeneratedOutputService,
   KnowledgeApplicationEvidenceAssessmentSchema,
+  KnowledgeContextInspectOperationOutputSchema,
+  KnowledgeContextInspectionOutputSchema,
   KnowledgeContextOperationOutputSchema,
   KnowledgeContextResultSchema,
   KnowledgeReconciliationOperationOutputSchema,
@@ -141,6 +146,7 @@ export {
   executeCodeOperation,
   executeCodeTestReplay,
   initializePreparedProject,
+  inspectKnowledgeContext,
   inspectProjectReadiness,
   inspectRepositoryArchitecture,
   inspectRepositoryCoverage,
