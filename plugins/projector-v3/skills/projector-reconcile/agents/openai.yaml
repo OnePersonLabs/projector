@@ -1,5 +1,5 @@
 interface:
-  display_name: "Projector Reconcile"
-  short_description: "Investigate changes without derailing the main task"
+  display_name: "Projector reconcile"
+  short_description: "Compare external edits with accepted meaning"
 policy:
   allow_implicit_invocation: true

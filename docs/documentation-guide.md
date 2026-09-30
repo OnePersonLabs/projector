@@ -36,7 +36,7 @@ Give each Mermaid diagram one job and keep the node labels readable. Quote every
 
 ## Keep terms precise
 
-Call `$projector`, `$projector-change`, `$projector-review`, `$projector-reconcile`, and `$projector-assimilate` skill invocations. Call `projector context`, `projector check`, and related terminal forms CLI operations. Keep accepted meaning, implementation evidence, retrieved context, and assimilation synthesis distinct.
+Call `$projector`, `$projector-verify`, `$projector-reconcile`, and `$projector-assimilate` skill invocations. Call `projector context`, `projector check`, and related terminal forms CLI operations. Keep accepted meaning, implementation evidence, retrieved context, and assimilation synthesis distinct.
 
 ## Write in the right voice
 

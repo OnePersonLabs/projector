@@ -16,6 +16,7 @@ Projector stores accepted project meaning in readable records, retrieves relevan
 |---|---|
 | Understand Projector's purpose and limits | [Overview](overview.md) |
 | Activate a repository and complete one task | [Getting started](getting-started.md) |
+| See the records behind a planned and implemented change | [Clip/Placement worked example](examples/clip-placement.md) |
 | See complete situations and recoveries | [Examples](examples.md) |
 | Choose a workflow for a kind of change | [Workflows](workflows.md) |
 | Choose the right skill invocation | [Skills](skills.md) |
@@ -33,7 +34,9 @@ The repository's [.projector/README.md](../.projector/README.md) is its canonica
 
 ## Use Projector
 
-The normal flow uses `$projector` to retrieve meaning, ordinary Codex tools to make an authorized implementation change, relevant behavior checks, and a Projector check to revisit the retained context. Use `$projector-change` when the intended meaning changes. Use `$projector-review` for consequential candidate diffs, `$projector-reconcile` for outside changes, and `$projector-assimilate` to synthesize large or branching source material.
+Use `$projector` in Codex chat for the whole task. In native Plan mode, review concrete proposed records and implementation consequences and revise them in conversation; planning does not write or accept canonical meaning or implement code. After you authorize execution, Projector accepts changed meaning through its lifecycle, then implements and verifies the task. A behavior repair can preserve the accepted model. Use `$projector-verify` to compare actual code with concepts, requirements, and scenarios; `$projector-reconcile` investigates outside edits, and `$projector-assimilate` synthesizes large or branching source material.
+
+Earlier guides named `$projector-change` and `$projector-review` as separate steps. Their current paths are `$projector` and `$projector-verify`. Historical evidence retains its original names.
 
 ## Find an exact contract
 

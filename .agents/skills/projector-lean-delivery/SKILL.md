@@ -1,7 +1,6 @@
 ---
 name: projector-lean-delivery
 description: Implement and review Projector changes against observable behavior, including context reuse, invalidation, architectural predicates, and recovery. Use for Projector implementation or repair work.
-disable-model-invocation: false
 ---
 
 # Projector delivery
@@ -10,9 +9,9 @@ Before choosing edit paths, follow the repository's `AGENTS.md` context and reco
 
 Keep tightly coupled work with its current owner. Delegate substantial independent work only when it is expected to reduce total effort, latency, or context load; reuse prior findings and assign nonoverlapping ownership. There is no standing agent pair, model mandate, or per-change review quota.
 
-Treat the delivery plan as a hypothesis. Update the same plan when implementation changes its assumptions, ordering, or verification method. Preserve required outcomes and challenge amendments against concrete failure modes; explicitly revise canonical meaning when the intended behavior changes. Do not retain a costly procedure merely because an earlier plan prescribed it.
+Treat the delivery plan as a hypothesis. Update the same plan when implementation changes its assumptions, ordering, or verification method. Preserve required outcomes and future commitments outside the implementation scope. Challenge amendments against concrete failure modes; explicitly revise canonical meaning when the intended behavior changes. Do not retain a costly procedure merely because an earlier plan prescribed it.
 
-Use [$projector-verify](../../../plugins/projector-v3/skills/projector-verify/SKILL.md) as the canonical verification procedure. Derive obligations before inspecting assertions, keep test-change decisions separate from execution selection, and check coherent slices. Retain stronger checks for stale mutation authority, persistent data, upgrades, and interrupted writes. Retain context and lifecycle identities in their actual Projector owners; no parallel report ledger is required.
+Use [$projector-verify](../../../plugins/projector-v3/skills/projector-verify/SKILL.md) to check implementation against accepted meaning and follow its shared verification procedure. Derive obligations before inspecting assertions, keep test-change decisions separate from execution selection, and check coherent slices. Retain stronger checks for stale mutation authority, persistent data, upgrades, and interrupted writes. Retain context and lifecycle identities in their actual Projector owners; no parallel report ledger is required.
 
 During implementation, reuse the canonical schemas, identity, relevance, state binding, lens, and lifecycle components. Rebuild packages before testing consumers that import their `dist` outputs.
 

@@ -1,107 +1,25 @@
 # Examples
 
-Each example follows a task from its trigger through review and outcome. IDs and project details below are illustrative; use the IDs returned by the active repository.
+Start with the [worked Clip/Placement example](examples/clip-placement.md). It follows an initial request through Plan mode revision, authorized model acceptance, illustrative implementation checks, and a later change using the same identities. The [initial](examples/clip-placement-initial.json) and [revision](examples/clip-placement-revision.json) proposals contain the complete schema-valid model changes outside this repository's canonical `.projector/` model.
 
-## Contents
+## Fix a bug without changing meaning
 
-- [Return to a behavior after a fresh session](#return-to-a-behavior-after-a-fresh-session)
-- [Change code while keeping accepted behavior](#change-code-while-keeping-accepted-behavior)
-- [Revise an accepted requirement](#revise-an-accepted-requirement)
-- [Reconcile a new consumer after a pull](#reconcile-a-new-consumer-after-a-pull)
-- [Review a consequential change](#review-a-consequential-change)
-- [Audit observed coverage](#audit-observed-coverage)
-- [Recover an interrupted controlled write](#recover-an-interrupted-controlled-write)
-- [Assimilate a large source pile](#assimilate-a-large-source-pile)
+A placement's saved transpose is lost after reload. The accepted requirement already says that save/reload must preserve each placement's value and shared clip reference. Ask `$projector` to retrieve `requirement:placement-transposition` and the related scenario. Codex traces serialization and reload, repairs the defect, runs a two-placement check, then checks retained context. The requirement and scenario remain unchanged because the intended behavior did not change.
 
-## Return to a behavior after a fresh session
+## Reconcile a new consumer
 
-A reconnect delivers the same replay event twice. In a fresh session, the developer wants to fix duplicate handling without changing the accepted idempotency behavior.
+A pull adds a report that reads placement data directly. Ask `$projector-reconcile` to inspect the actual diff and the current model. The new reader may change an assumption about internal data, but its existence alone is not a violation or a new product promise. Trace what it consumes and how it handles transpose values; report whether the existing obligation covers it, whether a repair is needed, and what remains unknown.
 
-> **You:** Use `$projector` to retrieve the replay contract for duplicate delivery IDs. Help me fix the reconnect bug while preserving the contract.
->
-> **Agent:** The context includes the idempotency requirement, its observable scenario, the rationale, and the query that found the event consumer. I will inspect the delivery path and persistence behavior before editing.
->
-> **You:** The patch looks good. Did this change the accepted behavior?
->
-> **Agent:** The replay behavior check covers the duplicate reconnect, and the context check found no changed assumption or consumer. I kept the model as it was.
+## Verify a consequential diff
 
-The agent retains the context ID and reports its checks. The context restores prior reasoning; it does not prove every replay path is correct.
-
-## Change code while keeping accepted behavior
-
-A developer replaces a database adapter while keeping the accepted retry behavior. They ask `$projector` for the retry obligation, inspect the current call path, make the authorized code change, and run retry behavior checks. They then run `projector check <context ID>`; Projector preserves conclusions whose dependencies did not change and reports any changed dependencies for review. A code refactor alone does not require a model revision. If the intended retry behavior changes, use `$projector-change` first.
-
-## Revise an accepted requirement
-
-The accepted requirement permits one retry. Product has decided that retries may continue until a deadline, and implementation has not started.
-
-> **You:** Use `$projector-change` to bound retries by a deadline. Keep the existing identity if it still owns this behavior.
->
-> **Agent:** I found the retry requirement and its scenarios. The identity still owns this boundary. Here is a proposal that revises the requirement and updates the timeout scenario.
->
-> **You:** The limit and timeout case match the decision. Apply this reviewed proposal.
->
-> **Agent:** The preview is bound to change ID `<change ID>` and hash `<reviewed hash>`. I will apply those exact values, then implement the accepted behavior and run the timeout and retry checks.
-
-The canonical change happens before implementation because intended behavior changed. A stale dependency requires a new preview; an accepted requirement alone does not prove the deadline works.
-
-## Reconcile a new consumer after a pull
-
-A pull adds a reporting package that reads a field previously treated as internal. The retained source query now returns a new consumer.
-
-> **You:** Use `$projector-reconcile` against this pull. Does the new reader change the accepted stability promise?
->
-> **Agent:** The consumer exists, but the current requirement does not promise this field to external clients. The pull changes the assumption about internal use; it does not by itself violate accepted meaning. I will trace the reader and report that evidence before recommending a model change.
->
-> **You:** Keep the field internal for now and remove the new read.
->
-> **Agent:** I will make that repair under the existing meaning, rerun the affected checks, and reconcile the retained context.
-
-If the maintainer instead decides to promise the field to reporting consumers, use `$projector-change` to accept that intent. Observed code does not automatically become canonical intent.
-
-## Review a consequential change
-
-A candidate change updates persistence and a public event consumed by several packages. The maintainer asks `$projector-review` to inspect the actual diff. The reviewer reads accepted meaning and current code, follows producers through persistence and consumers, checks registrations and tests, then tries concrete counterexamples. The maintainer reviews each finding by obligation, trigger, observable consequence, and repair; demonstrated violations remain separate from changed assumptions or unavailable evidence. After an authorized repair, reconcile the affected context and rerun checks whose dependencies changed. Review confidence and self-authored tests do not establish universal conformance.
-
-## Audit observed coverage
-
-Before planning a broad implementation repair, a maintainer wants to see the evidence Projector can currently observe.
-
-```text
-projector audit --scope src/payments
-projector audit --scope src/payments --question-offset 20
-```
-
-The report shows evidence status, open questions, unsupported or unavailable coverage, and the repair routes that are available. It leaves source and canonical records unchanged, though operational observation artifacts may be created. The maintainer uses focused context or exact record inspection to understand a question, then chooses an available route and audits again after the resulting work. The report is not a completeness percentage or a behavioral certificate.
+A candidate diff changes playback and persistence. Ask `$projector-verify` to compare it with `concept:clip`, `concept:placement`, the transposition requirement, and the save/reload scenario. A concrete counterexample uses one C4 clip in two placements at 0 and +2 semitones. If the implementation copies notes into each placement or changes the clip when one placement plays, report the location, trigger, observed effect, and affected obligation. Run the relevant application tests and state their coverage.
 
 ## Recover an interrupted controlled write
 
-An apply stops after writing part of a controlled transaction. The operation result supplies an approval ID.
-
-> **You:** Inspect approval `<approval ID>` and tell me whether Projector recognizes the interrupted write.
->
-> **Agent:** `projector resume <approval ID>` shows the retained journal and recovery state. Resume did not change the canonical model or renew approval.
->
-> **You:** Recovery is authorized. Restore a consistent state, but do not reapply the proposal.
->
-> **Agent:** I will run `projector recover <approval ID>` and inspect the outcome. If the change is still needed, I will capture a fresh preview for review.
-
-Recovery repairs a recognized transaction; it does not retry the old plan. Preserve an ambiguous journal for investigation. Never guess an ID or hand-edit recovery evidence.
+An interrupted model acceptance returns an actual approval ID. Inspect it with `projector resume <approval ID>` before any retry. If the journal is recognized and recovery is authorized, `projector recover <approval ID>` repairs that transaction without replaying the proposal. A change still needed after recovery requires a current reviewed plan. Preserve ambiguous evidence for investigation.
 
 ## Assimilate a large source pile
 
-A long-running design effort spans branchy chats, transcripts, research, and an existing repository. The user asks `$projector-assimilate` to preserve the useful mechanisms and prepare a change brief. Assimilation inventories the sources, records inspected and unavailable material, separates shared ancestry from independent branches, and maintains an `.assimilate/` index, topic notes, intake, and frontier. The integrator reads the synthesis with intake hidden and checks it against commitments, corrections, minority ideas, and unresolved gaps. When a candidate is mature, the agent grounds the brief in current Projector meaning before entering `$projector-change`. Assimilation notes keep separate identities and authority; a readable synthesis does not prove source fidelity.
+A design effort spans branching chats, research, and an existing app. `$projector-assimilate` inventories and synthesizes that material in `.assimilate/` with source coverage and unresolved gaps. When a candidate is mature, `$projector` compares it with accepted meaning and presents concrete proposed records. Assimilation's working notes do not become canonical merely because they are readable.
 
-```mermaid
-flowchart LR
-  S["Chats, research, and repository sources"] --> I["Inventory and retain intake"]
-  I --> W["Write assimilation working synthesis"]
-  W --> R["Read synthesis with intake hidden"]
-  R --> B["Prepare change intent brief"]
-  B --> P["Ground in Projector context"]
-  P --> C["Use reviewed canonical change"]
-```
-
-Assimilation first owns its source coverage and working synthesis. Only a mature candidate crosses into Projector, where current meaning, identity, and any canonical change are reviewed through the existing workflow.
-
-Continue with [Workflows](workflows.md), [Changing accepted meaning](changing-accepted-meaning.md), or [Review, reconcile, and recover](review-reconcile-recover.md).
+Continue with [Workflows](workflows.md) or [Review, reconcile, and recover](review-reconcile-recover.md).

@@ -1,22 +1,24 @@
 # Overview
 
-Projector gives a project a durable place to record intended behavior, architectural reasons, and obligations that can affect future changes. Its model links those records to source queries and typed relationships. Codex can retrieve a bounded context before work and revisit it after implementation.
+Projector lets you develop from a readable conceptual model. The model defines the system's concepts, relationships, requirements, scenarios and architectural decisions. It owns intended behavior; the current code is a realization that can change as the system develops.
 
-## The problem it addresses
+## Start with the concepts
 
-Important project decisions often outlive the session in which someone made them. A code comment may explain one line but omit alternatives, constraints, or the reason a behavior matters. A broad architecture note may be readable but hard to connect to a specific change. Projector keeps accepted meaning in structured, human-readable records and relates that meaning to inspected source.
+In a music app, a Clip owns reusable notes. A Placement references a Clip and owns one use's position and transpose value. That boundary explains why transposing one placement must preserve the shared clip and every other placement. A requirement states the behavior; a scenario makes it concrete with one C4 clip playing C4 and D4 through two placements, including after save and reload.
+
+Those records govern later work even if the implementation changes its classes, database tables or playback engine. The model also retains accepted future capabilities that have no implementation yet. Typed relationships connect the records, and source queries connect relevant meaning to inspected code. Read the [worked example](examples/clip-placement.md) to see the proposed contents and a later revision under the same identities.
 
 ## The everyday use
 
-Use `$projector` when a task needs existing project context. It retrieves related concepts, requirements, scenarios, decisions, evidence, and unresolved questions. Codex then inspects current code and makes authorized edits with ordinary tools. After behavior checks, Projector checks the retained context against current source and dependencies.
+Start with `$projector` and describe your task: ask what a feature involves, discuss a change in native Codex Plan mode, or request a feature or fix directly. Codex retrieves the relevant model and inspects current code, dependencies and unresolved questions before choosing changes.
 
-Use `$projector-change` when the intended meaning itself must change. It prepares a readable preview of the canonical changes and affected obligations. Applying that preview requires the exact reviewed plan and its current hash. This is a controlled change to the model, not a replacement for normal implementation work.
+When intended meaning changes, `$projector` shows readable proposed records and their implementation consequences. In native Codex Plan mode, you inspect and revise the contents, IDs, paths and reasons without changing canonical files or code. Once authorized execution is available, Codex accepts the model change through Projector's lifecycle, implements it and verifies the task. The completion report links the actual model changes and explains the code and evidence. A repair can change code under the existing model and report that the model was unchanged.
 
 ## What Projector does not establish
 
 Retrieval is not proof that every relevant obligation appeared in the packet. An open query, omitted item, or unavailable source remains an uncertainty to inspect. A passing check does not show that the software is correct, that the model is complete, or that a behavior test covered every case. A hash establishes agreement about bytes or normalized values, not truth.
 
-For a consequential code review, use `$projector-review` to inspect the actual diff, trace concrete producers and consumers, and try counterexamples. Run application behavior checks that cover the changed path.
+Use `$projector-verify` to inspect actual code against concepts, requirements, and scenarios, trace concrete producers and consumers, and try counterexamples. Run application behavior checks that cover the changed path.
 
 ## Where state lives
 

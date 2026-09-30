@@ -51,6 +51,10 @@ for(const repositoryPath of trackedPluginFiles.stdout.split("\0").filter(Boolean
  await mkdir(dirname(destination),{recursive:true});
  await copyFile(join(sourceRoot,repositoryPath),destination);
 }
+// A caller may use a temporary source index to include an uncommitted bundle.
+// The disposable fixture repositories must each use their own Git index.
+delete env.GIT_INDEX_FILE;
+delete process.env.GIT_INDEX_FILE;
 const packagedRoot=join(plugin,"runtime/projector");
 const { createBundledProjectorOperationRunner } = await import(pathToFileURL(join(packagedRoot,"exports/operations.js")).href);
 const { runPublicCommand } = await import(pathToFileURL(join(packagedRoot,"exports/commands.js")).href);
@@ -229,8 +233,14 @@ if(!renamed.meaning.sections.some(section=>section.entityId==="concept:clock"&&s
 await command(["resume",renamed.id],repository,{freshProcess:true});
 const bounded=await command(["context","Inspect the clock obligation","--entity","concept:clock","--budget","100"]);
 if(!bounded.meaning.sections.some(section=>section.text.includes("All domain time enters through the clock port."))&&bounded.meaning.disclosure.omitted===0)throw new Error("Bounded context silently lost its obligation without omission disclosure");
-const verifySkill="skills/projector-verify/SKILL.md";
-if((await readFile(join(preparedPlugin,verifySkill),"utf8"))!==(await readFile(join(plugin,verifySkill),"utf8")))throw new Error("Installed verification procedure differs from its canonical source");
+// Skills depend on shared proposal and verification references. Compare both
+// trees so packaging cannot silently omit a moved instruction or schema.
+for(const directory of ["skills","references"]){
+ await assertDirectoryTreeParity(
+  join(preparedPlugin,directory),join(plugin,directory),
+  `Installed ${directory} differ from the canonical plugin source.`,
+ );
+}
 const checkInput=join(output,"verification-check.json");
 await writeFile(checkInput,JSON.stringify({executable:process.execPath,args:["--input-type=module","--eval","import { readFileSync } from 'node:fs'; if (!readFileSync('src/time-port.ts','utf8').includes('=> 0')) process.exit(1);"],inputPaths:["src/time-port.ts"],populations:[],environment:[],timeoutMs:10000,completeInputs:true}));
 const checked=await command(["verify",checkInput]);
@@ -383,7 +393,7 @@ catch(error){
 if(!droppedContribution?.contributions.some(c=>c.entityId==="concept:cloud-b"&&c.status==="lost"))throw new Error("Installed integration failed to detect a silently dropped contribution");
 if(await sourceIdentity()!==beforeIntegration||(await run("git",["ls-files","--stage","-z"])).stdout!==beforeIntegrationIndex||(await run("git",["rev-parse","HEAD"])).stdout.trim()!==integrationBase)throw new Error("Integration assessment changed destination source, index or HEAD");
 report={status:"passed",tarball,plugin,preparedPlugin,isolated,records:1,checks:["offline npm tarball installation outside the source tree","standalone checked-in plugin dependency resolution","npm package bin init and human index","resident MCP initialization, discovery, validation, repeated calls and EOF shutdown","exact preview/apply","Markdown round trip","compact context","check","fresh-process read-only resume","inspect","read-only audit with retained context","late-consumer currentness with unaffected meaning reuse","stale approval refusal without canonical mutation","stable concept identity after source rename","bounded-context omission disclosure"],limitations:["Interruption and committed-result recovery are exercised by the lifecycle and continuation suites; this installed smoke does not establish comparative advantage or domain reconstruction.","Consumer discovery covers static imports and re-exports; dynamic resolution and unsupported runtime mechanisms remain unknown.","Git integration checks contribution preservation, canonical integrity and static result consumers; named canonical-integrity evidence is separately reusable, while arbitrary behavioral reuse and dynamic governance remain unqualified."]};
-report.checks.push("checked-in plugin runtime byte parity","installed verification procedure byte parity","native check observation survives a fresh process and unrelated target movement","read-only representation publication inspection");
+report.checks.push("checked-in plugin runtime byte parity","installed skills and shared references byte parity","native check observation survives a fresh process and unrelated target movement","read-only representation publication inspection");
 report.checks.push("checked-in plugin loads its packaged Python Tree-sitter grammar");
 report.checks.push("installed architecture evaluation refuses missing required research","installed HTTP host executes and reports satisfied and violated application predicates");
 report.checks.push("installed generation directly invokes the declared source and retains observed output evidence");

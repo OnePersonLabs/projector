@@ -6,7 +6,7 @@
 - [Does installing the plugin activate a repository?](#does-installing-the-plugin-activate-a-repository)
 - [Is a context packet a complete specification?](#is-a-context-packet-a-complete-specification)
 - [Does `check` prove that code is correct?](#does-check-prove-that-code-is-correct)
-- [When do I need `$projector-change`?](#when-do-i-need-projector-change)
+- [When does the model change?](#when-does-the-model-change)
 - [What if a check discovers a new consumer?](#what-if-a-check-discovers-a-new-consumer)
 - [Are `.assimilate/` notes Projector concepts?](#are-assimilate-notes-projector-concepts)
 - [Can an older format upgrade automatically?](#can-an-older-format-upgrade-automatically)
@@ -15,7 +15,7 @@
 
 ## Does Projector control every code edit?
 
-No. The normal workflow uses ordinary Codex tools to implement an authorized change. Use `$projector-change` when accepted meaning changes. Controlled execution is a distinct supported route for changes that specifically require Projector's transaction guarantees.
+No. `$projector` retrieves accepted meaning and carries an authorized task through any needed model acceptance, implementation, and verification. Code can be repaired under existing meaning. Projector-controlled writes have their own transaction guarantees; ordinary Codex edits use host authorization and checks.
 
 ## Does installing the plugin activate a repository?
 
@@ -29,9 +29,9 @@ It contains complete selected meaning and reports omissions, open queries, and u
 
 No. It rechecks retained meaning and dependencies. Run application behavior checks for the changed behavior. A successful operation does not establish that the design is complete or that untested code works.
 
-## When do I need `$projector-change`?
+## When does the model change?
 
-When intended project meaning changes. A refactor or implementation choice can change while preserving accepted meaning. When behavior, assumptions, architecture, or rationale changes, capture and review a canonical change.
+When intended project meaning changes. In Codex Plan mode, `$projector` shows the proposed records and revises them with you without writing or accepting them. After you authorize execution outside Plan mode, it accepts changed meaning through its lifecycle, then implements and verifies the task. A refactor or behavior repair can preserve the existing model.
 
 ## What if a check discovers a new consumer?
 

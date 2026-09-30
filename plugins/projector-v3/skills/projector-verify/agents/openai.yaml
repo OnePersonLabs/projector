@@ -1,0 +1,5 @@
+interface:
+  display_name: "Projector verify"
+  short_description: "Check implementation against accepted meaning"
+policy:
+  allow_implicit_invocation: true

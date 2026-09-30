@@ -10,7 +10,7 @@ Use `inspect` for exact canonical records, `context` for focused accepted meanin
 
 ## Review an actual candidate diff
 
-Use `$projector-review` with the candidate diff. Retrieve the relevant accepted meaning or resume its actual context ID, then inspect the current code behind changed responsibilities. Trace inputs, producers, persistence, consumers, registration, and behavior checks. Re-run source queries where needed so new consumers appear.
+Use `$projector-verify` with the actual implementation or candidate diff. Retrieve the relevant accepted meaning or resume its actual context ID, then compare code with the concepts, requirements, and scenarios behind changed responsibilities. Trace inputs, producers, persistence, consumers, registration, and behavior checks. Re-run source queries where needed so new consumers appear.
 
 Try counterexamples using real identities, order, retries, interruption, and stale-state behavior where relevant. Report findings in consequence order. Each finding should name the obligation, location, trigger, observable result, and smallest useful repair. Distinguish demonstrated violations, changed assumptions, missing producers, and unavailable evidence.
 
@@ -32,6 +32,6 @@ Run `projector resume <actual context/change/approval ID>`. Resume authenticates
 
 Inspect the actual approval with `projector resume <approval ID>`. For a recognized interrupted transaction, run `projector recover <approval ID>` only when recovery is authorized. Read the result and preserve failed or ambiguous evidence. Recovery restores consistency; it does not retry or reapply the proposal.
 
-If the intended change remains necessary, capture a fresh preview and review its exact meaning and dependencies. Never hand-edit journals or reuse an old approval for a changed plan.
+If the intended change remains necessary, `$projector` prepares a current plan and accepts it only during authorized execution. Never hand-edit journals or reuse an old approval for changed contents.
 
 Continue with [Examples](examples.md) or the [CLI reference](reference/cli.md).

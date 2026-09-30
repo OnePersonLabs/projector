@@ -5,6 +5,7 @@ Projector's concepts guide how accepted meaning relates to code and evidence. Fo
 ## Contents
 
 - [Accepted meaning](#accepted-meaning)
+- [A concept in the Clip/Placement example](#a-concept-in-the-clipplacement-example)
 - [One authored source per fact](#one-authored-source-per-fact)
 - [Stable identity](#stable-identity)
 - [Source queries and typed relationships](#source-queries-and-typed-relationships)
@@ -15,6 +16,14 @@ Projector's concepts guide how accepted meaning relates to code and evidence. Fo
 ## Accepted meaning
 
 Accepted meaning records what the project intends and why. It includes concepts, requirements, scenarios, decisions, concerns, constraints, and their relationships. It is the authority for project intent. Implementation, plans, context packets, and assimilation notes are evidence to assess against it.
+
+## A concept in the Clip/Placement example
+
+A **concept** names a durable part of the domain and states its boundary. In the [worked example](examples/clip-placement.md), `concept:clip` owns reusable notes and timing. `concept:placement` references a clip and owns one use's timeline position and transpose value. The distinction prevents a placement-specific pitch change from rewriting the shared clip. The concepts are readable records with stable IDs, not a glossary generated from code names.
+
+The **requirement** `requirement:placement-transposition` states what the app must do: store each placement's transpose, apply it during playback, and preserve it with the shared clip reference after reload. The **scenario** `scenario:two-placements-save-reload` supplies observable C4 and D4 cases. Typed relations connect Placement to Clip, Placement to its requirement, and the requirement to its scenario. Their complete schema-valid form is in the [initial proposal](examples/clip-placement-initial.json).
+
+The reason for separating clips from placements matters beyond the first feature: a later implementation can change its classes, tables, or UI while preserving that domain boundary. A later user decision about allowed transpose values revises the same requirement and scenario IDs; see the [revision](examples/clip-placement-revision.json).
 
 ## One authored source per fact
 

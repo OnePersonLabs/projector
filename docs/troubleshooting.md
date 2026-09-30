@@ -24,7 +24,7 @@ An omitted item remains unresolved. Retrieve focused context with its exact `--e
 
 ## A check reports changed assumptions or new source members
 
-Inspect the changed code and new query results. Decide whether the difference is harmless, changes an assumption, reveals a violation, or leaves unavailable evidence. Use `$projector-reconcile` for outside changes and `$projector-review` for a consequential diff. Change accepted meaning only through `$projector-change` when intent changed.
+Inspect the changed code and new query results. Decide whether the difference is harmless, changes an assumption, reveals a violation, or leaves unavailable evidence. Use `$projector-reconcile` for outside changes and `$projector-verify` to compare a consequential diff with accepted meaning. Use `$projector` when intent changes.
 
 ## A retained context is stale
 
@@ -32,7 +32,7 @@ Resume the actual context ID to inspect currentness. If its dependencies changed
 
 ## An apply is rejected as stale
 
-The reviewed plan no longer matches current dependencies or the proposal changed. Read the reason, capture a new preview, and review it. Do not substitute a fresh hash onto an old review.
+The reviewed plan no longer matches current dependencies or the proposal changed. Read the reason and return to `$projector` for a current plan and lifecycle result. Do not substitute a fresh hash onto an old review.
 
 ## A controlled operation reports recovery required
 

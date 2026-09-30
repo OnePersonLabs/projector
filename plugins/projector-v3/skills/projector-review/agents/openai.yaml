@@ -1,5 +1,0 @@
-interface:
-  display_name: "Projector review"
-  short_description: "Review consequential Projector changes proportionately"
-policy:
-  allow_implicit_invocation: true

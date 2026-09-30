@@ -1,87 +1,97 @@
 # Projector 3
 
-Projector keeps a project's accepted meaning and the reasons behind it available across code changes and fresh sessions. It connects readable records to source queries and typed relationships, so a changed assumption or a newly relevant consumer can bring an obligation back into view.
-
-The everyday loop is **retrieve meaning → change with Codex → check consequences**. A developer can change implementation with ordinary tools when the intended behavior stays the same. Use `$projector-change` when accepted meaning itself must change.
+With Projector, you develop software by shaping a readable model of its concepts, relationships, requirements, scenarios and decisions. Codex turns authorized changes to that model into code and verifies the result. The model remains the authority as the implementation changes, and can retain future capabilities before they are built.
 
 ## Contents
 
-- [A work story](#a-work-story)
-- [How the loop works](#how-the-loop-works)
+- [See it in action](#see-it-in-action)
 - [Install and start](#install-and-start)
-- [What Projector checks](#what-projector-checks)
-- [The model and data boundary](#the-model-and-data-boundary)
+- [How the model relates to code](#how-the-model-relates-to-code)
 - [Documentation](#documentation)
-- [Related projects](#related-projects)
 - [Develop Projector](#develop-projector)
+- [Related projects](#related-projects)
 - [License](#license)
 
-## A work story
+## See it in action
 
-Imagine a reconnect delivers the same replay event twice. In a fresh session, the developer wants to fix duplicate handling without changing the accepted replay behavior.
+Suppose you are building a music app with reusable clips. One clip can appear several times on a timeline. You want each placement to transpose the shared notes independently. Start in Codex Plan mode to work through the design. This conversation illustrates the workflow; the linked JSON contains the complete example model proposal.
 
-> **You:** Use `$projector` to trace why a replay event with the same delivery ID is ignored after reconnect, then help me fix the bug without changing that behavior.
->
-> **Codex:** Projector found the replay requirement, its scenario, and the reason duplicate delivery IDs stay idempotent. Here is the retained context and the source query that selected the consumer. I will inspect the producer and persistence path, then make a code change that preserves this behavior.
->
-> **You:** The patch looks right. What did you check?
->
-> **Codex:** The replay behavior check now covers the reconnect and duplicate delivery. The retained context check found the same assumption and consumer set, so I left accepted meaning unchanged.
+```text
+You: Use $projector. Let one clip appear in several timeline placements,
+     each with its own transpose value. Save and reload must keep that relationship.
 
-The context restores the decision and its reasoning. The behavior test supplies evidence for the changed path; neither result proves that every replay edge case has been covered.
+Codex: I propose concept:clip at .projector/model/concepts/clip.md:
+       "A clip owns reusable notes and timing."
+       concept:placement at .projector/model/concepts/placement.md:
+       "A placement references a clip and owns its timeline position and
+       transpose value."
+       requirement:placement-transposition says each placement stores its own
+       semitone value and save/reload preserves the shared clip reference.
+       scenario:two-placements-save-reload will exercise one C4 clip through
+       two placements. The app needs a clip reference on each placement,
+       playback transposition, and persistence for both values.
 
-## How the loop works
+You: Make the reload case cover two placements of the same clip. Keep the clip's
+     original notes unchanged.
 
-```mermaid
-flowchart LR
-  R["Request"] --> M["Retrieve accepted meaning"]
-  M --> I["Inspect implementation and dependencies"]
-  I --> C["Change with ordinary tools"]
-  C --> B["Run behavior checks"]
-  B --> K["Check retained context"]
-  K --> D{"Meaning or assumptions changed?"}
-  D -->|"Yes"| Q["Reconsider or revise meaning"]
-  D -->|"No"| F["Complete with evidence and limits"]
-  Q --> F
+Codex: Revised scenario: transpose 0 plays C4, and +2 plays D4 before and
+       after reload. Both placements still reference one clip, whose note
+       remains C4. I will add Placement -> Clip and Requirement -> Scenario
+       relations. The proposed contents are linked in the worked example.
+
+     [After leaving Codex Plan mode]
+You: Go ahead and implement that.
+
+Codex: Projector accepted the model change, then I changed the app and ran the
+       playback and persistence checks. Two placements of one C4 clip played
+       C4 and D4 before and after reload without changing the clip. Older
+       arrangement import has not been checked.
 ```
 
-The diagram shows two different kinds of work. Ordinary implementation changes can preserve accepted meaning. A changed assumption, obligation, relationship, or intended behavior needs reconsideration; `$projector-change` handles an accepted revision. A context check reports evidence and uncertainty, while behavior checks establish only the behavior they actually exercise.
+In Codex Plan mode, the conversation stays a plan: Codex shows proposed record contents, identities, paths, reasons, and implementation consequences, then revises them with you. Questions and discussion do not accept or write the model or start implementation. Leave Plan mode and authorize execution; `$projector` then runs the model lifecycle and implements and verifies the task. There is no separate skill to invoke for each phase. Read the [worked Clip/Placement example](docs/examples/clip-placement.md) for complete illustrative artifacts and a later revision that reuses their identities.
+
+You can also ask for the whole change in one shot, outside Plan mode:
+
+```text
+$projector Limit placement transpose to integer semitones from -24 to 24.
+Reject invalid values without changing the placement or clip. Implement it
+and keep the existing save/reload behavior.
+```
+
+Codex updates the relevant model records, implements the change, runs its checks, and reports the actual artifact changes with links. You can follow up with a revision such as “Make that -48 to 48.” A request like “Reload loses the second placement's transpose; fix it” can instead repair code under the existing model and report that the model was unchanged.
 
 ## Install and start
 
-This checkout registers the Codex plugin as `projector-v3@projector-v3`, with the display name **Projector V3**, to distinguish it from the older `../projector` checkout. The CLI command, `$projector` skills, and `.projector/` model paths retain their existing names.
+Projector V3 needs Node 24 or later. Install **Projector V3** (`projector-v3@projector-v3`) from this repository's Codex marketplace. For a local checkout:
 
-Install **Projector V3** (`projector-v3@projector-v3`) from this repository's marketplace and use Node 24 or later. The shipping plugin at `plugins/projector-v3` includes its compiled runtime; installation requires no build, `pnpm install`, or dependency download. For a local checkout, register the repository with `codex plugin marketplace add <checkout-path>`, then run `codex plugin add projector-v3@projector-v3`. The plugin's skills invoke `node <plugin>/scripts/projector.mjs`; the bare `projector` command requires the separately packaged CLI on the host `PATH`.
+```text
+codex plugin marketplace add <checkout-path>
+codex plugin add projector-v3@projector-v3
+```
 
-Contributors run `pnpm install` and `pnpm plugin:prepare-local` after runtime changes. That command stages the plugin under `.build/local-marketplace/plugins/projector-v3` and updates the shipping runtime under `plugins/projector-v3/runtime`. Include that generated runtime with the source change so GitHub installations receive the current code. `.build/` remains ignored by Git.
+Open a repository in Codex and say: “Use `$projector` to initialize this repository.” Installation does not activate a repository. For a new app, describe the behavior and boundaries you want to keep. For an existing app, ask Projector to inspect current code and decisions before proposing accepted meaning; code alone is evidence, not automatic intent.
 
-Ask Codex: “Use `$projector` to understand this project and help me make this change.” Installation alone does not activate a repository. Use `$projector` to retrieve context from an active `.projector/` model. Use `$projector-change` when the requested work changes intended behavior or architecture.
+`$projector` is a Codex skill invocation typed in chat, including Plan mode. It is not a shell command. The bundled terminal entry point is `node <plugin>/scripts/projector.mjs`; a bare `projector` command requires the separately packaged CLI on `PATH`. See [Getting started](docs/getting-started.md) for the first task and [CLI reference](docs/reference/cli.md) for lower-level operations.
 
-To activate Projector in a repository, ask Codex to use `$projector` to initialize it. Read [Getting started](docs/getting-started.md) for setup and the first complete task.
+## How the model relates to code
 
-## What Projector checks
+The accepted model under `.projector/` uses Markdown records with TOML metadata for concepts, requirements, scenarios, decisions, and reasons. Independent relationships and policies use TOML. A stable record ID is independent of its filename. Code is a revisable realization of the model: a repair can leave accepted meaning unchanged, and a future commitment can be accepted before its code exists.
 
-A context packet includes selected accepted meaning and reports what it omitted or could not inspect. Typed relationships and source-query membership help find consequences beyond the edited file. Reconciliation distinguishes stale assumptions, new query members, observed violations, and unavailable evidence. These outcomes require different responses.
-
-A successful Projector operation does not establish that the design is complete or that code behaves correctly. Use `$projector-review` on a consequential candidate diff to trace producers, persistence, consumers, registrations, and tests, and to try concrete failure cases. Run the relevant application checks as well. Application-specific observations come from a host-supplied interface; a hash proves matching data, not that a claim is true.
-
-## The model and data boundary
-
-Start with [.projector/README.md](.projector/README.md), the index for Projector's own accepted model. Concepts, requirements, scenarios, concerns, decisions, and rationale use readable Markdown records with TOML metadata. Relations and executable policies use TOML. Each fact has one authored source, and a record's stable identity is independent of its filename.
-
-Commit the canonical model and configuration. Runtime receipts, retained contexts, and recovery journals live under `.projector/runtime/`. Preserve unfinished recovery evidence. Projector 3 supports one artifact format; an older repository needs a checked cutover. Projector does not provide an automatic chain of format migrations.
+Projector reports which context and dependencies it inspected, plus omissions and unavailable evidence. A successful model operation does not prove application behavior. `$projector-verify` examines actual code against concepts, requirements, and scenarios, tries concrete counterexamples, and reports checks and missing evidence. Use `$projector-reconcile` for edits made outside the current Projector work and `$projector-assimilate` when a large or branching source set needs a separate working synthesis.
 
 ## Documentation
 
-Start at the [documentation home](docs/README.md). It routes readers to the first-use guide, practical examples, workflows, concepts, skill invocations, CLI reference, troubleshooting, and development guidance. The [model and context guide](docs/model-and-context.md) explains what is canonical and how retrieved context relates to it.
+Start at the [documentation home](docs/README.md). The [worked example](docs/examples/clip-placement.md) shows the records behind the conversation; [Workflows](docs/workflows.md) explains planning, execution, repair, and outside changes; [Model and context](docs/model-and-context.md) explains identity and evidence. The [CLI reference](docs/reference/cli.md) is for terminal use and integrations.
 
-## Related projects
-
-[Projector 4](https://github.com/OnePersonLabs/projector/tree/v4) manages a reviewed change from proposal through isolated implementation and integration. [Kerf](https://github.com/OnePersonLabs/kerf) provides a smaller workflow around readable project concepts, bounded focus, and evidence checks.
+Earlier documentation used `$projector-change` for model revisions and `$projector-review` for consequential code review. Their work now runs through `$projector` and `$projector-verify`. Historical records and command receipts keep their original names.
 
 ## Develop Projector
 
-Use the package manager declared by the workspace for developer installs. `pnpm build` compiles the packages. `pnpm verify` runs type checks, tests, package boundary checks, and the advisory prose check. `pnpm release:check` exercises the installed distribution in a fresh repository. See [Development](docs/development.md) before changing Projector itself.
+Contributors run `pnpm install` and `pnpm plugin:prepare-local` after runtime changes. The latter stages the plugin under `.build/local-marketplace/plugins/projector-v3` and updates the shipping runtime under `plugins/projector-v3/runtime`. Include that runtime with source changes so installed copies receive the current code. `pnpm verify` runs package checks and tests; `pnpm release:check` exercises an installed distribution. See [Development](docs/development.md).
+
+## Related projects
+
+[Projector 4](https://github.com/OnePersonLabs/projector/tree/v4) manages a reviewed change through isolated implementation and integration. [Kerf](https://github.com/OnePersonLabs/kerf) uses a smaller conceptual model and bounded focus workflow.
 
 ## License
 

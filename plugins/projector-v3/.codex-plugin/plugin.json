@@ -1,27 +1,28 @@
 {
   "name": "projector-v3",
   "version": "3.0.0",
-  "description": "Reuse durable engineering meaning, inspect architectural lenses before editing, and reconcile saved knowledge with code changes.",
+  "description": "Develop software through a readable model of its concepts, requirements, scenarios, relationships and decisions.",
   "author": {
     "name": "Projector contributors"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Projector V3",
-    "shortDescription": "Retain engineering meaning across changes.",
-    "longDescription": "Retrieve accepted meaning and architectural obligations before choosing edits, check saved context against later changes, and use Projector's existing controlled change workflow.",
+    "shortDescription": "Plan and build from a conceptual model.",
+    "longDescription": "Explore accepted concepts, requirements and decisions; plan concrete model changes in Codex Plan mode; implement authorized model and code changes together; and check the result against current meaning.",
     "developerName": "Projector contributors",
     "category": "Developer Tools",
     "capabilities": [
-      "Reusable engineering context",
-      "Architectural lens checks",
-      "State-bound planning",
-      "Controlled changes"
+      "Readable concepts and requirements",
+      "Concrete change planning",
+      "Model and code implementation",
+      "Behavior verification"
     ],
     "defaultPrompt": [
-      "Retrieve the relevant engineering context before this change.",
-      "Plan this change through Projector.",
-      "Review this change with Projector evidence."
+      "Show the concepts, requirements and decisions that govern this behavior.",
+      "Plan the model artifacts and code changes for this feature.",
+      "Implement this fix and check it against the accepted model.",
+      "Review this implementation for contradictions and missing behavior."
     ]
   }
 }

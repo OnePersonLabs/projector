@@ -1,5 +1,5 @@
 interface:
   display_name: "Projector"
-  short_description: "Develop through a durable conceptual model"
+  short_description: "Plan and build from concepts, requirements and decisions"
 policy:
   allow_implicit_invocation: true

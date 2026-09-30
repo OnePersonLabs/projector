@@ -1,57 +1,57 @@
 # Getting started
 
-This guide takes a repository from plugin installation to one checked implementation change. Projector requires Node 24 or later on the host `PATH`.
+This guide takes a repository from plugin installation through one authorized change. Projector needs Node 24 or later on the host `PATH`.
 
 ## Contents
 
-- [1. Install the plugin](#1-install-the-plugin)
-- [2. Activate the repository](#2-activate-the-repository)
-- [3. Establish the first accepted meaning](#3-establish-the-first-accepted-meaning)
-- [4. Retrieve meaning before editing](#4-retrieve-meaning-before-editing)
-- [5. Make and check the change](#5-make-and-check-the-change)
-- [6. Keep the right record](#6-keep-the-right-record)
-- [First-use checklist](#first-use-checklist)
+- [Install the plugin](#install-the-plugin)
+- [Initialize a repository](#initialize-a-repository)
+- [Plan the first change](#plan-the-first-change)
+- [Authorize execution](#authorize-execution)
+- [Inspect the result](#inspect-the-result)
+- [Use a terminal](#use-a-terminal)
 
-## 1. Install the plugin
+## Install the plugin
 
-Install **Projector V3** (`projector-v3@projector-v3`) from this repository's marketplace and use Node 24 or later. The shipping plugin at `plugins/projector-v3` includes its compiled runtime; installation requires no build, `pnpm install`, or dependency download. For a local checkout, register the repository with `codex plugin marketplace add <checkout-path>`, then run `codex plugin add projector-v3@projector-v3`. The plugin's skills invoke `node <plugin>/scripts/projector.mjs`; the bare `projector` command requires the separately packaged CLI on the host `PATH`.
+Install **Projector V3** (`projector-v3@projector-v3`) from this repository's Codex marketplace. For a local checkout:
 
-Contributors run `pnpm install` and `pnpm plugin:prepare-local` after runtime changes. That command stages the plugin under `.build/local-marketplace/plugins/projector-v3` and updates the shipping runtime under `plugins/projector-v3/runtime`. Include that generated runtime with the source change so GitHub installations receive the current code. `.build/` remains ignored by Git.
+```text
+codex plugin marketplace add <checkout-path>
+codex plugin add projector-v3@projector-v3
+```
 
-## 2. Activate the repository
+The installed plugin includes its compiled runtime. You do not need to build this repository to use it. Installing the plugin does not activate a project.
 
-Ask Codex: “Use `$projector` to initialize this repository.” The skill invokes the bundled CLI. If you run commands in a terminal, `node <plugin>/scripts/projector.mjs init` works with the plugin bundle; `projector init` requires the separate CLI distribution on `PATH`. Initialization creates or validates the Projector configuration and canonical model structure. Installing the plugin alone does not activate a repository.
+## Initialize a repository
 
-If Projector reports an unsupported authored format, stop and inspect the format boundary. Do not rename or rewrite older data to make initialization pass. The current release supports one artifact format and requires a checked cutover from an older format.
+Open the target repository in Codex and say: “Use `$projector` to initialize this repository.” This creates or checks `.projector/config.toml`, the readable model index, and the model structure. Initialization does not invent requirements from code.
 
-Initialization creates the configuration, runtime structure, and model index. It does not invent project obligations. A new project still needs accepted meaning based on user intent and inspected project evidence.
+For a new app, start with the behavior you intend to build. For an existing app, identify current behavior, decisions, and boundaries to inspect. An observed implementation is evidence for proposed meaning; it does not become accepted intent merely because it exists. If Projector reports an older unsupported format, keep the old files intact and inspect the cutover before writing new model data.
 
-## 3. Establish the first accepted meaning
+## Plan the first change
 
-If the model has no authored obligations, ask the user which existing behavior and boundaries must govern future work. Inspect the implementation and available product decisions as evidence, then use `$projector-change` to propose the first relevant concepts, requirements, and observable scenarios. Capture and review that proposal through the skill. From a terminal, run `node <plugin>/scripts/projector.mjs accept proposal.json --request "Record the existing replay contract"`, or use `projector accept proposal.json --request "Record the existing replay contract"` after installing the separate CLI distribution. Apply only the reviewed change ID and hash. Initialization does not seed a model from code automatically.
+In Codex Plan mode, describe an outcome and invoke `$projector` in chat. For example:
 
-If the model already has accepted meaning, move to the next step. For a behavior-preserving first task, ask Codex: “Use `$projector` to retrieve the replay duplicate-handling contract and help me fix the reconnect bug without changing that behavior.”
+> Use `$projector` to plan reusable clips with independent timeline placements. Each placement needs its own transpose value, and save/reload must preserve the shared clip reference.
 
-## 4. Retrieve meaning before editing
+Codex should show the actual candidate concepts, requirements, scenarios, relationships, stable IDs, proposed paths, reasons, and implementation consequences in readable form. Revise the plan in conversation. A question about the design is a request for explanation, not authorization. Plan mode does not capture or accept model changes, write canonical files, or implement code.
 
-The skill retrieves a context packet for the requested outcome. Name relevant record IDs with `--entity` or known source paths with `--target` when direct CLI use is appropriate. Read complete selected sections, relationships, reasons, evidence, omissions, and unknowns. Keep the returned context ID for the later check. The direct CLI examples in this guide use `projector` shorthand only when the separate CLI distribution is on `PATH`; otherwise, prefix the operation with `node <plugin>/scripts/projector.mjs`.
+If the repository already has a model, Codex retrieves the relevant records and checks whether an existing identity owns the change. A behavior repair can preserve accepted meaning. The [Clip/Placement example](examples/clip-placement.md) shows a new model, a revision after feedback, and a later change to the same identities.
 
-## 5. Make and check the change
+## Authorize execution
 
-For a behavior-preserving change, Codex inspects current code and makes authorized edits with ordinary tools. Run the behavior checks that exercise the changed path. Then check the retained context with `projector check <context ID>` or ask `$projector` to do so. Explain which obligations were examined and what remains uncertain. If the requested behavior itself changes, pause implementation and use `$projector-change` to review and accept the new meaning first.
+When the proposal matches the intended outcome, authorize Codex to implement it. Execution must be outside native Plan mode. That authorization covers model acceptance, implementation and verification together; `$projector` carries them through without another implementation prompt or skill invocation. The model lifecycle checks the exact proposed contents and current dependencies and retains recovery evidence.
 
-If source membership or an assumption changed, investigate it; that is not automatically a violation.
+If implementation reveals a material gap in intended meaning, Codex must show the proposed revision and resolve it before depending on that new meaning. A behavior-preserving code fix can keep the model unchanged.
 
-## 6. Keep the right record
+## Inspect the result
 
-When the task discovers a durable constraint, scenario, relationship, or reason that will help future work, use `$projector-change` to propose a model update. Do not record every implementation choice. Projector's model should retain facts that can change a future decision or help check an obligation.
+Review the linked `.projector/` records, code diff, behavior checks, Projector context findings, and unresolved evidence. A passing check establishes only the cases it exercised. `$projector-verify` can inspect the actual implementation against the concept, requirement, and scenario, including counterexamples such as two placements sharing one clip and save/reload preserving their separate transpose values.
 
-## First-use checklist
+For source changes made outside this Projector task, use `$projector-reconcile`. For a large, branching set of source documents or chats, use `$projector-assimilate` to prepare a separate working synthesis before taking mature intent into Projector.
 
-- The repository has an active `.projector/config.toml` and canonical `.projector/model/`.
-- Context output has a retained context ID.
-- The implementation was inspected and relevant behavior checks ran.
-- The context check's findings and unknowns were reviewed.
-- Any intended meaning change was handled through a reviewed canonical change.
+## Use a terminal
 
-Continue with the [everyday workflow](workflows.md) or browse complete [examples](examples.md).
+Skill names such as `$projector` are entered in Codex chat. The bundled terminal entry point is `node <plugin>/scripts/projector.mjs`; the bare `projector` command requires the separately packaged CLI on `PATH`. For example, `node <plugin>/scripts/projector.mjs init` initializes a repository and `node <plugin>/scripts/projector.mjs context "reuse clips in placements"` retrieves a context. The CLI exposes lower-level operations for integrations and exact inspection; it does not replace the conversational Plan mode review and authorization. See the [CLI reference](reference/cli.md).
+
+Continue with [Workflows](workflows.md) or the [worked example](examples/clip-placement.md).

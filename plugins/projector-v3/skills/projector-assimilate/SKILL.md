@@ -1,7 +1,6 @@
 ---
 name: projector-assimilate
-description: Assimilate large or branching chat logs, handoffs, transcripts, webpages, and repositories into a durable working synthesis and mature change intent for Projector. Use for long-running intake and resumption; ordinary Projector changes and simple summaries do not need it.
-disable-model-invocation: false
+description: Turn long chats, research and existing project material into a source-linked synthesis for the conceptual model. Keep decisions, contradictions and open questions visible before accepting changes.
 ---
 
 # Projector assimilate
@@ -46,6 +45,6 @@ If assimilation reveals a needed change to a project capability, including this 
 
 When the endpoint permits taking a mature candidate into Projector, prepare a self-contained change intent brief using [the handoff reference](references/change-handoff.md). Do not invent accepted identities, semantic hashes, approval, or implementation evidence. For a design-only endpoint, provide the brief and stop there.
 
-For an authorized canonical change, follow the installed `$projector` and `$projector-change` skills and current contracts. Projector adjudicates accepted meaning and owns its change lifecycle. Bring rejections or revisions back as evidence for assimilation's next pass; neither workspace silently rewrites the other.
+For an authorized canonical change, follow the installed `$projector` skill and current contracts. Projector adjudicates accepted meaning and owns its change lifecycle. Bring rejections or revisions back as evidence for assimilation's next pass; neither workspace silently rewrites the other.
 
 Leave interrupted synthesis work with a recoverable frontier and retained intake. Report the current synthesis, what changed or was deferred, available evidence and limitations, and the exact next useful action. The endpoint is the user's outcome, not completion of a ceremonial number of passes.

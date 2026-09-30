@@ -2,6 +2,8 @@
 
 The separately packaged CLI distribution exposes the bare `projector` command when installed on the host `PATH`. Installing the Projector plugin does not add this command to `PATH`. Plugin skills invoke the bundled CLI as `node <plugin>/scripts/projector.mjs`; for terminal use, prefix an operation with that script path when the standalone CLI is not installed. Both entry points expose the same public operations and arguments. Use Node 24 or later. Run `projector --help` or `node <plugin>/scripts/projector.mjs --help` for help.
 
+These are lower-level terminal and integration operations. The ordinary Codex workflow invokes `$projector` in chat: Plan mode discusses readable proposed artifacts without capture or mutation, and authorized execution handles model acceptance, implementation, and verification. Users do not have to orchestrate `accept` capture/apply by hand.
+
 ## Contents
 
 - [Operations](#operations)

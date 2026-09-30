@@ -1,59 +1,47 @@
 # Workflows
 
-Choose the workflow by the kind of work. The first path is the normal one; the others handle a change to meaning, a consequential review, an external change, or a large evidence set.
+`$projector` is the main Codex skill for project work. Choose the route by what the task changes and where the evidence came from.
 
 ## Contents
 
-- [Routine implementation](#routine-implementation)
-- [Change accepted meaning](#change-accepted-meaning)
-- [Review a consequential diff](#review-a-consequential-diff)
+- [Plan a change to meaning](#plan-a-change-to-meaning)
+- [Execute the authorized task](#execute-the-authorized-task)
+- [Repair code under existing meaning](#repair-code-under-existing-meaning)
+- [Verify an actual implementation](#verify-an-actual-implementation)
 - [Reconcile outside changes](#reconcile-outside-changes)
-- [Assimilate source material](#assimilate-source-material)
-- [When the tool is unavailable](#when-the-tool-is-unavailable)
+- [Assimilate substantial sources](#assimilate-substantial-sources)
+- [When Projector is unavailable](#when-projector-is-unavailable)
 
-## Routine implementation
+## Plan a change to meaning
 
-```mermaid
-flowchart LR
-  R["Request"] --> M["Retrieve accepted meaning"]
-  M --> S["Inspect code and dependencies"]
-  S --> E["Implement with ordinary tools"]
-  E --> T["Run behavior checks"]
-  T --> C["Check retained context"]
-  C --> O["Report evidence and uncertainty"]
-```
+Use `$projector` in native Codex Plan mode. Retrieve relevant accepted records and inspect the code and consumers. Show proposed concept, requirement, scenario, relation, and decision changes with readable contents, stable identities, likely paths, reasons, and implementation effects. Revise the plan through conversation. A question or tentative idea does not authorize a model write. Plan mode does not capture, accept, or implement the plan.
 
-The loop keeps meaning retrieval, implementation, behavioral evidence, and currentness review as separate steps. A changed assumption or new consumer leads to investigation; it does not automatically mean the code violates an obligation.
+See [Changing accepted meaning](changing-accepted-meaning.md) and the [Clip/Placement example](examples/clip-placement.md).
 
-1. Use `$projector` to retrieve meaning for the requested outcome. Include known entity IDs or source paths when helpful.
-2. Read the selected records, rationale, typed relationships, evidence, disclosure, and open questions. Retrieve focused context or inspect exact IDs when an item is missing or ambiguous.
-3. Inspect implementation and consumers. Make the authorized change with ordinary tools.
-4. Run relevant behavior checks.
-5. Run `projector check <context ID>` and review changed assumptions, new query members, violations, and unavailable observations.
-6. Report the obligations checked, the concrete behavior evidence, and remaining uncertainty.
+## Execute the authorized task
 
-Keep the context ID. After a session reset, use `projector resume <actual context ID>` to inspect whether its retained conclusions still apply.
+Authorize Codex to implement the agreed task outside Plan mode. That authorization covers model acceptance, implementation and verification together. `$projector` carries the scope through without another implementation prompt or skill invocation. Review the accepted records, actual code, application checks, context findings, and remaining unknowns. Internal lifecycle capture/apply commands are described in the [CLI reference](reference/cli.md) for terminal users and integrations; they are not additional skill invocations for the normal task.
 
-## Change accepted meaning
+If implementation reveals a new intent decision, revise the proposed meaning before depending on it. If the implementation is different but satisfies the same model, retain the model and explain the realization.
 
-Use `$projector-change` when intended behavior, a governing constraint, an architectural boundary, or an accepted rationale changes. Retrieve current identities first. Prepare a proposal with the current schema, capture a preview, review the exact changed meaning and impact, and apply only the reviewed change ID and hash. Then realize the intent in code and run behavior checks.
+## Repair code under existing meaning
 
-See [Changing accepted meaning](changing-accepted-meaning.md) for identity, preview, and stale-plan handling.
+Use `$projector` to retrieve the governing model, inspect the failing path, and repair the implementation. For example, if a saved placement loses its transpose on reload, the existing requirement already says to preserve it. A code fix and discriminating reload check can satisfy that obligation without changing the requirement. Check retained context after the edit and report changed assumptions or new consumers.
 
-## Review a consequential diff
+## Verify an actual implementation
 
-Use `$projector-review` when a change crosses important boundaries or a user asks for a project-aware review. The reviewer needs the actual candidate diff. Trace affected responsibilities through producer, persistence, consumers, registrations, and tests. Try concrete counterexamples and report demonstrated violations separately from changed assumptions and missing evidence.
+Use `$projector-verify` to compare code with the applicable concept, requirement, and scenario. Follow producers, persistence, consumers, and registrations. Try a counterexample that could distinguish a bad implementation: two placements of the same clip with different transpose values, then save and reload. Report demonstrated violations, passing observed cases, and unavailable evidence separately. Verification does not turn an untested case into a pass.
 
 ## Reconcile outside changes
 
-Use `$projector-reconcile` after a pull, direct edit, changed assumption, or other change outside an existing Projector plan. Set the comparison basis to the named commit range, actual diff, or retained context. Without an anchor, inspect the current diff and retrieve fresh context rather than inventing prior intent.
+Use `$projector-reconcile` after a pull, external commit, direct edit, or new consumer outside the retained task. Supply the actual diff, commits, or context ID. Inspect which assumptions and source-query members changed. A changed source hash can be harmless, a changed assumption, a violation, or an evidence gap. Revise accepted meaning only if intended meaning changes.
 
-## Assimilate source material
+## Assimilate substantial sources
 
-Use `$projector-assimilate` for large, branching, or long-running source intake. Keep intake and synthesis in a distinct `.assimilate/` workspace. When a mature idea crosses into canonical project meaning, ground it in current Projector context and hand it through `$projector-change`.
+Use `$projector-assimilate` for large or branching chats, documents, research, or repository histories. Its `.assimilate/` working synthesis has separate identity and authority. Ground a mature change brief in current `$projector` context before proposing accepted meaning.
 
-## When the tool is unavailable
+## When Projector is unavailable
 
-Read the canonical Markdown under `.projector/` directly and state which assurance is unavailable. Do not treat a direct read as a completed context retrieval or currentness check. Continue only within the user's authorization and available evidence.
+Read canonical records under `.projector/` directly and state that automated retrieval or currentness assurance was unavailable. Continue only as supported by the task's authorization and the evidence in hand.
 
 Continue with [Skills](skills.md), [Examples](examples.md), or [Review, reconcile, and recover](review-reconcile-recover.md).

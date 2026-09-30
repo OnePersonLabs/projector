@@ -1,38 +1,23 @@
 # Skill invocations
 
-These skill invocations guide Codex through Projector workflows. They are not CLI commands. Use the terminal `projector` operations for exact command-line actions; see the [CLI reference](reference/cli.md).
-
-## Contents
-
-- [`$projector`](#projector)
-- [`$projector-change`](#projector-change)
-- [`$projector-review`](#projector-review)
-- [`$projector-reconcile`](#projector-reconcile)
-- [`$projector-assimilate`](#projector-assimilate)
-- [A typical handoff between skills](#a-typical-handoff-between-skills)
+Type these names in Codex chat. They are not terminal commands. See the [CLI reference](reference/cli.md) for exact shell operations.
 
 ## `$projector`
 
-Use this for the everyday work loop: retrieve accepted meaning, continue an actual retained context, inspect records, check consequences, or explicitly recover a recognized interrupted controlled write. It helps the agent select relevant meaning before work and revisit it afterward.
+Use the main skill to initialize a repository, retrieve accepted meaning, plan a change, implement an authorized task, check consequences, and resume actual retained context. In Codex Plan mode, it presents proposed record contents, stable identities, paths, reasons, and implementation consequences for discussion and revision. Plan mode does not write, capture, or accept canonical changes or implement code. On authorized execution, it handles model acceptance through the lifecycle and proceeds to implementation and verification.
 
-## `$projector-change`
+## `$projector-verify`
 
-Use this when intended project meaning changes. The skill resolves existing identities, drafts a strict proposal, previews affected meaning, and applies only the exact reviewed plan. Then use normal implementation tools and behavior checks to realize it.
-
-## `$projector-review`
-
-Use this to review an actual candidate diff against accepted meaning and current dependencies. It traces producers, persistence, consumers, registrations, and tests, and looks for concrete failure traces.
+Use this to examine actual code against accepted concepts, requirements, and scenarios. It traces producers, persistence, consumers, registrations, and behavior checks where relevant; tries concrete counterexamples; and separates demonstrated violations from changed assumptions and unavailable evidence. The result names what was checked and what remains unknown.
 
 ## `$projector-reconcile`
 
-Use this when a pull, direct edit, new consumer, or changed assumption affects the repository outside an existing Projector context. The skill identifies what remains current and what requires reconsideration.
+Use this after a pull, direct edit, new consumer, or changed assumption outside the current Projector task. It compares actual source and retained meaning before deciding whether a code repair or model revision is needed.
 
 ## `$projector-assimilate`
 
-Use this to turn a large or branching body of source material into a durable working synthesis. It keeps its notes and intake separate from Projector's canonical model. Use it when the source intake itself is substantial; a simple summary or ordinary change does not need it.
+Use this when the source set is large or branches across chats, documents, research, or repository history. The result is a separate working synthesis in `.assimilate/`. Ground mature intent in current accepted meaning before proposing it through `$projector`; synthesis notes are not canonical Projector records.
 
-## A typical handoff between skills
+Earlier documentation called model revision `$projector-change` and consequential code review `$projector-review`. Use `$projector` and `$projector-verify` for those tasks now. Historical records may still contain the former names.
 
-Routine work starts with `$projector`, then uses normal code tools and checks. If implementation changes accepted meaning, route that boundary through `$projector-change`. For a high consequence diff, add `$projector-review`; when edits arrived from outside the retained work, use `$projector-reconcile`. For a source pile that needs its own durable synthesis, use `$projector-assimilate` before preparing a canonical change.
-
-The full instructions ship with the installed plugin under `plugins/projector-v3/skills/`. Continue with [Workflows](workflows.md) or the [CLI reference](reference/cli.md).
+See [Getting started](getting-started.md), the [worked example](examples/clip-placement.md), or [Workflows](workflows.md).

@@ -1,0 +1,52 @@
+{
+  "apiVersion": "projector.change-proposal/v1",
+  "architecture": null,
+  "analysisFacets": ["behavior", "architecture"],
+  "canonicalMutations": [
+    {
+      "kind": "requirement",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:f9e85b709b6e3e826fc7bd0ab18fadd8569394df927d5a5df80151528ece09e4",
+      "expectedDocumentHash": "sha256:v1:3914cb6d1fae2725a10579d32d1fbcc814112faafded52ed6d09e45ea93f1c32",
+      "rationale": "The user decided to limit transposition to an integer range of two octaves in either direction.",
+      "payload": {
+        "id": "requirement:placement-transposition",
+        "key": "placement-transposition",
+        "title": "Transpose each placement independently",
+        "aliases": [],
+        "statement": "Each placement MUST store its own integer transpose value in semitones from -24 through 24, inclusive. The app MUST reject a value outside that range without changing the placement or clip. Playback MUST apply the stored value to the referenced clip's notes without changing the clip. Two placements of one clip MAY have different transpose values. Saving and reloading an arrangement MUST preserve both the shared clip reference and each placement's transpose value.",
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": { "op": "all", "items": [] },
+        "origin": [{ "kind": "user-request", "locator": "example:clip-placement:initial-request", "description": "Illustrative request to reuse one clip at independent pitches." }, { "kind": "user-request", "locator": "example:clip-placement:range-decision", "description": "Illustrative later decision: integer semitones from -24 through 24; reject invalid values." }],
+        "evidence": []
+      }
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:21234f79d5f6381de138436b414c19f01f8c645f78c3bc52ff3d03701fb1cbbe",
+      "expectedDocumentHash": "sha256:v1:6b9084c056f554cf280b9436d9fbd23da3ecd55918c265ab954842c4c5907095",
+      "rationale": "The existing shared-clip scenario must also distinguish rejection of an invalid placement value.",
+      "payload": {
+        "id": "scenario:two-placements-save-reload",
+        "key": "two-placements-save-reload",
+        "title": "Play and reload two placements of one clip",
+        "aliases": [],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": { "op": "all", "items": [] },
+        "steps": [
+          { "role": "precondition", "statement": "One clip contains a C4 note. Two placements reference that clip; the first has transpose 0 and the second has transpose 2 semitones." },
+          { "role": "trigger", "statement": "The user plays both placements, saves the arrangement, reloads it, and plays both placements again." },
+          { "role": "expected-outcome", "statement": "The first placement plays C4 and the second plays D4 before and after reload. Both placements still reference the one clip." },
+          { "role": "forbidden-outcome", "statement": "Playing or saving either placement rewrites the clip's C4 note or the other placement's transpose value." },
+          { "role": "trigger", "statement": "The user tries to set the second placement's transpose to 25 or to 1.5 semitones." },
+          { "role": "expected-outcome", "statement": "The app rejects each invalid value. The second placement remains at 2 semitones and the shared clip remains unchanged." }
+        ],
+        "origin": [{ "kind": "user-request", "locator": "example:clip-placement:initial-request", "description": "Illustrative acceptance case for placement-specific transposition and reload." }, { "kind": "user-request", "locator": "example:clip-placement:range-decision", "description": "Illustrative later decision and rejection cases." }],
+        "evidence": []
+      }
+    }
+  ]
+}
