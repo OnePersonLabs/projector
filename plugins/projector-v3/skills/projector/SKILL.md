@@ -5,7 +5,7 @@ description: Develop software through a readable model of its concepts, requirem
 
 # Projector
 
-Use `node <plugin>/scripts/projector.mjs` as `projector` below. Resolve `<plugin>` from this skill directory. The command requires Node 24 or later and no repository package-manager command. Set `--root <absolute repository>` when the target differs from the current directory. When installed `projector_*` MCP tools are available, use the matching operation with an explicit absolute `repositoryRoot`. The resident MCP process uses the same operation runner and Core input contracts. Keep the CLI for shells and hosts without MCP.
+Use `node <plugin>/scripts/projector.mjs` as `projector` below. Resolve `<plugin>` from this skill directory. The command requires Node 24 or later and no repository package-manager command. Set `--root <absolute repository>` when the target differs from the current directory.
 
 Use this skill to initialize Projector on request or to work in a repository that already has `.projector/config.toml`. When activation is requested and execution is authorized outside Plan mode, run `projector init` before retrieving context. Installation alone does not authorize activation. The readable canonical Markdown under `.projector` owns accepted intent; TOML holds identities and typed bindings. Independent relations and policies remain TOML. Code, plans, retrieved candidates and assimilation notes are evidence to assess against accepted intent. If Projector is unavailable, read canonical Markdown directly and state the missing assurance.
 

@@ -16,7 +16,7 @@
 
 Use `$projector` in native Codex Plan mode. Retrieve relevant accepted records and inspect the code and consumers. Show proposed concept, requirement, scenario, relation, and decision changes with readable contents, stable identities, likely paths, reasons, and implementation effects. Revise the plan through conversation. A question or tentative idea does not authorize a model write. Plan mode does not capture, accept, or implement the plan.
 
-See [Changing accepted meaning](changing-accepted-meaning.md) and the [Clip/Placement example](examples/clip-placement.md).
+See [Changing accepted meaning](changing-accepted-meaning.md) and the [clip use example](examples/clip-use.md).
 
 ## Execute the authorized task
 
@@ -26,11 +26,11 @@ If implementation reveals a new intent decision, revise the proposed meaning bef
 
 ## Repair code under existing meaning
 
-Use `$projector` to retrieve the governing model, inspect the failing path, and repair the implementation. For example, if a saved placement loses its transpose on reload, the existing requirement already says to preserve it. A code fix and discriminating reload check can satisfy that obligation without changing the requirement. Check retained context after the edit and report changed assumptions or new consumers.
+Use `$projector` to retrieve the governing model, inspect the failing path, and repair the implementation. For example, if a saved clip use loses its transpose on reload, the existing requirement already says to preserve it. A code fix and discriminating reload check can satisfy that obligation without changing the requirement. Check retained context after the edit and report changed assumptions or new consumers.
 
 ## Verify an actual implementation
 
-Use `$projector-verify` to compare code with the applicable concept, requirement, and scenario. Follow producers, persistence, consumers, and registrations. Try a counterexample that could distinguish a bad implementation: two placements of the same clip with different transpose values, then save and reload. Report demonstrated violations, passing observed cases, and unavailable evidence separately. Verification does not turn an untested case into a pass.
+Use `$projector-verify` to compare code with the applicable concept, requirement, and scenario. Follow producers, persistence, consumers, and registrations. Try a counterexample that could distinguish a bad implementation: use one clip twice with different transpose values, then save and reload. Report demonstrated violations, passing observed cases, and unavailable evidence separately. Verification does not turn an untested case into a pass.
 
 ## Reconcile outside changes
 

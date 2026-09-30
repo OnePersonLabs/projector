@@ -32,11 +32,11 @@ For a new app, start with the behavior you intend to build. For an existing app,
 
 In Codex Plan mode, describe an outcome and invoke `$projector` in chat. For example:
 
-> Use `$projector` to plan reusable clips with independent timeline placements. Each placement needs its own transpose value, and save/reload must preserve the shared clip reference.
+> Use `$projector` to plan using a clip more than once in an arrangement. Each use needs its own transpose value, and save/reload must preserve the shared clip reference.
 
 Codex should show the actual candidate concepts, requirements, scenarios, relationships, stable IDs, proposed paths, reasons, and implementation consequences in readable form. Revise the plan in conversation. A question about the design is a request for explanation, not authorization. Plan mode does not capture or accept model changes, write canonical files, or implement code.
 
-If the repository already has a model, Codex retrieves the relevant records and checks whether an existing identity owns the change. A behavior repair can preserve accepted meaning. The [Clip/Placement example](examples/clip-placement.md) shows a new model, a revision after feedback, and a later change to the same identities.
+If the repository already has a model, Codex retrieves the relevant records and checks whether an existing identity owns the change. A behavior repair can preserve accepted meaning. The [clip use example](examples/clip-use.md) shows a new model, a revision after feedback, and a later change to the same identities.
 
 ## Authorize execution
 
@@ -46,12 +46,12 @@ If implementation reveals a material gap in intended meaning, Codex must show th
 
 ## Inspect the result
 
-Review the linked `.projector/` records, code diff, behavior checks, Projector context findings, and unresolved evidence. A passing check establishes only the cases it exercised. `$projector-verify` can inspect the actual implementation against the concept, requirement, and scenario, including counterexamples such as two placements sharing one clip and save/reload preserving their separate transpose values.
+Review the linked `.projector/` records, code diff, behavior checks, Projector context findings, and unresolved evidence. A passing check establishes only the cases it exercised. `$projector-verify` can inspect the actual implementation against the concept, requirement, and scenario, including counterexamples such as two uses of one clip sharing one clip and save/reload preserving their separate transpose values.
 
 For source changes made outside this Projector task, use `$projector-reconcile`. For a large, branching set of source documents or chats, use `$projector-assimilate` to prepare a separate working synthesis before taking mature intent into Projector.
 
 ## Use a terminal
 
-Skill names such as `$projector` are entered in Codex chat. The bundled terminal entry point is `node <plugin>/scripts/projector.mjs`; the bare `projector` command requires the separately packaged CLI on `PATH`. For example, `node <plugin>/scripts/projector.mjs init` initializes a repository and `node <plugin>/scripts/projector.mjs context "reuse clips in placements"` retrieves a context. The CLI exposes lower-level operations for integrations and exact inspection; it does not replace the conversational Plan mode review and authorization. See the [CLI reference](reference/cli.md).
+Skill names such as `$projector` are entered in Codex chat. The bundled terminal entry point is `node <plugin>/scripts/projector.mjs`; the bare `projector` command requires the separately packaged CLI on `PATH`. For example, `node <plugin>/scripts/projector.mjs init` initializes a repository and `node <plugin>/scripts/projector.mjs context "reuse clips in clip uses"` retrieves a context. The CLI exposes lower-level operations for integrations and exact inspection; it does not replace the conversational Plan mode review and authorization. See the [CLI reference](reference/cli.md).
 
-Continue with [Workflows](workflows.md) or the [worked example](examples/clip-placement.md).
+Continue with [Workflows](workflows.md) or the [worked example](examples/clip-use.md).

@@ -11,10 +11,6 @@
     "./commands": {
       "types": "./dist/public-command.d.ts",
       "default": "./dist/public-command.js"
-    },
-    "./mcp": {
-      "types": "./dist/mcp-server.d.ts",
-      "default": "./dist/mcp-server.js"
     }
   },
   "scripts": {
@@ -23,7 +19,6 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "^2.1.0",
     "@projector/analyzers": "workspace:*",
     "@projector/core": "workspace:*",
     "@projector/control-plane": "workspace:*",

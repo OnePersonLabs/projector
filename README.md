@@ -14,51 +14,59 @@ With Projector, you develop software by shaping a readable model of its concepts
 
 ## See it in action
 
-Suppose you are building a music app with reusable clips. One clip can appear several times on a timeline. You want each placement to transpose the shared notes independently. Start in Codex Plan mode to work through the design. This conversation illustrates the workflow; the linked JSON contains the complete example model proposal.
+Suppose you are building a music app with reusable clips. One clip can appear several times on a timeline. You want each use of a clip to transpose the shared notes independently. Start in Codex Plan mode to work through the design. This conversation illustrates the workflow; the linked JSON contains the complete example model proposal.
 
 ```text
-You: Use $projector. Let one clip appear in several timeline placements,
-     each with its own transpose value. Save and reload must keep that relationship.
+You: Use $projector. Let one clip be used more than once in an arrangement,
+     with a separate transpose value for each use. Save and reload must preserve
+     the shared clip reference.
 
-Codex: I propose concept:clip at .projector/model/concepts/clip.md:
+Codex: I propose concept:clip at
+       .projector/model/concepts/clip.md:
        "A clip owns reusable notes and timing."
-       concept:placement at .projector/model/concepts/placement.md:
-       "A placement references a clip and owns its timeline position and
-       transpose value."
-       requirement:placement-transposition says each placement stores its own
-       semitone value and save/reload preserves the shared clip reference.
-       scenario:two-placements-save-reload will exercise one C4 clip through
-       two placements. The app needs a clip reference on each placement,
-       playback transposition, and persistence for both values.
+       requirement:independent-transposition-per-use at
+       .projector/model/requirements/transpose-each-clip-use-independently--independent-transposition-per-use.md
+       says each use stores its own semitone value and save/reload preserves the
+       shared clip reference.
+       scenario:two-uses-of-one-clip-save-reload at
+       .projector/model/scenarios/save-and-reload-two-uses-of-one-clip--two-uses-of-one-clip-save-reload.md
+       exercises one C4 clip used twice. I would add the Clip -> Requirement
+       and Requirement -> Scenario relations under .projector/model/relations/.
+       The linked JSON is the complete proposal; these Markdown and TOML records
+       are where the accepted model lives. The app needs to store a clip
+       reference, position, and transpose value for each use and preserve them
+       through playback and save/reload.
 
-You: Make the reload case cover two placements of the same clip. Keep the clip's
+You: Make the reload case cover two uses of the same clip. Keep the clip's
      original notes unchanged.
 
-Codex: Revised scenario: transpose 0 plays C4, and +2 plays D4 before and
-       after reload. Both placements still reference one clip, whose note
-       remains C4. I will add Placement -> Clip and Requirement -> Scenario
-       relations. The proposed contents are linked in the worked example.
+Codex: I revise scenario:two-uses-of-one-clip-save-reload in
+       .projector/model/scenarios/save-and-reload-two-uses-of-one-clip--two-uses-of-one-clip-save-reload.md:
+       transpose 0 plays C4, and +2 plays D4 before and after reload. Both
+       uses still reference the same clip, whose note remains C4. I will add
+       the Clip -> Requirement and Requirement -> Scenario relations. The proposed
+       contents are linked in the worked example.
 
      [After leaving Codex Plan mode]
 You: Go ahead and implement that.
 
 Codex: Projector accepted the model change, then I changed the app and ran the
-       playback and persistence checks. Two placements of one C4 clip played
+       playback and persistence checks. Two clip uses of one C4 clip played
        C4 and D4 before and after reload without changing the clip. Older
        arrangement import has not been checked.
 ```
 
-In Codex Plan mode, the conversation stays a plan: Codex shows proposed record contents, identities, paths, reasons, and implementation consequences, then revises them with you. Questions and discussion do not accept or write the model or start implementation. Leave Plan mode and authorize execution; `$projector` then runs the model lifecycle and implements and verifies the task. There is no separate skill to invoke for each phase. Read the [worked Clip/Placement example](docs/examples/clip-placement.md) for complete illustrative artifacts and a later revision that reuses their identities.
+In Codex Plan mode, the conversation stays a plan: Codex shows proposed record contents, identities, paths, reasons, and implementation consequences, then revises them with you. Questions and discussion do not accept or write the model or start implementation. Leave Plan mode and authorize execution; `$projector` then runs the model lifecycle and implements and verifies the task. There is no separate skill to invoke for each phase. Read the [worked clip use example](docs/examples/clip-use.md) for complete illustrative artifacts and a later revision that reuses their identities.
 
 You can also ask for the whole change in one shot, outside Plan mode:
 
 ```text
-$projector Limit placement transpose to integer semitones from -24 to 24.
-Reject invalid values without changing the placement or clip. Implement it
+$projector Limit clip use transpose to integer semitones from -24 to 24.
+Reject invalid values without changing the clip use or clip. Implement it
 and keep the existing save/reload behavior.
 ```
 
-Codex updates the relevant model records, implements the change, runs its checks, and reports the actual artifact changes with links. You can follow up with a revision such as “Make that -48 to 48.” A request like “Reload loses the second placement's transpose; fix it” can instead repair code under the existing model and report that the model was unchanged.
+Codex updates the relevant model records, implements the change, runs its checks, and reports the actual artifact changes with links. You can follow up with a revision such as “Make that -48 to 48.” A request like “Reload loses the second clip use's transpose; fix it” can instead repair code under the existing model and report that the model was unchanged.
 
 ## Install and start
 
@@ -81,7 +89,7 @@ Projector reports which context and dependencies it inspected, plus omissions an
 
 ## Documentation
 
-Start at the [documentation home](docs/README.md). The [worked example](docs/examples/clip-placement.md) shows the records behind the conversation; [Workflows](docs/workflows.md) explains planning, execution, repair, and outside changes; [Model and context](docs/model-and-context.md) explains identity and evidence. The [CLI reference](docs/reference/cli.md) is for terminal use and integrations.
+Start at the [documentation home](docs/README.md). The [worked example](docs/examples/clip-use.md) shows the records behind the conversation; [Workflows](docs/workflows.md) explains planning, execution, repair, and outside changes; [Model and context](docs/model-and-context.md) explains identity and evidence. The [CLI reference](docs/reference/cli.md) is for terminal use and integrations.
 
 Earlier documentation used `$projector-change` for model revisions and `$projector-review` for consequential code review. Their work now runs through `$projector` and `$projector-verify`. Historical records and command receipts keep their original names.
 

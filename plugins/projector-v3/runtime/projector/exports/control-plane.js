@@ -32,11 +32,10 @@ import {
   shutdownCodeIndexRuns,
   summarizeRepositoryIntentReview,
   withProjectOperationAccess
-} from "../chunks/shared-3AJIPJSY.js";
-import "../chunks/shared-KSINEUXG.js";
+} from "../chunks/shared-HOCZL5MZ.js";
 import {
   inspectRepositoryArchitecture
-} from "../chunks/shared-VB5BNNLL.js";
+} from "../chunks/shared-R7Q3INRD.js";
 import {
   CompletionQuestionSchema,
   RepositoryCleanupOutputSchema,
@@ -44,7 +43,7 @@ import {
   RepositoryCoverageOutputSchema,
   inspectRepositoryCoverage,
   parseRepositoryCoverageResult
-} from "../chunks/shared-LO2RUO4E.js";
+} from "../chunks/shared-Z6IO2SZ3.js";
 import {
   KnowledgeContextInspectOperationOutputSchema,
   KnowledgeContextInspectionOutputSchema,
@@ -62,21 +61,21 @@ import {
   projectKnowledgeContext,
   projectKnowledgeReconciliation,
   projectRepresentationInspectionOperation
-} from "../chunks/shared-Y5DGGH2T.js";
-import "../chunks/shared-IYQMR2PN.js";
-import "../chunks/shared-VSZB442F.js";
+} from "../chunks/shared-F7QIBUKX.js";
+import "../chunks/shared-AE4LCZHI.js";
 import "../chunks/shared-ZQJOKWDN.js";
 import {
   KnowledgeApplicationEvidenceAssessmentSchema,
   KnowledgeContextResultSchema,
   KnowledgeReconciliationResultSchema
-} from "../chunks/shared-NOCWRNFA.js";
+} from "../chunks/shared-RDKUY5LE.js";
 import {
   buildRepositoryImpactSnapshot,
   predictRepositoryImpact,
   reconcileRepositoryImpact
-} from "../chunks/shared-TYAJTUSM.js";
-import "../chunks/shared-BRRTY4V2.js";
+} from "../chunks/shared-5DRPCZRI.js";
+import "../chunks/shared-KSINEUXG.js";
+import "../chunks/shared-IYQMR2PN.js";
 import "../chunks/shared-NMHHCCIJ.js";
 import "../chunks/shared-SRZY32OS.js";
 import "../chunks/shared-A2IBJY7A.js";
@@ -87,14 +86,15 @@ import {
   withResidentObservationWorkerPool
 } from "../chunks/shared-XUP2BAXD.js";
 import "../chunks/shared-DJXEJPTL.js";
+import "../chunks/shared-BRRTY4V2.js";
 import "../chunks/shared-QJIGMBBX.js";
 import "../chunks/shared-3OPGBX4O.js";
 import "../chunks/shared-GXAKKSCS.js";
 import "../chunks/shared-5EIJVVQJ.js";
 import "../chunks/shared-XN3IZTFL.js";
-import "../chunks/shared-EK2KJXX2.js";
 import "../chunks/shared-53BCDAHA.js";
 import "../chunks/shared-JRUJSZFM.js";
+import "../chunks/shared-EK2KJXX2.js";
 import "../chunks/shared-RMBXVF7C.js";
 import {
   ArchitectureEvaluationOutputSchema

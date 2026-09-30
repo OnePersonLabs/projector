@@ -1,0 +1,101 @@
+{
+  "apiVersion": "projector.change-proposal/v1",
+  "architecture": null,
+  "analysisFacets": [
+    "behavior",
+    "architecture"
+  ],
+  "canonicalMutations": [
+    {
+      "kind": "requirement",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:d5aa69e86dd7576549e815d2712deb2c476b6177c4e22a0c33a7ff89f1a70947",
+      "expectedDocumentHash": "sha256:v1:78f902d3767e10db216f98132670cef2c5309b0df39f9cd208bca14eb1993e4b",
+      "rationale": "The user decided to limit transposition to an integer range of two octaves in either direction.",
+      "payload": {
+        "id": "requirement:independent-transposition-per-use",
+        "key": "independent-transposition-per-use",
+        "title": "Transpose each clip use independently",
+        "aliases": [],
+        "statement": "Each use of a clip in an arrangement MUST store its own integer transpose value in semitones from -24 through 24, inclusive. The app MUST reject a value outside that range without changing the clip or any use. Playback MUST apply the stored value to the referenced clip’s notes without changing the clip. The same clip MAY be used more than once with different transpose values. Saving and reloading an arrangement MUST preserve the shared clip reference and each use’s transpose value.",
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "all",
+          "items": []
+        },
+        "origin": [
+          {
+            "kind": "user-request",
+            "locator": "example:clip-use:initial-request",
+            "description": "Illustrative request to reuse one clip at independent pitches."
+          },
+          {
+            "kind": "user-request",
+            "locator": "example:clip-use:range-decision",
+            "description": "Illustrative later decision: integer semitones from -24 through 24; reject invalid values."
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "revise",
+      "expectedSemanticHash": "sha256:v1:1708328392c70f926d80f3fc1012bb9ad372f1b0f2b5a3150ced17b157b48e9d",
+      "expectedDocumentHash": "sha256:v1:f31f9233fde831a8f54797a0033c0c9d44342d0e986bfc21dfe4db8ee4c89348",
+      "rationale": "The existing shared-clip scenario must also distinguish rejection of an invalid use of a clip value.",
+      "payload": {
+        "id": "scenario:two-uses-of-one-clip-save-reload",
+        "key": "two-uses-of-one-clip-save-reload",
+        "title": "Save and reload two uses of one clip",
+        "aliases": [],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "all",
+          "items": []
+        },
+        "steps": [
+          {
+            "role": "precondition",
+            "statement": "One clip contains a C4 note. An arrangement uses that clip twice; the first use has transpose 0 and the second has transpose 2 semitones."
+          },
+          {
+            "role": "trigger",
+            "statement": "The user plays both uses, saves the arrangement, reloads it, and plays both uses again."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "The first use plays C4 and the second plays D4 before and after reload. Both uses still reference the one clip."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Playing or saving either use rewrites the clip’s C4 note or the other use’s transpose value."
+          },
+          {
+            "role": "trigger",
+            "statement": "The user tries to set the second use’s transpose to 25 or to 1.5 semitones."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "The app rejects each invalid value. The second use remains at 2 semitones and the shared clip remains unchanged."
+          }
+        ],
+        "origin": [
+          {
+            "kind": "user-request",
+            "locator": "example:clip-use:initial-request",
+            "description": "Illustrative acceptance case for per-use transposition and reload."
+          },
+          {
+            "kind": "user-request",
+            "locator": "example:clip-use:range-decision",
+            "description": "Illustrative later decision and rejection cases."
+          }
+        ],
+        "evidence": []
+      }
+    }
+  ]
+}

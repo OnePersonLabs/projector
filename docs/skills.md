@@ -20,4 +20,4 @@ Use this when the source set is large or branches across chats, documents, resea
 
 Earlier documentation called model revision `$projector-change` and consequential code review `$projector-review`. Use `$projector` and `$projector-verify` for those tasks now. Historical records may still contain the former names.
 
-See [Getting started](getting-started.md), the [worked example](examples/clip-placement.md), or [Workflows](workflows.md).
+See [Getting started](getting-started.md), the [worked example](examples/clip-use.md), or [Workflows](workflows.md).

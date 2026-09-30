@@ -20,16 +20,6 @@
     "license": "MIT"
   },
   {
-    "name": "@modelcontextprotocol/core",
-    "version": "2.1.0",
-    "license": "MIT"
-  },
-  {
-    "name": "@modelcontextprotocol/server",
-    "version": "2.1.0",
-    "license": "MIT"
-  },
-  {
     "name": "@projector/analyzers",
     "version": "3.0.0"
   },

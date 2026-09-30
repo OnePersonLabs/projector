@@ -75,15 +75,15 @@ function endSemanticLease(scope, token) {
 async function execute(task, derivedBudget) {
   switch (task.type) {
     case "observe-indexed":
-      return start((await import("../chunks/shared-VZB5JG2F.js")).executeIndexedObservationTask, task.input, derivedBudget);
+      return start((await import("../chunks/shared-RY4B2HUY.js")).executeIndexedObservationTask, task.input, derivedBudget);
     case "code-operation":
       return start((await import("../chunks/shared-PCUUZNKE.js")).executeCodeWorker, task.input, deadline, maxDerivedBytes, endSemanticLease);
     case "indexed-knowledge-context":
     case "indexed-knowledge-reconcile": {
       const { SqliteObservationStore } = await import("../chunks/shared-WE75TEPS.js");
-      const { IndexedKnowledgeGraph } = await import("../chunks/shared-ZEI4PDZN.js");
-      const { IndexedGovernance } = await import("../chunks/shared-AX7X7C7T.js");
-      const { RepositoryKnowledgeService } = await import("../chunks/shared-35SXCUMS.js");
+      const { IndexedKnowledgeGraph } = await import("../chunks/shared-AUXTPSBG.js");
+      const { IndexedGovernance } = await import("../chunks/shared-WRIYBHMU.js");
+      const { RepositoryKnowledgeService } = await import("../chunks/shared-NHL6SOAH.js");
       const { IndexedSemanticGraph } = await import("../chunks/shared-KOF7I3EP.js");
       return start(async () => {
         const { descriptor } = task.input;
@@ -118,7 +118,7 @@ async function execute(task, derivedBudget) {
     }
     case "indexed-graph-query": {
       const { SqliteObservationStore } = await import("../chunks/shared-WE75TEPS.js");
-      const { QueryDependencyRegistry } = await import("../chunks/shared-IPYYBQFG.js");
+      const { QueryDependencyRegistry } = await import("../chunks/shared-MPD3S3QR.js");
       const { IndexedGraphReader } = await import("../chunks/shared-E7RBUVOV.js");
       const { IndexedQueryMemo } = await import("../chunks/shared-CUYCBLVJ.js");
       return start(async () => {
@@ -142,13 +142,13 @@ async function execute(task, derivedBudget) {
       });
     }
     case "change-relevance":
-      return start((await import("../chunks/shared-EDB3BVFV.js")).calculateRepositoryRelevance, task.input.observation, task.input.editedPaths, derivedBudget);
+      return start((await import("../chunks/shared-XJ2H5WSL.js")).calculateRepositoryRelevance, task.input.observation, task.input.editedPaths, derivedBudget);
     case "change-query": {
-      const { createChangeQueryRegistry } = await import("../chunks/shared-EDB3BVFV.js");
+      const { createChangeQueryRegistry } = await import("../chunks/shared-XJ2H5WSL.js");
       return start(() => createChangeQueryRegistry({ observation: task.input.observation, now: task.input.now, derivedBudget }).evaluate(task.input.query, { ...task.input.context, signal: new AbortController().signal }));
     }
     case "cache-protection":
-      return start((await import("../chunks/shared-NYBRPH6Y.js")).authenticateCacheProtectionSources, task.input);
+      return start((await import("../chunks/shared-GUJXQRLQ.js")).authenticateCacheProtectionSources, task.input);
     case "analyze-collected": {
       const { analyzeCollectedLocalRepository } = await import("../chunks/shared-MDJ6CQV7.js");
       return start(() => {
@@ -183,10 +183,10 @@ async function execute(task, derivedBudget) {
       });
     }
     case "authenticate-impact":
-      return start((await import("../chunks/shared-WRNSE7BP.js")).authenticateRepositoryImpactSource, task.input.source, task.input.reference);
+      return start((await import("../chunks/shared-PIQUDAGZ.js")).authenticateRepositoryImpactSource, task.input.source, task.input.reference);
     case "prepare-impact": {
-      const { KnowledgeGraph } = await import("../chunks/shared-C66SMQML.js");
-      const { buildRepositoryImpactSnapshot, predictRepositoryImpact, verifiedCurrentCodeGeneration } = await import("../chunks/shared-WRNSE7BP.js");
+      const { KnowledgeGraph } = await import("../chunks/shared-LBBLXQS7.js");
+      const { buildRepositoryImpactSnapshot, predictRepositoryImpact, verifiedCurrentCodeGeneration } = await import("../chunks/shared-PIQUDAGZ.js");
       return start(async () => {
         const graph = new KnowledgeGraph(task.input.observation, {}, derivedBudget);
         const codeGeneration = await verifiedCurrentCodeGeneration(task.input.observation.repositoryRoot, task.input.observation.state);
@@ -210,25 +210,25 @@ async function execute(task, derivedBudget) {
       });
     }
     case "coverage":
-      return start((await import("../chunks/shared-UQWON4YW.js")).computeRepositoryCoverage, task.input.observation, task.input.request, task.input.mode, host, task.input.now, derivedBudget);
+      return start((await import("../chunks/shared-HWGEODPS.js")).computeRepositoryCoverage, task.input.observation, task.input.request, task.input.mode, host, task.input.now, derivedBudget);
     case "architecture":
-      return start((await import("../chunks/shared-UJATY44R.js")).computeRepositoryArchitecture, task.input.observation, host, task.input.now, derivedBudget);
+      return start((await import("../chunks/shared-JSPISWDV.js")).computeRepositoryArchitecture, task.input.observation, host, task.input.now, derivedBudget);
     case "hash-content":
       return start(() => hashFramedDomain("transform-content", task.input.content));
     case "authenticate-context":
-      return start((await import("../chunks/shared-4XKRTNQ4.js")).authenticateKnowledgeContextSource, task.input.source);
+      return start((await import("../chunks/shared-RECFEZFS.js")).authenticateKnowledgeContextSource, task.input.source);
     case "decision-baseline-data":
-      return start((await import("../chunks/shared-UBKDM34L.js")).executeDecisionBaselineData, task.input);
+      return start((await import("../chunks/shared-HBNHSDA6.js")).executeDecisionBaselineData, task.input);
     case "knowledge-context":
-      return start((await import("../chunks/shared-35SXCUMS.js")).RepositoryKnowledgeService.computeContext, task.input.request, task.input.observation, { now: () => task.input.now, readDecisionBaseline: host.baseline, ...task.input.acceptedDecisionBaselines === void 0 ? {} : { acceptedDecisionBaselines: task.input.acceptedDecisionBaselines } }, host, derivedBudget);
+      return start((await import("../chunks/shared-NHL6SOAH.js")).RepositoryKnowledgeService.computeContext, task.input.request, task.input.observation, { now: () => task.input.now, readDecisionBaseline: host.baseline, ...task.input.acceptedDecisionBaselines === void 0 ? {} : { acceptedDecisionBaselines: task.input.acceptedDecisionBaselines } }, host, derivedBudget);
     case "knowledge-reconcile":
-      return start((await import("../chunks/shared-35SXCUMS.js")).RepositoryKnowledgeService.computeReconciliation, task.input.retained, task.input.observation, { now: () => task.input.now, readDecisionBaseline: host.baseline, ...task.input.acceptedDecisionBaselines === void 0 ? {} : { acceptedDecisionBaselines: task.input.acceptedDecisionBaselines } }, host, derivedBudget);
+      return start((await import("../chunks/shared-NHL6SOAH.js")).RepositoryKnowledgeService.computeReconciliation, task.input.retained, task.input.observation, { now: () => task.input.now, readDecisionBaseline: host.baseline, ...task.input.acceptedDecisionBaselines === void 0 ? {} : { acceptedDecisionBaselines: task.input.acceptedDecisionBaselines } }, host, derivedBudget);
     case "canonical":
       return start((await import("../chunks/shared-WE75TEPS.js")).parseCanonicalSnapshotSources, task.input.sources, derivedBudget);
     case "observe": {
       const { analyzeCollectedLocalRepository } = await import("../chunks/shared-MDJ6CQV7.js");
       const { parseCanonicalSnapshotSources } = await import("../chunks/shared-WE75TEPS.js");
-      const { realizeChangeRepositoryData } = await import("../chunks/shared-BBRLSH47.js");
+      const { realizeChangeRepositoryData } = await import("../chunks/shared-BJ3AXKTL.js");
       return start(() => {
         const hydrated = hydrateCapturedInventory(task.input.collected.inventoryResult);
         try {
@@ -240,14 +240,14 @@ async function execute(task, derivedBudget) {
       });
     }
     case "build-impact": {
-      const { KnowledgeGraph } = await import("../chunks/shared-C66SMQML.js");
-      const { buildRepositoryImpactSnapshot, verifiedCurrentCodeGeneration } = await import("../chunks/shared-WRNSE7BP.js");
+      const { KnowledgeGraph } = await import("../chunks/shared-LBBLXQS7.js");
+      const { buildRepositoryImpactSnapshot, verifiedCurrentCodeGeneration } = await import("../chunks/shared-PIQUDAGZ.js");
       return start(async () => buildRepositoryImpactSnapshot(task.input.observation, new KnowledgeGraph(task.input.observation, {}, derivedBudget), await verifiedCurrentCodeGeneration(task.input.observation.repositoryRoot, task.input.observation.state)));
     }
     case "predict-impact":
-      return start((await import("../chunks/shared-WRNSE7BP.js")).predictRepositoryImpact, task.input.snapshot, task.input.editedPaths, task.input.canonicalChanges, derivedBudget);
+      return start((await import("../chunks/shared-PIQUDAGZ.js")).predictRepositoryImpact, task.input.snapshot, task.input.editedPaths, task.input.canonicalChanges, derivedBudget);
     case "reconcile-impact":
-      return start((await import("../chunks/shared-WRNSE7BP.js")).reconcileRepositoryImpact, task.input.before, task.input.after, task.input.predictedUnitIds, task.input.planId, task.input.predictedPaths, task.input.hasPrediction, derivedBudget);
+      return start((await import("../chunks/shared-PIQUDAGZ.js")).reconcileRepositoryImpact, task.input.before, task.input.after, task.input.predictedUnitIds, task.input.planId, task.input.predictedPaths, task.input.hasPrediction, derivedBudget);
     default:
       throw new Error("Unsupported observation worker task; rebuild the installed runtime together with its caller");
   }

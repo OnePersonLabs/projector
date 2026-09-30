@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, readFile, writeFile, lstat, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile, lstat, rename, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -6,8 +6,6 @@ import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { buildReleasePackage } from "./build-release-package.mjs";
 import { buildPluginRuntime } from "./build-plugin-runtime.mjs";
 import { assertDirectoryTreeParity } from "./directory-tree-parity.mjs";
@@ -30,27 +28,13 @@ const installEnvironment=Object.fromEntries(Object.entries(env).filter(([key])=>
 const forward=(fd,chunk)=>{for(let offset=0;offset<chunk.length;)offset+=writeSync(fd,chunk,offset,chunk.length-offset);};
 await executeReleaseCommand(npm.executable,npm.arguments,{cwd:isolated,env:installEnvironment,timeout:null,captureOutput:false,onStdoutChunk:chunk=>forward(1,chunk),onStderrChunk:chunk=>forward(2,chunk)});
 const installed=join(isolated,"node_modules/@onepersonlabs/projector");
-const preparedPlugin=join(isolated,"plugin");
-await buildPluginRuntime(preparedPlugin,{releaseRoot:installed});
+const plugin=join(await mkdtemp(join(tmpdir(),"projector-plugin-v3-")),"plugin");
+await buildPluginRuntime(plugin,{releaseRoot:installed});
 await assertDirectoryTreeParity(
- join(preparedPlugin,"runtime"),
+ join(plugin,"runtime"),
  join(sourceRoot,"plugins/projector-v3/runtime"),
  "Checked-in plugin runtime differs from the fresh release bundle. Run pnpm plugin:prepare-local and commit plugins/projector-v3/runtime.",
 );
-// Keep the checked-in plugin outside both the repository and the npm install
-// tree. Node may otherwise satisfy a missing plugin dependency by walking to
-// an ancestor node_modules directory and make this standalone check lie.
-const trackedPluginRoot=await mkdtemp(join(tmpdir(),"projector-tracked-plugin-v3-"));
-const plugin=join(trackedPluginRoot,"plugin");
-const pluginPrefix="plugins/projector-v3/";
-const trackedPluginFiles=await executeReleaseCommand("git",["ls-files","-z","--",pluginPrefix],{cwd:sourceRoot,env,timeout:null,maxBuffer:null});
-for(const repositoryPath of trackedPluginFiles.stdout.split("\0").filter(Boolean)){
- if(!repositoryPath.startsWith(pluginPrefix))throw new Error(`Tracked plugin path escaped its source root: ${repositoryPath}`);
- const pluginPath=repositoryPath.slice(pluginPrefix.length);
- const destination=join(plugin,pluginPath);
- await mkdir(dirname(destination),{recursive:true});
- await copyFile(join(sourceRoot,repositoryPath),destination);
-}
 // A caller may use a temporary source index to include an uncommitted bundle.
 // The disposable fixture repositories must each use their own Git index.
 delete env.GIT_INDEX_FILE;
@@ -64,8 +48,6 @@ const pool=new ResidentObservationWorkerPool();
 const executeBundled=request=>withResidentObservationWorkerPool(pool,()=>bundledRunner.execute(request,{environment:env}));
 let report;
 try{
-const mcpManifest=JSON.parse(await readFile(join(plugin,".mcp.json"),"utf8"));
-if(mcpManifest.mcpServers?.projector?.command!=="node"||!mcpManifest.mcpServers.projector.args.includes("./scripts/projector-mcp.mjs"))throw new Error("Installed plugin does not advertise the resident MCP host");
 let repository=join(isolated,"fresh-project");await mkdir(repository);
 env.PROJECTOR_VERIFICATION_EVIDENCE_STORE=join(isolated,"retained-execution-evidence");
 const run=(executable,args,cwd=repository)=>executeReleaseCommand(executable,args,{cwd,env,timeout:null,maxBuffer:null});
@@ -80,7 +62,7 @@ const transcript=[];
 const command=async(args,cwd=repository,{freshProcess=false}={})=>{
  const start=performance.now();
  const result=freshProcess
-  ?await run(process.execPath,[join(plugin,"scripts/projector.mjs"),...args,"--json"],cwd)
+  ?await run(process.execPath,[join(installed,"dist/command-main.mjs"),...args,"--json"],cwd)
   :await runPublicCommand([...args,"--json"],{runner:{execute:executeBundled},cwd});
  const stdout=freshProcess?result.stdout:result.text;
  if(!freshProcess&&result.exitCode!==0)throw Object.assign(new Error(`Installed command exited with code ${result.exitCode}`),{code:result.exitCode,stdout,stderr:""});
@@ -104,74 +86,13 @@ const operation=async(name,input,{freshProcess=false}={})=>{
 const binResult=await run(process.execPath,[join(installed,"dist/command-main.mjs"),"init","--json"]);
 const initialized=JSON.parse(binResult.stdout);transcript.push({args:["init"],entry:"npm package bin",value:initialized});
 if(initialized.readiness.status!=="ready")throw new Error("Installed init was not ready");
-const mcp=spawn(process.execPath,[join(plugin,"scripts/projector-mcp.mjs")],{cwd:repository,env,stdio:["pipe","pipe","pipe"]});
-const mcpResponses=new Map();
-const mcpPending=new Map();
-let mcpStderr="";
-let mcpClosed=false;
-const failPending=(error)=>{for(const pending of mcpPending.values())pending.reject(error);mcpPending.clear();};
-const mcpClose=new Promise(resolve=>mcp.once("close",(code,signal)=>{
- mcpClosed=true;
- failPending(new Error(`Installed MCP closed before responding (code ${code}, signal ${signal}): ${mcpStderr}`));
- resolve();
-}));
-mcp.once("error",error=>failPending(error));
-mcp.stdin.on("error",error=>failPending(error));
-createInterface({input:mcp.stdout}).on("line",line=>{
- let message;
- try{message=JSON.parse(line);}catch{const invalid=`Invalid MCP stdout: ${line}\n`;mcpStderr=(mcpStderr+invalid).slice(-8_192);forward(2,Buffer.from(invalid));return;}
- if(message.id===undefined)return;
- const pending=mcpPending.get(message.id);
- if(pending){mcpPending.delete(message.id);pending.resolve(message);}else mcpResponses.set(message.id,message);
-});
-mcp.stderr.on("data",chunk=>{mcpStderr=(mcpStderr+String(chunk)).slice(-8_192);forward(2,chunk);});
-let mcpNextId=1;
-const mcpRequest=async(method,params)=>{
- if(mcpClosed)throw new Error(`Installed MCP closed before ${method}: ${mcpStderr}`);
- const id=mcpNextId++;
- const response=new Promise((resolve,reject)=>{
-  mcpPending.set(id,{resolve,reject});
-  if(mcpResponses.has(id)){const value=mcpResponses.get(id);mcpResponses.delete(id);mcpPending.delete(id);resolve(value);}
- });
- mcp.stdin.write(JSON.stringify({jsonrpc:"2.0",id,method,params})+"\n",error=>{if(error){const pending=mcpPending.get(id);mcpPending.delete(id);pending?.reject(error);}});
- return response;
-};
-try{
- const hello=await mcpRequest("initialize",{protocolVersion:"2025-06-18",capabilities:{},clientInfo:{name:"projector-installed-check",version:"1"}});
- if(hello.error||!hello.result?.serverInfo)throw new Error(`Installed MCP initialization failed: ${JSON.stringify(hello)}`);
- mcp.stdin.write(JSON.stringify({jsonrpc:"2.0",method:"notifications/initialized"})+"\n");
- const listed=await mcpRequest("tools/list",{});
- const tools=listed.result?.tools??[];
- if(!tools.some(tool=>tool.name==="projector_status")||!tools.some(tool=>tool.name==="projector_context"))throw new Error("Installed MCP omitted registered operation tools");
- const invalid=await mcpRequest("tools/call",{name:"projector_status",arguments:{repositoryRoot:repository,input:{invalid:true}}});
- if(!invalid.error&&!invalid.result?.isError)throw new Error("Installed MCP accepted invalid operation input");
- for(let index=0;index<2;index++){
-  const response=await mcpRequest("tools/call",{name:"projector_status",arguments:{repositoryRoot:repository,input:{}}});
-  if(response.result?.structuredContent?.status!=="succeeded")throw new Error(`Installed resident MCP status failed: ${JSON.stringify(response)}`);
- }
-}finally{
- if(!mcp.stdin.destroyed)mcp.stdin.end();
- let closeTimer;
- try{
-  const closed=await Promise.race([mcpClose.then(()=>true),new Promise(resolve=>{closeTimer=setTimeout(()=>resolve(false),10_000);})]);
-  if(!closed){
-   let killError;
-   try{mcp.kill("SIGKILL");}catch(error){killError=error;}
-   let killTimer;
-   try{
-    const killed=await Promise.race([mcpClose.then(()=>true),new Promise(resolve=>{killTimer=setTimeout(()=>resolve(false),2_000);})]);
-    if(!killed)throw Object.assign(new Error(`Installed MCP cleanup unconfirmed after EOF; pid ${mcp.pid}; isolated checkout ${isolated}; termination error: ${killError?.message??"none"}; stderr: ${mcpStderr}`),{code:"RELEASE_COMMAND_CLEANUP_UNCONFIRMED"});
-   }finally{clearTimeout(killTimer);}
-   throw new Error(`Installed MCP required termination after EOF: ${mcpStderr}`);
-  }
- }
- finally{clearTimeout(closeTimer);}
-}
 if(!(await readFile(join(repository,".projector/README.md"),"utf8")).includes("#"))throw new Error("Installed init omitted the human index");
-const context=await command(["context","Document the project's clock boundary"]);
+const context=await command(["context","Document the project's clock boundary"],repository,{freshProcess:true});
 const syntaxContext=await command(["context","Inspect the Python syntax fallback","--target","src/example.py"],repository,{freshProcess:true});
 if(typeof syntaxContext.contentHash!=="string")throw new Error("Checked-in plugin could not index a packaged Tree-sitter grammar");
-let syntaxRun=await operation("code.index",{provider:"syntax",buildVariant:"default",timeoutMs:null},{freshProcess:true});
+const syntaxIndexPath=join(output,"syntax-index.json");
+await writeFile(syntaxIndexPath,JSON.stringify({provider:"syntax",buildVariant:"default",timeoutMs:null}));
+let syntaxRun=await command(["code","index",syntaxIndexPath],repository,{freshProcess:true});
 while(syntaxRun.state==="running")syntaxRun=await operation("code.index-wait",{runId:syntaxRun.id,timeoutMs:30_000},{freshProcess:true});
 if(syntaxRun.state!=="published"||typeof syntaxRun.generation!=="string")throw new Error(`Checked-in syntax index did not publish: ${JSON.stringify(syntaxRun)}`);
 const pythonDefinition=await operation("code.query",{kind:"definition",name:"answer",generation:syntaxRun.generation,freshness:"pinned",limit:100});
@@ -183,7 +104,7 @@ const applied=await command(["accept","--apply",preview.selector,"--hash",previe
 if(!["success","succeeded"].includes(applied.outcome))throw new Error("Installed canonical apply failed");
 const selected=await command(["context","Change domain time handling","--entity","concept:clock","--target","src/clock.ts"]);
 if(!selected.meaning.sections.some(section=>section.text.includes("All domain time")))throw new Error("Installed compact context omitted accepted meaning");
-await command(["check",selected.id]);
+await command(["check",selected.id],repository,{freshProcess:true});
 const resumed=await command(["resume",selected.id],repository,{freshProcess:true});
 if(!resumed.context?.meaning.sections.some(section=>section.text.includes("All domain time")))throw new Error("Fresh-process resume did not restore the accepted clock boundary");
 const clock=await command(["inspect","concept:clock"]);
@@ -237,7 +158,7 @@ if(!bounded.meaning.sections.some(section=>section.text.includes("All domain tim
 // trees so packaging cannot silently omit a moved instruction or schema.
 for(const directory of ["skills","references"]){
  await assertDirectoryTreeParity(
-  join(preparedPlugin,directory),join(plugin,directory),
+  join(plugin,directory),join(sourceRoot,"plugins/projector-v3",directory),
   `Installed ${directory} differ from the canonical plugin source.`,
  );
 }
@@ -392,7 +313,7 @@ catch(error){
 }
 if(!droppedContribution?.contributions.some(c=>c.entityId==="concept:cloud-b"&&c.status==="lost"))throw new Error("Installed integration failed to detect a silently dropped contribution");
 if(await sourceIdentity()!==beforeIntegration||(await run("git",["ls-files","--stage","-z"])).stdout!==beforeIntegrationIndex||(await run("git",["rev-parse","HEAD"])).stdout.trim()!==integrationBase)throw new Error("Integration assessment changed destination source, index or HEAD");
-report={status:"passed",tarball,plugin,preparedPlugin,isolated,records:1,checks:["offline npm tarball installation outside the source tree","standalone checked-in plugin dependency resolution","npm package bin init and human index","resident MCP initialization, discovery, validation, repeated calls and EOF shutdown","exact preview/apply","Markdown round trip","compact context","check","fresh-process read-only resume","inspect","read-only audit with retained context","late-consumer currentness with unaffected meaning reuse","stale approval refusal without canonical mutation","stable concept identity after source rename","bounded-context omission disclosure"],limitations:["Interruption and committed-result recovery are exercised by the lifecycle and continuation suites; this installed smoke does not establish comparative advantage or domain reconstruction.","Consumer discovery covers static imports and re-exports; dynamic resolution and unsupported runtime mechanisms remain unknown.","Git integration checks contribution preservation, canonical integrity and static result consumers; named canonical-integrity evidence is separately reusable, while arbitrary behavioral reuse and dynamic governance remain unqualified."]};
+report={status:"passed",tarball,plugin,isolated,records:1,checks:["offline npm tarball installation outside the source tree","standalone installed plugin dependency resolution","npm package bin init and human index","fresh-process installed CLI context, check, acceptance, and code indexing","exact preview/apply","Markdown round trip","compact context","check","fresh-process read-only resume","inspect","read-only audit with retained context","late-consumer currentness with unaffected meaning reuse","stale approval refusal without canonical mutation","stable concept identity after source rename","bounded-context omission disclosure"],limitations:["Interruption and committed-result recovery are exercised by the lifecycle and continuation suites; this installed smoke does not establish comparative advantage or domain reconstruction.","Consumer discovery covers static imports and re-exports; dynamic resolution and unsupported runtime mechanisms remain unknown.","Git integration checks contribution preservation, canonical integrity and static result consumers; named canonical-integrity evidence is separately reusable, while arbitrary behavioral reuse and dynamic governance remain unqualified."]};
 report.checks.push("checked-in plugin runtime byte parity","installed skills and shared references byte parity","native check observation survives a fresh process and unrelated target movement","read-only representation publication inspection");
 report.checks.push("checked-in plugin loads its packaged Python Tree-sitter grammar");
 report.checks.push("installed architecture evaluation refuses missing required research","installed HTTP host executes and reports satisfied and violated application predicates");

@@ -16,7 +16,7 @@ Projector stores accepted project meaning in readable records, retrieves relevan
 |---|---|
 | Understand Projector's purpose and limits | [Overview](overview.md) |
 | Activate a repository and complete one task | [Getting started](getting-started.md) |
-| See the records behind a planned and implemented change | [Clip/Placement worked example](examples/clip-placement.md) |
+| See the records behind a planned and implemented change | [clip use worked example](examples/clip-use.md) |
 | See complete situations and recoveries | [Examples](examples.md) |
 | Choose a workflow for a kind of change | [Workflows](workflows.md) |
 | Choose the right skill invocation | [Skills](skills.md) |

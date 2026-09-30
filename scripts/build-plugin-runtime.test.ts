@@ -58,10 +58,6 @@ describe("standalone plugin assembly", () => {
     expect(await readFile(join(plugin, "runtime/projector/assets/windows-job-supervisor.ps1"), "utf8")).toContain("param");
     expect(JSON.parse(await readFile(join(plugin, "runtime/projector/licenses/third-party.json"), "utf8"))).toContainEqual(expect.objectContaining({ name: "zod" }));
     await access(join(plugin, "runtime/projector/licenses/zod/LICENSE"));
-    const mcp = JSON.parse(await readFile(join(plugin, ".mcp.json"), "utf8"));
-    expect(mcp.mcpServers.projector).toMatchObject({ command: "node", cwd: ".", args: ["./scripts/projector-mcp.mjs"] });
-    await access(join(plugin, "scripts/projector-mcp.mjs"));
-    await access(join(plugin, "runtime/projector/exports/mcp.js"));
     const hostNode = await execute("node", ["--version"], { cwd: plugin, env: { ...process.env, NODE_PATH: "" }, encoding: "utf8" });
     expect(hostNode.stdout.trim()).toBe(process.version);
     const hooks = JSON.parse(await readFile(join(plugin, "hooks/hooks.json"), "utf8")).hooks;

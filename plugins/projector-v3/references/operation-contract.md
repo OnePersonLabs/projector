@@ -52,9 +52,7 @@ Core owns supported operations and input schemas. Every result has `status`, `ex
 
 The typed retained detail request is `context.inspect` with `{ "contextId": "knowledge_context_..." }`, optional `cursor`, and optional `limit`. Its first result contains `document`; every result contains `records`, `offset`, `disclosure`, and optional `nextCursor`. A text record has `path`, `text`, `textOffset`, and `last`; other records have `path` and `value`. Set `view: "full"` without paging options to return the exact saved context. The saved context may be evicted under the disposable cache policy; inspection then fails explicitly and requires a new context. Reconciliation checks currentness separately. Direct `context` and `reconcile` full views remain available without a fixed transport byte ceiling.
 
-The installed `.mcp.json` starts `scripts/projector-mcp.mjs` as a resident stdio host. Each Core operation with a registered input schema appears as `projector_<operation>` with periods and hyphens replaced by underscores. For example, `projector_repository_check` accepts `repositoryRoot`, `input`, and optional `observationLimits` and `requestId`; the tool fixes `apiVersion` and `operation`. Its structured result is the same versioned operation result as the machine entry. Initialization and tool discovery do not require repository observation. One connection reuses its runner and idle computation workers, while each call retains its own Core validation, cancellation, readiness, access, resource accounting, and any caller-requested limits. Read-only, build or test, and mutation annotations describe effects; they do not grant authorization.
-
-`projector code index request.json` creates a source-bound code generation from the request's provider and input binding. In a resident MCP connection, `projector_code_index` returns a run ID while work continues; use `projector_code_index_status`, `projector_code_index_wait`, or `projector_code_index_cancel` with that exact ID. The one-shot CLI waits for its index run to finish before exiting. `projector code query|impact|tests|evidence|export request.json` forwards each exact JSON input to the corresponding Core operation. `projector code test-run request.json` runs one explicitly named Vitest case with isolated JSON and V8 coverage artifacts and imports verified per-test evidence; it does not replace repository verification. Derived code facts and runtime evidence remain separate from accepted authored meaning; a pinned query reports its historical generation, while a current query checks live inputs before using or refreshing an index.
+`projector code index request.json` creates a source-bound code generation from the request's provider and input binding. The CLI waits for its index run to finish before exiting. `projector code query|impact|tests|evidence|export request.json` forwards each exact JSON input to the corresponding Core operation. `projector code test-run request.json` runs one explicitly named Vitest case with isolated JSON and V8 coverage artifacts and imports verified per-test evidence; it does not replace repository verification. Derived code facts and runtime evidence remain separate from accepted authored meaning; a pinned query reports its historical generation, while a current query checks live inputs before using or refreshing an index.
 
 `code.tests` returns `complete` and may return `nextCursor`. Pass that cursor with the same generation and path filter to read the next retained-evidence page. A cursor becomes invalid if retained evidence changes. A test may appear on multiple pages; merge its `reasons` and `evidenceIds` by `testId`. `complete: false` without a cursor means that semantic discovery or another stated uncertainty remains open. `code.export` returns inline `content` for small graphs. Set `artifactName` to a filename when the graph exceeds the inline `maxBytes` allowance; Projector writes a complete artifact in its derived code export directory and returns its path, byte count, and SHA-256 hash. GraphML artifacts include nodes before edges and retain unresolved endpoints.
 
@@ -123,16 +121,10 @@ limit concurrent working sets; they do not reject a repository at a fixed size.
 Compiler programs still need project-wide state, and actual host resource
 exhaustion produces an error while preserving the previous completed generation.
 
-The harness controls MCP startup and response deadlines separately. The bundled
-Codex manifest requests a 3600-second tool response timeout. That timeout does
-not bound a retained index run: use its run ID for status, wait, or cancellation.
-Synchronous operations remain subject to the harness response deadline; use the
-direct CLI when they need to run beyond that deadline.
-
 `code.index-wait` waits at most the requested polling interval, then returns the
 current run state. Ending that wait does not cancel indexing. Use
-`code.index-cancel` for explicit cancellation. A resident host shutdown cancels
-its owned runs; incomplete stages cannot become a current generation.
+`code.index-cancel` for explicit cancellation. Incomplete stages cannot become
+a current generation.
 
 Full lifecycle operations remain available for integrations: `change.capture`, `change.plan`, `change.approve`, `change.apply`, and `change.recover`. Representation inspection distinguishes artifact integrity, dependency freshness, semantic fidelity and execution authorization. Hash agreement establishes byte or normalized-value agreement, not truth or agent understanding.
 

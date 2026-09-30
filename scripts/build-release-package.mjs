@@ -12,8 +12,8 @@ const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 export { releasePackageName, releaseVersion };
 const internalPackages = ["core", "analyzers", "engine", "runtime", "integrations", "control-plane"];
 const bundledNames = internalPackages.map((name) => `@projector/${name}`);
-const exportTargets = { "./commands": "public-command", "./operations": "operation-runner", "./mcp": "mcp-server", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./integrations/models": "integrations/models", "./integrations/codex": "integrations/codex", "./control-plane": "control-plane" };
-const operationRuntimeModules = ["operation-runner", "operational-verification", "public-command", "application-evidence-host", "mcp-server"];
+const exportTargets = { "./commands": "public-command", "./operations": "operation-runner", "./core": "core", "./analyzers": "analyzers", "./engine": "engine", "./engine/architecture": "engine/architecture", "./engine/coverage": "engine/coverage", "./engine/modernization": "engine/modernization", "./runtime": "runtime", "./integrations": "integrations", "./integrations/surfaces": "integrations/surfaces", "./integrations/models": "integrations/models", "./integrations/codex": "integrations/codex", "./control-plane": "control-plane" };
+const operationRuntimeModules = ["operation-runner", "operational-verification", "public-command", "application-evidence-host"];
 
 export async function buildReleasePackage(stagingRoot, packDestination, options = {}) {
   options.signal?.throwIfAborted();

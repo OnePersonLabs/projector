@@ -1,0 +1,134 @@
+{
+  "apiVersion": "projector.change-proposal/v1",
+  "architecture": null,
+  "analysisFacets": [
+    "behavior",
+    "architecture"
+  ],
+  "canonicalMutations": [
+    {
+      "kind": "concept",
+      "operation": "add",
+      "expectedAbsent": true,
+      "rationale": "A clip is reusable musical content, independent of any position on a timeline.",
+      "payload": {
+        "id": "concept:clip",
+        "key": "clip",
+        "kind": "data",
+        "name": "Clip",
+        "aliases": [],
+        "statement": "A clip owns reusable notes and timing. An arrangement can use the same clip more than once; editing the clip changes its shared musical content, not the timing or transpose value stored with any use.",
+        "status": "active",
+        "sourceClass": "authored",
+        "confidence": 1,
+        "tags": [
+          "arrangement"
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "kind": "requirement",
+      "operation": "add",
+      "expectedAbsent": true,
+      "rationale": "Musicians need to reuse one phrase at different pitches without copying and diverging its source notes.",
+      "payload": {
+        "id": "requirement:independent-transposition-per-use",
+        "key": "independent-transposition-per-use",
+        "title": "Transpose each clip use independently",
+        "aliases": [],
+        "statement": "Each use of a clip in an arrangement MUST store its own transpose value in semitones. Playback MUST apply that value to the referenced clip’s notes without changing the clip. The same clip MAY be used more than once with different transpose values. Saving and reloading an arrangement MUST preserve the shared clip reference and each use’s transpose value.",
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "all",
+          "items": []
+        },
+        "origin": [
+          {
+            "kind": "user-request",
+            "locator": "example:clip-use:initial-request",
+            "description": "Illustrative request to reuse one clip at independent pitches."
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "kind": "behavioral-scenario",
+      "operation": "add",
+      "expectedAbsent": true,
+      "rationale": "This case distinguishes per-use playback and persistence from copied or mutated shared clip content.",
+      "payload": {
+        "id": "scenario:two-uses-of-one-clip-save-reload",
+        "key": "two-uses-of-one-clip-save-reload",
+        "title": "Save and reload two uses of one clip",
+        "aliases": [],
+        "status": "active",
+        "sourceClass": "authored",
+        "scope": {
+          "op": "all",
+          "items": []
+        },
+        "steps": [
+          {
+            "role": "precondition",
+            "statement": "One clip contains a C4 note. An arrangement uses that clip twice; the first use has transpose 0 and the second has transpose 2 semitones."
+          },
+          {
+            "role": "trigger",
+            "statement": "The user plays both uses, saves the arrangement, reloads it, and plays both uses again."
+          },
+          {
+            "role": "expected-outcome",
+            "statement": "The first use plays C4 and the second plays D4 before and after reload. Both uses still reference the one clip."
+          },
+          {
+            "role": "forbidden-outcome",
+            "statement": "Playing or saving either use rewrites the clip’s C4 note or the other use’s transpose value."
+          }
+        ],
+        "origin": [
+          {
+            "kind": "user-request",
+            "locator": "example:clip-use:initial-request",
+            "description": "Illustrative acceptance case for per-use transposition and reload."
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "kind": "relation",
+      "operation": "add",
+      "expectedAbsent": true,
+      "rationale": "The save and reload case demonstrates the transposition obligation.",
+      "payload": {
+        "id": "relation:transposition-demonstrated-by-reload",
+        "fromId": "requirement:independent-transposition-per-use",
+        "toId": "scenario:two-uses-of-one-clip-save-reload",
+        "type": "demonstrated-by",
+        "sourceClass": "authored",
+        "confidence": 1,
+        "evidence": [],
+        "active": true
+      }
+    },
+    {
+      "kind": "relation",
+      "operation": "add",
+      "expectedAbsent": true,
+      "rationale": "Clip reuse has an obligation to preserve an independent transpose value for each use.",
+      "payload": {
+        "id": "relation:clip-has-transposition-requirement",
+        "fromId": "concept:clip",
+        "toId": "requirement:independent-transposition-per-use",
+        "type": "has-requirement",
+        "sourceClass": "authored",
+        "confidence": 1,
+        "evidence": [],
+        "active": true
+      }
+    }
+  ]
+}

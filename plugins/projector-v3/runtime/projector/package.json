@@ -12,7 +12,6 @@
   "exports": {
     "./commands": "./exports/commands.js",
     "./operations": "./exports/operations.js",
-    "./mcp": "./exports/mcp.js",
     "./core": "./exports/core.js",
     "./analyzers": "./exports/analyzers.js",
     "./engine": "./exports/engine.js",
@@ -31,8 +30,6 @@
     "@jridgewell/resolve-uri": "3.1.2",
     "@jridgewell/sourcemap-codec": "1.6.0",
     "@jridgewell/trace-mapping": "0.3.31",
-    "@modelcontextprotocol/core": "2.1.0",
-    "@modelcontextprotocol/server": "2.1.0",
     "@protobufjs/aspromise": "1.1.2",
     "@protobufjs/base64": "1.1.2",
     "@protobufjs/codegen": "2.0.5",

@@ -4,9 +4,9 @@ Projector lets you develop from a readable conceptual model. The model defines t
 
 ## Start with the concepts
 
-In a music app, a Clip owns reusable notes. A Placement references a Clip and owns one use's position and transpose value. That boundary explains why transposing one placement must preserve the shared clip and every other placement. A requirement states the behavior; a scenario makes it concrete with one C4 clip playing C4 and D4 through two placements, including after save and reload.
+In a music app, a Clip owns reusable notes. An arrangement can reference that Clip more than once, with separate positions and transpose values for its uses. The requirement states that each value belongs to its use and playback leaves the shared Clip unchanged. The scenario makes this concrete with one C4 clip playing C4 and D4 before and after save and reload.
 
-Those records govern later work even if the implementation changes its classes, database tables or playback engine. The model also retains accepted future capabilities that have no implementation yet. Typed relationships connect the records, and source queries connect relevant meaning to inspected code. Read the [worked example](examples/clip-placement.md) to see the proposed contents and a later revision under the same identities.
+Those records govern later work even if the implementation changes its classes, database tables or playback engine. The model also retains accepted future capabilities that have no implementation yet. Typed relationships connect the records, and source queries connect relevant meaning to inspected code. Read the [worked example](examples/clip-use.md) to see the proposed contents and a later revision under the same identities.
 
 ## The everyday use
 

@@ -139,18 +139,13 @@ describe("Projector installed operation entry", () => {
     await expect(runOperation(pluginRoot, undefined, [linked])).resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringMatching(/symbolic|link|too many levels/iu) });
   });
 
-  test("declares the resident MCP server while keeping replaced CLI wrappers removed", async () => {
-    const mcp = JSON.parse(await readFile(join(sourcePluginRoot, ".mcp.json"), "utf8"));
-    expect(mcp.mcpServers.projector).toMatchObject({ command: "node", cwd: ".", args: ["./scripts/projector-mcp.mjs"] });
-    await access(join(sourcePluginRoot, "scripts/projector-mcp.mjs"));
+  test("keeps replaced CLI wrappers removed", async () => {
     for (const path of [
       "scripts/projector-change.mjs",
       "scripts/projector-runtime.mjs",
     ]) {
       await expect(access(join(sourcePluginRoot, path))).rejects.toMatchObject({ code: "ENOENT" });
     }
-    const manifest = JSON.parse(await readFile(join(sourcePluginRoot, ".codex-plugin/plugin.json"), "utf8"));
-    expect(manifest).not.toHaveProperty("mcpServers");
   });
 });
 

@@ -122,7 +122,7 @@ async function sourceHashes(paths: RepositoryPathService, hashes: Record<string,
   return Object.fromEntries(entries);
 }
 
-/** Match codeInputHash while yielding between file chunks on the MCP event loop. */
+/** Match codeInputHash while yielding between file chunks. */
 async function streamingCodeInputHash(path: string): Promise<string> {
   const size = (await stat(path)).size;
   if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Code source size is not safely bounded: ${path}`);

@@ -14,7 +14,7 @@ Use `$projector` when the intended behavior, concept boundary, requirement, scen
 
 In native Codex Plan mode, `$projector` retrieves relevant accepted meaning, checks existing identities, and presents proposed changes as readable contents. For each changed artifact, inspect its stable ID, proposed path, changed text, relationship to other records, reason, and expected effect on implementation and checks. For a new boundary, the plan should explain what the new record owns and excludes. For an existing boundary, it should explain why the same identity still owns the change.
 
-Plan mode remains a conversation. It does not write canonical artifacts, capture or accept a model transaction, or implement code. A question about a candidate is not authorization. The [Clip/Placement example](examples/clip-placement.md) shows what the user sees before execution and links complete schema-valid proposals.
+Plan mode remains a conversation. It does not write canonical artifacts, capture or accept a model transaction, or implement code. A question about a candidate is not authorization. The [clip use example](examples/clip-use.md) shows what the user sees before execution and links complete schema-valid proposals.
 
 ## Revise the proposal
 
@@ -30,7 +30,7 @@ Implementation and verification have distinct evidence. Accepted records state i
 
 Reuse a record ID when it still owns the meaning. A filename can change without changing identity. A distinct new boundary needs a new identity and relationship to the current model. Do not erase an accepted future obligation because its code has not been written or because a first implementation took another form.
 
-In the worked example, `requirement:placement-transposition` first governs independent values and reload. A later user decision adds integer limits and rejection of invalid values. The revision retains that ID and the earlier save/reload obligation.
+In the worked example, `requirement:independent-transposition-per-use` first governs independent values and reload. A later user decision adds integer limits and rejection of invalid values. The revision retains that ID and the earlier save/reload obligation.
 
 ## Handle an interrupted operation
 
