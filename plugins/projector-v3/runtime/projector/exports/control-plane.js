@@ -32,11 +32,11 @@ import {
   shutdownCodeIndexRuns,
   summarizeRepositoryIntentReview,
   withProjectOperationAccess
-} from "../chunks/shared-XBXUZ6LW.js";
-import "../chunks/shared-JJSJW4WD.js";
+} from "../chunks/shared-3AJIPJSY.js";
+import "../chunks/shared-KSINEUXG.js";
 import {
   inspectRepositoryArchitecture
-} from "../chunks/shared-KYGT42KC.js";
+} from "../chunks/shared-VB5BNNLL.js";
 import {
   CompletionQuestionSchema,
   RepositoryCleanupOutputSchema,
@@ -44,7 +44,7 @@ import {
   RepositoryCoverageOutputSchema,
   inspectRepositoryCoverage,
   parseRepositoryCoverageResult
-} from "../chunks/shared-7FY6SYK3.js";
+} from "../chunks/shared-LO2RUO4E.js";
 import {
   KnowledgeContextInspectOperationOutputSchema,
   KnowledgeContextInspectionOutputSchema,
@@ -62,35 +62,35 @@ import {
   projectKnowledgeContext,
   projectKnowledgeReconciliation,
   projectRepresentationInspectionOperation
-} from "../chunks/shared-I33AG77U.js";
+} from "../chunks/shared-Y5DGGH2T.js";
 import "../chunks/shared-IYQMR2PN.js";
-import "../chunks/shared-WMJYNDOE.js";
-import "../chunks/shared-U5IWA3GK.js";
+import "../chunks/shared-VSZB442F.js";
+import "../chunks/shared-ZQJOKWDN.js";
 import {
   KnowledgeApplicationEvidenceAssessmentSchema,
   KnowledgeContextResultSchema,
   KnowledgeReconciliationResultSchema
-} from "../chunks/shared-J4K5AVD4.js";
+} from "../chunks/shared-NOCWRNFA.js";
 import {
   buildRepositoryImpactSnapshot,
   predictRepositoryImpact,
   reconcileRepositoryImpact
-} from "../chunks/shared-S2MOHQYG.js";
-import "../chunks/shared-WVDXAIGO.js";
-import "../chunks/shared-42UQ7H42.js";
+} from "../chunks/shared-TYAJTUSM.js";
+import "../chunks/shared-BRRTY4V2.js";
+import "../chunks/shared-NMHHCCIJ.js";
 import "../chunks/shared-SRZY32OS.js";
-import "../chunks/shared-O7HSDCA7.js";
-import "../chunks/shared-DCIZRROE.js";
+import "../chunks/shared-A2IBJY7A.js";
+import "../chunks/shared-P2AMJQGE.js";
 import {
   ResidentObservationWorkerPool,
   runObservationTask,
   withResidentObservationWorkerPool
-} from "../chunks/shared-NQTYENBP.js";
-import "../chunks/shared-D6ZBEZZ3.js";
-import "../chunks/shared-AOFBA3EQ.js";
+} from "../chunks/shared-XUP2BAXD.js";
+import "../chunks/shared-DJXEJPTL.js";
+import "../chunks/shared-QJIGMBBX.js";
 import "../chunks/shared-3OPGBX4O.js";
 import "../chunks/shared-GXAKKSCS.js";
-import "../chunks/shared-D2LP2F6Z.js";
+import "../chunks/shared-5EIJVVQJ.js";
 import "../chunks/shared-XN3IZTFL.js";
 import "../chunks/shared-EK2KJXX2.js";
 import "../chunks/shared-53BCDAHA.js";

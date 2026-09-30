@@ -147,7 +147,7 @@ export async function checkRepository(repositoryRoot: string, rawInput: Input = 
       const running = gitExec("git", ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", ...args], {
         cwd: safePaths.root, encoding: "utf8", timeout: Number.isFinite(deadline) ? Math.max(1, Math.floor(deadline - performance.now())) : 0,
         maxBuffer: maxGitBytes,
-        env: { ...environment, GIT_OPTIONAL_LOCKS: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null" },
+        env: { ...environment, GIT_OPTIONAL_LOCKS: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
         signal,
       });
       const accountOutput = (chunk: Buffer | string): void => {

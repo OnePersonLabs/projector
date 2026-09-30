@@ -69,7 +69,7 @@ function environment(): NodeJS.ProcessEnv {
     if (process.env[key] !== undefined) result[key] = process.env[key];
   }
   return { ...result, LANG: "C", LC_ALL: "C", GIT_CONFIG_NOSYSTEM: "1", GIT_ATTR_NOSYSTEM: "1",
-    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_OPTIONAL_LOCKS: "0" };
+    GIT_CONFIG_GLOBAL: "/dev/null", GIT_OPTIONAL_LOCKS: "0" };
 }
 export class GitCommandError extends ObservationError {
   constructor(readonly exitCode: number | null, readonly stderr: string, stage: string) {
