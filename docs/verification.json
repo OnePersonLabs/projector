@@ -1,29 +1,29 @@
 {
-  "checkedAt": "2026-10-03T01:21:16.259752+00:00",
+  "checkedAt": "2026-10-03T02:10:43.955Z",
   "git": {
     "branch": "v5",
     "parent": "098bb6756e3aee49975ed48d87069f22bcb69854"
   },
   "tests": {
-    "passed": 38,
+    "passed": 42,
     "failed": 0,
     "skipped": 0,
     "command": "npm.cmd test",
-    "baselineCommit": "fa8a1288a0db090734b9eb30c642dd2375ccf6fd",
-    "rerunForInstructionChange": false
+    "baselineCommit": "4522731e915eaaab4dbe9787c5e3a511eacaa39a",
+    "checkedState": "Source identities below; runtime changed for the discovery security fix"
   },
   "package": {
     "path": "dist/opl-projector-0.1.0.tgz",
-    "sha256": "d44c4535b4b2eda71d8c331bad026e79d5b6ddd5734fb20776dab922910635eb",
-    "size": 1177199,
-    "bundledPackages": 26,
-    "isolatedSmoke": "passed for baseline runtime; current changed instructions match archive bytes"
+    "sha256": "13281fedccabac3e55b2a832f3d471bab51d1a4a9cd79720ecc11b1d63be81ce",
+    "size": 2434177,
+    "bundledPackages": 15,
+    "isolatedSmoke": "passed: glob attack reproduction and recovery, dependency resolution, CLI, checkpoint, focus, native Clip checks, SCSS symbols"
   },
   "review": {
     "remainingFindings": 0,
     "activationReview": "independent opl-reviewer",
     "preparationPolicyDelta": "reviewed against installed npm 12 source",
-    "postReviewChanges": "Verification record and bundle regenerated for reviewed commit instructions; runtime source unchanged.",
+    "postReviewChanges": "Documentation and evidence updated; archive regenerated and installations refreshed. Reviewed runtime, manifests, and tests are unchanged.",
     "commitPolicy": {
       "remainingFindings": 0,
       "reviewedInstructionPatch": "EC5FBCF109FA215D13CCB152A6CBB3AD3F47F13B6C75DB5CBE6DA338AC013F0B",
@@ -32,6 +32,29 @@
       "routedReferences": "passed",
       "packagedInstructions": "match reviewed source",
       "skillInvocationTrials": "not run"
+    },
+    "globSecurity": {
+      "reviewer": "independent opl-reviewer",
+      "remainingFindings": 0,
+      "reviewedSources": [
+        {
+          "path": "plugins/opl-projector/package-lock.json",
+          "sha256": "c43290e2d627663bc17662628ade0d20b058ab1c7b0106e2315a9bec8ee1210e"
+        },
+        {
+          "path": "plugins/opl-projector/package.json",
+          "sha256": "8bd71c851353ccd56f8e2e10c872ebab3cfe7b9cf5d0f52c59ed9c5b528a437e"
+        },
+        {
+          "path": "plugins/opl-projector/runtime/state.mjs",
+          "sha256": "31a574f90a7c0bbe2bbe5d85509ed870deb3dcbedd2b8870cb61b8a973751428"
+        },
+        {
+          "path": "test/discovery.test.mjs",
+          "sha256": "0ae845e6d007aef30e53cf24af9ccd3970f72ac058f7b392c931b63ce4aa27a5"
+        }
+      ],
+      "limits": "Saved baseline dependency copy could not run a full live comparison; regression and parser review do not establish safety against all pathological globs"
     }
   },
   "installation": {
@@ -49,7 +72,8 @@
     },
     "activeProject": "C:/dev/projects/projector-v5",
     "nativeHookDelivery": "not exercised in a fresh session",
-    "skillInvocationTests": "not run"
+    "skillInvocationTests": "not run",
+    "refreshedAt": "2026-10-03T02:10:43.955Z"
   },
   "sources": [
     {
@@ -61,12 +85,20 @@
       "sha256": "040a24ea76d904a8a75e65088bcc1aca74136197f5b32c5882adc3cd172d64ec"
     },
     {
+      "path": "README.md",
+      "sha256": "b4e44e2c2428b4475865c8acb2545e3aafb3c0c7e5ae9bc48b8b44e3a979ca95"
+    },
+    {
       "path": "docs/approved-plan.md",
       "sha256": "0eebe7bcc10f6f6b8a39c4e607628320b6fe9fb29140efaead145da00f2828d8"
     },
     {
+      "path": "docs/implementation-report.md",
+      "sha256": "3c4f82c69043bc63aad1a146d8d7396fb73bd267aa927085396e0938b52d9e2e"
+    },
+    {
       "path": "docs/interfaces.md",
-      "sha256": "0af937c51acb501b2da8923e909a180b6670d0bf808ffd349f7eb16126bf2ab7"
+      "sha256": "3bb820f51384c7cceda9875f46326ebb2c8891a9d814bf22629f1ee4d050ee18"
     },
     {
       "path": "package-lock.json",
@@ -94,11 +126,11 @@
     },
     {
       "path": "plugins/opl-projector/package-lock.json",
-      "sha256": "5409943eff1e928feb9b530a77f24f30e64ef6f0aa8a6a2360cd6974b4799b41"
+      "sha256": "c43290e2d627663bc17662628ade0d20b058ab1c7b0106e2315a9bec8ee1210e"
     },
     {
       "path": "plugins/opl-projector/package.json",
-      "sha256": "3cdafe897595ab2ea83b2ddadd82961a450794d24af50a391f91415cdb631ebd"
+      "sha256": "8bd71c851353ccd56f8e2e10c872ebab3cfe7b9cf5d0f52c59ed9c5b528a437e"
     },
     {
       "path": "plugins/opl-projector/references/guide.md",
@@ -146,7 +178,7 @@
     },
     {
       "path": "plugins/opl-projector/runtime/state.mjs",
-      "sha256": "e3a3e220f3255019a578db52f5e93d59d44b079772568bec6ed491d6fb5f8739"
+      "sha256": "31a574f90a7c0bbe2bbe5d85509ed870deb3dcbedd2b8870cb61b8a973751428"
     },
     {
       "path": "plugins/opl-projector/runtime/work.mjs",
@@ -169,10 +201,6 @@
       "sha256": "76feabc752a8d32e546d131d148633e33f79ce48eddae6bb3269f7a4e8197b79"
     },
     {
-      "path": "README.md",
-      "sha256": "b4e44e2c2428b4475865c8acb2545e3aafb3c0c7e5ae9bc48b8b44e3a979ca95"
-    },
-    {
       "path": "scripts/prepare-plugin.mjs",
       "sha256": "b77608c87ea6d0c1dc85c4b659e2cc73cd2fb4f953f95642590e427a4a757810"
     },
@@ -189,21 +217,36 @@
       "sha256": "c94c564dfa10dff135123ce48d639095a9d8dabb7baed8860b091eff71dc5f30"
     },
     {
+      "path": "test/discovery.test.mjs",
+      "sha256": "0ae845e6d007aef30e53cf24af9ccd3970f72ac058f7b392c931b63ce4aa27a5"
+    },
+    {
       "path": "test/providers.test.mjs",
       "sha256": "3f11af1d6d2725d37c2933da90b19b1c76afa4ac4cb77a238d3a165e1ceabed7"
     }
   ],
   "dependencyAudit": {
-    "status": "vulnerable",
-    "high": 3,
-    "advisory": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
-    "dependencyChain": [
-      "fast-glob",
-      "micromatch",
-      "braces"
-    ],
-    "risk": "Stack-exhaustion denial of service through deeply nested glob patterns",
-    "npmFixAvailable": false,
-    "scope": "Existing dependency chain; no dependency changed in this instruction update."
+    "status": "clean",
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "resolvedAdvisory": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+    "remediation": "Discovery uses glob/raw with locked minimatch 10.2.6 and brace-expansion 5.0.12",
+    "loadedEntrypoint": "Default minified glob entrypoint reproduced stack overflow; public unbundled entrypoint passed the actual runtime regression"
+  },
+  "platformChecks": {
+    "WSL": {
+      "command": "node --test test/discovery.test.mjs",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "parser": "Baseline stack overflow reproduced with 4900 nested braces; reviewed runtime and unpacked archive pass without stack exhaustion",
+    "filesystem": "WSL preserves ENAMETOOLONG for the literal overlong path and subsequent ordinary discovery succeeds"
   }
 }

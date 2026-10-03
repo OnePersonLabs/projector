@@ -22,13 +22,13 @@ The helper currently discovers Units at file granularity. A Unit can represent a
 
 ## Verification
 
-`npm.cmd test` passed **38 tests, 0 failed, 0 skipped**, with exit code zero. The integrated run took about four seconds. Activation checks cover Git boundaries, quiet inactive hooks, inactive runtime calls, preserved recovery data, and same-session disable handling. It covers core behavior, provider protocols and direct services, source-bound imports, and the shared Clip integration scenario.
+`npm.cmd test` passed **42 tests, 0 failed, 0 skipped**, with exit code zero. The integrated run took about four seconds. Activation checks cover Git boundaries, quiet inactive hooks, inactive runtime calls, preserved recovery data, and same-session disable handling. The suite covers core behavior, provider protocols and direct services, source-bound imports, file discovery, and the shared Clip integration scenario. The four discovery tests also passed in WSL.
 
 The Clip checks actually execute JavaScript playback/export, Python persistence, and Rust playback. They exercise alternate handwritten implementations and the explicit committed-edit counterexample. Other checks cover moved source, a new consumer without coverage, static versus runtime evidence, relevant versus unrelated drift, failed observations, and stale dependencies across Lenses. They also cover preserved original mismatch, local repair stops, cache removal, and recoverable closed work.
 
 Recovery tests include an injected failure during the second rollback write. Resume retains the interrupted rollback and mixed output state. Explicit recovery completes it. A known unrelated edit causes preflight refusal before any restoration. Aliases and reordered outputs cannot bypass ownership or prior-state recurrence.
 
-The portable npm archive includes the six direct dependencies and their runtime dependency closure: **26 dependency packages**, about **1.2 MB compressed**. An isolated temporary-directory smoke verified that all six imports resolve inside the unpacked package. CLI help, checkpoint creation, selective focus, native Clip checks, and SCSS symbols passed. Full Clip reconciliation correctly returned unresolved with exit code 2 because some runtime participants remain unverified.
+The portable npm archive includes the six direct dependencies and their runtime dependency closure: **15 dependency packages**, about **2.4 MB compressed**. An isolated temporary-directory smoke verified that all six imports resolve inside the unpacked package. The attack-shaped glob input, subsequent ordinary discovery, CLI help, checkpoint creation, selective focus, native Clip checks, and SCSS symbols passed. Full Clip reconciliation correctly returned unresolved with exit code 2 because some runtime participants remain unverified.
 
 An independent `opl-reviewer` used source review, in-memory filesystem/process probes, and actual HTML/CSS observations. All material findings and the shutdown regression finding were resolved. Current checked source identities are recorded in [verification.json](verification.json). The activation/publication delta also received independent review.
 
@@ -46,7 +46,13 @@ The later user request adds reviewable local commits to the activated-project wo
 
 The policy keeps dependent implementation, consumers, checks, and necessary meaning together. It allows broad units when artificial splitting would make intermediate states misleading. It preserves other staged and working changes, and leaves a unit uncommitted when safe isolation is unavailable. There is no commit daemon, fixed size limit, additional lock, or separate history ledger.
 
-Validation for this instruction change uses skill metadata, reference resolution, prose review, and independent review. The runtime source is unchanged; the earlier 38 deterministic runtime checks remain baseline evidence. No skill-invocation test or AI trial establishes future model compliance with this policy.
+Validation for the commit-policy instruction change used skill metadata, reference resolution, prose review, and independent review. That change left runtime source unchanged, with 38 deterministic runtime checks as baseline evidence. The later discovery security fix has separate runtime verification. No skill-invocation test or AI trial establishes future model compliance with this policy.
+
+## Discovery security fix
+
+The [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) had no patched release. Discovery now uses `glob` 13.0.6 through its public `glob/raw` entrypoint, with locked `minimatch` 10.2.6 and `brace-expansion` 5.0.12. The default minified entrypoint embeds an older parser that reproduced a stack overflow even with a clean npm audit. The unbundled entrypoint uses the patched dependency closure. Projector adds no pattern-depth quota.
+
+The filesystem adapter preserves non-ENOENT scan errors that the glob library otherwise suppresses. Selection checks cover negation, brace alternatives and numeric ranges, extglobs, dotfiles, deduplication, ignored directories, file-only populations, symlinks, and project confinement. The former parser failed on a 4,900-level brace pattern below its input-length cap. The current runtime and unpacked archive complete parsing without stack exhaustion. WSL reports ENAMETOOLONG for the resulting literal path; that error remains visible, and subsequent ordinary discovery works. `npm audit --prefix plugins/opl-projector --json` reports **0 vulnerabilities**.
 
 ## Real language-server evidence
 

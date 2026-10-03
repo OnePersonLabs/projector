@@ -1,7 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import fg from 'fast-glob';
+// Use the public unbundled entrypoint so the locked parser dependencies apply.
+// Glob's minified entrypoint embeds an older brace-expansion implementation.
+import { glob, Ignore } from 'glob/raw';
 
 export const hash = value => crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
 export const slash = value => value.replaceAll('\\', '/');
@@ -53,7 +55,36 @@ export async function physicalProjectPath(root, relative) {
 
 export async function discover(root, patterns) {
   if (!Array.isArray(patterns) || patterns.some(p => typeof p !== 'string' || path.isAbsolute(p) || /^[a-z]:/i.test(p) || p.split(/[\\/]/).includes('..'))) throw new Error('Discovery patterns must remain inside the project');
-  const files = await fg(patterns, { cwd: root, dot: true, onlyFiles: true, followSymbolicLinks: false, unique: true, ignore: ['**/.git/**', '**/node_modules/**', '.projector/cache/**', '.projector/work/**'] });
+  const isExclusion = pattern => pattern.startsWith('!') && !pattern.startsWith('!(');
+  const ignore = new Ignore([
+    ...patterns.filter(isExclusion).map(pattern => pattern.slice(1)),
+    '**/.git/**', '**/node_modules/**', '.projector/cache/**', '.projector/work/**'
+  ], { dot: true, nocase: false });
+
+  // Glob treats filesystem errors as missing paths. Retain non-ENOENT errors
+  // through its public adapter so a partial scan cannot become an empty verdict.
+  let scanError;
+  const observedFs = Object.fromEntries(['lstat', 'readdir', 'readlink', 'realpath'].map(operation => [operation, async (...args) => {
+    try { return await fs[operation](...args); }
+    catch (error) {
+      if (error.code !== 'ENOENT') scanError ??= error;
+      throw error;
+    }
+  }]));
+  const files = await glob(patterns.filter(pattern => !isExclusion(pattern)), {
+    cwd: root, dot: true, nodir: true, follow: false, nocase: false,
+    ignore: {
+      ignored: entry => (!entry.isUnknown() && !entry.isFile()) || ignore.ignored(entry),
+      childrenIgnored: entry => entry.isSymbolicLink() || ignore.childrenIgnored(entry)
+    },
+    fs: {
+      promises: observedFs,
+      readdir: (target, options, callback) => observedFs.readdir(target, options).then(
+        entries => callback(null, entries), error => callback(error)
+      )
+    }
+  });
+  if (scanError) throw scanError;
   for (const file of files) await projectPath(root, file);
   return files.map(slash).sort();
 }

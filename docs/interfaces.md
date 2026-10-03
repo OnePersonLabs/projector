@@ -24,7 +24,9 @@ Every verdict names condition, selector/participants, selection status, evidence
 
 ## Shared filesystem functions
 
-runtime/state.mjs exports projectPath(root, relative), hash(value), captureInputs(root, paths), discover(root, patterns), captureScope(root, patterns, extraPaths=[]), readJson(path), writeJson(path,value), and writeText(path,text). Inputs are objects {path, hash}; missing files have hash=null. discover returns sorted project-relative files and refuses outside-root targets. captureScope returns {patterns, inputs, fingerprint}; fingerprint covers membership and contents. Atomically replace individual metadata files. No global observation lock.
+runtime/state.mjs exports projectPath(root, relative), hash(value), captureInputs(root, paths), discover(root, patterns), captureScope(root, patterns, extraPaths=[]), readJson(path), writeJson(path,value), and writeText(path,text). Inputs are objects {path, hash}; missing files have hash=null. captureScope returns {patterns, inputs, fingerprint}; fingerprint covers membership and contents. Atomically replace individual metadata files. No global observation lock.
+
+discover returns sorted, unique project-relative file paths with forward slashes and refuses outside-root targets. Glob arrays support exclusions, brace alternatives and ranges, and extglobs. Matching includes dotfiles and is case-sensitive. Missing paths can produce an empty population. Other filesystem errors reject the scan; a partial scan must not establish an empty population.
 
 ## Provider boundary
 
