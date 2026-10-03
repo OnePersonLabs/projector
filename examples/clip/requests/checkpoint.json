@@ -1,0 +1,12 @@
+{
+  "id": "clip-export",
+  "goal": "Publish a transposed export without editing the shared Clip.",
+  "concepts": ["clip"],
+  "lenses": ["clip-playback"],
+  "ownership": [{"owner":"export-worker","paths":["published/clip-export.json"]}],
+  "boundaries": ["shared/**", "js/**", "python/**", "published/**", ".projector/meaning/**"],
+  "completed": ["Authored JS, Python, and Rust checks; source-only C#, frontend and styling examples."],
+  "questions": ["Which native language checks should cover the source-only seams in the consuming repository?"],
+  "uncertainMutations": [],
+  "body": "shared/clip.json remains authoritative. Only an explicit committed edit changes it. Inspect staged output before publishing."
+}

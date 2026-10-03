@@ -1,0 +1,12 @@
+{
+  "name": "opl-projector",
+  "version": "0.1.0",
+  "description": "Recover shared meaning, carry out native work, and reconcile scoped evidence.",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OPL Projector",
+    "shortDescription": "Shared meaning and scoped reconciliation",
+    "longDescription": "Concepts, typed Relations, Projection Units, Pattern Candidates, and Projection Lenses for native agent work. Optional helpers preserve reasons, exceptions, evidence gaps, and recovery state."
+  },
+  "hooks": "./hooks/hooks.json"
+}

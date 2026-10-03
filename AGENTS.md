@@ -1,19 +1,9 @@
-# Projector V4 development rules
+# Projector V5 development
 
-Projector V4 development follows the repository's normal durable source, OpenSpec, and design artifacts.
+The approved design and later activation/publication amendment are in docs/approved-plan.md. Keep implementation in this workspace. Preserve other checkouts. The V5 plugin is opl-projector; use it only in activated projects.
 
-## Verification
+Use native execution and delegation. Keep one writer per mutable surface. Contracts are in docs/interfaces.md; runtime source is in plugins/opl-projector/runtime/. Do not add a second scheduler, implicit global semantic indexing, architecture quotas, or unrequested repository-wide guards.
 
-Use the local [canonical verification procedure](plugins/projector/skills/verify/SKILL.md) for verification planning, test maintenance, execution, and final review. Select its planning, ordinary repository, prepared-change, or branch-integration context from the actual work. This route does not activate Projector, require a prepared change, or depend on an installed plugin. Repository checks and completion gates still apply. Use [development commands](docs/development.md#focused-checks-and-complete-impact) for this checkout.
+Use $simplified-technical-english for instructions and implementation guidance. Use $de-ai-writing for human explanations. Write -- instead of an em dash.
 
-## Handoff isolation
-
-Files under `.temp/` are **one-way agent inputs only**. No tracked file outside `.temp/` may import, load, link to, cite, embed the path of, or otherwise depend on any file under `.temp/`.
-
-If information from a handoff or scratch file becomes necessary to the implementation, express that information in the appropriate durable source, specification, design, test, or configuration artifact outside `.temp/`; never create a back-reference into `.temp/`.
-
-Only this `AGENTS.md` and `.gitignore` may name `.temp/`, solely to state/enforce the isolation rule and track the handoff package. No other tracked file outside `.temp/` may mention or depend on a `.temp/` path.
-
-Do not modify or merge from `legacy/projector-main-v3` while implementing V4 unless the user explicitly requests a specific comparison. Do not resurrect V3 machinery by default.
-
-Before finishing a change, verify that newly written tracked files outside `.temp/` contain no handoff-path references or dependencies.
+Use deterministic checks for behavior. Do not run AI-consuming trials without explicit user authorization. Do not test skill invocation. Preserve supported evidence when another observation fails. Report incomplete coverage as unresolved.

@@ -1,9 +1,0 @@
-✔ only current successful covering supersession retires evidence, and a failing rerun blocks older pass reuse (85299.3557ms)
-ℹ tests 1
-ℹ suites 0
-ℹ pass 1
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 85803.1681

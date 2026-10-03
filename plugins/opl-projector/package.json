@@ -1,0 +1,36 @@
+{
+  "name": "opl-projector",
+  "version": "0.1.0",
+  "description": "Focused memory for adaptive convergence in native agent workflows.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "opl-projector": "runtime/cli.mjs"
+  },
+  "files": [
+    ".codex-plugin",
+    "AGENTS.md",
+    "skills",
+    "references",
+    "runtime",
+    "hooks"
+  ],
+  "dependencies": {
+    "yaml": "^2.9.1",
+    "fast-glob": "^3.3.3",
+    "vscode-jsonrpc": "^9.0.3",
+    "vscode-languageserver-textdocument": "^1.0.15",
+    "vscode-html-languageservice": "^5.6.2",
+    "vscode-css-languageservice": "^6.3.10"
+  },
+  "bundleDependencies": [
+    "yaml",
+    "fast-glob",
+    "vscode-jsonrpc",
+    "vscode-languageserver-textdocument",
+    "vscode-html-languageservice",
+    "vscode-css-languageservice"
+  ]
+}

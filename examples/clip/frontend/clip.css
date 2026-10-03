@@ -1,0 +1,6 @@
+:root { color-scheme: light dark; font: 1rem system-ui, sans-serif; }
+body { margin: 2rem; }
+input { width: 5rem; margin-inline-start: 0.5rem; }
+.clip-notes { padding-inline-start: 1.5rem; }
+.clip-notes li { padding: 0.4rem; }
+.clip-notes span + span { margin-inline-start: 1rem; }

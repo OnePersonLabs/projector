@@ -1,0 +1,6 @@
+$note-spacing: 0.4rem;
+.clip-notes {
+  padding-inline-start: 1.5rem;
+  li { padding: $note-spacing; }
+  span + span { margin-inline-start: 1rem; }
+}

@@ -1,2 +1,0 @@
-npm notice run @onepersonlabs/projector@4.2.0 npx
-npm notice run eslint test/change-readiness.test.ts test/host-installed.test.ts

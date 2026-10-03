@@ -1,13 +1,6 @@
-.worktrees/
 node_modules/
-dist/
+*.tgz
+.projector/cache/
+.verification/
 .plugin-build/
-*.tsbuildinfo
-.temp/
-*Zone.Identifier
-
-# Track only the V4 implementation handoff package under .temp/.
-!/.temp/
-.temp/*
-!/.temp/handoff/
-!/.temp/handoff/**
+!dist/opl-projector-0.1.0.tgz

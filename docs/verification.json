@@ -1,0 +1,185 @@
+{
+  "checkedAt": "2026-10-03T00:55:34.166923+00:00",
+  "git": {
+    "branch": "v5",
+    "parent": "098bb6756e3aee49975ed48d87069f22bcb69854"
+  },
+  "tests": {
+    "passed": 38,
+    "failed": 0,
+    "skipped": 0,
+    "command": "npm.cmd test"
+  },
+  "package": {
+    "path": "dist/opl-projector-0.1.0.tgz",
+    "sha256": "6bb80e5f888420e116f16f85a639fa0bcff944f870d5494919143da939a0936f",
+    "size": 1175185,
+    "bundledPackages": 26,
+    "isolatedSmoke": "passed"
+  },
+  "review": {
+    "remainingFindings": 0,
+    "activationReview": "independent opl-reviewer",
+    "preparationPolicyDelta": "reviewed against installed npm 12 source",
+    "postReviewChanges": "Text line endings normalized to LF for Git publication; semantic content preserved. Current archive isolated smoke and native refresh passed."
+  },
+  "installation": {
+    "pluginId": "opl-projector@opl-projector",
+    "version": "0.1.0",
+    "Windows": {
+      "installedPath": "C:/Users/zethj/.codex/plugins/cache/opl-projector/opl-projector/0.1.0",
+      "enabled": true,
+      "trustedHooks": 2
+    },
+    "WSL": {
+      "installedPath": "/home/zethj/.codex/plugins/cache/opl-projector/opl-projector/0.1.0",
+      "enabled": true,
+      "trustedHooks": 2
+    },
+    "activeProject": "C:/dev/projects/projector-v5",
+    "nativeHookDelivery": "not exercised in a fresh session",
+    "skillInvocationTests": "not run"
+  },
+  "sources": [
+    {
+      "path": ".agents/plugins/marketplace.json",
+      "sha256": "4f3458367fc0402257d709a04d574bd6e7ae54dddeaa6204fa3df7482aa3e3fe"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "040a24ea76d904a8a75e65088bcc1aca74136197f5b32c5882adc3cd172d64ec"
+    },
+    {
+      "path": "docs/approved-plan.md",
+      "sha256": "8dce867c254491b97a4fe57cfb0c7d7821a64a116aeb70cd864532e8e04288bd"
+    },
+    {
+      "path": "docs/interfaces.md",
+      "sha256": "0af937c51acb501b2da8923e909a180b6670d0bf808ffd349f7eb16126bf2ab7"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "49df7b5759f96c679b419c7e75b3d58b0b1b71349bb831e2cfbd64729b7de6d0"
+    },
+    {
+      "path": "package.json",
+      "sha256": "9e1b3d65f41450a3fcf94e4b5b1999c25ce10763441d4afda8a0576856288d36"
+    },
+    {
+      "path": "plugins/opl-projector/.codex-plugin/plugin.json",
+      "sha256": "b393b81e3ce328395144a35016fe8254c0fb1adb6707ce3c159d3de7713da4ae"
+    },
+    {
+      "path": "plugins/opl-projector/AGENTS.md",
+      "sha256": "08aa49aaa0592f8b624647ddfded226681bb9d47c81698aac04430fa5f274c71"
+    },
+    {
+      "path": "plugins/opl-projector/hooks/hooks.json",
+      "sha256": "be91a4399765f96858b27323f098559a36039e7e7ca990d30db65968a4529ac7"
+    },
+    {
+      "path": "plugins/opl-projector/hooks/projector-context.mjs",
+      "sha256": "d5bb155d8f43837cb378505c8c3521c41b89f66dab154b7b0c7410d4518e7bc7"
+    },
+    {
+      "path": "plugins/opl-projector/package-lock.json",
+      "sha256": "5409943eff1e928feb9b530a77f24f30e64ef6f0aa8a6a2360cd6974b4799b41"
+    },
+    {
+      "path": "plugins/opl-projector/package.json",
+      "sha256": "3cdafe897595ab2ea83b2ddadd82961a450794d24af50a391f91415cdb631ebd"
+    },
+    {
+      "path": "plugins/opl-projector/references/guide.md",
+      "sha256": "47346bc34e497d108de3dea5db255ccb44f4d2537d257a8d195406d97d74b6a2"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/activation.mjs",
+      "sha256": "61a0f9313f131a70bcad0df33f321fd716478036f5937087df6de7a8c3527f37"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/cli.mjs",
+      "sha256": "89e5d45ed75a64b41e73787a01268cf2d0a0f3066cfd368957b0c74843252cc2"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/meaning.mjs",
+      "sha256": "7c91ed6cce7e2a7423c732fd251cf7ba4c06ef07b32c67ef446d5297a5592f98"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/projector.mjs",
+      "sha256": "3ae761f3fb22b372b4977aabcd40e5342016397f74ff17f47ea3558ce9639268"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/providers/common.mjs",
+      "sha256": "d1a1e3a28a5ef01ebc23f77cf199e279bb445a309f690c908e42f9fe871801d6"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/providers/direct.mjs",
+      "sha256": "1fc57fcbf41b3b7a96bdc676a9383f52d1d9582ea79ea2df940feda5caf998c1"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/providers/import-index.mjs",
+      "sha256": "66c717a26f436844aad21acf277a43b0632c7dc8150f065619c74f156a85d1c0"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/providers/index.mjs",
+      "sha256": "e5c198a5cce516c88f9e2bac996554c523f16534517d68d2c8cbf2b20f71c9bb"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/providers/lsp.mjs",
+      "sha256": "ca65840dac1ce8991b650d159d66e826e9bf2eb360595a5fb96bee62dccd537f"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/repair.mjs",
+      "sha256": "212ca35108440ddbc855f3c076c04e120e4dc5838ba877893e98a7a97dbe2ee0"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/state.mjs",
+      "sha256": "e3a3e220f3255019a578db52f5e93d59d44b079772568bec6ed491d6fb5f8739"
+    },
+    {
+      "path": "plugins/opl-projector/runtime/work.mjs",
+      "sha256": "f6954e0b06461645454a89dfa004fae1b8d85a5331e97be29e51705bdd342cd0"
+    },
+    {
+      "path": "plugins/opl-projector/skills/carry-out-directive/SKILL.md",
+      "sha256": "db3d3d00195c984ecf5f73aa1516152d296cd3fb013f01c2d2d4862623f284da"
+    },
+    {
+      "path": "plugins/opl-projector/skills/enable-projector/SKILL.md",
+      "sha256": "03866b053c612b5a90416234a3fc3c868b79a04c5177926b79cac4c3c599f039"
+    },
+    {
+      "path": "plugins/opl-projector/skills/reconcile-and-learn/SKILL.md",
+      "sha256": "c1e3892c264e65f2acf07631f5aabb15f87a0804827db22be6830477935004a8"
+    },
+    {
+      "path": "plugins/opl-projector/skills/recover-meaning/SKILL.md",
+      "sha256": "76feabc752a8d32e546d131d148633e33f79ce48eddae6bb3269f7a4e8197b79"
+    },
+    {
+      "path": "README.md",
+      "sha256": "282d1df03406096ff577d40ccca53d8a34bf4a7acc385c75c4257fa43d4f37d5"
+    },
+    {
+      "path": "scripts/prepare-plugin.mjs",
+      "sha256": "b77608c87ea6d0c1dc85c4b659e2cc73cd2fb4f953f95642590e427a4a757810"
+    },
+    {
+      "path": "test/activation.test.mjs",
+      "sha256": "83d578e472a96d4cf27e0f9f5e7c739717964be8e1e6fb4ee1cbe2e82ff82746"
+    },
+    {
+      "path": "test/clip-integration.test.mjs",
+      "sha256": "1715243b3b87c000c11481f459d9320cb645a12535850ba28bc5893d6797b010"
+    },
+    {
+      "path": "test/core.test.mjs",
+      "sha256": "c94c564dfa10dff135123ce48d639095a9d8dabb7baed8860b091eff71dc5f30"
+    },
+    {
+      "path": "test/providers.test.mjs",
+      "sha256": "3f11af1d6d2725d37c2933da90b19b1c76afa4ac4cb77a238d3a165e1ceabed7"
+    }
+  ]
+}

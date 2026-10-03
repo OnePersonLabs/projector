@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Clip playback</title><link rel="stylesheet" href="clip.css"></head>
+<body>
+<main><h1>Clip playback</h1><label>Transpose <input id="transpose" type="number" value="0" step="1"></label><ol class="clip-notes" aria-live="polite"></ol></main>
+<script type="module">
+import { playback } from '../js/playback.mjs';
+const clip = await fetch('../shared/clip.json').then(response => {
+  if (!response.ok) throw new Error(`Clip request failed: ${response.status}`);
+  return response.json();
+});
+const input = document.querySelector('#transpose');
+const list = document.querySelector('.clip-notes');
+function render() {
+  list.replaceChildren(...playback(clip, Number(input.value)).map(note => {
+    const item = document.createElement('li');
+    item.textContent = `Pitch ${note.pitch}, beat ${note.beat}`;
+    return item;
+  }));
+}
+input.addEventListener('input', render);
+render();
+</script>
+</body></html>

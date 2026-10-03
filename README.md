@@ -1,135 +1,77 @@
-# Projector
+# OPL Projector -- V5
 
-Describe a change, review its requirements and design, and let your coding agent carry it through implementation and checks. Projector keeps the plan and the code together when the work changes direction.
+Projector helps an agent recover the reason for a change, find its current implementations, and compare selected behavior with that meaning. The native harness still runs the work and coordinates agents. The plugin stores readable meaning and offers optional evidence and recovery helpers.
 
-Implementation happens in your selected checkout. You can request an isolated worktree when useful. Finish integrates the reviewed code and accepted specifications together while preserving unrelated local work.
+The original vocabulary has work to do:
 
-## Contents
-
-- [See it in use](#see-it-in-use)
-- [How the work moves](#how-the-work-moves)
-- [Get started](#get-started)
-- [When the plan changes](#when-the-plan-changes)
-- [What Projector checks](#what-projector-checks)
-- [Documentation](#documentation)
-- [Related projects](#related-projects)
-- [Development](#development)
-- [License](#license)
-
-## See it in use
-
-Your application has a search results list. Mouse selection works, but people using a keyboard cannot move between results. You want arrow keys to move focus and Enter to open the selected result, without stealing keys from the search field.
-
-This is an illustrative conversation. The agent inspects your actual application before choosing files or checks.
-
-```text
-You: $projector:propose Add keyboard navigation to search results.
-     Arrow keys move between results; Enter opens the focused result.
-     Typing in the search field must keep working.
-
-Agent: The proposal, requirements, design, and tasks are ready to review.
-       They cover focus movement, activation, and input-field boundaries.
-
-You: Keep focus on the last result at the end of the list. Don't wrap.
-Agent: Updated the requirement and design. The tasks now reflect that choice.
-
-You: $projector:apply
-Agent: Implementing the reviewed plan in your selected checkout.
-
-You: $projector:finish
-Agent: Ran the relevant checks, obtained independent review, and archived
-       the change and integrated the result. Here is the commit and what was verified.
-```
-
-You review what the feature should do before the agent builds it. If the design changes halfway through, the agent revises the same change and accounts for useful work already present. [More practical stories](docs/examples.md).
-
-## How the work moves
-
-```mermaid
-flowchart LR
-    I["Idea"] --> P["Proposal, requirements, design, tasks"]
-    I --> E["Explore alternatives"]
-    E --> P
-    P --> R["Human review"]
-    R --> C["Selected checkout implementation"]
-    C --> V["Executed checks and independent review"]
-    V --> F["Finish: archive and integrated commit"]
-    C --> U["Revise the plan"]
-    U --> R
-```
-
-Git checkpoints preserve partial implementation when requirements change. Checks run at coherent checkpoints and cover their stated obligations; independent review examines the target and actual diff. Finish uses temporary isolation for the final commit, runs normal hooks, and preserves unrelated staging and working changes during recoverable installation. [The mental model](docs/overview.md) explains the artifacts and their owners.
-
-## Get started
-
-Install the Projector plugin in Codex. If you have this checkout, ask your agent:
-
-> Install this Projector checkout as a user-level Codex plugin and verify its installed skills and tools.
-
-The agent handles the build and local registration. This repository does not claim a public marketplace listing. [Installation details](docs/getting-started.md#install-the-plugin).
-
-Open the Git repository you want to change. In your agent's chat, use:
-
-```text
-$projector:init
-$projector:propose Add keyboard navigation to search results.
-```
-
-Read the generated plan and request any corrections. When it is ready:
-
-```text
-$projector:apply
-$projector:finish
-```
-
-The agent reports the integrated commit and archive. Use `$projector:merge` for a separately selected source branch. These are skill invocations in chat; internal CLI and MCP tools are described in the [runtime reference](docs/reference/runtime.md).
-
-To authorize planning, implementation, verification, and finish together, say:
-
-> Use Projector to add keyboard navigation. Draft the plan, implement it, run the checks, and finish the change.
-
-Otherwise, planning pauses for your review. Material ambiguities still need a decision. [Your first change](docs/getting-started.md) walks through the full path.
-
-## When the plan changes
-
-| Situation | Skill invocation |
+| Term | Purpose |
 | --- | --- |
-| You need to investigate alternatives | `$projector:explore` |
-| You are returning after an interruption | `$projector:continue` |
-| The requested behavior or design changed | `$projector:revise` |
-| You want to inspect drift | `$projector:audit` |
-| Existing edits or task status need reconstruction | `$projector:reconcile` |
-| A finished branch is ready to integrate | `$projector:merge` |
+| Concept | A stable idea, its conditions, reasons, exceptions, and reopening assumptions. |
+| Typed Relation | A named connection, marked as observed or accepted. |
+| Projection Unit | A current source participant discovered through a Lens. Several Units can realize one Concept. |
+| Projection Lens | Discovery and checks for particular conditions and participants. |
+| Pattern Candidate | A possible reusable approach with examples, counterexamples, and alternatives. |
 
-Projector preserves still-applicable commitments during revision. Task checkboxes describe work performed; they cannot override requirements or substitute for executed evidence. [Workflows](docs/workflows.md) explains the choices.
+Meaning lives in `.projector/meaning/` as Markdown with YAML frontmatter. A directive can keep a concise checkpoint in `.projector/work/`. Checks and discovery use disposable caches. Meaning and native application code remain usable after removing the plugin.
 
-## What Projector checks
+## Use it in a project
 
-Finish requires current executed evidence and independent review. Revisions can invalidate affected evidence. Interrupted completion resumes from durable state; repeating a settled finish reuses its publication.
+In a fresh Codex session with the plugin installed, say **"Enable Projector in this project."** The agent uses `$opl-projector:enable-projector` to create `.projector/active`. Then describe work normally. The agent selects the relevant skills and prepares helper requests; you do not need to remember a workflow or command names.
 
-Built-in providers cover JavaScript/TypeScript, Markdown, C#, Rust, Python, HTML, CSS, and SCSS, with static Tauri and React Native relationships. Indented Sass, dynamic relationships, and unproven native wiring remain explicit unknowns. Every tracked artifact can have ownership, including binary assets. Managed current queries require enrolled, cooperating writers; OpenSpec stores remain outside this workflow. Qualification records establish their stated conditions, not complete understanding of an application. [Limits and evidence](docs/reference/runtime.md).
+Say **"Turn Projector off in this project"** to remove the marker. Meaning and recovery records remain. Inactive projects receive no hook guidance or runtime observations. A nested Git repository needs its own activation.
 
-Projector includes its workflow skills and OpenSpec tooling. You do not need the old OpenSpec plugin alongside it. Existing project instructions can still select another workflow; [adoption guidance](docs/existing-projects.md) explains how to inspect that overlap.
+Rollback restores saved bytes from one owned repair when the current bytes still match that repair's output. It refuses to overwrite unrelated edits. It does not rewind the repository or undo ordinary native work.
 
-## Documentation
+## Try the helper
 
-[Documentation home](docs/README.md) routes by what you are trying to do.
+Use Node.js 24 or newer. From this workspace:
 
-- [Getting started](docs/getting-started.md): setup and the first reviewed change.
-- [Examples](docs/examples.md): features, revision, existing edits, recovery, and integration.
-- [Skill invocations](docs/skills.md): what each skill does and where to invoke it.
-- [Reviewing a change](docs/reviewing-a-change.md): assess the plan and the implemented result.
-- [Integration](docs/integration.md): integrated finish and merging another source branch.
-- [Troubleshooting](docs/troubleshooting.md): failures and concrete next steps.
+```powershell
+npm.cmd ci --ignore-scripts
+npm.cmd run setup:plugin
+node plugins/opl-projector/runtime/cli.mjs activate --root examples/clip
+node plugins/opl-projector/runtime/cli.mjs checkpoint --root examples/clip --request examples/clip/requests/checkpoint.json
+node plugins/opl-projector/runtime/cli.mjs focus --root examples/clip --request examples/clip/requests/focus.json
+node plugins/opl-projector/runtime/cli.mjs revisit --root examples/clip --request examples/clip/requests/focus.json
+node plugins/opl-projector/runtime/cli.mjs reconcile --root examples/clip --request examples/clip/requests/reconcile.json
+```
 
-## Related projects
+The last request explicitly runs native checks. The clip example requires Python and `rustc` for its persistence and Rust checks. It also includes frontend and C# subjects whose runtime behavior needs separate evidence. An unresolved result can therefore be the correct outcome.
 
-[Projector 3](https://github.com/OnePersonLabs/projector/tree/v3) centers on persistent accepted project meaning and focused context during ordinary coding. [Kerf](https://github.com/OnePersonLabs/kerf) uses a smaller Markdown concept model with bounded focus and project-defined lenses. This checkout, Projector 4, manages reviewed changes through implementation, verification, and integrated completion. Their artifact formats and workflows differ.
+Use `focus` to retrieve selected meaning, `revisit` to refresh discovery, and `reconcile` to collect scoped verdicts. Provider requests are explicit. A normal context request does not start a compiler or install a language server.
+
+The CLI also provides `observe`, `checkpoint`, `resume`, `close`, and `repair`. Results are JSON. Reconciliation exits with `0` for supported results, `1` for a mismatch, and `2` for unresolved evidence or an error. Native checks run without a shell. See [the reference guide](plugins/opl-projector/references/guide.md) for request formats, coverage declarations, provider setup, and owned-output repair.
+
+## Plugin contents
+
+The plugin is in [plugins/opl-projector](plugins/opl-projector). It contains project-scoped hook guidance and four skills:
+
+- `$opl-projector:enable-projector`: enable, disable, or inspect activation in a project.
+- `$opl-projector:recover-meaning`: recover the authority, current participants, and relevant uncertainty.
+- `$opl-projector:carry-out-directive`: carry out native work with explicit ownership and useful recovery state.
+- `$opl-projector:reconcile-and-learn`: investigate discrepancies and retain learning that could change future action.
+
+Create a portable package with `npm.cmd run pack:plugin` after `setup:plugin`. The plugin's own lockfile and dependency directory supply the bundled runtime. The root package supplies test tooling. Unpack the archive and use its `package` directory as the plugin root. Its CLI is `runtime/cli.mjs`. The local marketplace uses a prepared bundle under `.plugin-build/opl-projector`. `$opl:refresh-local-plugins` runs `plugin:prepare-local`, then installs and enables `opl-projector@opl-projector` and trusts its hooks in reachable Windows and WSL user homes. Preparation requires Node.js 24+, npm, and `tar`. Use the source checkout for this workflow. A raw GitHub marketplace checkout needs this preparation before its plugin source is installable.
+
+## Language evidence
+
+| Subject | Available observation route | Scope of verification |
+| --- | --- | --- |
+| JS, TS, JSX, TSX | Explicit LSP server; native checks | Protocol tests, clip JavaScript runtime checks, and real TS/TSX navigation with a version-provenance gap. |
+| Python, Rust, C# | Explicit LSP server; native checks | Real Python navigation and Rust symbols; clip Python/Rust runtime checks. C# runtime unrun here because no .NET SDK is installed. |
+| HTML | Packaged HTML language service | Document symbols and local reference highlights. HTML diagnostics are an explicit gap. |
+| CSS, SCSS | Packaged CSS language service | Symbols, definitions, references, and diagnostics. |
+| Tauri, NativeScript, React Native | Source/message discovery and native checks | Example seams; full framework integration remains unverified. |
+| Source-bound imported facts | Explicit JSON index import | Current source bindings and fact scope are checked. |
+
+LSP navigation does not establish a complete cross-language graph. The provider reports its capabilities, source inputs, and gaps. Static observations cannot establish runtime delivery or timing. New consumers require applicable check coverage before they receive support.
 
 ## Development
 
-Use Node 24.19.0 and `npm ci`, then `npm run check`. See [development and local installation](docs/development.md) for packaging and installed-host verification. Contributors can use the [documentation guide](docs/documentation-guide.md) when updating these pages.
+```powershell
+npm.cmd test
+```
 
-## License
+The deterministic tests cover scoped evidence, cache invalidation, discovery changes, native checks, provider failures, repair recovery, project activation, and the [shared Clip example](examples/clip/README.md). They make no AI calls. The [approved plan](docs/approved-plan.md) records the design and approval boundaries; [implementation interfaces](docs/interfaces.md) describe the data contracts. The [implementation report](docs/implementation-report.md) records verification and remaining gaps. The verified archive is [dist/opl-projector-0.1.0.tgz](dist/opl-projector-0.1.0.tgz).
 
-[MIT](LICENSE).
+V5 is an experiment in adaptive convergence. Its maintenance cost and benefit on Psychord still need evidence from use. If a Lens costs more than it helps, revise or suspend that mechanism while continuing native development.
