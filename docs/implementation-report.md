@@ -40,6 +40,14 @@ The marketplace source is the locally prepared `.plugin-build/opl-projector` bun
 
 Native installer enablement and hook trust were verified. Child-process probes verify hook output; delivery from a fresh native session and model skill selection have no AI trial evidence. Open a fresh session to load installed components.
 
+## Reviewable commit policy
+
+The later user request adds reviewable local commits to the activated-project workflow. Conditional consumer guidance declares the default; the execution skill defines coherent units and messages; its routed reference handles shared-index and mixed-edit cases. Activation explains the default. More specific user and repository rules take precedence. Publication and history changes remain separate actions.
+
+The policy keeps dependent implementation, consumers, checks, and necessary meaning together. It allows broad units when artificial splitting would make intermediate states misleading. It preserves other staged and working changes, and leaves a unit uncommitted when safe isolation is unavailable. There is no commit daemon, fixed size limit, additional lock, or separate history ledger.
+
+Validation for this instruction change uses skill metadata, reference resolution, prose review, and independent review. The runtime source is unchanged; the earlier 38 deterministic runtime checks remain baseline evidence. No skill-invocation test or AI trial establishes future model compliance with this policy.
+
 ## Real language-server evidence
 
 | Engine and setup | Observed result |

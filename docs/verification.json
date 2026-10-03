@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-03T00:55:34.166923+00:00",
+  "checkedAt": "2026-10-03T01:21:16.259752+00:00",
   "git": {
     "branch": "v5",
     "parent": "098bb6756e3aee49975ed48d87069f22bcb69854"
@@ -8,20 +8,31 @@
     "passed": 38,
     "failed": 0,
     "skipped": 0,
-    "command": "npm.cmd test"
+    "command": "npm.cmd test",
+    "baselineCommit": "fa8a1288a0db090734b9eb30c642dd2375ccf6fd",
+    "rerunForInstructionChange": false
   },
   "package": {
     "path": "dist/opl-projector-0.1.0.tgz",
-    "sha256": "6bb80e5f888420e116f16f85a639fa0bcff944f870d5494919143da939a0936f",
-    "size": 1175185,
+    "sha256": "d44c4535b4b2eda71d8c331bad026e79d5b6ddd5734fb20776dab922910635eb",
+    "size": 1177199,
     "bundledPackages": 26,
-    "isolatedSmoke": "passed"
+    "isolatedSmoke": "passed for baseline runtime; current changed instructions match archive bytes"
   },
   "review": {
     "remainingFindings": 0,
     "activationReview": "independent opl-reviewer",
     "preparationPolicyDelta": "reviewed against installed npm 12 source",
-    "postReviewChanges": "Text line endings normalized to LF for Git publication; semantic content preserved. Current archive isolated smoke and native refresh passed."
+    "postReviewChanges": "Verification record and bundle regenerated for reviewed commit instructions; runtime source unchanged.",
+    "commitPolicy": {
+      "remainingFindings": 0,
+      "reviewedInstructionPatch": "EC5FBCF109FA215D13CCB152A6CBB3AD3F47F13B6C75DB5CBE6DA338AC013F0B",
+      "runtimeChanged": false,
+      "skillsMetadata": "passed",
+      "routedReferences": "passed",
+      "packagedInstructions": "match reviewed source",
+      "skillInvocationTrials": "not run"
+    }
   },
   "installation": {
     "pluginId": "opl-projector@opl-projector",
@@ -51,7 +62,7 @@
     },
     {
       "path": "docs/approved-plan.md",
-      "sha256": "8dce867c254491b97a4fe57cfb0c7d7821a64a116aeb70cd864532e8e04288bd"
+      "sha256": "0eebe7bcc10f6f6b8a39c4e607628320b6fe9fb29140efaead145da00f2828d8"
     },
     {
       "path": "docs/interfaces.md",
@@ -71,7 +82,7 @@
     },
     {
       "path": "plugins/opl-projector/AGENTS.md",
-      "sha256": "08aa49aaa0592f8b624647ddfded226681bb9d47c81698aac04430fa5f274c71"
+      "sha256": "0f4594c1353586ea71c0ddf61bd34a50def2e2739e82d7c7b132f03d31cad8f7"
     },
     {
       "path": "plugins/opl-projector/hooks/hooks.json",
@@ -91,7 +102,7 @@
     },
     {
       "path": "plugins/opl-projector/references/guide.md",
-      "sha256": "47346bc34e497d108de3dea5db255ccb44f4d2537d257a8d195406d97d74b6a2"
+      "sha256": "5f1b1239a41e6a0756daac96ffd5ba59f018897fe27a9085bdb78d8f2262f6e4"
     },
     {
       "path": "plugins/opl-projector/runtime/activation.mjs",
@@ -143,11 +154,11 @@
     },
     {
       "path": "plugins/opl-projector/skills/carry-out-directive/SKILL.md",
-      "sha256": "db3d3d00195c984ecf5f73aa1516152d296cd3fb013f01c2d2d4862623f284da"
+      "sha256": "85492bf0a90e4e0df2382c3a64131a7345f44e43d9f21dda564f56a45d38ce4a"
     },
     {
       "path": "plugins/opl-projector/skills/enable-projector/SKILL.md",
-      "sha256": "03866b053c612b5a90416234a3fc3c868b79a04c5177926b79cac4c3c599f039"
+      "sha256": "e0d9b8d8d70735377a33980e53699f15421dc4051e071b8f31884c18fee2754f"
     },
     {
       "path": "plugins/opl-projector/skills/reconcile-and-learn/SKILL.md",
@@ -159,7 +170,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "282d1df03406096ff577d40ccca53d8a34bf4a7acc385c75c4257fa43d4f37d5"
+      "sha256": "b4e44e2c2428b4475865c8acb2545e3aafb3c0c7e5ae9bc48b8b44e3a979ca95"
     },
     {
       "path": "scripts/prepare-plugin.mjs",
@@ -181,5 +192,18 @@
       "path": "test/providers.test.mjs",
       "sha256": "3f11af1d6d2725d37c2933da90b19b1c76afa4ac4cb77a238d3a165e1ceabed7"
     }
-  ]
+  ],
+  "dependencyAudit": {
+    "status": "vulnerable",
+    "high": 3,
+    "advisory": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+    "dependencyChain": [
+      "fast-glob",
+      "micromatch",
+      "braces"
+    ],
+    "risk": "Stack-exhaustion denial of service through deeply nested glob patterns",
+    "npmFixAvailable": false,
+    "scope": "Existing dependency chain; no dependency changed in this instruction update."
+  }
 }

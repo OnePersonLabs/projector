@@ -22,6 +22,8 @@ Say **"Turn Projector off in this project"** to remove the marker. Meaning and r
 
 Rollback restores saved bytes from one owned repair when the current bytes still match that repair's output. It refuses to overwrite unrelated edits. It does not rewind the repository or undo ordinary native work.
 
+Activated Git projects also use reviewable local commits by default. The agent groups each behavior or decision with its implementation, consumers, checks, and necessary meaning changes. It commits at coherent completion points and explains the reason and validation. There are no file-count or line-count quotas. Existing commit rules and requests to leave work uncommitted take precedence. Pushing and rewriting history need separate authorization.
+
 ## Try the helper
 
 Use Node.js 24 or newer. From this workspace:

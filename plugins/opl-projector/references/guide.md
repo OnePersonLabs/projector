@@ -101,6 +101,22 @@ Replace `CURRENT_CONTENT_HASH` with the current content hash before use. This is
 
 Rollback preflights all outputs and records uncertainty before restoration. If restoration stops partway through, resume exposes the rollback record. Inspect output state and retry only the explicit recovery operation. Ownership checks compare physical files, including internal junction aliases.
 
+## Reviewable local commits
+
+The execution skill owns commit judgment. The native root uses Git directly; Projector does not create a commit daemon or require a new work ledger. This policy applies only while the project is activated. More specific user and repository rules take precedence.
+
+Choose a unit that explains one behavior, fix, or decision. For example, a protocol field change belongs with its producer, consumers, tests, and meaning. An unrelated presentation change belongs in another commit. A large change can remain one unit when splitting it would produce misleading or unusable intermediate states. Explain its dependencies and review order rather than inventing a size limit.
+
+Before staging, wait for that unit's writers to finish. Independent workers can continue on disjoint surfaces. Coordinate ownership of the shared Git index and commit operation through the native root; do not add a Projector lock or scheduler. Inspect existing staged work and the current working diff. Paths alone do not distinguish task changes from another writer's edits in the same file.
+
+Stage the exact owned paths or hunks for the unit. Include related checks and authored meaning when they explain the change. Exclude secrets, disposable caches, repair before images, and transient producer staging files. Include published generated outputs only when the repository expects them, with the source changes that explain them. Do not use blanket staging in a dirty shared checkout.
+
+Inspect the full staged diff, not only its filenames or statistics. Confirm it contains the intended unit and no unrelated staged work. Confirm its source and check evidence still apply after integration. If the index or selected files change concurrently, inspect the new state before proceeding. When safe isolation is unavailable, preserve all edits and leave the unit uncommitted. Do not unstage another writer's work or commit it for convenience.
+
+Use a message that describes the final change, its reason, relevant validation, and any important limitation. Commit with the repository's normal hooks. Do not use bypass flags for a pass. Inspect the resulting commit and remaining status. Record its ID and any uncommitted remainder in the existing handoff or useful checkpoint; do not duplicate Git history into a new ledger.
+
+For resumed work, inspect current history, staged changes, and actual working changes before deciding whether a unit is already committed. Do not recreate a commit from a stale checkpoint. A rollback of an owned repair can become a new reviewed correction commit when appropriate; it does not reset repository history. Pushing, amending published commits, rebasing, resetting, and force-pushing require separate authorization.
+
 ## Convergence and maintenance
 
 After two identical failed explanations or a return to an earlier output state, the helper stops that local automatic repair strategy. If accepted conditions conflict, the native root must stop repeating the affected repair and record the competing obligations. Continue independent work. Change approach or request the specific meaning decision.

@@ -8,6 +8,8 @@ Use authoritative meaning directly when it helps the work. The plugin is optiona
 
 Use native execution and delegation. The native root owns shared meaning and the checkpoint. Assign workers disjoint writes. Projector helpers do not schedule agents or execute a second workflow.
 
+In an activated Git project, use reviewable local commits by default, subject to the user's and repository's commit rules. The native root owns staging and commits. Use the commit procedure in `$opl-projector:carry-out-directive`; the user does not need to request each commit. Pushes and history changes need separate authorization.
+
 Recover only the meaning needed for the directive. Summaries point to authority; they do not replace reasons, exceptions, or reopening assumptions. State the scope of each supported claim. Keep unavailable evidence unresolved.
 
 After work changes meaning or creates a useful future action, update the affected meaning or checkpoint. Routine work does not require a Projector ceremony. Preserve a mismatch before changing code, selection, checks, or meaning to resolve it.

@@ -136,3 +136,11 @@ SessionStart and UserPromptSubmit hooks provide conditional baseline guidance. R
 Prepare the plugin with its locked dependency closure before native installation. Install and enable the new plugin and trust its current hooks in reachable Windows and WSL user homes. Remove older registered Projector installations and their remaining local plugin caches. Preserve their source checkouts and Git history. Publish V5 on a new branch with V4 as its parent; do not force-push or change V3/V4 branches.
 
 Verify the gate, scope boundaries, preserved recovery data, inactive short-circuit behavior, package isolation, and existing V5 behavior with deterministic checks and independent review. No AI-consuming trial or skill-invocation test is added. All other commitments in this plan remain applicable.
+
+## 7. Authorized reviewable commit policy -- 2026-10-03
+
+The user requested automatic commit behavior that reduces review effort and keeps commits aligned with understandable units of work. In activated Git projects, the native root makes coherent local commits by default, subject to more specific user and repository rules. The execution skill owns this judgment. Activation explains the policy, and conditional consumer guidance keeps it available without special user commands.
+
+Commit boundaries follow behavior and dependency structure, not file counts, line counts, elapsed time, language, or agent assignments. Keep implementation, consumers, checks, and necessary meaning together. Preserve other writers' staged and working changes. If a unit cannot be isolated safely, retain its uncommitted state and continue independent work. Commit messages explain the result, reason, validation, and relevant limits; broad units include a review order.
+
+This policy does not add a scheduler, commit daemon, Git lock, new ledger, automatic publication, history rewriting, or a per-commit certification campaign. Use existing check and review requirements. Validate instruction metadata and references, obtain a scoped independent review, and refresh the installed bundles. Do not add skill-invocation tests or AI-consuming trials. All previous commitments remain applicable.
