@@ -22,7 +22,7 @@ The helper currently discovers Units at file granularity. A Unit can represent a
 
 ## Verification
 
-`npm.cmd test` passed **42 tests, 0 failed, 0 skipped**, with exit code zero. The integrated run took about four seconds. Activation checks cover Git boundaries, quiet inactive hooks, inactive runtime calls, preserved recovery data, and same-session disable handling. The suite covers core behavior, provider protocols and direct services, source-bound imports, file discovery, and the shared Clip integration scenario. The four discovery tests also passed in WSL.
+`npm.cmd test` passed **38 tests, 0 failed, 0 skipped**, with exit code zero. The integrated run took about four seconds. Activation checks cover Git boundaries, quiet inactive hooks, inactive runtime calls, preserved recovery data, and same-session disable handling. The suite covers core behavior, provider protocols and direct services, source-bound imports, file discovery, and the shared Clip integration scenario.
 
 The Clip checks actually execute JavaScript playback/export, Python persistence, and Rust playback. They exercise alternate handwritten implementations and the explicit committed-edit counterexample. Other checks cover moved source, a new consumer without coverage, static versus runtime evidence, relevant versus unrelated drift, failed observations, and stale dependencies across Lenses. They also cover preserved original mismatch, local repair stops, cache removal, and recoverable closed work.
 
@@ -52,7 +52,7 @@ Validation for the commit-policy instruction change used skill metadata, referen
 
 The [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) had no patched release. Discovery now uses `glob` 13.0.6 through its public `glob/raw` entrypoint, with locked `minimatch` 10.2.6 and `brace-expansion` 5.0.12. The default minified entrypoint embeds an older parser that reproduced a stack overflow even with a clean npm audit. The unbundled entrypoint uses the patched dependency closure. Projector adds no pattern-depth quota.
 
-The filesystem adapter preserves non-ENOENT scan errors that the glob library otherwise suppresses. Selection checks cover negation, brace alternatives and numeric ranges, extglobs, dotfiles, deduplication, ignored directories, file-only populations, symlinks, and project confinement. The former parser failed on a 4,900-level brace pattern below its input-length cap. The current runtime and unpacked archive complete parsing without stack exhaustion. WSL reports ENAMETOOLONG for the resulting literal path; that error remains visible, and subsequent ordinary discovery works. `npm audit --prefix plugins/opl-projector --json` reports **0 vulnerabilities**.
+The filesystem adapter preserves non-ENOENT scan errors that the glob library otherwise suppresses. `npm audit --prefix plugins/opl-projector --json` reports **0 vulnerabilities**.
 
 ## Real language-server evidence
 

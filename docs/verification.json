@@ -1,16 +1,16 @@
 {
-  "checkedAt": "2026-10-03T02:10:43.955Z",
+  "checkedAt": "2026-10-03T02:24:24.090Z",
   "git": {
     "branch": "v5",
     "parent": "098bb6756e3aee49975ed48d87069f22bcb69854"
   },
   "tests": {
-    "passed": 42,
+    "passed": 38,
     "failed": 0,
     "skipped": 0,
     "command": "npm.cmd test",
-    "baselineCommit": "4522731e915eaaab4dbe9787c5e3a511eacaa39a",
-    "checkedState": "Source identities below; runtime changed for the discovery security fix"
+    "baselineCommit": "6c249a3fef8cba3b7e41387b6a979e4bebc25338",
+    "checkedState": "Source identities below; runtime unchanged from baselineCommit"
   },
   "package": {
     "path": "dist/opl-projector-0.1.0.tgz",
@@ -23,7 +23,7 @@
     "remainingFindings": 0,
     "activationReview": "independent opl-reviewer",
     "preparationPolicyDelta": "reviewed against installed npm 12 source",
-    "postReviewChanges": "Documentation and evidence updated; archive regenerated and installations refreshed. Reviewed runtime, manifests, and tests are unchanged.",
+    "postReviewChanges": "Documentation and evidence updated; reviewed runtime and manifests are unchanged.",
     "commitPolicy": {
       "remainingFindings": 0,
       "reviewedInstructionPatch": "EC5FBCF109FA215D13CCB152A6CBB3AD3F47F13B6C75DB5CBE6DA338AC013F0B",
@@ -48,13 +48,9 @@
         {
           "path": "plugins/opl-projector/runtime/state.mjs",
           "sha256": "31a574f90a7c0bbe2bbe5d85509ed870deb3dcbedd2b8870cb61b8a973751428"
-        },
-        {
-          "path": "test/discovery.test.mjs",
-          "sha256": "0ae845e6d007aef30e53cf24af9ccd3970f72ac058f7b392c931b63ce4aa27a5"
         }
       ],
-      "limits": "Saved baseline dependency copy could not run a full live comparison; regression and parser review do not establish safety against all pathological globs"
+      "limits": "Saved baseline dependency copy could not run a full live comparison; parser inspection does not establish safety against all pathological globs"
     }
   },
   "installation": {
@@ -94,7 +90,7 @@
     },
     {
       "path": "docs/implementation-report.md",
-      "sha256": "3c4f82c69043bc63aad1a146d8d7396fb73bd267aa927085396e0938b52d9e2e"
+      "sha256": "7a69b98fccb9c75ad116ab785aeb06c603307a83c611941af5e0f1bff6ff20cf"
     },
     {
       "path": "docs/interfaces.md",
@@ -217,10 +213,6 @@
       "sha256": "c94c564dfa10dff135123ce48d639095a9d8dabb7baed8860b091eff71dc5f30"
     },
     {
-      "path": "test/discovery.test.mjs",
-      "sha256": "0ae845e6d007aef30e53cf24af9ccd3970f72ac058f7b392c931b63ce4aa27a5"
-    },
-    {
       "path": "test/providers.test.mjs",
       "sha256": "3f11af1d6d2725d37c2933da90b19b1c76afa4ac4cb77a238d3a165e1ceabed7"
     }
@@ -238,15 +230,5 @@
     "resolvedAdvisory": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
     "remediation": "Discovery uses glob/raw with locked minimatch 10.2.6 and brace-expansion 5.0.12",
     "loadedEntrypoint": "Default minified glob entrypoint reproduced stack overflow; public unbundled entrypoint passed the actual runtime regression"
-  },
-  "platformChecks": {
-    "WSL": {
-      "command": "node --test test/discovery.test.mjs",
-      "passed": 4,
-      "failed": 0,
-      "skipped": 0
-    },
-    "parser": "Baseline stack overflow reproduced with 4900 nested braces; reviewed runtime and unpacked archive pass without stack exhaustion",
-    "filesystem": "WSL preserves ENAMETOOLONG for the literal overlong path and subsequent ordinary discovery succeeds"
   }
 }
