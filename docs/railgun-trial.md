@@ -1,8 +1,19 @@
 # Railgun trial: selective seam refresh
 
-Status: designed, not run. This document does not authorize AI-consuming runs.
-The user requested a targeted design and permanent experiment guidance. No
-Projector runtime, hook, or workflow instruction has changed for this trial.
+Status: both comparisons assessed on 2026-10-03. Retain current V5; the
+selective-refresh candidate has no demonstrated net benefit in this trial. The user said
+"go for it" and authorized limited further exploration if the pair shows no
+particular difference. The initial pair and one focused follow-up are finished. Preserve their
+results. No further comparison or prompt tuning is authorized by this record. No Projector runtime, hook, or workflow instruction
+has changed for this trial.
+
+Execution state: temporary fixtures and evaluator are under
+`C:/Users/zethj/AppData/Local/Temp/projector-railgun-20261003-0424`. The watcher
+reported failure, and its four artifacts were inspected once. All recorded agent processes stopped. `manifest.json` and the per-phase JSON events retain the
+partial results. No candidate instruction has been installed.
+Both arms use global revision 33, Luna high, the same copied V5 guidance and
+local helper, and the same disposable workspace permissions. CLI sessions are
+fresh and ephemeral; prompts and JSON events are retained by the observer.
 
 ## Decision and hypothesis
 
@@ -193,8 +204,156 @@ expand the benchmark, tune the prompt, or schedule maintenance trials.
 
 Record the checked source snapshots, environment, prompts, raw cost evidence,
 contract outcomes, differences, decision, and limits in this document when an
-authorized run occurs. Until then, the finding is unknown. Do not promote the
-candidate into installed workflow guidance based on this design alone.
+authorized run occurs. Use the assessed findings below. Do not promote the candidate into installed
+workflow guidance without evidence that its benefit justifies its cost.
+
+## Initial result and focused follow-up
+
+| Initial arm | Handoff phase | Resume phase | Observed result |
+| --- | --- | --- | --- |
+| X: current V5 | Completed in 158.407 seconds; 8 completed tool items | Stopped at the remaining 141.812 seconds; 11 completed tool items | Checkpoint exists; handwritten and new preview paths still lose attributes |
+| Y: candidate | Stopped at 300.198 seconds; 18 completed tool items | Not reached | Checkpoint exists; handwritten path still loses attributes; external handoff changes were never applied |
+
+The baseline used 300.219 active seconds in total; the candidate used 300.198.
+The completed X handoff reported 363,262 input tokens, including 306,176 cached
+input tokens, and 6,900 output tokens. It also reported 3,642 reasoning output
+tokens. Preserve these native fields; do not add reasoning to output or assert
+an independently measured billable total. Canceled phases supplied no final
+usage counters. Their token totals are unknown, not zero.
+
+Neither arm completed the requested implementation. The unequal handoff
+exposure prevents a fair comparison of final contract failures. Inspection of
+`X-2.jsonl` and `Y-1.jsonl` found repeated source and instruction reads. Y also
+searched globs that omitted `.mjs` files and retried discovery. X encountered a
+failed patch while revising the Lens. Both stderr logs reported an MCP startup
+timeout after 30 seconds. These observations show real overhead and incidental
+errors; they do not establish that the candidate caused them. X's checkpoint
+was 6,042 bytes; Y's was 5,857 bytes. Checkpoint size alone supplies no benefit.
+
+Use the user's explicit permission for limited further exploration for one
+follow-up. This amendment supersedes the original single-pair stopping point
+only for that follow-up. Preserve the original evidence and do not extend its
+allowance or replay its canceled mutations.
+
+The follow-up asks a narrower question: does the same candidate help an agent
+resume and implement the contract when checkpoint construction is already
+complete? It cannot establish the candidate's total two-phase cost.
+
+Create two new copies from the same frozen source. Give both one identical,
+observer-prepared checkpoint through the existing checkpoint API. Capture its
+snapshot before applying the same preview consumer and contributor comment.
+Retain the original behavioral directive in `DIRECTIVE.md`, excluding only the
+completed checkpoint-writing and planned-stop instructions. This avoids asking
+the resumed agent to repeat the completed phase. Provide both agents the same
+documented CLI resume command and relevant paths. The candidate receives only
+the original candidate instruction as additional text.
+
+Use Luna high, the same global revision, tools, activation, dependency closure,
+and permissions. Run candidate first, then baseline, each in a fresh context
+with at most 300 active seconds. Reverse order to expose another ordering
+condition, not to claim control of cache or host variation. Preserve the same
+independent oracle and all original contracts, including the explicit edit,
+contributor comment, JavaScript scope, and truthful evidence. Permit native
+delegation under the same rules in both arms.
+
+Save the prepared checkpoints, source manifest, exact prompts, event streams,
+usage, final patches, and evaluator results under `followup/` in the existing
+temporary result directory. Check source equivalence before launching. Record
+any missing measurements. Stop after this follow-up, assess both results, and
+retain current V5 unless the evidence supports an instruction-only adoption.
+Do not launch a third comparison or tune repeatedly for a favorable result.
+
+Independent review approved the prepared follow-up after the temporary harness
+was repaired to record launch state before spawning and retain malformed-event
+errors after cancellation. Reviewed harness SHA-256:
+`582ad9470289ab5c8219f2e8988e9dad92605096c83e8e8403a71f3e7ea977f3`.
+The reviewer verified 54 identical source files and the same failing negative
+controls. Dependency contents were not part of that independent hash check;
+both copies came from the same prepared bundle. Observed versions include
+`glob` 13.0.6, `minimatch` 10.2.6, and `yaml` 2.9.1.
+
+## Follow-up result and decision
+
+The follow-up watcher reported command failure with exit code 1, without an
+outer watcher timeout. Its four artifacts were inspected once. The harness
+recorded both arm cancellations, no malformed events, and evaluated the actual
+partial trees after the agents stopped. Do not interpret the command failure
+as a behavior-test failure.
+
+| Measure | P: candidate | Q: current V5 |
+| --- | --- | --- |
+| Independent behavior checks | 22 of 22 passed | 22 of 22 passed |
+| Agent completion | Canceled; no final response | Canceled; no final response |
+| Observed active wall time | 300.252 seconds, spending cap reached | 300.176 seconds, spending cap reached |
+| Completed command/tool items | 26 | 18 |
+| File-change tool items | 2 | 5 |
+| Agent runs of the existing JS check | 2 | 3 |
+| Final checkpoint size | 3,262 bytes | 5,461 bytes |
+| Changed paths, including external edits | 7 | 7 |
+| Final native token totals | Unknown | Unknown |
+
+Both implementations preserve the tested attributes, positive and negative
+transpositions, saved source, independent uses, the explicit edit, and the
+contributor comment. Both extended the existing JS check and Lens coverage to
+include preview. Both changed the shared example input to add velocity and
+label. The independent evaluator supplied its own fixed input and expected
+values, so agreement with the agents' edited fixture was not its oracle.
+
+The candidate changed preview to call the existing playback function; the
+baseline kept a direct copied-note implementation. Both are valid for the
+observed contract. The candidate compressed its checkpoint and refreshed its
+snapshot through the checkpoint API. The baseline preserved the original
+snapshot and more explanatory text. A shorter checkpoint does not prove lower
+review effort or future maintenance cost.
+
+Both agents attempted a local commit, and Git reported permission denied while
+creating `.git/index.lock`. Their stderr logs record a Windows sandbox denial.
+The experiment requested `workspace-write` and `approval_policy=never`; local
+commits were permitted by the prompt but failed under that host configuration.
+Both preserved staged work and inspected Git state. This is a confound for
+workflow completion. Do not bypass the denial or repair the disposable trees
+and present the repaired result as agent performance. Both also logged the same
+30-second MCP startup timeout.
+The live root session has unrestricted filesystem access. These restricted
+trial runs do not establish that ordinary installed V5 cannot create commits.
+
+The candidate encountered a missing skill path and a failed Lens patch, then
+recovered. The baseline revised its checkpoint prose and repeated its check
+while preparing the commit. Evidence is in `P.jsonl`, `Q.jsonl`, and their stderr
+logs. These action differences are observable; one pair does not establish
+that the candidate instruction caused them.
+
+The five-minute caps censor completion times. Neither run emitted a
+`turn.completed` usage counter, so token savings, total token cost, and billable
+cost cannot be compared. Separately timed human review effort, command/model
+time subdivisions, and long-term maintenance cost were not measured. The patch
+and checkpoint sizes are process proxies only. The two comparisons together
+used about 20 active agent minutes, excluding fixture setup, investigation,
+evaluation, independent review, and report preparation.
+
+Decision: retain current V5. No tested contract failed in either follow-up arm,
+and the candidate prevented no observed baseline error. It added 780 instruction
+bytes and used eight more completed tool items, while leaving a smaller
+checkpoint and using one fewer JS check run. Those mixed observations do not
+justify another installed workflow obligation. This is a decision against
+adoption on the available evidence, not proof that selective refresh is harmful
+or never useful. Missing token and completion evidence remains unresolved.
+
+Keep the permanent railgun experiment guidance already installed in OPL.
+Keep the add/remove/refactor questions as optional planning directions in this
+record. Do not add a consensus controller, mandatory agent panel, timer, or
+another checkpoint system. No runtime, hook, or installed Projector workflow
+instruction changed during these comparisons.
+
+Follow-up snapshot identities:
+
+- Candidate patch SHA-256:
+  `47dff6496b1d2e8ec21b53578c2009ec9461ea94325dcf7d6c079db418514963`.
+- Baseline patch SHA-256:
+  `e6011af2139d6b67ec5e1ebabb59bfef8ca3c34051679a3f920aefdf5576397b`.
+- Exact prompts, manifests, checkpoints, negative controls, event streams,
+  partial patches, and positive evaluator outcomes remain under `followup/`
+  in the temporary evidence directory named above. No third run is planned.
 
 ## Separate idea: extension, structural change, removal
 
