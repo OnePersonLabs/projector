@@ -1,6 +1,8 @@
 # Psychord workflow review
 
-Date: 2026-10-05. Psychord implementation remains paused.
+Date: 2026-10-05. Psychord was paused for this review. The user subsequently
+resumed implementation; its current task record is in Psychord's
+`.projector/work/current-work.md`.
 
 ## Recommendation
 
@@ -10,10 +12,10 @@ provides that exit while preserving the option to recover an idea or recording.
 Permanent erasure would destroy that option without establishing whether the
 musical idea is feasible.
 
-The current evidence supports rejecting the development approach that produced
-this situation. It does not establish that the dream is impossible, that its
-complete scope is feasible, or that it is commercially worthwhile. Another
-unbounded rewrite has not earned a recommendation.
+The audit identifies specific avoidable costs in the development approach.
+It does not establish that most effort was wasted, that the dream is impossible,
+that its complete scope is feasible, or that it is commercially worthwhile.
+Another unbounded rewrite has not earned a recommendation.
 
 My assessment is that Projector was over-applied in this recovery. Its net
 benefit over Git, focused design notes, and a short current task record remains
@@ -40,9 +42,13 @@ contains:
 
 These are coordination and context-volume measurements. They are not a billing
 estimate, a quota estimate, unique content, child-agent totals, or a breakdown
-of wasted hours. The evidence does not support assigning all 16 hours to
-Projector, tests, or reviews. It does show substantial repeated setup,
-communication, output consumption, and context recovery.
+of wasted hours. Twenty-three launches in roughly 16 hours is about 1.4 per
+hour. The roughly 70 agents across the full session include the earlier
+recovery phases. These counts do not establish excessive delegation, repeated
+investigation, or wasted time. Several independent reviews found real defects.
+Evaluate assignments by useful work, defects caught, and total coordination
+cost; minimizing launches is not the objective. The verified excesses are the
+large default context packets and the specific repeated-test/review rules below.
 
 Source: root session `01a100b0-9ff6-72f0-8004-e239128f6684`. The local metadata
 counter and output are in `.verification/workflow-review/`. They print counts,
@@ -133,8 +139,8 @@ the existence of more machinery to maintain.
 
 ## Pause handoff
 
-The next decision is whether Psychord should resume at all. No continuation is
-scheduled. If it resumes, keep the recovered intended scope and select a
+At audit handoff, the next decision was whether Psychord should resume. The user
+has since authorized continuation. Keep the recovered intended scope and select a
 connected musical behavior that the user can play and understand. Exercise its
 recognition, assessment, challenge response, and visible explanation together
 before extending dependent systems. That demonstration would be evidence about
