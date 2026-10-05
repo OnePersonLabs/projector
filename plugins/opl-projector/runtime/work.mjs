@@ -15,6 +15,39 @@ export async function readCheckpoint(root, id) {
   if (!match) throw new Error(`Invalid checkpoint: ${id}`);
   return { ...parse(match[1]), body: text.slice(match[0].length) };
 }
+
+// Routine navigation needs the current question and a route to its evidence,
+// not another copy of every source digest, verdict participant, or before image.
+// The saved record and readCheckpoint/resume APIs retain complete recovery data.
+export function checkpointContext(record) {
+  const context = {
+    id: record.id,
+    goal: record.goal,
+    status: record.status,
+    file: `.projector/work/${workId(record.id)}.md`,
+    concepts: record.concepts ?? [],
+    lenses: record.lenses ?? [],
+    owners: (record.ownership ?? []).map(item => ({ owner: item.owner, paths: item.paths?.length ?? 0 })),
+    questions: record.questions ?? [],
+    uncertainMutations: record.uncertainMutations ?? [],
+    evidence: {
+      sourceInputs: record.snapshot?.inputs?.length ?? 0,
+      completedItems: record.completed?.length ?? 0,
+      originalMismatches: record.mismatches?.length ?? 0,
+      lastReconciliation: record.lastReconciliation?.status ?? null,
+    },
+    detail: 'Navigation summary only. Read the relevant checkpoint fields for exact ownership, decisions, exceptions, and recovery evidence before acting.',
+  };
+  if (record.changed) context.changed = record.changed;
+  if (record.next) context.next = record.next;
+  if (record.mutations) context.mutations = record.mutations.map(item => ({
+    id: item.id,
+    status: item.attempt?.status ?? 'unknown',
+    file: `.projector/work/repairs/${workId(item.id)}/record.json`,
+    instruction: item.instruction,
+  }));
+  return context;
+}
 export async function writeCheckpoint(root, request) {
   const activatedProject = await activeRoot(root);
   if (!activatedProject) return inactive(root);

@@ -67,6 +67,20 @@ The CLI accepts `activate`, `deactivate`, `status`, `focus`, `revisit`, `reconci
 
 ESM callers can import `focus`, `revisit`, and `reconcile` from `PLUGIN_ROOT/runtime/projector.mjs` and pass `(root, request)`. Checkpoint helpers are `writeCheckpoint(root, request)`, `resume(root, id)`, and `closeCheckpoint(root, id)`. CLI resume and close requests use `{"id":"clip-export"}`.
 
+`focus` returns compact checkpoint context when `work` is selected. CLI
+`checkpoint` and `resume` also return compact context. It includes open questions,
+uncertain mutation identities, evidence counts, and the saved record path.
+Resume also reports changed paths and repair-record pointers. Detailed source
+inventories, verdict participants, narrative, and recovery bytes remain in the
+saved records. Read relevant fields when needed; this summary is navigation,
+not sufficient evidence for acceptance or mutation.
+
+Set `includeWorkDetails: true` in these requests only when the full record is
+needed. Direct ESM checkpoint and resume APIs retain their full results for
+programmatic consumers. Select the required fields before sending them to an
+agent. SessionStart loads full consumer guidance; UserPromptSubmit checks
+activation and gives a short reminder with a bootstrap pointer.
+
 With `work`, `revisit` also refreshes the checkpoint's discovery boundaries. Request `paths` add boundaries for this observation. Changes outside current Lens selection become discovery questions. A literal `query` searches the selected source and these boundaries. Declared Lens observations run on demand. Ordinary `focus` does not run them.
 
 ## Provider setup
@@ -87,6 +101,11 @@ Provider metadata separates `adapterVersion` from `engine.name` and `engine.vers
 
 ## Checkpoints and owned repair
 
+Keep current decisions, assignments, unresolved risks, and next actions concise.
+Replace superseded narrative status instead of appending a session diary.
+Preserve intent, reasons, exceptions, original mismatches, and unresolved repair
+evidence. Link detailed results and read them for a specific question.
+
 The native root writes the shared checkpoint with `id`, `goal`, `concepts`, `lenses`, `ownership`, `boundaries`, `completed`, `questions`, and `uncertainMutations`. Each ownership entry has `owner` and explicit output `paths`. `boundaries` contains project-relative discovery globs for the source snapshot. Put narrative limits in optional `body`. Active checkpoints live at `.projector/work/ID.md`; closed checkpoints move to `.projector/work/archive/ID.md` and remain readable.
 
 Resume compares recorded source and discovery with the checkout. Inspect uncertain mutations; never replay them automatically. Reconcile records an original mismatch before applying changed selector, checker, or condition interpretation.
@@ -100,6 +119,21 @@ Run a known producer through the native host and stage its output. Inspect the s
 Replace `CURRENT_CONTENT_HASH` with the current content hash before use. This is request syntax, not an executable fixture receipt. Only checkpoint-owned paths can change automatically. Repair saves before images and an attempt record before writes. Repeated identical attempts or prior-state recurrence stop that local strategy. Inspect actual state after interruption. Rollback changes only bytes that still match this attempt's postimage; unrelated edits remain intact.
 
 Rollback preflights all outputs and records uncertainty before restoration. If restoration stops partway through, resume exposes the rollback record. Inspect output state and retry only the explicit recovery operation. Ownership checks compare physical files, including internal junction aliases.
+
+## What hashes establish
+
+Runtime hashes have defined consumers: reject stale provider facts, invalidate
+inapplicable check results, detect source changes on resume, and refuse repair
+or rollback against changed contents. They identify bytes within those checks.
+They do not prove behavior, coverage, user intent, or human comprehension.
+Repair remains cooperative; a hash comparison is not a lock against another
+process changing a file afterward.
+
+Use Git commits and scoped diffs for ordinary code review identity. An extra
+snapshot or hash inventory needs a specific consumer and decision that Git or
+existing runtime records cannot supply. Do not maintain duplicate manifests or
+hash the evidence again merely to label it accepted. Backup or asset integrity
+checks retain their own purpose and do not become application acceptance.
 
 ## Reviewable local commits
 
@@ -121,7 +155,13 @@ For resumed work, inspect current history, staged changes, and actual working ch
 
 After two identical failed explanations or a return to an earlier output state, the helper stops that local automatic repair strategy. If accepted conditions conflict, the native root must stop repeating the affected repair and record the competing obligations. Continue independent work. Change approach or request the specific meaning decision.
 
-Keep related behavior understandable together. Introduce an abstraction for meaningful complexity or a real boundary. If fixes repeatedly require additional layers, revisit the premise. Do not enforce call-depth quotas, caller-count quotas, or universal folder layouts.
+Keep related behavior understandable together. The user must be able to follow
+consequential behavior and detect a wrong assumption. Use concrete names, useful
+interfaces, and nearby explanations of reasons and constraints. Investigate
+large files for distinct reasons to change; splitting them into many small files
+does not itself improve comprehension. If fixes repeatedly require additional
+layers, revisit the premise. Do not enforce line-count, call-depth, or folder
+quotas. Do not substitute an agent's readability judgment for human understanding.
 
 Promote a Pattern only through an explicit meaning decision. Create or revise an explicitly scoped Lens, preserve applicability and counterexamples, and use evidence independent of that Lens's own repair. Repetition alone does not accept a Pattern.
 

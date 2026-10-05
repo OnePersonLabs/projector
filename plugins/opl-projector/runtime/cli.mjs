@@ -3,6 +3,7 @@ import path from 'node:path';
 import { focus, revisit, reconcile, writeCheckpoint, resume, closeCheckpoint, repair } from './projector.mjs';
 import { observe } from './providers/index.mjs';
 import { readJson } from './state.mjs';
+import { checkpointContext } from './work.mjs';
 import { activate, deactivate, activationStatus, projectRoot, activeRoot, inactive } from './activation.mjs';
 
 async function main() {
@@ -24,8 +25,12 @@ async function main() {
     return;
   }
   const request = options.request ? await readJson(path.resolve(options.request)) : {};
-  const result = await operations[command](root, request);
-  console.log(JSON.stringify(result, null, 2));
+  // Output selection is a transport option, not saved task state.
+  const { includeWorkDetails, ...checkpointRequest } = request;
+  const result = await operations[command](root, command === 'checkpoint' ? checkpointRequest : request);
+  const output = ['checkpoint', 'resume'].includes(command) && result.status !== 'inactive' && includeWorkDetails !== true
+    ? checkpointContext(result) : result;
+  console.log(JSON.stringify(output, null, 2));
   if (result.status === 'mismatch') process.exitCode = 1;
   else if (['unresolved', 'stopped', 'unavailable', 'interrupted'].includes(result.status)) process.exitCode = 2;
 }

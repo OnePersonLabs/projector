@@ -38,6 +38,14 @@ Return {provider:{id,adapterVersion,engine:{name,version}}, requestBinding, oper
 
 Checkpoint requests have id, goal, concepts, lenses, ownership [{owner,paths}], boundaries, completed, questions, and uncertainMutations. Root is the shared checkpoint writer. Closed checkpoints move out of default focus but remain readable. Resume compares source/discovery snapshots with current checkout and never replays a mutation.
 
+Default focus checkpoint context and CLI checkpoint/resume output are compact
+navigation summaries. They preserve open questions and uncertain mutation IDs,
+report evidence counts, and point to the full saved record. CLI resume also
+reports changed paths and repair-record pointers without embedding recovery
+bytes. `includeWorkDetails: true` returns the complete work record. Direct ESM
+checkpoint and resume results remain complete. Persisted checkpoint and repair
+formats are unchanged.
+
 Repair requests have id, work, owner, outputs [{path,expectedHash,content|fromFile|delete}], and optional condition and explanation. Only paths explicitly owned in the checkpoint can be automatically changed. fromFile accepts a producer's staged output; the native host runs the known producer. Save before images and an attempt record under the work directory before writes. Repeated same attempts or prior-state recurrence stop the strategy locally. inspect and rollback modes inspect the actual state; rollback changes only bytes still matching this attempt's postimage. Do not overwrite unrelated edits.
 
 Checks may declare coverage as explicit participant paths, or coverage: selection when the command genuinely evaluates the current selected population. Default coverage includes only literal selector paths. Wildcard members do not inherit support from a check unless coverage includes them. Check scope is authored evidence applicability, not a proof that arbitrary check code is complete.

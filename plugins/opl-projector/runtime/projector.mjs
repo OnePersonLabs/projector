@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { hash, projectPath, discover, captureScope, writeJson, optionalJson } from './state.mjs';
 import { loadMeaning, conditionOf, selectLenses } from './meaning.mjs';
-import { readCheckpoint, updateCheckpoint } from './work.mjs';
+import { readCheckpoint, updateCheckpoint, checkpointContext } from './work.mjs';
 import { observe } from './providers/index.mjs';
 export { writeCheckpoint, resume, closeCheckpoint } from './work.mjs';
 export { repair } from './repair.mjs';
@@ -16,7 +16,7 @@ export async function focus(root, request = {}) {
   root = activatedProject;
   const records = await loadMeaning(root);
   const active = records.filter(item => item.status !== 'retired');
-  if (!request.concepts?.length && !request.query && !request.paths?.length && !request.lenses?.length) return { index: active.map(({ id, kind, title, file }) => ({ id, kind, title, file })), instruction: 'Select relevant identities, words, or paths; no global graph was loaded into the packet' };
+  if (!request.concepts?.length && !request.query && !request.paths?.length && !request.lenses?.length && !request.work) return { index: active.map(({ id, kind, title, file }) => ({ id, kind, title, file })), instruction: 'Select relevant identities, words, or paths; no global graph was loaded into the packet' };
   const words = request.query?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
   const selected = active.filter(item => request.concepts?.includes(item.id) || request.lenses?.includes(item.id) || words.some(word => `${item.title} ${item.id} ${item.body}`.toLowerCase().includes(word)));
   for (const id of request.concepts ?? []) if (!active.some(record => record.id === id)) throw new Error(`Unknown active meaning: ${id}`);
@@ -31,7 +31,8 @@ export async function focus(root, request = {}) {
   }
   const ids = new Set(selected.map(record => record.id));
   const related = active.filter(item => !ids.has(item.id) && ((item.kind === 'lens' && item.conditions?.some(ref => ids.has(ref.split('#')[0]))) || item.concepts?.some(id => ids.has(id)) || selected.some(record => record.relations?.some(link => link.target === item.id))));
-  const checkpoint = request.work ? await readCheckpoint(root, request.work) : undefined;
+  const work = request.work ? await readCheckpoint(root, request.work) : undefined;
+  const checkpoint = work && (request.includeWorkDetails === true ? work : checkpointContext(work));
   return { meaning: selected, related: related.map(({ id, kind, title, file }) => ({ id, kind, title, file })), checkpoint, observations: 'Request a provider explicitly when current code facts would help' };
 }
 

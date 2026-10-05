@@ -7,7 +7,7 @@ description: In a Projector-activated project, reconcile changed implementations
 
 Check that this project is activated before Projector work. If `.projector/active` is absent, continue the native task without Projector. Do not make activation a condition of ordinary work.
 
-Select the affected Concepts and Projection Lenses. Read the conditions, exceptions, selector population, and check definitions. Use `reconcile` to reuse applicable receipts. Set `runChecks: true` only when native checks are needed. See [the reference guide](../../references/guide.md).
+Select the affected Concepts and Projection Lenses. Read the conditions, exceptions, selector population, and check definitions. Use `reconcile` when reusing or checking these bindings answers a current question. Set `runChecks: true` only when native checks are needed. Batch related checks at a useful integration point; a new edit or commit alone does not invalidate every result. See [the reference guide](../../references/guide.md).
 
 For each verdict, retain the condition, participants, selection status, evidence, status, and reason. Keep failed or unavailable observations alongside supported evidence. Empty required selection is unresolved unless the condition explicitly allows absence.
 

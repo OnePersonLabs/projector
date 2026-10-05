@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 import { stringify } from 'yaml';
 import { focus, revisit, reconcile, writeCheckpoint, resume, closeCheckpoint, repair } from '../plugins/opl-projector/runtime/projector.mjs';
 import { hash, projectPath, writeText } from '../plugins/opl-projector/runtime/state.mjs';
-import { updateCheckpoint } from '../plugins/opl-projector/runtime/work.mjs';
+import { readCheckpoint, updateCheckpoint } from '../plugins/opl-projector/runtime/work.mjs';
 const run = promisify(execFile);
 const cli = path.resolve('plugins/opl-projector/runtime/cli.mjs');
 
@@ -60,6 +60,41 @@ test('focus selects meaning without hydrating cycles or old checkpoint archives'
   assert.equal(closed.status, 'closed');
   assert.ok((await fs.readFile(path.join(root, closed.file), 'utf8')).includes('A useful native edit'));
   assert.equal((await focus(root, { concepts: ['idea'] })).checkpoint, undefined);
+});
+
+test('routine checkpoint output retains recovery routes while full records remain available', async t => {
+  const { root } = await fixture(t);
+  await checkpoint(root);
+  const repairId = 'interrupted';
+  const repairFile = `.projector/work/repairs/${repairId}/record.json`;
+  await writeText(path.join(root, repairFile), JSON.stringify({ status: 'interrupted', before: 'x'.repeat(20000) }));
+  await updateCheckpoint(root, 'directive', {
+    uncertainMutations: [repairId],
+    body: 'Decision: retain the user recording. Exception: never replay an uncertain write.',
+  });
+  const saved = await readCheckpoint(root, 'directive');
+  const savedBytes = await fs.readFile(path.join(root, '.projector/work/directive.md'));
+  const compact = (await focus(root, { work: 'directive' })).checkpoint;
+  assert.deepEqual(compact.questions, saved.questions);
+  assert.deepEqual(compact.uncertainMutations, saved.uncertainMutations);
+  assert.equal(compact.owners[0].paths, saved.ownership[0].paths.length);
+  assert.deepEqual(await fs.readFile(path.join(root, compact.file)), savedBytes);
+  assert.deepEqual((await focus(root, { work: 'directive', includeWorkDetails: true })).checkpoint, saved);
+
+  await fs.appendFile(path.join(root, 'src/a.mjs'), '// changed since checkpoint\n');
+  const fullResume = await resume(root, 'directive');
+  const requestPath = path.join(root, 'request.json');
+  await fs.writeFile(requestPath, JSON.stringify({ id: 'directive' }));
+  const invoke = () => run(process.execPath, [cli, 'resume', '--root', root, '--request', requestPath]);
+  const summary = JSON.parse((await invoke()).stdout);
+  assert.deepEqual(summary.changed, fullResume.changed);
+  assert.deepEqual(summary.questions, saved.questions);
+  assert.equal(summary.mutations[0].status, fullResume.mutations[0].attempt.status);
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, summary.mutations[0].file), 'utf8')), fullResume.mutations[0].attempt);
+  assert.ok(JSON.stringify(summary).length < JSON.stringify(fullResume).length);
+  await fs.writeFile(requestPath, JSON.stringify({ id: 'directive', includeWorkDetails: true }));
+  assert.deepEqual(JSON.parse((await invoke()).stdout), fullResume);
+  assert.deepEqual(await fs.readFile(path.join(root, compact.file)), savedBytes);
 });
 
 test('missing Lens and missing required population are unresolved; allowed absence is explicit', async t => {

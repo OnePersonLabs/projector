@@ -13,6 +13,10 @@ Use a selective `focus` request when the optional helper reduces discovery work.
 
 Separate accepted meaning from observed source facts and candidate patterns. Record unresolved coverage. A provider result identifies its language, operation, scope, and gaps; it does not prove all consumers were found.
 
-For interrupted work, read the checkpoint and use `resume` to compare snapshots. Inspect the actual diff and native task state. Inspect uncertain mutations in the checkout before action. Do not replay them.
+For interrupted work, start with the compact checkpoint context. Use `resume`
+when source-change detection will affect the next action. Read detailed evidence
+only for the relevant question; the saved checkpoint retains it. Inspect the
+actual diff and native task state. Inspect uncertain mutations in the checkout
+before action. Do not replay them.
 
 Give the native root a compact packet: authority links, relevant conditions, participant scope, supported evidence, gaps, ownership, and the next useful action. The root decides shared meaning and delegation. Stop discovery when the remaining uncertainty does not affect this directive.

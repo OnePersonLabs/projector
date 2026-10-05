@@ -86,7 +86,7 @@ test('a directory at the marker path is inactive and mutation errors surface', a
   await assert.rejects(activeRoot(path.join(root, '\0')), { code: 'ERR_INVALID_ARG_VALUE' });
 });
 
-test('active hooks emit root and consumer guidance for both events; inactive hooks emit nothing', async t => {
+test('session hooks load guidance and prompt hooks link to it; inactive hooks emit nothing', async t => {
   const root = await fixture(t);
   const child = path.join(root, 'src');
   await fs.mkdir(child);
@@ -103,7 +103,12 @@ test('active hooks emit root and consumer guidance for both events; inactive hoo
     const output = JSON.parse(on.stdout).hookSpecificOutput;
     assert.equal(output.hookEventName, event);
     assert.ok(output.additionalContext.includes(JSON.stringify(root)));
-    assert.ok(output.additionalContext.includes(guidance));
+    if (event === 'SessionStart') assert.ok(output.additionalContext.includes(guidance));
+    else {
+      const guidancePath = fileURLToPath(new URL('../plugins/opl-projector/AGENTS.md', import.meta.url));
+      assert.ok(output.additionalContext.includes(JSON.stringify(guidancePath)));
+      assert.ok(output.additionalContext.length < guidance.length);
+    }
   }
   const nested = path.join(child, 'unrelated');
   await fs.mkdir(path.join(nested, '.git'), { recursive: true });

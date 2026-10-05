@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { activeRoot } from '../runtime/activation.mjs';
 
 let input = '';
@@ -13,7 +14,11 @@ if (event !== 'SessionStart' && event !== 'UserPromptSubmit') {
 }
 const root = await activeRoot(request.cwd);
 if (root) {
-  const guidance = await fs.readFile(new URL('../AGENTS.md', import.meta.url), 'utf8');
+  // Full guidance belongs at session start/resume/compaction. Prompt hooks still
+  // check activation, including a plugin enabled after the session began.
+  const guidance = event === 'SessionStart'
+    ? await fs.readFile(new URL('../AGENTS.md', import.meta.url), 'utf8')
+    : `Use the Projector consumer guidance already loaded in this session. If it is not loaded, read ${JSON.stringify(fileURLToPath(new URL('../AGENTS.md', import.meta.url)))} before Projector work. Recheck this project's .projector/active marker before using Projector; ordinary native work does not require its helpers.`;
   const additionalContext = [
     `Projector is active for project root: ${JSON.stringify(root)}.`,
     guidance,
