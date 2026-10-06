@@ -12,6 +12,15 @@ export async function lsp(context, request) {
     return;
   }
   if (request.timeoutMs !== undefined && (!Number.isFinite(request.timeoutMs) || request.timeoutMs <= 0)) throw new Error('timeoutMs must be a positive resource budget');
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (config.experimentalCapabilities !== undefined && !object(config.experimentalCapabilities)) throw new Error('config.experimentalCapabilities must be an object');
+  const readiness = config.readiness;
+  if (readiness !== undefined) {
+    const primitive = value => value === null || ['string','boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value));
+    if (!object(readiness) || typeof readiness.notification !== 'string' || !readiness.notification.trim() || !object(readiness.equals) || !Object.keys(readiness.equals).length || !Object.values(readiness.equals).every(primitive)) throw new Error('config.readiness requires a notification and a nonempty equals map of primitive values');
+    if (request.timeoutMs === undefined) throw new Error('Configured LSP readiness requires an explicit positive timeoutMs resource budget');
+    context.readiness = {notification:readiness.notification,equals:readiness.equals,status:'unconfirmed',observed:null};
+  }
   const child = spawn(config.command, config.args, {cwd:context.root,shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});
   const closed = new Promise(resolve => child.once('close', resolve));
   let ended = false;
@@ -41,8 +50,24 @@ export async function lsp(context, request) {
   connection.onRequest('workspace/workspaceFolders', () => [{uri:pathToFileURL(context.root).href,name:'project'}]);
   connection.onRequest('client/registerCapability', () => null);
   connection.onRequest('window/workDoneProgress/create', () => null);
+  let notifyReadiness;
+  const observeReadiness = params => {
+    context.readiness.observed = params ?? null;
+    // This is the latest server status, not a latch or a source-analysis barrier.
+    context.readiness.status = object(params) && Object.entries(readiness.equals).every(([key,value]) => params[key] === value) ? 'matched' : 'unconfirmed';
+    notifyReadiness?.();
+  };
+  if (readiness && readiness.notification !== 'textDocument/publishDiagnostics') connection.onNotification(readiness.notification, observeReadiness);
+  const awaitReadiness = async () => {
+    while (readiness && context.readiness.status !== 'matched') {
+      if (failure) throw failure;
+      await Promise.race([new Promise(resolve => { notifyReadiness = resolve; }), stopped]);
+    }
+    if (failure) throw failure;
+  };
   const notifications = new Set();
   connection.onNotification('textDocument/publishDiagnostics', params => {
+    if (readiness?.notification === 'textDocument/publishDiagnostics') observeReadiness(params);
     const task = (async () => {
     try {
       const file = await sourcePath(context.root, params.uri);
@@ -55,11 +80,11 @@ export async function lsp(context, request) {
     task.finally(() => notifications.delete(task));
   });
   connection.listen();
-  const send = (method, ...params) => Promise.race([connection.sendRequest(method, ...params, cancellation.token), stopped]);
+  const send = (method, ...params) => failure ? Promise.reject(failure) : Promise.race([connection.sendRequest(method, ...params, cancellation.token), stopped]);
   let initialized = false;
   try {
     if (failure) throw failure;
-    const result = await send('initialize', {processId:process.pid,rootUri:pathToFileURL(context.root).href,workspaceFolders:[{uri:pathToFileURL(context.root).href,name:'project'}],capabilities:{textDocument:{diagnostic:{dynamicRegistration:false},documentSymbol:{hierarchicalDocumentSymbolSupport:true}},workspace:{configuration:true,workspaceFolders:true}},initializationOptions:config.initializationOptions ?? null});
+    const result = await send('initialize', {processId:process.pid,rootUri:pathToFileURL(context.root).href,workspaceFolders:[{uri:pathToFileURL(context.root).href,name:'project'}],capabilities:{textDocument:{diagnostic:{dynamicRegistration:false},documentSymbol:{hierarchicalDocumentSymbolSupport:true}},workspace:{configuration:true,workspaceFolders:true},...(config.experimentalCapabilities ? {experimental:config.experimentalCapabilities} : {})},initializationOptions:config.initializationOptions ?? null});
     initialized = true;
     context.engine = {name:result.serverInfo?.name ?? config.command,version:result.serverInfo?.version ?? null};
     if (!context.engine.version) gap(context, 'engine-version-unavailable', 'The server did not report its engine version; retain this provenance gap');
@@ -73,6 +98,7 @@ export async function lsp(context, request) {
     }
     for (const file of context.files) {
       try {
+        if (failure) throw failure;
         const documentUri = await uri(context.root, file);
         await connection.sendNotification('textDocument/didOpen', {textDocument:{uri:documentUri,languageId:languageId(file),version:1,text:await readSource(context.root,file)}});
         const params = {textDocument:{uri:documentUri}};
@@ -81,6 +107,7 @@ export async function lsp(context, request) {
           params.position = request.position;
           if (request.operation === 'references') params.context = {includeDeclaration:request.includeDeclaration ?? true};
         }
+        await awaitReadiness();
         const response = await send(operation[1], params);
         if (request.operation === 'symbols') await symbols(context,response,file);
         else if (request.operation === 'diagnostics') {
@@ -115,6 +142,7 @@ export async function lsp(context, request) {
       child.stderr.destroy();
       if (!ended) child.kill();
       await closed;
+      if (readiness && context.readiness.status !== 'matched') gap(context,'lsp-readiness-unconfirmed',`The latest ${readiness.notification} notification did not match the configured readiness fields`);
     }
   }
 }

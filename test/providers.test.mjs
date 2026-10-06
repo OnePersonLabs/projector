@@ -124,6 +124,120 @@ test('LSP stdio negotiates capabilities, opens languages, queries navigation and
   assert.equal(JSON.parse((await fs.readFile(path.join(root,'opened.jsonl'),'utf8')).trim().split('\n')[0]).languageId,'rust');
 });
 
+async function readinessServer(t, mode) {
+  const root = await fixture(t, {'src/main.rs':'fn main() {}'});
+  const rpc = pathToFileURL(pluginRequire.resolve('vscode-jsonrpc/node')).href;
+  const script = `
+import fs from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
+import { createMessageConnection, StreamMessageReader, StreamMessageWriter } from ${JSON.stringify(rpc)};
+const mode = ${JSON.stringify(mode)}, method = 'fixture/status';
+const connection = createMessageConnection(new StreamMessageReader(process.stdin),new StreamMessageWriter(process.stdout));
+const trace = [];
+let ready = false;
+async function status(health, idle) {
+  ready = health === 'ok' && idle;
+  trace.push({event:'status',health,idle});
+  await connection.sendNotification(method,{health,idle});
+}
+connection.onRequest('initialize', async params => {
+  if (!params.capabilities.experimental.fixtureStatus || !params.capabilities.workspace.configuration) throw new Error('Capabilities were lost');
+  await status('ok',true);
+  if (mode === 'busy' || mode === 'warning' || mode === 'missing') await status(mode === 'warning' ? 'warning' : 'ok',false);
+  return {serverInfo:{name:'readiness-fixture',version:'1'},capabilities:{definitionProvider:true}};
+});
+connection.onNotification('textDocument/didOpen', async () => {
+  trace.push({event:'open'});
+  if (mode === 'exit') { writeFileSync('trace.json',JSON.stringify(trace)); process.exit(7); }
+  if (mode === 'busy') {
+    // An explicit protocol round trip gives the client the intervening busy state.
+    await connection.sendRequest('workspace/workspaceFolders');
+    await status('ok',true);
+  }
+});
+connection.onRequest('textDocument/definition', async params => {
+  trace.push({event:'query',ready});
+  if (!ready) throw new Error('Semantic request preceded readiness');
+  if (mode === 'late-warning') await status('warning',false);
+  return [{uri:params.textDocument.uri,range:${JSON.stringify(range)}}];
+});
+connection.onRequest('shutdown', async () => { await fs.writeFile('trace.json',JSON.stringify(trace)); return null; });
+connection.onNotification('exit', () => process.exit(0));
+connection.listen();
+`;
+  await fs.writeFile(path.join(root,'ready-server.mjs'),script);
+  return {root,config:{command:process.execPath,args:[path.join(root,'ready-server.mjs')],experimentalCapabilities:{fixtureStatus:true},readiness:{notification:'fixture/status',equals:{health:'ok',idle:true}}}};
+}
+
+test('LSP readiness retains early status and lets later busy status block dependent requests', async t => {
+  for (const mode of ['early','busy']) {
+    const {root,config} = await readinessServer(t,mode);
+    const result = await observe(root,{provider:'lsp',operation:'definitions',files:['src/main.rs'],position:{line:0,character:3},config,timeoutMs:5000});
+    assert.equal(result.status,'complete',JSON.stringify(result.gaps));
+    assert.equal(result.readiness.status,'matched');
+    const trace = JSON.parse(await fs.readFile(path.join(root,'trace.json'),'utf8'));
+    assert.equal(trace[0].event,'status');
+    assert.ok(trace.findIndex(event => event.event === 'open') > 0);
+    const query = trace.findIndex(event => event.event === 'query');
+    assert.ok(query > trace.findIndex(event => event.event === 'open'));
+    assert.ok(trace[query].ready);
+    if (mode === 'busy') assert.ok(query > trace.findLastIndex(event => event.event === 'status' && event.idle));
+    assert.equal(result.scope.semanticCompleteness,'unclaimed');
+  }
+});
+
+test('LSP latest warning supersedes matched readiness without discarding returned facts', async t => {
+  const {root,config} = await readinessServer(t,'late-warning');
+  const result = await observe(root,{provider:'lsp',operation:'definitions',files:['src/main.rs'],position:{line:0,character:3},config,timeoutMs:5000});
+  assert.equal(result.status,'partial');
+  assert.equal(result.readiness.status,'unconfirmed');
+  assert.equal(result.readiness.observed.health,'warning');
+  assert.ok(result.gaps.some(g => g.code === 'lsp-readiness-unconfirmed'));
+  assert.ok(result.facts.some(f => f.kind === 'definition'));
+  assert.ok(result.facts.some(f => f.kind === 'source-file'));
+});
+
+test('LSP unmet readiness respects the caller budget and cancellation', async t => {
+  for (const mode of ['warning','missing','cancel']) {
+    const {root,config} = await readinessServer(t,mode === 'cancel' ? 'missing' : mode);
+    if (mode === 'missing') config.readiness.notification = 'fixture/never';
+    const controller = new AbortController();
+    const timer = mode === 'cancel' ? setTimeout(() => controller.abort(),200) : null;
+    try {
+      const result = await observe(root,{provider:'lsp',operation:'definitions',files:['src/main.rs'],position:{line:0,character:3},config,timeoutMs:mode === 'cancel' ? 5000 : 200,signal:controller.signal});
+      assert.equal(result.status,'partial');
+      assert.equal(result.readiness.status,'unconfirmed');
+      assert.ok(result.gaps.some(g => g.code === 'lsp-readiness-unconfirmed'));
+      assert.ok(result.gaps.some(g => /cancelled|budget exhausted/.test(g.message)));
+      assert.ok(result.facts.some(f => f.kind === 'source-file'));
+      assert.ok(!result.facts.some(f => f.kind === 'definition'));
+    } finally { clearTimeout(timer); }
+  }
+});
+
+test('LSP process failure after matching readiness retains failure and closes observation', async t => {
+  const {root,config} = await readinessServer(t,'exit');
+  const result = await observe(root,{provider:'lsp',operation:'definitions',files:['src/main.rs'],position:{line:0,character:3},config,timeoutMs:5000});
+  assert.equal(result.status,'partial');
+  assert.ok(result.gaps.some(g => /exited|closed/.test(g.message)));
+  assert.ok(result.facts.some(f => f.kind === 'source-file'));
+  assert.ok(!result.facts.some(f => f.kind === 'definition'));
+});
+
+test('LSP readiness requires a bounded declarative contract before spawning', async t => {
+  const root = await fixture(t,{'main.py':'value = 1'});
+  for (const config of [
+    {readiness:{notification:'fixture/status',equals:{ready:true}}},
+    {readiness:{notification:'fixture/status',equals:{nested:{ready:true}}}},
+    {experimentalCapabilities:[]},
+  ]) {
+    const result = await observe(root,{provider:'lsp',operation:'definitions',files:['main.py'],config:{command:'must-not-spawn',args:[],...config}});
+    assert.equal(result.status,'partial');
+    assert.ok(result.gaps.some(g => g.code === 'provider-failed'));
+    assert.ok(result.facts.some(f => f.kind === 'source-file'));
+  }
+});
+
 test('index rejects facts when a declared dependency changes outside the fact location', async t => {
   const root = await fixture(t,{'main.ts':'const value = 1;', 'config.json':'{"value":1}'});
   const inputs = await captureInputs(root,['main.ts','config.json']);

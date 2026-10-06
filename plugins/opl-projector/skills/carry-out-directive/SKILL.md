@@ -7,11 +7,17 @@ description: In a Projector-activated project, carry out implementation work wit
 
 Check that this project is activated before Projector work. If `.projector/active` is absent, continue the native task without Projector. Do not make activation a condition of ordinary work.
 
-Read the applicable authority and relevant exceptions. Use the native host to plan and execute the work. The native root owns shared meaning and the checkpoint. Give workers disjoint output paths and the conditions that apply to their outputs. Projector supplies evidence and recovery helpers; it does not schedule work.
+Read the applicable authority and relevant exceptions. Use the native host to plan and execute the work. The root owns shared meaning, affected Lenses, and the checkpoint unless it assigns an exact surface. Projector supplies evidence and recovery helpers; it does not schedule work.
 
 If the project is a Git checkout, inspect the branch, current commit, and Git status before editing. Identify existing staged work and inspect relevant working diffs. Distinguish existing work from the directive's changes. For every project, identify the next unit that a reviewer can understand as one change. Adjust that boundary as dependencies become clear; do not wait until final handoff to divide a large changeset.
 
-Use Projection Units to navigate from a Concept to affected implementation participants. Refresh stale bindings when files or discovery membership change. Use Projection Lenses to select the population separately from the property under test. Handwritten implementations can satisfy the same Concept without sharing a generator or syntax.
+Before accepting a consequential design, use [Applying Projector](../../references/applying-projector.md) to connect governing meaning to the changed rule, its owner, actual consumers, relevant state transitions, and evidence. Start from the requested outcome and current meaning, including authoritative prose. Use Units and Lenses as navigation. A selected file list is not an impact analysis, and checks do not supply missing requirements.
+
+Record decision-changing obligations and uncertainties in the existing plan or checkpoint when useful; do not create a second ledger. Probe a consequential premise before dependent implementation. Current local context can resolve a routine edit without a new artifact or helper call. Keep the full intended outcome and still-applicable plan commitments visible.
+
+Give workers governing meaning pointers, the changed contract and settled shared interfaces, actual consumers, disjoint write paths, and required evidence. They return unexpected dependencies and proposed Lens changes to the root. Separate Unit or Lens IDs do not establish independent ownership of files, checkpoints, cache baselines, or the Git index.
+
+Compare traced participants and actual changes with affected Lens selectors. The root maintains their intended population, condition references, observations, check inputs, target, evidence kind, and coverage with the implementation. Verify globs against the actual tree. Refresh affected bindings when source or membership changes; report unresolved scope. Select unsafe implementations too, and accept valid handwritten alternatives. Follow [Lens maintenance](../../references/applying-projector.md#maintain-affected-lenses) for the concrete procedure.
 
 Choose the next connected behavior that closes a product gap and exercise it
 through its actual consumer. Keep the full intended scope visible. Explain the
@@ -21,7 +27,7 @@ compensate for an opaque implementation.
 
 Run known producers through the native host. When replacement needs recovery, produce staged files first. Inspect staged content, then use an owned `repair` request with expected hashes. Read [the reference guide](../../references/guide.md) for the request contract. Keep source, generated outputs, and producer ownership explicit.
 
-Keep original mismatch evidence before changing an implementation, selector, check, or Concept. Probe consequential assumptions before building on them. Batch affected checks when connected behavior is ready and reuse still-applicable evidence. State what the checks establish and which checks remain unrun.
+Keep original mismatch evidence before changing an implementation, selector, check, or Concept. Compare actual changes with the intended behavior and predicted consequences. If successive patches expose the same faulty ownership or lifetime premise, pause dependent patches and revise that connected design. Use `$opl-projector:reconcile-and-learn` to distinguish a realization, binding, observation, or meaning defect. Batch affected checks when connected behavior is ready and reuse still-applicable evidence. State what the checks establish and which checks remain unrun.
 
 ## Reviewable local commits
 
@@ -37,7 +43,7 @@ Commit only the directive's reviewed changes. Preserve other staged and working 
 
 ## Handoff
 
-Update shared meaning only when this work changes meaning. Update the checkpoint when it creates a useful future action or interruption state. Preserve unrelated edits. Hand the root exact changed paths, evidence, gaps, and decisions.
+Update shared meaning only when this work changes meaning. Finish known affected Lens updates or retain their specific unresolved scope and next action. Update the checkpoint when it creates a useful future action or interruption state. Preserve unrelated edits. Hand the root exact changed paths, evidence, gaps, and decisions. State source, installed-plugin, and session-loaded instruction status separately when delivering plugin changes.
 
 Keep the active record about current decisions, assignments, unresolved risks,
 and the next action. Use links for retained detail. Prefer a commit and scoped
